@@ -282,6 +282,8 @@ function readTypeScriptClientPaths() {
             .replaceAll("${encodedEmployeeId}", "{employeeId}")
             .replaceAll("${runId}", "{runId}")
             .replaceAll("${encodedRunId}", "{runId}")
+            .replaceAll("${envName}", "{envName}")
+            .replaceAll("${encodedEnvName}", "{envName}")
             .replaceAll("${skillId}", "{skillId}")
             .replaceAll("${encodedSkillId}", "{skillId}"),
         ),

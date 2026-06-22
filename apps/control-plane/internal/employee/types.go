@@ -132,6 +132,75 @@ type WorkspaceFile struct {
 	UpdatedAt         time.Time
 }
 
+type EnvironmentVariableStatus string
+
+const (
+	EnvironmentVariableStatusActive   EnvironmentVariableStatus = "active"
+	EnvironmentVariableStatusDisabled EnvironmentVariableStatus = "disabled"
+)
+
+type EnvironmentVariableSummary struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Name              string
+	Configured        bool
+	Fingerprint       string
+	Sensitive         bool
+	Status            EnvironmentVariableStatus
+	UpdatedAt         time.Time
+}
+
+type EnvironmentVariableRecord struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Name              string
+	EncryptedValue    string
+	EncryptionKeyID   string
+	ValueFingerprint  string
+	Sensitive         bool
+	Status            EnvironmentVariableStatus
+	CreatedBy         *uuid.UUID
+	UpdatedBy         *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type ListEnvironmentVariablesRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+type UpsertEnvironmentVariableRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Name              string
+	Value             string
+	Sensitive         bool
+	ActorUserID       *uuid.UUID
+}
+
+type DeleteEnvironmentVariableRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Name              string
+}
+
+// InitialEnvironmentVariable is used by the digital-employee create flow to save
+// env vars at create time. Plaintext lives only in the request; the service
+// encrypts before any write.
+type InitialEnvironmentVariable struct {
+	Name      string
+	Value     string
+	Sensitive bool
+}
+
+// RuntimeEnvironmentVariablePayload is the decrypted shape handed to the run
+// service for the Runtime command payload. Control Plane decrypts; Runtime
+// Agent never sees ciphertext or keys.
 type RuntimeEnvironmentVariablePayload struct {
 	Name      string
 	Value     string
@@ -397,6 +466,7 @@ type CreateDigitalEmployeeRequest struct {
 	ProviderType           string
 	SessionPolicy          map[string]any
 	WorkspacePolicy        map[string]any
+	EnvironmentVariables   []InitialEnvironmentVariable
 }
 
 type CreateDigitalEmployeeConfigRevisionRequest struct {

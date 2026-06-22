@@ -1,7 +1,9 @@
 package employee
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -450,6 +452,63 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	}
 	if len(repo.commandReceipts) != 1 {
 		t.Fatalf("expected one command receipt, got %#v", repo.commandReceipts)
+	}
+}
+
+func TestCreateDigitalEmployeePersistsInitialEnvironmentVariablesInTransaction(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	svc.SetEnvironmentCodec(testCreateFlowEnvironmentCodec(t))
+	req.EnvironmentVariables = []InitialEnvironmentVariable{{
+		Name:      " GH_TOKEN ",
+		Value:     "ghp_secret_value",
+		Sensitive: true,
+	}}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+
+	if repo.transactionCount != 1 || repo.transactionCommitCount != 1 || repo.transactionRollbackCount != 0 {
+		t.Fatalf("expected one committed transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
+	}
+	if len(repo.envVars) != 1 {
+		t.Fatalf("expected one env var, got %#v", repo.envVars)
+	}
+	record := repo.envVars["GH_TOKEN"]
+	if record.TenantID != req.TenantID || record.TeamID != *req.TeamID || record.DigitalEmployeeID != created.ID || record.Name != "GH_TOKEN" {
+		t.Fatalf("unexpected env var scope: %#v", record)
+	}
+	if record.EncryptedValue == "" || strings.Contains(record.EncryptedValue, "ghp_secret_value") {
+		t.Fatalf("stored env value leaked plaintext: %#v", record)
+	}
+	if record.EncryptionKeyID != "v1" || record.ValueFingerprint == "" || !record.Sensitive {
+		t.Fatalf("expected encrypted env metadata, got %#v", record)
+	}
+}
+
+func TestCreateDigitalEmployeeRollsBackInitialEnvironmentVariablesWhenNameInvalid(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	svc.SetEnvironmentCodec(testCreateFlowEnvironmentCodec(t))
+	req.EnvironmentVariables = []InitialEnvironmentVariable{{
+		Name:      "1BAD",
+		Value:     "ghp_secret_value",
+		Sensitive: true,
+	}}
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got %v", err)
+	}
+	if repo.transactionCount != 1 || repo.transactionCommitCount != 0 || repo.transactionRollbackCount != 1 {
+		t.Fatalf("expected one rolled-back transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
+	}
+	if len(repo.employees) != 0 || len(repo.envVars) != 0 || len(repo.instances) != 0 || len(repo.commandReceipts) != 0 {
+		t.Fatalf("expected local facts rollback, employees=%#v env=%#v instances=%#v receipts=%#v", repo.employees, repo.envVars, repo.instances, repo.commandReceipts)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected no runtime dispatch after invalid env var, got %#v", dispatcher.commands)
 	}
 }
 
@@ -1970,6 +2029,18 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	}
 }
 
+func testCreateFlowEnvironmentCodec(t *testing.T) *EnvironmentValueCodec {
+	t.Helper()
+	codec, err := NewEnvironmentValueCodec(EnvironmentValueCodecConfig{
+		Keys:        "v1:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)),
+		ActiveKeyID: "v1",
+	})
+	if err != nil {
+		t.Fatalf("new env codec: %v", err)
+	}
+	return codec
+}
+
 func assertBlockingIssue(t *testing.T, validation EffectiveConfigValidation, code string) {
 	t.Helper()
 	for _, issue := range validation.BlockingErrors {
@@ -2071,6 +2142,7 @@ type memoryRepository struct {
 	runtimeProviderOptions   []RuntimeProviderOption
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	envVars                  map[string]EnvironmentVariableRecord
 	workspaceFiles           []WorkspaceFileRecord
 	workspaceFileRevisions   []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber int32
@@ -2094,6 +2166,7 @@ func newMemoryRepository() *memoryRepository {
 		currentTeamConfigByTeam:  make(map[uuid.UUID]uuid.UUID),
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
+		envVars:                  make(map[string]EnvironmentVariableRecord),
 		nextConfigRevisionNumber: 1,
 	}
 }
@@ -2389,6 +2462,52 @@ func (r *memoryRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID
 	return out, nil
 }
 
+func (r *memoryRepository) ListEnvironmentVariables(_ context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableRecord, error) {
+	records := make([]EnvironmentVariableRecord, 0)
+	for _, record := range r.envVars {
+		if record.TenantID == req.TenantID && record.DigitalEmployeeID == req.DigitalEmployeeID && record.Status == EnvironmentVariableStatusActive {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+func (r *memoryRepository) UpsertEnvironmentVariable(_ context.Context, req UpsertEnvironmentVariableStoreRequest) (EnvironmentVariableRecord, error) {
+	now := time.Now().UTC()
+	record, ok := r.envVars[req.Name]
+	if !ok {
+		record.ID = uuid.New()
+		record.CreatedAt = now
+		record.CreatedBy = validUUIDPtr(req.UpdatedBy)
+	}
+	record.TenantID = req.TenantID
+	record.TeamID = req.TeamID
+	record.DigitalEmployeeID = req.DigitalEmployeeID
+	record.Name = req.Name
+	record.EncryptedValue = req.EncryptedValue
+	record.EncryptionKeyID = req.EncryptionKeyID
+	record.ValueFingerprint = req.ValueFingerprint
+	record.Sensitive = req.Sensitive
+	record.Status = EnvironmentVariableStatusActive
+	record.UpdatedBy = validUUIDPtr(req.UpdatedBy)
+	record.UpdatedAt = now
+	r.envVars[req.Name] = record
+	return record, nil
+}
+
+func (r *memoryRepository) DeleteEnvironmentVariable(_ context.Context, req DeleteEnvironmentVariableRequest) error {
+	record, ok := r.envVars[req.Name]
+	if !ok || record.TenantID != req.TenantID || record.DigitalEmployeeID != req.DigitalEmployeeID {
+		return nil
+	}
+	delete(r.envVars, req.Name)
+	return nil
+}
+
+func (r *memoryRepository) ListRuntimeEnvironmentVariables(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]EnvironmentVariableRecord, error) {
+	return r.ListEnvironmentVariables(ctx, ListEnvironmentVariablesRequest{TenantID: tenantID, DigitalEmployeeID: digitalEmployeeID})
+}
+
 func (r *memoryRepository) UpsertWorkspaceFileSync(_ context.Context, _ UpsertWorkspaceFileSyncParams) error {
 	return nil
 }
@@ -2634,6 +2753,7 @@ type memoryRepositorySnapshot struct {
 	commandReceipts          map[string]*RuntimeCommandReceipt
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	envVars                  map[string]EnvironmentVariableRecord
 	workspaceFiles           []WorkspaceFileRecord
 	workspaceFileRevisions   []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber int32
@@ -2649,6 +2769,7 @@ func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 		commandReceipts:          cloneCommandReceiptMap(r.commandReceipts),
 		employeeConfigs:          cloneEmployeeConfigInputMap(r.employeeConfigs),
 		effectiveConfigs:         cloneEffectiveConfigRecordMap(r.effectiveConfigs),
+		envVars:                  cloneEnvironmentVariableRecordMap(r.envVars),
 		workspaceFiles:           cloneWorkspaceFileRecords(r.workspaceFiles),
 		workspaceFileRevisions:   cloneWorkspaceFileRevisionRecords(r.workspaceFileRevisions),
 		nextConfigRevisionNumber: r.nextConfigRevisionNumber,
@@ -2664,6 +2785,7 @@ func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
 	r.commandReceipts = snapshot.commandReceipts
 	r.employeeConfigs = snapshot.employeeConfigs
 	r.effectiveConfigs = snapshot.effectiveConfigs
+	r.envVars = snapshot.envVars
 	r.workspaceFiles = snapshot.workspaceFiles
 	r.workspaceFileRevisions = snapshot.workspaceFileRevisions
 	r.nextConfigRevisionNumber = snapshot.nextConfigRevisionNumber
@@ -2750,6 +2872,16 @@ func cloneEffectiveConfigRecordMap(values map[uuid.UUID]DigitalEmployeeEffective
 		record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
 		record.RevokedAt = cloneTimePtr(record.RevokedAt)
 		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneEnvironmentVariableRecordMap(values map[string]EnvironmentVariableRecord) map[string]EnvironmentVariableRecord {
+	cloned := make(map[string]EnvironmentVariableRecord, len(values))
+	for name, record := range values {
+		record.CreatedBy = validUUIDPtr(record.CreatedBy)
+		record.UpdatedBy = validUUIDPtr(record.UpdatedBy)
+		cloned[name] = record
 	}
 	return cloned
 }

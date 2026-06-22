@@ -246,6 +246,24 @@ func (e DigitalEmployeeEffectiveConfigStatus) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeEnvironmentVariableSummaryStatus.
+const (
+	DigitalEmployeeEnvironmentVariableSummaryStatusActive   DigitalEmployeeEnvironmentVariableSummaryStatus = "active"
+	DigitalEmployeeEnvironmentVariableSummaryStatusDisabled DigitalEmployeeEnvironmentVariableSummaryStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeEnvironmentVariableSummaryStatus enum.
+func (e DigitalEmployeeEnvironmentVariableSummaryStatus) Valid() bool {
+	switch e {
+	case DigitalEmployeeEnvironmentVariableSummaryStatusActive:
+		return true
+	case DigitalEmployeeEnvironmentVariableSummaryStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeExecutionInstanceStatus.
 const (
 	DigitalEmployeeExecutionInstanceStatusActive       DigitalEmployeeExecutionInstanceStatus = "active"
@@ -440,19 +458,19 @@ func (e DigitalEmployeeStatus) Valid() bool {
 
 // Defines values for DigitalEmployeeWorkbenchStatus.
 const (
-	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
-	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
-	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
+	Error          DigitalEmployeeWorkbenchStatus = "error"
+	PendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
+	Ready          DigitalEmployeeWorkbenchStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
 func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	switch e {
-	case DigitalEmployeeWorkbenchStatusError:
+	case Error:
 		return true
-	case DigitalEmployeeWorkbenchStatusPendingBinding:
+	case PendingBinding:
 		return true
-	case DigitalEmployeeWorkbenchStatusReady:
+	case Ready:
 		return true
 	default:
 		return false
@@ -1623,6 +1641,11 @@ type CreateDigitalEmployeeRequest struct {
 	ContextPolicyOverride  *map[string]interface{} `json:"context_policy_override,omitempty"`
 	Description            *string                 `json:"description,omitempty"`
 	EmployeeType           string                  `json:"employee_type"`
+	EnvironmentVariables   *[]struct {
+		Name      string `json:"name"`
+		Sensitive *bool  `json:"sensitive,omitempty"`
+		Value     string `json:"value"`
+	} `json:"environment_variables,omitempty"`
 	Metadata               *map[string]interface{} `json:"metadata,omitempty"`
 	Name                   string                  `json:"name"`
 	OutputContractAddendum *map[string]interface{} `json:"output_contract_addendum,omitempty"`
@@ -1951,6 +1974,25 @@ type DigitalEmployeeEffectiveConfig struct {
 
 // DigitalEmployeeEffectiveConfigStatus defines model for DigitalEmployeeEffectiveConfig.Status.
 type DigitalEmployeeEffectiveConfigStatus string
+
+// DigitalEmployeeEnvironmentVariableSummary defines model for DigitalEmployeeEnvironmentVariableSummary.
+type DigitalEmployeeEnvironmentVariableSummary struct {
+	Configured        bool                `json:"configured"`
+	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
+
+	// Fingerprint Stable non-secret fingerprint for change detection.
+	Fingerprint *string                                         `json:"fingerprint,omitempty"`
+	Id          *openapi_types.UUID                             `json:"id,omitempty"`
+	Name        string                                          `json:"name"`
+	Sensitive   bool                                            `json:"sensitive"`
+	Status      DigitalEmployeeEnvironmentVariableSummaryStatus `json:"status"`
+	TeamId      *openapi_types.UUID                             `json:"team_id,omitempty"`
+	TenantId    *openapi_types.UUID                             `json:"tenant_id,omitempty"`
+	UpdatedAt   *time.Time                                      `json:"updated_at,omitempty"`
+}
+
+// DigitalEmployeeEnvironmentVariableSummaryStatus defines model for DigitalEmployeeEnvironmentVariableSummary.Status.
+type DigitalEmployeeEnvironmentVariableSummaryStatus string
 
 // DigitalEmployeeExecutionInstance defines model for DigitalEmployeeExecutionInstance.
 type DigitalEmployeeExecutionInstance struct {
@@ -3420,6 +3462,7 @@ type RuntimeNode struct {
 	Metadata                *map[string]interface{} `json:"metadata,omitempty"`
 	Name                    string                  `json:"name"`
 	NodeId                  string                  `json:"node_id"`
+	RequiredTools           *[]string               `json:"required_tools,omitempty"`
 	RuntimeNodeId           *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
 	Status                  RuntimeNodeStatus       `json:"status"`
 	SupportedProviders      []string                `json:"supported_providers"`
@@ -3487,19 +3530,20 @@ type Skill struct {
 	CreatedBy *string `json:"created_by,omitempty"`
 
 	// CreatedByName Uploader display name
-	CreatedByName *string            `json:"created_by_name,omitempty"`
-	Description   string             `json:"description"`
-	IconKey       string             `json:"icon_key"`
-	Id            openapi_types.UUID `json:"id"`
-	Name          string             `json:"name"`
-	RiskLevel     string             `json:"risk_level"`
-	Slug          string             `json:"slug"`
-	Source        string             `json:"source"`
-	Tags          []string           `json:"tags"`
-	TeamBindings  []SkillTeamBinding `json:"team_bindings"`
-	TenantId      openapi_types.UUID `json:"tenant_id"`
-	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
-	Version       string             `json:"version"`
+	CreatedByName       *string                  `json:"created_by_name,omitempty"`
+	Description         string                   `json:"description"`
+	IconKey             string                   `json:"icon_key"`
+	Id                  openapi_types.UUID       `json:"id"`
+	Name                string                   `json:"name"`
+	RiskLevel           string                   `json:"risk_level"`
+	RuntimeDependencies SkillRuntimeDependencies `json:"runtime_dependencies"`
+	Slug                string                   `json:"slug"`
+	Source              string                   `json:"source"`
+	Tags                []string                 `json:"tags"`
+	TeamBindings        []SkillTeamBinding       `json:"team_bindings"`
+	TenantId            openapi_types.UUID       `json:"tenant_id"`
+	UpdatedAt           *time.Time               `json:"updated_at,omitempty"`
+	Version             string                   `json:"version"`
 }
 
 // SkillAgentBinding defines model for SkillAgentBinding.
@@ -3509,6 +3553,12 @@ type SkillAgentBinding struct {
 	Status    string              `json:"status"`
 	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
 	TeamName  *string             `json:"team_name,omitempty"`
+}
+
+// SkillRuntimeDependencies defines model for SkillRuntimeDependencies.
+type SkillRuntimeDependencies struct {
+	Env   []string `json:"env"`
+	Tools []string `json:"tools"`
 }
 
 // SkillTeamBinding defines model for SkillTeamBinding.
@@ -3800,10 +3850,17 @@ type UpdateTeamRequest struct {
 
 // UploadSkillRequest defines model for UploadSkillRequest.
 type UploadSkillRequest struct {
-	Description *string            `json:"description,omitempty"`
-	File        openapi_types.File `json:"file"`
-	Name        string             `json:"name"`
-	RiskLevel   *string            `json:"risk_level,omitempty"`
+	Description         *string                   `json:"description,omitempty"`
+	File                openapi_types.File        `json:"file"`
+	Name                string                    `json:"name"`
+	RiskLevel           *string                   `json:"risk_level,omitempty"`
+	RuntimeDependencies *SkillRuntimeDependencies `json:"runtime_dependencies,omitempty"`
+
+	// RuntimeEnv Comma-separated environment variable names required by the skill at runtime.
+	RuntimeEnv *string `json:"runtime_env,omitempty"`
+
+	// RuntimeTools Comma-separated CLI tool names required by the skill at runtime.
+	RuntimeTools *string `json:"runtime_tools,omitempty"`
 
 	// Tags Comma-separated uploaded skill labels.
 	Tags *string `json:"tags,omitempty"`
@@ -3823,6 +3880,14 @@ type UpsertDigitalEmployeeExecutionInstanceRequest struct {
 	RuntimeSelector      *map[string]interface{} `json:"runtime_selector,omitempty"`
 	SessionPolicy        *map[string]interface{} `json:"session_policy,omitempty"`
 	WorkspacePolicy      *map[string]interface{} `json:"workspace_policy,omitempty"`
+}
+
+// UpsertEnvironmentVariableRequest defines model for UpsertEnvironmentVariableRequest.
+type UpsertEnvironmentVariableRequest struct {
+	Sensitive *bool `json:"sensitive,omitempty"`
+
+	// Value Plaintext value accepted only on write; never returned by read APIs.
+	Value string `json:"value"`
 }
 
 // UpsertTeamLendingPolicy defines model for UpsertTeamLendingPolicy.
@@ -4429,6 +4494,9 @@ type ApproveDigitalEmployeeEffectiveConfigJSONRequestBody = ApproveEffectiveConf
 
 // PreviewDigitalEmployeeEffectiveConfigJSONRequestBody defines body for PreviewDigitalEmployeeEffectiveConfig for application/json ContentType.
 type PreviewDigitalEmployeeEffectiveConfigJSONRequestBody = EffectiveConfigPreviewRequest
+
+// UpsertEmployeeEnvironmentVariableJSONRequestBody defines body for UpsertEmployeeEnvironmentVariable for application/json ContentType.
+type UpsertEmployeeEnvironmentVariableJSONRequestBody = UpsertEnvironmentVariableRequest
 
 // UpsertDigitalEmployeeExecutionInstanceJSONRequestBody defines body for UpsertDigitalEmployeeExecutionInstance for application/json ContentType.
 type UpsertDigitalEmployeeExecutionInstanceJSONRequestBody = UpsertDigitalEmployeeExecutionInstanceRequest
@@ -5095,6 +5163,15 @@ type ServerInterface interface {
 	// List merged team and personal MCP servers
 	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
 	ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List employee environment variables
+	// (GET /api/v1/digital-employees/{employeeId}/environment-variables)
+	ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Delete an employee environment variable
+	// (DELETE /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
+	DeleteEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string)
+	// Upsert an employee environment variable
+	// (PUT /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
+	UpsertEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string)
 	// Get the digital employee execution instance
 	// (GET /api/v1/digital-employees/{employeeId}/execution-instance)
 	GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -5605,6 +5682,24 @@ func (_ Unimplemented) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWrit
 // List merged team and personal MCP servers
 // (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
 func (_ Unimplemented) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List employee environment variables
+// (GET /api/v1/digital-employees/{employeeId}/environment-variables)
+func (_ Unimplemented) ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete an employee environment variable
+// (DELETE /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
+func (_ Unimplemented) DeleteEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Upsert an employee environment variable
+// (PUT /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
+func (_ Unimplemented) UpsertEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6975,6 +7070,102 @@ func (siw *ServerInterfaceWrapper) ListEffectiveMCPServers(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListEffectiveMCPServers(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmployeeEnvironmentVariables operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeEnvironmentVariables(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteEmployeeEnvironmentVariable operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "envName" -------------
+	var envName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "envName", chi.URLParam(r, "envName"), &envName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "envName", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteEmployeeEnvironmentVariable(w, r, employeeId, envName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpsertEmployeeEnvironmentVariable operation middleware
+func (siw *ServerInterfaceWrapper) UpsertEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "envName" -------------
+	var envName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "envName", chi.URLParam(r, "envName"), &envName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "envName", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpsertEmployeeEnvironmentVariable(w, r, employeeId, envName)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12742,6 +12933,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-servers", wrapper.ListEffectiveMCPServers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/environment-variables", wrapper.ListEmployeeEnvironmentVariables)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/environment-variables/{envName}", wrapper.DeleteEmployeeEnvironmentVariable)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/environment-variables/{envName}", wrapper.UpsertEmployeeEnvironmentVariable)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.GetDigitalEmployeeExecutionInstance)

@@ -82,6 +82,6 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 WHERE rc.tenant_id = sqlc.arg('tenant_id')::uuid
   AND rn.node_id = sqlc.arg('node_id')::varchar
-  AND rc.capability_type = 'provider'
+  AND rc.capability_type IN ('provider', 'tool')
   AND rc.archived_at IS NULL
 ORDER BY rc.provider_type ASC, rc.capability_key ASC;

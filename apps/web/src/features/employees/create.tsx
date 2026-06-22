@@ -18,6 +18,7 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,14 @@ type WizardDraft = {
   runtime_node_id: string;
   provider_type: string;
   team_id: string;
+  environment_variables: EnvironmentVariableDraftRow[];
+};
+
+type EnvironmentVariableDraftRow = {
+  id: string;
+  name: string;
+  value: string;
+  sensitive: boolean;
 };
 
 type ValidationErrors = Partial<
@@ -102,6 +111,7 @@ const emptyDraft: WizardDraft = {
   runtime_binding: "",
   runtime_node_id: "",
   team_id: "",
+  environment_variables: [],
 };
 
 export function CreateEmployeePage() {
@@ -212,6 +222,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           provider_type: runtimeOption.provider_type,
           session_policy: { mode: "reuse_latest" },
           workspace_policy: {},
+          environment_variables: draft.environment_variables
+            .filter((row) => row.name.trim() && row.value)
+            .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
         },
       );
     },
@@ -440,6 +453,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     error={errors.runtime}
                     options={createOptions.data}
                     onSelectRuntime={selectRuntime}
+                    onUpdate={updateDraft}
                   />
                 ) : null}
               </div>
@@ -1399,13 +1413,25 @@ function RuntimeStep({
   error,
   options,
   onSelectRuntime,
+  onUpdate,
 }: {
   draft: WizardDraft;
   error?: string;
   options?: DigitalEmployeeCreateOptions;
   onSelectRuntime: (runtimeBindingValue: string) => void;
+  onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const runtimeOptions = options?.runtime_provider_options ?? [];
+  const updateEnvironmentRow = (rowId: string, patch: Partial<EnvironmentVariableDraftRow>) => {
+    onUpdate({
+      environment_variables: draft.environment_variables.map((row) =>
+        row.id === rowId ? { ...row, ...patch } : row,
+      ),
+    });
+  };
+  const removeEnvironmentRow = (rowId: string) => {
+    onUpdate({ environment_variables: draft.environment_variables.filter((row) => row.id !== rowId) });
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -1426,6 +1452,71 @@ function RuntimeStep({
       </RadioGroup>
       {runtimeOptions.length === 0 ? <p className="text-sm text-muted-foreground">暂无可用 Runtime Provider。</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <section className="rounded-md border bg-card/80 p-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium">员工环境变量</h3>
+            <p className="text-xs text-muted-foreground">用于技能运行依赖；创建请求会提交值，接口不会回显明文。</p>
+          </div>
+          <Button
+            onClick={() =>
+              onUpdate({ environment_variables: [...draft.environment_variables, newEnvironmentVariableRow()] })
+            }
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Plus data-icon="inline-start" />
+            添加环境变量
+          </Button>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {draft.environment_variables.length === 0 ? (
+            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无环境变量。</p>
+          ) : null}
+          {draft.environment_variables.map((row, index) => (
+            <div
+              className="grid gap-2 rounded-md border bg-background p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end"
+              key={row.id}
+            >
+              <div className="grid gap-1.5">
+                <Label htmlFor={`employee-env-name-${row.id}`}>环境变量名称 {index + 1}</Label>
+                <Input
+                  id={`employee-env-name-${row.id}`}
+                  onChange={(event) => updateEnvironmentRow(row.id, { name: event.target.value })}
+                  placeholder="GH_TOKEN"
+                  value={row.name}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`employee-env-value-${row.id}`}>环境变量值 {index + 1}</Label>
+                <Input
+                  id={`employee-env-value-${row.id}`}
+                  onChange={(event) => updateEnvironmentRow(row.id, { value: event.target.value })}
+                  type="password"
+                  value={row.value}
+                />
+              </div>
+              <label className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+                <Checkbox
+                  checked={row.sensitive}
+                  onCheckedChange={(checked) => updateEnvironmentRow(row.id, { sensitive: checked === true })}
+                />
+                敏感
+              </label>
+              <Button
+                aria-label={`移除环境变量 ${index + 1}`}
+                onClick={() => removeEnvironmentRow(row.id)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -1582,6 +1673,15 @@ function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, ru
 
 function runtimeBinding(option: DigitalEmployeeRuntimeProviderOption) {
   return `${option.runtime_node_id}:${option.provider_type}`;
+}
+
+function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+    name: "",
+    value: "",
+    sensitive: true,
+  };
 }
 
 function stringList(value: unknown) {

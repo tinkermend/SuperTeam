@@ -407,6 +407,21 @@ export type CreateDigitalEmployeeInput = {
   session_policy?: Record<string, unknown>;
   workspace_policy?: Record<string, unknown>;
   budget_policy?: BudgetPolicy;
+  environment_variables?: Array<{ name: string; value: string; sensitive: boolean }>;
+};
+
+export type DigitalEmployeeEnvironmentVariableSummary = {
+  name: string;
+  configured: boolean;
+  fingerprint: string;
+  sensitive: boolean;
+  status: "active" | "disabled";
+  updated_at?: string;
+};
+
+export type UpsertDigitalEmployeeEnvironmentVariableInput = {
+  value: string;
+  sensitive?: boolean;
 };
 
 type LegacyDraftDigitalEmployeeInput = {
@@ -724,6 +739,57 @@ export async function getDigitalEmployeeExecutionInstance(
     `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`,
     "digital employee execution instance",
   );
+}
+
+export function listEmployeeEnvironmentVariables(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployeeEnvironmentVariableSummary[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<DigitalEmployeeEnvironmentVariableSummary[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables`,
+    "employee environment variables",
+  );
+}
+
+export function upsertEmployeeEnvironmentVariable(
+  options: ApiClientOptions,
+  employeeId: string,
+  name: string,
+  input: UpsertDigitalEmployeeEnvironmentVariableInput,
+): Promise<DigitalEmployeeEnvironmentVariableSummary> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const envName = encodePathSegment(name);
+
+  return putJson<DigitalEmployeeEnvironmentVariableSummary>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`,
+    input,
+    "upsert employee environment variable",
+  );
+}
+
+export async function deleteEmployeeEnvironmentVariable(
+  options: ApiClientOptions,
+  employeeId: string,
+  name: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const envName = encodePathSegment(name);
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`),
+    {
+      credentials: "include",
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, "delete employee environment variable");
+  }
 }
 
 export function createDigitalEmployeeConfigRevision(

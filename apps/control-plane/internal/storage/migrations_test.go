@@ -246,6 +246,44 @@ func TestDigitalEmployeeWorkspaceFilesMigration(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeEnvironmentVariablesMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/033_digital_employee_env_and_skill_dependencies.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE digital_employee_environment_variables",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"team_id UUID NOT NULL",
+		"digital_employee_id UUID NOT NULL",
+		"name TEXT NOT NULL",
+		"encrypted_value TEXT NOT NULL",
+		"encryption_key_id TEXT NOT NULL",
+		"value_fingerprint TEXT NOT NULL",
+		"sensitive BOOLEAN NOT NULL DEFAULT true",
+		"status VARCHAR(50) NOT NULL DEFAULT 'active'",
+		"metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"CREATE UNIQUE INDEX digital_employee_env_unique_active_name",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"plain_value",
+		"plaintext",
+		"decrypted_value",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("migration must not store plaintext env values, found %q", forbidden)
+		}
+	}
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {

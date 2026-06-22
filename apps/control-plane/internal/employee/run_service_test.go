@@ -340,6 +340,26 @@ func TestRunServiceCreateRunReportsPendingRuntimeWhenNodeHasNotReported(t *testi
 	}
 }
 
+func TestRunServiceRuntimeEventPayloadRedactsEnvironmentValues(t *testing.T) {
+	redacted := redactRuntimeEventPayload(map[string]any{
+		"environment": []any{
+			map[string]any{"name": "GH_TOKEN", "value": "plain-token", "sensitive": true},
+		},
+	})
+
+	environment, ok := redacted["environment"].([]any)
+	if !ok || len(environment) != 1 {
+		t.Fatalf("expected one redacted environment entry, got %#v", redacted["environment"])
+	}
+	entry := environment[0].(map[string]any)
+	if entry["name"] != "GH_TOKEN" || entry["sensitive"] != true {
+		t.Fatalf("expected name and sensitive preserved, got %#v", entry)
+	}
+	if entry["value"] != "[redacted]" {
+		t.Fatalf("expected environment value redacted, got %#v", entry)
+	}
+}
+
 func TestRunServiceCreateRunEnrichesProjectTaskAttemptMetadata(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()

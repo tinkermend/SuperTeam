@@ -201,11 +201,13 @@ function createOptionsFixture({
 }
 
 function createWizardFetcher({
+  expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
 }: {
+  expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
   expectedRuntimeNodeId?: string;
   runtimeCount?: 1 | 2;
@@ -256,6 +258,7 @@ function createWizardFetcher({
         provider_type: expectedProviderType,
         session_policy: { mode: "reuse_latest" },
         workspace_policy: {},
+        environment_variables: expectedEnvironmentVariables ?? [],
       });
 
       return jsonResponse(
@@ -373,6 +376,32 @@ describe("CreateEmployeeView", () => {
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.budget_policy).toEqual({ daily_token_limit: 12000 });
+  });
+
+  it("submits environment variables from the runtime step when creating a digital employee", async () => {
+    const fetcher = createWizardFetcher({
+      expectedEnvironmentVariables: [{ name: "GH_TOKEN", value: "ghp_secret", sensitive: true }],
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "添加环境变量" }));
+    await userEvent.fill(screen.getByLabelText("环境变量名称 1"), "GH_TOKEN");
+    await userEvent.fill(screen.getByLabelText("环境变量值 1"), "ghp_secret");
+    await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.environment_variables).toEqual([
+      { name: "GH_TOKEN", value: "ghp_secret", sensitive: true },
+    ]);
   });
 
   it("omits daily token budget when the field is empty", async () => {

@@ -36,6 +36,7 @@ type runtimeNodeResponse struct {
 	MaxSlots                int32                  `json:"max_slots"`
 	CurrentLoad             int32                  `json:"current_load"`
 	Status                  runtime.NodeStatus     `json:"status"`
+	RequiredTools           []string               `json:"required_tools,omitempty"`
 	CommandChannelConnected *bool                  `json:"command_channel_connected,omitempty"`
 	Metadata                map[string]interface{} `json:"metadata,omitempty"`
 	LastHeartbeatAt         string                 `json:"last_heartbeat_at,omitempty"`
@@ -202,6 +203,18 @@ func newRuntimeNodeResponse(node *runtime.Node) runtimeNodeResponse {
 	}
 	if !node.UpdatedAt.IsZero() {
 		response.UpdatedAt = node.UpdatedAt.UTC().Format(timeRFC3339Nano)
+	}
+	return response
+}
+
+func newRuntimeHeartbeatResponse(resp *runtime.HeartbeatResponse) runtimeNodeResponse {
+	if resp == nil {
+		return runtimeNodeResponse{}
+	}
+	response := newRuntimeNodeResponse(resp.Node)
+	response.RequiredTools = append([]string(nil), resp.RequiredTools...)
+	if response.RequiredTools == nil {
+		response.RequiredTools = []string{}
 	}
 	return response
 }

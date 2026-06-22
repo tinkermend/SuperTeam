@@ -343,7 +343,7 @@ func (s *fakeRuntimeService) RegisterNode(ctx context.Context, req runtime.Regis
 	return cloneNode(node), nil
 }
 
-func (s *fakeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error) {
+func (s *fakeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.HeartbeatResponse, error) {
 	node, ok := s.nodes[req.NodeID]
 	if !ok {
 		return nil, errors.New("node not found")
@@ -351,7 +351,7 @@ func (s *fakeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.Up
 	node.CurrentLoad = req.CurrentLoad
 	node.LastHeartbeatAt = time.Now().UTC()
 	node.UpdatedAt = node.LastHeartbeatAt
-	return cloneNode(node), nil
+	return &runtime.HeartbeatResponse{Node: cloneNode(node), RequiredTools: []string{}}, nil
 }
 
 func (s *fakeRuntimeService) GetNode(ctx context.Context, nodeID string) (*runtime.Node, error) {

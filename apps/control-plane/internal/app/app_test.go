@@ -129,7 +129,9 @@ func TestRunContainerClosesTemporalClientWhenWorkerStartFails(t *testing.T) {
 func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	stores := newTestStorageClients(t)
 
-	disabled, err := NewContainerWithConfig(stores, config.Config{})
+	disabled, err := NewContainerWithConfig(stores, config.Config{
+		EmployeeEnv: testEmployeeEnvConfig(),
+	})
 	if err != nil {
 		t.Fatalf("new disabled container: %v", err)
 	}
@@ -158,6 +160,7 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	}
 
 	enabled, err := NewContainerWithConfig(stores, config.Config{
+		EmployeeEnv: testEmployeeEnvConfig(),
 		Temporal: config.TemporalConfig{
 			Enabled:   true,
 			Address:   "127.0.0.1:7233",
@@ -198,6 +201,7 @@ func TestNewContainerWithConfigWiresOpenFGAShadowAuthorizer(t *testing.T) {
 	stores := newTestStorageClients(t)
 
 	container, err := NewContainerWithConfig(stores, config.Config{
+		EmployeeEnv: testEmployeeEnvConfig(),
 		Authz: config.AuthzConfig{
 			Engine: "openfga_shadow",
 			OpenFGA: config.OpenFGAConfig{
@@ -222,6 +226,7 @@ func TestNewContainerWithConfigWiresOpenFGAAuthorizer(t *testing.T) {
 	stores := newTestStorageClients(t)
 
 	container, err := NewContainerWithConfig(stores, config.Config{
+		EmployeeEnv: testEmployeeEnvConfig(),
 		Authz: config.AuthzConfig{
 			Engine: "openfga",
 			OpenFGA: config.OpenFGAConfig{
@@ -239,6 +244,13 @@ func TestNewContainerWithConfigWiresOpenFGAAuthorizer(t *testing.T) {
 		t.Fatalf("expected openfga authorizer, got %T", container.Authorizer)
 	}
 	assertUnexportedFieldType(t, container.AuthService, "projectTeamScopeSyncer", "*authz.OpenFGATupleSyncer")
+}
+
+func testEmployeeEnvConfig() config.EmployeeEnvConfig {
+	return config.EmployeeEnvConfig{
+		Keys:        "v1:BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+		ActiveKeyID: "v1",
+	}
 }
 
 func TestRunStartRetryableClassifiesRunStartFailures(t *testing.T) {

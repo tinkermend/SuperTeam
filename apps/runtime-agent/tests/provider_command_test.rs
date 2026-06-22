@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use superteam_runtime_agent::providers::ProviderRequest;
@@ -12,6 +13,7 @@ fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest 
         session_id: session_id.map(ToString::to_string),
         continue_session,
         model: Some("model-a".to_string()),
+        environment: BTreeMap::from([("GH_TOKEN".to_string(), "plain-token".to_string())]),
     }
 }
 
@@ -62,6 +64,32 @@ fn claude_uses_runtime_governed_non_interactive_permissions() {
         args.windows(2)
             .any(|window| window == ["--permission-mode", "bypassPermissions"])
     );
+}
+
+#[test]
+fn providers_inject_runtime_environment() {
+    for command in [
+        ClaudeProvider::new("claude").build_command(&request(None, false)),
+        OpenCodeProvider::new("opencode").build_command(&request(None, false)),
+        CodexProvider::new("codex").build_command(&request(None, false)),
+    ] {
+        let envs: std::collections::HashMap<_, _> = command
+            .as_std()
+            .get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().to_string(),
+                        value.to_string_lossy().to_string(),
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(
+            envs.get("GH_TOKEN").map(String::as_str),
+            Some("plain-token")
+        );
+    }
 }
 
 #[test]

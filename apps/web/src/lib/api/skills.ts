@@ -14,6 +14,17 @@ export type SkillAgentBinding = {
   status: string;
 };
 
+export type SkillRuntimeDependencies = {
+  tools: string[];
+  env: string[];
+};
+
+export type SkillRuntimeDependencyStatus = {
+  load_status?: string;
+  missing_tools?: string[];
+  missing_env?: string[];
+};
+
 export type Skill = {
   id: string;
   tenant_id: string;
@@ -35,6 +46,7 @@ export type Skill = {
   created_by_name: string;
   team_bindings: SkillTeamBinding[];
   agent_bindings: SkillAgentBinding[];
+  runtime_dependencies?: SkillRuntimeDependencies;
   created_at?: string;
   updated_at?: string;
 };
@@ -44,6 +56,7 @@ export type EffectiveEmployeeSkill = {
   source_scope: "team" | "employee";
   inherited: boolean;
   read_only: boolean;
+  runtime_dependency_status?: SkillRuntimeDependencyStatus;
 };
 
 export type ListSkillsFilters = {
@@ -55,6 +68,7 @@ export type UploadSkillInput = {
   file: File;
   name: string;
   risk_level?: string;
+  runtime_dependencies?: SkillRuntimeDependencies;
   tags?: string[];
 };
 
@@ -109,6 +123,12 @@ export async function uploadSkill(
   }
   if (input.tags?.length) {
     formData.set("tags", input.tags.join(","));
+  }
+  if (input.runtime_dependencies?.tools?.length) {
+    formData.set("runtime_tools", input.runtime_dependencies.tools.join(","));
+  }
+  if (input.runtime_dependencies?.env?.length) {
+    formData.set("runtime_env", input.runtime_dependencies.env.join(","));
   }
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/skills/uploads"), {

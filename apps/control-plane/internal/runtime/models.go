@@ -378,6 +378,11 @@ type Node struct {
 	UpdatedAt          time.Time
 }
 
+type HeartbeatResponse struct {
+	Node          *Node
+	RequiredTools []string
+}
+
 // IsOnline checks if the node is online based on heartbeat
 // A node is considered online if it has sent a heartbeat within the last 60 seconds
 func (n *Node) IsOnline() bool {
@@ -410,6 +415,7 @@ type RegisterNodeRequest struct {
 
 // UpdateHeartbeatRequest represents a request to update node heartbeat
 type UpdateHeartbeatRequest struct {
+	TenantID    uuid.UUID
 	NodeID      string
 	CurrentLoad int32
 }

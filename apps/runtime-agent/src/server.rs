@@ -125,6 +125,8 @@ struct CreateRunRequest {
     #[serde(default)]
     continue_session: bool,
     model: Option<String>,
+    #[serde(default)]
+    environment: std::collections::BTreeMap<String, String>,
 }
 
 async fn create_run(
@@ -138,6 +140,7 @@ async fn create_run(
         session_id: request.session_id,
         continue_session: request.continue_session,
         model: request.model,
+        environment: request.environment,
         command_context: None,
     };
     validate_run_spec(&spec)?;
@@ -278,6 +281,7 @@ async fn run_provider_stream(
             session_id: spec.session_id,
             continue_session: spec.continue_session,
             model: spec.model,
+            environment: spec.environment,
         })
         .await?;
 

@@ -238,6 +238,11 @@ impl RuntimeCommandExecutor {
                 RuntimeCommandType::ResumeSession | RuntimeCommandType::SendInput
             ),
             model: payload.model.clone(),
+            environment: payload
+                .environment
+                .iter()
+                .map(|env| (env.name.clone(), env.value.clone()))
+                .collect(),
             command_context: Some(RuntimeCommandRunContext {
                 command_id: payload.command_id.clone(),
                 digital_employee_id: payload.digital_employee_id.clone(),
@@ -1681,6 +1686,7 @@ fn provider_request(spec: &RunSpec) -> ProviderRequest {
         session_id: spec.session_id.clone(),
         continue_session: spec.continue_session,
         model: spec.model.clone(),
+        environment: spec.environment.clone(),
     }
 }
 
@@ -1724,6 +1730,7 @@ mod tests {
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
+            environment: Vec::new(),
             session_policy: RuntimeSessionPolicy {
                 mode: SessionPolicyMode::New,
                 provider_session_id: None,

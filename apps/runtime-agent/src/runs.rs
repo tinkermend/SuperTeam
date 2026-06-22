@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,6 +9,7 @@ use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, broadcast};
 
+use crate::commands::payload::RuntimeEnvironmentVariablePayload;
 use crate::events::ProviderEvent;
 use crate::providers::ProviderRunHandle;
 
@@ -43,8 +44,30 @@ pub struct RunSpec {
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_context: Option<RuntimeCommandRunContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RedactedEnvironmentVariableView {
+    pub name: String,
+    pub value: String,
+    pub sensitive: bool,
+}
+
+pub fn redacted_environment_view(
+    environment: &[RuntimeEnvironmentVariablePayload],
+) -> Vec<RedactedEnvironmentVariableView> {
+    environment
+        .iter()
+        .map(|env| RedactedEnvironmentVariableView {
+            name: env.name.clone(),
+            value: "[redacted]".to_string(),
+            sensitive: env.sensitive,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

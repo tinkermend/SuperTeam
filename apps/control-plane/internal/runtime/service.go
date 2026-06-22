@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,7 +29,12 @@ const (
 )
 
 type Service struct {
-	repository Repository
+	repository            Repository
+	requiredToolsResolver RequiredToolsResolver
+}
+
+type RequiredToolsResolver interface {
+	ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -38,6 +44,10 @@ func NewService(repository Repository) (*Service, error) {
 	return &Service{
 		repository: repository,
 	}, nil
+}
+
+func (s *Service) SetRequiredToolsResolver(resolver RequiredToolsResolver) {
+	s.requiredToolsResolver = resolver
 }
 
 func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*EnrollHelloResponse, error) {
@@ -703,7 +713,7 @@ func (s *Service) RegisterNode(ctx context.Context, req RegisterNodeRequest) (*N
 }
 
 // UpdateHeartbeat updates the heartbeat and load of a node
-func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatRequest) (*Node, error) {
+func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatRequest) (*HeartbeatResponse, error) {
 	// Validate request
 	if req.NodeID == "" {
 		return nil, errors.New("node_id is required")
@@ -756,7 +766,47 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		}
 	}
 
-	return node, nil
+	requiredTools, err := s.requiredTools(ctx, tenantOrDefault(req.TenantID), req.NodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &HeartbeatResponse{
+		Node:          node,
+		RequiredTools: requiredTools,
+	}, nil
+}
+
+func (s *Service) requiredTools(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error) {
+	if s.requiredToolsResolver == nil {
+		return []string{}, nil
+	}
+	tools, err := s.requiredToolsResolver.ListRequiredToolsForNode(ctx, tenantID, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list required tools: %w", err)
+	}
+	return normalizeToolNames(tools), nil
+}
+
+func normalizeToolNames(tools []string) []string {
+	if len(tools) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(tools))
+	normalized := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		normalized = append(normalized, name)
+	}
+	sort.Strings(normalized)
+	return normalized
 }
 
 // GetNode retrieves a node by ID

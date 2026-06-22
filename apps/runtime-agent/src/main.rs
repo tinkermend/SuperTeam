@@ -133,6 +133,7 @@ async fn run_provider(args: RunArgs) -> anyhow::Result<()> {
         session_id: args.session_id,
         continue_session: args.continue_session,
         model: args.model,
+        environment: Default::default(),
     };
     let provider_bin = args
         .provider_bin

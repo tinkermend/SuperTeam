@@ -71,6 +71,14 @@ pub struct RuntimeMCPServerPayload {
     pub permission_scope: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeEnvironmentVariablePayload {
+    pub name: String,
+    pub value: String,
+    #[serde(default)]
+    pub sensitive: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeProvisionInstanceCommandPayload {
     pub command_id: String,
@@ -162,6 +170,8 @@ pub struct RuntimeSessionCommandPayload {
     pub skills: Vec<RuntimeSkillPayload>,
     #[serde(default)]
     pub mcp_servers: Vec<RuntimeMCPServerPayload>,
+    #[serde(default)]
+    pub environment: Vec<RuntimeEnvironmentVariablePayload>,
     pub session_policy: RuntimeSessionPolicy,
     pub prompt: Option<String>,
     pub input: Option<String>,
@@ -309,6 +319,12 @@ impl RuntimeSessionCommandPayload {
             anyhow::bail!("prompt or input is required");
         }
 
+        for env in &self.environment {
+            if !valid_env_name(&env.name) {
+                anyhow::bail!("invalid environment variable name: {}", env.name);
+            }
+        }
+
         Ok(())
     }
 
@@ -338,6 +354,15 @@ fn require_field(payload: &serde_json::Value, field: &str) -> Result<()> {
         anyhow::bail!("{field} is required");
     }
     Ok(())
+}
+
+fn valid_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c == '_' || c.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 fn require_uuid_like(field: &str, value: &str) -> Result<()> {

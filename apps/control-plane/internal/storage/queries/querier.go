@@ -280,6 +280,7 @@ type Querier interface {
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
+	ListRequiredToolsForNode(ctx context.Context, arg ListRequiredToolsForNodeParams) ([]string, error)
 	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRuntimeCapabilitiesForNodeParams) ([]RuntimeCapability, error)
 	ListRuntimeEnrollments(ctx context.Context, arg ListRuntimeEnrollmentsParams) ([]RuntimeEnrollment, error)

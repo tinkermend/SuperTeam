@@ -1344,6 +1344,71 @@ func TestDigitalEmployeeRouteSanitizesAuthorizationBackendError(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeEnvironmentVariableRoutes(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	employeeID := uuid.New()
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list env vars to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+
+	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables/GH_TOKEN", strings.NewReader(`{"value":"secret","sensitive":true}`))
+	upsertReq.AddCookie(cookie)
+	upsertResp := httptest.NewRecorder()
+	server.ServeHTTP(upsertResp, upsertReq)
+	if upsertResp.Code != http.StatusOK {
+		t.Fatalf("expected upsert env var to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
+	}
+	if strings.Contains(upsertResp.Body.String(), "secret") {
+		t.Fatalf("response leaked plaintext: %s", upsertResp.Body.String())
+	}
+	if !service.upsertEnvReq.Sensitive {
+		t.Fatalf("expected explicit sensitive flag to stay true, got %#v", service.upsertEnvReq)
+	}
+
+	defaultSensitiveReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables/GH_PAT", strings.NewReader(`{"value":"secret2"}`))
+	defaultSensitiveReq.AddCookie(cookie)
+	defaultSensitiveResp := httptest.NewRecorder()
+	server.ServeHTTP(defaultSensitiveResp, defaultSensitiveReq)
+	if defaultSensitiveResp.Code != http.StatusOK {
+		t.Fatalf("expected upsert env var without sensitive flag to succeed, got %d: %s", defaultSensitiveResp.Code, defaultSensitiveResp.Body.String())
+	}
+	if strings.Contains(defaultSensitiveResp.Body.String(), "secret2") {
+		t.Fatalf("response leaked plaintext: %s", defaultSensitiveResp.Body.String())
+	}
+	if !service.upsertEnvReq.Sensitive {
+		t.Fatalf("expected omitted sensitive flag to default true, got %#v", service.upsertEnvReq)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables/GH_TOKEN", nil)
+	deleteReq.AddCookie(cookie)
+	deleteResp := httptest.NewRecorder()
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete env var to succeed, got %d: %s", deleteResp.Code, deleteResp.Body.String())
+	}
+}
+
 type routeEmployeeService struct {
 	createOptionsReq          employee.CreateOptionsRequest
 	createOptions             *employee.CreateOptions
@@ -1352,6 +1417,9 @@ type routeEmployeeService struct {
 	overviewReq               employee.GetDigitalEmployeeOverviewRequest
 	listWorkspaceFilesReq     employee.ListWorkspaceFilesRequest
 	upsertWorkspaceFileReq    employee.UpsertWorkspaceFileRequest
+	listEnvReq                employee.ListEnvironmentVariablesRequest
+	upsertEnvReq              employee.UpsertEnvironmentVariableRequest
+	deleteEnvReq              employee.DeleteEnvironmentVariableRequest
 	bindReq                   employee.BindExecutionInstanceRequest
 	updateReq                 employee.UpdateStatusRequest
 	getTenantID               uuid.UUID
@@ -1564,6 +1632,33 @@ func (s *routeEmployeeService) UpsertWorkspaceFile(ctx context.Context, req empl
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}, nil
+}
+
+func (s *routeEmployeeService) ListEnvironmentVariables(ctx context.Context, req employee.ListEnvironmentVariablesRequest) ([]employee.EnvironmentVariableSummary, error) {
+	s.listEnvReq = req
+	return []employee.EnvironmentVariableSummary{{
+		Name:        "GH_TOKEN",
+		Configured:  true,
+		Fingerprint: "abc123",
+		Sensitive:   true,
+		Status:      employee.EnvironmentVariableStatusActive,
+	}}, nil
+}
+
+func (s *routeEmployeeService) UpsertEnvironmentVariable(ctx context.Context, req employee.UpsertEnvironmentVariableRequest) (employee.EnvironmentVariableSummary, error) {
+	s.upsertEnvReq = req
+	return employee.EnvironmentVariableSummary{
+		Name:        req.Name,
+		Configured:  true,
+		Fingerprint: "abc123",
+		Sensitive:   true,
+		Status:      employee.EnvironmentVariableStatusActive,
+	}, nil
+}
+
+func (s *routeEmployeeService) DeleteEnvironmentVariable(ctx context.Context, req employee.DeleteEnvironmentVariableRequest) error {
+	s.deleteEnvReq = req
+	return nil
 }
 
 func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.UpdateStatusRequest) (*employee.DigitalEmployee, error) {

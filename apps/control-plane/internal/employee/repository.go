@@ -8,6 +8,8 @@ import (
 )
 
 type Repository interface {
+	EnvironmentVariableRepository
+
 	WithTransaction(ctx context.Context, fn func(Repository) error) error
 	CreateDigitalEmployee(ctx context.Context, params CreateDigitalEmployeeParams) (DigitalEmployeeRecord, error)
 	ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error)
