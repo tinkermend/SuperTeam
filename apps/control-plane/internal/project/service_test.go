@@ -873,6 +873,131 @@ func TestCompleteProjectTaskAttemptResultContractHumanReviewRoutesToWaitingHuman
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
 }
 
+func TestResolveProjectTaskHumanWaitAcceptanceApproveAppendsAcceptedLatestResult(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture, summary, decision, waitingResult, originalContract := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-accept-result")
+
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过，证据完整",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, task.Status)
+	require.NotNil(t, task.LatestTaskResultID)
+	require.NotEqual(t, waitingResult.ID, *task.LatestTaskResultID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	acceptedResult := requireProjectTaskResultByID(t, results, *task.LatestTaskResultID)
+	oldResult := requireProjectTaskResultByID(t, results, waitingResult.ID)
+	require.Equal(t, TaskResultDecisionWaitingHumanReview, oldResult.Decision)
+	require.Nil(t, oldResult.DecisionRequestID)
+	require.Equal(t, TaskResultStatusCompleted, acceptedResult.ResultStatus)
+	require.Equal(t, "accepted", acceptedResult.ValidationStatus)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, acceptedResult.Decision)
+	require.NotNil(t, acceptedResult.AttemptID)
+	require.Equal(t, fixture.attemptID, *acceptedResult.AttemptID)
+	require.NotNil(t, acceptedResult.ExecutionSummaryID)
+	require.Equal(t, summary.ID, *acceptedResult.ExecutionSummaryID)
+	require.NotNil(t, acceptedResult.CreatedEventID)
+	require.NotEqual(t, *oldResult.CreatedEventID, *acceptedResult.CreatedEventID)
+	require.NotNil(t, acceptedResult.DecisionRequestID)
+	require.Equal(t, decision.ID, *acceptedResult.DecisionRequestID)
+	require.Equal(t, originalContract.Summary, acceptedResult.Contract.Summary)
+	require.Equal(t, originalContract.HumanReviewRequest, acceptedResult.Contract.HumanReviewRequest)
+	require.Len(t, acceptedResult.Contract.AcceptanceResults, 1)
+	require.Equal(t, "验收通过，证据完整", acceptedResult.Contract.AcceptanceResults[0].HumanAcceptedReason)
+}
+
+func TestResolveProjectTaskHumanWaitAcceptanceApproveSignalsCoordinatorCompleted(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture, summary, _, _, _ := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-accept-signal")
+	initialCompletedEvents := countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted)
+
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, task.Status)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, fixture.taskID, coordinator.lastCompleted.ProjectTaskID)
+	require.Equal(t, summary.ID, coordinator.lastCompleted.ExecutionSummaryID)
+	require.Equal(t, repo.projects[fixture.projectID].CoordinationWorkflowID, coordinator.lastCompleted.WorkflowID)
+	require.Equal(t, initialCompletedEvents+1, countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted))
+	completedEvent := lastProjectEventOfType(t, repo.events, ProjectEventTaskCompleted)
+	require.Equal(t, completedEvent.ID, coordinator.lastCompleted.CompletedEventID)
+}
+
+func TestResolveProjectTaskHumanWaitResultReviewNonApproveDoesNotAcceptResultOrSignal(t *testing.T) {
+	tests := []struct {
+		name           string
+		resolution     string
+		expectedStatus string
+	}{
+		{name: "resume_same_task", resolution: HumanWaitResolutionResumeSameTask, expectedStatus: ProjectTaskStatusQueued},
+		{name: "cancel_and_replan", resolution: HumanWaitResolutionCancelAndReplan, expectedStatus: ProjectTaskStatusCancelled},
+		{name: "cancel_without_replan", resolution: HumanWaitResolutionCancelWithoutPlan, expectedStatus: ProjectTaskStatusCancelled},
+		{name: "mark_failed", resolution: HumanWaitResolutionMarkFailed, expectedStatus: ProjectTaskStatusFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newProjectTaskResultMemoryRepository()
+			coordinator := &fakeCoordinatorSignalClient{}
+			service, err := NewServiceWithCoordinator(repo, coordinator)
+			require.NoError(t, err)
+			fixture, _, _, waitingResult, _ := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-"+tt.name)
+
+			task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+				TenantID:        fixture.tenantID,
+				ProjectID:       fixture.projectID,
+				ProjectTaskID:   fixture.taskID,
+				ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+				Resolution:      tt.resolution,
+				ResponseSummary: "继续处理",
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedStatus, task.Status)
+			require.Equal(t, 0, coordinator.completedSignals)
+			results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+				TenantID:      fixture.tenantID,
+				ProjectID:     fixture.projectID,
+				ProjectTaskID: fixture.taskID,
+				Limit:         10,
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			require.Equal(t, waitingResult.ID, results[0].ID)
+			require.Equal(t, TaskResultDecisionWaitingHumanReview, results[0].Decision)
+			require.NotEqual(t, TaskResultDecisionCompleteAccepted, results[0].Decision)
+		})
+	}
+}
+
 func TestCompleteProjectTaskAttemptRevisionNeededResultContractRoutesToWaitingHuman(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -1601,6 +1726,68 @@ func validCompletedTaskResultContract() TaskResultContract {
 		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
 		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
 	}
+}
+
+func completeProjectTaskAttemptIntoHumanReviewResult(t *testing.T, service *Service, repo *projectTaskResultMemoryRepository, idempotencyKey string) (projectTaskAttemptServiceFixture, ExecutionSummary, DecisionRequest, ProjectTaskResult, TaskResultContract) {
+	t.Helper()
+
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := validCompletedTaskResultContract()
+	contract.HumanReviewRequest = &TaskResultHumanReviewRequest{
+		Reason:     "需要负责人确认验收口径",
+		Prompt:     "请确认是否接受该结果",
+		Options:    []string{"accept", "request_revision"},
+		RequiredBy: "human_owner",
+		ReviewType: "acceptance",
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest(idempotencyKey),
+		Conclusion:                       "legacy conclusion",
+		ResultContract:                   &contract,
+	})
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingRequestID)
+	require.Len(t, repo.decisionRequests, 1)
+	decision := repo.decisionRequests[0]
+	require.Equal(t, "project_task_acceptance", decision.DecisionType)
+	require.Equal(t, decision.ID, *repo.tasks[0].WaitingRequestID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, TaskResultDecisionWaitingHumanReview, results[0].Decision)
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+	return fixture, *summary, decision, results[0], contract
+}
+
+func requireProjectTaskResultByID(t *testing.T, results []ProjectTaskResult, id uuid.UUID) ProjectTaskResult {
+	t.Helper()
+	for _, result := range results {
+		if result.ID == id {
+			return result
+		}
+	}
+	t.Fatalf("project task result %s not found in %#v", id, results)
+	return ProjectTaskResult{}
+}
+
+func lastProjectEventOfType(t *testing.T, events []ProjectEvent, eventType ProjectEventType) ProjectEvent {
+	t.Helper()
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].EventType == eventType {
+			return events[i]
+		}
+	}
+	t.Fatalf("project event type %s not found in %#v", eventType, events)
+	return ProjectEvent{}
 }
 
 func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
@@ -7794,6 +7981,41 @@ func (r *projectTaskResultMemoryRepository) LinkProjectTaskLatestResult(ctx cont
 		return ProjectTask{}, ErrProjectNotFound
 	}
 	return ProjectTask{}, ErrProjectConflict
+}
+
+func (r *projectTaskResultMemoryRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
+	decisionFound := false
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID || decision.ID != decisionRequestID {
+			continue
+		}
+		if decision.ProjectTaskID == nil {
+			return ProjectTaskResult{}, ErrProjectConflict
+		}
+		decisionFound = true
+		break
+	}
+	if !decisionFound {
+		return ProjectTaskResult{}, ErrProjectConflict
+	}
+	for index, result := range r.projectTaskResults {
+		if result.TenantID != tenantID || result.ProjectID != projectID || result.ID != resultID {
+			continue
+		}
+		for _, decision := range r.decisionRequests {
+			if decision.ID == decisionRequestID && decision.ProjectTaskID != nil && *decision.ProjectTaskID != result.ProjectTaskID {
+				return ProjectTaskResult{}, ErrProjectConflict
+			}
+		}
+		if result.DecisionRequestID != nil && *result.DecisionRequestID != decisionRequestID {
+			return ProjectTaskResult{}, ErrProjectConflict
+		}
+		result.DecisionRequestID = &decisionRequestID
+		result.UpdatedAt = time.Now().UTC()
+		r.projectTaskResults[index] = result
+		return result, nil
+	}
+	return ProjectTaskResult{}, ErrProjectConflict
 }
 
 func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {

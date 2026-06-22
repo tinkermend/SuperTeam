@@ -2965,7 +2965,142 @@ func (s *Service) ResolveProjectTaskHumanWait(ctx context.Context, req ResolvePr
 	if err != nil {
 		return nil, err
 	}
+	if targetStatus == ProjectTaskStatusCompleted && req.Resolution == HumanWaitResolutionApprove {
+		acceptedResult, linkedTask, recorded, err := s.recordHumanAcceptedProjectTaskResult(ctx, task, result, req)
+		if err != nil {
+			return nil, err
+		}
+		if recorded {
+			result.Task = linkedTask
+		}
+		summaryID, err := s.projectTaskHumanWaitCompletionSummaryID(ctx, req, acceptedResult)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
+			TenantID:           req.TenantID,
+			ProjectID:          task.ProjectID,
+			ProjectTaskID:      task.ID,
+			ExecutionSummaryID: summaryID,
+			CompletedEventID:   result.Event.ID,
+			WorkflowID:         projectRecord.CoordinationWorkflowID,
+		}); err != nil {
+			_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EmployeeTaskCompleted", "failed", err, map[string]any{
+				"project_task_id":       task.ID.String(),
+				"execution_summary_id":  summaryID.String(),
+				"completed_event_id":    result.Event.ID.String(),
+				"human_wait_resolution": req.Resolution,
+			})
+			return nil, err
+		}
+	}
 	return &result.Task, nil
+}
+
+func (s *Service) recordHumanAcceptedProjectTaskResult(ctx context.Context, task ProjectTask, writeback ProjectTaskWritebackResult, req ResolveProjectTaskHumanWaitRequest) (*ProjectTaskResult, ProjectTask, bool, error) {
+	if task.LatestTaskResultID == nil {
+		return nil, ProjectTask{}, false, nil
+	}
+	latestResult, ok, err := s.findProjectTaskResult(ctx, req.TenantID, task.ProjectID, task.ID, *task.LatestTaskResultID)
+	if err != nil {
+		return nil, ProjectTask{}, false, err
+	}
+	if !ok || latestResult.ResultStatus != TaskResultStatusCompleted || latestResult.Decision != TaskResultDecisionWaitingHumanReview {
+		return nil, ProjectTask{}, false, nil
+	}
+	eventID := writeback.Event.ID
+	recorded, err := s.repository.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:           req.TenantID,
+		ProjectID:          task.ProjectID,
+		ProjectTaskID:      task.ID,
+		AttemptID:          latestResult.AttemptID,
+		ExecutionSummaryID: latestResult.ExecutionSummaryID,
+		ResultStatus:       TaskResultStatusCompleted,
+		ValidationStatus:   "accepted",
+		Decision:           TaskResultDecisionCompleteAccepted,
+		Contract:           taskResultContractWithHumanAcceptance(latestResult.Contract, req.ResponseSummary),
+		ValidationWarnings: append([]string(nil), latestResult.ValidationWarnings...),
+		IdempotencyKey:     humanAcceptedProjectTaskResultIdempotencyKey(latestResult, task),
+		CreatedEventID:     &eventID,
+	})
+	if err != nil {
+		return nil, ProjectTask{}, false, err
+	}
+	linkedTask, err := s.repository.LinkProjectTaskLatestResult(ctx, req.TenantID, task.ProjectID, task.ID, recorded.ID)
+	if err != nil {
+		return nil, ProjectTask{}, false, err
+	}
+	if task.WaitingRequestID != nil {
+		linkedResult, err := s.repository.LinkProjectTaskResultDecisionRequest(ctx, req.TenantID, task.ProjectID, recorded.ID, *task.WaitingRequestID)
+		if err != nil {
+			return nil, ProjectTask{}, false, err
+		}
+		recorded = linkedResult
+	}
+	return &recorded, linkedTask, true, nil
+}
+
+func (s *Service) findProjectTaskResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTaskResult, bool, error) {
+	results, err := s.repository.ListProjectTaskResults(ctx, ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+		Limit:         100,
+	})
+	if err != nil {
+		return ProjectTaskResult{}, false, err
+	}
+	for _, result := range results {
+		if result.ID == resultID {
+			return result, true, nil
+		}
+	}
+	return ProjectTaskResult{}, false, nil
+}
+
+func taskResultContractWithHumanAcceptance(contract TaskResultContract, responseSummary string) TaskResultContract {
+	responseSummary = strings.TrimSpace(responseSummary)
+	if responseSummary == "" {
+		return contract
+	}
+	if len(contract.AcceptanceResults) == 0 {
+		contract.AcceptanceResults = []TaskResultAcceptanceResult{{
+			ID:                  "human_acceptance",
+			Criterion:           "human_acceptance",
+			Status:              TaskResultCriterionStatusHumanOverridden,
+			Summary:             "人工验收通过",
+			HumanAcceptedReason: responseSummary,
+		}}
+		return contract
+	}
+	for i := range contract.AcceptanceResults {
+		contract.AcceptanceResults[i].HumanAcceptedReason = responseSummary
+	}
+	return contract
+}
+
+func humanAcceptedProjectTaskResultIdempotencyKey(latestResult ProjectTaskResult, task ProjectTask) string {
+	decisionID := "no-decision-request"
+	if task.WaitingRequestID != nil {
+		decisionID = task.WaitingRequestID.String()
+	}
+	return fmt.Sprintf("project_task_result:%s:human_acceptance:%s:%s", latestResult.ID, task.ID, decisionID)
+}
+
+func (s *Service) projectTaskHumanWaitCompletionSummaryID(ctx context.Context, req ResolveProjectTaskHumanWaitRequest, acceptedResult *ProjectTaskResult) (uuid.UUID, error) {
+	if acceptedResult != nil && acceptedResult.ExecutionSummaryID != nil {
+		return *acceptedResult.ExecutionSummaryID, nil
+	}
+	summaries, err := s.repository.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 100, 0)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	for _, summary := range summaries {
+		if summary.ProjectTaskID == req.ProjectTaskID {
+			return summary.ID, nil
+		}
+	}
+	return uuid.Nil, nil
 }
 
 func projectTaskRequiresAcceptance(task ProjectTask, req CompleteProjectTaskAttemptRequest) bool {
