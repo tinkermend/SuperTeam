@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SuperTeam Design System Prototype - Closure Review</title>
+    <link rel="stylesheet" href="./design-system-prototypes.css" />
+    <script src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+    <script src="./prototype-icons.js"></script>
+  </head>
+  <body>
+    <main class="page">
+      <section class="workspace">
+        <div class="page-header">
+          <div>
+            <p class="eyebrow">项目闭环</p>
+            <h1 class="page-title">验收与证据审阅</h1>
+            <p class="page-subtitle">在同一屏内查看结论、证据、负责人意见和风险提示，保持后台工具的紧凑密度。</p>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-outline"><i data-lucide="file-check-2"></i>导出摘要</button>
+            <button class="btn btn-primary"><i data-lucide="check-circle-2"></i>提交结论</button>
+          </div>
+        </div>
+
+        <div class="grid grid-4">
+          <article class="metric-card">
+            <div class="metric-label">
+              <span>待确认项</span>
+              <span class="icon-tile icon-warning"><i data-lucide="circle-alert"></i></span>
+            </div>
+            <div class="metric-value">4</div>
+            <div class="metric-foot">需要人工判断</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">
+              <span>已归档证据</span>
+              <span class="icon-tile icon-artifact"><i data-lucide="archive"></i></span>
+            </div>
+            <div class="metric-value">27</div>
+            <div class="metric-foot">包含日志和工件</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">
+              <span>通过检查</span>
+              <span class="icon-tile icon-success"><i data-lucide="shield-check"></i></span>
+            </div>
+            <div class="metric-value">91%</div>
+            <div class="metric-foot">剩余项需复核</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">
+              <span>最近更新</span>
+              <span class="icon-tile icon-info"><i data-lucide="clock-3"></i></span>
+            </div>
+            <div class="metric-value">12m</div>
+            <div class="metric-foot">由执行事件触发</div>
+          </article>
+        </div>
+
+        <div class="split" style="margin-top: 16px">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">验收检查</h2>
+                <p class="panel-note">使用语义图标、状态胶囊和浅色面板表达检查进度，不把每个字段拆成装饰卡片。</p>
+              </div>
+              <span class="badge warning">需要判断</span>
+            </div>
+            <div class="check-list">
+              <div class="check-item">
+                <span class="icon-tile icon-success"><i data-lucide="check"></i></span>
+                <div>
+                  <strong>需求范围</strong>
+                  <div class="muted">输出内容与当前任务范围一致，没有发现额外业务假设。</div>
+                </div>
+                <span class="badge success">通过</span>
+              </div>
+              <div class="check-item">
+                <span class="icon-tile icon-artifact"><i data-lucide="paperclip"></i></span>
+                <div>
+                  <strong>证据完整性</strong>
+                  <div class="muted">关键截图、命令输出和结论已经进入审计链路。</div>
+                </div>
+                <span class="badge primary">处理中</span>
+              </div>
+              <div class="check-item">
+                <span class="icon-tile icon-warning"><i data-lucide="message-square-warning"></i></span>
+                <div>
+                  <strong>人工意见</strong>
+                  <div class="muted">需要负责人补充最终判断，提交后保留可追踪记录。</div>
+                </div>
+                <span class="badge warning">等待</span>
+              </div>
+            </div>
+          </section>
+
+          <aside class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">处理意见</h2>
+                <p class="panel-note">短表单保持稳定白底和清晰 focus ring，不强制附带业务摘要。</p>
+              </div>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <label for="closure-result">验收结论</label>
+                <select id="closure-result" class="select">
+                  <option>同意进入闭环</option>
+                  <option>需要补充证据</option>
+                  <option>暂缓验收</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="closure-note">意见说明</label>
+                <textarea id="closure-note" class="textarea">请基于当前证据补充判断说明。</textarea>
+                <div class="field-help">建议只写判断理由、补证要求或验收结论。</div>
+              </div>
+              <div class="inline-alert">
+                <i data-lucide="info"></i>
+                <div>提交会写入审计记录。危险或不可逆动作应使用独立确认流程。</div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="panel" style="margin-top: 16px">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">证据清单</h2>
+              <p class="panel-note">表格保持高可读性，移动端进入横向滚动容器。</p>
+            </div>
+            <button class="btn btn-outline"><i data-lucide="sliders-horizontal"></i>筛选</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>证据</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>来源</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>执行摘要</strong><div class="mono muted">ART-3102</div></td>
+                  <td>工件</td>
+                  <td><span class="badge success">已归档</span></td>
+                  <td class="muted">任务结果</td>
+                  <td><button class="btn btn-outline">查看</button></td>
+                </tr>
+                <tr>
+                  <td><strong>验证输出</strong><div class="mono muted">LOG-8841</div></td>
+                  <td>日志</td>
+                  <td><span class="badge primary">可追踪</span></td>
+                  <td class="muted">运行记录</td>
+                  <td><button class="btn btn-outline">打开</button></td>
+                </tr>
+                <tr>
+                  <td><strong>负责人意见</strong><div class="mono muted">DEC-1640</div></td>
+                  <td>决策</td>
+                  <td><span class="badge warning">待补充</span></td>
+                  <td class="muted">人工输入</td>
+                  <td><button class="btn btn-outline">处理</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script>
+      window.renderPrototypeIcons();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SuperTeam Design System Prototype - Overlays</title>
+    <link rel="stylesheet" href="./design-system-prototypes.css" />
+    <script src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+    <script src="./prototype-icons.js"></script>
+  </head>
+  <body>
+    <main class="page">
+      <section class="workspace">
+        <div class="page-header">
+          <div>
+            <p class="eyebrow">浮层与表单</p>
+            <h1 class="page-title">确认、短表单与轻量反馈</h1>
+            <p class="page-subtitle">同一套浮层样式可以承载确认、短表单、错误提示和辅助说明，但不强制任何业务元信息。</p>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-outline"><i data-lucide="undo-2"></i>撤销</button>
+            <button class="btn btn-primary"><i data-lucide="send"></i>提交</button>
+          </div>
+        </div>
+
+        <div class="split">
+          <section class="modal-stage panel" aria-label="弹窗示例">
+            <div class="grid grid-3" style="opacity: 0.44">
+              <article class="metric-card">
+                <div class="metric-label">运行中</div>
+                <div class="metric-value">12</div>
+              </article>
+              <article class="metric-card">
+                <div class="metric-label">待确认</div>
+                <div class="metric-value">5</div>
+              </article>
+              <article class="metric-card">
+                <div class="metric-label">已归档</div>
+                <div class="metric-value">84</div>
+              </article>
+            </div>
+
+            <div class="modal-backdrop">
+              <section class="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+                <header class="modal-header">
+                  <div class="modal-title-row">
+                    <span class="icon-tile icon-success"><i data-lucide="shield-check"></i></span>
+                    <div>
+                      <h2 id="dialog-title" class="modal-title">处理意见</h2>
+                      <p class="modal-description">补充本次判断所需的简短说明。</p>
+                    </div>
+                  </div>
+                  <button class="icon-button" aria-label="关闭弹窗"><i data-lucide="x"></i></button>
+                </header>
+
+                <div class="modal-body">
+                  <div class="inline-alert">
+                    <i data-lucide="triangle-alert"></i>
+                    <div>当前操作会进入审计记录。请保持说明简洁、明确，并避免写入无关信息。</div>
+                  </div>
+
+                  <div class="field">
+                    <label for="decision-note">处理意见 <span class="muted">可选</span></label>
+                    <textarea
+                      id="decision-note"
+                      class="textarea"
+                      placeholder="补充判断理由、补证要求或验收结论"
+                    ></textarea>
+                    <div class="field-help">0 / 500</div>
+                  </div>
+
+                  <div class="grid grid-2">
+                    <div class="field">
+                      <label for="owner">负责人</label>
+                      <input id="owner" class="input" value="当前用户" readonly />
+                    </div>
+                    <div class="field">
+                      <label for="visibility">可见范围</label>
+                      <select id="visibility" class="select">
+                        <option>项目成员</option>
+                        <option>仅负责人</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label for="required">必填字段示例</label>
+                    <input id="required" class="input" aria-invalid="true" />
+                    <div class="field-error">请填写必要说明。</div>
+                  </div>
+                </div>
+
+                <footer class="modal-footer">
+                  <span class="muted">提交后会保留操作痕迹。</span>
+                  <div class="action-row">
+                    <button class="btn btn-outline">取消</button>
+                    <button class="btn btn-primary"><i data-lucide="check"></i>确认提交</button>
+                  </div>
+                </footer>
+              </section>
+            </div>
+          </section>
+
+          <aside class="grid">
+            <section class="sheet">
+              <div class="panel-header" style="margin-bottom: 0">
+                <div>
+                  <h2 class="panel-title">详情抽屉</h2>
+                  <p class="panel-note">长内容进入 Sheet，不挤压短确认弹窗。</p>
+                </div>
+                <button class="icon-button" aria-label="关闭抽屉"><i data-lucide="panel-right-close"></i></button>
+              </div>
+              <div class="grid">
+                <div class="field">
+                  <label>上下文片段</label>
+                  <textarea class="textarea" readonly>这里保留较长说明和历史记录，使用稳定背景而不是强透明玻璃。</textarea>
+                </div>
+                <div class="action-row">
+                  <span class="badge artifact">工件</span>
+                  <span class="badge success">可追踪</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">轻量浮层</h2>
+                  <p class="panel-note">Popover 比 Dialog 更轻，Toast 只做短反馈。</p>
+                </div>
+              </div>
+              <div class="grid grid-2">
+                <div class="popover">
+                  <strong>更多操作</strong>
+                  <div class="event-list" style="margin-top: 8px">
+                    <div class="event"><span class="dot"></span><span>复制链接</span><i data-lucide="copy"></i></div>
+                    <div class="event"><span class="dot success"></span><span>导出记录</span><i data-lucide="download"></i></div>
+                  </div>
+                </div>
+                <div class="toast">
+                  <div class="modal-title-row">
+                    <span class="icon-tile icon-success"><i data-lucide="check"></i></span>
+                    <div>
+                      <strong>操作已提交</strong>
+                      <div class="muted">状态将在列表中刷新。</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">按钮状态</h2>
+                  <p class="panel-note">主操作、次要操作和危险操作保持不同语义。</p>
+                </div>
+              </div>
+              <div class="action-row" style="flex-wrap: wrap">
+                <button class="btn btn-primary">主操作</button>
+                <button class="btn btn-outline">次要操作</button>
+                <button class="btn btn-ghost">轻量操作</button>
+                <button class="btn btn-danger"><i data-lucide="trash-2"></i>危险操作</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <script>
+      window.renderPrototypeIcons();
+    </script>
+  </body>
+</html>
