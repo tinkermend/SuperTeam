@@ -22,6 +22,12 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a data-router-link="true" href={to}>{children}</a>
+  ),
+}));
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -335,10 +341,9 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("团队发布窗口确认")).toBeVisible();
     expect(screen.getByRole("button", { name: "通过" }).query()).toBeNull();
     expect(screen.getByRole("button", { name: "退回" }).query()).toBeNull();
-    await expect.element(screen.getByRole("link", { name: "查看上下文" })).toHaveAttribute(
-      "href",
-      "/projects/project-1/approvals#approval-1",
-    );
+    const contextLink = screen.getByRole("link", { name: "查看上下文" });
+    await expect.element(contextLink).toHaveAttribute("href", "/projects/project-1/approvals#approval-1");
+    await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
   });
 
   it("falls back to the project link when deep_link route is unsafe", async () => {
@@ -352,10 +357,9 @@ describe("InboxView", () => {
     const screen = await renderInboxView(createInboxFetcher({ mineItem: unsafeItem }));
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "查看上下文" })).toHaveAttribute(
-      "href",
-      "/projects/safe-project#approval-1",
-    );
+    const contextLink = screen.getByRole("link", { name: "查看上下文" });
+    await expect.element(contextLink).toHaveAttribute("href", "/projects/safe-project#approval-1");
+    await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
   });
 
   it("shows failed action submissions inside the dialog without closing it", async () => {

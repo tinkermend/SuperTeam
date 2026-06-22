@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowUpRight, Clock, FileText } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import {
   LiquidCard,
   SemanticIconTile,
@@ -74,13 +75,13 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
                         <Clock className="size-3.5" />
                         {formatDateTime(item.last_activity_at)}
                       </span>
-                      <a
+                      <Link
                         className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                        href={resolveInboxHref(item)}
+                        to={resolveInboxHref(item)}
                       >
                         查看上下文
                         <ArrowUpRight className="size-3.5" />
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 </div>

@@ -38,7 +38,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
    - Do not kill unmanaged user processes without inspecting them first.
 
 4. Run the right gates:
-   - Web change: targeted Vitest/browser test, typecheck when risk justifies it, and real browser verification against the running Web and real Control Plane for visible UI or data behavior.
+   - Web change: targeted Vitest/browser test, typecheck when risk justifies it, and real browser verification against the running Web and real Control Plane for visible UI or data behavior. For in-app navigation changes, click the actual entry in Chrome plug/browser automation and confirm the result is a TanStack Router transition, not a document-level reload.
    - Control Plane change: targeted `go test` for the affected package and curl/API smoke against the running Control Plane with real auth when route behavior matters.
    - Contract change: regenerate OpenAPI output and run `pnpm verify:contracts`.
    - sqlc/schema change: run sqlc generation when queries/schema changed.
@@ -65,6 +65,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
 ### Frontend and UI
 
 - Read `DESIGN.md` before layout or style changes.
+- For internal Web routes, use TanStack Router `Link` or `navigate`; reserve native `<a href>`, `window.location.href`, `location.assign`, or `location.replace` for external links, downloads, same-page anchors, or explicitly intended full-page navigation.
 - Use real browser verification for visible UI, especially layout/style changes.
 - For lists, tables, card workbenches, filters, sorting, pagination, or tabs, preserve existing data during background refresh; do not unload the main content when data already exists.
 - For React Query queryKey changes, keep previous data unless the business explicitly requires clearing it.
