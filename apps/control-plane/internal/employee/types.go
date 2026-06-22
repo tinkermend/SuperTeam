@@ -132,6 +132,12 @@ type WorkspaceFile struct {
 	UpdatedAt         time.Time
 }
 
+type RuntimeEnvironmentVariablePayload struct {
+	Name      string
+	Value     string
+	Sensitive bool
+}
+
 type ListWorkspaceFilesRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID

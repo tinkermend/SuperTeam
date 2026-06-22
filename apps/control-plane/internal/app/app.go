@@ -383,6 +383,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	runService.SetSkillLister(skillService)
+	runService.SetRuntimeCapabilityLister(runtimeService)
 	runWritebackService, err := employee.NewDigitalEmployeeRunWritebackService(runRepository, auditService, runtimeEventRecorderAdapter{runtimeService: runtimeService})
 	if err != nil {
 		return nil, err

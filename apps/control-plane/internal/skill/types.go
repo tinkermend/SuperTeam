@@ -8,35 +8,35 @@ import (
 )
 
 var (
-	ErrInvalidInput        = errors.New("invalid skill input")
-	ErrNotFound            = errors.New("skill not found")
+	ErrInvalidInput         = errors.New("invalid skill input")
+	ErrNotFound             = errors.New("skill not found")
 	ErrTeamAlreadyInherited = errors.New("team already inherited this skill")
 )
 
 type Skill struct {
-	ID                uuid.UUID
-	TenantID          uuid.UUID
-	Slug              string
-	Name              string
-	Description       string
-	Version           string
-	Source            string
-	RiskLevel         string
-	IconKey           string
-	ColorToken        string
-	Tags              []string
-	TeamIDs           []uuid.UUID
-	ArchiveObjectRef  string
-	ArchiveFilename   string
-	ArchiveSizeBytes  int64
-	ArchiveChecksum   string
-	ArchiveFileCount  int
-	CreatedBy         uuid.UUID
-	CreatedByName     string
-	TeamBindings      []*SkillTeamBinding
-	AgentBindings     []*SkillAgentBinding
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	Slug             string
+	Name             string
+	Description      string
+	Version          string
+	Source           string
+	RiskLevel        string
+	IconKey          string
+	ColorToken       string
+	Tags             []string
+	TeamIDs          []uuid.UUID
+	ArchiveObjectRef string
+	ArchiveFilename  string
+	ArchiveSizeBytes int64
+	ArchiveChecksum  string
+	ArchiveFileCount int
+	CreatedBy        uuid.UUID
+	CreatedByName    string
+	TeamBindings     []*SkillTeamBinding
+	AgentBindings    []*SkillAgentBinding
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type SkillTeamBinding struct {
@@ -53,13 +53,21 @@ type SkillAgentBinding struct {
 }
 
 type SkillRuntimeRecord struct {
-	ID              uuid.UUID
-	Slug            string
-	ArchiveObjectRef string
-	ArchiveChecksum string
-	ArchiveSizeBytes int64
-	ArchiveFileCount int
+	ID                  uuid.UUID
+	Slug                string
+	ArchiveObjectRef    string
+	ArchiveChecksum     string
+	ArchiveSizeBytes    int64
+	ArchiveFileCount    int
+	RuntimeDependencies RuntimeDependencies
 }
+
+type RuntimeDependencies struct {
+	Tools []string `json:"tools,omitempty"`
+	Env   []string `json:"env,omitempty"`
+}
+
+type SkillRuntimeDependencies = RuntimeDependencies
 
 type ListSkillsRequest struct {
 	TenantID uuid.UUID
@@ -89,23 +97,23 @@ type UploadSkillRequest struct {
 }
 
 type UpsertSkillPackageRequest struct {
-	TenantID          uuid.UUID
-	ActorUserID       uuid.UUID
-	Slug              string
-	Name              string
-	Description       string
-	Version           string
-	Source            string
-	RiskLevel         string
-	IconKey           string
-	ColorToken        string
-	Tags              []string
-	TeamIDs           []uuid.UUID
-	ArchiveObjectRef  string
-	ArchiveFilename   string
-	ArchiveSizeBytes  int64
-	ArchiveChecksum   string
-	ArchiveFileCount  int
+	TenantID         uuid.UUID
+	ActorUserID      uuid.UUID
+	Slug             string
+	Name             string
+	Description      string
+	Version          string
+	Source           string
+	RiskLevel        string
+	IconKey          string
+	ColorToken       string
+	Tags             []string
+	TeamIDs          []uuid.UUID
+	ArchiveObjectRef string
+	ArchiveFilename  string
+	ArchiveSizeBytes int64
+	ArchiveChecksum  string
+	ArchiveFileCount int
 }
 
 type BindTeamSkillRequest struct {

@@ -247,15 +247,18 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const latestDemandId = demandsQuery.data?.[0]?.id;
   const planRevisionsQuery = useQuery({
-    enabled: Boolean(effectiveProjectId),
-    queryKey: ["project-plan-revisions", effectiveProjectId],
+    enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
+    queryKey: ["project-plan-revisions", effectiveProjectId, latestDemandId],
     queryFn: () =>
-      listProjectPlanRevisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
+      listProjectPlanRevisions(apiOptions, effectiveProjectId as string, {
+        demandId: latestDemandId as string,
+        limit: 10,
+      }),
     placeholderData: keepPreviousData,
   });
 
-  const latestDemandId = demandsQuery.data?.[0]?.id;
   const taskGraphQuery = useQuery({
     enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
     queryKey: ["project-task-graph", effectiveProjectId, latestDemandId],

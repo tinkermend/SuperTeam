@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/skill"
 )
 
 const (
@@ -39,10 +40,25 @@ type AuditLogger interface {
 	LogEvent(ctx context.Context, eventType, actorType, actorID, resourceType, resourceID, action string) error
 }
 
+type RuntimeSkillLister interface {
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]skill.SkillRuntimeRecord, error)
+}
+
+type RuntimeCapabilityLister interface {
+	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]cpruntime.RuntimeCapability, error)
+}
+
+type RuntimeEnvironmentLister interface {
+	ListRuntimeEnvironmentVariablesForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error)
+}
+
 type DigitalEmployeeRunService struct {
-	repository DigitalEmployeeRunRepository
-	dispatcher RuntimeCommandDispatcher
-	audit      AuditLogger
+	repository              DigitalEmployeeRunRepository
+	dispatcher              RuntimeCommandDispatcher
+	audit                   AuditLogger
+	skillLister             RuntimeSkillLister
+	runtimeCapabilityLister RuntimeCapabilityLister
+	environmentLister       RuntimeEnvironmentLister
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -57,6 +73,18 @@ func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispa
 		dispatcher: dispatcher,
 		audit:      audit,
 	}, nil
+}
+
+func (s *DigitalEmployeeRunService) SetSkillLister(l RuntimeSkillLister) {
+	s.skillLister = l
+}
+
+func (s *DigitalEmployeeRunService) SetRuntimeCapabilityLister(l RuntimeCapabilityLister) {
+	s.runtimeCapabilityLister = l
+}
+
+func (s *DigitalEmployeeRunService) SetEnvironmentLister(l RuntimeEnvironmentLister) {
+	s.environmentLister = l
 }
 
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
@@ -113,7 +141,11 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
-			return s.dispatchStartSession(ctx, req, objective, prompt, preflight, activeRun)
+			runtimeInputs, err := s.loadRuntimeRunInputs(ctx, req.TenantID, req.DigitalEmployeeID, preflight)
+			if err != nil {
+				return nil, err
+			}
+			return s.dispatchStartSession(ctx, req, objective, prompt, preflight, activeRun, runtimeInputs)
 		}
 		if isStalePreConfirmationRun(activeRun) {
 			if _, err := s.reapStaleRun(ctx, req.TenantID, req.UserID, activeRun); err != nil {
@@ -123,6 +155,11 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		} else {
 			return nil, fmt.Errorf("%w: active digital employee run exists", ErrConflict)
 		}
+	}
+
+	runtimeInputs, err := s.loadRuntimeRunInputs(ctx, req.TenantID, req.DigitalEmployeeID, preflight)
+	if err != nil {
+		return nil, err
 	}
 
 	commandID := newRuntimeCommandID()
@@ -153,10 +190,10 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		return nil, fmt.Errorf("create digital employee run: %w", err)
 	}
 
-	return s.dispatchStartSession(ctx, req, objective, prompt, preflight, run)
+	return s.dispatchStartSession(ctx, req, objective, prompt, preflight, run, runtimeInputs)
 }
 
-func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun) (*DigitalEmployeeRun, error) {
+func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, runtimeInputs runtimeRunInputs) (*DigitalEmployeeRun, error) {
 	if run.Status.IsTerminal() || run.Status == DigitalEmployeeRunStatusRunning || run.Status == DigitalEmployeeRunStatusCancelling {
 		return run, nil
 	}
@@ -165,7 +202,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 	if err != nil {
 		return nil, fmt.Errorf("list workspace files for start session: %w", err)
 	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles)
+	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles, runtimeInputs)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -632,7 +669,60 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord) map[string]any {
+type runtimeRunInputs struct {
+	skills      []skill.SkillRuntimeRecord
+	environment []RuntimeEnvironmentVariablePayload
+}
+
+func (s *DigitalEmployeeRunService) loadRuntimeRunInputs(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, preflight RunPreflight) (runtimeRunInputs, error) {
+	inputs := runtimeRunInputs{}
+	if s.skillLister != nil {
+		skills, err := s.skillLister.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+		if err != nil {
+			return runtimeRunInputs{}, fmt.Errorf("list skills for runtime: %w", err)
+		}
+		inputs.skills = skills
+	}
+
+	requiredTools := requiredRuntimeTools(inputs.skills)
+	if len(requiredTools) > 0 {
+		if s.runtimeCapabilityLister == nil {
+			return runtimeRunInputs{}, missingRuntimeToolError(preflight.NodeID, requiredTools[0])
+		}
+		capabilities, err := s.runtimeCapabilityLister.ListRuntimeCapabilitiesForNode(ctx, tenantID, preflight.NodeID)
+		if err != nil {
+			return runtimeRunInputs{}, fmt.Errorf("list runtime capabilities: %w", err)
+		}
+		availableTools := availableRuntimeTools(capabilities)
+		for _, tool := range requiredTools {
+			if !availableTools[tool] {
+				return runtimeRunInputs{}, missingRuntimeToolError(preflight.NodeID, tool)
+			}
+		}
+	}
+
+	requiredEnv := requiredRuntimeEnvironmentNames(inputs.skills)
+	if len(requiredEnv) > 0 {
+		if s.environmentLister == nil {
+			return runtimeRunInputs{}, fmt.Errorf("%w: required runtime environment variables are not configured: %s", ErrInvalidInput, strings.Join(requiredEnv, ", "))
+		}
+		environment, err := s.environmentLister.ListRuntimeEnvironmentVariablesForRuntime(ctx, tenantID, digitalEmployeeID)
+		if err != nil {
+			return runtimeRunInputs{}, fmt.Errorf("list runtime environment variables: %w", err)
+		}
+		availableEnv := availableRuntimeEnvironment(environment)
+		for _, name := range requiredEnv {
+			if !availableEnv[name] {
+				return runtimeRunInputs{}, fmt.Errorf("%w: required runtime environment variable is missing: %s", ErrInvalidInput, name)
+			}
+		}
+		inputs.environment = environment
+	}
+
+	return inputs, nil
+}
+
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord, runtimeInputs runtimeRunInputs) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
@@ -669,10 +759,94 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"session_policy":        runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":      cloneMap(preflight.RuntimeSelector),
 		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
-		"skills":                emptyRuntimeSkillsPayload(),
+		"skills":                runtimeSkillsPayload(runtimeInputs.skills),
 		"mcp_servers":           emptyRuntimeMCPServersPayload(),
+		"environment":           runtimeEnvironmentPayload(runtimeInputs.environment),
 		"metadata":              metadata,
 	}
+}
+
+func requiredRuntimeTools(skills []skill.SkillRuntimeRecord) []string {
+	return uniqueTrimmedValues(func(yield func(string)) {
+		for _, item := range skills {
+			for _, value := range item.RuntimeDependencies.Tools {
+				yield(value)
+			}
+		}
+	})
+}
+
+func requiredRuntimeEnvironmentNames(skills []skill.SkillRuntimeRecord) []string {
+	return uniqueTrimmedValues(func(yield func(string)) {
+		for _, item := range skills {
+			for _, value := range item.RuntimeDependencies.Env {
+				yield(value)
+			}
+		}
+	})
+}
+
+func uniqueTrimmedValues(collect func(func(string))) []string {
+	values := make([]string, 0)
+	seen := map[string]struct{}{}
+	collect(func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	})
+	return values
+}
+
+func availableRuntimeTools(capabilities []cpruntime.RuntimeCapability) map[string]bool {
+	available := make(map[string]bool, len(capabilities))
+	for _, capability := range capabilities {
+		if strings.TrimSpace(capability.CapabilityType) != "tool" || !capability.Available {
+			continue
+		}
+		key := strings.TrimSpace(capability.CapabilityKey)
+		if key == "" {
+			continue
+		}
+		available[key] = true
+	}
+	return available
+}
+
+func availableRuntimeEnvironment(environment []RuntimeEnvironmentVariablePayload) map[string]bool {
+	available := make(map[string]bool, len(environment))
+	for _, item := range environment {
+		name := strings.TrimSpace(item.Name)
+		if name != "" {
+			available[name] = true
+		}
+	}
+	return available
+}
+
+func runtimeEnvironmentPayload(environment []RuntimeEnvironmentVariablePayload) []map[string]any {
+	out := make([]map[string]any, 0, len(environment))
+	for _, item := range environment {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":      name,
+			"value":     item.Value,
+			"sensitive": item.Sensitive,
+		})
+	}
+	return out
+}
+
+func missingRuntimeToolError(nodeID, tool string) error {
+	return fmt.Errorf("%w: pending_runtime required runtime tool %q has not been reported by node %s", ErrRuntimeUnavailable, tool, nodeID)
 }
 
 func runtimeSessionPolicyPayload(policy map[string]any) map[string]any {

@@ -905,6 +905,25 @@ async function renderProjects(
 }
 
 describe("ProjectsView", () => {
+  it("filters project plan revisions to the latest demand", async () => {
+    const fetcher = createProjectFetcher();
+    await renderProjects(fetcher, "project-1");
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects/project-1/plan-revisions" &&
+            init?.method === "GET" &&
+            target.searchParams.get("demand_id") === "demand-1" &&
+            target.searchParams.get("limit") === "10"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
   it("renders the project list and selected overview", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);

@@ -32,7 +32,11 @@ Modify:
 - `apps/control-plane/internal/employee/pg_repository.go` - env table CRUD and runtime env queries.
 - `apps/control-plane/internal/employee/repository.go` - env repository methods.
 - `apps/control-plane/internal/employee/service.go` - create flow saves initial env vars.
-- `apps/control-plane/internal/employee/run_service.go` - dependency evaluation, skill payload, env decrypt payload.
+- `apps/control-plane/internal/employee/run_service.go` - dependency evaluation, skill payload, env decrypt payload, and new `RuntimeSkillLister` / `RuntimeCapabilityLister` / `RuntimeEnvironmentLister` collaborator interfaces + setters.
+- `apps/control-plane/internal/employee/run_repository.go` - no interface change required; the run service consumes the three listers above instead of growing `DigitalEmployeeRunRepository`.
+- `apps/control-plane/internal/app/app.go` (`NewContainerWithConfig`) - construct the env `EnvironmentValueCodec` from `cfg.EmployeeEnv` (fail fast on bad/missing keys), inject it into the employee service, and wire the run-service lister setters (`SetSkillLister(skillService)` / `SetRuntimeCapabilityLister(runtimeService)` / `SetEnvironmentLister(employeeService)`).
+- `apps/control-plane/internal/config/config.go` - new `EmployeeEnvConfig` section (`keys`, `activeKeyId`) on `Config`, env overlay, and startup validation.
+- `apps/control-plane/config/config.example.yaml` - documented `employeeEnv:` template section (the real `config.yaml` is gitignored).
 - `apps/control-plane/internal/employee/service_test.go` - create/run preflight tests.
 - `apps/control-plane/internal/skill/types.go` - `SkillRuntimeDependencies`, dependency status types.
 - `apps/control-plane/internal/skill/handler.go` - upload form parse and response fields.
@@ -370,6 +374,60 @@ func fingerprintValue(key []byte, name, value string) string {
 }
 ```
 
+- [ ] **Step 6b: Load encryption keys from `config.yaml` (`employeeEnv` section)**
+
+This project's convention is that configuration lives in `apps/control-plane/config/config.yaml` (gitignored; `config.example.yaml` is the committed template), loaded by `config.LoadFromFile` → `yaml.Unmarshal` into `Config`, then `applyEnv` overlays env-var overrides. The encryption keys follow the same pattern as `objectStore.secretAccessKey` and `planner.apiKey` — a yaml section, not env-only.
+
+In `apps/control-plane/internal/config/config.go`:
+
+- Add a section type and wire it onto `Config`:
+
+```go
+type EmployeeEnvConfig struct {
+    Keys        string `yaml:"keys"`        // comma-separated "keyId:base64(32-byte-key)"
+    ActiveKeyID string `yaml:"activeKeyId"` // keyId used to encrypt new values
+}
+```
+
+```go
+// inside type Config:
+EmployeeEnv EmployeeEnvConfig `yaml:"employeeEnv"`
+```
+
+- In `applyEnv`, add env overrides so the yaml field can still be overridden by the legacy env var names (consistent with every other section):
+
+```go
+cfg.EmployeeEnv.Keys = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_KEYS", cfg.EmployeeEnv.Keys)
+cfg.EmployeeEnv.ActiveKeyID = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", cfg.EmployeeEnv.ActiveKeyID)
+```
+
+- In `validate()`, fail startup with an actionable message when the section is incomplete (design §11: missing key ⇒ startup failure). The "active key id not in key list" check is enforced by `NewEnvironmentValueCodec` at boot (Task 2 wiring), so `validate()` only guards presence:
+
+```go
+if strings.TrimSpace(cfg.EmployeeEnv.Keys) == "" {
+    return errors.New("employeeEnv.keys is required (set employeeEnv in config.yaml or SUPERTEAM_ENV_ENCRYPTION_KEYS)")
+}
+if strings.TrimSpace(cfg.EmployeeEnv.ActiveKeyID) == "" {
+    return errors.New("employeeEnv.activeKeyId is required (set employeeEnv in config.yaml or SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID)")
+}
+```
+
+In `apps/control-plane/config/config.example.yaml`, add the documented template (operators fill real values in their gitignored `config.yaml`):
+
+```yaml
+employeeEnv:
+  # Digital-employee environment-variable encryption. Comma-separated
+  # "keyId:base64(32-byte-key)" entries; activeKeyId selects the key used to
+  # encrypt new values (all listed keys can decrypt, to support rotation).
+  # Generate a key with:  openssl rand -base64 32
+  # Keep config.yaml out of git (it already is). Env overrides:
+  #   SUPERTEAM_ENV_ENCRYPTION_KEYS / SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID
+  keys: "v1:replace-with-base64-32-byte-key"
+  activeKeyId: "v1"
+```
+
+The codec stays env-agnostic: `NewEnvironmentValueCodec(EnvironmentValueCodecConfig{Keys: cfg.EmployeeEnv.Keys, ActiveKeyID: cfg.EmployeeEnv.ActiveKeyID})` is constructed in `app.go` (Task 2 wiring) and injected into the employee service. Do not read these keys directly from `os.Getenv` inside the employee package.
+
 - [ ] **Step 7: Run task tests**
 
 Run:
@@ -377,10 +435,11 @@ Run:
 ```bash
 go test ./apps/control-plane/internal/storage -run TestDigitalEmployeeEnvironmentVariablesMigration -count=1
 go test ./apps/control-plane/internal/employee -run 'TestEnvironmentCrypto' -count=1
+go test ./apps/control-plane/internal/config -count=1
 git diff --check
 ```
 
-Expected: all pass.
+Add a `config_test.go` case asserting `employeeEnv` parses from yaml and that `validate()` fails when `keys` or `activeKeyId` is missing. Expected: all pass.
 
 - [ ] **Step 8: Commit**
 
@@ -389,7 +448,9 @@ git add apps/control-plane/internal/storage/migrations/032_digital_employee_env_
   apps/control-plane/internal/storage/migrations/atlas.sum \
   apps/control-plane/internal/storage/migrations_test.go \
   apps/control-plane/internal/employee/env_crypto.go \
-  apps/control-plane/internal/employee/env_service_test.go
+  apps/control-plane/internal/employee/env_service_test.go \
+  apps/control-plane/internal/config/config.go apps/control-plane/internal/config/config_test.go \
+  apps/control-plane/config/config.example.yaml
 git commit -m "feat: add encrypted employee environment storage foundation"
 ```
 
@@ -406,6 +467,7 @@ git commit -m "feat: add encrypted employee environment storage foundation"
 - Modify: `apps/control-plane/internal/employee/handler.go`
 - Modify: `apps/control-plane/internal/api/server.go`
 - Modify: `apps/control-plane/internal/api/employee_routes_test.go`
+- Modify: `apps/control-plane/internal/app/app.go` (construct env codec from `cfg.EmployeeEnv`, inject via `employeeService.SetEnvironmentCodec`, save initial env vars in the create flow)
 - Modify: `contracts/control-plane/openapi.yaml`
 
 - [ ] **Step 1: Add route tests first**
@@ -535,7 +597,33 @@ type DeleteEnvironmentVariableRequest struct {
 	DigitalEmployeeID uuid.UUID
 	Name              string
 }
+
+// InitialEnvironmentVariable is used by the digital-employee create flow to save
+// env vars at create time. Plaintext lives only in the request; the service
+// encrypts before any write.
+type InitialEnvironmentVariable struct {
+	Name      string
+	Value     string
+	Sensitive bool
+}
+
+// RuntimeEnvironmentVariablePayload is the decrypted shape handed to the run
+// service for the Runtime command payload. Control Plane decrypts; Runtime
+// Agent never sees ciphertext or keys.
+type RuntimeEnvironmentVariablePayload struct {
+	Name      string
+	Value     string
+	Sensitive bool
+}
 ```
+
+Extend `CreateDigitalEmployeeRequest` (in `employee/types.go`) with:
+
+```go
+EnvironmentVariables []InitialEnvironmentVariable
+```
+
+This field is the create-time entry point referenced by Task 5's create-flow wiring and by the Web create wizard (Task 7).
 
 - [ ] **Step 4: Implement service/repository contracts**
 
@@ -605,6 +693,35 @@ func (s *Service) DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvir
 
 Each method must verify tenant and employee IDs, normalize name, confirm employee exists with `GetDigitalEmployee`, encrypt values through `EnvironmentValueCodec`, and never return plaintext.
 
+Add a runtime-decrypt method used by the run service (Task 5). It reads active encrypted records and decrypts through `EnvironmentValueCodec`, returning `[]RuntimeEnvironmentVariablePayload`. It must never log plaintext:
+
+```go
+func (s *Service) ListRuntimeEnvironmentVariablesForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error)
+```
+
+This method is the concrete implementation of the `RuntimeEnvironmentLister` interface consumed by `DigitalEmployeeRunService` in Task 5. Keep decryption inside the env service so the codec never leaks into the run service.
+
+The env service methods need the codec. Add an `envCodec *EnvironmentValueCodec` field and a `SetEnvironmentCodec(*EnvironmentValueCodec)` setter onto `employee.Service` (the env methods live on `*Service`), mirroring the `SetRunService` / `SetAuthorizer` pattern. In `app.go` `NewContainerWithConfig`, construct the codec from the config loaded in Task 1 Step 6b and inject it, failing the container build on a codec error (bad/missing/unknown active key — design §11):
+
+```go
+envCodec, err := employee.NewEnvironmentValueCodec(employee.EnvironmentValueCodecConfig{
+    Keys:        cfg.EmployeeEnv.Keys,
+    ActiveKeyID: cfg.EmployeeEnv.ActiveKeyID,
+})
+if err != nil {
+    return nil, fmt.Errorf("build env encryption codec: %w", err)
+}
+employeeService.SetEnvironmentCodec(envCodec)
+```
+
+`employeeService` is already constructed in `NewContainerWithConfig`; this is also where Task 5 wires the run-service listers.
+
+- [ ] **Step 5b: Save initial env vars in the create flow**
+
+The digital-employee create flow currently saves child records inside `s.repository.WithTransaction(...)` → `createLocalReadyEmployeeFacts` (`service.go`). Add a new step in that transaction that encrypts and persists each entry of `req.EnvironmentVariables` via the env repository's upsert path (`UpsertEnvironmentVariableStoreRequest`), using the same `EnvironmentValueCodec`, after the employee row exists so `digital_employee_id` is valid. The team id comes from the create request. If encryption fails, the whole create transaction must roll back (no half-written secrets). Normalize each name with `normalizeEnvName`; reject the create request with `ErrInvalidInput` on any invalid name.
+
+Also parse the new field in `HTTPHandler.CreateDigitalEmployee` (`handler.go`) — the handler decodes an inline anonymous struct into `CreateDigitalEmployeeRequest`; add an `EnvironmentVariables []struct { Name, Value string; Sensitive bool }` field there and map it onto the request. Authz stays on the existing `authz.ActionEmployeeCreate` action for create.
+
 - [ ] **Step 6: Implement PgRepository methods**
 
 In `apps/control-plane/internal/employee/pg_repository.go`, add SQL using the existing pgx style:
@@ -663,6 +780,7 @@ In `contracts/control-plane/openapi.yaml`, add:
 - `PUT /api/v1/digital-employees/{employeeId}/environment-variables/{envName}`
 - `DELETE /api/v1/digital-employees/{employeeId}/environment-variables/{envName}`
 - schemas `DigitalEmployeeEnvironmentVariableSummary` and `UpsertEnvironmentVariableRequest`
+- extend the create-employee request schema (the body of `POST /api/v1/digital-employees`) with an optional `environment_variables` array of `{ name, value, sensitive }` so the create-flow field from Step 5b is contract-covered. The `DigitalEmployee` detail response must NOT gain any env field; env summaries come only from the dedicated list endpoint.
 
 Run:
 
@@ -674,13 +792,13 @@ corepack pnpm verify:contracts
 - [ ] **Step 9: Run task tests**
 
 ```bash
-go test ./apps/control-plane/internal/employee -run 'TestEnvironment' -count=1
+go test ./apps/control-plane/internal/employee -run 'TestEnvironment|TestCreateDigitalEmployee' -count=1
 go test ./apps/control-plane/internal/api -run TestDigitalEmployeeEnvironmentVariableRoutes -count=1
 corepack pnpm verify:contracts
 git diff --check
 ```
 
-Expected: all pass.
+Expected: all pass. Add a service test asserting `CreateDigitalEmployee` with `EnvironmentVariables` persists exactly one encrypted row per entry (use a fake env repository in the employee service test) and rolls back when a name is invalid.
 
 - [ ] **Step 10: Commit**
 
@@ -689,7 +807,9 @@ git add contracts/control-plane/openapi.yaml apps/control-plane/internal/api/ser
   apps/control-plane/internal/api/server.go apps/control-plane/internal/api/employee_routes_test.go \
   apps/control-plane/internal/employee/types.go apps/control-plane/internal/employee/repository.go \
   apps/control-plane/internal/employee/pg_repository.go apps/control-plane/internal/employee/env_repository.go \
-  apps/control-plane/internal/employee/env_service.go apps/control-plane/internal/employee/env_service_test.go
+  apps/control-plane/internal/employee/env_service.go apps/control-plane/internal/employee/env_service_test.go \
+  apps/control-plane/internal/employee/handler.go apps/control-plane/internal/employee/service.go \
+  apps/control-plane/internal/employee/service_test.go apps/control-plane/internal/app/app.go
 git commit -m "feat: manage encrypted employee environment variables"
 ```
 
@@ -771,6 +891,8 @@ type SkillRuntimeDependencyStatus struct {
 
 Add `RuntimeDependencies SkillRuntimeDependencies` to `Skill`, `UploadSkillRequest`, and `UpsertSkillPackageRequest`. Add `RuntimeDependencyStatus *SkillRuntimeDependencyStatus` to `SkillAgentBinding` or `EffectiveEmployeeSkill`, whichever is easier for the existing response shape.
 
+Note: `Skill` currently has **no** `Metadata` field and `skillSelectColumns` (`skill/pg_repository.go:22`) does **not** include `s.metadata`. `RuntimeDependencies` is a typed projection over the JSONB `metadata` column, not a separate column. So also add a `Metadata map[string]any` field (or `json.RawMessage`) to `Skill` so the raw blob can be scanned; the service/repository layer unmarshals `metadata.runtime_dependencies` into `Skill.RuntimeDependencies` on every read (and back into `metadata` on write). The same applies to `SkillRuntimeRecord` (`skill/types.go:55`) because the run service reads dependencies via runtime skill records in Task 5.
+
 In `apps/control-plane/internal/skill/service.go`, add:
 
 ```go
@@ -792,14 +914,15 @@ func normalizeRuntimeDependencies(input SkillRuntimeDependencies) (SkillRuntimeD
 
 Use sorted unique output.
 
-- [ ] **Step 4: Persist dependencies in skills.metadata**
+- [ ] **Step 4: Persist and read dependencies via skills.metadata**
 
-In `apps/control-plane/internal/skill/pg_repository.go`:
+`skill/pg_repository.go` uses a hand-written column constant (`skillSelectColumns`) consumed by every skill SELECT and scan site. Changing the column list is therefore **not** a one-liner — every read path must be updated together:
 
 - Add `s.metadata` to `skillSelectColumns`.
-- Scan it as `[]byte` or `map[string]any`.
-- Marshal dependency metadata during `UpsertSkillPackage`.
-- Insert/update `metadata`.
+- Add a scan destination for the metadata column at every `Scan(...)` / row-mapping site that reads skills (list, get, runtime skills, agent bindings). Scan into `[]byte` then `json.Unmarshal` into `map[string]any` (guard NULL/empty with `COALESCE(s.metadata, '{}'::jsonb)` so existing rows scan cleanly).
+- Populate `Skill.Metadata` from the unmarshaled map and project `Skill.RuntimeDependencies` by decoding the `runtime_dependencies` sub-key (tolerate missing key → empty `SkillRuntimeDependencies`). Do the same projection for `SkillRuntimeRecord` so Task 5 can read deps from runtime skill records.
+- Marshal dependency metadata during `UpsertSkillPackage`: merge `runtime_dependencies` into the existing metadata map (never overwrite unrelated metadata keys), then write the merged JSONB. Update `UpsertSkillPackageParams` and the underlying query so the `metadata` column is included in INSERT and UPDATE. Preserve the column's existing `'{}'::jsonb` default for rows created without dependencies.
+- The `ALTER TABLE skills ALTER COLUMN metadata SET DEFAULT '{}'::jsonb` from Task 1 is redundant (migration `009_skill_management.sql` already sets it) — keep it only as an idempotent no-op or drop it; do not rely on it.
 
 Metadata shape:
 
@@ -876,199 +999,170 @@ git commit -m "feat: add skill runtime dependency metadata"
 
 ---
 
-### Task 4: Runtime Agent Tool Capability Probe
+### Task 4: Dynamic CLI Tool Capability Probing
 
-**Files:**
-- Create: `apps/runtime-agent/src/tools.rs`
-- Modify: `apps/runtime-agent/src/lib.rs`
-- Modify: `apps/runtime-agent/src/config.rs`
-- Modify: `apps/runtime-agent/src/daemon.rs`
-- Modify: `apps/runtime-agent/tests/daemon_test.rs`
+The probe set is **dynamic and database-driven**, not a static config list. The Control Plane scans the database once to compute, per runtime node, the CLI tools required by the digital employees mounted on that node (their bound skills' `runtime_dependencies.tools`), injects that list into the node's heartbeat response, and the Runtime Agent periodically probes exactly that list on PATH. PATH is never scanned exhaustively; there is no global static probe list. (Operator can optionally keep a small always-probe baseline; it is additive, not authoritative.)
 
-- [ ] **Step 1: Add failing config and daemon tests**
+Depends on Task 3 (skills carry `runtime_dependencies`). Task 5's preflight consumes the `tool` capabilities reported here.
 
-In `apps/runtime-agent/tests/daemon_test.rs`, add a config test:
+**Files (Control Plane):**
+- Modify: `apps/control-plane/internal/storage/queries/runtime_events.sql` (+ generated `.sql.go`) — relax `ListRuntimeCapabilitiesForNode` from `capability_type='provider'` to `capability_type IN ('provider','tool')`. Latent bug today: tool caps are upserted by the agent but never returned by the list query, so preflight could not see them.
+- Create query + service method `ListRequiredToolsForNode(tenantID, nodeID)` (Step A3) — one DB scan.
+- Modify: `apps/control-plane/internal/runtime/service.go` (+ handler/models) — compute `required_tools` and include it in the heartbeat response.
+- Modify: `apps/control-plane/internal/app/app.go` — wire the required-tools resolver into the runtime heartbeat path.
+- Modify: `contracts/control-plane/openapi.yaml` — add `required_tools` to the heartbeat response schema.
+- Tests: `apps/control-plane/internal/runtime/*_test.go`, `apps/control-plane/internal/api/runtime_routes_test.go`.
+
+**Files (Runtime Agent):**
+- Create: `apps/runtime-agent/src/tools.rs` — PATH probe helper.
+- Modify: `apps/runtime-agent/src/controlplane/models.rs` — add `required_tools: Vec<String>` to `HeartbeatResponse`.
+- Modify: `apps/runtime-agent/src/daemon.rs` — make `build_capabilities` `pub` and accept the probe set; in `heartbeat_loop` recompute from `baseline ∪ required_tools` and `upsert_capabilities` on change.
+- Modify: `apps/runtime-agent/src/config.rs` — `tools.probe_names` becomes an OPTIONAL always-probe baseline (default empty); no longer authoritative.
+- Modify: `apps/runtime-agent/tests/daemon_test.rs`.
+
+#### Phase A — Control Plane: scan the DB for required tools and inject into heartbeat
+
+- [ ] **Step A1: Write failing tests**
+
+In `apps/control-plane/internal/runtime/` add a test (and an `api/runtime_routes_test.go` case) asserting:
+- `ListRequiredToolsForNode(tenantID, nodeN)` returns the sorted, de-duped union of `runtime_dependencies.tools` over skills bound to DEs whose active execution instance is on node N. A DE on a different node (skill needs `helm`) does NOT contribute. A DE on node N with no skills / skills without deps contributes nothing.
+- `ListRuntimeCapabilitiesForNode(...)` now returns rows with `capability_type='tool'` (it did not before the Step A4 filter change).
+
+- [ ] **Step A2: Run, expect failure** — method/query absent; capability filter still provider-only.
+
+- [ ] **Step A3: Implement `ListRequiredToolsForNode` as a single DB scan**
+
+Add a sqlc query (e.g. `apps/control-plane/internal/storage/queries/skill.sql`) that scans the DB once — execution instances on the node → enabled skill bindings (agent + team, mirroring `ListSkillsForRuntime`) → `skills.metadata.runtime_dependencies.tools`:
+
+```sql
+-- name: ListRequiredToolsForNode :many
+WITH mounted_skills AS (
+    SELECT s.metadata
+    FROM digital_employee_execution_instances dei
+    JOIN skill_agent_bindings sab
+      ON sab.tenant_id = dei.tenant_id
+     AND sab.digital_employee_id = dei.digital_employee_id
+     AND sab.status = 'enabled'
+    JOIN skills s ON s.tenant_id = sab.tenant_id AND s.id = sab.skill_id
+    WHERE dei.tenant_id = @tenant_id
+      AND dei.runtime_node_id = @runtime_node_id
+      AND dei.deleted_at IS NULL
+      AND dei.status IN ('provisioning','ready','active')
+    UNION
+    SELECT s.metadata
+    FROM digital_employee_execution_instances dei
+    JOIN digital_employees de ON de.tenant_id = dei.tenant_id AND de.id = dei.digital_employee_id
+    JOIN skill_team_bindings stb ON stb.tenant_id = de.tenant_id AND stb.team_id = de.team_id
+    JOIN skills s ON s.tenant_id = stb.tenant_id AND s.id = stb.skill_id
+    WHERE dei.tenant_id = @tenant_id
+      AND dei.runtime_node_id = @runtime_node_id
+      AND dei.deleted_at IS NULL
+      AND dei.status IN ('provisioning','ready','active')
+)
+SELECT DISTINCT tool
+FROM mounted_skills ms,
+     LATERAL jsonb_array_elements_text(
+        COALESCE(ms.metadata->'runtime_dependencies', '{}'::jsonb)->'tools'
+     ) AS tool
+ORDER BY tool;
+```
+
+Regenerate sqlc. Expose via `func (s *Service) ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)` — resolve the agent string `nodeID` → `runtime_nodes.id` exactly the way `ListRuntimeCapabilitiesForNode` does (it joins on `rn.node_id = $node_id`).
+
+- [ ] **Step A4: Relax the capability-list filter**
+
+In `apps/control-plane/internal/storage/queries/runtime_events.sql`, change `ListRuntimeCapabilitiesForNode`'s `capability_type = 'provider'` to `capability_type IN ('provider', 'tool')`. Regenerate sqlc. This also surfaces `tool` capabilities on the node-detail UI (design §9.4).
+
+- [ ] **Step A5: Inject `required_tools` into the heartbeat response**
+
+The runtime heartbeat handler already resolves the node (tenant + node id). Add a collaborator interface on the runtime service and compute the list on each heartbeat:
+
+```go
+type RequiredToolsResolver interface {
+    ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)
+}
+```
+
+Wire it via `SetRequiredToolsResolver` at `app.go` `NewContainerWithConfig` (point at the skill service where Step A3's method lives). Add `required_tools []string` to the heartbeat response model and to the OpenAPI heartbeat-response schema, then run `corepack pnpm generate:control-plane && corepack pnpm verify:contracts`.
+
+- [ ] **Step A6: Run Phase A tests + commit**
+
+```bash
+go test ./apps/control-plane/internal/runtime -count=1
+go test ./apps/control-plane/internal/api -run RuntimeRoutes -count=1
+corepack pnpm verify:contracts
+git diff --check
+git add apps/control-plane/internal/storage/queries/skill.sql \
+  apps/control-plane/internal/storage/queries/runtime_events.sql \
+  apps/control-plane/internal/storage/queries/*.sql.go \
+  apps/control-plane/internal/skill/service.go apps/control-plane/internal/runtime/service.go \
+  apps/control-plane/internal/runtime/models.go apps/control-plane/internal/app/app.go \
+  contracts/control-plane/openapi.yaml apps/control-plane/internal/api/server.gen.go \
+  apps/control-plane/internal/runtime/*_test.go apps/control-plane/internal/api/runtime_routes_test.go
+git commit -m "feat: compute per-node required CLI tools from mounted employees"
+```
+
+#### Phase B — Runtime Agent: periodically probe the injected list
+
+- [ ] **Step B1: Write failing tests**
+
+In `apps/runtime-agent/tests/daemon_test.rs`:
 
 ```rust
 #[test]
-fn config_loads_tool_probe_names_from_env() {
-    let cfg = RuntimeConfig::load_with_env(
-        None,
-        [
-            ("RUNTIME_AGENT_NODE_ID", "node-a"),
-            ("RUNTIME_AGENT_BOOTSTRAP_KEY", "bootstrap"),
-            ("RUNTIME_AGENT_TOOL_PROBE_NAMES", "git, gh,kubectl"),
-        ],
-        RuntimeConfigOverrides::default(),
-    )
-    .expect("config");
-
-    assert_eq!(cfg.tools.probe_names, vec!["git", "gh", "kubectl"]);
+fn config_probe_baseline_defaults_empty() {
+    let cfg = RuntimeConfig::new("node-a").expect("config");
+    assert!(cfg.tools.probe_names.is_empty(),
+        "baseline must default to empty; the authoritative probe set is injected by the control plane");
 }
-```
 
-Add a capability test near existing daemon capability tests:
-
-```rust
 #[tokio::test]
-async fn runtime_reports_configured_tool_capabilities() {
-    let mut cfg = RuntimeConfig::new("node-a").expect("config");
-    cfg.tools.probe_names = vec!["definitely-missing-superteam-tool".to_string()];
-
-    let capabilities = superteam_runtime_agent::daemon::build_capabilities_for_test(&cfg).await;
-    let tool = capabilities
-        .iter()
-        .find(|cap| cap.capability_type == "tool" && cap.capability_key == "definitely-missing-superteam-tool")
-        .expect("tool capability");
-
+async fn build_capabilities_probes_required_tool_set() {
+    let cfg = RuntimeConfig::new("node-a").expect("config");
+    let caps = superteam_runtime_agent::daemon::build_capabilities(
+        &cfg,
+        &["definitely-missing-superteam-tool".to_string()],
+    ).await;
+    let tool = caps.iter()
+        .find(|c| c.capability_type == "tool" && c.capability_key == "definitely-missing-superteam-tool")
+        .expect("tool capability probed from required set");
     assert!(!tool.available);
     assert_eq!(tool.status, "missing");
-    assert_eq!(tool.provider_type, "tool");
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step B2: Run, expect failure** — `tools` section / new `build_capabilities` signature absent.
+
+- [ ] **Step B3: Probe helper + optional baseline config**
+
+Create `apps/runtime-agent/src/tools.rs` with `pub fn probe_tool(name: &str) -> ToolProbeResult { name, binary_path, available }` (PATH lookup only; never an exhaustive scan). In `config.rs` keep `tools.probe_names: Vec<String>` but **default it to `vec![]`**; document it as an optional always-probe baseline (env `RUNTIME_AGENT_TOOL_PROBE_NAMES` still overrides for operators who want a persistent baseline). It is no longer the authoritative source.
+
+- [ ] **Step B4: Probe the injected list and re-report on heartbeat**
+
+Make `build_capabilities` `pub` and accept the probe set explicitly (it is **not** `#[cfg(test)]` — integration tests in `tests/` would otherwise fail to link):
+
+```rust
+pub async fn build_capabilities(config: &RuntimeConfig, probe_tools: &[String]) -> Vec<RuntimeCapabilityInput>
+```
+
+`probe_tools` is the full set to probe (baseline ∪ required). Tool capabilities are emitted from it; provider/workspace/capability capabilities are unchanged. At enrollment call `build_capabilities(&cfg, &cfg.tools.probe_names)` (baseline only — required set is unknown until the first heartbeat).
+
+Add `required_tools: Vec<String>` to `HeartbeatResponse` (`controlplane/models.rs`). In `heartbeat_loop` (`daemon.rs`): read `required_tools` from the response; when it differs from the last seen set, recompute `probe_tools = baseline ∪ required_tools`, call `build_capabilities(&cfg, &probe_tools)`, and `client.upsert_capabilities(&node_id, caps)`. Store the last seen required set on the daemon so subsequent equal heartbeats are a no-op.
+
+- [ ] **Step B5: Run Phase B tests + commit**
 
 ```bash
-cargo test --manifest-path apps/runtime-agent/Cargo.toml config_loads_tool_probe_names_from_env runtime_reports_configured_tool_capabilities
-```
-
-Expected: compile failure because `tools` config and test helper do not exist.
-
-- [ ] **Step 3: Add tools config**
-
-In `apps/runtime-agent/src/config.rs`, add:
-
-```rust
-pub tools: ToolsSection,
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolsSection {
-    pub probe_names: Vec<String>,
-}
-```
-
-Add file config:
-
-```rust
-tools: Option<FileToolsSection>,
-
-#[derive(Debug, Deserialize, Default)]
-struct FileToolsSection {
-    probe_names: Option<Vec<String>>,
-}
-```
-
-Default:
-
-```rust
-tools: ToolsSection {
-    probe_names: vec!["git".to_string(), "gh".to_string()],
-},
-```
-
-Env parsing:
-
-```rust
-"RUNTIME_AGENT_TOOL_PROBE_NAMES" => {
-    self.tools.probe_names = parse_csv(value);
-}
-```
-
-Add `parse_csv`:
-
-```rust
-fn parse_csv(value: &str) -> Vec<String> {
-    let mut values: Vec<String> = value
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(ToString::to_string)
-        .collect();
-    values.sort();
-    values.dedup();
-    values
-}
-```
-
-- [ ] **Step 4: Add tool probe helper**
-
-Create `apps/runtime-agent/src/tools.rs`:
-
-```rust
-use std::env;
-use std::path::PathBuf;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolProbeResult {
-    pub name: String,
-    pub binary_path: Option<PathBuf>,
-    pub available: bool,
-}
-
-pub fn probe_tool(name: &str) -> ToolProbeResult {
-    let binary_path = env::var_os("PATH")
-        .and_then(|path| {
-            env::split_paths(&path)
-                .map(|dir| dir.join(name))
-                .find(|candidate| candidate.is_file())
-        });
-    ToolProbeResult {
-        name: name.to_string(),
-        available: binary_path.is_some(),
-        binary_path,
-    }
-}
-```
-
-- [ ] **Step 5: Append tool capabilities**
-
-In `apps/runtime-agent/src/daemon.rs`, expose a test helper:
-
-```rust
-#[cfg(test)]
-pub async fn build_capabilities_for_test(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
-    build_capabilities(config).await
-}
-```
-
-Append tool capabilities in `build_capabilities`:
-
-```rust
-for name in &config.tools.probe_names {
-    let probe = crate::tools::probe_tool(name);
-    capabilities.push(RuntimeCapabilityInput {
-        capability_type: "tool".to_string(),
-        capability_key: probe.name,
-        provider_type: "tool".to_string(),
-        provider_version: None,
-        binary_path: probe.binary_path.map(|path| path.display().to_string()),
-        available: probe.available,
-        workspace_base_dir: None,
-        capacity: None,
-        labels: None,
-        status: if probe.available { "available" } else { "missing" }.to_string(),
-        details: None,
-        health_status: if probe.available { "configured" } else { "missing" }.to_string(),
-        metadata: None,
-    });
-}
-```
-
-- [ ] **Step 6: Run task tests**
-
-```bash
-cargo test --manifest-path apps/runtime-agent/Cargo.toml config_loads_tool_probe_names_from_env runtime_reports_configured_tool_capabilities
+cargo test --manifest-path apps/runtime-agent/Cargo.toml config_probe_baseline_defaults_empty build_capabilities_probes_required_tool_set
+cargo test --manifest-path apps/runtime-agent/Cargo.toml daemon_test
 git diff --check
+git add apps/runtime-agent/src/tools.rs apps/runtime-agent/src/config.rs apps/runtime-agent/src/daemon.rs \
+  apps/runtime-agent/src/controlplane/models.rs apps/runtime-agent/tests/daemon_test.rs
+git commit -m "feat: probe required CLI tools injected via heartbeat"
 ```
 
-- [ ] **Step 7: Commit**
-
-```bash
-git add apps/runtime-agent/src/lib.rs apps/runtime-agent/src/tools.rs apps/runtime-agent/src/config.rs \
-  apps/runtime-agent/src/daemon.rs apps/runtime-agent/tests/daemon_test.rs
-git commit -m "feat: report runtime CLI tool capabilities"
-```
+Notes:
+- Stale `tool` capabilities (a tool no longer required by any mounted employee) are harmless — they just record "tool X exists on this node" — so v1 does not GC them; the reported set always reflects the latest probe of `baseline ∪ required`.
+- A freshly enrolled node has no required-tools until its first heartbeat (~30s); until then Task 5's preflight reports `pending_runtime`, which is the correct state (design §7.4).
 
 ---
 
@@ -1076,24 +1170,28 @@ git commit -m "feat: report runtime CLI tool capabilities"
 
 **Files:**
 - Modify: `apps/control-plane/internal/employee/run_service.go`
-- Modify: `apps/control-plane/internal/employee/service.go`
 - Modify: `apps/control-plane/internal/employee/run_service_test.go`
 - Modify: `apps/control-plane/internal/skill/types.go`
 - Modify: `apps/control-plane/internal/skill/service.go`
 - Modify: `apps/control-plane/internal/skill/pg_repository.go`
-- Modify: `apps/control-plane/internal/runtime/repository.go`
+- Modify: `apps/control-plane/internal/app/app.go` (`NewContainerWithConfig`: wire the three run-service lister setters — `SetSkillLister(skillService)`, `SetRuntimeCapabilityLister(runtimeService)`, `SetEnvironmentLister(employeeService)`)
+- No change: `apps/control-plane/internal/runtime/repository.go` (`ListRuntimeCapabilitiesForNode` already exists and is consumed via the new collaborator)
 
-- [ ] **Step 1: Add failing run preflight tests**
+- [ ] **Step 1: Add lister interfaces, fake wiring, and failing run preflight tests**
 
-In `apps/control-plane/internal/employee/run_service_test.go`, extend `fakeRunServiceRepository` with:
+The run service does **not** get these reads from its `DigitalEmployeeRunRepository`. `ListSkillsForRuntime` lives on `skill.PgRepository` / the existing `SkillLister` interface (`employee/service.go:20`), and `ListRuntimeCapabilitiesForNode` lives on `runtime.RuntimeCapabilityReadRepository` (`runtime/repository.go:60`). So introduce three collaborator interfaces on `DigitalEmployeeRunService` (Step 5) and wire them via setters, mirroring the existing `SetRunService` / `SetAuthorizer` pattern.
+
+In `apps/control-plane/internal/employee/run_service_test.go`, extend `fakeRunServiceRepository` so it satisfies all three lister interfaces with one fake (the env lister returns the **decrypted** payload shape, since decryption stays in the env service in production):
 
 ```go
 runtimeSkills []skill.SkillRuntimeRecord
 runtimeCapabilities []cpruntime.RuntimeCapability
-runtimeEnv []EnvironmentVariableRecord
+runtimeEnv []RuntimeEnvironmentVariablePayload
+// An empty runtimeCapabilities slice models a node that has not reported any
+// capability yet; the evaluator treats that as pending_runtime.
 ```
 
-Add methods on the fake repository:
+Add lister methods on the fake repository:
 
 ```go
 func (f *fakeRunServiceRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
@@ -1104,10 +1202,24 @@ func (f *fakeRunServiceRepository) ListRuntimeCapabilitiesForNode(context.Contex
 	return f.runtimeCapabilities, nil
 }
 
-func (f *fakeRunServiceRepository) ListRuntimeEnvironmentVariables(context.Context, uuid.UUID, uuid.UUID) ([]EnvironmentVariableRecord, error) {
+func (f *fakeRunServiceRepository) ListRuntimeEnvironmentVariablesForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error) {
 	return f.runtimeEnv, nil
 }
 ```
+
+Add a test helper that wires the fake as all three listers (the run service gains `SetSkillLister` / `SetRuntimeCapabilityLister` / `SetEnvironmentLister` setters in Step 5):
+
+```go
+func newRunServiceWithListers(t *testing.T, repo *fakeRunServiceRepository, dispatcher RuntimeCommandDispatcher) *DigitalEmployeeRunService {
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetSkillLister(repo)
+	service.SetRuntimeCapabilityLister(repo)
+	service.SetEnvironmentLister(repo)
+	return service
+}
+```
+
+Use `newRunServiceWithListers` (not bare `mustNewRunService`) in the two tests below so the dependency-evaluation path has non-nil listers. Existing tests that do not exercise dependency evaluation keep using `mustNewRunService` unchanged.
 
 Then add:
 
@@ -1120,9 +1232,14 @@ func TestRunServiceCreateRunRejectsSkillWithMissingToolDependency(t *testing.T) 
 		ArchiveChecksum: strings.Repeat("a", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
 		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}},
 	}}
+	repo.runtimeCapabilities = []cpruntime.RuntimeCapability{{
+		CapabilityType: "tool",
+		CapabilityKey:  "git",
+		Available:      true,
+	}} // node has reported capabilities (so not pending), but gh is missing
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
-	service := mustNewRunService(t, repo, dispatcher)
+	service := newRunServiceWithListers(t, repo, dispatcher)
 
 	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
 	if err == nil || !strings.Contains(err.Error(), "gh") {
@@ -1146,20 +1263,14 @@ func TestRunServiceStartSessionPayloadIncludesLoadableSkillsAndEnvironment(t *te
 		ArchiveChecksum: strings.Repeat("b", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
 		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}, Env: []string{"GH_TOKEN"}},
 	}}
-	repo.runtimeEnv = []EnvironmentVariableRecord{{
-		TenantID: repo.preflight.TenantID,
-		TeamID: repo.preflight.TeamID,
-		DigitalEmployeeID: repo.preflight.DigitalEmployeeID,
+	repo.runtimeEnv = []RuntimeEnvironmentVariablePayload{{
 		Name: "GH_TOKEN",
-		EncryptedValue: "encrypted",
-		EncryptionKeyID: "v1",
-		ValueFingerprint: "abc123",
+		Value: "plain-token",
 		Sensitive: true,
-		Status: EnvironmentVariableStatusActive,
 	}}
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
-	service := mustNewRunService(t, repo, dispatcher)
+	service := newRunServiceWithListers(t, repo, dispatcher)
 
 	run, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
 	if err != nil {
@@ -1184,15 +1295,37 @@ func TestRunServiceStartSessionPayloadIncludesLoadableSkillsAndEnvironment(t *te
 		t.Fatal("expected command id")
 	}
 }
+
+func TestRunServiceCreateRunReportsPendingRuntimeWhenNodeHasNotReported(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.runtimeSkills = []skill.SkillRuntimeRecord{{
+		ID: uuid.New(), Slug: "github", ArchiveObjectRef: "s3://bucket/github.zip",
+		ArchiveChecksum: strings.Repeat("c", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
+		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}},
+	}}
+	// runtimeCapabilities left empty: the node has not reported any capability yet.
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := newRunServiceWithListers(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	if err == nil || !strings.Contains(err.Error(), "pending_runtime") {
+		t.Fatalf("expected pending_runtime failure, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected pending runtime not to dispatch, got %#v", dispatcher.commands)
+	}
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-go test ./apps/control-plane/internal/employee -run 'TestRunService(CreateRunRejectsSkillWithMissingToolDependency|StartSessionPayloadIncludesLoadableSkillsAndEnvironment)' -count=1
+go test ./apps/control-plane/internal/employee -run 'TestRunService(CreateRunRejectsSkillWithMissingToolDependency|StartSessionPayloadIncludesLoadableSkillsAndEnvironment|CreateRunReportsPendingRuntimeWhenNodeHasNotReported)' -count=1
 ```
 
-Expected: fail because dependency evaluation and env payload are missing.
+Expected: fail because dependency evaluation, pending_runtime handling, and the env payload are missing.
 
 - [ ] **Step 3: Extend runtime skill records**
 
@@ -1215,107 +1348,138 @@ type SkillDependencyEvaluation struct {
 	MissingEnv   []string
 }
 
+// evaluateSkillDependencies computes the load status of one skill.
+//   - nodeReportedAnyCapability is true when the runtime node has reported at
+//     least one capability of any kind. When false, the node is treated as
+//     pending_runtime (capability reporting not yet received) — per design §7.4.
+//   - Status priority is: pending_runtime > missing_tools > missing_env >
+//     loadable. Both MissingTools and MissingEnv are always fully populated
+//     regardless of the chosen status so the error/UI can list everything.
 func evaluateSkillDependencies(
 	skill skill.SkillRuntimeRecord,
 	availableTools map[string]struct{},
 	availableEnv map[string]struct{},
+	nodeReportedAnyCapability bool,
 ) SkillDependencyEvaluation {
-	var missingTools []string
+	missingTools := []string{}
 	for _, tool := range skill.RuntimeDependencies.Tools {
 		if _, ok := availableTools[tool]; !ok {
 			missingTools = append(missingTools, tool)
 		}
 	}
-	var missingEnv []string
+	missingEnv := []string{}
 	for _, name := range skill.RuntimeDependencies.Env {
 		if _, ok := availableEnv[name]; !ok {
 			missingEnv = append(missingEnv, name)
 		}
 	}
+
 	status := "loadable"
-	if len(missingTools) > 0 {
+	switch {
+	case !nodeReportedAnyCapability && (len(missingTools) > 0 || len(missingEnv) > 0):
+		status = "pending_runtime"
+	case len(missingTools) > 0:
 		status = "missing_tools"
-	}
-	if len(missingEnv) > 0 {
+	case len(missingEnv) > 0:
 		status = "missing_env"
 	}
 	return SkillDependencyEvaluation{LoadStatus: status, MissingTools: missingTools, MissingEnv: missingEnv}
 }
 ```
 
-If both tools and env are missing, return `missing_tools` and include both arrays in the error details.
+Status semantics match the design: `loadable` (deps satisfied), `missing_tools` (Runtime node lacks a required CLI), `missing_env` (employee lacks a required env var), `pending_runtime` (node has not reported capabilities yet so loadability cannot be decided). When both tools and env are missing and the node has reported, status is `missing_tools` and both arrays are returned. `pending_runtime` only applies when there is something missing AND the node has reported nothing — a node that reported but lacks the tool is `missing_tools`, not pending.
 
-- [ ] **Step 5: Wire preflight**
+- [ ] **Step 5: Add lister collaborators and wire the preflight**
 
-Before `dispatchStartSession`, query:
-
-- effective employee skills
-- `ListRuntimeCapabilitiesForNode`
-- active environment variables
-
-Build:
+Add three collaborator interfaces near `DigitalEmployeeRunService` (the existing `SkillLister` in `employee/service.go:20` already covers the skill signature; define the other two here and reuse the skill one by signature match):
 
 ```go
+type RuntimeSkillLister interface {
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]skill.SkillRuntimeRecord, error)
+}
+type RuntimeCapabilityLister interface {
+	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]cpruntime.RuntimeCapability, error)
+}
+type RuntimeEnvironmentLister interface {
+	ListRuntimeEnvironmentVariablesForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error)
+}
+```
+
+Add three fields to `DigitalEmployeeRunService` and three setters mirroring the existing `SetRunService` / `SetAuthorizer` pattern:
+
+```go
+func (s *DigitalEmployeeRunService) SetSkillLister(l RuntimeSkillLister)
+func (s *DigitalEmployeeRunService) SetRuntimeCapabilityLister(l RuntimeCapabilityLister)
+func (s *DigitalEmployeeRunService) SetEnvironmentLister(l RuntimeEnvironmentLister)
+```
+
+At the composition root — `app.go` `NewContainerWithConfig(stores, cfg)` (where `runService := employee.NewDigitalEmployeeRunService(...)` is already called) — call the setters with the real implementations already constructed in that function: `skillService`, `runtimeService`, and `employeeService` (which owns `ListRuntimeEnvironmentVariablesForRuntime` and the injected codec from Task 2). Concretely: `runService.SetSkillLister(skillService)`, `runService.SetRuntimeCapabilityLister(runtimeService)`, `runService.SetEnvironmentLister(employeeService)`. Do **not** add these methods to `DigitalEmployeeRunRepository`; the run service orchestrates the three collaborator interfaces instead.
+
+Before `dispatchStartSession`, read through the listers (never `s.repository`):
+
+```go
+runtimeSkills, _ := s.skillLister.ListSkillsForRuntime(ctx, req.TenantID, req.DigitalEmployeeID)
+capabilities, _ := s.capabilityLister.ListRuntimeCapabilitiesForNode(ctx, req.TenantID, preflight.RuntimeNodeID)
+runtimeEnv, _ := s.envLister.ListRuntimeEnvironmentVariablesForRuntime(ctx, req.TenantID, req.DigitalEmployeeID)
+
 availableTools := map[string]struct{}{}
+for _, cap := range capabilities {
+	if cap.CapabilityType == "tool" && cap.Available {
+		availableTools[cap.CapabilityKey] = struct{}{}
+	}
+}
 availableEnv := map[string]struct{}{}
+for _, env := range runtimeEnv {
+	availableEnv[env.Name] = struct{}{}
+}
+nodeReportedAnyCapability := len(capabilities) > 0
 ```
 
-For tools, include only capabilities where:
+Evaluate each skill. If any active skill is not `loadable`, fail the run closed with a code that distinguishes the three failure shapes so the UI/API can route the user to the right fix:
 
 ```go
-cap.CapabilityType == "tool" && cap.Available
+// status "missing_tools"  -> skill_dependencies_not_satisfied
+// status "missing_env"    -> skill_dependencies_not_satisfied
+// status "pending_runtime"-> skill_dependencies_pending_runtime
+fmt.Errorf("%w: %s: %s", ErrInvalidInput, code, strings.Join(messages, "; "))
 ```
 
-For env, include active encrypted env records.
-
-If any active skill has missing deps, return an error with code/message:
-
-```go
-fmt.Errorf("%w: skill_dependencies_not_satisfied: %s", ErrInvalidInput, strings.Join(messages, "; "))
-```
+Each message names the skill and the missing tools/env (or "等待 Runtime 上报" for pending). Never include env values in the message. Pass `runtimeSkills` and `runtimeEnv` (decrypted) into `buildStartSessionPayload` (Step 6) only when all skills are loadable.
 
 - [ ] **Step 6: Fill start session payload**
 
-Change `buildStartSessionPayload` signature to accept:
+`buildStartSessionPayload` currently emits `"skills": emptyRuntimeSkillsPayload()` (`run_service.go:672`). Replace that with the real skills and add the environment block. Change the signature to accept:
 
 ```go
 runtimeSkills []skill.SkillRuntimeRecord
 runtimeEnv []RuntimeEnvironmentVariablePayload
 ```
 
-Add:
+(`RuntimeEnvironmentVariablePayload` is defined in Task 2; do not redefine it here.) Add:
 
 ```go
-"skills": runtimeSkillsPayload(runtimeSkills),
+"skills":      runtimeSkillsPayload(runtimeSkills),
 "environment": runtimeEnvironmentPayload(runtimeEnv),
 ```
 
-Define:
+`runtimeEnvironmentPayload` returns `[]map[string]any` with `name`, `value`, and `sensitive`. The values are already plaintext at this point (decrypted by the env lister in Step 5); Runtime Agent receives them as-is.
 
-```go
-type RuntimeEnvironmentVariablePayload struct {
-	Name      string
-	Value     string
-	Sensitive bool
-}
-```
+- [ ] **Step 7: Redact environment values in persisted runtime events**
 
-`runtimeEnvironmentPayload` returns `[]map[string]any` with `name`, `value`, and `sensitive`.
-
-- [ ] **Step 7: Redaction check**
-
-Ensure the command receipt/event payload redaction path redacts `"environment"` values. If redaction is centralized in `redactRuntimeEventPayload`, add:
+Event/command redaction is centralized in `redactRuntimeEventPayload` (`pg_run_repository.go:523`), which today redacts keys like `token`/`secret` but would otherwise persist the dispatched `environment` plaintext. Add an explicit branch so the `environment` array is scrubbed before any runtime command event or provider session event is stored:
 
 ```go
 case "environment":
     redacted[key] = redactEnvironmentPayload(value)
 ```
 
-Expected redacted shape:
+`redactEnvironmentPayload` walks each entry and replaces `value` with `"[redacted]"` while preserving `name` and `sensitive`. Expected redacted shape:
 
 ```json
 {"name":"GH_TOKEN","value":"[redacted]","sensitive":true}
 ```
+
+This covers the Control-Plane side. Runtime-Agent-side log/snapshot redaction is a separate requirement (Task 6, design §8.3) because Runtime Agent has no existing redaction layer.
 
 - [ ] **Step 8: Run task tests**
 
@@ -1327,12 +1491,14 @@ git diff --check
 - [ ] **Step 9: Commit**
 
 ```bash
-git add apps/control-plane/internal/employee/run_service.go apps/control-plane/internal/employee/service.go \
+git add apps/control-plane/internal/employee/run_service.go \
   apps/control-plane/internal/employee/run_service_test.go apps/control-plane/internal/skill/types.go \
   apps/control-plane/internal/skill/service.go apps/control-plane/internal/skill/pg_repository.go \
-  apps/control-plane/internal/runtime/repository.go
+  apps/control-plane/internal/app/app.go
 git commit -m "feat: validate skill dependencies before employee runs"
 ```
+
+(`runtime/repository.go` needs no change — `ListRuntimeCapabilitiesForNode` already exists there and is consumed via the new `RuntimeCapabilityLister` collaborator.)
 
 ---
 
@@ -1447,15 +1613,17 @@ In `validate`, reject invalid names with `anyhow::bail!("invalid environment var
 
 - [ ] **Step 5: Carry env through RunSpec and ProviderRequest**
 
-In `apps/runtime-agent/src/runs.rs`:
+In `apps/runtime-agent/src/runs.rs` (`RunSpec` derives `Serialize`/`Deserialize` and existing fields carry `#[serde(...)]` attributes, so the new field must default or older payloads/snapshots will fail to deserialize):
 
 ```rust
+#[serde(default)]
 pub environment: std::collections::BTreeMap<String, String>,
 ```
 
 In `apps/runtime-agent/src/providers/mod.rs`:
 
 ```rust
+#[serde(default)]
 pub environment: std::collections::BTreeMap<String, String>,
 ```
 
@@ -1493,15 +1661,41 @@ Call it in each adapter after `current_dir`:
 crate::providers::apply_environment(&mut command, request);
 ```
 
-- [ ] **Step 7: Run task tests**
+- [ ] **Step 7: Mask environment values in Runtime logs and snapshots**
+
+Runtime Agent has **no existing redaction layer** (confirmed: no redact/mask/sanitiz logic outside path-traversal sanitization). Per design §8.3, plaintext env must never appear in Runtime logs, provider events, run snapshots, or error messages. Now that plaintext env flows through `RuntimeSessionCommandPayload` → `RunSpec` → `ProviderRequest`, add a focused redaction guard:
+
+- `RunSnapshot` (`runs.rs:50`) must **not** gain an `environment` field — env lives only on `RunSpec`/`ProviderRequest` for the subprocess and is not persisted.
+- Add a `redacted_environment_view` helper (e.g. in `runs.rs`) that returns a log-safe, serializable view of the payload/spec with every `environment[].value` replaced by `"[redacted]"` (keeping `name` and `sensitive`). Use it at every site that logs, traces, or serializes the command payload or `RunSpec`/`ProviderRequest` for diagnostics (search for `tracing::`, `dbg!`, `info!`, `debug!`, `serde_json::to_string` over these types).
+- Ensure provider error/failure paths that surface command context go through the same redacted view (design §11: provider failure output must be env-redacted).
+
+Add a test in `apps/runtime-agent/tests/runtime_command_payload_test.rs` asserting a redacted payload view does not contain the plaintext value:
+
+```rust
+#[test]
+fn redacted_environment_view_hides_plaintext_values() {
+    let mut payload = valid_payload();
+    payload["environment"] = json!([
+        {"name": "GH_TOKEN", "value": "plain-token", "sensitive": true}
+    ]);
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid");
+    let view = superteam_runtime_agent::runs::redacted_environment_view(&parsed.environment);
+    let rendered = serde_json::to_string(&view).unwrap();
+    assert!(!rendered.contains("plain-token"));
+    assert!(rendered.contains("GH_TOKEN"));
+    assert!(rendered.contains("[redacted]"));
+}
+```
+
+- [ ] **Step 8: Run task tests**
 
 ```bash
-cargo test --manifest-path apps/runtime-agent/Cargo.toml parses_environment_variables_for_session_payload providers_inject_runtime_environment
+cargo test --manifest-path apps/runtime-agent/Cargo.toml parses_environment_variables_for_session_payload providers_inject_runtime_environment redacted_environment_view_hides_plaintext_values
 cargo test --manifest-path apps/runtime-agent/Cargo.toml runtime_command_payload_test provider_command_test
 git diff --check
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add apps/runtime-agent/src/commands/payload.rs apps/runtime-agent/src/runs.rs \
@@ -1580,27 +1774,39 @@ Add `listEmployeeEnvironmentVariables`, `upsertEmployeeEnvironmentVariable`, and
 
 - [ ] **Step 3: Add skill upload form tests**
 
-In `apps/web/src/features/skills/index.test.tsx`, add a test that uploads a skill with tools/env:
+Use the real helpers in `apps/web/src/features/skills/index.test.tsx`: `renderSkillsView(fetcher)` takes a **fetcher** (not an options object), there is **no** `skillFactory` (use the inline `skillsFixture`), and interaction is via `userEvent.*` directly (there is no `const user`). Mirror the existing upload test at `index.test.tsx:102-108`, which captures the upload `FormData` through the fetcher and asserts field names — extend that same capture to record `runtime_tools` and `runtime_env`:
 
 ```tsx
 it("submits runtime dependency fields when uploading a skill", async () => {
-  const uploadSkill = vi.fn().mockResolvedValue(skillFactory({
-    runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN"] },
-  }));
-  renderSkillsView({ uploadSkill });
+  const captured: Record<string, string | null> = {};
+  const fetcher = createSkillsFetcher();
+  // Extend the existing upload-capture branch (the one that today asserts
+  // formData.get("name") / "risk_level" / "file") to also record the new fields.
+  fetcher.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/skills/uploads") && init?.body instanceof FormData) {
+      captured.runtime_tools = (init.body.get("runtime_tools") as string | null) ?? null;
+      captured.runtime_env = (init.body.get("runtime_env") as string | null) ?? null;
+      return jsonResponse({ ...skillsFixture[0], runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN"] } });
+    }
+    return createSkillsFetcher()(input, init);
+  });
 
-  await user.click(screen.getByRole("button", { name: /上传技能/ }));
-  await user.type(screen.getByLabelText("技能名称"), "GitHub Skill");
-  await user.type(screen.getByLabelText("运行依赖 CLI"), "gh");
-  await user.type(screen.getByLabelText("运行依赖环境变量"), "GH_TOKEN");
-  await user.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill.zip", { type: "application/zip" }));
-  await user.click(screen.getByRole("button", { name: /^上传$/ }));
+  renderSkillsView(fetcher);
 
-  expect(uploadSkill).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-    runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN"] },
-  }));
+  await userEvent.click(await screen.findByRole("button", { name: /上传技能/ }));
+  await userEvent.type(screen.getByLabelText("技能名称"), "GitHub Skill");
+  await userEvent.type(screen.getByLabelText("运行依赖 CLI"), "gh");
+  await userEvent.type(screen.getByLabelText("运行依赖环境变量"), "GH_TOKEN");
+  await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill.zip", { type: "application/zip" }));
+  await userEvent.click(screen.getByRole("button", { name: "上传" }));
+
+  expect(captured.runtime_tools).toBe("gh");
+  expect(captured.runtime_env).toBe("GH_TOKEN");
 });
 ```
+
+If the existing capture helper has a different shape than `fetcher.mockImplementation((input, init) => ...)`, adapt the capture to that shape but keep the two assertions on `runtime_tools` / `runtime_env`. Apply the same correction to the employee create test (`create.test.tsx`): no factory, `userEvent` direct, and assert the create payload includes `environment_variables`.
 
 - [ ] **Step 4: Implement skill UI**
 
@@ -1643,14 +1849,14 @@ function splitDependencyInput(value: string): string[] {
 
 - [ ] **Step 5: Add employee create env UI**
 
-In `apps/web/src/features/employees/create.tsx`, add repeatable env rows with:
+`apps/web/src/features/employees/create.tsx` is a **4-step wizard** (`身份` / `能力` / `治理` / `运行`), not a single form, and it assembles `CreateDigitalEmployeeInput` across steps. Add the repeatable env-var editor in the **`运行` step** (alongside runtime node / provider / session policy), and thread the collected rows into the final assembled `CreateDigitalEmployeeInput`. Each row has:
 
 - name input
 - value password input
 - sensitive checkbox default checked
 - remove button
 
-Payload field:
+Payload field (added to `CreateDigitalEmployeeInput` in `apps/web/src/lib/api/employees.ts`):
 
 ```ts
 environment_variables: envRows
@@ -1658,11 +1864,11 @@ environment_variables: envRows
   .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
 ```
 
-Add matching type field to `CreateDigitalEmployeeInput`.
+Add the matching `environment_variables?: { name: string; value: string; sensitive: boolean }[]` field to the `CreateDigitalEmployeeInput` type. Use the wizard's existing step-state pattern (do not introduce a parallel form store).
 
 - [ ] **Step 6: Add employee detail env summary**
 
-In `apps/web/src/features/employees/components/employee-capabilities-panel.tsx`, add a compact environment-variable section near the personal skills section. If the component becomes hard to read, create a local child component in the same file named `EmployeeEnvironmentPanel`.
+`EmployeeCapabilitiesPanel` (`apps/web/src/features/employees/components/employee-capabilities-panel.tsx`) is currently **orphaned** — `detail.tsx` does not render it. Before adding env UI, mount the panel on the detail page: render `<EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />` inside `EmployeeDetailView` (it fetches its own data by `employeeId`). Then add a compact environment-variable section to the panel near the existing 个人技能 section. If the panel becomes hard to read, create a local child component in the same file named `EmployeeEnvironmentPanel`.
 
 Render this table:
 
@@ -1689,12 +1895,12 @@ Use a compact badge or inline status text consistent with existing dashboard sty
 - [ ] **Step 8: Run Web tests**
 
 ```bash
-corepack pnpm --filter ./apps/web run test -- --run apps/web/src/features/skills/index.test.tsx
-corepack pnpm --filter ./apps/web run test -- --run apps/web/src/features/employees/create.test.tsx
+corepack pnpm --filter ./apps/web run test -- apps/web/src/features/skills/index.test.tsx
+corepack pnpm --filter ./apps/web run test -- apps/web/src/features/employees/create.test.tsx
 git diff --check
 ```
 
-Expected: tests pass.
+(`vitest-run.mjs` already forces run mode, so `--run` is redundant; the repo convention is `run test -- <file>`.) Expected: tests pass.
 
 - [ ] **Step 9: Commit**
 
@@ -1723,7 +1929,7 @@ go test ./apps/control-plane/internal/skill -count=1
 go test ./apps/control-plane/internal/employee -run 'Environment|Skill|CreateRun|StartSession' -count=1
 go test ./apps/control-plane/internal/api -run 'SkillRoutes|DigitalEmployeeEnvironmentVariableRoutes' -count=1
 cargo test --manifest-path apps/runtime-agent/Cargo.toml runtime_command_payload_test provider_command_test daemon_test
-corepack pnpm --filter ./apps/web run test -- --run apps/web/src/features/skills/index.test.tsx apps/web/src/features/employees/create.test.tsx
+corepack pnpm --filter ./apps/web run test -- apps/web/src/features/skills/index.test.tsx apps/web/src/features/employees/create.test.tsx
 corepack pnpm verify:contracts
 git diff --check
 ```
@@ -1765,8 +1971,8 @@ scripts/dev-services.sh status
 
 Smoke path:
 
-1. Configure `SUPERTEAM_ENV_ENCRYPTION_KEYS` and `SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID` for Control Plane.
-2. Configure Runtime with `RUNTIME_AGENT_TOOL_PROBE_NAMES=git,gh`.
+1. Configure env encryption in `apps/control-plane/config/config.yaml` under the `employeeEnv:` section (`keys: "v1:<base64-32-byte-key>"`, `activeKeyId: "v1"`); generate the key with `openssl rand -base64 32`. (Env overrides `SUPERTEAM_ENV_ENCRYPTION_KEYS` / `SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID` still work but yaml is the canonical source.)
+2. Do NOT set a static tool list — leave `RUNTIME_AGENT_TOOL_PROBE_NAMES` unset (baseline defaults empty). Instead assign a digital employee to the node whose bound skill declares `runtime_dependencies.tools=["gh"]`; the Control Plane injects `gh` into the heartbeat response and the Runtime Agent probes it within one heartbeat (~30s).
 3. Confirm `GET /api/v1/runtime/nodes/{nodeId}/capabilities` shows `capability_type=tool` for `gh`.
 4. Upload a skill with `runtime_dependencies.tools=["gh"]` and `runtime_dependencies.env=["GH_TOKEN"]`.
 5. Create or edit a digital employee with `GH_TOKEN`.
@@ -1832,10 +2038,20 @@ git commit -m "docs: note CLI skill runtime dependency support"
   - Skill `runtime_dependencies`: Task 3 and Task 7.
   - Runtime `tool` capability: Task 4.
   - Encrypted employee env storage and key management: Task 1 and Task 2.
-  - Run preflight dependency validation and payload filling: Task 5.
-  - Runtime Provider env injection: Task 6.
-  - Console flows: Task 7.
+  - Create-time env saving (Step 5b): Task 2.
+  - Run preflight dependency validation, `pending_runtime`, and payload filling: Task 5.
+  - Runtime Provider env injection **and** Runtime-side redaction (design §8.3): Task 6.
+  - Console flows (incl. mounting the previously-orphaned capabilities panel): Task 7.
   - Verification and real smoke: Task 8.
-- Placeholder scan: no unresolved placeholder markers remain in the plan.
+- Codebase alignment (verified before revision):
+  - The run service reads skills/capabilities/env via three **collaborator interfaces** wired with setters (`RuntimeSkillLister` / `RuntimeCapabilityLister` / `RuntimeEnvironmentLister`) — these methods are **not** added to `DigitalEmployeeRunRepository`. `ListSkillsForRuntime` is reused from `skill.PgRepository`/`SkillLister`; `ListRuntimeCapabilitiesForNode` is reused from `runtime.RuntimeCapabilityReadRepository`.
+  - Composition root is `app.go` `NewContainerWithConfig(stores, cfg)` — this is where the env codec is built from `cfg.EmployeeEnv` and injected into `employeeService`, and where the three run-service lister setters are called.
+  - Tool probing is **dynamic**, not a static config list: CP scans the DB once (`ListRequiredToolsForNode`) for the CLI tools required by skills bound to the DEs mounted on the node, injects the list into the heartbeat response, and the agent re-probes `baseline ∪ required` each heartbeat and re-upserts. `tools.probe_names` is an optional always-probe baseline only (default empty). `ListRuntimeCapabilitiesForNode` is relaxed to include `capability_type='tool'` (it was provider-only — a latent bug that would have hidden all tool caps from preflight).
+  - Encryption keys live in `config.yaml` as an `employeeEnv:` section (`keys`, `activeKeyId`), loaded via `config.LoadFromFile`/`applyEnv` exactly like `objectStore`/`planner`; `SUPERTEAM_ENV_ENCRYPTION_KEYS` / `SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID` remain as env overrides, not the canonical source. Startup fails if the section is missing or the active key is unknown.
+  - Skill dependencies are a projection over the JSONB `metadata` column: `Skill`/`SkillRuntimeRecord` gain a `Metadata` field and `RuntimeDependencies`; every scan site and `UpsertSkillPackage` are updated (Task 3 Step 4). The `ALTER TABLE ... metadata SET DEFAULT` is redundant vs migration `009`.
+  - `build_capabilities` is made `pub` (not `#[cfg(test)]`) so integration tests in `tests/` can call it (Task 4 Step 5).
+  - New `RunSpec`/`ProviderRequest` `environment` fields carry `#[serde(default)]`; `RunSnapshot` gains no env field.
+  - `RuntimeEnvironmentVariablePayload` is defined once (Task 2) and reused by the env service, run service, and Runtime payload.
+- Placeholder scan: no unresolved placeholders remain — the earlier `<composition root>` marker is resolved to `apps/control-plane/internal/app/app.go` (`NewContainerWithConfig`).
 - Type consistency: use `runtime_dependencies`, `environment`, `EnvironmentVariableSummary`, `SkillRuntimeDependencies`, and `RuntimeEnvironmentVariablePayload` consistently across tasks.
 - Scope check: project source-directory access, CLI installation UI, CLI version checks, MCP merge logic, and KMS/Vault integration stay outside this plan.
