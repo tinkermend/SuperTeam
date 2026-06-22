@@ -79,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-22 18:25：重构上传技能页 `/skills/upload` 的单页工作台视觉布局：参考新原型改为顶部 zip 包状态带、左侧技能信息与运行依赖声明、右侧发布摘要卡片；保留技能包描述名称由 zip 文件名生成、技能中文名称单独填写、CLI/环境变量仅声明不检测的业务语义，并修复 CLI/环境变量逐字输入时 token 被截断为单字符的问题。验证：`corepack pnpm --filter ./apps/web run test`、`corepack pnpm --filter ./apps/web typecheck`、`git diff --check` 通过；本地 Web/Control Plane/Runtime 服务运行中，真实 Chromium 登录 `admin/admin` 后打开 `/skills/upload`，选择示例 zip 并填写依赖声明，桌面与 390px 移动端无横向溢出，逐字输入 `gh,node` 与 `GH_TOKEN,OPENAI_API_KEY` 可正确保留完整 token。
 - 2026-06-18 15:45：对齐流程编排工作台与真实期望的偏移，移除流程详情页左侧「流程实例」侧栏（其操作顺序信息已在右侧流程图中渲染，属冗余），详情页改为全宽流程图；流程图节点详情由原右侧固定卡片改为点击「数字人执行任务」节点才弹出的居中弹窗 Dialog，进入详情页不再预选节点、弹窗不自动弹出，点击画布空白或关闭按钮收起弹窗；同步删除已无消费者的 `workflow-instance-list.tsx` 与节点检查器的固定卡片分支，并更新相关组件测试。
 - 2026-06-17 04:02：项目创建抽屉改为基于当前登录人授权范围选择团队，加载 `/api/auth/me` 与用户可选团队范围，只允许提交 active 授权团队，并默认使用当前用户作为项目负责人。
 - 2026-06-17 02:41：重做用户管理中新建人类平台用户流程，改为抽屉式表单，直接设置用户名、名称、密码、内置头像资产和多选可选团队，并在用户详情中展示可选团队范围。

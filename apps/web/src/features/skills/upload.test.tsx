@@ -122,6 +122,25 @@ describe("SkillUploadView", () => {
     await expect.element(publishButton).not.toBeDisabled();
   });
 
+  it("shows a compact package status band and ready publish summary", async () => {
+    const screen = await renderUploadView();
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill-api-doc.zip", { type: "application/zip" }));
+    await userEvent.fill(screen.getByLabelText("技能中文名称"), "接口文档生成");
+    await userEvent.fill(screen.getByLabelText("技能描述"), "根据 OpenAPI/Swagger 规范自动生成接口文档与请求示例，支持多语言 SDK 示例输出。");
+    await userEvent.fill(screen.getByLabelText("标签"), "文档生成,API,OpenAPI");
+    await userEvent.fill(screen.getByLabelText("CLI 依赖"), "gh,node");
+    await userEvent.fill(screen.getByLabelText("环境变量"), "GH_TOKEN,OPENAI_API_KEY");
+
+    await expect.element(screen.getByText("ZIP 已选择")).toBeVisible();
+    await expect.element(screen.getByText("包含 SKILL.md")).toBeVisible();
+    await expect.element(screen.getByText("服务端发布校验")).toBeVisible();
+    await expect.element(screen.getByText("可发布")).toBeVisible();
+    await expect.element(screen.getByText("元数据与依赖声明已就绪")).toBeVisible();
+    await expect.element(screen.getByText("skill-api-doc.zip（3 B）")).toBeVisible();
+    await expect.element(screen.getByText("4 项")).toBeVisible();
+  });
+
   it("submits the Chinese name and declaration-only dependencies without environment value checks", async () => {
     const captured: Record<string, FormDataEntryValue | null> = {};
     const onUploaded = vi.fn();
@@ -155,5 +174,26 @@ describe("SkillUploadView", () => {
     expect(captured.package_name).toBeNull();
     expect(document.body.textContent).not.toContain("GH_TOKEN 需目标配置");
     expect(onUploaded).toHaveBeenCalledWith(uploadedSkill);
+  });
+
+  it("keeps dependency tokens intact when users type them character by character", async () => {
+    const captured: Record<string, FormDataEntryValue | null> = {};
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const formData = init?.body as FormData;
+      captured.runtime_tools = formData.get("runtime_tools");
+      captured.runtime_env = formData.get("runtime_env");
+      return jsonResponse(uploadedSkill, 201);
+    });
+    const screen = await renderUploadView({ fetcher });
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill-api-doc.zip", { type: "application/zip" }));
+    await userEvent.fill(screen.getByLabelText("技能中文名称"), "接口文档生成");
+    await userEvent.type(screen.getByLabelText("CLI 依赖"), "gh,node");
+    await userEvent.type(screen.getByLabelText("环境变量"), "GH_TOKEN,OPENAI_API_KEY");
+    await userEvent.click(screen.getByRole("button", { name: "发布到技能市场" }));
+
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(captured.runtime_tools).toBe("gh,node");
+    expect(captured.runtime_env).toBe("GH_TOKEN,OPENAI_API_KEY");
   });
 });
