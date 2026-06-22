@@ -30,44 +30,48 @@ vi.mock("@tanstack/react-router", () => ({
 
 const skillsFixture = [
   {
-    id: "skill-diagnose",
+    id: "skill-requirement",
     tenant_id: "tenant-1",
-    slug: "diagnose",
-    name: "diagnose",
-    description: "系统化诊断流程",
-    version: "v1.0.0",
+    slug: "requirement-clarifier",
+    name: "需求澄清助手",
+    description: "基于结构化提问流程，输出需求澄清记录",
+    version: "1.3.0",
     source: "upload",
     risk_level: "low",
     icon_key: "stethoscope",
     color_token: "cyan",
-    tags: ["诊断", "测试", "自动化"],
-    archive_object_ref: "s3://bucket/skills/diagnose.zip",
-    archive_filename: "diagnose.zip",
+    tags: ["需求分析", "沟通协作", "交付"],
+    archive_object_ref: "s3://bucket/skills/requirement-clarifier.zip",
+    archive_filename: "requirement-clarifier.zip",
     archive_size_bytes: 4096,
     archive_checksum_sha256: "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
     archive_file_count: 3,
     created_by: "user-1",
     created_by_name: "开发管理员",
-    team_bindings: [{ team_id: "team-1", team_name: "平台工程" }],
+    team_bindings: [
+      { team_id: "team-1", team_name: "平台工程" },
+      { team_id: "team-2", team_name: "产品团队" },
+    ],
     agent_bindings: [
       { agent_id: "agent-1", agent_name: "需求澄清 Agent", team_name: "产品团队", status: "enabled" },
+      { agent_id: "agent-2", agent_name: "项目协调 Agent", team_name: "平台工程", status: "enabled" },
     ],
     runtime_dependencies: { tools: [], env: [] },
   },
   {
-    id: "skill-tdd",
+    id: "skill-api-doc",
     tenant_id: "tenant-1",
-    slug: "tdd",
-    name: "tdd",
-    description: "测试优先流程",
-    version: "v1.0.0",
+    slug: "api-doc-generator",
+    name: "接口文档生成",
+    description: "根据 OpenAPI 规范生成接口文档与示例",
+    version: "1.2.1",
     source: "upload",
     risk_level: "medium",
     icon_key: "flask",
     color_token: "emerald",
-    tags: ["测试"],
-    archive_object_ref: "s3://bucket/skills/tdd.zip",
-    archive_filename: "tdd.zip",
+    tags: ["文档生成", "API", "规范"],
+    archive_object_ref: "s3://bucket/skills/api-doc.zip",
+    archive_filename: "api-doc.zip",
     archive_size_bytes: 2048,
     archive_checksum_sha256: "def456abc123def456abc123def456abc123def456abc123def456abc123def4567",
     archive_file_count: 1,
@@ -75,6 +79,34 @@ const skillsFixture = [
     created_by_name: "开发管理员",
     team_bindings: [],
     agent_bindings: [],
+    runtime_dependencies: { tools: [], env: [] },
+  },
+  {
+    id: "skill-incident-review",
+    tenant_id: "tenant-1",
+    slug: "incident-review",
+    name: "生产事故复盘",
+    description: "结构化复盘生产事故，输出根因与改进建议",
+    version: "1.0.2",
+    source: "upload",
+    risk_level: "high",
+    icon_key: "shield-check",
+    color_token: "violet",
+    tags: ["运维", "复盘", "高风险"],
+    archive_object_ref: "s3://bucket/skills/incident-review.zip",
+    archive_filename: "incident-review.zip",
+    archive_size_bytes: 8192,
+    archive_checksum_sha256: "fed456abc123def456abc123def456abc123def456abc123def456abc123def456",
+    archive_file_count: 2,
+    created_by: "user-1",
+    created_by_name: "开发管理员",
+    team_bindings: [
+      { team_id: "team-1", team_name: "平台工程" },
+      { team_id: "team-2", team_name: "安全治理" },
+    ],
+    agent_bindings: [
+      { agent_id: "agent-3", agent_name: "运维复盘 Agent", team_name: "平台工程", status: "enabled" },
+    ],
     runtime_dependencies: { tools: [], env: [] },
   },
 ] satisfies Skill[];
@@ -99,16 +131,17 @@ function createSkillsFetcher() {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     if (url.pathname === "/api/v1/skills" && method === "GET") {
-      return jsonResponse(skillsFixture);
+      const q = url.searchParams.get("q")?.trim() ?? "";
+      const rows = q
+        ? skillsFixture.filter((skill) => `${skill.name} ${skill.description} ${skill.tags.join(" ")}`.includes(q))
+        : skillsFixture;
+      return jsonResponse(rows);
     }
     if (url.pathname === "/api/v1/teams" && method === "GET") {
       return jsonResponse(teamsFixture);
     }
   if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse([]);
-    }
-    if (url.pathname.startsWith("/api/v1/skills/skill-diagnose") && method === "DELETE") {
-      return new Response(null, { status: 204 });
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -123,15 +156,22 @@ async function renderSkillsView(fetcher = createSkillsFetcher()) {
 }
 
 describe("SkillsView", () => {
-  it("renders skill list with uploader info and archive metadata", async () => {
+  it("renders the skill market homepage with metric strip and action buttons", async () => {
     const screen = await renderSkillsView();
 
-    await expect.element(screen.getByRole("heading", { name: "技能管理" })).toBeVisible();
-    await expect.element(screen.getByText("开发管理员")).toBeVisible();
-    await expect.element(screen.getByText("1 个团队")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "技能市场" })).toBeVisible();
+    await expect.element(screen.getByText("发现、校验并安装技能到团队或数字员工")).toBeVisible();
+    await expect.element(screen.getByText("可安装")).toBeVisible();
+    await expect.element(screen.getByText("需审批")).toBeVisible();
+    await expect.element(screen.getByText("团队绑定")).toBeVisible();
+    await expect.element(screen.getByText("数字员工绑定")).toBeVisible();
+    await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
+    await expect.element(screen.getByRole("columnheader", { name: "风险" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
   });
 
-  it("uses router navigation for the upload workspace instead of opening an upload dialog", async () => {
+  it("uses router navigation for the upload page without designing that flow here", async () => {
     const screen = await renderSkillsView();
 
     const uploadLink = screen.getByRole("link", { name: "上传技能" });
@@ -140,17 +180,17 @@ describe("SkillsView", () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("deletes a skill after confirmation", async () => {
+  it("filters the market by search text while keeping the table chrome visible", async () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "删除技能 diagnose" }));
-    await expect.element(screen.getByRole("dialog", { name: "删除技能" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await userEvent.fill(screen.getByRole("searchbox", { name: "搜索技能" }), "文档");
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills/skill-diagnose",
-      expect.objectContaining({ method: "DELETE" }),
+      "http://control-plane.local/api/v1/skills?q=%E6%96%87%E6%A1%A3",
+      expect.objectContaining({ method: "GET" }),
     );
+    await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
+    await expect.element(screen.getByText("接口文档生成")).toBeVisible();
   });
 });
