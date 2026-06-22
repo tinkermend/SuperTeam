@@ -795,6 +795,36 @@ func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t 
 	require.Empty(t, repo.decisionRequests, "idempotent review must not create a second decision request")
 }
 
+func TestProjectStoreRequestProjectAcceptanceReviewReturnsDecisionWhenInboxProjectionFails(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	inboxErr := errors.New("inbox projection unavailable")
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{upsertErr: inboxErr}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID, ProjectID: projectID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.ProjectStatusAcceptance, repo.projectRecord.Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, repo.decisionRequests[0].ID, result.ID)
+	require.Len(t, inbox.upserts, 1)
+}
+
 func TestProjectStoreRequestProjectAcceptanceReviewCreatesFinalDemandSummary(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -858,9 +888,10 @@ func TestProjectStoreRequestProjectAcceptanceReviewCreatesFinalDemandSummary(t *
 	require.NotEqual(t, uuid.Nil, result.ID)
 	require.Equal(t, project.ProjectStatusAcceptance, repo.projectRecord.Status)
 	require.Len(t, repo.demandSummaries, 1)
-	require.Len(t, projectStoreEventsByType(repo.events, project.ProjectEventDemandSummaryCreated), 1)
+	summaryEvents := projectStoreEventsByType(repo.events, project.ProjectEventDemandSummaryCreated)
+	require.Len(t, summaryEvents, 1)
 	summary := repo.demandSummaries[0]
-	require.NotNil(t, summary.CreatedEventID)
+	require.Equal(t, summary.ID.String(), summaryEvents[0].Payload["summary_id"])
 	require.Equal(t, string(project.ProjectDemandStatusCompleted), summary.Status)
 	require.Contains(t, summary.Conclusion, "completed")
 	payload := summary.SummaryPayload
@@ -879,6 +910,51 @@ func TestProjectStoreRequestProjectAcceptanceReviewCreatesFinalDemandSummary(t *
 	requirePayloadListContains(t, payload, "remaining_risks", "summary", "仍需人工验收")
 	requirePayloadListContains(t, payload, "suggested_next_steps", "summary", "负责人完成最终验收")
 	require.Len(t, repo.decisionRequests, 1, "summary generation must not replace human-owned project acceptance")
+}
+
+func TestProjectStoreRequestProjectAcceptanceReviewSummarizesMoreThanOneHundredDemandTasks(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	var lastTaskID uuid.UUID
+	tasks := make([]project.ProjectTask, 0, 105)
+	for i := 0; i < 105; i++ {
+		taskID := uuid.New()
+		if i == 104 {
+			lastTaskID = taskID
+		}
+		tasks = append(tasks, projectStoreTask(tenantID, projectID, demandID, jobID, routeID, taskID, project.ProjectTaskStatusCompleted))
+	}
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+		demands: []project.ProjectDemand{{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "超过一百个任务的需求",
+			Status:    project.ProjectDemandStatusCompleted,
+		}},
+		tasks: tasks,
+	}
+	store := NewProjectStoreWithApprovals(repo, &projectStoreApprovalCreator{})
+
+	_, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID, ProjectID: projectID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.demandSummaries, 1)
+	taskStatuses := payloadListItems(repo.demandSummaries[0].SummaryPayload["task_statuses"])
+	require.Len(t, taskStatuses, 105)
+	requirePayloadListContains(t, repo.demandSummaries[0].SummaryPayload, "task_statuses", "task_id", lastTaskID.String())
 }
 
 func TestProjectStoreRequestProjectAcceptanceReviewSkipsExistingDemandSummary(t *testing.T) {
@@ -956,6 +1032,7 @@ func TestProjectStoreRequestProjectAcceptanceReviewStopsWhenDemandSummaryCreatio
 	require.Equal(t, project.ProjectStatusRunning, repo.projectRecord.Status)
 	require.Empty(t, repo.decisionRequests)
 	require.Empty(t, repo.demandSummaries)
+	require.Empty(t, projectStoreEventsByType(repo.events, project.ProjectEventDemandSummaryCreated))
 }
 
 func TestProjectStoreRequestProjectAcceptanceReviewSummarizesFailedAndCancelledDemandTasks(t *testing.T) {
@@ -3432,6 +3509,30 @@ func (r *projectStoreMemoryRepository) ListProjectTasksByCoordinationJob(ctx con
 		if task.TenantID == tenantID && task.ProjectID == projectID && task.CoordinationJobID != nil && *task.CoordinationJobID == coordinationJobID {
 			tasks = append(tasks, task)
 		}
+	}
+	return tasks, nil
+}
+
+func (r *projectStoreMemoryRepository) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]project.ProjectTask, error) {
+	tasks := make([]project.ProjectTask, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		if task.TenantID != tenantID || task.ProjectID != projectID {
+			continue
+		}
+		if status != nil && task.Status != *status {
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if int(offset) >= len(tasks) {
+		return []project.ProjectTask{}, nil
+	}
+	tasks = tasks[offset:]
+	if limit > 0 && int(limit) < len(tasks) {
+		tasks = tasks[:limit]
 	}
 	return tasks, nil
 }

@@ -1271,7 +1271,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 	}
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
-			return DecisionRequestResult{}, err
+			return DecisionRequestResult{ID: decision.ID}, nil
 		}
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
@@ -1299,12 +1299,17 @@ func (s *ProjectStore) ensureFinalDemandSummariesForAcceptance(ctx context.Conte
 }
 
 func (s *ProjectStore) ensureFinalDemandSummary(ctx context.Context, demand project.ProjectDemand) error {
-	if _, err := s.repository.GetLatestProjectDemandSummary(ctx, demand.TenantID, demand.ProjectID, demand.ID); err == nil {
+	idempotencyKey := "final-demand-summary:" + demand.ID.String()
+	if latest, err := s.repository.GetLatestProjectDemandSummary(ctx, demand.TenantID, demand.ProjectID, demand.ID); err == nil {
+		if latest.IdempotencyKey == idempotencyKey {
+			_, err = s.ensureFinalDemandSummaryCreatedEvent(ctx, demand, latest, idempotencyKey)
+			return err
+		}
 		return nil
 	} else if !errors.Is(err, project.ErrProjectNotFound) {
 		return err
 	}
-	tasks, err := s.repository.ListDemandLaunchProjectTasks(ctx, demand.TenantID, demand.ProjectID, demand.ID, 100)
+	tasks, err := s.listDemandSummaryTasks(ctx, demand.TenantID, demand.ProjectID, demand.ID)
 	if err != nil {
 		return err
 	}
@@ -1317,16 +1322,7 @@ func (s *ProjectStore) ensureFinalDemandSummary(ctx context.Context, demand proj
 		taskFacts = append(taskFacts, demandSummaryTaskFact{Task: task, LatestResult: latestResult})
 	}
 	payload, conclusion := buildFinalDemandSummaryPayload(demand, taskFacts)
-	idempotencyKey := "final-demand-summary:" + demand.ID.String()
-	event, err := s.ensureCoordinatorProjectEvent(ctx, demand.TenantID, demand.ProjectID, project.ProjectEventDemandSummaryCreated, "demand_summary:"+demand.ID.String(), "需求最终总结已生成", map[string]any{
-		"demand_id":       demand.ID.String(),
-		"demand_status":   string(demand.Status),
-		"idempotency_key": idempotencyKey,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = s.repository.CreateProjectDemandSummary(ctx, project.CreateProjectDemandSummaryRequest{
+	summary, err := s.repository.CreateProjectDemandSummary(ctx, project.CreateProjectDemandSummaryRequest{
 		TenantID:           demand.TenantID,
 		ProjectID:          demand.ProjectID,
 		DemandID:           demand.ID,
@@ -1335,9 +1331,40 @@ func (s *ProjectStore) ensureFinalDemandSummary(ctx context.Context, demand proj
 		SummaryPayload:     payload,
 		AcceptanceRequired: true,
 		IdempotencyKey:     idempotencyKey,
-		CreatedEventID:     &event.ID,
 	})
+	if err != nil {
+		return err
+	}
+	_, err = s.ensureFinalDemandSummaryCreatedEvent(ctx, demand, summary, idempotencyKey)
 	return err
+}
+
+func (s *ProjectStore) ensureFinalDemandSummaryCreatedEvent(ctx context.Context, demand project.ProjectDemand, summary project.ProjectDemandSummary, idempotencyKey string) (project.ProjectEvent, error) {
+	return s.ensureCoordinatorProjectEvent(ctx, demand.TenantID, demand.ProjectID, project.ProjectEventDemandSummaryCreated, "demand_summary:"+demand.ID.String(), "需求最终总结已生成", map[string]any{
+		"demand_id":       demand.ID.String(),
+		"demand_status":   string(demand.Status),
+		"summary_id":      summary.ID.String(),
+		"idempotency_key": idempotencyKey,
+	})
+}
+
+func (s *ProjectStore) listDemandSummaryTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]project.ProjectTask, error) {
+	const pageLimit int32 = 100
+	tasks := make([]project.ProjectTask, 0)
+	for offset := int32(0); ; offset += pageLimit {
+		page, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, pageLimit, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, task := range page {
+			if task.DemandID != nil && *task.DemandID == demandID {
+				tasks = append(tasks, task)
+			}
+		}
+		if len(page) < int(pageLimit) {
+			return tasks, nil
+		}
+	}
 }
 
 func (s *ProjectStore) latestTaskResult(ctx context.Context, task project.ProjectTask) (*project.ProjectTaskResult, error) {
