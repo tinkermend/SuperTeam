@@ -17,8 +17,12 @@ import (
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
-const maxProjectEventAppendAttempts = 3
-const maxProjectConfigRevisionAttempts = 3
+const (
+	maxProjectEventAppendAttempts     = 3
+	maxProjectConfigRevisionAttempts  = 3
+	defaultProjectTaskResultListLimit = int32(50)
+	maxProjectTaskResultListLimit     = int32(200)
+)
 
 type PgRepository struct {
 	q  *queries.Queries
@@ -995,17 +999,31 @@ func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordPr
 }
 
 func (r *PgRepository) ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error) {
+	limit, offset := normalizeProjectTaskResultPagination(req.Limit, req.Offset)
 	rows, err := r.q.ListProjectTaskResults(ctx, queries.ListProjectTaskResultsParams{
 		TenantID:      req.TenantID,
 		ProjectID:     req.ProjectID,
 		ProjectTaskID: req.ProjectTaskID,
-		Limit:         req.Limit,
-		Offset:        req.Offset,
+		Limit:         limit,
+		Offset:        offset,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return projectTaskResultsFromRecords(rows)
+}
+
+func normalizeProjectTaskResultPagination(limit, offset int32) (int32, int32) {
+	if limit <= 0 {
+		limit = defaultProjectTaskResultListLimit
+	}
+	if limit > maxProjectTaskResultListLimit {
+		limit = maxProjectTaskResultListLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 func (r *PgRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
@@ -1022,16 +1040,32 @@ func (r *PgRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID
 }
 
 func (r *PgRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
-	row, err := r.q.LinkProjectTaskResultDecisionRequest(ctx, queries.LinkProjectTaskResultDecisionRequestParams{
-		DecisionRequestID: decisionRequestID,
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		ID:                resultID,
+	return withProjectQueries(ctx, r, "project task result decision request link", func(q *queries.Queries) (ProjectTaskResult, error) {
+		row, err := q.LinkProjectTaskResultDecisionRequest(ctx, queries.LinkProjectTaskResultDecisionRequestParams{
+			DecisionRequestID: decisionRequestID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			ID:                resultID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskResult{}, ErrProjectConflict
+			}
+			return ProjectTaskResult{}, err
+		}
+		if _, err := q.LinkDecisionRequestProjectTaskResult(ctx, queries.LinkDecisionRequestProjectTaskResultParams{
+			ProjectTaskResultID: resultID,
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			DecisionRequestID:   decisionRequestID,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskResult{}, ErrProjectConflict
+			}
+			return ProjectTaskResult{}, err
+		}
+		return projectTaskResultFromRecord(row)
 	})
-	if err != nil {
-		return ProjectTaskResult{}, projectRepositoryError(err)
-	}
-	return projectTaskResultFromRecord(row)
 }
 
 func (r *PgRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error) {
@@ -1042,7 +1076,10 @@ func (r *PgRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, te
 		ID:             resultID,
 	})
 	if err != nil {
-		return ProjectTaskResult{}, projectRepositoryError(err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTaskResult{}, ErrProjectConflict
+		}
+		return ProjectTaskResult{}, err
 	}
 	return projectTaskResultFromRecord(row)
 }

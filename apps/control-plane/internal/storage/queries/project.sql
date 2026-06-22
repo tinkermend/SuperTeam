@@ -1562,6 +1562,29 @@ SET decision_request_id = sqlc.arg('decision_request_id')::uuid
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = sqlc.arg('decision_request_id')::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_decision_requests
+    WHERE project_decision_requests.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_decision_requests.project_id = sqlc.arg('project_id')::uuid
+      AND project_decision_requests.id = sqlc.arg('decision_request_id')::uuid
+  )
+RETURNING *;
+
+-- name: LinkDecisionRequestProjectTaskResult :one
+UPDATE project_decision_requests
+SET project_task_result_id = sqlc.arg('project_task_result_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('decision_request_id')::uuid
+  AND (project_task_result_id IS NULL OR project_task_result_id = sqlc.arg('project_task_result_id')::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_task_results
+    WHERE project_task_results.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_task_results.project_id = sqlc.arg('project_id')::uuid
+      AND project_task_results.id = sqlc.arg('project_task_result_id')::uuid
+  )
 RETURNING *;
 
 -- name: LinkProjectTaskResultRevisionTask :one
@@ -1570,6 +1593,13 @@ SET revision_task_id = sqlc.arg('revision_task_id')::uuid
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND (revision_task_id IS NULL OR revision_task_id = sqlc.arg('revision_task_id')::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_tasks
+    WHERE project_tasks.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_tasks.project_id = sqlc.arg('project_id')::uuid
+      AND project_tasks.id = sqlc.arg('revision_task_id')::uuid
+  )
 RETURNING *;
 
 -- name: CreateProjectDemandSummary :one

@@ -220,6 +220,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
+	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
 	LinkProjectTaskDispatchGateAttempt(ctx context.Context, arg LinkProjectTaskDispatchGateAttemptParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context, arg LinkProjectTaskDispatchGateDecisionRequestParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskLatestResult(ctx context.Context, arg LinkProjectTaskLatestResultParams) (ProjectTask, error)

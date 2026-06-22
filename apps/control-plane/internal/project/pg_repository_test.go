@@ -468,6 +468,169 @@ func TestPgRepositoryCreateProjectDemandSummaryIsIdempotent(t *testing.T) {
 	require.Equal(t, []any{"persist-result"}, latest.SummaryPayload["tasks"])
 }
 
+func TestProjectTaskResultPaginationDefaultsCapsAndNormalizesOffset(t *testing.T) {
+	limit, offset := normalizeProjectTaskResultPagination(0, -5)
+	require.Equal(t, int32(50), limit)
+	require.Equal(t, int32(0), offset)
+
+	limit, offset = normalizeProjectTaskResultPagination(500, 7)
+	require.Equal(t, int32(200), limit)
+	require.Equal(t, int32(7), offset)
+
+	limit, offset = normalizeProjectTaskResultPagination(25, 3)
+	require.Equal(t, int32(25), limit)
+	require.Equal(t, int32(3), offset)
+}
+
+func TestProjectTaskResultLinksAreConsistencySafeQueries(t *testing.T) {
+	body, err := os.ReadFile("../storage/queries/project.sql")
+	require.NoError(t, err)
+	sql := string(body)
+
+	for _, fragment := range []string{
+		"-- name: LinkProjectTaskResultDecisionRequest :one",
+		"AND (decision_request_id IS NULL OR decision_request_id = sqlc.arg('decision_request_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_decision_requests",
+		"project_decision_requests.tenant_id = sqlc.arg('tenant_id')::uuid",
+		"project_decision_requests.project_id = sqlc.arg('project_id')::uuid",
+		"project_decision_requests.id = sqlc.arg('decision_request_id')::uuid",
+		"-- name: LinkDecisionRequestProjectTaskResult :one",
+		"SET project_task_result_id = sqlc.arg('project_task_result_id')::uuid",
+		"AND (project_task_result_id IS NULL OR project_task_result_id = sqlc.arg('project_task_result_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_task_results",
+		"-- name: LinkProjectTaskResultRevisionTask :one",
+		"AND (revision_task_id IS NULL OR revision_task_id = sqlc.arg('revision_task_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_tasks",
+		"project_tasks.tenant_id = sqlc.arg('tenant_id')::uuid",
+		"project_tasks.project_id = sqlc.arg('project_id')::uuid",
+		"project_tasks.id = sqlc.arg('revision_task_id')::uuid",
+	} {
+		require.Contains(t, sql, fragment)
+	}
+}
+
+func TestProjectTaskResultLinksAreIdempotentAndConflictSafe(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		Title:                 "result link source",
+		Status:                ProjectTaskStatusPlanned,
+		RequiresHumanApproval: true,
+	})
+	require.NoError(t, err)
+	result, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    task.ID,
+		ResultStatus:     TaskResultStatusRevisionNeeded,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionRevisionTask,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusRevisionNeeded,
+			Summary: "需要修订",
+		},
+		IdempotencyKey: "link-result-1",
+	})
+	require.NoError(t, err)
+
+	revisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &task.ID,
+	})
+	require.NoError(t, err)
+	linkedRevision, err := repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, revisionTask.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedRevision.RevisionTaskID)
+	require.Equal(t, revisionTask.ID, *linkedRevision.RevisionTaskID)
+	linkedRevision, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, revisionTask.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedRevision.RevisionTaskID)
+	require.Equal(t, revisionTask.ID, *linkedRevision.RevisionTaskID)
+	otherRevisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "other revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &task.ID,
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, otherRevisionTask.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	taskID := task.ID
+	decision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	linkedDecision, err := repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, decision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedDecision.DecisionRequestID)
+	require.Equal(t, decision.ID, *linkedDecision.DecisionRequestID)
+	linkedDecision, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, decision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedDecision.DecisionRequestID)
+	require.Equal(t, decision.ID, *linkedDecision.DecisionRequestID)
+
+	otherDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review result differently",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, otherDecision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	secondResult, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    task.ID,
+		ResultStatus:     TaskResultStatusBlocked,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionBlockedWaitingHuman,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待人工判断",
+		},
+		IdempotencyKey: "link-result-2",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, secondResult.ID, decision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+	freshDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review second result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	linkedSecond, err := repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, secondResult.ID, freshDecision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedSecond.DecisionRequestID)
+	require.Equal(t, freshDecision.ID, *linkedSecond.DecisionRequestID)
+}
+
 func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

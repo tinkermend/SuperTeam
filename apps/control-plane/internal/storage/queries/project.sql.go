@@ -2989,6 +2989,62 @@ func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetPro
 	return runtime_node_id, err
 }
 
+const LinkDecisionRequestProjectTaskResult = `-- name: LinkDecisionRequestProjectTaskResult :one
+UPDATE project_decision_requests
+SET project_task_result_id = $1::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND (project_task_result_id IS NULL OR project_task_result_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_task_results
+    WHERE project_task_results.tenant_id = $2::uuid
+      AND project_task_results.project_id = $3::uuid
+      AND project_task_results.id = $1::uuid
+  )
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+`
+
+type LinkDecisionRequestProjectTaskResultParams struct {
+	ProjectTaskResultID uuid.UUID `json:"project_task_result_id"`
+	TenantID            uuid.UUID `json:"tenant_id"`
+	ProjectID           uuid.UUID `json:"project_id"`
+	DecisionRequestID   uuid.UUID `json:"decision_request_id"`
+}
+
+func (q *Queries) LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, LinkDecisionRequestProjectTaskResult,
+		arg.ProjectTaskResultID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DecisionRequestID,
+	)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
+	)
+	return i, err
+}
+
 const LinkProjectTaskDispatchGateAttempt = `-- name: LinkProjectTaskDispatchGateAttempt :one
 UPDATE project_task_dispatch_gate_results
 SET attempt_id = $1::uuid,
@@ -3176,6 +3232,13 @@ SET decision_request_id = $1::uuid
 WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_decision_requests
+    WHERE project_decision_requests.tenant_id = $2::uuid
+      AND project_decision_requests.project_id = $3::uuid
+      AND project_decision_requests.id = $1::uuid
+  )
 RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
 `
 
@@ -3226,6 +3289,13 @@ SET revision_task_id = $1::uuid
 WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
+  AND (revision_task_id IS NULL OR revision_task_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_tasks
+    WHERE project_tasks.tenant_id = $2::uuid
+      AND project_tasks.project_id = $3::uuid
+      AND project_tasks.id = $1::uuid
+  )
 RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
 `
 

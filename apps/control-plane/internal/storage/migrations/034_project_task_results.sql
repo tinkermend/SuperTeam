@@ -1,3 +1,6 @@
+CREATE UNIQUE INDEX uq_project_execution_summaries_tenant_project_task_id
+    ON project_execution_summaries(tenant_id, project_id, project_task_id, id);
+
 CREATE TABLE project_task_results (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
@@ -27,7 +30,8 @@ CREATE TABLE project_task_results (
         FOREIGN KEY (tenant_id, project_task_id, attempt_id)
         REFERENCES project_task_attempts(tenant_id, project_task_id, id),
     CONSTRAINT fk_project_task_results_execution_summary
-        FOREIGN KEY (execution_summary_id) REFERENCES project_execution_summaries(id),
+        FOREIGN KEY (tenant_id, project_id, project_task_id, execution_summary_id)
+        REFERENCES project_execution_summaries(tenant_id, project_id, project_task_id, id),
     CONSTRAINT chk_project_task_results_status CHECK (
         result_status IN ('completed', 'revision_needed', 'blocked', 'failed', 'cancelled')
     ),
@@ -107,6 +111,12 @@ CREATE INDEX idx_project_decision_requests_task_result
     ON project_decision_requests(tenant_id, project_task_result_id)
     WHERE project_task_result_id IS NOT NULL;
 
+CREATE UNIQUE INDEX uq_project_demands_tenant_project_id
+    ON project_demands(tenant_id, project_id, id);
+
+CREATE UNIQUE INDEX uq_project_report_refs_tenant_project_id
+    ON project_report_refs(tenant_id, project_id, id);
+
 CREATE TABLE project_demand_summaries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
@@ -122,10 +132,11 @@ CREATE TABLE project_demand_summaries (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_project_demand_summaries_demand
-        FOREIGN KEY (demand_id)
-        REFERENCES project_demands(id) ON DELETE CASCADE,
+        FOREIGN KEY (tenant_id, project_id, demand_id)
+        REFERENCES project_demands(tenant_id, project_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_project_demand_summaries_report
-        FOREIGN KEY (report_ref_id) REFERENCES project_report_refs(id),
+        FOREIGN KEY (tenant_id, project_id, report_ref_id)
+        REFERENCES project_report_refs(tenant_id, project_id, id),
     CONSTRAINT chk_project_demand_summaries_status CHECK (
         status IN ('completed', 'blocked', 'failed', 'cancelled')
     )
