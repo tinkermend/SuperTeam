@@ -65,7 +65,6 @@ type TaskResultContract struct {
 	EvidenceRefs       []TaskResultRef               `json:"evidence_refs,omitempty"`
 	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
 	ChangesMade        []TaskResultChange            `json:"changes_made,omitempty"`
-	Changes            []TaskResultChange            `json:"changes,omitempty"`
 	Verification       []TaskResultVerification      `json:"verification,omitempty"`
 	Risks              []TaskResultRisk              `json:"risks,omitempty"`
 	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`

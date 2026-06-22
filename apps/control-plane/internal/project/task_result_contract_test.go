@@ -2,6 +2,7 @@ package project
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -436,6 +437,10 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 		"replan_request": {"reason": "plan constraint changed", "constraints": ["preserve runtime scope"]},
 		"blocker": {"resolution_prompt": "Provide missing credential or approve sanitized evidence."}
 	}`, string(payload))
+	require.NotContains(t, string(payload), `"changes"`)
+
+	_, hasLegacyChangesField := reflect.TypeOf(TaskResultContract{}).FieldByName("Changes")
+	require.False(t, hasLegacyChangesField)
 
 	retryable := false
 	partialPayload, err := json.Marshal(TaskResultContract{
