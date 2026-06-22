@@ -51,6 +51,13 @@ type Repository interface {
 	GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error)
+	RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error)
+	ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error)
+	LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error)
+	LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error)
+	LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error)
+	CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error)
+	GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error)
 	QueueProjectTaskWithAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error)
 	RecordPreDispatchGateResult(ctx context.Context, req RecordPreDispatchGateResultRequest) (PreDispatchGateResult, error)
 	GetPreDispatchGateResult(ctx context.Context, tenantID, projectID, gateResultID uuid.UUID) (PreDispatchGateResult, error)
@@ -242,6 +249,7 @@ type CreateProjectTaskRequest struct {
 	PlannedTaskKey            *string
 	TaskKind                  *string
 	StageIndex                *int32
+	RevisionOfTaskID          *uuid.UUID
 	AcceptedPlanRevisionID    *uuid.UUID
 	DecompositionClaimKey     *string
 	ExpectedOutputs           []any
@@ -249,6 +257,45 @@ type CreateProjectTaskRequest struct {
 	HandoffContract           map[string]any
 	PlannerMetadata           map[string]any
 	BlockedByTaskIDs          []uuid.UUID
+}
+
+type RecordProjectTaskResultRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      uuid.UUID
+	AttemptID          *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	ResultStatus       TaskResultStatus
+	ValidationStatus   string
+	Decision           TaskResultDecision
+	Contract           TaskResultContract
+	ValidationErrors   []string
+	ValidationWarnings []string
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
+	DecisionRequestID  *uuid.UUID
+	RevisionTaskID     *uuid.UUID
+}
+
+type ListProjectTaskResultsRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	Limit         int32
+	Offset        int32
+}
+
+type CreateProjectDemandSummaryRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	Status             string
+	Conclusion         string
+	SummaryPayload     map[string]any
+	ReportRefID        *uuid.UUID
+	AcceptanceRequired bool
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
 }
 
 type CreateProjectTaskGraphRequest struct {

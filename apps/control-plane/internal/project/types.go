@@ -319,6 +319,8 @@ type ProjectTask struct {
 	BlockedByTaskIDs           []uuid.UUID
 	CurrentAttemptID           *uuid.UUID
 	LatestDispatchGateResultID *uuid.UUID
+	LatestTaskResultID         *uuid.UUID
+	RevisionOfTaskID           *uuid.UUID
 	AcceptedPlanRevisionID     *uuid.UUID
 	DecompositionClaimKey      *string
 	AttemptCount               int32
@@ -333,6 +335,43 @@ type ProjectTask struct {
 	StatusChangedAt            time.Time
 	CreatedAt                  time.Time
 	UpdatedAt                  time.Time
+}
+
+type ProjectTaskResult struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      uuid.UUID
+	AttemptID          *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	ResultStatus       TaskResultStatus
+	ValidationStatus   string
+	Decision           TaskResultDecision
+	Contract           TaskResultContract
+	ValidationErrors   []string
+	ValidationWarnings []string
+	IdempotencyKey     string
+	DecisionRequestID  *uuid.UUID
+	RevisionTaskID     *uuid.UUID
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type ProjectDemandSummary struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	Status             string
+	Conclusion         string
+	SummaryPayload     map[string]any
+	ReportRefID        *uuid.UUID
+	AcceptanceRequired bool
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type ProjectTaskExecutionPacket struct {

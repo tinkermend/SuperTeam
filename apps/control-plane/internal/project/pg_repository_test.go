@@ -382,6 +382,92 @@ func TestCreateProjectTaskPersistsGraphContractFields(t *testing.T) {
 	require.Equal(t, "test", task.PlannerMetadata["planner"])
 }
 
+func TestPgRepositoryRecordProjectTaskResultIsIdempotentAndLinksLatest(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		Title:                 "持久化结果契约",
+		Status:                ProjectTaskStatusPlanned,
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	contract := TaskResultContract{Status: TaskResultStatusCompleted, Summary: "完成结果"}
+	first, err := repo.RecordProjectTaskResult(context.Background(), RecordProjectTaskResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		ResultStatus:       TaskResultStatusCompleted,
+		ValidationStatus:   "accepted",
+		Decision:           TaskResultDecisionCompleteAccepted,
+		Contract:           contract,
+		ValidationWarnings: []string{"manual-check"},
+		IdempotencyKey:     "attempt-result-1",
+	})
+	require.NoError(t, err)
+
+	second, err := repo.RecordProjectTaskResult(context.Background(), RecordProjectTaskResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		ResultStatus:       TaskResultStatusCompleted,
+		ValidationStatus:   "accepted",
+		Decision:           TaskResultDecisionCompleteAccepted,
+		Contract:           contract,
+		ValidationWarnings: []string{"manual-check"},
+		IdempotencyKey:     "attempt-result-1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, contract, second.Contract)
+	require.Equal(t, []string{"manual-check"}, second.ValidationWarnings)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: task.ID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, first.ID, results[0].ID)
+
+	updated, err := repo.LinkProjectTaskLatestResult(context.Background(), tenantID, projectID, task.ID, first.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updated.LatestTaskResultID)
+	require.Equal(t, first.ID, *updated.LatestTaskResultID)
+}
+
+func TestPgRepositoryCreateProjectDemandSummaryIsIdempotent(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+
+	req := CreateProjectDemandSummaryRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		DemandID:           demandID,
+		Status:             "completed",
+		Conclusion:         "需求已完成",
+		SummaryPayload:     map[string]any{"accepted": true, "tasks": []any{"persist-result"}},
+		AcceptanceRequired: true,
+		IdempotencyKey:     "demand-summary-1",
+	}
+	first, err := repo.CreateProjectDemandSummary(context.Background(), req)
+	require.NoError(t, err)
+	second, err := repo.CreateProjectDemandSummary(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+
+	latest, err := repo.GetLatestProjectDemandSummary(context.Background(), tenantID, projectID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, latest.ID)
+	require.Equal(t, true, latest.SummaryPayload["accepted"])
+	require.Equal(t, []any{"persist-result"}, latest.SummaryPayload["tasks"])
+}
+
 func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -3069,6 +3155,34 @@ func (r *memoryRepository) GetProjectTaskGraph(ctx context.Context, req GetProje
 	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
 }
 
+func (r *memoryRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error) {
+	return ProjectDemandSummary{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error) {
+	return ProjectDemandSummary{}, ErrProjectNotFound
+}
+
 func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	t.Helper()
 
@@ -3094,6 +3208,8 @@ func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		for _, statement := range []string{
+			"DELETE FROM project_demand_summaries WHERE tenant_id = $1",
+			"DELETE FROM project_task_results WHERE tenant_id = $1",
 			"DELETE FROM project_task_attempts WHERE tenant_id = $1",
 			"DELETE FROM project_execution_summaries WHERE tenant_id = $1",
 			"DELETE FROM project_decision_requests WHERE tenant_id = $1",

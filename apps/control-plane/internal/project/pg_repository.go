@@ -934,6 +934,154 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 	return r.createProjectTaskWithQueries(ctx, r.q, req)
 }
 
+func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	contractPayload, err := marshalJSON(req.Contract, "contract_payload")
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	validationErrors, err := jsonbStringSlice(req.ValidationErrors, "validation_errors")
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	validationWarnings, err := jsonbStringSlice(req.ValidationWarnings, "validation_warnings")
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	humanReviewRequest := []byte("{}")
+	if req.Contract.HumanReviewRequest != nil {
+		humanReviewRequest, err = marshalJSON(req.Contract.HumanReviewRequest, "human_review_request")
+		if err != nil {
+			return ProjectTaskResult{}, err
+		}
+	}
+	replanRequest := []byte("{}")
+	if req.Contract.ReplanRequest != nil {
+		replanRequest, err = marshalJSON(req.Contract.ReplanRequest, "replan_request")
+		if err != nil {
+			return ProjectTaskResult{}, err
+		}
+	}
+	revisionRequest := []byte("{}")
+	if req.Contract.RevisionRequest != nil {
+		revisionRequest, err = marshalJSON(req.Contract.RevisionRequest, "revision_request")
+		if err != nil {
+			return ProjectTaskResult{}, err
+		}
+	}
+	row, err := r.q.CreateProjectTaskResult(ctx, queries.CreateProjectTaskResultParams{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ProjectTaskID:      req.ProjectTaskID,
+		AttemptID:          nullUUID(req.AttemptID),
+		ExecutionSummaryID: nullUUID(req.ExecutionSummaryID),
+		ResultStatus:       string(req.ResultStatus),
+		ValidationStatus:   req.ValidationStatus,
+		Decision:           string(req.Decision),
+		ContractPayload:    contractPayload,
+		ValidationErrors:   validationErrors,
+		ValidationWarnings: validationWarnings,
+		IdempotencyKey:     req.IdempotencyKey,
+		HumanReviewRequest: humanReviewRequest,
+		ReplanRequest:      replanRequest,
+		RevisionRequest:    revisionRequest,
+		CreatedEventID:     nullUUID(req.CreatedEventID),
+		DecisionRequestID:  nullUUID(req.DecisionRequestID),
+		RevisionTaskID:     nullUUID(req.RevisionTaskID),
+	})
+	if err != nil {
+		return ProjectTaskResult{}, projectRepositoryError(err)
+	}
+	return projectTaskResultFromRecord(row)
+}
+
+func (r *PgRepository) ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error) {
+	rows, err := r.q.ListProjectTaskResults(ctx, queries.ListProjectTaskResultsParams{
+		TenantID:      req.TenantID,
+		ProjectID:     req.ProjectID,
+		ProjectTaskID: req.ProjectTaskID,
+		Limit:         req.Limit,
+		Offset:        req.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return projectTaskResultsFromRecords(rows)
+}
+
+func (r *PgRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.LinkProjectTaskLatestResult(ctx, queries.LinkProjectTaskLatestResultParams{
+		TaskResultID:  resultID,
+		TenantID:      tenantID,
+		ProjectTaskID: projectTaskID,
+		ProjectID:     projectID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
+func (r *PgRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
+	row, err := r.q.LinkProjectTaskResultDecisionRequest(ctx, queries.LinkProjectTaskResultDecisionRequestParams{
+		DecisionRequestID: decisionRequestID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ID:                resultID,
+	})
+	if err != nil {
+		return ProjectTaskResult{}, projectRepositoryError(err)
+	}
+	return projectTaskResultFromRecord(row)
+}
+
+func (r *PgRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error) {
+	row, err := r.q.LinkProjectTaskResultRevisionTask(ctx, queries.LinkProjectTaskResultRevisionTaskParams{
+		RevisionTaskID: revisionTaskID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ID:             resultID,
+	})
+	if err != nil {
+		return ProjectTaskResult{}, projectRepositoryError(err)
+	}
+	return projectTaskResultFromRecord(row)
+}
+
+func (r *PgRepository) CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error) {
+	summaryPayload, err := jsonbObject(req.SummaryPayload, "summary_payload")
+	if err != nil {
+		return ProjectDemandSummary{}, err
+	}
+	row, err := r.q.CreateProjectDemandSummary(ctx, queries.CreateProjectDemandSummaryParams{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		DemandID:           req.DemandID,
+		Status:             req.Status,
+		Conclusion:         req.Conclusion,
+		SummaryPayload:     summaryPayload,
+		ReportRefID:        nullUUID(req.ReportRefID),
+		AcceptanceRequired: req.AcceptanceRequired,
+		IdempotencyKey:     req.IdempotencyKey,
+		CreatedEventID:     nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectDemandSummary{}, projectRepositoryError(err)
+	}
+	return projectDemandSummaryFromRecord(row)
+}
+
+func (r *PgRepository) GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error) {
+	row, err := r.q.GetLatestProjectDemandSummary(ctx, queries.GetLatestProjectDemandSummaryParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+	if err != nil {
+		return ProjectDemandSummary{}, projectRepositoryError(err)
+	}
+	return projectDemandSummaryFromRecord(row)
+}
+
 func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, q *queries.Queries, req QueueProjectTaskRequest, attemptID uuid.UUID, attemptNo int32, eventID *uuid.UUID) (ProjectTaskAttempt, error) {
 	packet, err := jsonbObject(req.ExecutionContextPacket, "execution_context_packet")
 	if err != nil {
@@ -1494,6 +1642,7 @@ func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *quer
 		PlannedTaskKey:            textPtr(req.PlannedTaskKey),
 		TaskKind:                  textPtr(req.TaskKind),
 		StageIndex:                int4Ptr(req.StageIndex),
+		RevisionOfTaskID:          nullUUID(req.RevisionOfTaskID),
 		AcceptedPlanRevisionID:    nullUUID(req.AcceptedPlanRevisionID),
 		DecompositionClaimKey:     textPtr(req.DecompositionClaimKey),
 		Title:                     req.Title,
@@ -4350,6 +4499,8 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		BlockedByTaskIDs:           []uuid.UUID{},
 		CurrentAttemptID:           ptrUUID(row.CurrentAttemptID),
 		LatestDispatchGateResultID: ptrUUID(row.LatestDispatchGateResultID),
+		LatestTaskResultID:         ptrUUID(row.LatestTaskResultID),
+		RevisionOfTaskID:           ptrUUID(row.RevisionOfTaskID),
 		AcceptedPlanRevisionID:     ptrUUID(row.AcceptedPlanRevisionID),
 		DecompositionClaimKey:      ptrText(row.DecompositionClaimKey),
 		AttemptCount:               row.AttemptCount,
@@ -4364,6 +4515,63 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		StatusChangedAt:            row.StatusChangedAt.Time,
 		CreatedAt:                  row.CreatedAt.Time,
 		UpdatedAt:                  row.UpdatedAt.Time,
+	}, nil
+}
+
+func projectTaskResultFromRecord(row queries.ProjectTaskResult) (ProjectTaskResult, error) {
+	var contract TaskResultContract
+	if err := json.Unmarshal(row.ContractPayload, &contract); err != nil {
+		return ProjectTaskResult{}, fmt.Errorf("contract_payload: %w", err)
+	}
+	validationErrors, err := stringSliceFromJSON(row.ValidationErrors)
+	if err != nil {
+		return ProjectTaskResult{}, fmt.Errorf("validation_errors: %w", err)
+	}
+	validationWarnings, err := stringSliceFromJSON(row.ValidationWarnings)
+	if err != nil {
+		return ProjectTaskResult{}, fmt.Errorf("validation_warnings: %w", err)
+	}
+	return ProjectTaskResult{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		ProjectTaskID:      row.ProjectTaskID,
+		AttemptID:          ptrUUID(row.AttemptID),
+		ExecutionSummaryID: ptrUUID(row.ExecutionSummaryID),
+		ResultStatus:       TaskResultStatus(row.ResultStatus),
+		ValidationStatus:   row.ValidationStatus,
+		Decision:           TaskResultDecision(row.Decision),
+		Contract:           contract,
+		ValidationErrors:   validationErrors,
+		ValidationWarnings: validationWarnings,
+		IdempotencyKey:     row.IdempotencyKey,
+		DecisionRequestID:  ptrUUID(row.DecisionRequestID),
+		RevisionTaskID:     ptrUUID(row.RevisionTaskID),
+		CreatedEventID:     ptrUUID(row.CreatedEventID),
+		CreatedAt:          row.CreatedAt.Time,
+		UpdatedAt:          row.UpdatedAt.Time,
+	}, nil
+}
+
+func projectDemandSummaryFromRecord(row queries.ProjectDemandSummary) (ProjectDemandSummary, error) {
+	summaryPayload, err := mapFromJSON(row.SummaryPayload)
+	if err != nil {
+		return ProjectDemandSummary{}, fmt.Errorf("summary_payload: %w", err)
+	}
+	return ProjectDemandSummary{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		DemandID:           row.DemandID,
+		Status:             row.Status,
+		Conclusion:         row.Conclusion,
+		SummaryPayload:     summaryPayload,
+		ReportRefID:        ptrUUID(row.ReportRefID),
+		AcceptanceRequired: row.AcceptanceRequired,
+		IdempotencyKey:     row.IdempotencyKey,
+		CreatedEventID:     ptrUUID(row.CreatedEventID),
+		CreatedAt:          row.CreatedAt.Time,
+		UpdatedAt:          row.UpdatedAt.Time,
 	}, nil
 }
 
@@ -5110,6 +5318,18 @@ func tasksFromRecords(rows []queries.ProjectTask) ([]ProjectTask, error) {
 		tasks = append(tasks, task)
 	}
 	return tasks, nil
+}
+
+func projectTaskResultsFromRecords(rows []queries.ProjectTaskResult) ([]ProjectTaskResult, error) {
+	results := make([]ProjectTaskResult, 0, len(rows))
+	for _, row := range rows {
+		result, err := projectTaskResultFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 func preDispatchGateResultsFromRecords(rows []queries.ProjectTaskDispatchGateResult) ([]PreDispatchGateResult, error) {

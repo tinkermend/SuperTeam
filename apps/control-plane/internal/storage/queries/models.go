@@ -883,6 +883,8 @@ type ProjectDecisionRequest struct {
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
 	// 该人类决策由哪个 dispatch gate 结果创建。
 	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
+	// 该人类决策由哪个结构化任务结果触发。
+	ProjectTaskResultID uuid.NullUUID `json:"project_task_result_id"`
 }
 
 // 用户或外部系统提交到项目的需求
@@ -917,6 +919,24 @@ type ProjectDemand struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 需求更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 项目需求最终总结记录，按 demand 生成 append-only 总结和报告引用。
+type ProjectDemandSummary struct {
+	ID         uuid.UUID `json:"id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	ProjectID  uuid.UUID `json:"project_id"`
+	DemandID   uuid.UUID `json:"demand_id"`
+	Status     string    `json:"status"`
+	Conclusion string    `json:"conclusion"`
+	// 最终需求总结 JSON，包含目标、结论、任务状态、证据、人工决策、验证、风险和下一步建议。
+	SummaryPayload     []byte             `json:"summary_payload"`
+	ReportRefID        uuid.NullUUID      `json:"report_ref_id"`
+	AcceptanceRequired bool               `json:"acceptance_required"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	CreatedEventID     uuid.NullUUID      `json:"created_event_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目生命周期内的关键事件流
@@ -1275,6 +1295,10 @@ type ProjectTask struct {
 	StatusChangedAt pgtype.Timestamptz `json:"status_changed_at"`
 	// 该任务最近一次 gate 结果ID。
 	LatestDispatchGateResultID uuid.NullUUID `json:"latest_dispatch_gate_result_id"`
+	// 该任务是否为另一个 ProjectTask 的 append-only 修订任务。
+	RevisionOfTaskID uuid.NullUUID `json:"revision_of_task_id"`
+	// 该任务最新结构化结果记录ID。
+	LatestTaskResultID uuid.NullUUID `json:"latest_task_result_id"`
 }
 
 // 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。
@@ -1412,6 +1436,36 @@ type ProjectTaskDispatchGateResult struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Gate 结果最近更新时间。
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// ProjectTask 结构化结果契约记录，保存 Runtime/Provider 写回后的可审计结果、校验状态和调度决策。
+type ProjectTaskResult struct {
+	ID                 uuid.UUID     `json:"id"`
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	ProjectTaskID      uuid.UUID     `json:"project_task_id"`
+	AttemptID          uuid.NullUUID `json:"attempt_id"`
+	ExecutionSummaryID uuid.NullUUID `json:"execution_summary_id"`
+	ResultStatus       string        `json:"result_status"`
+	ValidationStatus   string        `json:"validation_status"`
+	Decision           string        `json:"decision"`
+	// TaskResultContract JSON，不保存完整日志、密钥、连接串或大段 prompt。
+	ContractPayload []byte `json:"contract_payload"`
+	// 结果契约校验错误数组。
+	ValidationErrors   []byte `json:"validation_errors"`
+	ValidationWarnings []byte `json:"validation_warnings"`
+	IdempotencyKey     string `json:"idempotency_key"`
+	// 结果需要人类判断时的请求摘要，不作为审批事实源。
+	HumanReviewRequest []byte `json:"human_review_request"`
+	// 任务结果触发重规划时的结构化原因和约束。
+	ReplanRequest []byte `json:"replan_request"`
+	// 任务结果触发修订时的结构化原因和建议。
+	RevisionRequest   []byte             `json:"revision_request"`
+	CreatedEventID    uuid.NullUUID      `json:"created_event_id"`
+	DecisionRequestID uuid.NullUUID      `json:"decision_request_id"`
+	RevisionTaskID    uuid.NullUUID      `json:"revision_task_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目任务转派请求表，保存数字员工发起的结构化转派事实

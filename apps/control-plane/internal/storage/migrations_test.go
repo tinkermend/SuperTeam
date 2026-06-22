@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -694,6 +695,34 @@ func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
 			t.Fatalf("migrations missing durable-closure comment %q", fragment)
 		}
 	}
+}
+
+func TestProjectTaskResultsMigrationIsAppendOnlyAndTenantScoped(t *testing.T) {
+	body := readMigration(t, "034_project_task_results.sql")
+
+	require.Contains(t, body, "CREATE TABLE project_task_results")
+	require.Contains(t, body, "tenant_id UUID NOT NULL")
+	require.Contains(t, body, "project_task_id UUID NOT NULL")
+	require.Contains(t, body, "attempt_id UUID")
+	require.Contains(t, body, "contract_payload JSONB NOT NULL")
+	require.Contains(t, body, "validation_errors JSONB NOT NULL DEFAULT '[]'::jsonb")
+	require.Contains(t, body, "CREATE UNIQUE INDEX uq_project_task_results_idempotency")
+	require.Contains(t, body, "ON project_task_results(tenant_id, project_task_id, attempt_id, idempotency_key)")
+	require.Contains(t, body, "CREATE INDEX idx_project_task_results_tenant_task_created")
+	require.Contains(t, body, "COMMENT ON COLUMN project_task_results.contract_payload")
+	require.NotContains(t, strings.ToLower(body), "raw_log")
+	require.NotContains(t, strings.ToLower(body), "secret")
+}
+
+func TestProjectDemandSummariesMigrationIsDemandScoped(t *testing.T) {
+	body := readMigration(t, "034_project_task_results.sql")
+
+	require.Contains(t, body, "CREATE TABLE project_demand_summaries")
+	require.Contains(t, body, "demand_id UUID NOT NULL")
+	require.Contains(t, body, "summary_payload JSONB NOT NULL")
+	require.Contains(t, body, "CREATE UNIQUE INDEX uq_project_demand_summaries_idempotency")
+	require.Contains(t, body, "CREATE INDEX idx_project_demand_summaries_tenant_demand_created")
+	require.Contains(t, body, "COMMENT ON COLUMN project_demand_summaries.summary_payload")
 }
 
 func TestProjectPlanRevisionsMigrationHasTenantFirstIndexes(t *testing.T) {

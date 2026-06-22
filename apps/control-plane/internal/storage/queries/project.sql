@@ -495,6 +495,7 @@ INSERT INTO project_tasks (
     planned_task_key,
     task_kind,
     stage_index,
+    revision_of_task_id,
     accepted_plan_revision_id,
     decomposition_claim_key,
     title,
@@ -518,6 +519,7 @@ INSERT INTO project_tasks (
     sqlc.narg('planned_task_key')::varchar,
     sqlc.narg('task_kind')::varchar,
     sqlc.narg('stage_index')::integer,
+    sqlc.narg('revision_of_task_id')::uuid,
     sqlc.narg('accepted_plan_revision_id')::uuid,
     sqlc.narg('decomposition_claim_key')::varchar,
     sqlc.arg('title')::varchar,
@@ -1503,6 +1505,99 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
   )
 ORDER BY created_at DESC;
+
+-- name: CreateProjectTaskResult :one
+INSERT INTO project_task_results (
+    tenant_id, project_id, project_task_id, attempt_id, execution_summary_id,
+    result_status, validation_status, decision, contract_payload, validation_errors,
+    validation_warnings, idempotency_key, human_review_request, replan_request,
+    revision_request, created_event_id, decision_request_id, revision_task_id
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('project_task_id')::uuid,
+    sqlc.narg('attempt_id')::uuid,
+    sqlc.narg('execution_summary_id')::uuid,
+    sqlc.arg('result_status')::varchar,
+    sqlc.arg('validation_status')::varchar,
+    sqlc.arg('decision')::varchar,
+    sqlc.arg('contract_payload')::jsonb,
+    COALESCE(sqlc.narg('validation_errors')::jsonb, '[]'::jsonb),
+    COALESCE(sqlc.narg('validation_warnings')::jsonb, '[]'::jsonb),
+    sqlc.arg('idempotency_key')::varchar,
+    COALESCE(sqlc.narg('human_review_request')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.narg('replan_request')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.narg('revision_request')::jsonb, '{}'::jsonb),
+    sqlc.narg('created_event_id')::uuid,
+    sqlc.narg('decision_request_id')::uuid,
+    sqlc.narg('revision_task_id')::uuid
+) ON CONFLICT (
+    tenant_id,
+    project_task_id,
+    COALESCE(attempt_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    idempotency_key
+)
+DO UPDATE SET updated_at = project_task_results.updated_at
+RETURNING *;
+
+-- name: LinkProjectTaskLatestResult :one
+UPDATE project_tasks
+SET latest_task_result_id = sqlc.arg('task_result_id')::uuid
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('project_task_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+RETURNING *;
+
+-- name: ListProjectTaskResults :many
+SELECT * FROM project_task_results
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: LinkProjectTaskResultDecisionRequest :one
+UPDATE project_task_results
+SET decision_request_id = sqlc.arg('decision_request_id')::uuid
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: LinkProjectTaskResultRevisionTask :one
+UPDATE project_task_results
+SET revision_task_id = sqlc.arg('revision_task_id')::uuid
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: CreateProjectDemandSummary :one
+INSERT INTO project_demand_summaries (
+    tenant_id, project_id, demand_id, status, conclusion, summary_payload,
+    report_ref_id, acceptance_required, idempotency_key, created_event_id
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('demand_id')::uuid,
+    sqlc.arg('status')::varchar,
+    sqlc.arg('conclusion')::text,
+    sqlc.arg('summary_payload')::jsonb,
+    sqlc.narg('report_ref_id')::uuid,
+    sqlc.arg('acceptance_required')::boolean,
+    sqlc.arg('idempotency_key')::varchar,
+    sqlc.narg('created_event_id')::uuid
+) ON CONFLICT (tenant_id, demand_id, idempotency_key)
+DO UPDATE SET updated_at = project_demand_summaries.updated_at
+RETURNING *;
+
+-- name: GetLatestProjectDemandSummary :one
+SELECT * FROM project_demand_summaries
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: CreateProjectTaskAttemptContextUpdate :one
 INSERT INTO project_task_attempt_context_updates (
