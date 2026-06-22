@@ -98,15 +98,8 @@ function createSkillsFetcher() {
     if (url.pathname === "/api/v1/teams" && method === "GET") {
       return jsonResponse(teamsFixture);
     }
-    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+  if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse([]);
-    }
-    if (url.pathname === "/api/v1/skills/uploads" && method === "POST") {
-      const formData = init?.body as FormData;
-      expect(formData.get("name")).toBe("custom-audit");
-      expect(formData.get("risk_level")).toBe("medium");
-      expect(formData.get("file")).toBeInstanceOf(File);
-      return jsonResponse({ ...skillsFixture[0], id: "skill-custom-audit", slug: "custom-audit", name: "custom-audit" }, 201);
     }
     if (url.pathname.startsWith("/api/v1/skills/skill-diagnose") && method === "DELETE") {
       return new Response(null, { status: 204 });
@@ -132,53 +125,11 @@ describe("SkillsView", () => {
     await expect.element(screen.getByText("1 个团队")).toBeVisible();
   });
 
-  it("uploads a zip without team binding and includes risk level", async () => {
-    const fetcher = createSkillsFetcher();
-    const screen = await renderSkillsView(fetcher);
+  it("links to the upload workspace instead of opening an upload dialog", async () => {
+    const screen = await renderSkillsView();
 
-    await userEvent.click(screen.getByRole("button", { name: "上传技能" }));
-    await expect.element(screen.getByRole("dialog", { name: "上传技能" })).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("技能名称"), "custom-audit");
-    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "custom-audit.zip", { type: "application/zip" }));
-    await userEvent.click(screen.getByRole("button", { name: "上传" }));
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills/uploads",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("submits runtime dependency fields when uploading a skill", async () => {
-    const captured: Record<string, string | null> = {};
-    const fetcher = createSkillsFetcher();
-    fetcher.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      const method = init?.method ?? "GET";
-      if (url.pathname === "/api/v1/skills/uploads" && method === "POST" && init?.body instanceof FormData) {
-        captured.runtime_tools = (init.body.get("runtime_tools") as string | null) ?? null;
-        captured.runtime_env = (init.body.get("runtime_env") as string | null) ?? null;
-        return jsonResponse({
-          ...skillsFixture[0],
-          id: "skill-github",
-          slug: "github-skill",
-          name: "GitHub Skill",
-          runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN"] },
-        }, 201);
-      }
-
-      return createSkillsFetcher()(input, init);
-    });
-    const screen = await renderSkillsView(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "上传技能" }));
-    await userEvent.fill(screen.getByLabelText("技能名称"), "GitHub Skill");
-    await userEvent.fill(screen.getByLabelText("运行依赖 CLI"), "gh");
-    await userEvent.fill(screen.getByLabelText("运行依赖环境变量"), "GH_TOKEN");
-    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill.zip", { type: "application/zip" }));
-    await userEvent.click(screen.getByRole("button", { name: "上传" }));
-
-    expect(captured.runtime_tools).toBe("gh");
-    expect(captured.runtime_env).toBe("GH_TOKEN");
+    await expect.element(screen.getByRole("link", { name: "上传技能" })).toHaveAttribute("href", "/skills/upload");
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("deletes a skill after confirmation", async () => {

@@ -134,6 +134,38 @@ describe("skills API", () => {
     );
   });
 
+  it("omits blank optional upload fields so the backend can derive SKILL.md metadata", async () => {
+    const skill = makeSkill({
+      archive_filename: "release-review.zip",
+      description: "检查发布计划、回滚策略和验收证据。",
+      name: "Release Review",
+      slug: "release-review",
+    });
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.body).toBeInstanceOf(FormData);
+      const formData = init?.body as FormData;
+      expect(formData.has("name")).toBe(false);
+      expect(formData.has("description")).toBe(false);
+      expect(formData.has("runtime_tools")).toBe(false);
+      expect(formData.has("runtime_env")).toBe(false);
+      expect(formData.get("file")).toBeInstanceOf(File);
+      return new Response(JSON.stringify(skill), { headers: { "content-type": "application/json" }, status: 201 });
+    });
+
+    await expect(
+      uploadSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        {
+          description: " ",
+          file: new File(["zip"], "release-review.zip", { type: "application/zip" }),
+          name: " ",
+          runtime_dependencies: { env: [], tools: [] },
+          tags: [],
+        },
+      ),
+    ).resolves.toEqual(skill);
+  });
+
   it("deletes a skill by id", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
     await expect(deleteSkill({ baseUrl: "http://control-plane.local", fetcher }, "skill 1/ops")).resolves.toBeUndefined();

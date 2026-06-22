@@ -66,7 +66,7 @@ export type ListSkillsFilters = {
 export type UploadSkillInput = {
   description?: string;
   file: File;
-  name: string;
+  name?: string;
   risk_level?: string;
   runtime_dependencies?: SkillRuntimeDependencies;
   tags?: string[];
@@ -114,21 +114,28 @@ export async function uploadSkill(
 ): Promise<Skill> {
   const formData = new FormData();
   formData.set("file", input.file);
-  formData.set("name", input.name);
-  if (input.description) {
-    formData.set("description", input.description);
+  const name = input.name?.trim();
+  const description = input.description?.trim();
+  const runtimeTools = cleanUploadList(input.runtime_dependencies?.tools);
+  const runtimeEnv = cleanUploadList(input.runtime_dependencies?.env);
+  const tags = cleanUploadList(input.tags);
+  if (name) {
+    formData.set("name", name);
+  }
+  if (description) {
+    formData.set("description", description);
   }
   if (input.risk_level) {
     formData.set("risk_level", input.risk_level);
   }
-  if (input.tags?.length) {
-    formData.set("tags", input.tags.join(","));
+  if (tags.length) {
+    formData.set("tags", tags.join(","));
   }
-  if (input.runtime_dependencies?.tools?.length) {
-    formData.set("runtime_tools", input.runtime_dependencies.tools.join(","));
+  if (runtimeTools.length) {
+    formData.set("runtime_tools", runtimeTools.join(","));
   }
-  if (input.runtime_dependencies?.env?.length) {
-    formData.set("runtime_env", input.runtime_dependencies.env.join(","));
+  if (runtimeEnv.length) {
+    formData.set("runtime_env", runtimeEnv.join(","));
   }
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/skills/uploads"), {
@@ -138,6 +145,10 @@ export async function uploadSkill(
   });
 
   return parseJson<Skill>(response, "upload skill");
+}
+
+function cleanUploadList(items?: string[]): string[] {
+  return items?.map((item) => item.trim()).filter(Boolean) ?? [];
 }
 
 export async function listTeamSkills(

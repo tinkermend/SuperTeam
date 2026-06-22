@@ -33,7 +33,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -43,7 +42,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -55,7 +53,6 @@ import {
   listSkills,
   unbindEmployeeSkill,
   unbindTeamSkill,
-  uploadSkill,
   type Skill,
 } from "@/lib/api/skills";
 import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
@@ -95,7 +92,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [selectedSkillId, setSelectedSkillId] = useState<string>();
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null);
 
   const apiOptions: ApiOpts = { baseUrl: apiBaseUrl, fetcher };
@@ -134,9 +130,11 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                 <p className="text-sm text-muted-foreground">上传技能 zip 包，管理团队和数字员工的技能绑定。</p>
               </div>
             </div>
-            <Button onClick={() => setUploadOpen(true)} type="button">
-              <UploadCloud data-icon="inline-start" />
-              上传技能
+            <Button asChild>
+              <a href="/skills/upload">
+                <UploadCloud data-icon="inline-start" />
+                上传技能
+              </a>
             </Button>
           </div>
 
@@ -166,17 +164,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
           </div>
         </div>
       </Main>
-
-      <SkillUploadDialog
-        apiOptions={apiOptions}
-        onUploaded={(skill) => {
-          setSelectedSkillId(skill.id);
-          setUploadOpen(false);
-          void queryClient.invalidateQueries({ queryKey: ["skills"] });
-        }}
-        onOpenChange={setUploadOpen}
-        open={uploadOpen}
-      />
 
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="max-w-md">
@@ -550,127 +537,6 @@ function EmployeeBindingSection({ skill, apiOptions }: { skill: Skill; apiOption
   );
 }
 
-function SkillUploadDialog({
-  apiOptions,
-  onOpenChange,
-  onUploaded,
-  open,
-}: {
-  apiOptions: ApiOpts;
-  onOpenChange: (open: boolean) => void;
-  onUploaded: (skill: Skill) => void;
-  open: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
-  const [riskLevel, setRiskLevel] = useState("medium");
-  const [runtimeTools, setRuntimeTools] = useState("");
-  const [runtimeEnv, setRuntimeEnv] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const upload = useMutation({
-    mutationFn: () => {
-      if (!file) {
-        throw new Error("请选择技能 zip 包");
-      }
-      return uploadSkill(apiOptions, {
-        description,
-        file,
-        name,
-        risk_level: riskLevel,
-        runtime_dependencies: {
-          tools: splitDependencyInput(runtimeTools),
-          env: splitDependencyInput(runtimeEnv),
-        },
-        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-      });
-    },
-    onSuccess: (skill) => {
-      setName("");
-      setDescription("");
-      setTags("");
-      setRiskLevel("medium");
-      setRuntimeTools("");
-      setRuntimeEnv("");
-      setFile(null);
-      onUploaded(skill);
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>上传技能</DialogTitle>
-          <DialogDescription>通过 zip 包导入技能。zip 包必须包含 SKILL.md。上传后可在详情页绑定团队和数字员工。</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <Label htmlFor="skill-zip">技能 zip 包</Label>
-            <Input
-              accept=".zip,application/zip"
-              id="skill-zip"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="skill-name">技能名称</Label>
-            <Input id="skill-name" onChange={(event) => setName(event.target.value)} value={name} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="skill-risk">风险等级</Label>
-            <Select onValueChange={setRiskLevel} value={riskLevel}>
-              <SelectTrigger id="skill-risk">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="low">低风险</SelectItem>
-                <SelectItem value="medium">中风险</SelectItem>
-                <SelectItem value="high">高风险</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="skill-tags">标签</Label>
-            <Input id="skill-tags" onChange={(event) => setTags(event.target.value)} placeholder="诊断,自动化" value={tags} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="skill-runtime-tools">运行依赖 CLI</Label>
-            <Input
-              id="skill-runtime-tools"
-              onChange={(event) => setRuntimeTools(event.target.value)}
-              placeholder="gh,kubectl"
-              value={runtimeTools}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="skill-runtime-env">运行依赖环境变量</Label>
-            <Input
-              id="skill-runtime-env"
-              onChange={(event) => setRuntimeEnv(event.target.value)}
-              placeholder="GH_TOKEN"
-              value={runtimeEnv}
-            />
-          </div>
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <Label htmlFor="skill-description">技能描述</Label>
-            <Textarea id="skill-description" onChange={(event) => setDescription(event.target.value)} value={description} />
-          </div>
-        </div>
-        {upload.error instanceof Error ? <p className="text-sm text-destructive">{upload.error.message}</p> : null}
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">取消</Button>
-          <Button disabled={!file || !name.trim() || upload.isPending} onClick={() => upload.mutate()} type="button">
-            <UploadCloud data-icon="inline-start" />
-            上传
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function RuntimeDependencyBadges({ skill }: { skill: Skill }) {
   const tools = skill.runtime_dependencies?.tools ?? [];
   const env = skill.runtime_dependencies?.env ?? [];
@@ -711,10 +577,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function runtimeDependencyCount(skill: Skill) {
   return (skill.runtime_dependencies?.tools?.length ?? 0) + (skill.runtime_dependencies?.env?.length ?? 0);
-}
-
-function splitDependencyInput(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
 function countAgentBindings(skills: Skill[]) {
