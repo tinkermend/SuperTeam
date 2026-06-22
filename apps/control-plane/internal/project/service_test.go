@@ -873,6 +873,274 @@ func TestCompleteProjectTaskAttemptResultContractHumanReviewRoutesToWaitingHuman
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
 }
 
+func TestCompleteProjectTaskAttemptRevisionNeededResultContractRoutesToWaitingHuman(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:  TaskResultStatusRevisionNeeded,
+		Summary: "需要负责人确认修订范围",
+		RevisionRequest: &TaskResultRevisionRequest{
+			Reason:                 "验收口径需要补充",
+			RecommendedTaskSummary: "补充缺失证据后重试当前任务",
+			RequestedChanges:       []string{"补充验收证据"},
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-revision-result"),
+		Conclusion:                       "runtime posted explicit revision result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "需要负责人确认修订范围", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonClarification, *repo.tasks[0].WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_clarification", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 0, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionRevisionAttempt, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptBlockedResultContractRoutesToWaitingHuman(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:  TaskResultStatusBlocked,
+		Summary: "缺少客户授权",
+		Blocker: &TaskResultBlocker{
+			Reason:           "permission_required",
+			ResolutionPrompt: "请负责人补充客户系统访问授权",
+			RequiredBy:       "human_owner",
+			ContextRefs:      []TaskResultRef{{Kind: "missing_context", Ref: "customer-permission"}},
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-blocked-result"),
+		Conclusion:                       "runtime posted explicit blocked result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "缺少客户授权", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonPermissionRequired, *repo.tasks[0].WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_permission", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 0, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionBlockedWaitingHuman, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptRetryableFailedResultContractQueuesRetry(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(3)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = &maxAttempts
+	retryable := true
+	contract := TaskResultContract{
+		Status:  TaskResultStatusFailed,
+		Summary: "Runtime 节点短暂不可用",
+		Failure: &TaskResultFailure{
+			ErrorFamily:            FailureFamilyTransientRuntime,
+			Retryable:              &retryable,
+			RecoveryRecommendation: "retry_original_attempt",
+			Message:                "runtime restarted",
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-failed-retryable-result"),
+		Conclusion:                       "runtime posted explicit retryable failure result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "Runtime 节点短暂不可用", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusQueued, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
+	require.NotEqual(t, fixture.attemptID, *repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, int32(2), repo.tasks[0].AttemptCount)
+	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.projectTaskAttempts, 2)
+	require.Equal(t, ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 0, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionFailedRetryable, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptReplanResultContractWaitsWithPlanInvalid(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(3)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = &maxAttempts
+	retryable := true
+	contract := TaskResultContract{
+		Status:  TaskResultStatusFailed,
+		Summary: "当前计划无法继续",
+		Failure: &TaskResultFailure{
+			ErrorFamily:            FailureFamilyPlanInvalid,
+			Retryable:              &retryable,
+			RecoveryRecommendation: "request_replan",
+			Message:                "dependency graph changed",
+		},
+		ReplanRequest: &TaskResultReplanRequest{
+			Reason:      "依赖关系已变化",
+			Scope:       "project",
+			Constraints: []string{"保留已有结果"},
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-replan-result"),
+		Conclusion:                       "runtime posted explicit replan result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "当前计划无法继续", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonPlanInvalid, *repo.tasks[0].WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 0, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionReplanRequested, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptNonRetryableFailedResultContractSignalsFailure(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	retryable := false
+	contract := TaskResultContract{
+		Status:  TaskResultStatusFailed,
+		Summary: "输出契约无法解析",
+		Failure: &TaskResultFailure{
+			ErrorFamily:            FailureFamilyNonRetryableExecution,
+			Retryable:              &retryable,
+			RecoveryRecommendation: "manual_recovery_required",
+			Message:                "missing required result fields",
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-failed-final-result"),
+		Conclusion:                       "runtime posted explicit final failure result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "输出契约无法解析", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusFailed, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, "输出契约无法解析", *repo.projectTaskAttempts[0].FailureMessage)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 1, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionFailedRecovery, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptCancelledResultContractTerminalizesWithoutFailureSignal(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:  TaskResultStatusCancelled,
+		Summary: "业务负责人取消当前任务",
+		Cancellation: &TaskResultCancellation{
+			Reason:      "需求已取消",
+			CancelledBy: "human_owner",
+		},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-cancelled-result"),
+		Conclusion:                       "runtime posted explicit cancellation result",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.executionSummaries)
+	require.Equal(t, "业务负责人取消当前任务", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusCancelled, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, 0, coordinator.failedSignals)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, contract, result.Contract)
+	require.Equal(t, TaskResultDecisionCancelledTerminal, result.Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func requireSingleProjectTaskResult(t *testing.T, repo *projectTaskResultMemoryRepository, fixture projectTaskAttemptServiceFixture) ProjectTaskResult {
+	t.Helper()
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	return results[0]
+}
+
 func TestCompleteProjectTaskAttemptInvalidResultContractDoesNotCommitTerminalWriteback(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)

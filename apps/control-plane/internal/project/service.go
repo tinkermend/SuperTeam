@@ -1950,6 +1950,12 @@ func (s *Service) RenewProjectTaskAttemptLease(ctx context.Context, req RenewPro
 }
 
 func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error) {
+	if req.ResultContract != nil && req.ResultContract.Status != TaskResultStatusCompleted {
+		return s.SubmitProjectTaskAttemptResult(ctx, SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			ResultContract:                   *req.ResultContract,
+		})
+	}
 	req.Conclusion = strings.TrimSpace(req.Conclusion)
 	if req.Conclusion == "" {
 		return nil, ErrInvalidProject
