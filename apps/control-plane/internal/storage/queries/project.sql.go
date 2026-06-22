@@ -1789,7 +1789,7 @@ INSERT INTO project_task_results (
     tenant_id, project_id, project_task_id, attempt_id, execution_summary_id,
     result_status, validation_status, decision, contract_payload, validation_errors,
     validation_warnings, idempotency_key, human_review_request, replan_request,
-    revision_request, created_event_id, decision_request_id, revision_task_id
+    revision_request, created_event_id
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1806,9 +1806,7 @@ INSERT INTO project_task_results (
     COALESCE($13::jsonb, '{}'::jsonb),
     COALESCE($14::jsonb, '{}'::jsonb),
     COALESCE($15::jsonb, '{}'::jsonb),
-    $16::uuid,
-    $17::uuid,
-    $18::uuid
+    $16::uuid
 ) ON CONFLICT (
     tenant_id,
     project_task_id,
@@ -1836,8 +1834,6 @@ type CreateProjectTaskResultParams struct {
 	ReplanRequest      []byte        `json:"replan_request"`
 	RevisionRequest    []byte        `json:"revision_request"`
 	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
-	DecisionRequestID  uuid.NullUUID `json:"decision_request_id"`
-	RevisionTaskID     uuid.NullUUID `json:"revision_task_id"`
 }
 
 func (q *Queries) CreateProjectTaskResult(ctx context.Context, arg CreateProjectTaskResultParams) (ProjectTaskResult, error) {
@@ -1858,8 +1854,6 @@ func (q *Queries) CreateProjectTaskResult(ctx context.Context, arg CreateProject
 		arg.ReplanRequest,
 		arg.RevisionRequest,
 		arg.CreatedEventID,
-		arg.DecisionRequestID,
-		arg.RevisionTaskID,
 	)
 	var i ProjectTaskResult
 	err := row.Scan(
@@ -3002,6 +2996,7 @@ WHERE tenant_id = $2::uuid
     WHERE project_task_results.tenant_id = $2::uuid
       AND project_task_results.project_id = $3::uuid
       AND project_task_results.id = $1::uuid
+      AND project_task_results.project_task_id = project_decision_requests.project_task_id
   )
 RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
 `
@@ -3238,6 +3233,7 @@ WHERE tenant_id = $2::uuid
     WHERE project_decision_requests.tenant_id = $2::uuid
       AND project_decision_requests.project_id = $3::uuid
       AND project_decision_requests.id = $1::uuid
+      AND project_decision_requests.project_task_id = project_task_results.project_task_id
   )
 RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
 `
@@ -3295,6 +3291,7 @@ WHERE tenant_id = $2::uuid
     WHERE project_tasks.tenant_id = $2::uuid
       AND project_tasks.project_id = $3::uuid
       AND project_tasks.id = $1::uuid
+      AND project_tasks.revision_of_task_id = project_task_results.project_task_id
   )
 RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
 `

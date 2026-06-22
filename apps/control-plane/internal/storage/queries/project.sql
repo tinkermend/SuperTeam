@@ -1511,7 +1511,7 @@ INSERT INTO project_task_results (
     tenant_id, project_id, project_task_id, attempt_id, execution_summary_id,
     result_status, validation_status, decision, contract_payload, validation_errors,
     validation_warnings, idempotency_key, human_review_request, replan_request,
-    revision_request, created_event_id, decision_request_id, revision_task_id
+    revision_request, created_event_id
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
@@ -1528,9 +1528,7 @@ INSERT INTO project_task_results (
     COALESCE(sqlc.narg('human_review_request')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.narg('replan_request')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.narg('revision_request')::jsonb, '{}'::jsonb),
-    sqlc.narg('created_event_id')::uuid,
-    sqlc.narg('decision_request_id')::uuid,
-    sqlc.narg('revision_task_id')::uuid
+    sqlc.narg('created_event_id')::uuid
 ) ON CONFLICT (
     tenant_id,
     project_task_id,
@@ -1568,6 +1566,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     WHERE project_decision_requests.tenant_id = sqlc.arg('tenant_id')::uuid
       AND project_decision_requests.project_id = sqlc.arg('project_id')::uuid
       AND project_decision_requests.id = sqlc.arg('decision_request_id')::uuid
+      AND project_decision_requests.project_task_id = project_task_results.project_task_id
   )
 RETURNING *;
 
@@ -1584,6 +1583,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     WHERE project_task_results.tenant_id = sqlc.arg('tenant_id')::uuid
       AND project_task_results.project_id = sqlc.arg('project_id')::uuid
       AND project_task_results.id = sqlc.arg('project_task_result_id')::uuid
+      AND project_task_results.project_task_id = project_decision_requests.project_task_id
   )
 RETURNING *;
 
@@ -1599,6 +1599,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     WHERE project_tasks.tenant_id = sqlc.arg('tenant_id')::uuid
       AND project_tasks.project_id = sqlc.arg('project_id')::uuid
       AND project_tasks.id = sqlc.arg('revision_task_id')::uuid
+      AND project_tasks.revision_of_task_id = project_task_results.project_task_id
   )
 RETURNING *;
 

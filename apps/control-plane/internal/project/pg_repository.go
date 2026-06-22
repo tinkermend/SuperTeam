@@ -939,6 +939,9 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 }
 
 func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	if req.DecisionRequestID != nil || req.RevisionTaskID != nil {
+		return ProjectTaskResult{}, ErrProjectConflict
+	}
 	contractPayload, err := marshalJSON(req.Contract, "contract_payload")
 	if err != nil {
 		return ProjectTaskResult{}, err
@@ -989,8 +992,6 @@ func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordPr
 		ReplanRequest:      replanRequest,
 		RevisionRequest:    revisionRequest,
 		CreatedEventID:     nullUUID(req.CreatedEventID),
-		DecisionRequestID:  nullUUID(req.DecisionRequestID),
-		RevisionTaskID:     nullUUID(req.RevisionTaskID),
 	})
 	if err != nil {
 		return ProjectTaskResult{}, projectRepositoryError(err)

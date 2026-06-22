@@ -482,6 +482,42 @@ func TestProjectTaskResultPaginationDefaultsCapsAndNormalizesOffset(t *testing.T
 	require.Equal(t, int32(3), offset)
 }
 
+func TestRecordProjectTaskResultRejectsDirectLinkIDs(t *testing.T) {
+	repo := NewPgRepository(queries.New(noRowsDB{}))
+	linkID := uuid.New()
+	req := RecordProjectTaskResultRequest{
+		TenantID:         uuid.New(),
+		ProjectID:        uuid.New(),
+		ProjectTaskID:    uuid.New(),
+		ResultStatus:     TaskResultStatusBlocked,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionBlockedWaitingHuman,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待人工判断",
+		},
+		IdempotencyKey:    "direct-link-rejected",
+		DecisionRequestID: &linkID,
+	}
+
+	_, err := repo.RecordProjectTaskResult(context.Background(), req)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	req.DecisionRequestID = nil
+	req.RevisionTaskID = &linkID
+	_, err = repo.RecordProjectTaskResult(context.Background(), req)
+	require.ErrorIs(t, err, ErrProjectConflict)
+}
+
+func TestProjectTaskResultInsertDoesNotAcceptLinkColumns(t *testing.T) {
+	body, err := os.ReadFile("../storage/queries/project.sql")
+	require.NoError(t, err)
+	block := sqlQueryBlock(t, string(body), "-- name: CreateProjectTaskResult :one", "-- name: LinkProjectTaskLatestResult :one")
+
+	require.NotContains(t, block, "decision_request_id")
+	require.NotContains(t, block, "revision_task_id")
+}
+
 func TestProjectTaskResultLinksAreConsistencySafeQueries(t *testing.T) {
 	body, err := os.ReadFile("../storage/queries/project.sql")
 	require.NoError(t, err)
@@ -494,6 +530,7 @@ func TestProjectTaskResultLinksAreConsistencySafeQueries(t *testing.T) {
 		"project_decision_requests.tenant_id = sqlc.arg('tenant_id')::uuid",
 		"project_decision_requests.project_id = sqlc.arg('project_id')::uuid",
 		"project_decision_requests.id = sqlc.arg('decision_request_id')::uuid",
+		"project_decision_requests.project_task_id = project_task_results.project_task_id",
 		"-- name: LinkDecisionRequestProjectTaskResult :one",
 		"SET project_task_result_id = sqlc.arg('project_task_result_id')::uuid",
 		"AND (project_task_result_id IS NULL OR project_task_result_id = sqlc.arg('project_task_result_id')::uuid)",
@@ -504,9 +541,20 @@ func TestProjectTaskResultLinksAreConsistencySafeQueries(t *testing.T) {
 		"project_tasks.tenant_id = sqlc.arg('tenant_id')::uuid",
 		"project_tasks.project_id = sqlc.arg('project_id')::uuid",
 		"project_tasks.id = sqlc.arg('revision_task_id')::uuid",
+		"project_tasks.revision_of_task_id = project_task_results.project_task_id",
 	} {
 		require.Contains(t, sql, fragment)
 	}
+}
+
+func sqlQueryBlock(t *testing.T, sql, start, end string) string {
+	t.Helper()
+
+	startIndex := strings.Index(sql, start)
+	require.NotEqual(t, -1, startIndex)
+	endIndex := strings.Index(sql[startIndex:], end)
+	require.NotEqual(t, -1, endIndex)
+	return sql[startIndex : startIndex+endIndex]
 }
 
 func TestProjectTaskResultLinksAreIdempotentAndConflictSafe(t *testing.T) {
@@ -536,6 +584,24 @@ func TestProjectTaskResultLinksAreIdempotentAndConflictSafe(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	otherSourceTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "other source task",
+		Status:    ProjectTaskStatusPlanned,
+	})
+	require.NoError(t, err)
+	wrongRevisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "wrong source revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &otherSourceTask.ID,
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, wrongRevisionTask.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
 	revisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
 		TenantID:         tenantID,
 		ProjectID:        projectID,
@@ -564,6 +630,21 @@ func TestProjectTaskResultLinksAreIdempotentAndConflictSafe(t *testing.T) {
 	require.ErrorIs(t, err, ErrProjectConflict)
 
 	taskID := task.ID
+	otherTaskID := otherSourceTask.ID
+	wrongDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &otherTaskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review wrong task result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, wrongDecision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
 	decision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
