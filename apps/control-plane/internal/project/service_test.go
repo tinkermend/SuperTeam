@@ -952,6 +952,44 @@ func TestResolveProjectTaskHumanWaitAcceptanceApproveSignalsCoordinatorCompleted
 	require.Equal(t, completedEvent.ID, coordinator.lastCompleted.CompletedEventID)
 }
 
+func TestResolveProjectTaskHumanWaitAcceptanceDecisionLinkFailureLeavesTaskWaitingAndLatestUnaccepted(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture, _, _, waitingResult, _ := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-link-failure")
+	linkErr := errors.New("decision link unavailable")
+	repo.linkProjectTaskResultDecisionRequestErr = linkErr
+
+	_, err = service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过",
+	})
+
+	require.ErrorIs(t, err, linkErr)
+	require.Equal(t, 0, coordinator.completedSignals)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.LatestTaskResultID)
+	require.Equal(t, waitingResult.ID, *task.LatestTaskResultID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	latest := requireProjectTaskResultByID(t, results, *task.LatestTaskResultID)
+	require.Equal(t, TaskResultDecisionWaitingHumanReview, latest.Decision)
+	require.False(t, ProjectTaskResultAcceptedForDependencyUnlock(latest))
+}
+
 func TestResolveProjectTaskHumanWaitResultReviewNonApproveDoesNotAcceptResultOrSignal(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -6399,8 +6437,9 @@ type memoryRepository struct {
 
 type projectTaskResultMemoryRepository struct {
 	*memoryRepository
-	recordProjectTaskResultErr     error
-	linkProjectTaskLatestResultErr error
+	recordProjectTaskResultErr              error
+	linkProjectTaskLatestResultErr          error
+	linkProjectTaskResultDecisionRequestErr error
 }
 
 type repositoryWithoutProjectTeamScopeAuthorizer struct {
@@ -7984,6 +8023,9 @@ func (r *projectTaskResultMemoryRepository) LinkProjectTaskLatestResult(ctx cont
 }
 
 func (r *projectTaskResultMemoryRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
+	if r.linkProjectTaskResultDecisionRequestErr != nil {
+		return ProjectTaskResult{}, r.linkProjectTaskResultDecisionRequestErr
+	}
 	decisionFound := false
 	for _, decision := range r.decisionRequests {
 		if decision.TenantID != tenantID || decision.ProjectID != projectID || decision.ID != decisionRequestID {
