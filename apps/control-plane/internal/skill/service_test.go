@@ -123,6 +123,33 @@ func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	}
 }
 
+func TestServiceUploadSkillUsesArchiveFilenameSlugWhenDisplayNameIsChinese(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "# 示例浏览器技能\n\n示例描述。",
+	})
+
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID:    uuid.New(),
+		Name:        "示例浏览器上传技能",
+		Description: "用于验证上传技能单页工作台的示例技能。",
+		Archive:     archive,
+		Filename:    "example-browser-upload-skill.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+
+	if repo.upsertReq.Name != "示例浏览器上传技能" {
+		t.Fatalf("expected Chinese display name to be preserved, got %q", repo.upsertReq.Name)
+	}
+	if repo.upsertReq.Slug != "example-browser-upload-skill" {
+		t.Fatalf("expected slug from archive filename, got %q", repo.upsertReq.Slug)
+	}
+}
+
 func TestServiceUploadSkillStoresRuntimeDependencies(t *testing.T) {
 	repo := &serviceTestRepository{}
 	service := newTestService(repo)

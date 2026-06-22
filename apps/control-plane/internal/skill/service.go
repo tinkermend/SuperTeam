@@ -113,6 +113,12 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	}
 	slug := slugify(name)
 	if slug == "" {
+		slug = slugify(skillNameFromMarkdown(skillMarkdownContent))
+	}
+	if slug == "" {
+		slug = slugify(strings.TrimSuffix(path.Base(req.Filename), path.Ext(req.Filename)))
+	}
+	if slug == "" {
 		return nil, fmt.Errorf("%w: skill slug is required", ErrInvalidInput)
 	}
 
