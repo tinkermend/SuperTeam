@@ -14,6 +14,7 @@ use crate::controlplane::models::{
     EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
     ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RuntimeCommand,
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    TaskResultContract,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -1298,6 +1299,8 @@ fn project_task_complete_writeback(
         ));
     }
     let artifact_refs = parsed_array(parsed.as_ref(), "artifact_refs");
+    let result_contract =
+        parsed_result_contract(parsed.as_ref(), &conclusion, &evidence_refs, &artifact_refs);
     let missing_information = parsed_array(parsed.as_ref(), "missing_information");
     let recommended_next_action = parsed_string(parsed.as_ref(), "recommended_next_action")
         .or_else(|| {
@@ -1370,6 +1373,7 @@ fn project_task_complete_writeback(
             .and_then(|value| value.get("requires_human_review"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
+        result_contract: Some(result_contract),
     }
 }
 
@@ -1429,6 +1433,7 @@ fn project_task_wait_human_writeback(
             "suggested_resolution_options",
         )
         .unwrap_or_else(|| vec!["resume_same_task".to_string()]),
+        result_contract: None,
     })
 }
 
@@ -1533,6 +1538,90 @@ fn parsed_confidence_factors(
     factors
 }
 
+fn parsed_result_contract(
+    value: Option<&serde_json::Value>,
+    fallback_summary: &str,
+    evidence_refs: &[serde_json::Value],
+    artifact_refs: &[serde_json::Value],
+) -> TaskResultContract {
+    if let Some(contract) = value
+        .and_then(|value| value.get("result_contract"))
+        .and_then(serde_json::Value::as_object)
+    {
+        return TaskResultContract {
+            status: contract
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("completed")
+                .to_string(),
+            summary: contract
+                .get("summary")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(fallback_summary)
+                .to_string(),
+            acceptance_results: contract
+                .get("acceptance_results")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            evidence_refs: contract
+                .get("evidence_refs")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_else(|| evidence_refs.to_vec()),
+            artifact_refs: contract
+                .get("artifact_refs")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_else(|| artifact_refs.to_vec()),
+            changes_made: contract
+                .get("changes_made")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            verification: contract
+                .get("verification")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            risks: contract
+                .get("risks")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            follow_up_requests: contract
+                .get("follow_up_requests")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            human_review_request: contract.get("human_review_request").cloned(),
+            revision_request: contract.get("revision_request").cloned(),
+            blocker: contract.get("blocker").cloned(),
+            failure: contract.get("failure").cloned(),
+            replan_request: contract.get("replan_request").cloned(),
+            cancellation: contract.get("cancellation").cloned(),
+        };
+    }
+
+    TaskResultContract {
+        status: "completed".to_string(),
+        summary: fallback_summary.to_string(),
+        acceptance_results: Vec::new(),
+        evidence_refs: evidence_refs.to_vec(),
+        artifact_refs: artifact_refs.to_vec(),
+        changes_made: Vec::new(),
+        verification: Vec::new(),
+        risks: Vec::new(),
+        follow_up_requests: Vec::new(),
+        human_review_request: None,
+        revision_request: None,
+        blocker: None,
+        failure: None,
+        replan_request: None,
+        cancellation: None,
+    }
+}
+
 fn trimmed_optional(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -1581,6 +1670,7 @@ fn project_task_fail_writeback(
         failure_summary: error_message.trim().to_string(),
         failure_family: failure_family.to_string(),
         retryable,
+        result_contract: None,
     }
 }
 

@@ -1317,6 +1317,53 @@ func TestCompleteProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	}
 }
 
+func TestCompleteProjectTaskAttemptResultRouteParsesTaskResultContract(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.MustParse("00000000-0000-0000-0000-000000000441")
+	taskID := uuid.MustParse("00000000-0000-0000-0000-000000000442")
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000443")
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"00000000-0000-0000-0000-000000000442",
+		"runtime_node_id":"00000000-0000-0000-0000-000000000443",
+		"lease_token":"lease-token",
+		"idempotency_key":"result-1",
+		"result_contract":{
+			"status":"completed",
+			"summary":"完成分析",
+			"acceptance_results":[{"criterion":"输出结论","status":"passed","evidence_refs":["artifact:report"]}],
+			"evidence_refs":[{"type":"report","ref":"artifact:report"}],
+			"artifact_refs":[],
+			"verification":[{"type":"unit_test","status":"passed","summary":"测试通过"}],
+			"risks":[]
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/result", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.SubmitProjectTaskAttemptResult(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected result writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.submitProjectTaskAttemptResultReq.AttemptID != attemptID ||
+		service.submitProjectTaskAttemptResultReq.ProjectTaskID != taskID ||
+		service.submitProjectTaskAttemptResultReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected result request identity: %#v", service.submitProjectTaskAttemptResultReq)
+	}
+	if service.submitProjectTaskAttemptResultReq.ResultContract.Status != TaskResultStatusCompleted {
+		t.Fatalf("expected completed result status, got %#v", service.submitProjectTaskAttemptResultReq.ResultContract.Status)
+	}
+	if len(service.submitProjectTaskAttemptResultReq.ResultContract.AcceptanceResults) != 1 ||
+		service.submitProjectTaskAttemptResultReq.ResultContract.AcceptanceResults[0].Criterion != "输出结论" ||
+		service.submitProjectTaskAttemptResultReq.ResultContract.AcceptanceResults[0].Status != TaskResultCriterionStatusPassed {
+		t.Fatalf("unexpected acceptance results: %#v", service.submitProjectTaskAttemptResultReq.ResultContract.AcceptanceResults)
+	}
+}
+
 func TestFailProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	tenantID := uuid.New()
 	attemptID := uuid.New()
@@ -1419,48 +1466,49 @@ func withRuntimeContext(req *http.Request, tenantID, runtimeNodeID uuid.UUID) *h
 }
 
 type handlerTestService struct {
-	createReq              CreateProjectRequest
-	createErr              error
-	submitDemandReq        SubmitProjectDemandRequest
-	submitDemandErr        error
-	workflowInstances      []WorkflowInstanceSummary
-	workflowInstancesReq   ListWorkflowInstancesRequest
-	createEvidenceReq      CreateEvidenceRefServiceRequest
-	patchEvidenceReq       PatchEvidenceRequest
-	patchEvidenceErr       error
-	createAcceptanceReq    CreateAcceptanceServiceRequest
-	createArchiveReq       CreateArchiveSnapshotServiceRequest
-	getAcceptanceErr       error
-	getConfigRevisionErr   error
-	getOverviewCalls       int
-	routeDecisionTenantID  uuid.UUID
-	routeDecisionProjectID uuid.UUID
-	routeDecisionLimit     int32
-	routeDecisionOffset    int32
-	planRevisions          []PlanRevision
-	planRevisionListReq    ListPlanRevisionsRequest
-	planRevisionTenantID   uuid.UUID
-	planRevisionProjectID  uuid.UUID
-	planRevisionID         uuid.UUID
-	dispatchGates          []PreDispatchGateResult
-	dispatchGateListReq    ListPreDispatchGateResultsRequest
-	resolveDecisionReq     ResolveDecisionRequest
-	launchDetailTenantID   uuid.UUID
-	launchDetailDemandID   uuid.UUID
-	launchDetailProjectID  uuid.UUID
-	taskGraph              ProjectTaskGraph
-	taskGraphReq           GetProjectTaskGraphRequest
-	taskGraphCalls         int
-	taskLiveness           []ProjectTaskLiveness
-	taskLivenessTenantID   uuid.UUID
-	taskLivenessProjectID  uuid.UUID
-	executionTrace         *ProjectExecutionTrace
-	executionTraceReq      GetExecutionTraceRequest
-	startAttemptReq        StartProjectTaskAttemptRequest
-	renewAttemptLeaseReq   RenewProjectTaskAttemptLeaseRequest
-	completeAttemptReq     CompleteProjectTaskAttemptRequest
-	failAttemptReq         FailProjectTaskAttemptRequest
-	waitAttemptReq         WaitHumanProjectTaskAttemptRequest
+	createReq                         CreateProjectRequest
+	createErr                         error
+	submitDemandReq                   SubmitProjectDemandRequest
+	submitDemandErr                   error
+	workflowInstances                 []WorkflowInstanceSummary
+	workflowInstancesReq              ListWorkflowInstancesRequest
+	createEvidenceReq                 CreateEvidenceRefServiceRequest
+	patchEvidenceReq                  PatchEvidenceRequest
+	patchEvidenceErr                  error
+	createAcceptanceReq               CreateAcceptanceServiceRequest
+	createArchiveReq                  CreateArchiveSnapshotServiceRequest
+	getAcceptanceErr                  error
+	getConfigRevisionErr              error
+	getOverviewCalls                  int
+	routeDecisionTenantID             uuid.UUID
+	routeDecisionProjectID            uuid.UUID
+	routeDecisionLimit                int32
+	routeDecisionOffset               int32
+	planRevisions                     []PlanRevision
+	planRevisionListReq               ListPlanRevisionsRequest
+	planRevisionTenantID              uuid.UUID
+	planRevisionProjectID             uuid.UUID
+	planRevisionID                    uuid.UUID
+	dispatchGates                     []PreDispatchGateResult
+	dispatchGateListReq               ListPreDispatchGateResultsRequest
+	resolveDecisionReq                ResolveDecisionRequest
+	launchDetailTenantID              uuid.UUID
+	launchDetailDemandID              uuid.UUID
+	launchDetailProjectID             uuid.UUID
+	taskGraph                         ProjectTaskGraph
+	taskGraphReq                      GetProjectTaskGraphRequest
+	taskGraphCalls                    int
+	taskLiveness                      []ProjectTaskLiveness
+	taskLivenessTenantID              uuid.UUID
+	taskLivenessProjectID             uuid.UUID
+	executionTrace                    *ProjectExecutionTrace
+	executionTraceReq                 GetExecutionTraceRequest
+	startAttemptReq                   StartProjectTaskAttemptRequest
+	renewAttemptLeaseReq              RenewProjectTaskAttemptLeaseRequest
+	completeAttemptReq                CompleteProjectTaskAttemptRequest
+	submitProjectTaskAttemptResultReq SubmitProjectTaskAttemptResultRequest
+	failAttemptReq                    FailProjectTaskAttemptRequest
+	waitAttemptReq                    WaitHumanProjectTaskAttemptRequest
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -1697,6 +1745,11 @@ func (s *handlerTestService) RenewProjectTaskAttemptLease(ctx context.Context, r
 
 func (s *handlerTestService) CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error) {
 	s.completeAttemptReq = req
+	return &ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID}, nil
+}
+
+func (s *handlerTestService) SubmitProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest) (*ExecutionSummary, error) {
+	s.submitProjectTaskAttemptResultReq = req
 	return &ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID}, nil
 }
 

@@ -414,6 +414,7 @@ func (s *Server) registerRoutes() {
 						r.Post("/started", s.projectHandler.StartProjectTaskAttempt)
 						r.Post("/lease", s.projectHandler.RenewProjectTaskAttemptLease)
 						r.Post("/complete", s.projectHandler.CompleteProjectTaskAttempt)
+						r.Post("/result", s.projectHandler.SubmitProjectTaskAttemptResult)
 						r.Post("/fail", s.projectHandler.FailProjectTaskAttempt)
 						r.Post("/wait-human", s.projectHandler.WaitHumanProjectTaskAttempt)
 					})

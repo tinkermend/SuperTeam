@@ -379,6 +379,26 @@ paths:
       responses:
         "202":
           description: Attempt completion accepted
+  /api/v1/runtime/project-task-attempts/{attemptId}/result:
+    post:
+      operationId: submitProjectTaskAttemptResult
+      summary: Submit a structured ProjectTask result contract
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectTaskAttemptResultRequest"
+      responses:
+        "202":
+          description: Result accepted for processing
   /api/v1/runtime/project-task-attempts/{attemptId}/fail:
     post:
       operationId: failProjectTaskAttempt
@@ -6534,6 +6554,148 @@ components:
             lease_expires_at:
               type: string
               format: date-time
+    TaskResultStatus:
+      type: string
+      enum:
+        - completed
+        - revision_needed
+        - blocked
+        - failed
+        - cancelled
+    TaskResultCriterionStatus:
+      type: string
+      enum:
+        - passed
+        - failed
+        - needs_human
+        - not_applicable
+        - human_overridden
+    TaskResultContract:
+      type: object
+      required:
+        - status
+        - summary
+        - acceptance_results
+        - evidence_refs
+        - artifact_refs
+        - verification
+        - risks
+      properties:
+        status:
+          $ref: "#/components/schemas/TaskResultStatus"
+        summary:
+          type: string
+        acceptance_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResultAcceptanceResult"
+        evidence_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResultRef"
+        artifact_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResultRef"
+        changes_made:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        verification:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        risks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        follow_up_requests:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        human_review_request:
+          type: object
+          additionalProperties: true
+        revision_request:
+          type: object
+          additionalProperties: true
+        blocker:
+          type: object
+          additionalProperties: true
+        failure:
+          type: object
+          additionalProperties: true
+        replan_request:
+          type: object
+          additionalProperties: true
+        cancellation:
+          type: object
+          additionalProperties: true
+    TaskResultAcceptanceResult:
+      type: object
+      required:
+        - criterion
+        - status
+        - evidence_refs
+      properties:
+        id:
+          type: string
+        criterion:
+          type: string
+        criterion_id:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskResultCriterionStatus"
+        summary:
+          type: string
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        human_accepted_reason:
+          type: string
+    TaskResultRef:
+      type: object
+      required:
+        - type
+        - ref
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        type:
+          type: string
+        ref:
+          type: string
+        uri:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    SubmitProjectTaskAttemptResultRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          required:
+            - result_contract
+          properties:
+            result_contract:
+              $ref: "#/components/schemas/TaskResultContract"
     CompleteProjectTaskAttemptRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
@@ -6561,6 +6723,8 @@ components:
               type: string
             requires_human_review:
               type: boolean
+            result_contract:
+              $ref: "#/components/schemas/TaskResultContract"
     FailProjectTaskAttemptRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
@@ -6575,6 +6739,8 @@ components:
               type: string
             retryable:
               type: boolean
+            result_contract:
+              $ref: "#/components/schemas/TaskResultContract"
     WaitHumanProjectTaskAttemptRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
@@ -6605,6 +6771,8 @@ components:
               type: array
               items:
                 type: string
+            result_contract:
+              $ref: "#/components/schemas/TaskResultContract"
     Team:
       type: object
       required:

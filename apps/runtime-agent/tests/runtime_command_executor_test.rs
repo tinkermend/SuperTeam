@@ -815,6 +815,81 @@ fn project_task_attempt_metadata(expected_outputs: Vec<&str>) -> Value {
     })
 }
 
+async fn run_project_task_completion_and_capture_writeback(summary: Option<String>) -> Value {
+    let temp = TempDir::new().expect("tempdir");
+    let result_line = serde_json::json!({
+        "type": "result",
+        "result": summary.unwrap_or_else(|| "provider completed".to_string())
+    })
+    .to_string();
+    let script = format!(
+        "#!/usr/bin/env bash\nprintf '%s\\n' '{{\"type\":\"system\",\"session_id\":\"session-result-contract\"}}'\nprintf '%s\\n' '{}'\n",
+        result_line
+    );
+    let fake_claude = make_script(temp.path(), "fake-claude-result-contract", &script);
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-result-contract",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "result_contract",
+        "acceptance_results",
+        "evidence_refs",
+    ]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let captured = wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    http_server.task.abort();
+    captured.payload
+}
+
+#[tokio::test]
+async fn project_task_completion_writeback_includes_structured_result_contract() {
+    let summary = serde_json::json!({
+        "result_contract": {
+            "status": "completed",
+            "summary": "完成分析",
+            "acceptance_results": [
+                {"criterion": "输出结论", "status": "passed", "evidence_refs": ["artifact:report"]}
+            ],
+            "evidence_refs": [{"type": "report", "ref": "artifact:report"}],
+            "artifact_refs": [],
+            "verification": [{"type": "command", "status": "passed", "summary": "命令通过"}],
+            "risks": []
+        }
+    })
+    .to_string();
+
+    let captured = run_project_task_completion_and_capture_writeback(Some(summary)).await;
+
+    let contract = captured
+        .get("result_contract")
+        .expect("result_contract is sent");
+    assert_eq!(contract["status"], "completed");
+    assert_eq!(contract["summary"], "完成分析");
+    assert_eq!(contract["acceptance_results"][0]["criterion"], "输出结论");
+}
+
 #[tokio::test]
 async fn start_session_completes_project_task_when_metadata_requests_writeback() {
     let temp = TempDir::new().expect("tempdir");

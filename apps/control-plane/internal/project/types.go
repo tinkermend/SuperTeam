@@ -1130,6 +1130,7 @@ type CompleteProjectTaskAttemptRequest struct {
 	MissingInformation    []any
 	RecommendedNextAction string
 	RequiresHumanReview   bool
+	ResultContract        *TaskResultContract
 }
 
 type FailProjectTaskRequest struct {
@@ -1146,6 +1147,7 @@ type FailProjectTaskAttemptRequest struct {
 	FailureSummary    string
 	FailureFamily     string
 	Retryable         *bool
+	ResultContract    *TaskResultContract
 }
 
 type WaitHumanProjectTaskAttemptRequest struct {
@@ -1155,6 +1157,12 @@ type WaitHumanProjectTaskAttemptRequest struct {
 	Summary                    string
 	MissingContextRefs         []any
 	SuggestedResolutionOptions []string
+	ResultContract             *TaskResultContract
+}
+
+type SubmitProjectTaskAttemptResultRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	ResultContract TaskResultContract
 }
 
 type ResolveProjectTaskHumanWaitRequest struct {
