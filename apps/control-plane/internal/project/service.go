@@ -2140,7 +2140,11 @@ func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req Submit
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, req.ResultContract); err != nil {
+	result, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, req.ResultContract)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.routeNonCompletedProjectTaskAttemptResult(ctx, req, result); err != nil {
 		return nil, err
 	}
 	return &ExecutionSummary{
@@ -2164,6 +2168,193 @@ func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task Proje
 		return result, ErrInvalidProjectEvidence
 	}
 	return result, nil
+}
+
+func (s *Service) routeNonCompletedProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest, result ProjectTaskResult) error {
+	switch result.Decision {
+	case TaskResultDecisionRevisionAttempt, TaskResultDecisionRevisionTask:
+		_, err := s.WaitHumanProjectTaskAttempt(ctx, WaitHumanProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			Reason:                           humanWaitReasonForTaskResultRevision(req.ResultContract),
+			Summary:                          taskResultHumanWaitSummary(req.ResultContract),
+			MissingContextRefs:               taskResultHumanWaitContextRefs(result, req.ResultContract),
+			SuggestedResolutionOptions:       taskResultHumanWaitResolutionOptions(result.Decision),
+			ResultContract:                   &req.ResultContract,
+		})
+		return err
+	case TaskResultDecisionBlockedWaitingHuman:
+		_, err := s.WaitHumanProjectTaskAttempt(ctx, WaitHumanProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			Reason:                           humanWaitReasonForTaskResultBlocker(req.ResultContract.Blocker),
+			Summary:                          taskResultHumanWaitSummary(req.ResultContract),
+			MissingContextRefs:               taskResultHumanWaitContextRefs(result, req.ResultContract),
+			SuggestedResolutionOptions:       taskResultHumanWaitResolutionOptions(result.Decision),
+			ResultContract:                   &req.ResultContract,
+		})
+		return err
+	case TaskResultDecisionReplanRequested:
+		_, err := s.WaitHumanProjectTaskAttempt(ctx, WaitHumanProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			Reason:                           HumanWaitReasonPlanInvalid,
+			Summary:                          taskResultHumanWaitSummary(req.ResultContract),
+			MissingContextRefs:               taskResultHumanWaitContextRefs(result, req.ResultContract),
+			SuggestedResolutionOptions:       taskResultHumanWaitResolutionOptions(result.Decision),
+			ResultContract:                   &req.ResultContract,
+		})
+		return err
+	case TaskResultDecisionFailedRetryable, TaskResultDecisionFailedRecovery:
+		_, err := s.FailProjectTaskAttempt(ctx, FailProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			FailureSummary:                   taskResultFailureSummary(req.ResultContract),
+			FailureFamily:                    taskResultFailureFamily(req.ResultContract),
+			Retryable:                        taskResultFailureRetryable(req.ResultContract),
+			ResultContract:                   &req.ResultContract,
+		})
+		return err
+	case TaskResultDecisionCancelledTerminal:
+		retryable := false
+		_, err := s.FailProjectTaskAttempt(ctx, FailProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			FailureSummary:                   taskResultCancellationSummary(req.ResultContract),
+			FailureFamily:                    FailureFamilyBusinessCancelled,
+			Retryable:                        &retryable,
+			ResultContract:                   &req.ResultContract,
+		})
+		return err
+	default:
+		return ErrInvalidProjectEvidence
+	}
+}
+
+func humanWaitReasonForTaskResultRevision(contract TaskResultContract) string {
+	if contract.RevisionRequest != nil && contract.RevisionRequest.ContractChanged {
+		return HumanWaitReasonPlanInvalid
+	}
+	return HumanWaitReasonClarification
+}
+
+func humanWaitReasonForTaskResultBlocker(blocker *TaskResultBlocker) string {
+	if blocker == nil {
+		return HumanWaitReasonClarification
+	}
+	value := strings.ToLower(strings.TrimSpace(strings.Join([]string{
+		blocker.Reason,
+		blocker.ResolutionPrompt,
+		blocker.RequiredBy,
+	}, " ")))
+	switch {
+	case strings.Contains(value, HumanWaitReasonPermissionRequired),
+		strings.Contains(value, "permission"),
+		strings.Contains(value, "authorization"),
+		strings.Contains(value, "auth"):
+		return HumanWaitReasonPermissionRequired
+	case strings.Contains(value, HumanWaitReasonApprovalRequired),
+		strings.Contains(value, "approval"),
+		strings.Contains(value, "approve"):
+		return HumanWaitReasonApprovalRequired
+	case strings.Contains(value, HumanWaitReasonPlanInvalid),
+		strings.Contains(value, "plan invalid"),
+		strings.Contains(value, "replan"),
+		strings.Contains(value, "contract_changed"):
+		return HumanWaitReasonPlanInvalid
+	case strings.Contains(value, HumanWaitReasonMissingContext),
+		strings.Contains(value, "missing context"),
+		strings.Contains(value, "context"):
+		return HumanWaitReasonMissingContext
+	default:
+		if len(blocker.ContextRefs) > 0 {
+			return HumanWaitReasonMissingContext
+		}
+		return HumanWaitReasonClarification
+	}
+}
+
+func taskResultHumanWaitSummary(contract TaskResultContract) string {
+	if summary := strings.TrimSpace(contract.Summary); summary != "" {
+		return summary
+	}
+	return "Task result requires human recovery decision"
+}
+
+func taskResultHumanWaitContextRefs(result ProjectTaskResult, contract TaskResultContract) []any {
+	context := map[string]any{
+		"kind":           "task_result_contract",
+		"task_result_id": result.ID.String(),
+		"status":         string(contract.Status),
+		"decision":       string(result.Decision),
+		"summary":        contract.Summary,
+	}
+	switch {
+	case contract.RevisionRequest != nil:
+		context["reason"] = contract.RevisionRequest.Reason
+		context["contract_changed"] = contract.RevisionRequest.ContractChanged
+		context["requested_changes"] = contract.RevisionRequest.RequestedChanges
+		if contract.RevisionRequest.RecommendedTaskTitle != "" {
+			context["recommended_task_title"] = contract.RevisionRequest.RecommendedTaskTitle
+		}
+		if contract.RevisionRequest.RecommendedTaskSummary != "" {
+			context["recommended_task_summary"] = contract.RevisionRequest.RecommendedTaskSummary
+		}
+	case contract.Blocker != nil:
+		context["reason"] = contract.Blocker.Reason
+		context["required_by"] = contract.Blocker.RequiredBy
+		context["resolution_prompt"] = contract.Blocker.ResolutionPrompt
+	case contract.ReplanRequest != nil:
+		context["reason"] = contract.ReplanRequest.Reason
+		context["scope"] = contract.ReplanRequest.Scope
+		context["constraints"] = contract.ReplanRequest.Constraints
+	}
+	refs := []any{context}
+	if contract.Blocker != nil && len(contract.Blocker.ContextRefs) > 0 {
+		refs = append(refs, taskResultRefsToAny(contract.Blocker.ContextRefs)...)
+	}
+	return refs
+}
+
+func taskResultHumanWaitResolutionOptions(decision TaskResultDecision) []string {
+	switch decision {
+	case TaskResultDecisionRevisionAttempt, TaskResultDecisionRevisionTask, TaskResultDecisionReplanRequested:
+		return []string{HumanWaitResolutionResumeSameTask, HumanWaitResolutionCancelAndReplan, HumanWaitResolutionMarkFailed}
+	default:
+		return []string{HumanWaitResolutionResumeSameTask, HumanWaitResolutionCancelWithoutPlan, HumanWaitResolutionMarkFailed}
+	}
+}
+
+func taskResultFailureSummary(contract TaskResultContract) string {
+	if summary := strings.TrimSpace(contract.Summary); summary != "" {
+		return summary
+	}
+	if contract.Failure != nil && strings.TrimSpace(contract.Failure.Message) != "" {
+		return strings.TrimSpace(contract.Failure.Message)
+	}
+	return "Task result reported failure"
+}
+
+func taskResultFailureFamily(contract TaskResultContract) string {
+	if contract.Failure != nil {
+		if family := strings.TrimSpace(contract.Failure.ErrorFamily); family != "" {
+			return family
+		}
+	}
+	return FailureFamilyNonRetryableExecution
+}
+
+func taskResultFailureRetryable(contract TaskResultContract) *bool {
+	if contract.Failure != nil && contract.Failure.Retryable != nil {
+		return contract.Failure.Retryable
+	}
+	retryable := retryableFailureFamily(taskResultFailureFamily(contract))
+	return &retryable
+}
+
+func taskResultCancellationSummary(contract TaskResultContract) string {
+	if summary := strings.TrimSpace(contract.Summary); summary != "" {
+		return summary
+	}
+	if contract.Cancellation != nil && strings.TrimSpace(contract.Cancellation.Reason) != "" {
+		return strings.TrimSpace(contract.Cancellation.Reason)
+	}
+	return "Task result reported cancellation"
 }
 
 func projectTaskAttemptResultRecordRequest(task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract, validation TaskResultValidation) RecordProjectTaskResultRequest {

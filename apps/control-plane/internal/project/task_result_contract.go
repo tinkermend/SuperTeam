@@ -487,11 +487,11 @@ func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResu
 	case TaskResultStatusBlocked:
 		return TaskResultDecisionBlockedWaitingHuman
 	case TaskResultStatusFailed:
-		if result.Failure != nil && result.Failure.Retryable != nil && *result.Failure.Retryable && taskResultRetryBudgetRemains(task) {
-			return TaskResultDecisionFailedRetryable
-		}
 		if result.ReplanRequest != nil {
 			return TaskResultDecisionReplanRequested
+		}
+		if result.Failure != nil && result.Failure.Retryable != nil && *result.Failure.Retryable && taskResultRetryBudgetRemains(task) {
+			return TaskResultDecisionFailedRetryable
 		}
 		return TaskResultDecisionFailedRecovery
 	case TaskResultStatusCancelled:
