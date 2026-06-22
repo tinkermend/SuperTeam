@@ -5010,15 +5010,39 @@ const ListUnresolvedBlockersForTasks = `-- name: ListUnresolvedBlockersForTasks 
 SELECT
     d.dependent_task_id,
     d.blocker_task_id,
-    b.status AS blocker_status
+    b.status AS blocker_status,
+    b.latest_task_result_id,
+    latest_result.result_status AS latest_result_status,
+    latest_result.decision AS latest_result_decision,
+    latest_result.validation_status AS latest_result_validation_status,
+    CASE
+        WHEN b.status = 'completed'
+         AND latest_result.id IS NOT NULL
+         AND latest_result.result_status = 'completed'
+         AND latest_result.decision = 'complete_accepted'
+         AND latest_result.validation_status = 'accepted'
+        THEN true
+        ELSE false
+    END AS acceptance_satisfied
 FROM project_task_dependencies d
 JOIN project_tasks b
   ON b.tenant_id = d.tenant_id
  AND b.id = d.blocker_task_id
+LEFT JOIN project_task_results latest_result
+  ON latest_result.tenant_id = b.tenant_id
+ AND latest_result.project_id = b.project_id
+ AND latest_result.project_task_id = b.id
+ AND latest_result.id = b.latest_task_result_id
 WHERE d.tenant_id = $1::uuid
   AND d.project_id = $2::uuid
   AND d.dependent_task_id = ANY($3::uuid[])
-  AND b.status <> 'completed'
+  AND NOT (
+        b.status = 'completed'
+        AND latest_result.id IS NOT NULL
+        AND latest_result.result_status = 'completed'
+        AND latest_result.decision = 'complete_accepted'
+        AND latest_result.validation_status = 'accepted'
+    )
 ORDER BY d.dependent_task_id, d.created_at ASC
 `
 
@@ -5029,9 +5053,14 @@ type ListUnresolvedBlockersForTasksParams struct {
 }
 
 type ListUnresolvedBlockersForTasksRow struct {
-	DependentTaskID uuid.UUID `json:"dependent_task_id"`
-	BlockerTaskID   uuid.UUID `json:"blocker_task_id"`
-	BlockerStatus   string    `json:"blocker_status"`
+	DependentTaskID              uuid.UUID     `json:"dependent_task_id"`
+	BlockerTaskID                uuid.UUID     `json:"blocker_task_id"`
+	BlockerStatus                string        `json:"blocker_status"`
+	LatestTaskResultID           uuid.NullUUID `json:"latest_task_result_id"`
+	LatestResultStatus           pgtype.Text   `json:"latest_result_status"`
+	LatestResultDecision         pgtype.Text   `json:"latest_result_decision"`
+	LatestResultValidationStatus pgtype.Text   `json:"latest_result_validation_status"`
+	AcceptanceSatisfied          bool          `json:"acceptance_satisfied"`
 }
 
 func (q *Queries) ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error) {
@@ -5043,7 +5072,16 @@ func (q *Queries) ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUn
 	items := []ListUnresolvedBlockersForTasksRow{}
 	for rows.Next() {
 		var i ListUnresolvedBlockersForTasksRow
-		if err := rows.Scan(&i.DependentTaskID, &i.BlockerTaskID, &i.BlockerStatus); err != nil {
+		if err := rows.Scan(
+			&i.DependentTaskID,
+			&i.BlockerTaskID,
+			&i.BlockerStatus,
+			&i.LatestTaskResultID,
+			&i.LatestResultStatus,
+			&i.LatestResultDecision,
+			&i.LatestResultValidationStatus,
+			&i.AcceptanceSatisfied,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

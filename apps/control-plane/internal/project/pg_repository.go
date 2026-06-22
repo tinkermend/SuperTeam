@@ -1942,9 +1942,14 @@ func (r *PgRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenan
 	readiness := make([]ProjectTaskDependencyReadiness, 0, len(rows))
 	for _, row := range rows {
 		readiness = append(readiness, ProjectTaskDependencyReadiness{
-			DependentTaskID: row.DependentTaskID,
-			BlockerTaskID:   row.BlockerTaskID,
-			BlockerStatus:   row.BlockerStatus,
+			DependentTaskID:              row.DependentTaskID,
+			BlockerTaskID:                row.BlockerTaskID,
+			BlockerStatus:                row.BlockerStatus,
+			LatestTaskResultID:           ptrUUID(row.LatestTaskResultID),
+			LatestResultStatus:           taskResultStatusFromText(row.LatestResultStatus),
+			LatestResultDecision:         taskResultDecisionFromText(row.LatestResultDecision),
+			LatestResultValidationStatus: textValue(row.LatestResultValidationStatus),
+			AcceptanceSatisfied:          row.AcceptanceSatisfied,
 		})
 	}
 	return readiness, nil
@@ -1952,6 +1957,14 @@ func (r *PgRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenan
 
 func (r *PgRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {
 	return r.listProjectTasksByCoordinationJobWithQueries(ctx, r.q, tenantID, projectID, coordinationJobID)
+}
+
+func taskResultStatusFromText(value pgtype.Text) TaskResultStatus {
+	return TaskResultStatus(textValue(value))
+}
+
+func taskResultDecisionFromText(value pgtype.Text) TaskResultDecision {
+	return TaskResultDecision(textValue(value))
 }
 
 func (r *PgRepository) listProjectTasksByCoordinationJobWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {

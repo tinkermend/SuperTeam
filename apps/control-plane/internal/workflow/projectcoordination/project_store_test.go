@@ -608,6 +608,7 @@ func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlocke
 			projectStoreDependency(tenantID, projectID, jobID, readyDependentID, completedBlockerID),
 		},
 	}
+	repo.setTaskLatestResult(completedBlockerID, projectStoreTaskResult(tenantID, projectID, completedBlockerID, project.TaskResultDecisionCompleteAccepted, "accepted"))
 	store := NewProjectStore(repo)
 
 	ids, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{
@@ -618,6 +619,49 @@ func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlocke
 
 	require.NoError(t, err)
 	require.Equal(t, []uuid.UUID{rootID, readyDependentID}, ids)
+}
+
+func TestProjectStoreListDispatchableTasksRequiresAcceptedLatestBlockerResult(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	rootID := uuid.New()
+	noResultBlockerID := uuid.New()
+	waitingResultBlockerID := uuid.New()
+	acceptedBlockerID := uuid.New()
+	noResultDependentID := uuid.New()
+	waitingResultDependentID := uuid.New()
+	acceptedDependentID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, rootID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, noResultBlockerID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, waitingResultBlockerID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, acceptedBlockerID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, noResultDependentID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, waitingResultDependentID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, acceptedDependentID, "planned"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, noResultDependentID, noResultBlockerID),
+			projectStoreDependency(tenantID, projectID, jobID, waitingResultDependentID, waitingResultBlockerID),
+			projectStoreDependency(tenantID, projectID, jobID, acceptedDependentID, acceptedBlockerID),
+		},
+	}
+	repo.setTaskLatestResult(waitingResultBlockerID, projectStoreTaskResult(tenantID, projectID, waitingResultBlockerID, project.TaskResultDecisionWaitingHumanReview, "accepted"))
+	repo.setTaskLatestResult(acceptedBlockerID, projectStoreTaskResult(tenantID, projectID, acceptedBlockerID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+	store := NewProjectStore(repo)
+
+	ids, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{rootID, acceptedDependentID}, ids)
 }
 
 func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *testing.T) {
@@ -646,6 +690,7 @@ func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *tes
 			projectStoreDependency(tenantID, projectID, jobID, alreadyPlannedID, completedTaskID),
 		},
 	}
+	repo.setTaskLatestResult(completedTaskID, projectStoreTaskResult(tenantID, projectID, completedTaskID, project.TaskResultDecisionCompleteAccepted, "accepted"))
 	store := NewProjectStore(repo)
 
 	ids, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
@@ -661,6 +706,52 @@ func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *tes
 	require.Equal(t, "planned", repo.taskStatus(alreadyPlannedID))
 	require.Equal(t, []projectTaskStatusUpdateRecord{
 		{TenantID: tenantID, TaskID: readyDownstreamID, Status: "planned", CurrentStatuses: []string{"blocked"}},
+	}, repo.statusUpdates)
+}
+
+func TestProjectStoreResolveReadyDownstreamRequiresAcceptedLatestBlockerResult(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	completedTaskID := uuid.New()
+	downstreamID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, completedTaskID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, completedTaskID),
+		},
+	}
+	store := NewProjectStore(repo)
+
+	ids, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: completedTaskID,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	require.Equal(t, "blocked", repo.taskStatus(downstreamID))
+	require.Empty(t, repo.statusUpdates)
+
+	repo.setTaskLatestResult(completedTaskID, projectStoreTaskResult(tenantID, projectID, completedTaskID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+
+	ids, err = store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: completedTaskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{downstreamID}, ids)
+	require.Equal(t, "planned", repo.taskStatus(downstreamID))
+	require.Equal(t, []projectTaskStatusUpdateRecord{
+		{TenantID: tenantID, TaskID: downstreamID, Status: "planned", CurrentStatuses: []string{"blocked"}},
 	}, repo.statusUpdates)
 }
 
@@ -1022,6 +1113,7 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 	requireNoDependency(t, repo.taskDependencies, downstreamID, failedTaskID)
 
 	repo.setTaskStatus(replacement.ID, "completed")
+	repo.setTaskLatestResult(replacement.ID, projectStoreTaskResult(tenantID, projectID, replacement.ID, project.TaskResultDecisionCompleteAccepted, "accepted"))
 	ready, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
 		TenantID:        tenantID,
 		ProjectID:       projectID,
@@ -2207,6 +2299,7 @@ type projectStoreMemoryRepository struct {
 	routeDecisions                        []project.RouteDecision
 	planRevisions                         []project.PlanRevision
 	taskDependencies                      []project.ProjectTaskDependency
+	projectTaskResults                    []project.ProjectTaskResult
 	statusUpdates                         []projectTaskStatusUpdateRecord
 	routeDecisionRequests                 []project.CreateRouteDecisionRequest
 	projectTaskRequests                   []project.CreateProjectTaskRequest
@@ -3112,16 +3205,51 @@ func (r *projectStoreMemoryRepository) ListUnresolvedBlockersForTasks(ctx contex
 		if err != nil {
 			return nil, err
 		}
-		if blocker.Status == "completed" {
+		accepted, latestResult := r.blockerAcceptanceSatisfied(blocker)
+		if accepted {
 			continue
 		}
-		readiness = append(readiness, project.ProjectTaskDependencyReadiness{
-			DependentTaskID: dependency.DependentTaskID,
-			BlockerTaskID:   dependency.BlockerTaskID,
-			BlockerStatus:   blocker.Status,
-		})
+		item := project.ProjectTaskDependencyReadiness{
+			DependentTaskID:     dependency.DependentTaskID,
+			BlockerTaskID:       dependency.BlockerTaskID,
+			BlockerStatus:       blocker.Status,
+			AcceptanceSatisfied: accepted,
+		}
+		if blocker.LatestTaskResultID != nil {
+			item.LatestTaskResultID = blocker.LatestTaskResultID
+		}
+		if latestResult != nil {
+			item.LatestResultStatus = latestResult.ResultStatus
+			item.LatestResultDecision = latestResult.Decision
+			item.LatestResultValidationStatus = latestResult.ValidationStatus
+		}
+		readiness = append(readiness, item)
 	}
 	return readiness, nil
+}
+
+func (r *projectStoreMemoryRepository) blockerAcceptanceSatisfied(blocker project.ProjectTask) (bool, *project.ProjectTaskResult) {
+	if blocker.Status != project.ProjectTaskStatusCompleted || blocker.LatestTaskResultID == nil || *blocker.LatestTaskResultID == uuid.Nil {
+		return false, nil
+	}
+	for _, result := range r.projectTaskResults {
+		if result.ID != *blocker.LatestTaskResultID || result.ProjectTaskID != blocker.ID {
+			continue
+		}
+		resultCopy := result
+		return project.ProjectTaskResultAcceptedForDependencyUnlock(result), &resultCopy
+	}
+	return false, nil
+}
+
+func (r *projectStoreMemoryRepository) ListProjectTaskResults(ctx context.Context, req project.ListProjectTaskResultsRequest) ([]project.ProjectTaskResult, error) {
+	results := make([]project.ProjectTaskResult, 0, len(r.projectTaskResults))
+	for _, result := range r.projectTaskResults {
+		if result.TenantID == req.TenantID && result.ProjectID == req.ProjectID && result.ProjectTaskID == req.ProjectTaskID {
+			results = append(results, result)
+		}
+	}
+	return results, nil
 }
 
 func (r *projectStoreMemoryRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID string) (bool, error) {
@@ -3317,6 +3445,24 @@ func projectStoreDependency(tenantID, projectID, coordinationJobID, dependentTas
 	}
 }
 
+func projectStoreTaskResult(tenantID, projectID, taskID uuid.UUID, decision project.TaskResultDecision, validationStatus string) project.ProjectTaskResult {
+	return project.ProjectTaskResult{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    taskID,
+		ResultStatus:     project.TaskResultStatusCompleted,
+		ValidationStatus: validationStatus,
+		Decision:         decision,
+		Contract: project.TaskResultContract{
+			Status:  project.TaskResultStatusCompleted,
+			Summary: "dependency result",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+}
+
 func (r *projectStoreMemoryRepository) taskStatus(taskID uuid.UUID) string {
 	for _, task := range r.tasks {
 		if task.ID == taskID {
@@ -3330,6 +3476,17 @@ func (r *projectStoreMemoryRepository) setTaskStatus(taskID uuid.UUID, status st
 	for index, task := range r.tasks {
 		if task.ID == taskID {
 			r.tasks[index].Status = status
+			return
+		}
+	}
+}
+
+func (r *projectStoreMemoryRepository) setTaskLatestResult(taskID uuid.UUID, result project.ProjectTaskResult) {
+	r.projectTaskResults = append(r.projectTaskResults, result)
+	for index, task := range r.tasks {
+		if task.ID == taskID {
+			r.tasks[index].LatestTaskResultID = &result.ID
+			r.tasks[index].UpdatedAt = result.UpdatedAt
 			return
 		}
 	}

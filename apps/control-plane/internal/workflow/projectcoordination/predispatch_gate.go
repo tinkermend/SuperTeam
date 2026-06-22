@@ -119,11 +119,15 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		if blocker.ProjectID != input.ProjectID {
 			return project.PreDispatchGateSnapshot{}, project.ErrProjectNotFound
 		}
+		acceptanceSatisfied, resultVersion, err := s.dependencyAcceptanceSatisfied(ctx, input.TenantID, input.ProjectID, blocker)
+		if err != nil {
+			return project.PreDispatchGateSnapshot{}, err
+		}
 		snapshot.Dependencies = append(snapshot.Dependencies, project.PreDispatchDependencySnapshot{
 			TaskID:              blocker.ID,
 			Status:              blocker.Status,
-			AcceptanceSatisfied: blocker.Status == project.ProjectTaskStatusCompleted,
-			ResultVersion:       dependencyResultVersion(blocker),
+			AcceptanceSatisfied: acceptanceSatisfied,
+			ResultVersion:       resultVersion,
 		})
 	}
 	if task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
@@ -168,6 +172,31 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Tools = mergePreDispatchToolSnapshot(snapshot.Tools, tools)
 	}
 	return snapshot, nil
+}
+
+func (s *ProjectStore) dependencyAcceptanceSatisfied(ctx context.Context, tenantID, projectID uuid.UUID, blocker project.ProjectTask) (bool, string, error) {
+	if blocker.Status != project.ProjectTaskStatusCompleted {
+		return false, dependencyResultVersion(blocker, nil), nil
+	}
+	if blocker.LatestTaskResultID == nil || *blocker.LatestTaskResultID == uuid.Nil {
+		return false, dependencyResultVersion(blocker, nil), nil
+	}
+	results, err := s.repository.ListProjectTaskResults(ctx, project.ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: blocker.ID,
+		Limit:         100,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	for _, result := range results {
+		if result.ID != *blocker.LatestTaskResultID {
+			continue
+		}
+		return project.ProjectTaskResultAcceptedForDependencyUnlock(result), dependencyResultVersion(blocker, &result), nil
+	}
+	return false, dependencyResultVersion(blocker, nil), nil
 }
 
 func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error) {
@@ -703,11 +732,25 @@ func applyBudgetMetadata(budget *project.PreDispatchBudgetSnapshot, values map[s
 	}
 }
 
-func dependencyResultVersion(task project.ProjectTask) string {
+func dependencyResultVersion(task project.ProjectTask, latestResult *project.ProjectTaskResult) string {
+	parts := []string{task.ID.String()}
 	if !task.UpdatedAt.IsZero() {
-		return task.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		parts = append(parts, task.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	}
-	return task.ID.String()
+	if task.LatestTaskResultID != nil && *task.LatestTaskResultID != uuid.Nil {
+		parts = append(parts, "latest_result:"+task.LatestTaskResultID.String())
+	}
+	if latestResult != nil {
+		parts = append(parts,
+			string(latestResult.ResultStatus),
+			string(latestResult.Decision),
+			strings.TrimSpace(latestResult.ValidationStatus),
+		)
+		if !latestResult.UpdatedAt.IsZero() {
+			parts = append(parts, latestResult.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		}
+	}
+	return strings.Join(parts, ":")
 }
 
 func timePtrString(value *time.Time) any {

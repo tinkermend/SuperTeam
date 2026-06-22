@@ -918,15 +918,39 @@ ORDER BY created_at ASC;
 SELECT
     d.dependent_task_id,
     d.blocker_task_id,
-    b.status AS blocker_status
+    b.status AS blocker_status,
+    b.latest_task_result_id,
+    latest_result.result_status AS latest_result_status,
+    latest_result.decision AS latest_result_decision,
+    latest_result.validation_status AS latest_result_validation_status,
+    CASE
+        WHEN b.status = 'completed'
+         AND latest_result.id IS NOT NULL
+         AND latest_result.result_status = 'completed'
+         AND latest_result.decision = 'complete_accepted'
+         AND latest_result.validation_status = 'accepted'
+        THEN true
+        ELSE false
+    END AS acceptance_satisfied
 FROM project_task_dependencies d
 JOIN project_tasks b
   ON b.tenant_id = d.tenant_id
  AND b.id = d.blocker_task_id
+LEFT JOIN project_task_results latest_result
+  ON latest_result.tenant_id = b.tenant_id
+ AND latest_result.project_id = b.project_id
+ AND latest_result.project_task_id = b.id
+ AND latest_result.id = b.latest_task_result_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
   AND d.project_id = sqlc.arg('project_id')::uuid
   AND d.dependent_task_id = ANY(sqlc.arg('dependent_task_ids')::uuid[])
-  AND b.status <> 'completed'
+  AND NOT (
+        b.status = 'completed'
+        AND latest_result.id IS NOT NULL
+        AND latest_result.result_status = 'completed'
+        AND latest_result.decision = 'complete_accepted'
+        AND latest_result.validation_status = 'accepted'
+    )
 ORDER BY d.dependent_task_id, d.created_at ASC;
 
 -- name: ListProjectTasksByCoordinationJob :many

@@ -440,6 +440,79 @@ func TestPgRepositoryRecordProjectTaskResultIsIdempotentAndLinksLatest(t *testin
 	require.Equal(t, first.ID, *updated.LatestTaskResultID)
 }
 
+func TestPgRepositoryListUnresolvedBlockersRequiresAcceptedLatestResult(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	createTask := func(title, status string) ProjectTask {
+		task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     title,
+			Status:    status,
+		})
+		require.NoError(t, err)
+		return task
+	}
+	recordLatestResult := func(task ProjectTask, decision TaskResultDecision, validationStatus string) {
+		result, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+			TenantID:         tenantID,
+			ProjectID:        projectID,
+			ProjectTaskID:    task.ID,
+			ResultStatus:     TaskResultStatusCompleted,
+			ValidationStatus: validationStatus,
+			Decision:         decision,
+			Contract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "dependency result",
+			},
+			IdempotencyKey: "dependency-result-" + task.ID.String(),
+		})
+		require.NoError(t, err)
+		_, err = repo.LinkProjectTaskLatestResult(ctx, tenantID, projectID, task.ID, result.ID)
+		require.NoError(t, err)
+	}
+	createDependency := func(dependent, blocker ProjectTask) {
+		_, err := pgRepo.CreateProjectTaskDependency(ctx, CreateProjectTaskDependencyRequest{
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			DependentTaskID: dependent.ID,
+			BlockerTaskID:   blocker.ID,
+		})
+		require.NoError(t, err)
+	}
+
+	noResultBlocker := createTask("completed blocker without result", ProjectTaskStatusCompleted)
+	waitingResultBlocker := createTask("completed blocker waiting human", ProjectTaskStatusCompleted)
+	acceptedBlocker := createTask("completed blocker accepted", ProjectTaskStatusCompleted)
+	noResultDependent := createTask("dependent blocked by missing result", ProjectTaskStatusPlanned)
+	waitingResultDependent := createTask("dependent blocked by waiting result", ProjectTaskStatusPlanned)
+	acceptedDependent := createTask("dependent with accepted result", ProjectTaskStatusPlanned)
+	createDependency(noResultDependent, noResultBlocker)
+	createDependency(waitingResultDependent, waitingResultBlocker)
+	createDependency(acceptedDependent, acceptedBlocker)
+	recordLatestResult(waitingResultBlocker, TaskResultDecisionWaitingHumanReview, "accepted")
+	recordLatestResult(acceptedBlocker, TaskResultDecisionCompleteAccepted, "accepted")
+
+	unresolved, err := repo.ListUnresolvedBlockersForTasks(ctx, tenantID, projectID, []uuid.UUID{
+		noResultDependent.ID,
+		waitingResultDependent.ID,
+		acceptedDependent.ID,
+	})
+
+	require.NoError(t, err)
+	byDependent := map[uuid.UUID]ProjectTaskDependencyReadiness{}
+	for _, blocker := range unresolved {
+		byDependent[blocker.DependentTaskID] = blocker
+	}
+	require.Contains(t, byDependent, noResultDependent.ID)
+	require.Equal(t, noResultBlocker.ID, byDependent[noResultDependent.ID].BlockerTaskID)
+	require.Contains(t, byDependent, waitingResultDependent.ID)
+	require.Equal(t, waitingResultBlocker.ID, byDependent[waitingResultDependent.ID].BlockerTaskID)
+	require.NotContains(t, byDependent, acceptedDependent.ID)
+}
+
 func TestPgRepositoryCreateProjectDemandSummaryIsIdempotent(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

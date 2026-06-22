@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -367,9 +368,22 @@ type ProjectTaskGraphTaskResult struct {
 }
 
 type ProjectTaskDependencyReadiness struct {
-	DependentTaskID uuid.UUID
-	BlockerTaskID   uuid.UUID
-	BlockerStatus   string
+	DependentTaskID              uuid.UUID
+	BlockerTaskID                uuid.UUID
+	BlockerStatus                string
+	LatestTaskResultID           *uuid.UUID
+	LatestResultStatus           TaskResultStatus
+	LatestResultDecision         TaskResultDecision
+	LatestResultValidationStatus string
+	AcceptanceSatisfied          bool
+}
+
+// ProjectTaskResultAcceptedForDependencyUnlock reports whether a structured task
+// result is strong enough to release downstream dependency gates.
+func ProjectTaskResultAcceptedForDependencyUnlock(result ProjectTaskResult) bool {
+	return result.ResultStatus == TaskResultStatusCompleted &&
+		result.Decision == TaskResultDecisionCompleteAccepted &&
+		strings.EqualFold(strings.TrimSpace(result.ValidationStatus), "accepted")
 }
 
 type ProjectTaskCompletionContract struct {
