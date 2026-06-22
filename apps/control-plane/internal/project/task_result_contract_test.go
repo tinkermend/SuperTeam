@@ -53,9 +53,7 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 	t.Run("completed result rejects blank acceptance criterion evidence refs", func(t *testing.T) {
 		result := completeTaskResultContract()
-		result.AcceptanceResults[1].EvidenceRefs = []TaskResultRef{
-			{Kind: "report", Ref: "   "},
-		}
+		result.AcceptanceResults[1].EvidenceRefs = []string{"   "}
 
 		validation := ValidateTaskResultContract(taskResultContractTask(), result)
 
@@ -66,7 +64,9 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 	t.Run("completed result rejects unknown verification status", func(t *testing.T) {
 		result := completeTaskResultContract()
-		result.Verification.Status = TaskResultVerificationStatus("bogus")
+		result.Verification = []TaskResultVerification{
+			{Status: TaskResultVerificationStatus("bogus")},
+		}
 
 		validation := ValidateTaskResultContract(taskResultContractTask(), result)
 
@@ -96,11 +96,14 @@ func TestValidateTaskResultContract(t *testing.T) {
 			Status:  TaskResultStatusBlocked,
 			Summary: "缺少生产只读凭据，无法核对最终状态。",
 			Blocker: &TaskResultBlocker{
-				Reason:     "需要人类提供生产只读凭据",
-				RequiredBy: "human",
+				Reason:           "需要人类提供生产只读凭据",
+				RequiredBy:       "human",
+				ResolutionPrompt: "请提供生产只读凭据或确认改用脱敏导出",
 			},
 			HumanReviewRequest: &TaskResultHumanReviewRequest{
 				Reason:     "请负责人确认是否提供凭据或改用脱敏导出",
+				Prompt:     "是否提供凭据？",
+				Options:    []string{"提供凭据", "使用脱敏导出"},
 				RequiredBy: "human",
 			},
 		}
@@ -222,14 +225,24 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 	contract := TaskResultContract{
 		Status:  TaskResultStatusCompleted,
 		Summary: "shape check",
+		ChangesMade: []TaskResultChange{
+			{Summary: "added task result validation"},
+		},
 		EvidenceRefs: []TaskResultRef{
 			{Type: "trace", Summary: "trace evidence", ID: "evidence-1"},
 		},
 		Risks: []TaskResultRisk{
 			{Level: "low", Description: "known residual risk"},
 		},
-		Verifications: []TaskResultVerification{
-			{Status: TaskResultVerificationPassed, Summary: "focused test passed"},
+		Verification: []TaskResultVerification{
+			{Status: TaskResultVerificationPassed, Type: "go_test", Ref: "go-test://focused", Summary: "focused test passed"},
+		},
+		HumanReviewRequest: &TaskResultHumanReviewRequest{
+			Prompt:  "Accept residual risk?",
+			Options: []string{"accept", "request_revision"},
+		},
+		Blocker: &TaskResultBlocker{
+			ResolutionPrompt: "Provide missing credential or approve sanitized evidence.",
 		},
 	}
 
@@ -238,25 +251,13 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 	require.JSONEq(t, `{
 		"status": "completed",
 		"summary": "shape check",
+		"changes_made": [{"summary": "added task result validation"}],
 		"evidence_refs": [{"id": "evidence-1", "type": "trace", "summary": "trace evidence"}],
 		"risks": [{"level": "low", "description": "known residual risk"}],
-		"verification": [{"status": "passed", "summary": "focused test passed"}]
+		"verification": [{"status": "passed", "type": "go_test", "ref": "go-test://focused", "summary": "focused test passed"}],
+		"human_review_request": {"prompt": "Accept residual risk?", "options": ["accept", "request_revision"]},
+		"blocker": {"resolution_prompt": "Provide missing credential or approve sanitized evidence."}
 	}`, string(payload))
-
-	singleVerificationPayload, err := json.Marshal(TaskResultContract{
-		Status:  TaskResultStatusCompleted,
-		Summary: "single verification bridge",
-		Verification: TaskResultVerification{
-			Status:  TaskResultVerificationPassed,
-			Summary: "legacy field still exposes plan JSON shape",
-		},
-	})
-	require.NoError(t, err)
-	require.JSONEq(t, `{
-		"status": "completed",
-		"summary": "single verification bridge",
-		"verification": [{"status": "passed", "summary": "legacy field still exposes plan JSON shape"}]
-	}`, string(singleVerificationPayload))
 }
 
 func taskResultContractTask() ProjectTask {
@@ -282,18 +283,14 @@ func completeTaskResultContract() TaskResultContract {
 		Summary: "已完成数据库核对，列出剩余低风险项并给出负责人验收建议。",
 		AcceptanceResults: []TaskResultAcceptanceResult{
 			{
-				Criterion: "SQL 核对",
-				Status:    TaskResultCriterionStatusPassed,
-				EvidenceRefs: []TaskResultRef{
-					{Kind: "query", Ref: "evidence://sql/project-count"},
-				},
+				Criterion:    "SQL 核对",
+				Status:       TaskResultCriterionStatusPassed,
+				EvidenceRefs: []string{"evidence://sql/project-count"},
 			},
 			{
-				Criterion: "说明剩余风险",
-				Status:    TaskResultCriterionStatusPassed,
-				EvidenceRefs: []TaskResultRef{
-					{Kind: "report", Ref: "evidence://risk-summary"},
-				},
+				Criterion:    "说明剩余风险",
+				Status:       TaskResultCriterionStatusPassed,
+				EvidenceRefs: []string{"evidence://risk-summary"},
 			},
 		},
 		EvidenceRefs: []TaskResultRef{
@@ -302,9 +299,13 @@ func completeTaskResultContract() TaskResultContract {
 		ArtifactRefs: []TaskResultRef{
 			{Kind: "report", Ref: "artifact://task/report"},
 		},
-		Verification: TaskResultVerification{
-			Status:  TaskResultVerificationStatusPassed,
-			Summary: "go test focused package passed",
+		Verification: []TaskResultVerification{
+			{
+				Status:  TaskResultVerificationStatusPassed,
+				Type:    "go_test",
+				Ref:     "go-test://focused",
+				Summary: "go test focused package passed",
+			},
 		},
 	}
 }

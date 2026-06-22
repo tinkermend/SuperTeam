@@ -1,7 +1,6 @@
 package project
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -65,9 +64,9 @@ type TaskResultContract struct {
 	AcceptanceResults  []TaskResultAcceptanceResult  `json:"acceptance_results,omitempty"`
 	EvidenceRefs       []TaskResultRef               `json:"evidence_refs,omitempty"`
 	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
+	ChangesMade        []TaskResultChange            `json:"changes_made"`
 	Changes            []TaskResultChange            `json:"changes,omitempty"`
-	Verification       TaskResultVerification        `json:"-"`
-	Verifications      []TaskResultVerification      `json:"verification,omitempty"`
+	Verification       []TaskResultVerification      `json:"verification"`
 	Risks              []TaskResultRisk              `json:"risks,omitempty"`
 	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`
 	HumanReviewRequest *TaskResultHumanReviewRequest `json:"human_review_request,omitempty"`
@@ -78,14 +77,6 @@ type TaskResultContract struct {
 	Cancellation       *TaskResultCancellation       `json:"cancellation,omitempty"`
 }
 
-func (result TaskResultContract) MarshalJSON() ([]byte, error) {
-	type taskResultContractAlias TaskResultContract
-	if len(result.Verifications) == 0 {
-		result.Verifications = taskResultVerifications(result)
-	}
-	return json.Marshal(taskResultContractAlias(result))
-}
-
 type TaskResultAcceptanceResult struct {
 	ID                  string                    `json:"id,omitempty"`
 	Criterion           string                    `json:"criterion,omitempty"`
@@ -93,7 +84,7 @@ type TaskResultAcceptanceResult struct {
 	Name                string                    `json:"name,omitempty"`
 	Status              TaskResultCriterionStatus `json:"status"`
 	Summary             string                    `json:"summary,omitempty"`
-	EvidenceRefs        []TaskResultRef           `json:"evidence_refs,omitempty"`
+	EvidenceRefs        []string                  `json:"evidence_refs,omitempty"`
 	HumanAcceptedReason string                    `json:"human_accepted_reason,omitempty"`
 }
 
@@ -117,6 +108,8 @@ type TaskResultChange struct {
 
 type TaskResultVerification struct {
 	Status       TaskResultVerificationStatus `json:"status"`
+	Type         string                       `json:"type,omitempty"`
+	Ref          string                       `json:"ref,omitempty"`
 	Summary      string                       `json:"summary,omitempty"`
 	Method       string                       `json:"method,omitempty"`
 	EvidenceRefs []TaskResultRef              `json:"evidence_refs,omitempty"`
@@ -139,6 +132,8 @@ type TaskResultFollowUpRequest struct {
 
 type TaskResultHumanReviewRequest struct {
 	Reason                     string   `json:"reason,omitempty"`
+	Prompt                     string   `json:"prompt,omitempty"`
+	Options                    []string `json:"options,omitempty"`
 	RequiredBy                 string   `json:"required_by,omitempty"`
 	ReviewType                 string   `json:"review_type,omitempty"`
 	SuggestedResolutionOptions []string `json:"suggested_resolution_options,omitempty"`
@@ -151,9 +146,10 @@ type TaskResultRevisionRequest struct {
 }
 
 type TaskResultBlocker struct {
-	Reason      string          `json:"reason,omitempty"`
-	RequiredBy  string          `json:"required_by,omitempty"`
-	ContextRefs []TaskResultRef `json:"context_refs,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	ResolutionPrompt string          `json:"resolution_prompt,omitempty"`
+	RequiredBy       string          `json:"required_by,omitempty"`
+	ContextRefs      []TaskResultRef `json:"context_refs,omitempty"`
 }
 
 type TaskResultFailure struct {
@@ -259,6 +255,7 @@ func TaskResultContractFromLegacyCompletion(req CompleteProjectTaskAttemptReques
 	if req.RequiresHumanReview {
 		result.HumanReviewRequest = &TaskResultHumanReviewRequest{
 			Reason:     "legacy_completion_requires_human_review",
+			Prompt:     "Review legacy completion result",
 			RequiredBy: "human",
 		}
 	}
@@ -300,12 +297,15 @@ func TaskResultContractFromWaitHuman(req WaitHumanProjectTaskAttemptRequest) Tas
 		Status:  TaskResultStatusBlocked,
 		Summary: summary,
 		Blocker: &TaskResultBlocker{
-			Reason:      reason,
-			RequiredBy:  "human",
-			ContextRefs: taskResultRefsFromAny(req.MissingContextRefs, "missing_context"),
+			Reason:           reason,
+			ResolutionPrompt: reason,
+			RequiredBy:       "human",
+			ContextRefs:      taskResultRefsFromAny(req.MissingContextRefs, "missing_context"),
 		},
 		HumanReviewRequest: &TaskResultHumanReviewRequest{
 			Reason:                     reason,
+			Prompt:                     reason,
+			Options:                    req.SuggestedResolutionOptions,
 			RequiredBy:                 "human",
 			SuggestedResolutionOptions: req.SuggestedResolutionOptions,
 		},
@@ -334,11 +334,10 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 	if requiredOutputs["artifact_refs"] && len(result.ArtifactRefs) == 0 {
 		errors = append(errors, "expected_output_missing:artifact_refs")
 	}
-	verifications := taskResultVerifications(result)
-	if requiredOutputs["verification"] && len(verifications) == 0 {
+	if requiredOutputs["verification"] && len(result.Verification) == 0 {
 		errors = append(errors, "expected_output_missing:verification")
 	}
-	for _, verification := range verifications {
+	for _, verification := range result.Verification {
 		switch verification.Status {
 		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
 		case TaskResultVerificationStatusFailed:
@@ -369,18 +368,8 @@ func validateCompletedAcceptanceResult(criterion string, result TaskResultAccept
 	default:
 		return []string{"acceptance_result_not_accepted:" + criterion}
 	}
-	if !hasUsableTaskResultRef(result.EvidenceRefs) {
+	if !hasUsableStringRef(result.EvidenceRefs) {
 		return []string{"acceptance_result_evidence_missing:" + criterion}
-	}
-	return nil
-}
-
-func taskResultVerifications(result TaskResultContract) []TaskResultVerification {
-	if len(result.Verifications) > 0 {
-		return result.Verifications
-	}
-	if result.Verification.Status != "" {
-		return []TaskResultVerification{result.Verification}
 	}
 	return nil
 }
@@ -399,6 +388,15 @@ func usableTaskResultRef(ref TaskResultRef) bool {
 		strings.TrimSpace(ref.URI) != "" ||
 		strings.TrimSpace(ref.URL) != "" ||
 		strings.TrimSpace(ref.ID) != ""
+}
+
+func hasUsableStringRef(refs []string) bool {
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func requiredAcceptanceCriteria(contract map[string]any) []string {
@@ -465,7 +463,7 @@ func taskResultNeedsHumanReview(task ProjectTask, result TaskResultContract) boo
 		return true
 	}
 	for _, risk := range result.Risks {
-		if risk.RequiresHumanReview || highRiskLevel(risk.Severity) {
+		if risk.RequiresHumanReview || highRiskLevel(risk.Severity) || highRiskLevel(risk.Level) {
 			return true
 		}
 	}
