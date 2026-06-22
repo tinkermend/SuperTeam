@@ -64,9 +64,9 @@ type TaskResultContract struct {
 	AcceptanceResults  []TaskResultAcceptanceResult  `json:"acceptance_results,omitempty"`
 	EvidenceRefs       []TaskResultRef               `json:"evidence_refs,omitempty"`
 	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
-	ChangesMade        []TaskResultChange            `json:"changes_made"`
+	ChangesMade        []TaskResultChange            `json:"changes_made,omitempty"`
 	Changes            []TaskResultChange            `json:"changes,omitempty"`
-	Verification       []TaskResultVerification      `json:"verification"`
+	Verification       []TaskResultVerification      `json:"verification,omitempty"`
 	Risks              []TaskResultRisk              `json:"risks,omitempty"`
 	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`
 	HumanReviewRequest *TaskResultHumanReviewRequest `json:"human_review_request,omitempty"`
@@ -101,6 +101,8 @@ type TaskResultRef struct {
 }
 
 type TaskResultChange struct {
+	Type         string          `json:"type,omitempty"`
+	Ref          string          `json:"ref,omitempty"`
 	Summary      string          `json:"summary,omitempty"`
 	Files        []string        `json:"files,omitempty"`
 	ArtifactRefs []TaskResultRef `json:"artifact_refs,omitempty"`
@@ -125,6 +127,7 @@ type TaskResultRisk struct {
 }
 
 type TaskResultFollowUpRequest struct {
+	Type               string          `json:"type,omitempty"`
 	Summary            string          `json:"summary,omitempty"`
 	RequiredBy         string          `json:"required_by,omitempty"`
 	MissingInformation []TaskResultRef `json:"missing_information,omitempty"`
@@ -140,9 +143,11 @@ type TaskResultHumanReviewRequest struct {
 }
 
 type TaskResultRevisionRequest struct {
-	Reason           string   `json:"reason,omitempty"`
-	ContractChanged  bool     `json:"contract_changed,omitempty"`
-	RequestedChanges []string `json:"requested_changes,omitempty"`
+	Reason                 string   `json:"reason,omitempty"`
+	RecommendedTaskTitle   string   `json:"recommended_task_title,omitempty"`
+	RecommendedTaskSummary string   `json:"recommended_task_summary,omitempty"`
+	ContractChanged        bool     `json:"contract_changed,omitempty"`
+	RequestedChanges       []string `json:"requested_changes,omitempty"`
 }
 
 type TaskResultBlocker struct {
@@ -160,8 +165,9 @@ type TaskResultFailure struct {
 }
 
 type TaskResultReplanRequest struct {
-	Reason string `json:"reason,omitempty"`
-	Scope  string `json:"scope,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
+	Scope       string   `json:"scope,omitempty"`
+	Constraints []string `json:"constraints,omitempty"`
 }
 
 type TaskResultCancellation struct {
@@ -189,6 +195,7 @@ func ValidateTaskResultContract(task ProjectTask, result TaskResultContract) Tas
 	if strings.TrimSpace(result.Summary) == "" {
 		validation.Errors = append(validation.Errors, "summary_required")
 	}
+	validation.Errors = append(validation.Errors, validateTaskResultVerifications(result.Verification)...)
 
 	switch result.Status {
 	case TaskResultStatusCompleted:
@@ -331,20 +338,11 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 	if requiredOutputs["evidence_refs"] && !hasUsableTaskResultRef(result.EvidenceRefs) {
 		errors = append(errors, "expected_output_missing:evidence_refs")
 	}
-	if requiredOutputs["artifact_refs"] && len(result.ArtifactRefs) == 0 {
+	if requiredOutputs["artifact_refs"] && !hasUsableTaskResultRef(result.ArtifactRefs) {
 		errors = append(errors, "expected_output_missing:artifact_refs")
 	}
 	if requiredOutputs["verification"] && len(result.Verification) == 0 {
 		errors = append(errors, "expected_output_missing:verification")
-	}
-	for _, verification := range result.Verification {
-		switch verification.Status {
-		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
-		case TaskResultVerificationStatusFailed:
-			errors = append(errors, "verification_failed")
-		default:
-			errors = append(errors, "verification_status_invalid:"+string(verification.Status))
-		}
 	}
 
 	for _, criterion := range requiredAcceptanceCriteria(task.HandoffContract) {
@@ -354,6 +352,20 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 			continue
 		}
 		errors = append(errors, validateCompletedAcceptanceResult(criterion, acceptanceResult)...)
+	}
+	return errors
+}
+
+func validateTaskResultVerifications(verifications []TaskResultVerification) []string {
+	var errors []string
+	for _, verification := range verifications {
+		switch verification.Status {
+		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
+		case TaskResultVerificationStatusFailed:
+			errors = append(errors, "verification_failed")
+		default:
+			errors = append(errors, "verification_status_invalid:"+string(verification.Status))
+		}
 	}
 	return errors
 }
@@ -578,6 +590,9 @@ func stringsFromAny(value any) []string {
 }
 
 func stringsFromCriterionMap(value map[string]any) []string {
+	if criterionRequired, ok := boolFromAny(value["required"]); ok && !criterionRequired {
+		return nil
+	}
 	for _, key := range []string{"criterion", "name", "id", "key", "title"} {
 		text := stringFromMap(value, key)
 		if text != "" {
@@ -588,6 +603,9 @@ func stringsFromCriterionMap(value map[string]any) []string {
 }
 
 func stringsFromCriterionStringMap(value map[string]string) []string {
+	if required, ok := value["required"]; ok && strings.EqualFold(strings.TrimSpace(required), "false") {
+		return nil
+	}
 	for _, key := range []string{"criterion", "name", "id", "key", "title"} {
 		text := strings.TrimSpace(value[key])
 		if text != "" {
@@ -624,4 +642,20 @@ func firstNonBlankString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func boolFromAny(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		text := strings.ToLower(strings.TrimSpace(typed))
+		if text == "true" {
+			return true, true
+		}
+		if text == "false" {
+			return false, true
+		}
+	}
+	return false, false
 }

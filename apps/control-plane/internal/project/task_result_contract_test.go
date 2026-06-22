@@ -51,6 +51,19 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
+	t.Run("completed result rejects blank artifact refs when artifacts are required", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.ArtifactRefs = []TaskResultRef{
+			{Kind: "report", Ref: "   "},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "expected_output_missing:artifact_refs")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
 	t.Run("completed result rejects blank acceptance criterion evidence refs", func(t *testing.T) {
 		result := completeTaskResultContract()
 		result.AcceptanceResults[1].EvidenceRefs = []string{"   "}
@@ -73,6 +86,54 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.False(t, validation.Valid)
 		require.Contains(t, validation.Errors, "verification_status_invalid:bogus")
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("non-completed result rejects unknown verification status when verification is present", func(t *testing.T) {
+		result := TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待负责人补充凭据。",
+			Blocker: &TaskResultBlocker{
+				Reason:     "缺少凭据",
+				RequiredBy: "human",
+			},
+			Verification: []TaskResultVerification{
+				{Status: TaskResultVerificationStatus("bogus")},
+			},
+		}
+
+		validation := ValidateTaskResultContract(ProjectTask{}, result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "verification_status_invalid:bogus")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("acceptance criteria maps with required false are optional", func(t *testing.T) {
+		task := taskResultContractTask()
+		task.HandoffContract = map[string]any{
+			"acceptance_criteria": []any{
+				map[string]any{
+					"name":     "可选截图",
+					"required": false,
+				},
+				map[string]any{
+					"name": "说明剩余风险",
+				},
+			},
+		}
+		result := completeTaskResultContract()
+		result.AcceptanceResults = []TaskResultAcceptanceResult{
+			{
+				Criterion:    "说明剩余风险",
+				Status:       TaskResultCriterionPassed,
+				EvidenceRefs: []string{"evidence://risk-summary"},
+			},
+		}
+
+		validation := ValidateTaskResultContract(task, result)
+
+		require.True(t, validation.Valid)
+		require.Empty(t, validation.Errors)
 	})
 
 	t.Run("revision_needed requires a revision reason", func(t *testing.T) {
@@ -226,7 +287,7 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 		Status:  TaskResultStatusCompleted,
 		Summary: "shape check",
 		ChangesMade: []TaskResultChange{
-			{Summary: "added task result validation"},
+			{Type: "code", Ref: "git://task-result-contract.go", Summary: "added task result validation"},
 		},
 		EvidenceRefs: []TaskResultRef{
 			{Type: "trace", Summary: "trace evidence", ID: "evidence-1"},
@@ -241,6 +302,18 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 			Prompt:  "Accept residual risk?",
 			Options: []string{"accept", "request_revision"},
 		},
+		FollowUpRequests: []TaskResultFollowUpRequest{
+			{Type: "human_acceptance", Summary: "review residual risk"},
+		},
+		RevisionRequest: &TaskResultRevisionRequest{
+			Reason:                 "needs scoped correction",
+			RecommendedTaskTitle:   "Revise task result contract",
+			RecommendedTaskSummary: "Add missing public plan fields",
+		},
+		ReplanRequest: &TaskResultReplanRequest{
+			Reason:      "plan constraint changed",
+			Constraints: []string{"preserve runtime scope"},
+		},
 		Blocker: &TaskResultBlocker{
 			ResolutionPrompt: "Provide missing credential or approve sanitized evidence.",
 		},
@@ -251,13 +324,30 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 	require.JSONEq(t, `{
 		"status": "completed",
 		"summary": "shape check",
-		"changes_made": [{"summary": "added task result validation"}],
+		"changes_made": [{"type": "code", "ref": "git://task-result-contract.go", "summary": "added task result validation"}],
 		"evidence_refs": [{"id": "evidence-1", "type": "trace", "summary": "trace evidence"}],
 		"risks": [{"level": "low", "description": "known residual risk"}],
 		"verification": [{"status": "passed", "type": "go_test", "ref": "go-test://focused", "summary": "focused test passed"}],
 		"human_review_request": {"prompt": "Accept residual risk?", "options": ["accept", "request_revision"]},
+		"follow_up_requests": [{"type": "human_acceptance", "summary": "review residual risk"}],
+		"revision_request": {"reason": "needs scoped correction", "recommended_task_title": "Revise task result contract", "recommended_task_summary": "Add missing public plan fields"},
+		"replan_request": {"reason": "plan constraint changed", "constraints": ["preserve runtime scope"]},
 		"blocker": {"resolution_prompt": "Provide missing credential or approve sanitized evidence."}
 	}`, string(payload))
+
+	retryable := false
+	partialPayload, err := json.Marshal(TaskResultContract{
+		Status:  TaskResultStatusFailed,
+		Summary: "partial contract",
+		Failure: &TaskResultFailure{
+			ErrorFamily:            "provider_interrupted",
+			Retryable:              &retryable,
+			RecoveryRecommendation: "manual_recovery_required",
+		},
+	})
+	require.NoError(t, err)
+	require.NotContains(t, string(partialPayload), "changes_made")
+	require.NotContains(t, string(partialPayload), "verification")
 }
 
 func taskResultContractTask() ProjectTask {
