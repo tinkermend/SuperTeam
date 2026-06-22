@@ -2010,15 +2010,16 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		}
 		return nil, ErrInvalidProjectEvidence
 	}
-	var resultRecordReq *RecordProjectTaskResultRequest
-	if req.ResultContract != nil {
-		validation := ValidateTaskResultContract(task, *req.ResultContract)
-		if !validation.Valid {
-			return nil, ErrInvalidProjectEvidence
-		}
-		recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *req.ResultContract, validation)
-		resultRecordReq = &recordReq
+	resultContract := req.ResultContract
+	if resultContract == nil {
+		legacyContract := TaskResultContractFromLegacyCompletion(req)
+		resultContract = &legacyContract
 	}
+	validation := ValidateTaskResultContract(task, *resultContract)
+	if !validation.Valid {
+		return nil, ErrInvalidProjectEvidence
+	}
+	recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *resultContract, validation)
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
 	if err != nil {
 		return nil, err
@@ -2043,14 +2044,10 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		}
 		var result ProjectTaskWritebackResult
 		var err error
-		if resultRecordReq != nil {
-			result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx, CompleteProjectTaskAttemptAcceptanceResultWritebackRequest{
-				Acceptance: acceptanceReq,
-				Result:     *resultRecordReq,
-			})
-		} else {
-			result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, acceptanceReq)
-		}
+		result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx, CompleteProjectTaskAttemptAcceptanceResultWritebackRequest{
+			Acceptance: acceptanceReq,
+			Result:     recordReq,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -2081,14 +2078,10 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return &result.Summary, nil
 	}
 	var result ProjectTaskWritebackResult
-	if resultRecordReq != nil {
-		result, err = writebackRepository.CompleteProjectTaskAttemptResultWriteback(ctx, CompleteProjectTaskAttemptResultWritebackRequest{
-			Complete: req,
-			Result:   *resultRecordReq,
-		})
-	} else {
-		result, err = writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
-	}
+	result, err = writebackRepository.CompleteProjectTaskAttemptResultWriteback(ctx, CompleteProjectTaskAttemptResultWritebackRequest{
+		Complete: req,
+		Result:   recordReq,
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -1024,7 +1024,7 @@ func TestGetProjectTaskLivenessReturnsNextAction(t *testing.T) {
 }
 
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
-	repo := newMemoryRepository()
+	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
 	service, err := NewServiceWithCoordinator(repo, coordinator)
 	if err != nil {
@@ -1047,7 +1047,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
-	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedHumanOwnerMember(repo.memoryRepository, tenantID, projectID, ownerID)
 
 	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"验证 Runtime 执行回写",
@@ -1096,7 +1096,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		Status:                    ProjectTaskStatusQueued,
 		AssignedDigitalEmployeeID: &employeeID,
 	})
-	runID := bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+	runID := bindTaskToRuntimeRun(repo.memoryRepository, 0, runtimeNodeID)
 	attemptID := uuid.New()
 	leaseToken := "lease-token-1"
 	repo.tasks[0].CurrentAttemptID = &attemptID

@@ -766,10 +766,10 @@ func TestRenewProjectTaskAttemptLeaseUpdatesExpiry(t *testing.T) {
 }
 
 func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) {
-	repo := newMemoryRepository()
+	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
-	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 
 	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-1"),
@@ -829,6 +829,53 @@ func TestCompleteProjectTaskAttemptStoresStructuredResultContract(t *testing.T) 
 	require.Equal(t, summary.ID, *results[0].ExecutionSummaryID)
 	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestCompleteProjectTaskAttemptLegacyCompletionStoresAcceptedLatestResult(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	completeReq := CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-legacy-result"),
+		Conclusion:                       "done with legacy evidence",
+		EvidenceRefs:                     []any{"s3://bucket/report.md"},
+		ArtifactRefs:                     []any{"artifact:analysis-report"},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), completeReq)
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, fixture.taskID, coordinator.lastCompleted.ProjectTaskID)
+	require.Equal(t, summary.ID, coordinator.lastCompleted.ExecutionSummaryID)
+	require.Equal(t, repo.projects[fixture.projectID].CoordinationWorkflowID, coordinator.lastCompleted.WorkflowID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, TaskResultContractFromLegacyCompletion(completeReq), results[0].Contract)
+	require.Equal(t, TaskResultStatusCompleted, results[0].ResultStatus)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, results[0].Decision)
+	require.Equal(t, "accepted", results[0].ValidationStatus)
+	require.True(t, ProjectTaskResultAcceptedForDependencyUnlock(results[0]))
+	require.NotNil(t, results[0].AttemptID)
+	require.Equal(t, fixture.attemptID, *results[0].AttemptID)
+	require.NotNil(t, results[0].ExecutionSummaryID)
+	require.Equal(t, summary.ID, *results[0].ExecutionSummaryID)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+	require.NotNil(t, results[0].CreatedEventID)
+	require.Equal(t, *results[0].CreatedEventID, coordinator.lastCompleted.CompletedEventID)
 }
 
 func TestCompleteProjectTaskAttemptResultContractHumanReviewRoutesToWaitingHuman(t *testing.T) {
@@ -1869,10 +1916,10 @@ func lastProjectEventOfType(t *testing.T, events []ProjectEvent, eventType Proje
 }
 
 func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
-	repo := newMemoryRepository()
+	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
-	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("complete-ledger"),
 		Conclusion:                       "验收证据已生成",
@@ -1887,11 +1934,11 @@ func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
 }
 
 func TestCompleteProjectTaskAttemptAcceptanceBeforeCompletedWritesLedgerEvents(t *testing.T) {
-	repo := newMemoryRepository()
+	repo := newProjectTaskResultMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
 	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, nil, nil, inbox, nil)
 	require.NoError(t, err)
-	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	high := "high"
 	repo.tasks[0].RiskLevel = &high
 
