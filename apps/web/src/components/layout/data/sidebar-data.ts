@@ -1,6 +1,7 @@
 import {
   Blocks,
   Bot,
+  CalendarClock,
   CircleDollarSign,
   FileClock,
   FolderKanban,
@@ -82,6 +83,12 @@ export function buildSidebarData({
             title: "流程编排",
             url: "/workflows",
             icon: GitBranch,
+            iconTone: "workflow",
+          },
+          {
+            title: "自动化任务",
+            url: "/automations",
+            icon: CalendarClock,
             iconTone: "workflow",
           },
           {

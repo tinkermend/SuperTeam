@@ -10,6 +10,7 @@ const expectedIconTones = new Map([
   ['项目管理', 'workflow'],
   ['团队管理', 'permission'],
   ['流程编排', 'workflow'],
+  ['自动化任务', 'workflow'],
   ['外部能力', 'capability'],
   ['协作集成', 'approval'],
   ['审批中心', 'approval'],
@@ -52,22 +53,28 @@ describe('sidebarData', () => {
     })
   })
 
-  it('places collaboration integration before approval center in the core navigation group', () => {
+  it('places automation tasks between workflows and external capabilities in the core navigation group', () => {
     const coreItems = sidebarData.navGroups.find(
       (group) => group.title === '核心导航'
     )?.items
 
     expect(coreItems?.map((item) => item.title)).toEqual([
       '流程编排',
+      '自动化任务',
       '外部能力',
       '协作集成',
       '审批中心',
       'Runtime 节点',
     ])
+    expect(coreItems?.[1]).toMatchObject({
+      title: '自动化任务',
+      url: '/automations',
+      iconTone: 'workflow',
+    })
     expect(coreItems?.[2]).toMatchObject({
-      title: '协作集成',
-      url: '/collaboration',
-      iconTone: 'approval',
+      title: '外部能力',
+      url: '/capabilities',
+      iconTone: 'capability',
     })
   })
 

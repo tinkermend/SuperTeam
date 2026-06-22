@@ -32,6 +32,7 @@ import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedCostsIndexRouteImport } from './routes/_authenticated/costs/index'
 import { Route as AuthenticatedCollaborationIndexRouteImport } from './routes/_authenticated/collaboration/index'
 import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_authenticated/capabilities/index'
+import { Route as AuthenticatedAutomationsIndexRouteImport } from './routes/_authenticated/automations/index'
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedApprovalsIndexRouteImport } from './routes/_authenticated/approvals/index'
 import { Route as AuthenticatedWorkflowsDemandIdRouteImport } from './routes/_authenticated/workflows/$demandId'
@@ -170,6 +171,12 @@ const AuthenticatedCapabilitiesIndexRoute =
     path: '/capabilities/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAutomationsIndexRoute =
+  AuthenticatedAutomationsIndexRouteImport.update({
+    id: '/automations/',
+    path: '/automations/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAuditIndexRoute = AuthenticatedAuditIndexRouteImport.update({
   id: '/audit/',
   path: '/audit/',
@@ -274,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
+  '/automations/': typeof AuthenticatedAutomationsIndexRoute
   '/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
   '/collaboration/': typeof AuthenticatedCollaborationIndexRoute
   '/costs/': typeof AuthenticatedCostsIndexRoute
@@ -312,6 +320,7 @@ export interface FileRoutesByTo {
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
+  '/automations': typeof AuthenticatedAutomationsIndexRoute
   '/capabilities': typeof AuthenticatedCapabilitiesIndexRoute
   '/collaboration': typeof AuthenticatedCollaborationIndexRoute
   '/costs': typeof AuthenticatedCostsIndexRoute
@@ -352,6 +361,7 @@ export interface FileRoutesById {
   '/_authenticated/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
+  '/_authenticated/automations/': typeof AuthenticatedAutomationsIndexRoute
   '/_authenticated/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
   '/_authenticated/collaboration/': typeof AuthenticatedCollaborationIndexRoute
   '/_authenticated/costs/': typeof AuthenticatedCostsIndexRoute
@@ -392,6 +402,7 @@ export interface FileRouteTypes {
     | '/workflows/$demandId'
     | '/approvals/'
     | '/audit/'
+    | '/automations/'
     | '/capabilities/'
     | '/collaboration/'
     | '/costs/'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/workflows/$demandId'
     | '/approvals'
     | '/audit'
+    | '/automations'
     | '/capabilities'
     | '/collaboration'
     | '/costs'
@@ -469,6 +481,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workflows/$demandId'
     | '/_authenticated/approvals/'
     | '/_authenticated/audit/'
+    | '/_authenticated/automations/'
     | '/_authenticated/capabilities/'
     | '/_authenticated/collaboration/'
     | '/_authenticated/costs/'
@@ -661,6 +674,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCapabilitiesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/automations/': {
+      id: '/_authenticated/automations/'
+      path: '/automations'
+      fullPath: '/automations/'
+      preLoaderRoute: typeof AuthenticatedAutomationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/audit/': {
       id: '/_authenticated/audit/'
       path: '/audit'
@@ -806,6 +826,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedWorkflowsDemandIdRoute: typeof AuthenticatedWorkflowsDemandIdRoute
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
+  AuthenticatedAutomationsIndexRoute: typeof AuthenticatedAutomationsIndexRoute
   AuthenticatedCapabilitiesIndexRoute: typeof AuthenticatedCapabilitiesIndexRoute
   AuthenticatedCollaborationIndexRoute: typeof AuthenticatedCollaborationIndexRoute
   AuthenticatedCostsIndexRoute: typeof AuthenticatedCostsIndexRoute
@@ -839,6 +860,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedWorkflowsDemandIdRoute: AuthenticatedWorkflowsDemandIdRoute,
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
+  AuthenticatedAutomationsIndexRoute: AuthenticatedAutomationsIndexRoute,
   AuthenticatedCapabilitiesIndexRoute: AuthenticatedCapabilitiesIndexRoute,
   AuthenticatedCollaborationIndexRoute: AuthenticatedCollaborationIndexRoute,
   AuthenticatedCostsIndexRoute: AuthenticatedCostsIndexRoute,
