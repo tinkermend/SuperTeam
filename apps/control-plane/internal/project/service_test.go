@@ -990,6 +990,46 @@ func TestResolveProjectTaskHumanWaitAcceptanceDecisionLinkFailureLeavesTaskWaiti
 	require.False(t, ProjectTaskResultAcceptedForDependencyUnlock(latest))
 }
 
+func TestResolveProjectTaskHumanWaitAcceptanceLatestLinkFailureStillRestoresTaskWaiting(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture, _, _, waitingResult, _ := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-latest-link-failure")
+	linkErr := errors.New("latest result link unavailable")
+	repo.linkProjectTaskLatestResultErr = linkErr
+	repo.linkProjectTaskLatestResultErrAfter = repo.linkProjectTaskLatestResultCalls
+
+	_, err = service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过",
+	})
+
+	require.ErrorIs(t, err, linkErr)
+	require.Contains(t, err.Error(), "rollback human accepted task result")
+	require.Equal(t, 0, coordinator.completedSignals)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.LatestTaskResultID)
+	require.Equal(t, waitingResult.ID, *task.LatestTaskResultID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	latest := requireProjectTaskResultByID(t, results, *task.LatestTaskResultID)
+	require.Equal(t, TaskResultDecisionWaitingHumanReview, latest.Decision)
+	require.False(t, ProjectTaskResultAcceptedForDependencyUnlock(latest))
+}
+
 func TestResolveProjectTaskHumanWaitResultReviewNonApproveDoesNotAcceptResultOrSignal(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -6439,6 +6479,8 @@ type projectTaskResultMemoryRepository struct {
 	*memoryRepository
 	recordProjectTaskResultErr              error
 	linkProjectTaskLatestResultErr          error
+	linkProjectTaskLatestResultErrAfter     int
+	linkProjectTaskLatestResultCalls        int
 	linkProjectTaskResultDecisionRequestErr error
 }
 
@@ -8002,7 +8044,9 @@ func (r *projectTaskResultMemoryRepository) ListProjectTaskResults(ctx context.C
 }
 
 func (r *projectTaskResultMemoryRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
-	if r.linkProjectTaskLatestResultErr != nil {
+	r.linkProjectTaskLatestResultCalls++
+	if r.linkProjectTaskLatestResultErr != nil &&
+		(r.linkProjectTaskLatestResultErrAfter <= 0 || r.linkProjectTaskLatestResultCalls > r.linkProjectTaskLatestResultErrAfter) {
 		return ProjectTask{}, r.linkProjectTaskLatestResultErr
 	}
 	for _, result := range r.projectTaskResults {

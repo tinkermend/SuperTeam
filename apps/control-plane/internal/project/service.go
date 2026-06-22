@@ -3042,28 +3042,30 @@ func (s *Service) recordHumanAcceptedProjectTaskResult(ctx context.Context, task
 
 func (s *Service) rollbackHumanAcceptedProjectTaskResult(ctx context.Context, task ProjectTask, latestResultID uuid.UUID, cause error) error {
 	if rollbackErr := s.restoreProjectTaskHumanWaitState(ctx, task, latestResultID); rollbackErr != nil {
-		return fmt.Errorf("%w; rollback human accepted task result: %v", cause, rollbackErr)
+		return errors.Join(cause, fmt.Errorf("rollback human accepted task result: %w", rollbackErr))
 	}
 	return cause
 }
 
 func (s *Service) restoreProjectTaskHumanWaitState(ctx context.Context, task ProjectTask, latestResultID uuid.UUID) error {
+	rollbackErrors := make([]error, 0, 2)
 	if latestResultID != uuid.Nil {
 		if _, err := s.repository.LinkProjectTaskLatestResult(ctx, task.TenantID, task.ProjectID, task.ID, latestResultID); err != nil {
-			return err
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore previous latest task result: %w", err))
 		}
 	}
 	if _, err := s.repository.UpdateProjectTaskStatus(ctx, task.TenantID, task.ID, ProjectTaskStatusWaitingHuman, nil, []string{ProjectTaskStatusCompleted}); err != nil {
 		current, getErr := s.repository.GetProjectTask(ctx, task.TenantID, task.ID)
 		if getErr == nil && current.Status == ProjectTaskStatusWaitingHuman {
-			return nil
+			return errors.Join(rollbackErrors...)
 		}
 		if getErr != nil {
-			return fmt.Errorf("%w; get project task after rollback failure: %v", err, getErr)
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w; get project task after rollback failure: %v", err, getErr))
+		} else {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w", err))
 		}
-		return err
 	}
-	return nil
+	return errors.Join(rollbackErrors...)
 }
 
 func (s *Service) findProjectTaskResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTaskResult, bool, error) {
