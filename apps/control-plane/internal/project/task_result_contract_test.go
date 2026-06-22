@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,43 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 		require.False(t, validation.Valid)
 		require.Contains(t, validation.Errors, "acceptance_result_evidence_missing:说明剩余风险")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("completed result rejects blank top-level evidence refs", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.EvidenceRefs = []TaskResultRef{
+			{Kind: "trace", Ref: "   "},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "expected_output_missing:evidence_refs")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("completed result rejects blank acceptance criterion evidence refs", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.AcceptanceResults[1].EvidenceRefs = []TaskResultRef{
+			{Kind: "report", Ref: "   "},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "acceptance_result_evidence_missing:说明剩余风险")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("completed result rejects unknown verification status", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.Verification.Status = TaskResultVerificationStatus("bogus")
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "verification_status_invalid:bogus")
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
@@ -90,6 +128,24 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 		require.True(t, validation.Valid)
 		require.Equal(t, TaskResultDecisionFailedRetryable, validation.Decision)
+	})
+}
+
+func TestFailureContractAdapter(t *testing.T) {
+	t.Run("legacy failure adapter produces valid failed contract when retryable is nil", func(t *testing.T) {
+		contract := TaskResultContractFromFailure(FailProjectTaskAttemptRequest{
+			FailureSummary: "Provider exited before final result.",
+			FailureFamily:  "provider_interrupted",
+		})
+
+		require.Equal(t, TaskResultStatusFailed, contract.Status)
+		require.NotNil(t, contract.Failure)
+		require.NotNil(t, contract.Failure.Retryable)
+		require.False(t, *contract.Failure.Retryable)
+
+		validation := ValidateTaskResultContract(ProjectTask{}, contract)
+		require.True(t, validation.Valid)
+		require.Equal(t, TaskResultDecisionFailedRecovery, validation.Decision)
 	})
 }
 
@@ -151,6 +207,56 @@ func TestProjectTaskResultEventConstants(t *testing.T) {
 	require.Equal(t, ProjectEventType("project_task.result.rejected"), ProjectEventTaskResultRejected)
 	require.Equal(t, ProjectEventType("project_task.result.blocked"), ProjectEventTaskResultBlocked)
 	require.Equal(t, ProjectEventType("project_task.result.retryable_failed"), ProjectEventTaskResultRetryableFailed)
+}
+
+func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
+	require.Equal(t, TaskResultCriterionStatusPassed, TaskResultCriterionPassed)
+	require.Equal(t, TaskResultCriterionStatusFailed, TaskResultCriterionFailed)
+	require.Equal(t, TaskResultCriterionStatusNeedsHuman, TaskResultCriterionNeedsHuman)
+	require.Equal(t, TaskResultCriterionStatusNotApplicable, TaskResultCriterionNotApplicable)
+	require.Equal(t, TaskResultCriterionStatusHumanOverridden, TaskResultCriterionHumanOverridden)
+	require.Equal(t, TaskResultVerificationStatusPassed, TaskResultVerificationPassed)
+	require.Equal(t, TaskResultVerificationStatusFailed, TaskResultVerificationFailed)
+	require.Equal(t, TaskResultVerificationStatusSkipped, TaskResultVerificationSkipped)
+
+	contract := TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "shape check",
+		EvidenceRefs: []TaskResultRef{
+			{Type: "trace", Summary: "trace evidence", ID: "evidence-1"},
+		},
+		Risks: []TaskResultRisk{
+			{Level: "low", Description: "known residual risk"},
+		},
+		Verifications: []TaskResultVerification{
+			{Status: TaskResultVerificationPassed, Summary: "focused test passed"},
+		},
+	}
+
+	payload, err := json.Marshal(contract)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"status": "completed",
+		"summary": "shape check",
+		"evidence_refs": [{"id": "evidence-1", "type": "trace", "summary": "trace evidence"}],
+		"risks": [{"level": "low", "description": "known residual risk"}],
+		"verification": [{"status": "passed", "summary": "focused test passed"}]
+	}`, string(payload))
+
+	singleVerificationPayload, err := json.Marshal(TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "single verification bridge",
+		Verification: TaskResultVerification{
+			Status:  TaskResultVerificationPassed,
+			Summary: "legacy field still exposes plan JSON shape",
+		},
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"status": "completed",
+		"summary": "single verification bridge",
+		"verification": [{"status": "passed", "summary": "legacy field still exposes plan JSON shape"}]
+	}`, string(singleVerificationPayload))
 }
 
 func taskResultContractTask() ProjectTask {

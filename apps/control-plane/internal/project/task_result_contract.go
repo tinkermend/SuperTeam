@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -23,6 +24,12 @@ const (
 	TaskResultCriterionStatusNeedsHuman      TaskResultCriterionStatus = "needs_human"
 	TaskResultCriterionStatusNotApplicable   TaskResultCriterionStatus = "not_applicable"
 	TaskResultCriterionStatusHumanOverridden TaskResultCriterionStatus = "human_overridden"
+
+	TaskResultCriterionPassed          = TaskResultCriterionStatusPassed
+	TaskResultCriterionFailed          = TaskResultCriterionStatusFailed
+	TaskResultCriterionNeedsHuman      = TaskResultCriterionStatusNeedsHuman
+	TaskResultCriterionNotApplicable   = TaskResultCriterionStatusNotApplicable
+	TaskResultCriterionHumanOverridden = TaskResultCriterionStatusHumanOverridden
 )
 
 type TaskResultVerificationStatus string
@@ -31,6 +38,10 @@ const (
 	TaskResultVerificationStatusPassed  TaskResultVerificationStatus = "passed"
 	TaskResultVerificationStatusFailed  TaskResultVerificationStatus = "failed"
 	TaskResultVerificationStatusSkipped TaskResultVerificationStatus = "skipped"
+
+	TaskResultVerificationPassed  = TaskResultVerificationStatusPassed
+	TaskResultVerificationFailed  = TaskResultVerificationStatusFailed
+	TaskResultVerificationSkipped = TaskResultVerificationStatusSkipped
 )
 
 type TaskResultDecision string
@@ -49,111 +60,124 @@ const (
 )
 
 type TaskResultContract struct {
-	Status             TaskResultStatus
-	Summary            string
-	AcceptanceResults  []TaskResultAcceptanceResult
-	EvidenceRefs       []TaskResultRef
-	ArtifactRefs       []TaskResultRef
-	Changes            []TaskResultChange
-	Verification       TaskResultVerification
-	Risks              []TaskResultRisk
-	FollowUpRequests   []TaskResultFollowUpRequest
-	HumanReviewRequest *TaskResultHumanReviewRequest
-	RevisionRequest    *TaskResultRevisionRequest
-	Blocker            *TaskResultBlocker
-	Failure            *TaskResultFailure
-	ReplanRequest      *TaskResultReplanRequest
-	Cancellation       *TaskResultCancellation
+	Status             TaskResultStatus              `json:"status"`
+	Summary            string                        `json:"summary"`
+	AcceptanceResults  []TaskResultAcceptanceResult  `json:"acceptance_results,omitempty"`
+	EvidenceRefs       []TaskResultRef               `json:"evidence_refs,omitempty"`
+	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
+	Changes            []TaskResultChange            `json:"changes,omitempty"`
+	Verification       TaskResultVerification        `json:"-"`
+	Verifications      []TaskResultVerification      `json:"verification,omitempty"`
+	Risks              []TaskResultRisk              `json:"risks,omitempty"`
+	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`
+	HumanReviewRequest *TaskResultHumanReviewRequest `json:"human_review_request,omitempty"`
+	RevisionRequest    *TaskResultRevisionRequest    `json:"revision_request,omitempty"`
+	Blocker            *TaskResultBlocker            `json:"blocker,omitempty"`
+	Failure            *TaskResultFailure            `json:"failure,omitempty"`
+	ReplanRequest      *TaskResultReplanRequest      `json:"replan_request,omitempty"`
+	Cancellation       *TaskResultCancellation       `json:"cancellation,omitempty"`
+}
+
+func (result TaskResultContract) MarshalJSON() ([]byte, error) {
+	type taskResultContractAlias TaskResultContract
+	if len(result.Verifications) == 0 {
+		result.Verifications = taskResultVerifications(result)
+	}
+	return json.Marshal(taskResultContractAlias(result))
 }
 
 type TaskResultAcceptanceResult struct {
-	ID                  string
-	Criterion           string
-	CriterionID         string
-	Name                string
-	Status              TaskResultCriterionStatus
-	Summary             string
-	EvidenceRefs        []TaskResultRef
-	HumanAcceptedReason string
+	ID                  string                    `json:"id,omitempty"`
+	Criterion           string                    `json:"criterion,omitempty"`
+	CriterionID         string                    `json:"criterion_id,omitempty"`
+	Name                string                    `json:"name,omitempty"`
+	Status              TaskResultCriterionStatus `json:"status"`
+	Summary             string                    `json:"summary,omitempty"`
+	EvidenceRefs        []TaskResultRef           `json:"evidence_refs,omitempty"`
+	HumanAcceptedReason string                    `json:"human_accepted_reason,omitempty"`
 }
 
 type TaskResultRef struct {
-	ID       string
-	Kind     string
-	Ref      string
-	URI      string
-	URL      string
-	Title    string
-	Metadata map[string]any
+	ID       string         `json:"id,omitempty"`
+	Kind     string         `json:"kind,omitempty"`
+	Type     string         `json:"type,omitempty"`
+	Ref      string         `json:"ref,omitempty"`
+	URI      string         `json:"uri,omitempty"`
+	URL      string         `json:"url,omitempty"`
+	Title    string         `json:"title,omitempty"`
+	Summary  string         `json:"summary,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type TaskResultChange struct {
-	Summary      string
-	Files        []string
-	ArtifactRefs []TaskResultRef
+	Summary      string          `json:"summary,omitempty"`
+	Files        []string        `json:"files,omitempty"`
+	ArtifactRefs []TaskResultRef `json:"artifact_refs,omitempty"`
 }
 
 type TaskResultVerification struct {
-	Status       TaskResultVerificationStatus
-	Summary      string
-	Method       string
-	EvidenceRefs []TaskResultRef
+	Status       TaskResultVerificationStatus `json:"status"`
+	Summary      string                       `json:"summary,omitempty"`
+	Method       string                       `json:"method,omitempty"`
+	EvidenceRefs []TaskResultRef              `json:"evidence_refs,omitempty"`
 }
 
 type TaskResultRisk struct {
-	Summary             string
-	Severity            string
-	Mitigation          string
-	RequiresHumanReview bool
+	Summary             string `json:"summary,omitempty"`
+	Description         string `json:"description,omitempty"`
+	Severity            string `json:"severity,omitempty"`
+	Level               string `json:"level,omitempty"`
+	Mitigation          string `json:"mitigation,omitempty"`
+	RequiresHumanReview bool   `json:"requires_human_review,omitempty"`
 }
 
 type TaskResultFollowUpRequest struct {
-	Summary            string
-	RequiredBy         string
-	MissingInformation []TaskResultRef
+	Summary            string          `json:"summary,omitempty"`
+	RequiredBy         string          `json:"required_by,omitempty"`
+	MissingInformation []TaskResultRef `json:"missing_information,omitempty"`
 }
 
 type TaskResultHumanReviewRequest struct {
-	Reason                     string
-	RequiredBy                 string
-	ReviewType                 string
-	SuggestedResolutionOptions []string
+	Reason                     string   `json:"reason,omitempty"`
+	RequiredBy                 string   `json:"required_by,omitempty"`
+	ReviewType                 string   `json:"review_type,omitempty"`
+	SuggestedResolutionOptions []string `json:"suggested_resolution_options,omitempty"`
 }
 
 type TaskResultRevisionRequest struct {
-	Reason           string
-	ContractChanged  bool
-	RequestedChanges []string
+	Reason           string   `json:"reason,omitempty"`
+	ContractChanged  bool     `json:"contract_changed,omitempty"`
+	RequestedChanges []string `json:"requested_changes,omitempty"`
 }
 
 type TaskResultBlocker struct {
-	Reason      string
-	RequiredBy  string
-	ContextRefs []TaskResultRef
+	Reason      string          `json:"reason,omitempty"`
+	RequiredBy  string          `json:"required_by,omitempty"`
+	ContextRefs []TaskResultRef `json:"context_refs,omitempty"`
 }
 
 type TaskResultFailure struct {
-	ErrorFamily            string
-	Retryable              *bool
-	RecoveryRecommendation string
-	Message                string
+	ErrorFamily            string `json:"error_family,omitempty"`
+	Retryable              *bool  `json:"retryable,omitempty"`
+	RecoveryRecommendation string `json:"recovery_recommendation,omitempty"`
+	Message                string `json:"message,omitempty"`
 }
 
 type TaskResultReplanRequest struct {
-	Reason string
-	Scope  string
+	Reason string `json:"reason,omitempty"`
+	Scope  string `json:"scope,omitempty"`
 }
 
 type TaskResultCancellation struct {
-	Reason      string
-	CancelledBy string
+	Reason      string `json:"reason,omitempty"`
+	CancelledBy string `json:"cancelled_by,omitempty"`
 }
 
 type TaskResultValidation struct {
-	Valid    bool
-	Decision TaskResultDecision
-	Errors   []string
-	Warnings []string
+	Valid    bool                        `json:"valid"`
+	Decision TaskResultDecision          `json:"decision"`
+	Errors   []TaskResultValidationError `json:"errors,omitempty"`
+	Warnings []string                    `json:"warnings,omitempty"`
 }
 
 type TaskResultValidationError = string
@@ -246,15 +270,19 @@ func AdaptCompletionEvidenceToResultContract(req CompleteProjectTaskAttemptReque
 }
 
 func TaskResultContractFromFailure(req FailProjectTaskAttemptRequest) TaskResultContract {
+	retryable := false
+	if req.Retryable != nil {
+		retryable = *req.Retryable
+	}
 	result := TaskResultContract{
 		Status:  TaskResultStatusFailed,
 		Summary: strings.TrimSpace(req.FailureSummary),
 		Failure: &TaskResultFailure{
 			ErrorFamily: strings.TrimSpace(req.FailureFamily),
-			Retryable:   req.Retryable,
+			Retryable:   &retryable,
 		},
 	}
-	if req.Retryable != nil && *req.Retryable {
+	if retryable {
 		result.Failure.RecoveryRecommendation = "retry_original_attempt"
 	} else {
 		result.Failure.RecoveryRecommendation = "manual_recovery_required"
@@ -300,17 +328,24 @@ func validTaskResultStatus(status TaskResultStatus) bool {
 func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []string {
 	var errors []string
 	requiredOutputs := stringSetFromAny(task.ExpectedOutputs)
-	if requiredOutputs["evidence_refs"] && len(result.EvidenceRefs) == 0 {
+	if requiredOutputs["evidence_refs"] && !hasUsableTaskResultRef(result.EvidenceRefs) {
 		errors = append(errors, "expected_output_missing:evidence_refs")
 	}
 	if requiredOutputs["artifact_refs"] && len(result.ArtifactRefs) == 0 {
 		errors = append(errors, "expected_output_missing:artifact_refs")
 	}
-	if requiredOutputs["verification"] && result.Verification.Status == "" {
+	verifications := taskResultVerifications(result)
+	if requiredOutputs["verification"] && len(verifications) == 0 {
 		errors = append(errors, "expected_output_missing:verification")
 	}
-	if result.Verification.Status == TaskResultVerificationStatusFailed {
-		errors = append(errors, "verification_failed")
+	for _, verification := range verifications {
+		switch verification.Status {
+		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
+		case TaskResultVerificationStatusFailed:
+			errors = append(errors, "verification_failed")
+		default:
+			errors = append(errors, "verification_status_invalid:"+string(verification.Status))
+		}
 	}
 
 	for _, criterion := range requiredAcceptanceCriteria(task.HandoffContract) {
@@ -334,10 +369,36 @@ func validateCompletedAcceptanceResult(criterion string, result TaskResultAccept
 	default:
 		return []string{"acceptance_result_not_accepted:" + criterion}
 	}
-	if len(result.EvidenceRefs) == 0 {
+	if !hasUsableTaskResultRef(result.EvidenceRefs) {
 		return []string{"acceptance_result_evidence_missing:" + criterion}
 	}
 	return nil
+}
+
+func taskResultVerifications(result TaskResultContract) []TaskResultVerification {
+	if len(result.Verifications) > 0 {
+		return result.Verifications
+	}
+	if result.Verification.Status != "" {
+		return []TaskResultVerification{result.Verification}
+	}
+	return nil
+}
+
+func hasUsableTaskResultRef(refs []TaskResultRef) bool {
+	for _, ref := range refs {
+		if usableTaskResultRef(ref) {
+			return true
+		}
+	}
+	return false
+}
+
+func usableTaskResultRef(ref TaskResultRef) bool {
+	return strings.TrimSpace(ref.Ref) != "" ||
+		strings.TrimSpace(ref.URI) != "" ||
+		strings.TrimSpace(ref.URL) != "" ||
+		strings.TrimSpace(ref.ID) != ""
 }
 
 func requiredAcceptanceCriteria(contract map[string]any) []string {
@@ -450,14 +511,17 @@ func taskResultRefFromAny(value any, defaultKind string) (TaskResultRef, bool) {
 		if text == "" {
 			return TaskResultRef{}, false
 		}
-		return TaskResultRef{Kind: defaultKind, Ref: text}, true
+		return TaskResultRef{Kind: defaultKind, Type: defaultKind, Ref: text}, true
 	case map[string]any:
+		refType := firstNonBlankString(stringFromMap(typed, "type"), stringFromMap(typed, "kind"), defaultKind)
 		ref := TaskResultRef{
 			Kind:     firstNonBlankString(stringFromMap(typed, "kind"), stringFromMap(typed, "type"), defaultKind),
+			Type:     refType,
 			Ref:      firstNonBlankString(stringFromMap(typed, "ref"), stringFromMap(typed, "id"), stringFromMap(typed, "uri"), stringFromMap(typed, "url")),
 			URI:      stringFromMap(typed, "uri"),
 			URL:      stringFromMap(typed, "url"),
 			Title:    firstNonBlankString(stringFromMap(typed, "title"), stringFromMap(typed, "name")),
+			Summary:  stringFromMap(typed, "summary"),
 			Metadata: typed,
 		}
 		ref.ID = stringFromMap(typed, "id")
@@ -466,13 +530,16 @@ func taskResultRefFromAny(value any, defaultKind string) (TaskResultRef, bool) {
 		}
 		return ref, true
 	case map[string]string:
+		refType := firstNonBlankString(typed["type"], typed["kind"], defaultKind)
 		ref := TaskResultRef{
-			ID:    strings.TrimSpace(typed["id"]),
-			Kind:  firstNonBlankString(typed["kind"], typed["type"], defaultKind),
-			Ref:   firstNonBlankString(typed["ref"], typed["id"], typed["uri"], typed["url"]),
-			URI:   strings.TrimSpace(typed["uri"]),
-			URL:   strings.TrimSpace(typed["url"]),
-			Title: firstNonBlankString(typed["title"], typed["name"]),
+			ID:      strings.TrimSpace(typed["id"]),
+			Kind:    firstNonBlankString(typed["kind"], typed["type"], defaultKind),
+			Type:    refType,
+			Ref:     firstNonBlankString(typed["ref"], typed["id"], typed["uri"], typed["url"]),
+			URI:     strings.TrimSpace(typed["uri"]),
+			URL:     strings.TrimSpace(typed["url"]),
+			Title:   firstNonBlankString(typed["title"], typed["name"]),
+			Summary: strings.TrimSpace(typed["summary"]),
 		}
 		if strings.TrimSpace(ref.Ref) == "" {
 			return TaskResultRef{}, false
@@ -483,7 +550,7 @@ func taskResultRefFromAny(value any, defaultKind string) (TaskResultRef, bool) {
 		if text == "" {
 			return TaskResultRef{}, false
 		}
-		return TaskResultRef{Kind: defaultKind, Ref: text}, true
+		return TaskResultRef{Kind: defaultKind, Type: defaultKind, Ref: text}, true
 	}
 }
 
