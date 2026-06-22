@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   Blocks,
   Bot,
@@ -131,10 +132,10 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
               </div>
             </div>
             <Button asChild>
-              <a href="/skills/upload">
+              <Link to="/skills/upload">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
-              </a>
+              </Link>
             </Button>
           </div>
 

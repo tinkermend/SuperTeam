@@ -22,6 +22,13 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a data-router-link="true" href={to}>{children}</a>
+  ),
+  useNavigate: () => vi.fn(),
+}));
+
 const uploadedSkill = {
   id: "skill-uploaded",
   tenant_id: "tenant-1",
@@ -87,6 +94,18 @@ describe("SkillUploadView", () => {
     expect(content).not.toContain("解析结果");
     expect(content).not.toContain("发布前检查");
     expect(content).not.toContain("缺失");
+  });
+
+  it("uses router navigation for links back to the skill market", async () => {
+    const screen = await renderUploadView();
+
+    for (const link of [
+      screen.getByRole("link", { exact: true, name: "技能市场" }),
+      screen.getByRole("link", { exact: true, name: "返回技能市场" }),
+    ]) {
+      await expect.element(link).toHaveAttribute("href", "/skills");
+      await expect.element(link).toHaveAttribute("data-router-link", "true");
+    }
   });
 
   it("derives the package display name from the zip filename and requires a Chinese skill name", async () => {

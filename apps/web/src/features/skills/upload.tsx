@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -110,7 +110,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
           <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <a className="hover:text-foreground" href="/skills">技能市场</a>
+                <Link className="hover:text-foreground" to="/skills">技能市场</Link>
                 <span>/</span>
                 <span>上传技能</span>
               </div>
@@ -127,10 +127,10 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
               </div>
             </div>
             <Button asChild className="self-start" variant="outline">
-              <a href="/skills">
+              <Link to="/skills">
                 <ArrowLeft data-icon="inline-start" />
                 返回技能市场
-              </a>
+              </Link>
             </Button>
           </div>
 

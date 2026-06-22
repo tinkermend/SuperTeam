@@ -22,6 +22,12 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a data-router-link="true" href={to}>{children}</a>
+  ),
+}));
+
 const skillsFixture = [
   {
     id: "skill-diagnose",
@@ -125,10 +131,12 @@ describe("SkillsView", () => {
     await expect.element(screen.getByText("1 个团队")).toBeVisible();
   });
 
-  it("links to the upload workspace instead of opening an upload dialog", async () => {
+  it("uses router navigation for the upload workspace instead of opening an upload dialog", async () => {
     const screen = await renderSkillsView();
 
-    await expect.element(screen.getByRole("link", { name: "上传技能" })).toHaveAttribute("href", "/skills/upload");
+    const uploadLink = screen.getByRole("link", { name: "上传技能" });
+    await expect.element(uploadLink).toHaveAttribute("href", "/skills/upload");
+    await expect.element(uploadLink).toHaveAttribute("data-router-link", "true");
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
