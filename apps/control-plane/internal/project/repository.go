@@ -130,10 +130,22 @@ type ProjectTaskAttemptWritebackRepository interface {
 	StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error)
 	RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error)
 	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+	CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error)
 	CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error)
+	CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error)
 	WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error)
+}
+
+type CompleteProjectTaskAttemptResultWritebackRequest struct {
+	Complete CompleteProjectTaskAttemptRequest
+	Result   RecordProjectTaskResultRequest
+}
+
+type CompleteProjectTaskAttemptAcceptanceResultWritebackRequest struct {
+	Acceptance CompleteProjectTaskAttemptAcceptanceWritebackRequest
+	Result     RecordProjectTaskResultRequest
 }
 
 type ProviderEventExecutionLedgerRepository interface {

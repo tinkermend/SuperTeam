@@ -939,6 +939,10 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 }
 
 func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	return r.recordProjectTaskResultWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) recordProjectTaskResultWithQueries(ctx context.Context, q *queries.Queries, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
 	if req.DecisionRequestID != nil || req.RevisionTaskID != nil {
 		return ProjectTaskResult{}, ErrProjectConflict
 	}
@@ -975,7 +979,7 @@ func (r *PgRepository) RecordProjectTaskResult(ctx context.Context, req RecordPr
 			return ProjectTaskResult{}, err
 		}
 	}
-	row, err := r.q.CreateProjectTaskResult(ctx, queries.CreateProjectTaskResultParams{
+	row, err := q.CreateProjectTaskResult(ctx, queries.CreateProjectTaskResultParams{
 		TenantID:           req.TenantID,
 		ProjectID:          req.ProjectID,
 		ProjectTaskID:      req.ProjectTaskID,
@@ -1028,7 +1032,11 @@ func normalizeProjectTaskResultPagination(limit, offset int32) (int32, int32) {
 }
 
 func (r *PgRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
-	row, err := r.q.LinkProjectTaskLatestResult(ctx, queries.LinkProjectTaskLatestResultParams{
+	return r.linkProjectTaskLatestResultWithQueries(ctx, r.q, tenantID, projectID, projectTaskID, resultID)
+}
+
+func (r *PgRepository) linkProjectTaskLatestResultWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	row, err := q.LinkProjectTaskLatestResult(ctx, queries.LinkProjectTaskLatestResultParams{
 		TaskResultID:  resultID,
 		TenantID:      tenantID,
 		ProjectTaskID: projectTaskID,
@@ -1038,6 +1046,19 @@ func (r *PgRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID
 		return ProjectTask{}, projectRepositoryError(err)
 	}
 	return taskFromRecord(row)
+}
+
+func (r *PgRepository) recordProjectTaskResultForWritebackWithQueries(ctx context.Context, q *queries.Queries, req RecordProjectTaskResultRequest, result ProjectTaskWritebackResult) (ProjectTaskResult, error) {
+	req.ExecutionSummaryID = &result.Summary.ID
+	req.CreatedEventID = &result.Event.ID
+	taskResult, err := r.recordProjectTaskResultWithQueries(ctx, q, req)
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if _, err := r.linkProjectTaskLatestResultWithQueries(ctx, q, req.TenantID, req.ProjectID, req.ProjectTaskID, taskResult.ID); err != nil {
+		return ProjectTaskResult{}, err
+	}
+	return taskResult, nil
 }
 
 func (r *PgRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
@@ -3311,150 +3332,184 @@ func (r *PgRepository) extractExecutionEvidenceRefsWithQueries(ctx context.Conte
 
 func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt completion writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
-		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
-			TenantID:     req.TenantID,
-			ProjectID:    task.ProjectID,
-			EventType:    ProjectEventTaskCompleted,
-			ActorType:    "digital_employee",
-			ActorID:      req.DigitalEmployeeID.String(),
-			ResourceType: strPtr("project_task"),
-			ResourceID:   strPtr(task.ID.String()),
-			Summary:      "项目任务已完成",
-			Payload: map[string]any{
-				"project_task_id":         task.ID.String(),
-				"project_task_attempt_id": req.AttemptID.String(),
-			},
-		})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
-			TenantID:              req.TenantID,
-			ProjectID:             task.ProjectID,
-			ProjectTaskID:         task.ID,
-			DigitalEmployeeID:     req.DigitalEmployeeID,
-			Conclusion:            req.Conclusion,
-			EvidenceRefs:          sliceOrEmptyAny(req.EvidenceRefs),
-			ArtifactRefs:          sliceOrEmptyAny(req.ArtifactRefs),
-			ConfidenceFactors:     mapOrEmptyAny(req.ConfidenceFactors),
-			Uncertainty:           strings.TrimSpace(req.Uncertainty),
-			MissingInformation:    sliceOrEmptyAny(req.MissingInformation),
-			RecommendedNextAction: strings.TrimSpace(req.RecommendedNextAction),
-			RequiresHumanReview:   req.RequiresHumanReview,
-			CreatedEventID:        &event.ID,
-		})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.TenantID, task.ProjectID, &task.ID, req.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.EvidenceRefs))
-		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
-			TenantID:          req.TenantID,
-			ID:                req.AttemptID,
-			LeaseToken:        req.LeaseToken,
-			Status:            ProjectTaskAttemptStatusSucceeded,
-			ProviderSessionID: textPtr(req.ProviderSessionID),
-			TerminalEventID:   nullUUID(&event.ID),
-		}); err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
-			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
-				return ProjectTaskWritebackResult{}, err
-			}
-		}
-		task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		if task.DemandID != nil {
-			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID); err != nil {
-				return ProjectTaskWritebackResult{}, err
-			}
-		}
-		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+		return r.completeProjectTaskAttemptWritebackWithQueries(ctx, q, req)
 	})
+}
+
+func (r *PgRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt completion result writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		result, err := r.completeProjectTaskAttemptWritebackWithQueries(ctx, q, req.Complete)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := r.recordProjectTaskResultForWritebackWithQueries(ctx, q, req.Result, result); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return result, nil
+	})
+}
+
+func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx context.Context, q *queries.Queries, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
+	task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskCompleted,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务已完成",
+		Payload: map[string]any{
+			"project_task_id":         task.ID.String(),
+			"project_task_attempt_id": req.AttemptID.String(),
+		},
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
+		TenantID:              req.TenantID,
+		ProjectID:             task.ProjectID,
+		ProjectTaskID:         task.ID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          sliceOrEmptyAny(req.EvidenceRefs),
+		ArtifactRefs:          sliceOrEmptyAny(req.ArtifactRefs),
+		ConfidenceFactors:     mapOrEmptyAny(req.ConfidenceFactors),
+		Uncertainty:           strings.TrimSpace(req.Uncertainty),
+		MissingInformation:    sliceOrEmptyAny(req.MissingInformation),
+		RecommendedNextAction: strings.TrimSpace(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+		CreatedEventID:        &event.ID,
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.TenantID, task.ProjectID, &task.ID, req.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.EvidenceRefs))
+	if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+		TenantID:          req.TenantID,
+		ID:                req.AttemptID,
+		LeaseToken:        req.LeaseToken,
+		Status:            ProjectTaskAttemptStatusSucceeded,
+		ProviderSessionID: textPtr(req.ProviderSessionID),
+		TerminalEventID:   nullUUID(&event.ID),
+	}); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
+		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
+	task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	if task.DemandID != nil {
+		if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
 }
 
 func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt acceptance writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
-		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
-			TenantID:     req.Complete.TenantID,
-			ProjectID:    req.Task.ProjectID,
-			EventType:    ProjectEventTaskWaitingHuman,
-			ActorType:    "digital_employee",
-			ActorID:      req.Complete.DigitalEmployeeID.String(),
-			ResourceType: strPtr("project_task"),
-			ResourceID:   strPtr(req.Task.ID.String()),
-			Summary:      "项目任务等待验收",
-			Payload: map[string]any{
-				"project_task_id":         req.Complete.ProjectTaskID.String(),
-				"project_task_attempt_id": req.Complete.AttemptID.String(),
-				"waiting_reason":          HumanWaitReasonAcceptanceRequired,
-			},
-		})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
-			TenantID:              req.Complete.TenantID,
-			ProjectID:             req.Task.ProjectID,
-			ProjectTaskID:         req.Task.ID,
-			DigitalEmployeeID:     req.Complete.DigitalEmployeeID,
-			Conclusion:            req.Complete.Conclusion,
-			EvidenceRefs:          sliceOrEmptyAny(req.Complete.EvidenceRefs),
-			ArtifactRefs:          sliceOrEmptyAny(req.Complete.ArtifactRefs),
-			ConfidenceFactors:     mapOrEmptyAny(req.Complete.ConfidenceFactors),
-			Uncertainty:           strings.TrimSpace(req.Complete.Uncertainty),
-			MissingInformation:    sliceOrEmptyAny(req.Complete.MissingInformation),
-			RecommendedNextAction: strings.TrimSpace(req.Complete.RecommendedNextAction),
-			RequiresHumanReview:   true,
-			CreatedEventID:        &event.ID,
-		})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.Complete.TenantID, req.Task.ProjectID, &req.Task.ID, req.Complete.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.Complete.EvidenceRefs))
-		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
-			TenantID:          req.Complete.TenantID,
-			ID:                req.Complete.AttemptID,
-			LeaseToken:        req.Complete.LeaseToken,
-			Status:            ProjectTaskAttemptStatusSucceeded,
-			ProviderSessionID: textPtr(req.Complete.ProviderSessionID),
-			TerminalEventID:   nullUUID(&event.ID),
-		}); err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
-			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
-				return ProjectTaskWritebackResult{}, err
-			}
-		}
-		decisionReq := req.Decision
-		decisionReq.CreatedEventID = &event.ID
-		decision, err := r.createDecisionRequestWithQueries(ctx, q, decisionReq)
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
-			WaitingReason:    HumanWaitReasonAcceptanceRequired,
-			WaitingRequestID: nullUUID(&decision.ID),
-			LatestEventID:    nullUUID(&event.ID),
-			TenantID:         req.Task.TenantID,
-			ID:               req.Task.ID,
-		})
-		if err != nil {
-			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
-		}
-		task, err := taskFromRecord(row)
-		if err != nil {
-			return ProjectTaskWritebackResult{}, err
-		}
-		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
+		return r.completeProjectTaskAttemptAcceptanceWritebackWithQueries(ctx, q, req)
 	})
+}
+
+func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt acceptance result writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		result, err := r.completeProjectTaskAttemptAcceptanceWritebackWithQueries(ctx, q, req.Acceptance)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := r.recordProjectTaskResultForWritebackWithQueries(ctx, q, req.Result, result); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return result, nil
+	})
+}
+
+func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(ctx context.Context, q *queries.Queries, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {
+	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.Complete.TenantID,
+		ProjectID:    req.Task.ProjectID,
+		EventType:    ProjectEventTaskWaitingHuman,
+		ActorType:    "digital_employee",
+		ActorID:      req.Complete.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(req.Task.ID.String()),
+		Summary:      "项目任务等待验收",
+		Payload: map[string]any{
+			"project_task_id":         req.Complete.ProjectTaskID.String(),
+			"project_task_attempt_id": req.Complete.AttemptID.String(),
+			"waiting_reason":          HumanWaitReasonAcceptanceRequired,
+		},
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
+		TenantID:              req.Complete.TenantID,
+		ProjectID:             req.Task.ProjectID,
+		ProjectTaskID:         req.Task.ID,
+		DigitalEmployeeID:     req.Complete.DigitalEmployeeID,
+		Conclusion:            req.Complete.Conclusion,
+		EvidenceRefs:          sliceOrEmptyAny(req.Complete.EvidenceRefs),
+		ArtifactRefs:          sliceOrEmptyAny(req.Complete.ArtifactRefs),
+		ConfidenceFactors:     mapOrEmptyAny(req.Complete.ConfidenceFactors),
+		Uncertainty:           strings.TrimSpace(req.Complete.Uncertainty),
+		MissingInformation:    sliceOrEmptyAny(req.Complete.MissingInformation),
+		RecommendedNextAction: strings.TrimSpace(req.Complete.RecommendedNextAction),
+		RequiresHumanReview:   true,
+		CreatedEventID:        &event.ID,
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.Complete.TenantID, req.Task.ProjectID, &req.Task.ID, req.Complete.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.Complete.EvidenceRefs))
+	if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+		TenantID:          req.Complete.TenantID,
+		ID:                req.Complete.AttemptID,
+		LeaseToken:        req.Complete.LeaseToken,
+		Status:            ProjectTaskAttemptStatusSucceeded,
+		ProviderSessionID: textPtr(req.Complete.ProviderSessionID),
+		TerminalEventID:   nullUUID(&event.ID),
+	}); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
+		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
+	decisionReq := req.Decision
+	decisionReq.CreatedEventID = &event.ID
+	decision, err := r.createDecisionRequestWithQueries(ctx, q, decisionReq)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
+		WaitingReason:    HumanWaitReasonAcceptanceRequired,
+		WaitingRequestID: nullUUID(&decision.ID),
+		LatestEventID:    nullUUID(&event.ID),
+		TenantID:         req.Task.TenantID,
+		ID:               req.Task.ID,
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+	}
+	task, err := taskFromRecord(row)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
 }
 
 func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {

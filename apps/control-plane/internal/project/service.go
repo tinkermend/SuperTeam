@@ -2004,12 +2004,21 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		}
 		return nil, ErrInvalidProjectEvidence
 	}
+	var resultRecordReq *RecordProjectTaskResultRequest
+	if req.ResultContract != nil {
+		validation := ValidateTaskResultContract(task, *req.ResultContract)
+		if !validation.Valid {
+			return nil, ErrInvalidProjectEvidence
+		}
+		recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *req.ResultContract, validation)
+		resultRecordReq = &recordReq
+	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
 	if err != nil {
 		return nil, err
 	}
 	if projectTaskRequiresAcceptance(task, req) {
-		result, err := writebackRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, CompleteProjectTaskAttemptAcceptanceWritebackRequest{
+		acceptanceReq := CompleteProjectTaskAttemptAcceptanceWritebackRequest{
 			Task:     task,
 			Complete: req,
 			Decision: CreateDecisionRequestRequest{
@@ -2025,7 +2034,17 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 				RiskLevelSnapshot: stringValue(task.RiskLevel),
 				StatusSnapshot:    "pending",
 			},
-		})
+		}
+		var result ProjectTaskWritebackResult
+		var err error
+		if resultRecordReq != nil {
+			result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx, CompleteProjectTaskAttemptAcceptanceResultWritebackRequest{
+				Acceptance: acceptanceReq,
+				Result:     *resultRecordReq,
+			})
+		} else {
+			result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, acceptanceReq)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -2053,14 +2072,17 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 				"execution_summary_id": result.Summary.ID.String(),
 			})
 		}
-		if req.ResultContract != nil {
-			if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, &result.Summary.ID, &result.Event.ID, *req.ResultContract); err != nil {
-				return nil, err
-			}
-		}
 		return &result.Summary, nil
 	}
-	result, err := writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
+	var result ProjectTaskWritebackResult
+	if resultRecordReq != nil {
+		result, err = writebackRepository.CompleteProjectTaskAttemptResultWriteback(ctx, CompleteProjectTaskAttemptResultWritebackRequest{
+			Complete: req,
+			Result:   *resultRecordReq,
+		})
+	} else {
+		result, err = writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -2082,11 +2104,6 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 			"project_task_id":      task.ID.String(),
 			"execution_summary_id": result.Summary.ID.String(),
 		})
-	}
-	if req.ResultContract != nil {
-		if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, &result.Summary.ID, &result.Event.ID, *req.ResultContract); err != nil {
-			return nil, err
-		}
 	}
 	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
 		TenantID:           req.TenantID,
@@ -2136,11 +2153,25 @@ func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req Submit
 
 func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract) (ProjectTaskResult, error) {
 	validation := ValidateTaskResultContract(task, contract)
+	result, err := s.repository.RecordProjectTaskResult(ctx, projectTaskAttemptResultRecordRequest(task, runtimeReq, summaryID, eventID, contract, validation))
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if _, err := s.repository.LinkProjectTaskLatestResult(ctx, runtimeReq.TenantID, task.ProjectID, runtimeReq.ProjectTaskID, result.ID); err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if !validation.Valid {
+		return result, ErrInvalidProjectEvidence
+	}
+	return result, nil
+}
+
+func projectTaskAttemptResultRecordRequest(task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract, validation TaskResultValidation) RecordProjectTaskResultRequest {
 	validationStatus := "accepted"
 	if !validation.Valid {
 		validationStatus = "rejected"
 	}
-	result, err := s.repository.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+	return RecordProjectTaskResultRequest{
 		TenantID:           runtimeReq.TenantID,
 		ProjectID:          task.ProjectID,
 		ProjectTaskID:      runtimeReq.ProjectTaskID,
@@ -2154,17 +2185,7 @@ func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task Proje
 		ValidationWarnings: validation.Warnings,
 		IdempotencyKey:     "project_task_attempt:" + runtimeReq.AttemptID.String() + ":result:" + runtimeReq.IdempotencyKey,
 		CreatedEventID:     eventID,
-	})
-	if err != nil {
-		return ProjectTaskResult{}, err
 	}
-	if _, err := s.repository.LinkProjectTaskLatestResult(ctx, runtimeReq.TenantID, task.ProjectID, runtimeReq.ProjectTaskID, result.ID); err != nil {
-		return ProjectTaskResult{}, err
-	}
-	if !validation.Valid {
-		return result, ErrInvalidProjectEvidence
-	}
-	return result, nil
 }
 
 func taskResultValidationErrors(errors []TaskResultValidationError) []string {

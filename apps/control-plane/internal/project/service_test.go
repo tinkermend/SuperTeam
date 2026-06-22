@@ -831,25 +831,106 @@ func TestCompleteProjectTaskAttemptStoresStructuredResultContract(t *testing.T) 
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
 }
 
+func TestCompleteProjectTaskAttemptInvalidResultContractDoesNotCommitTerminalWriteback(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := validCompletedTaskResultContract()
+	contract.Summary = ""
+	initialTask := repo.tasks[0]
+	initialAttempt := repo.projectTaskAttempts[0]
+	initialSummaryCount := len(repo.executionSummaries)
+	initialEventCount := len(repo.events)
+	initialLedgerCount := len(repo.executionLedgerEvents)
+
+	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-invalid-result"),
+		Conclusion:                       "legacy conclusion",
+		ResultContract:                   &contract,
+	})
+
+	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+	require.Equal(t, initialTask.Status, repo.tasks[0].Status)
+	require.Equal(t, initialTask.CurrentAttemptID, repo.tasks[0].CurrentAttemptID)
+	require.Nil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, initialAttempt.Status, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.executionSummaries, initialSummaryCount)
+	require.Len(t, repo.events, initialEventCount)
+	require.Len(t, repo.executionLedgerEvents, initialLedgerCount)
+	require.Empty(t, repo.projectTaskResults)
+}
+
+func TestCompleteProjectTaskAttemptResultLinkFailureRollsBackTerminalWriteback(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	repo.linkProjectTaskLatestResultErr = ErrProjectConflict
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := validCompletedTaskResultContract()
+	initialTask := repo.tasks[0]
+	initialAttempt := repo.projectTaskAttempts[0]
+	initialSummaryCount := len(repo.executionSummaries)
+	initialEventCount := len(repo.events)
+	initialLedgerCount := len(repo.executionLedgerEvents)
+
+	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-link-fails"),
+		Conclusion:                       "legacy conclusion",
+		ResultContract:                   &contract,
+	})
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+	require.Equal(t, initialTask.Status, repo.tasks[0].Status)
+	require.Equal(t, initialTask.CurrentAttemptID, repo.tasks[0].CurrentAttemptID)
+	require.Nil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, initialAttempt.Status, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.executionSummaries, initialSummaryCount)
+	require.Len(t, repo.events, initialEventCount)
+	require.Len(t, repo.executionLedgerEvents, initialLedgerCount)
+	require.Empty(t, repo.projectTaskResults)
+}
+
+func TestCompleteProjectTaskAttemptAcceptanceResultLinkFailureRollsBackTerminalWriteback(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	repo.linkProjectTaskLatestResultErr = ErrProjectConflict
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].RequiresHumanApproval = true
+	contract := validCompletedTaskResultContract()
+	initialTask := repo.tasks[0]
+	initialAttempt := repo.projectTaskAttempts[0]
+	initialSummaryCount := len(repo.executionSummaries)
+	initialEventCount := len(repo.events)
+	initialLedgerCount := len(repo.executionLedgerEvents)
+	initialDecisionCount := len(repo.decisionRequests)
+
+	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-acceptance-link-fails"),
+		Conclusion:                       "legacy conclusion",
+		ResultContract:                   &contract,
+	})
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+	require.Equal(t, initialTask.Status, repo.tasks[0].Status)
+	require.Equal(t, initialTask.CurrentAttemptID, repo.tasks[0].CurrentAttemptID)
+	require.Nil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, initialAttempt.Status, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.executionSummaries, initialSummaryCount)
+	require.Len(t, repo.events, initialEventCount)
+	require.Len(t, repo.executionLedgerEvents, initialLedgerCount)
+	require.Len(t, repo.decisionRequests, initialDecisionCount)
+	require.Empty(t, repo.projectTaskResults)
+}
+
 func TestSubmitProjectTaskAttemptResultUsesRealServiceAndStoresContract(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
-	contract := TaskResultContract{
-		Status:  TaskResultStatusCompleted,
-		Summary: "结构化结果",
-		AcceptanceResults: []TaskResultAcceptanceResult{
-			{
-				Criterion:    "输出结论",
-				Status:       TaskResultCriterionStatusPassed,
-				EvidenceRefs: []string{"artifact:report"},
-			},
-		},
-		EvidenceRefs: []TaskResultRef{{Type: "report", Ref: "artifact:report"}},
-		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
-		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
-	}
+	contract := validCompletedTaskResultContract()
+	contract.Summary = "结构化结果"
 
 	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-real-service"),
@@ -867,6 +948,23 @@ func TestSubmitProjectTaskAttemptResultUsesRealServiceAndStoresContract(t *testi
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, contract, results[0].Contract)
+}
+
+func validCompletedTaskResultContract() TaskResultContract {
+	return TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "完成分析",
+		AcceptanceResults: []TaskResultAcceptanceResult{
+			{
+				Criterion:    "输出结论",
+				Status:       TaskResultCriterionStatusPassed,
+				EvidenceRefs: []string{"artifact:report"},
+			},
+		},
+		EvidenceRefs: []TaskResultRef{{Type: "report", Ref: "artifact:report"}},
+		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
+		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
+	}
 }
 
 func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
@@ -5478,6 +5576,8 @@ type memoryRepository struct {
 
 type projectTaskResultMemoryRepository struct {
 	*memoryRepository
+	recordProjectTaskResultErr     error
+	linkProjectTaskLatestResultErr error
 }
 
 type repositoryWithoutProjectTeamScopeAuthorizer struct {
@@ -6948,7 +7048,54 @@ func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Conte
 	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
 }
 
+func (r *memoryRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	result, err := r.CompleteProjectTaskAttemptWriteback(ctx, req.Complete)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := recordProjectTaskResultForMemoryWriteback(ctx, r, req.Result, result); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return result, nil
+}
+
+func (r *projectTaskResultMemoryRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	resultSnapshot := append([]ProjectTaskResult(nil), r.projectTaskResults...)
+	result, err := r.memoryRepository.CompleteProjectTaskAttemptWriteback(ctx, req.Complete)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := recordProjectTaskResultForMemoryWriteback(ctx, r, req.Result, result); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		r.projectTaskResults = resultSnapshot
+		return ProjectTaskWritebackResult{}, err
+	}
+	return result, nil
+}
+
+func recordProjectTaskResultForMemoryWriteback(ctx context.Context, repository interface {
+	RecordProjectTaskResult(context.Context, RecordProjectTaskResultRequest) (ProjectTaskResult, error)
+	LinkProjectTaskLatestResult(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (ProjectTask, error)
+}, req RecordProjectTaskResultRequest, result ProjectTaskWritebackResult) (ProjectTaskResult, error) {
+	req.ExecutionSummaryID = &result.Summary.ID
+	req.CreatedEventID = &result.Event.ID
+	taskResult, err := repository.RecordProjectTaskResult(ctx, req)
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if _, err := repository.LinkProjectTaskLatestResult(ctx, req.TenantID, req.ProjectID, req.ProjectTaskID, taskResult.ID); err != nil {
+		return ProjectTaskResult{}, err
+	}
+	return taskResult, nil
+}
+
 func (r *projectTaskResultMemoryRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	if r.recordProjectTaskResultErr != nil {
+		return ProjectTaskResult{}, r.recordProjectTaskResultErr
+	}
 	for _, result := range r.projectTaskResults {
 		if result.TenantID == req.TenantID && result.IdempotencyKey == req.IdempotencyKey {
 			return result, nil
@@ -6993,6 +7140,9 @@ func (r *projectTaskResultMemoryRepository) ListProjectTaskResults(ctx context.C
 }
 
 func (r *projectTaskResultMemoryRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	if r.linkProjectTaskLatestResultErr != nil {
+		return ProjectTask{}, r.linkProjectTaskLatestResultErr
+	}
 	for _, result := range r.projectTaskResults {
 		if result.TenantID != tenantID || result.ProjectID != projectID || result.ProjectTaskID != projectTaskID || result.ID != resultID {
 			continue
@@ -7073,6 +7223,34 @@ func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx con
 		return ProjectTaskWritebackResult{}, err
 	}
 	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
+}
+
+func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	result, err := r.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, req.Acceptance)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := recordProjectTaskResultForMemoryWriteback(ctx, r, req.Result, result); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return result, nil
+}
+
+func (r *projectTaskResultMemoryRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	resultSnapshot := append([]ProjectTaskResult(nil), r.projectTaskResults...)
+	result, err := r.memoryRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, req.Acceptance)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := recordProjectTaskResultForMemoryWriteback(ctx, r, req.Result, result); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		r.projectTaskResults = resultSnapshot
+		return ProjectTaskWritebackResult{}, err
+	}
+	return result, nil
 }
 
 func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
@@ -7452,6 +7630,7 @@ type memoryWritebackSnapshot struct {
 	executionSummaries    []ExecutionSummary
 	executionLedgerEvents []ExecutionLedgerEvent
 	transferRequests      []TransferRequest
+	decisionRequests      []DecisionRequest
 }
 
 func (r *memoryRepository) writebackSnapshot() memoryWritebackSnapshot {
@@ -7463,6 +7642,7 @@ func (r *memoryRepository) writebackSnapshot() memoryWritebackSnapshot {
 		executionSummaries:    append([]ExecutionSummary(nil), r.executionSummaries...),
 		executionLedgerEvents: append([]ExecutionLedgerEvent(nil), r.executionLedgerEvents...),
 		transferRequests:      append([]TransferRequest(nil), r.transferRequests...),
+		decisionRequests:      append([]DecisionRequest(nil), r.decisionRequests...),
 	}
 }
 
@@ -7474,6 +7654,7 @@ func (r *memoryRepository) restoreWritebackSnapshot(snapshot memoryWritebackSnap
 	r.executionSummaries = snapshot.executionSummaries
 	r.executionLedgerEvents = snapshot.executionLedgerEvents
 	r.transferRequests = snapshot.transferRequests
+	r.decisionRequests = snapshot.decisionRequests
 }
 
 func (r *memoryRepository) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
