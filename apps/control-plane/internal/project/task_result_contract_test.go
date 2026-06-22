@@ -51,6 +51,20 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
+	t.Run("completed result rejects mixed valid and blank top-level evidence refs", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.EvidenceRefs = []TaskResultRef{
+			{Kind: "trace", Ref: "evidence://task/trace"},
+			{Kind: "trace", Ref: "   "},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "evidence_ref_blank")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
 	t.Run("completed result rejects blank artifact refs when artifacts are required", func(t *testing.T) {
 		result := completeTaskResultContract()
 		result.ArtifactRefs = []TaskResultRef{
@@ -61,6 +75,20 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 		require.False(t, validation.Valid)
 		require.Contains(t, validation.Errors, "expected_output_missing:artifact_refs")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("completed result rejects mixed valid and blank artifact refs", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.ArtifactRefs = []TaskResultRef{
+			{Kind: "report", Ref: "artifact://task/report"},
+			{Kind: "report", Ref: "   "},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "artifact_ref_blank")
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
@@ -75,6 +103,17 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
+	t.Run("completed result rejects mixed valid and blank acceptance criterion evidence refs", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.AcceptanceResults[1].EvidenceRefs = []string{"evidence://risk-summary", "   "}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "acceptance_result_evidence_blank:说明剩余风险")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
 	t.Run("completed result rejects unknown verification status", func(t *testing.T) {
 		result := completeTaskResultContract()
 		result.Verification = []TaskResultVerification{
@@ -85,6 +124,19 @@ func TestValidateTaskResultContract(t *testing.T) {
 
 		require.False(t, validation.Valid)
 		require.Contains(t, validation.Errors, "verification_status_invalid:bogus")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("completed result rejects failed verification", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.Verification = []TaskResultVerification{
+			{Status: TaskResultVerificationFailed},
+		}
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "verification_failed")
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
@@ -106,6 +158,26 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.False(t, validation.Valid)
 		require.Contains(t, validation.Errors, "verification_status_invalid:bogus")
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("non-completed result allows failed verification evidence", func(t *testing.T) {
+		result := TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待负责人补充凭据。",
+			Blocker: &TaskResultBlocker{
+				Reason:     "缺少凭据",
+				RequiredBy: "human",
+			},
+			Verification: []TaskResultVerification{
+				{Status: TaskResultVerificationFailed},
+			},
+		}
+
+		validation := ValidateTaskResultContract(ProjectTask{}, result)
+
+		require.True(t, validation.Valid)
+		require.Empty(t, validation.Errors)
+		require.Equal(t, TaskResultDecisionBlockedWaitingHuman, validation.Decision)
 	})
 
 	t.Run("acceptance criteria maps with required false are optional", func(t *testing.T) {
@@ -196,7 +268,7 @@ func TestValidateTaskResultContract(t *testing.T) {
 }
 
 func TestFailureContractAdapter(t *testing.T) {
-	t.Run("legacy failure adapter produces valid failed contract when retryable is nil", func(t *testing.T) {
+	t.Run("legacy failure adapter infers retryable false for unknown family when retryable is nil", func(t *testing.T) {
 		contract := TaskResultContractFromFailure(FailProjectTaskAttemptRequest{
 			FailureSummary: "Provider exited before final result.",
 			FailureFamily:  "provider_interrupted",
@@ -208,6 +280,36 @@ func TestFailureContractAdapter(t *testing.T) {
 		require.False(t, *contract.Failure.Retryable)
 
 		validation := ValidateTaskResultContract(ProjectTask{}, contract)
+		require.True(t, validation.Valid)
+		require.Equal(t, TaskResultDecisionFailedRecovery, validation.Decision)
+	})
+
+	t.Run("legacy failure adapter infers retryable true for transient family when retryable is nil", func(t *testing.T) {
+		contract := TaskResultContractFromFailure(FailProjectTaskAttemptRequest{
+			FailureSummary: "Runtime lease was interrupted.",
+			FailureFamily:  FailureFamilyTransientRuntime,
+		})
+
+		require.Equal(t, TaskResultStatusFailed, contract.Status)
+		require.NotNil(t, contract.Failure)
+		require.NotNil(t, contract.Failure.Retryable)
+		require.True(t, *contract.Failure.Retryable)
+
+		validation := ValidateTaskResultContract(ProjectTask{AttemptCount: 1, MaxAttempts: int32Ptr(3)}, contract)
+		require.True(t, validation.Valid)
+		require.Equal(t, TaskResultDecisionFailedRetryable, validation.Decision)
+	})
+
+	t.Run("failed retryable with exhausted task budget maps to failed recovery", func(t *testing.T) {
+		retryable := true
+		contract := TaskResultContractFromFailure(FailProjectTaskAttemptRequest{
+			FailureSummary: "Provider timed out.",
+			FailureFamily:  FailureFamilyTimeout,
+			Retryable:      &retryable,
+		})
+
+		validation := ValidateTaskResultContract(ProjectTask{AttemptCount: 3, MaxAttempts: int32Ptr(3)}, contract)
+
 		require.True(t, validation.Valid)
 		require.Equal(t, TaskResultDecisionFailedRecovery, validation.Decision)
 	})

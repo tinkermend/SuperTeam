@@ -195,7 +195,9 @@ func ValidateTaskResultContract(task ProjectTask, result TaskResultContract) Tas
 	if strings.TrimSpace(result.Summary) == "" {
 		validation.Errors = append(validation.Errors, "summary_required")
 	}
-	validation.Errors = append(validation.Errors, validateTaskResultVerifications(result.Verification)...)
+	validation.Errors = append(validation.Errors, taskResultRefBlankErrors("evidence_ref_blank", result.EvidenceRefs)...)
+	validation.Errors = append(validation.Errors, taskResultRefBlankErrors("artifact_ref_blank", result.ArtifactRefs)...)
+	validation.Errors = append(validation.Errors, validateTaskResultVerifications(result.Status, result.Verification)...)
 
 	switch result.Status {
 	case TaskResultStatusCompleted:
@@ -274,7 +276,7 @@ func AdaptCompletionEvidenceToResultContract(req CompleteProjectTaskAttemptReque
 }
 
 func TaskResultContractFromFailure(req FailProjectTaskAttemptRequest) TaskResultContract {
-	retryable := false
+	retryable := retryableFailureFamily(req.FailureFamily)
 	if req.Retryable != nil {
 		retryable = *req.Retryable
 	}
@@ -356,13 +358,15 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 	return errors
 }
 
-func validateTaskResultVerifications(verifications []TaskResultVerification) []string {
+func validateTaskResultVerifications(status TaskResultStatus, verifications []TaskResultVerification) []string {
 	var errors []string
 	for _, verification := range verifications {
 		switch verification.Status {
 		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
 		case TaskResultVerificationStatusFailed:
-			errors = append(errors, "verification_failed")
+			if status == TaskResultStatusCompleted {
+				errors = append(errors, "verification_failed")
+			}
 		default:
 			errors = append(errors, "verification_status_invalid:"+string(verification.Status))
 		}
@@ -380,10 +384,23 @@ func validateCompletedAcceptanceResult(criterion string, result TaskResultAccept
 	default:
 		return []string{"acceptance_result_not_accepted:" + criterion}
 	}
-	if !hasUsableStringRef(result.EvidenceRefs) {
-		return []string{"acceptance_result_evidence_missing:" + criterion}
+	var errors []string
+	if hasBlankStringRef(result.EvidenceRefs) {
+		errors = append(errors, "acceptance_result_evidence_blank:"+criterion)
 	}
-	return nil
+	if !hasUsableStringRef(result.EvidenceRefs) {
+		errors = append(errors, "acceptance_result_evidence_missing:"+criterion)
+	}
+	return errors
+}
+
+func retryableFailureFamily(family string) bool {
+	switch strings.TrimSpace(family) {
+	case FailureFamilyTransientRuntime, FailureFamilyTransientProvider, FailureFamilyTimeout:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasUsableTaskResultRef(refs []TaskResultRef) bool {
@@ -402,9 +419,28 @@ func usableTaskResultRef(ref TaskResultRef) bool {
 		strings.TrimSpace(ref.ID) != ""
 }
 
+func taskResultRefBlankErrors(code string, refs []TaskResultRef) []string {
+	var errors []string
+	for _, ref := range refs {
+		if !usableTaskResultRef(ref) {
+			errors = append(errors, code)
+		}
+	}
+	return errors
+}
+
 func hasUsableStringRef(refs []string) bool {
 	for _, ref := range refs {
 		if strings.TrimSpace(ref) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBlankStringRef(refs []string) bool {
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) == "" {
 			return true
 		}
 	}
