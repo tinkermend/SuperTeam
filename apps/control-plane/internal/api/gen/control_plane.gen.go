@@ -3678,14 +3678,10 @@ type Task struct {
 // TaskResultAcceptanceResult defines model for TaskResultAcceptanceResult.
 type TaskResultAcceptanceResult struct {
 	Criterion           string                    `json:"criterion"`
-	CriterionId         *string                   `json:"criterion_id,omitempty"`
 	EvidenceRefs        []string                  `json:"evidence_refs"`
 	HumanAcceptedReason *string                   `json:"human_accepted_reason,omitempty"`
-	Id                  *string                   `json:"id,omitempty"`
-	Name                *string                   `json:"name,omitempty"`
 	Notes               *string                   `json:"notes,omitempty"`
 	Status              TaskResultCriterionStatus `json:"status"`
-	Summary             *string                   `json:"summary,omitempty"`
 }
 
 // TaskResultContract defines model for TaskResultContract.
@@ -3712,15 +3708,9 @@ type TaskResultCriterionStatus string
 
 // TaskResultRef defines model for TaskResultRef.
 type TaskResultRef struct {
-	Id       *string                 `json:"id,omitempty"`
-	Kind     *string                 `json:"kind,omitempty"`
-	Metadata *map[string]interface{} `json:"metadata,omitempty"`
-	Ref      string                  `json:"ref"`
-	Summary  *string                 `json:"summary,omitempty"`
-	Title    *string                 `json:"title,omitempty"`
-	Type     string                  `json:"type"`
-	Uri      *string                 `json:"uri,omitempty"`
-	Url      *string                 `json:"url,omitempty"`
+	Ref     string  `json:"ref"`
+	Summary *string `json:"summary,omitempty"`
+	Type    string  `json:"type"`
 }
 
 // TaskResultStatus defines model for TaskResultStatus.

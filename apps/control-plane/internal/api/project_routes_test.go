@@ -5,17 +5,46 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
+
+func TestGeneratedTaskResultSchemasExposeOnlyPlannedPublicFields(t *testing.T) {
+	requireGeneratedFields := func(model any, expected []string) {
+		t.Helper()
+		typ := reflect.TypeOf(model)
+		fields := make([]string, 0, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			fields = append(fields, typ.Field(i).Name)
+		}
+		if !reflect.DeepEqual(fields, expected) {
+			t.Fatalf("expected generated fields %v, got %v", expected, fields)
+		}
+	}
+
+	requireGeneratedFields(gen.TaskResultAcceptanceResult{}, []string{
+		"Criterion",
+		"EvidenceRefs",
+		"HumanAcceptedReason",
+		"Notes",
+		"Status",
+	})
+	requireGeneratedFields(gen.TaskResultRef{}, []string{
+		"Ref",
+		"Summary",
+		"Type",
+	})
+}
 
 func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())

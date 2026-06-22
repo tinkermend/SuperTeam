@@ -2053,6 +2053,11 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 				"execution_summary_id": result.Summary.ID.String(),
 			})
 		}
+		if req.ResultContract != nil {
+			if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, &result.Summary.ID, &result.Event.ID, *req.ResultContract); err != nil {
+				return nil, err
+			}
+		}
 		return &result.Summary, nil
 	}
 	result, err := writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
@@ -2078,6 +2083,11 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 			"execution_summary_id": result.Summary.ID.String(),
 		})
 	}
+	if req.ResultContract != nil {
+		if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, &result.Summary.ID, &result.Event.ID, *req.ResultContract); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
 		TenantID:           req.TenantID,
 		ProjectID:          task.ProjectID,
@@ -2094,6 +2104,102 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, err
 	}
 	return &result.Summary, nil
+}
+
+func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest) (*ExecutionSummary, error) {
+	if req.ResultContract.Status == TaskResultStatusCompleted {
+		return s.CompleteProjectTaskAttempt(ctx, CompleteProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: req.ProjectTaskAttemptRuntimeRequest,
+			Conclusion:                       req.ResultContract.Summary,
+			EvidenceRefs:                     taskResultRefsToAny(req.ResultContract.EvidenceRefs),
+			ArtifactRefs:                     taskResultRefsToAny(req.ResultContract.ArtifactRefs),
+			RecommendedNextAction:            firstTaskResultFollowUpSummary(req.ResultContract.FollowUpRequests),
+			RequiresHumanReview:              req.ResultContract.HumanReviewRequest != nil,
+			ResultContract:                   &req.ResultContract,
+		})
+	}
+
+	task, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, req.ResultContract); err != nil {
+		return nil, err
+	}
+	return &ExecutionSummary{
+		TenantID:      req.TenantID,
+		ProjectID:     task.ProjectID,
+		ProjectTaskID: req.ProjectTaskID,
+		Conclusion:    req.ResultContract.Summary,
+	}, nil
+}
+
+func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract) (ProjectTaskResult, error) {
+	validation := ValidateTaskResultContract(task, contract)
+	validationStatus := "accepted"
+	if !validation.Valid {
+		validationStatus = "rejected"
+	}
+	result, err := s.repository.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:           runtimeReq.TenantID,
+		ProjectID:          task.ProjectID,
+		ProjectTaskID:      runtimeReq.ProjectTaskID,
+		AttemptID:          &runtimeReq.AttemptID,
+		ExecutionSummaryID: summaryID,
+		ResultStatus:       contract.Status,
+		ValidationStatus:   validationStatus,
+		Decision:           validation.Decision,
+		Contract:           contract,
+		ValidationErrors:   taskResultValidationErrors(validation.Errors),
+		ValidationWarnings: validation.Warnings,
+		IdempotencyKey:     "project_task_attempt:" + runtimeReq.AttemptID.String() + ":result:" + runtimeReq.IdempotencyKey,
+		CreatedEventID:     eventID,
+	})
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if _, err := s.repository.LinkProjectTaskLatestResult(ctx, runtimeReq.TenantID, task.ProjectID, runtimeReq.ProjectTaskID, result.ID); err != nil {
+		return ProjectTaskResult{}, err
+	}
+	if !validation.Valid {
+		return result, ErrInvalidProjectEvidence
+	}
+	return result, nil
+}
+
+func taskResultValidationErrors(errors []TaskResultValidationError) []string {
+	values := make([]string, 0, len(errors))
+	for _, err := range errors {
+		values = append(values, string(err))
+	}
+	return values
+}
+
+func taskResultRefsToAny(refs []TaskResultRef) []any {
+	values := make([]any, 0, len(refs))
+	for _, ref := range refs {
+		value := map[string]any{}
+		if ref.Type != "" {
+			value["type"] = ref.Type
+		}
+		if ref.Ref != "" {
+			value["ref"] = ref.Ref
+		}
+		if ref.Summary != "" {
+			value["summary"] = ref.Summary
+		}
+		values = append(values, value)
+	}
+	return values
+}
+
+func firstTaskResultFollowUpSummary(requests []TaskResultFollowUpRequest) string {
+	for _, request := range requests {
+		if summary := strings.TrimSpace(request.Summary); summary != "" {
+			return summary
+		}
+	}
+	return ""
 }
 
 type parsedEvidenceRef struct {

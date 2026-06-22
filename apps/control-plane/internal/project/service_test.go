@@ -784,6 +784,91 @@ func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) 
 	require.Contains(t, repo.eventTypes, ProjectEventTaskCompleted)
 }
 
+func TestCompleteProjectTaskAttemptStoresStructuredResultContract(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "完成分析",
+		AcceptanceResults: []TaskResultAcceptanceResult{
+			{
+				Criterion:    "输出结论",
+				Status:       TaskResultCriterionStatusPassed,
+				EvidenceRefs: []string{"artifact:report"},
+			},
+		},
+		EvidenceRefs: []TaskResultRef{{Type: "report", Ref: "artifact:report"}},
+		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
+		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-with-result"),
+		Conclusion:                       "legacy conclusion",
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, contract, results[0].Contract)
+	require.Equal(t, TaskResultStatusCompleted, results[0].ResultStatus)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, results[0].Decision)
+	require.Equal(t, "accepted", results[0].ValidationStatus)
+	require.NotNil(t, results[0].AttemptID)
+	require.Equal(t, fixture.attemptID, *results[0].AttemptID)
+	require.NotNil(t, results[0].ExecutionSummaryID)
+	require.Equal(t, summary.ID, *results[0].ExecutionSummaryID)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestSubmitProjectTaskAttemptResultUsesRealServiceAndStoresContract(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "结构化结果",
+		AcceptanceResults: []TaskResultAcceptanceResult{
+			{
+				Criterion:    "输出结论",
+				Status:       TaskResultCriterionStatusPassed,
+				EvidenceRefs: []string{"artifact:report"},
+			},
+		},
+		EvidenceRefs: []TaskResultRef{{Type: "report", Ref: "artifact:report"}},
+		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
+		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
+	}
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-real-service"),
+		ResultContract:                   contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "结构化结果", summary.Conclusion)
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, contract, results[0].Contract)
+}
+
 func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -5359,6 +5444,7 @@ type memoryRepository struct {
 	routeDecisions                   []RouteDecision
 	executionSummaries               []ExecutionSummary
 	executionLedgerEvents            []ExecutionLedgerEvent
+	projectTaskResults               []ProjectTaskResult
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
 	contextUpdates                   []ProjectTaskAttemptContextUpdate
@@ -5390,6 +5476,10 @@ type memoryRepository struct {
 	projectTaskRunWorkProducts    map[uuid.UUID][]any
 }
 
+type projectTaskResultMemoryRepository struct {
+	*memoryRepository
+}
+
 type repositoryWithoutProjectTeamScopeAuthorizer struct {
 	Repository
 }
@@ -5416,6 +5506,10 @@ func newMemoryRepository() *memoryRepository {
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
 	}
+}
+
+func newProjectTaskResultMemoryRepository() *projectTaskResultMemoryRepository {
+	return &projectTaskResultMemoryRepository{memoryRepository: newMemoryRepository()}
 }
 
 func ptrUUIDValue(id uuid.UUID) *uuid.UUID {
@@ -6852,6 +6946,68 @@ func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Conte
 		return ProjectTaskWritebackResult{}, err
 	}
 	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+}
+
+func (r *projectTaskResultMemoryRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	for _, result := range r.projectTaskResults {
+		if result.TenantID == req.TenantID && result.IdempotencyKey == req.IdempotencyKey {
+			return result, nil
+		}
+	}
+	now := time.Now().UTC()
+	result := ProjectTaskResult{
+		ID:                 uuid.New(),
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ProjectTaskID:      req.ProjectTaskID,
+		AttemptID:          req.AttemptID,
+		ExecutionSummaryID: req.ExecutionSummaryID,
+		ResultStatus:       req.ResultStatus,
+		ValidationStatus:   req.ValidationStatus,
+		Decision:           req.Decision,
+		Contract:           req.Contract,
+		ValidationErrors:   append([]string(nil), req.ValidationErrors...),
+		ValidationWarnings: append([]string(nil), req.ValidationWarnings...),
+		IdempotencyKey:     req.IdempotencyKey,
+		DecisionRequestID:  req.DecisionRequestID,
+		RevisionTaskID:     req.RevisionTaskID,
+		CreatedEventID:     req.CreatedEventID,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	r.projectTaskResults = append(r.projectTaskResults, result)
+	return result, nil
+}
+
+func (r *projectTaskResultMemoryRepository) ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error) {
+	results := make([]ProjectTaskResult, 0, len(r.projectTaskResults))
+	for _, result := range r.projectTaskResults {
+		if result.TenantID == req.TenantID && result.ProjectID == req.ProjectID && result.ProjectTaskID == req.ProjectTaskID {
+			results = append(results, result)
+		}
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
+	return paginateTestSlice(results, req.Limit, req.Offset), nil
+}
+
+func (r *projectTaskResultMemoryRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	for _, result := range r.projectTaskResults {
+		if result.TenantID != tenantID || result.ProjectID != projectID || result.ProjectTaskID != projectTaskID || result.ID != resultID {
+			continue
+		}
+		for i, task := range r.tasks {
+			if task.TenantID == tenantID && task.ProjectID == projectID && task.ID == projectTaskID {
+				task.LatestTaskResultID = &resultID
+				task.UpdatedAt = time.Now().UTC()
+				r.tasks[i] = task
+				return task, nil
+			}
+		}
+		return ProjectTask{}, ErrProjectNotFound
+	}
+	return ProjectTask{}, ErrProjectConflict
 }
 
 func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {

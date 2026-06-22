@@ -6642,18 +6642,10 @@ components:
         - status
         - evidence_refs
       properties:
-        id:
-          type: string
         criterion:
-          type: string
-        criterion_id:
-          type: string
-        name:
           type: string
         status:
           $ref: "#/components/schemas/TaskResultCriterionStatus"
-        summary:
-          type: string
         evidence_refs:
           type: array
           items:
@@ -6668,25 +6660,12 @@ components:
         - type
         - ref
       properties:
-        id:
-          type: string
-        kind:
-          type: string
         type:
           type: string
         ref:
           type: string
-        uri:
-          type: string
-        url:
-          type: string
-        title:
-          type: string
         summary:
           type: string
-        metadata:
-          type: object
-          additionalProperties: true
     SubmitProjectTaskAttemptResultRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"

@@ -1568,12 +1568,12 @@ fn parsed_result_contract(
                 .get("evidence_refs")
                 .and_then(serde_json::Value::as_array)
                 .cloned()
-                .unwrap_or_else(|| evidence_refs.to_vec()),
+                .unwrap_or_else(|| normalized_result_refs(evidence_refs, "evidence")),
             artifact_refs: contract
                 .get("artifact_refs")
                 .and_then(serde_json::Value::as_array)
                 .cloned()
-                .unwrap_or_else(|| artifact_refs.to_vec()),
+                .unwrap_or_else(|| normalized_result_refs(artifact_refs, "artifact")),
             changes_made: contract
                 .get("changes_made")
                 .and_then(serde_json::Value::as_array)
@@ -1607,8 +1607,8 @@ fn parsed_result_contract(
         status: "completed".to_string(),
         summary: fallback_summary.to_string(),
         acceptance_results: Vec::new(),
-        evidence_refs: evidence_refs.to_vec(),
-        artifact_refs: artifact_refs.to_vec(),
+        evidence_refs: normalized_result_refs(evidence_refs, "evidence"),
+        artifact_refs: normalized_result_refs(artifact_refs, "artifact"),
         changes_made: Vec::new(),
         verification: Vec::new(),
         risks: Vec::new(),
@@ -1620,6 +1620,54 @@ fn parsed_result_contract(
         replan_request: None,
         cancellation: None,
     }
+}
+
+fn normalized_result_refs(
+    values: &[serde_json::Value],
+    default_type: &str,
+) -> Vec<serde_json::Value> {
+    values
+        .iter()
+        .filter_map(|value| normalized_result_ref(value, default_type))
+        .collect()
+}
+
+fn normalized_result_ref(
+    value: &serde_json::Value,
+    default_type: &str,
+) -> Option<serde_json::Value> {
+    if let Some(text) = value.as_str().and_then(|text| trimmed_optional(Some(text))) {
+        let mut object = serde_json::Map::new();
+        object.insert(
+            "type".to_string(),
+            serde_json::Value::String(default_type.to_string()),
+        );
+        object.insert("ref".to_string(), serde_json::Value::String(text));
+        return Some(serde_json::Value::Object(object));
+    }
+
+    let object = value.as_object()?;
+    let reference = ["ref", "uri", "url", "id"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(serde_json::Value::as_str))
+        .and_then(|text| trimmed_optional(Some(text)))?;
+    let result_type = object
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+        .unwrap_or_else(|| default_type.to_string());
+
+    let mut result = serde_json::Map::new();
+    result.insert("type".to_string(), serde_json::Value::String(result_type));
+    result.insert("ref".to_string(), serde_json::Value::String(reference));
+    if let Some(summary) = object
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+    {
+        result.insert("summary".to_string(), serde_json::Value::String(summary));
+    }
+    Some(serde_json::Value::Object(result))
 }
 
 fn trimmed_optional(value: Option<&str>) -> Option<String> {

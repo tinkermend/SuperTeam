@@ -891,6 +891,31 @@ async fn project_task_completion_writeback_includes_structured_result_contract()
 }
 
 #[tokio::test]
+async fn project_task_completion_writeback_normalizes_legacy_string_refs_in_fallback_contract() {
+    let summary = serde_json::json!({
+        "conclusion": "legacy complete",
+        "evidence_refs": ["artifact:report"],
+        "artifact_refs": ["artifact:analysis-report"]
+    })
+    .to_string();
+
+    let captured = run_project_task_completion_and_capture_writeback(Some(summary)).await;
+
+    let contract = captured
+        .get("result_contract")
+        .expect("fallback result_contract is sent");
+    assert_eq!(contract["status"], "completed");
+    assert_eq!(contract["summary"], "legacy complete");
+    assert_eq!(contract["evidence_refs"][0]["type"], "evidence");
+    assert_eq!(contract["evidence_refs"][0]["ref"], "artifact:report");
+    assert_eq!(contract["artifact_refs"][0]["type"], "artifact");
+    assert_eq!(
+        contract["artifact_refs"][0]["ref"],
+        "artifact:analysis-report"
+    );
+}
+
+#[tokio::test]
 async fn start_session_completes_project_task_when_metadata_requests_writeback() {
     let temp = TempDir::new().expect("tempdir");
     let fake_claude = make_script(
