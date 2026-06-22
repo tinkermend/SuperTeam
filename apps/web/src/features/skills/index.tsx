@@ -1,40 +1,38 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Blocks,
   Bot,
-  FileArchive,
-  Plus,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  Grid2X2,
+  List,
+  MoreHorizontal,
   Search as SearchIcon,
   ServerCog,
   ShieldCheck,
   Stethoscope,
-  Trash2,
   TriangleAlert,
   UploadCloud,
-  User,
+  UserRoundCheck,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import {
   LiquidCard,
   SemanticIconTile,
+  StatusBadge,
   type Tone,
 } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -42,22 +40,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import {
-  bindEmployeeSkill,
-  bindTeamSkill,
-  deleteSkill,
-  listSkills,
-  unbindEmployeeSkill,
-  unbindTeamSkill,
-  type Skill,
-} from "@/lib/api/skills";
-import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
-import { listTeams } from "@/lib/api/teams";
+import { listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 
@@ -67,10 +62,30 @@ type SkillsViewProps = {
 };
 
 type ApiOpts = { baseUrl: string; fetcher?: typeof fetch };
+type RiskFilter = "all" | "low" | "medium" | "high";
+type ScopeFilter = "all" | "team" | "employee" | "unbound";
+type DependencyFilter = "all" | "none" | "required";
+type StatusFilter = "all" | SkillMarketStatus;
+type ViewMode = "list" | "grid";
+
+type SkillMarketStatus = "installed" | "available" | "approval" | "dependency";
+
+type MetricDefinition = {
+  icon: LucideIcon;
+  label: string;
+  tone: Tone;
+  value: number;
+};
+
+type StatusDisplay = {
+  label: string;
+  tone: Tone;
+  value: SkillMarketStatus;
+};
 
 const iconMap: Record<string, LucideIcon> = {
   blocks: Blocks,
-  flask: Blocks,
+  flask: FileText,
   "server-cog": ServerCog,
   "shield-check": ShieldCheck,
   stethoscope: Stethoscope,
@@ -90,10 +105,15 @@ export function SkillsPage() {
 }
 
 export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
-  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+  const [dependencyFilter, setDependencyFilter] = useState<DependencyFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedSkillId, setSelectedSkillId] = useState<string>();
-  const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
 
   const apiOptions: ApiOpts = { baseUrl: apiBaseUrl, fetcher };
   const skills = useQuery({
@@ -104,14 +124,14 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const skillRows = skills.data ?? [];
   const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? skillRows[0];
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
-
-  const deleteMutation = useMutation({
-    mutationFn: (skillId: string) => deleteSkill(apiOptions, skillId),
-    onSuccess: async () => {
-      setDeleteTarget(null);
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-  });
+  const metrics = useMemo(() => buildMarketMetrics(skillRows), [skillRows]);
+  const filteredRows = useMemo(
+    () => filterSkills(skillRows, { dependencyFilter, riskFilter, scopeFilter, statusFilter }),
+    [dependencyFilter, riskFilter, scopeFilter, skillRows, statusFilter],
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const activePage = Math.min(page, pageCount);
+  const pagedRows = filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize);
 
   return (
     <>
@@ -121,29 +141,24 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
       </Header>
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-3">
-              <SemanticIconTile tone="primary" size="lg">
-                <Blocks />
-              </SemanticIconTile>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-normal">技能管理</h1>
-                <p className="text-sm text-muted-foreground">上传技能 zip 包，管理团队和数字员工的技能绑定。</p>
-              </div>
+          <header className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold tracking-normal">技能市场</h1>
+              <p className="mt-1 text-sm text-muted-foreground">发现、校验并安装技能到团队或数字员工</p>
             </div>
-            <Button asChild>
+            <Button asChild className="self-start">
               <Link to="/skills/upload">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
               </Link>
             </Button>
-          </div>
+          </header>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <SkillMetric icon={Blocks} label="技能总数" value={skillRows.length} tone="primary" />
-            <SkillMetric icon={Bot} label="已绑定 Agent" value={countAgentBindings(skillRows)} tone="info" />
-            <SkillMetric icon={FileArchive} label="归档文件数" value={countArchiveFiles(skillRows)} tone="artifact" />
-          </div>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="技能市场指标">
+            {metrics.map((metric) => (
+              <SkillMarketMetric key={metric.label} metric={metric} />
+            ))}
+          </section>
 
           {skills.isError ? (
             <Alert variant="destructive">
@@ -153,407 +168,503 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             </Alert>
           ) : null}
 
-          <div className="grid min-h-[650px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-            <SkillListPanel
-              onQueryChange={setQuery}
-              onSelectSkill={setSelectedSkillId}
-              query={query}
-              selectedSkillId={selectedSkill?.id}
-              skills={skillRows}
-            />
-            <SkillDetailPanel skill={selectedSkill} apiOptions={apiOptions} onDelete={setDeleteTarget} />
-          </div>
+          <LiquidCard className="min-w-0 rounded-lg p-0">
+            <CardContent className="p-0">
+              <SkillMarketToolbar
+                dependencyFilter={dependencyFilter}
+                onDependencyFilterChange={(value) => {
+                  setDependencyFilter(value);
+                  setPage(1);
+                }}
+                onQueryChange={(value) => {
+                  setQuery(value);
+                  setPage(1);
+                }}
+                onRiskFilterChange={(value) => {
+                  setRiskFilter(value);
+                  setPage(1);
+                }}
+                onScopeFilterChange={(value) => {
+                  setScopeFilter(value);
+                  setPage(1);
+                }}
+                onStatusFilterChange={(value) => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}
+                onViewModeChange={setViewMode}
+                query={query}
+                riskFilter={riskFilter}
+                scopeFilter={scopeFilter}
+                statusFilter={statusFilter}
+                viewMode={viewMode}
+              />
+
+              {viewMode === "list" ? (
+                <SkillMarketTable
+                  onSelectSkill={setSelectedSkillId}
+                  rows={pagedRows}
+                  selectedSkillId={selectedSkill?.id}
+                />
+              ) : (
+                <SkillMarketGrid
+                  onSelectSkill={setSelectedSkillId}
+                  rows={pagedRows}
+                  selectedSkillId={selectedSkill?.id}
+                />
+              )}
+
+              <SkillMarketPagination
+                currentPage={activePage}
+                onPageChange={setPage}
+                onPageSizeChange={(value) => {
+                  setPageSize(value);
+                  setPage(1);
+                }}
+                pageCount={pageCount}
+                pageSize={pageSize}
+                total={filteredRows.length}
+              />
+            </CardContent>
+          </LiquidCard>
         </div>
       </Main>
-
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>删除技能</DialogTitle>
-            <DialogDescription>
-              确定要删除「{deleteTarget?.name}」吗？所有团队和数字员工的绑定关系将被移除，S3 归档对象也将被删除。此操作不可撤销。
-            </DialogDescription>
-          </DialogHeader>
-          {deleteMutation.isError ? (
-            <p className="text-sm text-destructive">{deleteMutation.error instanceof Error ? deleteMutation.error.message : "删除失败"}</p>
-          ) : null}
-          <DialogFooter>
-            <Button onClick={() => setDeleteTarget(null)} type="button" variant="outline">取消</Button>
-            <Button
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-              type="button"
-              variant="destructive"
-            >
-              <Trash2 data-icon="inline-start" />
-              确认删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
 
-function SkillMetric({ icon: Icon, label, tone, value }: { icon: LucideIcon; label: string; tone: Tone; value: number }) {
+function SkillMarketMetric({ metric }: { metric: MetricDefinition }) {
+  const Icon = metric.icon;
   return (
-    <LiquidCard role="group" aria-label={`${label} ${value}`} className="rounded-lg">
+    <LiquidCard role="group" aria-label={`${metric.label} ${metric.value}`} className="rounded-lg py-0">
       <CardContent className="flex items-center gap-3 p-4">
-        <SemanticIconTile tone={tone} size="sm">
+        <SemanticIconTile tone={metric.tone} size="sm">
           <Icon />
         </SemanticIconTile>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tracking-normal">{value}</p>
+        <div className="min-w-0">
+          <p className="truncate text-sm text-muted-foreground">{metric.label}</p>
+          <p className="text-2xl font-semibold leading-tight tracking-normal">{metric.value}</p>
         </div>
       </CardContent>
     </LiquidCard>
   );
 }
 
-function SkillListPanel({
+function SkillMarketToolbar({
+  dependencyFilter,
+  onDependencyFilterChange,
   onQueryChange,
-  onSelectSkill,
+  onRiskFilterChange,
+  onScopeFilterChange,
+  onStatusFilterChange,
+  onViewModeChange,
   query,
-  selectedSkillId,
-  skills,
+  riskFilter,
+  scopeFilter,
+  statusFilter,
+  viewMode,
 }: {
+  dependencyFilter: DependencyFilter;
+  onDependencyFilterChange: (value: DependencyFilter) => void;
   onQueryChange: (value: string) => void;
-  onSelectSkill: (id: string) => void;
+  onRiskFilterChange: (value: RiskFilter) => void;
+  onScopeFilterChange: (value: ScopeFilter) => void;
+  onStatusFilterChange: (value: StatusFilter) => void;
+  onViewModeChange: (value: ViewMode) => void;
   query: string;
-  selectedSkillId?: string;
-  skills: Skill[];
+  riskFilter: RiskFilter;
+  scopeFilter: ScopeFilter;
+  statusFilter: StatusFilter;
+  viewMode: ViewMode;
 }) {
   return (
-    <LiquidCard className="min-w-0 rounded-lg">
-      <CardHeader className="gap-3 border-b">
-        <CardTitle className="text-base">技能列表</CardTitle>
-        <div className="flex items-center gap-2 rounded-md border bg-background px-2">
+    <div className="flex min-w-0 flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center">
+        <label className="flex min-w-0 items-center gap-2 rounded-md border bg-background/80 px-3">
           <SearchIcon className="size-4 text-muted-foreground" />
           <Input
             aria-label="搜索技能"
-            className="border-0 px-0 shadow-none focus-visible:ring-0"
+            className="h-9 min-w-0 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索技能名称"
+            placeholder="搜索技能、标签、运行依赖"
+            type="search"
             value={query}
           />
+        </label>
+        <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4 lg:flex lg:items-center">
+          <FilterSelect
+            label="风险等级"
+            onValueChange={(value) => onRiskFilterChange(value as RiskFilter)}
+            options={[
+              { label: "全部风险", value: "all" },
+              { label: "低风险", value: "low" },
+              { label: "中风险", value: "medium" },
+              { label: "高风险", value: "high" },
+            ]}
+            value={riskFilter}
+          />
+          <FilterSelect
+            label="绑定范围"
+            onValueChange={(value) => onScopeFilterChange(value as ScopeFilter)}
+            options={[
+              { label: "全部范围", value: "all" },
+              { label: "团队绑定", value: "team" },
+              { label: "员工绑定", value: "employee" },
+              { label: "未绑定", value: "unbound" },
+            ]}
+            value={scopeFilter}
+          />
+          <FilterSelect
+            label="运行依赖"
+            onValueChange={(value) => onDependencyFilterChange(value as DependencyFilter)}
+            options={[
+              { label: "全部依赖", value: "all" },
+              { label: "无依赖", value: "none" },
+              { label: "有依赖", value: "required" },
+            ]}
+            value={dependencyFilter}
+          />
+          <FilterSelect
+            label="状态"
+            onValueChange={(value) => onStatusFilterChange(value as StatusFilter)}
+            options={[
+              { label: "全部状态", value: "all" },
+              { label: "已安装", value: "installed" },
+              { label: "可安装", value: "available" },
+              { label: "需审批", value: "approval" },
+              { label: "需补全依赖", value: "dependency" },
+            ]}
+            value={statusFilter}
+          />
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <ScrollArea className="h-[560px]">
-          <div className="flex flex-col gap-1 p-3">
-            {skills.map((skill) => (
-              <button
-                className={cn(
-                  "flex min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted",
-                  selectedSkillId === skill.id && "bg-primary/10 text-primary",
-                )}
-                key={skill.id}
-                onClick={() => onSelectSkill(skill.id)}
-                type="button"
-              >
-                <SkillIcon skill={skill} size="sm" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{skill.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {skill.archive_file_count} 个文件 · {skill.team_bindings.length} 个团队
-                    {runtimeDependencyCount(skill) > 0 ? ` · ${runtimeDependencyCount(skill)} 个运行依赖` : ""}
-                  </span>
-                </span>
-              </button>
-            ))}
-            {skills.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">暂无技能，请上传 zip 包</p>
-            ) : null}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </LiquidCard>
-  );
-}
-
-function SkillDetailPanel({
-  skill,
-  apiOptions,
-  onDelete,
-}: {
-  skill?: Skill;
-  apiOptions: ApiOpts;
-  onDelete: (skill: Skill) => void;
-}) {
-  if (!skill) {
-    return (
-      <LiquidCard className="min-w-0 rounded-lg">
-        <CardContent className="flex h-[560px] min-w-0 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          请选择左侧技能查看详情
-        </CardContent>
-      </LiquidCard>
-    );
-  }
-
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <LiquidCard className="rounded-lg">
-        <CardHeader className="gap-3 border-b">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <SkillIcon skill={skill} />
-              <div className="min-w-0">
-                <CardTitle className="truncate text-base">{skill.name}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
-              </div>
-            </div>
-            <Button aria-label={`删除技能 ${skill.name}`} onClick={() => onDelete(skill)} size="sm" type="button" variant="ghost">
-              <Trash2 className="text-destructive" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 p-4 text-sm">
-          <div className="grid gap-3 md:grid-cols-2">
-            <InfoRow label="版本" value={skill.version} />
-            <InfoRow label="来源" value={skill.source} />
-            <InfoRow label="风险等级" value={skill.risk_level} />
-            <InfoRow label="文件数" value={`${skill.archive_file_count}`} />
-            <InfoRow label="包大小" value={formatBytes(skill.archive_size_bytes)} />
-            <InfoRow label="校验值" value={skill.archive_checksum_sha256.slice(0, 12) + "…"} />
-          </div>
-          <Separator />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <User className="size-4" />
-            <span>上传者：<span className="font-medium text-foreground">{skill.created_by_name || "未知"}</span></span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {skill.tags.map((tag) => (
-              <Badge key={tag} variant="outline">{tag}</Badge>
-            ))}
-          </div>
-          <RuntimeDependencyBadges skill={skill} />
-        </CardContent>
-      </LiquidCard>
-
-      <TeamBindingSection skill={skill} apiOptions={apiOptions} />
-      <EmployeeBindingSection skill={skill} apiOptions={apiOptions} />
+      </div>
+      <div className="flex self-start rounded-md border bg-background/80 p-1">
+        <Button
+          aria-label="列表视图"
+          aria-pressed={viewMode === "list"}
+          className={cn("h-8 rounded-md px-2.5", viewMode === "list" && "bg-secondary text-secondary-foreground")}
+          onClick={() => onViewModeChange("list")}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <List />
+        </Button>
+        <Button
+          aria-label="网格视图"
+          aria-pressed={viewMode === "grid"}
+          className={cn("h-8 rounded-md px-2.5", viewMode === "grid" && "bg-secondary text-secondary-foreground")}
+          onClick={() => onViewModeChange("grid")}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <Grid2X2 />
+        </Button>
+      </div>
     </div>
   );
 }
 
-function TeamBindingSection({ skill, apiOptions }: { skill: Skill; apiOptions: ApiOpts }) {
-  const queryClient = useQueryClient();
-  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+function FilterSelect({
+  label,
+  onValueChange,
+  options,
+  value,
+}: {
+  label: string;
+  onValueChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  return (
+    <Select onValueChange={onValueChange} value={value}>
+      <SelectTrigger aria-label={label} className="w-full min-w-0 bg-background/70 lg:w-[124px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
-  const teams = useQuery({
-    queryKey: ["teams", "all"],
-    queryFn: () => listTeams(apiOptions),
-  });
+function SkillMarketTable({
+  onSelectSkill,
+  rows,
+  selectedSkillId,
+}: {
+  onSelectSkill: (id: string) => void;
+  rows: Skill[];
+  selectedSkillId?: string;
+}) {
+  return (
+    <Table>
+      <TableHeader className="bg-muted/35">
+        <TableRow className="hover:bg-muted/35">
+          <TableHead className="min-w-[300px] px-4" role="columnheader">技能</TableHead>
+          <TableHead className="min-w-24" role="columnheader">风险</TableHead>
+          <TableHead className="min-w-[180px]" role="columnheader">标签</TableHead>
+          <TableHead className="min-w-24" role="columnheader">版本</TableHead>
+          <TableHead className="min-w-32" role="columnheader">绑定目标</TableHead>
+          <TableHead className="min-w-28" role="columnheader">状态</TableHead>
+          <TableHead className="min-w-[220px] text-right" role="columnheader">操作</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((skill) => (
+          <SkillMarketTableRow
+            key={skill.id}
+            onSelectSkill={onSelectSkill}
+            selected={selectedSkillId === skill.id}
+            skill={skill}
+          />
+        ))}
+        {rows.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+              暂无匹配技能，请调整搜索或筛选条件
+            </TableCell>
+          </TableRow>
+        ) : null}
+      </TableBody>
+    </Table>
+  );
+}
 
-  const boundTeamIds = useMemo(() => new Set(skill.team_bindings.map((b) => b.team_id)), [skill.team_bindings]);
-  const availableTeams = (teams.data ?? []).filter((team) => !boundTeamIds.has(team.id));
-
-  const bindMutation = useMutation({
-    mutationFn: (teamId: string) => bindTeamSkill(apiOptions, teamId, skill.id),
-    onSuccess: async () => {
-      setSelectedTeamId("");
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-  });
-  const unbindMutation = useMutation({
-    mutationFn: (teamId: string) => unbindTeamSkill(apiOptions, teamId, skill.id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-  });
+function SkillMarketTableRow({
+  onSelectSkill,
+  selected,
+  skill,
+}: {
+  onSelectSkill: (id: string) => void;
+  selected: boolean;
+  skill: Skill;
+}) {
+  const risk = riskDisplay(skill.risk_level);
+  const status = statusDisplay(skill);
 
   return (
-    <LiquidCard className="rounded-lg">
-      <CardHeader className="border-b">
-        <CardTitle className="text-base">团队绑定</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2">
-          <Select onValueChange={setSelectedTeamId} value={selectedTeamId}>
-            <SelectTrigger className="min-w-0 flex-1">
-              <SelectValue placeholder="选择要绑定的团队" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableTeams.map((team) => (
-                <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <TableRow
+      className={cn("h-[88px] border-b bg-background/35", selected && "bg-primary/5 outline outline-1 -outline-offset-1 outline-primary/70")}
+      data-state={selected ? "selected" : undefined}
+    >
+      <TableCell className="px-4 whitespace-normal">
+        <button
+          className="flex min-w-0 items-start gap-3 text-left"
+          onClick={() => onSelectSkill(skill.id)}
+          type="button"
+        >
+          <SkillIcon skill={skill} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold">{skill.name}</span>
+            <span className="mt-1 block max-w-[310px] text-sm leading-5 text-muted-foreground">{skill.description}</span>
+          </span>
+        </button>
+      </TableCell>
+      <TableCell>
+        <StatusBadge tone={risk.tone}>{risk.label}</StatusBadge>
+      </TableCell>
+      <TableCell>
+        <SkillTagStack tags={skill.tags} />
+      </TableCell>
+      <TableCell className="font-medium">{skill.version}</TableCell>
+      <TableCell>
+        <BindingSummary skill={skill} />
+      </TableCell>
+      <TableCell>
+        <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end gap-2">
           <Button
-            disabled={!selectedTeamId || bindMutation.isPending}
-            onClick={() => selectedTeamId && bindMutation.mutate(selectedTeamId)}
+            aria-label={`查看详情 ${skill.name}`}
+            onClick={() => onSelectSkill(skill.id)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            查看详情
+          </Button>
+          <Button
+            aria-label={`安装 ${skill.name}`}
+            onClick={() => onSelectSkill(skill.id)}
             size="sm"
             type="button"
           >
-            <Plus data-icon="inline-start" />
-            绑定
+            安装
+          </Button>
+          <Button
+            aria-label={`更多操作 ${skill.name}`}
+            onClick={() => onSelectSkill(skill.id)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MoreHorizontal />
           </Button>
         </div>
-        {bindMutation.isError ? (
-          <p className="text-sm text-destructive">{bindMutation.error instanceof Error ? bindMutation.error.message : "绑定失败"}</p>
-        ) : null}
-        <div className="flex flex-col gap-2">
-          {skill.team_bindings.map((binding) => (
-            <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3" key={binding.team_id}>
-              <span className="truncate text-sm font-medium">{binding.team_name}</span>
-              <Button
-                disabled={unbindMutation.isPending}
-                onClick={() => unbindMutation.mutate(binding.team_id)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
-          ))}
-          {skill.team_bindings.length === 0 ? <p className="text-sm text-muted-foreground">暂无团队绑定</p> : null}
-        </div>
-      </CardContent>
-    </LiquidCard>
+      </TableCell>
+    </TableRow>
   );
 }
 
-function EmployeeBindingSection({ skill, apiOptions }: { skill: Skill; apiOptions: ApiOpts }) {
-  const queryClient = useQueryClient();
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
-
-  const boundTeamIds = useMemo(() => skill.team_bindings.map((b) => b.team_id), [skill.team_bindings]);
-
-  const employeesQuery = useQuery({
-    enabled: boundTeamIds.length > 0,
-    queryKey: ["skill-employees", boundTeamIds.join(",")],
-    queryFn: async () => {
-      const results = await Promise.all(
-        boundTeamIds.map((teamId) => listDigitalEmployees(apiOptions, { team_id: teamId })),
-      );
-      const merged: DigitalEmployee[] = [];
-      const seen = new Set<string>();
-      for (const list of results) {
-        for (const emp of list) {
-          if (!seen.has(emp.id)) {
-            seen.add(emp.id);
-            merged.push(emp);
-          }
-        }
-      }
-      return merged;
-    },
-  });
-
-  const personalBoundIds = useMemo(
-    () => new Set(skill.agent_bindings.map((b) => b.agent_id)),
-    [skill.agent_bindings],
-  );
-
-  const availableEmployees = (employeesQuery.data ?? []).filter(
-    (emp) => !personalBoundIds.has(emp.id),
-  );
-
-  const bindMutation = useMutation({
-    mutationFn: (employeeId: string) => bindEmployeeSkill(apiOptions, employeeId, skill.id),
-    onSuccess: async () => {
-      setSelectedEmployeeId("");
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-  });
-  const unbindMutation = useMutation({
-    mutationFn: (employeeId: string) => unbindEmployeeSkill(apiOptions, employeeId, skill.id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-  });
-
-  const personalBindings = skill.agent_bindings;
-
-  return (
-    <LiquidCard className="rounded-lg">
-      <CardHeader className="border-b">
-        <CardTitle className="text-base">数字员工绑定</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 p-4">
-        {boundTeamIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">请先绑定团队，员工将通过团队继承获得此技能。如需个人补充绑定，团队绑定后可在此操作。</p>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">团队继承的员工自动拥有此技能。下方可对未继承的员工做个人补充绑定。</p>
-            <div className="flex items-center gap-2">
-              <Select onValueChange={setSelectedEmployeeId} value={selectedEmployeeId}>
-                <SelectTrigger className="min-w-0 flex-1">
-                  <SelectValue placeholder="选择要绑定的数字员工" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableEmployees.map((emp) => (
-                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                disabled={!selectedEmployeeId || bindMutation.isPending}
-                onClick={() => selectedEmployeeId && bindMutation.mutate(selectedEmployeeId)}
-                size="sm"
-                type="button"
-              >
-                <Plus data-icon="inline-start" />
-                绑定
-              </Button>
-            </div>
-            {bindMutation.isError ? (
-              <p className="text-sm text-destructive">
-                {bindMutation.error instanceof Error ? bindMutation.error.message : "绑定失败，可能团队已继承此技能"}
-              </p>
-            ) : null}
-          </>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-muted-foreground">个人绑定</p>
-          {personalBindings.map((binding) => (
-            <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3" key={binding.agent_id}>
-              <div className="flex min-w-0 items-center gap-2">
-                <SemanticIconTile tone="info" size="sm">
-                  <Bot />
-                </SemanticIconTile>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{binding.agent_name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{binding.team_name || "未归属团队"}</p>
-                </div>
-              </div>
-              <Button
-                disabled={unbindMutation.isPending}
-                onClick={() => unbindMutation.mutate(binding.agent_id)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
-          ))}
-          {personalBindings.length === 0 ? <p className="text-sm text-muted-foreground">暂无个人绑定</p> : null}
-        </div>
-      </CardContent>
-    </LiquidCard>
-  );
-}
-
-function RuntimeDependencyBadges({ skill }: { skill: Skill }) {
-  const tools = skill.runtime_dependencies?.tools ?? [];
-  const env = skill.runtime_dependencies?.env ?? [];
-  if (tools.length === 0 && env.length === 0) {
-    return <p className="text-xs text-muted-foreground">运行依赖：无</p>;
+function SkillMarketGrid({
+  onSelectSkill,
+  rows,
+  selectedSkillId,
+}: {
+  onSelectSkill: (id: string) => void;
+  rows: Skill[];
+  selectedSkillId?: string;
+}) {
+  if (rows.length === 0) {
+    return <div className="p-8 text-center text-sm text-muted-foreground">暂无匹配技能，请调整搜索或筛选条件</div>;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground">运行依赖</span>
-      {tools.map((tool) => (
-        <Badge key={`tool-${tool}`} variant="secondary">CLI {tool}</Badge>
+    <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {rows.map((skill) => {
+        const risk = riskDisplay(skill.risk_level);
+        const status = statusDisplay(skill);
+        return (
+          <button
+            className={cn(
+              "flex min-w-0 flex-col gap-4 rounded-lg border bg-background/60 p-4 text-left transition-colors hover:bg-accent/55",
+              selectedSkillId === skill.id && "border-primary bg-primary/5",
+            )}
+            key={skill.id}
+            onClick={() => onSelectSkill(skill.id)}
+            type="button"
+          >
+            <span className="flex min-w-0 items-start gap-3">
+              <SkillIcon skill={skill} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{skill.name}</span>
+                <span className="mt-1 line-clamp-2 block text-sm text-muted-foreground">{skill.description}</span>
+              </span>
+            </span>
+            <span className="flex flex-wrap gap-2">
+              <StatusBadge tone={risk.tone}>{risk.label}</StatusBadge>
+              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+            </span>
+            <span className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+              <span>团队 {skill.team_bindings.length}</span>
+              <span>数字员工 {skill.agent_bindings.length}</span>
+              <span>{skill.version}</span>
+            </span>
+            <span className="flex justify-end gap-2">
+              <Button aria-label={`查看详情 ${skill.name}`} size="sm" type="button" variant="outline">查看详情</Button>
+              <Button aria-label={`安装 ${skill.name}`} size="sm" type="button">安装</Button>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SkillMarketPagination({
+  currentPage,
+  onPageChange,
+  onPageSizeChange,
+  pageCount,
+  pageSize,
+  total,
+}: {
+  currentPage: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+}) {
+  const pages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => index + 1);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3 border-t p-4 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
+      <span>共 {total} 条</span>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <Button
+            aria-label="上一页"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronLeft />
+          </Button>
+          {pages.map((pageNumber) => (
+            <Button
+              aria-current={currentPage === pageNumber ? "page" : undefined}
+              className={cn("size-8 rounded-md px-0", currentPage === pageNumber && "bg-secondary text-secondary-foreground")}
+              key={pageNumber}
+              onClick={() => onPageChange(pageNumber)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {pageNumber}
+            </Button>
+          ))}
+          {pageCount > 5 ? <span className="px-2">...</span> : null}
+          <Button
+            aria-label="下一页"
+            disabled={currentPage >= pageCount}
+            onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronRight />
+          </Button>
+        </div>
+        <Select onValueChange={(value) => onPageSizeChange(Number(value))} value={`${pageSize}`}>
+          <SelectTrigger aria-label="每页条数" className="w-[112px] bg-background/70">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="10">10 条/页</SelectItem>
+            <SelectItem value="20">20 条/页</SelectItem>
+            <SelectItem value="50">50 条/页</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+function SkillTagStack({ tags }: { tags: string[] }) {
+  const visibleTags = tags.slice(0, 2);
+  const extraCount = Math.max(0, tags.length - visibleTags.length);
+
+  return (
+    <div className="flex max-w-[180px] flex-wrap gap-1.5">
+      {visibleTags.map((tag) => (
+        <Badge className="bg-background/70 text-muted-foreground" key={tag} variant="outline">{tag}</Badge>
       ))}
-      {env.map((name) => (
-        <Badge key={`env-${name}`} variant="outline">ENV {name}</Badge>
-      ))}
+      {extraCount > 0 ? <Badge className="bg-background/70 text-muted-foreground" variant="outline">+{extraCount}</Badge> : null}
+    </div>
+  );
+}
+
+function BindingSummary({ skill }: { skill: Skill }) {
+  return (
+    <div className="space-y-1 text-sm leading-5">
+      <div className="flex items-center gap-2">
+        <Users className="size-4 text-muted-foreground" />
+        <span>团队</span>
+        <span className="font-medium">{skill.team_bindings.length}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Bot className="size-4 text-muted-foreground" />
+        <span>数字员工</span>
+        <span className="font-medium">{skill.agent_bindings.length}</span>
+      </div>
     </div>
   );
 }
@@ -567,29 +678,80 @@ function SkillIcon({ size = "default", skill }: { size?: "sm" | "default"; skill
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="truncate font-medium">{value}</span>
-    </div>
-  );
+function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
+  return [
+    { icon: ClipboardList, label: "技能总数", tone: "info", value: skills.length },
+    { icon: CheckCircle2, label: "可安装", tone: "success", value: skills.filter((skill) => statusDisplay(skill).value === "available").length },
+    { icon: TriangleAlert, label: "需补全依赖", tone: "warning", value: skills.filter((skill) => runtimeDependencyCount(skill) > 0).length },
+    { icon: UserRoundCheck, label: "需审批", tone: "danger", value: skills.filter(needsApproval).length },
+    { icon: Blocks, label: "团队绑定", tone: "info", value: countTeamBindings(skills) },
+    { icon: Bot, label: "数字员工绑定", tone: "primary", value: countAgentBindings(skills) },
+  ];
+}
+
+function filterSkills(
+  rows: Skill[],
+  filters: {
+    dependencyFilter: DependencyFilter;
+    riskFilter: RiskFilter;
+    scopeFilter: ScopeFilter;
+    statusFilter: StatusFilter;
+  },
+) {
+  return rows.filter((skill) => {
+    const risk = normalizeRisk(skill.risk_level);
+    const status = statusDisplay(skill).value;
+    const dependencyCount = runtimeDependencyCount(skill);
+    const hasTeamBindings = skill.team_bindings.length > 0;
+    const hasAgentBindings = skill.agent_bindings.length > 0;
+
+    if (filters.riskFilter !== "all" && risk !== filters.riskFilter) return false;
+    if (filters.statusFilter !== "all" && status !== filters.statusFilter) return false;
+    if (filters.dependencyFilter === "none" && dependencyCount > 0) return false;
+    if (filters.dependencyFilter === "required" && dependencyCount === 0) return false;
+    if (filters.scopeFilter === "team" && !hasTeamBindings) return false;
+    if (filters.scopeFilter === "employee" && !hasAgentBindings) return false;
+    if (filters.scopeFilter === "unbound" && (hasTeamBindings || hasAgentBindings)) return false;
+
+    return true;
+  });
+}
+
+function statusDisplay(skill: Skill): StatusDisplay {
+  if (needsApproval(skill)) return { label: "需审批", tone: "danger", value: "approval" };
+  if (runtimeDependencyCount(skill) > 0) return { label: "需补全依赖", tone: "warning", value: "dependency" };
+  if (skill.team_bindings.length > 0 || skill.agent_bindings.length > 0) {
+    return { label: "已安装", tone: "success", value: "installed" };
+  }
+  return { label: "可安装", tone: "info", value: "available" };
+}
+
+function riskDisplay(riskLevel: string): { label: string; tone: Tone } {
+  const risk = normalizeRisk(riskLevel);
+  if (risk === "high") return { label: "高风险", tone: "danger" };
+  if (risk === "medium") return { label: "中风险", tone: "warning" };
+  return { label: "低风险", tone: "success" };
+}
+
+function normalizeRisk(riskLevel: string): Exclude<RiskFilter, "all"> {
+  const normalized = riskLevel.toLowerCase();
+  if (normalized === "high" || normalized === "critical") return "high";
+  if (normalized === "medium") return "medium";
+  return "low";
+}
+
+function needsApproval(skill: Skill) {
+  return normalizeRisk(skill.risk_level) === "high";
 }
 
 function runtimeDependencyCount(skill: Skill) {
   return (skill.runtime_dependencies?.tools?.length ?? 0) + (skill.runtime_dependencies?.env?.length ?? 0);
 }
 
+function countTeamBindings(skills: Skill[]) {
+  return skills.reduce((total, skill) => total + skill.team_bindings.length, 0);
+}
+
 function countAgentBindings(skills: Skill[]) {
   return skills.reduce((total, skill) => total + skill.agent_bindings.length, 0);
-}
-
-function countArchiveFiles(skills: Skill[]) {
-  return skills.reduce((total, skill) => total + skill.archive_file_count, 0);
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

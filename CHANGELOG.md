@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-22 19:15：重构技能管理首页为技能市场视图：保留技能上传入口，新增市场指标、搜索筛选、列表/网格切换、风险/状态/绑定目标展示，以及“查看详情”“安装”占位按钮；详情和安装流程不在本次实现范围内。验证：`corepack pnpm --filter ./apps/web run typecheck`、`corepack pnpm --filter ./apps/web run test`、`git diff --check` 通过；真实链路将在合并到 `main` 后用当前 `main` 页面连接真实 Control Plane 复验。
 - 2026-06-21 02:15：修复真实 OpenFGA 1.18 链路验证暴露的 tuple 写入兼容问题：`OpenFGAHTTPClient.WriteTuples` 现在接受 Write API 成功返回的 `200` 或 `204`，并在 writes/deletes payload 中分别带 `on_duplicate: "ignore"`、`on_missing: "ignore"`，确保 backfill、单记录 upsert/revoke 和重试同步具备幂等性。
 - 2026-06-21 01:44：`scripts/dev-services.sh start openfga` 改为默认优先使用本机已安装的 `openfga` CLI 启动，自动执行 `openfga migrate` 后以 SQLite 文件 `.scratch/openfga/openfga.db` 运行服务，并继续支持 `SUPERTEAM_DEV_OPENFGA_MODE=compose` 走 Docker Compose；新增本机 CLI 启动、状态与停止的脚本回归测试。
 - 2026-06-21 00:26：需求路由 planner HTTP 调用去 DeepSeek 专名化，重命名为 OpenAI-compatible planner/client/request/config 边界；生产装配继续从 `planner.baseURL`/`planner.model`（或对应环境变量）取模型与 endpoint，不再在代码默认值里绑定具体 DeepSeek provider/model，`config.example.yaml` 改为通用占位并标注 DeepSeek 与千问兼容端点示例。补充 qwen 模型请求构造与 provider-neutral 错误文案测试。真实链路验证：重启运行中 Control Plane 后，通过真实 admin 会话向现有项目提交需求，协调线程执行 `PlanDemandRoute` 并生成 route decision、task graph 节点与待审核决策，无 chat/model/provider 错误。
