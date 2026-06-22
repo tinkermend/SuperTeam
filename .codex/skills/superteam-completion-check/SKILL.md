@@ -35,6 +35,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
 3. Verify current code is what is running:
    - Inspect `scripts/dev-services.sh status` or process commands when local services are involved.
    - After merge, migration, generated code, or a 404/old behavior, restart only the relevant `scripts/dev-services.sh` managed service before real-chain testing.
+   - For branch-finish work, verify the checkout and running services are on merged `main` before the post-merge smoke; feature-branch evidence does not prove the merged result.
    - Do not kill unmanaged user processes without inspecting them first.
 
 4. Run the right gates:
@@ -45,7 +46,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
    - Database migration/read model: run migration status/apply against the intended development database and confirm the new table/column/index exists by status, schema inspect, or an equivalent read-only DB check.
    - Cross-layer workflow: verify at least one real path from UI or curl through Control Plane to the backing store, then confirm the page or API final state.
    - Runtime/Provider integration: verify local unit/fake-Provider behavior, then run a real Runtime/Provider smoke when claiming the execution path is usable. If a real Provider binary, credentials, or safe execution workspace is unavailable, stop as blocked instead of claiming completion.
-   - Merge completion: after merging, rerun the relevant real-chain smoke on the merged code, not only on the feature branch.
+   - Merge completion: after merging, rerun the relevant real-chain smoke on merged `main`, not only on the feature branch. For Web-visible flows, use the Chrome plug/browser automation against the running Web and real Control Plane, then record the page or API evidence.
 
 5. Run the common project hygiene checks:
    - Add a `CHANGELOG.md` entry for completed feature work using `TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M'`; do not hand-write the timestamp.
@@ -53,6 +54,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
    - Keep documentation in Simplified Chinese unless the touched file has a stronger existing convention.
    - Confirm new files live inside the expected directory boundary, such as HTML prototypes under `docs/prototypes/`.
    - Run `git diff --check` before final response when files changed.
+   - For branch-finish work, remove the branch worktree, prune worktrees, and delete the branch only after post-merge real-chain verification passes. If merge or verification is blocked, keep the branch/worktree available and report the blocker.
 
 6. Report honestly:
    - If only mock/component/unit/build verification ran for work that does not require real-chain verification, explicitly say that real-chain verification was not done.
