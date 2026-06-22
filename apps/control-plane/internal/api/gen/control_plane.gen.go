@@ -459,6 +459,33 @@ func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	}
 }
 
+// Defines values for DispatchGateResultStatus.
+const (
+	DispatchGateResultStatusBlocked        DispatchGateResultStatus = "blocked"
+	DispatchGateResultStatusPassed         DispatchGateResultStatus = "passed"
+	DispatchGateResultStatusReplanRequired DispatchGateResultStatus = "replan_required"
+	DispatchGateResultStatusRetryLater     DispatchGateResultStatus = "retry_later"
+	DispatchGateResultStatusWaitingHuman   DispatchGateResultStatus = "waiting_human"
+)
+
+// Valid indicates whether the value is a known member of the DispatchGateResultStatus enum.
+func (e DispatchGateResultStatus) Valid() bool {
+	switch e {
+	case DispatchGateResultStatusBlocked:
+		return true
+	case DispatchGateResultStatusPassed:
+		return true
+	case DispatchGateResultStatusReplanRequired:
+		return true
+	case DispatchGateResultStatusRetryLater:
+		return true
+	case DispatchGateResultStatusWaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EffectiveEmployeeSkillSourceScope.
 const (
 	EffectiveEmployeeSkillSourceScopeEmployee EffectiveEmployeeSkillSourceScope = "employee"
@@ -2192,6 +2219,43 @@ type DigitalEmployeeTypeOption struct {
 
 // DigitalEmployeeWorkbenchStatus defines model for DigitalEmployeeWorkbenchStatus.
 type DigitalEmployeeWorkbenchStatus string
+
+// DispatchGateBlocker defines model for DispatchGateBlocker.
+type DispatchGateBlocker struct {
+	Details   map[string]interface{} `json:"details"`
+	Key       string                 `json:"key"`
+	Retryable bool                   `json:"retryable"`
+	Severity  string                 `json:"severity"`
+}
+
+// DispatchGateCheck defines model for DispatchGateCheck.
+type DispatchGateCheck struct {
+	Details map[string]interface{} `json:"details"`
+	Key     string                 `json:"key"`
+	Status  string                 `json:"status"`
+}
+
+// DispatchGateResult defines model for DispatchGateResult.
+type DispatchGateResult struct {
+	AcceptedPlanRevisionId *openapi_types.UUID      `json:"accepted_plan_revision_id,omitempty"`
+	AttemptId              *openapi_types.UUID      `json:"attempt_id,omitempty"`
+	AttemptNo              int32                    `json:"attempt_no"`
+	Blockers               []DispatchGateBlocker    `json:"blockers"`
+	CheckedAt              time.Time                `json:"checked_at"`
+	Checks                 []DispatchGateCheck      `json:"checks"`
+	DecisionRequestId      *openapi_types.UUID      `json:"decision_request_id,omitempty"`
+	DispatchReason         string                   `json:"dispatch_reason"`
+	HumanActionRequest     map[string]interface{}   `json:"human_action_request"`
+	Id                     openapi_types.UUID       `json:"id"`
+	PlannedTaskKey         *string                  `json:"planned_task_key,omitempty"`
+	ProjectTaskId          openapi_types.UUID       `json:"project_task_id"`
+	RetryAfter             *time.Time               `json:"retry_after,omitempty"`
+	SelectedEmployeeId     openapi_types.UUID       `json:"selected_employee_id"`
+	Status                 DispatchGateResultStatus `json:"status"`
+}
+
+// DispatchGateResultStatus defines model for DispatchGateResult.Status.
+type DispatchGateResultStatus string
 
 // EffectiveConfigPreview defines model for EffectiveConfigPreview.
 type EffectiveConfigPreview struct {
@@ -5217,6 +5281,9 @@ type ServerInterface interface {
 	// List project tasks
 	// (GET /api/v1/projects/{projectId}/tasks)
 	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
+	// List project task dispatch gate results
+	// (GET /api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates)
+	ListProjectTaskDispatchGates(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
 	// Get project task liveness projection
 	// (GET /api/v1/projects/{projectId}/tasks/{taskId}/liveness)
 	GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
@@ -5910,6 +5977,12 @@ func (_ Unimplemented) GetProjectTaskGraph(w http.ResponseWriter, r *http.Reques
 // List project tasks
 // (GET /api/v1/projects/{projectId}/tasks)
 func (_ Unimplemented) ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project task dispatch gate results
+// (GET /api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates)
+func (_ Unimplemented) ListProjectTaskDispatchGates(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9417,6 +9490,41 @@ func (siw *ServerInterfaceWrapper) ListProjectTasks(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListProjectTaskDispatchGates operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectTaskDispatchGates(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "taskId" -------------
+	var taskId TaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectTaskDispatchGates(w, r, projectId, taskId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetProjectTaskLiveness operation middleware
 func (siw *ServerInterfaceWrapper) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request) {
 
@@ -12820,6 +12928,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates", wrapper.ListProjectTaskDispatchGates)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/liveness", wrapper.GetProjectTaskLiveness)

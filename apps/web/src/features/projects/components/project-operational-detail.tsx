@@ -28,6 +28,8 @@ import type {
   CreateProjectAcceptanceInput,
   CreateProjectArchiveSnapshotInput,
   CreateProjectEvidenceInput,
+  DispatchGateResult,
+  DispatchGateStatus,
   ProjectDecisionRequest,
   ProjectDemand,
   ProjectEvidenceRef,
@@ -59,6 +61,8 @@ type ProjectOperationalDetailProps = {
   coordinationJobs: ProjectCoordinationJob[];
   decisionRequests: ProjectDecisionRequest[];
   demands: ProjectDemand[];
+  dispatchGateTaskTitle?: string;
+  dispatchGates?: DispatchGateResult[];
   evidence?: ProjectEvidenceRef[];
   events: ProjectEvent[];
   executionTrace?: ProjectExecutionTrace;
@@ -98,6 +102,8 @@ export function ProjectOperationalDetail({
   coordinationJobs,
   decisionRequests,
   demands,
+  dispatchGateTaskTitle,
+  dispatchGates,
   evidence,
   events,
   executionTrace,
@@ -401,6 +407,11 @@ export function ProjectOperationalDetail({
               </div>
             </LiquidCard>
           )}
+
+          <DispatchGateSummary
+            gates={dispatchGates ?? []}
+            taskTitle={dispatchGateTaskTitle}
+          />
 
           <LiquidCard className="rounded-xl">
             <PanelHeader
@@ -716,6 +727,64 @@ export function ProjectOperationalDetail({
   );
 }
 
+function DispatchGateSummary({
+  gates,
+  taskTitle,
+}: {
+  gates: DispatchGateResult[];
+  taskTitle?: string;
+}) {
+  const latest = gates[0];
+  if (!latest) {
+    return null;
+  }
+  const statusLabel: Record<DispatchGateStatus, string> = {
+    blocked: "Blocked",
+    passed: "Passed",
+    replan_required: "Replan required",
+    retry_later: "Retry later",
+    waiting_human: "Waiting human",
+  };
+
+  return (
+    <section className="border-t border-border px-1 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium text-foreground">Pre-dispatch gate</h3>
+          {taskTitle ? (
+            <p className="mt-1 truncate text-xs text-muted-foreground">{taskTitle}</p>
+          ) : null}
+        </div>
+        <StatusBadge tone={dispatchGateTone(latest.status)}>
+          {statusLabel[latest.status]}
+        </StatusBadge>
+      </div>
+      {latest.blockers.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {latest.blockers.map((blocker) => (
+            <li
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground"
+              key={`${latest.id}-${blocker.key}`}
+            >
+              <span className="min-w-0 break-all font-mono text-xs text-foreground">
+                {blocker.key}
+              </span>
+              <span className="text-xs">
+                {blocker.retryable ? "retryable" : blocker.severity}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {latest.retry_after ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Retry after {formatDateTime(latest.retry_after)}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function FactTile({
   icon,
   label,
@@ -961,4 +1030,31 @@ function requestTone(status: string) {
     return "danger";
   }
   return "warning";
+}
+
+function dispatchGateTone(status: DispatchGateStatus) {
+  if (status === "passed") {
+    return "success";
+  }
+  if (status === "retry_later" || status === "waiting_human") {
+    return "warning";
+  }
+  if (status === "blocked" || status === "replan_required") {
+    return "danger";
+  }
+  return "neutral";
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }

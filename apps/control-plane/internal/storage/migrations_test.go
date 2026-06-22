@@ -681,6 +681,102 @@ func TestProjectPlanRevisionsMigrationHasTenantFirstIndexes(t *testing.T) {
 	}
 }
 
+func TestProjectTaskDispatchGateMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/032_project_task_dispatch_gates.sql")
+	if err != nil {
+		t.Fatalf("read dispatch gate migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE project_task_dispatch_gate_results",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"project_id UUID NOT NULL",
+		"project_task_id UUID NOT NULL",
+		"accepted_plan_revision_id UUID",
+		"selected_employee_id UUID NOT NULL",
+		"attempt_no INTEGER NOT NULL",
+		"idempotency_key VARCHAR(255) NOT NULL",
+		"dispatch_token VARCHAR(128) NOT NULL",
+		"status VARCHAR(32) NOT NULL",
+		"checks JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"blockers JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"human_action_request JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"retry_after TIMESTAMPTZ",
+		"attempt_id UUID",
+		"decision_request_id UUID",
+		"created_event_id UUID",
+		"CREATE UNIQUE INDEX uq_project_tasks_tenant_project_task_id",
+		"ON project_tasks(tenant_id, project_id, id)",
+		"FOREIGN KEY (tenant_id, project_id, project_task_id)",
+		"REFERENCES project_tasks(tenant_id, project_id, id) ON DELETE CASCADE",
+		"CREATE UNIQUE INDEX uq_project_task_dispatch_gate_results_key",
+		"ON project_task_dispatch_gate_results(tenant_id, project_task_id, idempotency_key)",
+		"CREATE UNIQUE INDEX uq_approval_requests_dispatch_gate_pending",
+		"ON approval_requests(tenant_id, resource_id)",
+		"WHERE resource_type = 'project_task_dispatch_gate' AND status = 'pending'",
+		"CREATE UNIQUE INDEX uq_project_task_dispatch_gate_results_tenant_task_id",
+		"ON project_task_dispatch_gate_results(tenant_id, project_task_id, id)",
+		"CREATE UNIQUE INDEX uq_project_task_dispatch_gate_results_tenant_project_id",
+		"ON project_task_dispatch_gate_results(tenant_id, project_id, id)",
+		"CREATE INDEX idx_project_task_dispatch_gate_results_task_created",
+		"ALTER TABLE project_task_attempts",
+		"ADD COLUMN dispatch_gate_result_id UUID",
+		"ALTER TABLE project_tasks",
+		"ADD COLUMN latest_dispatch_gate_result_id UUID",
+		"ALTER TABLE project_decision_requests",
+		"ADD COLUMN dispatch_gate_result_id UUID",
+		"ADD CONSTRAINT fk_project_decision_requests_dispatch_gate",
+		"FOREIGN KEY (tenant_id, project_id, dispatch_gate_result_id)",
+		"REFERENCES project_task_dispatch_gate_results(tenant_id, project_id, id)",
+		"COMMENT ON TABLE project_task_dispatch_gate_results IS",
+		"COMMENT ON COLUMN project_task_dispatch_gate_results.blockers IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected dispatch gate migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"BIGSERIAL",
+		"CREATE TYPE",
+		"connection_string",
+		"secret_value",
+		"raw_log",
+		"provider_stdout",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("dispatch gate migration must avoid %q", forbidden)
+		}
+	}
+
+	queryBody, err := os.ReadFile("queries/project.sql")
+	if err != nil {
+		t.Fatalf("read project queries: %v", err)
+	}
+	projectSQL := string(queryBody)
+	attemptStart := strings.Index(projectSQL, "-- name: CreateProjectTaskAttempt :one")
+	if attemptStart < 0 {
+		t.Fatalf("project queries must contain CreateProjectTaskAttempt")
+	}
+	attemptRest := projectSQL[attemptStart:]
+	attemptEnd := strings.Index(attemptRest, "-- name: GetProjectTaskAttempt :one")
+	if attemptEnd < 0 {
+		t.Fatalf("CreateProjectTaskAttempt query must end before GetProjectTaskAttempt")
+	}
+	attemptSQL := attemptRest[:attemptEnd]
+
+	for _, expected := range []string{
+		"    dispatch_gate_result_id,\n    created_event_id",
+		"    sqlc.narg('dispatch_gate_result_id')::uuid,\n    sqlc.narg('created_event_id')::uuid",
+	} {
+		if !strings.Contains(attemptSQL, expected) {
+			t.Fatalf("expected CreateProjectTaskAttempt query to contain %q", expected)
+		}
+	}
+}
+
 func TestExecutionLedgerEventsMigration(t *testing.T) {
 	sql := readMigration(t, "029_execution_ledger_events.sql")
 	block := createTableBlock(t, sql, "execution_ledger_events")

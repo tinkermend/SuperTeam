@@ -35,6 +35,7 @@ type HandlerService interface {
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error)
 	GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*PlanRevision, error)
+	ListPreDispatchGateResults(ctx context.Context, req ListPreDispatchGateResultsRequest) ([]PreDispatchGateResult, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error)
@@ -520,6 +521,28 @@ func (h *HTTPHandler) GetPlanRevision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, planRevisionResponseFromDomain(*revision))
+}
+
+func (h *HTTPHandler) ListProjectTaskDispatchGates(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	results, err := service.ListPreDispatchGateResults(r.Context(), ListPreDispatchGateResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskID,
+		Limit:         50,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": dispatchGateResponses(results)})
 }
 
 func (h *HTTPHandler) ListCoordinationJobs(w http.ResponseWriter, r *http.Request) {
@@ -1740,6 +1763,37 @@ type planRevisionResponse struct {
 	UpdatedAt              string         `json:"updated_at,omitempty"`
 }
 
+type dispatchGateResponse struct {
+	ID                     string                        `json:"id"`
+	ProjectTaskID          string                        `json:"project_task_id"`
+	AcceptedPlanRevisionID *string                       `json:"accepted_plan_revision_id,omitempty"`
+	PlannedTaskKey         *string                       `json:"planned_task_key,omitempty"`
+	SelectedEmployeeID     string                        `json:"selected_employee_id"`
+	AttemptNo              int32                         `json:"attempt_no"`
+	DispatchReason         string                        `json:"dispatch_reason"`
+	Status                 string                        `json:"status"`
+	CheckedAt              time.Time                     `json:"checked_at"`
+	Checks                 []dispatchGateCheckResponse   `json:"checks"`
+	Blockers               []dispatchGateBlockerResponse `json:"blockers"`
+	HumanActionRequest     map[string]any                `json:"human_action_request"`
+	RetryAfter             *time.Time                    `json:"retry_after,omitempty"`
+	AttemptID              *string                       `json:"attempt_id,omitempty"`
+	DecisionRequestID      *string                       `json:"decision_request_id,omitempty"`
+}
+
+type dispatchGateCheckResponse struct {
+	Key     string         `json:"key"`
+	Status  string         `json:"status"`
+	Details map[string]any `json:"details"`
+}
+
+type dispatchGateBlockerResponse struct {
+	Key       string         `json:"key"`
+	Severity  string         `json:"severity"`
+	Retryable bool           `json:"retryable"`
+	Details   map[string]any `json:"details"`
+}
+
 type executionSummaryResponse struct {
 	ID                    string         `json:"id"`
 	TenantID              string         `json:"tenant_id"`
@@ -2478,6 +2532,30 @@ func planRevisionResponseFromDomain(revision PlanRevision) planRevisionResponse 
 	}
 }
 
+func dispatchGateResponses(results []PreDispatchGateResult) []dispatchGateResponse {
+	responses := make([]dispatchGateResponse, 0, len(results))
+	for _, result := range results {
+		responses = append(responses, dispatchGateResponse{
+			ID:                     result.ID.String(),
+			ProjectTaskID:          result.ProjectTaskID.String(),
+			AcceptedPlanRevisionID: stringPtr(result.AcceptedPlanRevisionID),
+			PlannedTaskKey:         result.PlannedTaskKey,
+			SelectedEmployeeID:     result.SelectedEmployeeID.String(),
+			AttemptNo:              result.AttemptNo,
+			DispatchReason:         result.DispatchReason,
+			Status:                 result.Status,
+			CheckedAt:              result.CheckedAt,
+			Checks:                 dispatchGateCheckResponses(result.Checks),
+			Blockers:               dispatchGateBlockerResponses(result.Blockers),
+			HumanActionRequest:     mapOrEmpty(map[string]any(result.HumanActionRequest)),
+			RetryAfter:             result.RetryAfter,
+			AttemptID:              stringPtr(result.AttemptID),
+			DecisionRequestID:      stringPtr(result.DecisionRequestID),
+		})
+	}
+	return responses
+}
+
 func executionSummaryResponses(summaries []ExecutionSummary) []executionSummaryResponse {
 	responses := make([]executionSummaryResponse, 0, len(summaries))
 	for _, summary := range summaries {
@@ -3003,6 +3081,31 @@ func stringSliceOrEmpty(value []string) []string {
 		return []string{}
 	}
 	return value
+}
+
+func dispatchGateCheckResponses(checks []PreDispatchGateCheck) []dispatchGateCheckResponse {
+	responses := make([]dispatchGateCheckResponse, 0, len(checks))
+	for _, check := range checks {
+		responses = append(responses, dispatchGateCheckResponse{
+			Key:     check.Key,
+			Status:  check.Status,
+			Details: mapOrEmpty(check.Details),
+		})
+	}
+	return responses
+}
+
+func dispatchGateBlockerResponses(blockers []PreDispatchGateBlocker) []dispatchGateBlockerResponse {
+	responses := make([]dispatchGateBlockerResponse, 0, len(blockers))
+	for _, blocker := range blockers {
+		responses = append(responses, dispatchGateBlockerResponse{
+			Key:       blocker.Key,
+			Severity:  blocker.Severity,
+			Retryable: blocker.Retryable,
+			Details:   mapOrEmpty(blocker.Details),
+		})
+	}
+	return responses
 }
 
 func uuidStrings(values []uuid.UUID) []string {

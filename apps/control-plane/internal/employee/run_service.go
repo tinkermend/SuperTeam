@@ -598,7 +598,7 @@ func computeRunIdempotencyFingerprint(req CreateDigitalEmployeeRunRequest, objec
 		"grace_sec":             req.GraceSec,
 		"metadata":              req.Metadata,
 		"workspace_policy":      preflight.WorkspacePolicy,
-		"session_policy":        preflight.SessionPolicy,
+		"session_policy":        runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":      preflight.RuntimeSelector,
 	}
 	encoded, err := json.Marshal(input)
@@ -624,7 +624,7 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 		"grace_sec":                     req.GraceSec,
 		"metadata":                      cloneMap(req.Metadata),
 		"workspace_policy":              cloneMap(preflight.WorkspacePolicy),
-		"session_policy":                cloneMap(preflight.SessionPolicy),
+		"session_policy":                runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":              cloneMap(preflight.RuntimeSelector),
 		"idempotency_fingerprint":       fingerprint,
 		"has_approved_effective_config": preflight.HasApprovedEffectiveConfig,
@@ -666,13 +666,25 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"timeout_sec":           req.TimeoutSec,
 		"grace_sec":             req.GraceSec,
 		"workspace_policy":      cloneMap(preflight.WorkspacePolicy),
-		"session_policy":        cloneMap(preflight.SessionPolicy),
+		"session_policy":        runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":      cloneMap(preflight.RuntimeSelector),
 		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
 		"skills":                emptyRuntimeSkillsPayload(),
 		"mcp_servers":           emptyRuntimeMCPServersPayload(),
 		"metadata":              metadata,
 	}
+}
+
+func runtimeSessionPolicyPayload(policy map[string]any) map[string]any {
+	normalized := cloneMap(policy)
+	mode, _ := normalized["mode"].(string)
+	if strings.TrimSpace(mode) == "" {
+		normalized["mode"] = "new"
+	}
+	if _, ok := normalized["recoverable"]; !ok {
+		normalized["recoverable"] = true
+	}
+	return normalized
 }
 
 func buildStopSessionPayload(run *DigitalEmployeeRun, commandID, reason string) map[string]any {

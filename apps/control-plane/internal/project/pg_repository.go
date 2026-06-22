@@ -957,6 +957,7 @@ func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, 
 		LeaseToken:                    req.LeaseToken,
 		LeaseExpiresAt:                timestamptzPtr(req.LeaseExpiresAt),
 		IdempotencyKey:                req.IdempotencyKey,
+		DispatchGateResultID:          nullUUID(req.DispatchGateResultID),
 		CreatedEventID:                nullUUID(eventID),
 	})
 	if err != nil {
@@ -1076,6 +1077,26 @@ func (r *PgRepository) QueueProjectTaskWithAttempt(ctx context.Context, req Queu
 		if err != nil {
 			return QueueProjectTaskResult{}, projectRepositoryError(err)
 		}
+		if req.DispatchGateResultID != nil {
+			if _, err := q.LinkProjectTaskDispatchGateAttempt(ctx, queries.LinkProjectTaskDispatchGateAttemptParams{
+				AttemptID:     attempt.ID,
+				TenantID:      req.TenantID,
+				ProjectID:     req.ProjectID,
+				ProjectTaskID: req.ProjectTaskID,
+				ID:            *req.DispatchGateResultID,
+			}); err != nil {
+				return QueueProjectTaskResult{}, projectRepositoryError(err)
+			}
+			queued, err = q.MarkProjectTaskLatestDispatchGate(ctx, queries.MarkProjectTaskLatestDispatchGateParams{
+				LatestDispatchGateResultID: *req.DispatchGateResultID,
+				TenantID:                   req.TenantID,
+				ProjectID:                  req.ProjectID,
+				ID:                         req.ProjectTaskID,
+			})
+			if err != nil {
+				return QueueProjectTaskResult{}, projectRepositoryError(err)
+			}
+		}
 		mappedTask, err := taskFromRecord(queued)
 		if err != nil {
 			return QueueProjectTaskResult{}, err
@@ -1104,6 +1125,190 @@ func queueProjectTaskEventPayload(req QueueProjectTaskRequest, attemptID uuid.UU
 		payload["runtime_node_id"] = req.RuntimeNodeID.String()
 	}
 	return payload
+}
+
+func (r *PgRepository) RecordPreDispatchGateResult(ctx context.Context, req RecordPreDispatchGateResultRequest) (PreDispatchGateResult, error) {
+	return withProjectQueries(ctx, r, "record pre-dispatch gate result", func(q *queries.Queries) (PreDispatchGateResult, error) {
+		checks, err := preDispatchGateChecksJSON(req.Checks)
+		if err != nil {
+			return PreDispatchGateResult{}, err
+		}
+		blockers, err := preDispatchGateBlockersJSON(req.Blockers)
+		if err != nil {
+			return PreDispatchGateResult{}, err
+		}
+		humanAction, err := jsonbObject(map[string]any(req.HumanActionRequest), "human_action_request")
+		if err != nil {
+			return PreDispatchGateResult{}, err
+		}
+		checkedAt := req.CheckedAt
+		if checkedAt.IsZero() {
+			checkedAt = time.Now().UTC()
+		}
+		shouldMarkLatest := true
+		row, err := q.CreateProjectTaskDispatchGateResult(ctx, queries.CreateProjectTaskDispatchGateResultParams{
+			ID:                     uuid.New(),
+			TenantID:               req.TenantID,
+			ProjectID:              req.ProjectID,
+			ProjectTaskID:          req.ProjectTaskID,
+			AcceptedPlanRevisionID: nullUUID(req.AcceptedPlanRevisionID),
+			PlannedTaskKey:         textPtr(req.PlannedTaskKey),
+			SelectedEmployeeID:     req.SelectedEmployeeID,
+			AttemptNo:              req.AttemptNo,
+			DispatchReason:         req.DispatchReason,
+			IdempotencyKey:         req.IdempotencyKey,
+			DispatchToken:          req.DispatchToken,
+			Status:                 req.Status,
+			CheckedAt:              pgtype.Timestamptz{Time: checkedAt, Valid: true},
+			Checks:                 checks,
+			Blockers:               blockers,
+			HumanActionRequest:     humanAction,
+			RetryAfter:             timestamptzPtr(req.RetryAfter),
+			CreatedEventID:         nullUUID(req.CreatedEventID),
+		})
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return PreDispatchGateResult{}, projectRepositoryError(err)
+			}
+			row, err = q.GetProjectTaskDispatchGateResultByKey(ctx, queries.GetProjectTaskDispatchGateResultByKeyParams{
+				TenantID:       req.TenantID,
+				ProjectID:      req.ProjectID,
+				ProjectTaskID:  req.ProjectTaskID,
+				IdempotencyKey: req.IdempotencyKey,
+			})
+			if err != nil {
+				return PreDispatchGateResult{}, projectRepositoryError(err)
+			}
+			shouldMarkLatest = false
+		}
+		if shouldMarkLatest {
+			if _, err := q.MarkProjectTaskLatestDispatchGate(ctx, queries.MarkProjectTaskLatestDispatchGateParams{
+				LatestDispatchGateResultID: row.ID,
+				TenantID:                   req.TenantID,
+				ProjectID:                  req.ProjectID,
+				ID:                         req.ProjectTaskID,
+			}); err != nil {
+				return PreDispatchGateResult{}, projectRepositoryError(err)
+			}
+		}
+		return preDispatchGateResultFromRecord(row)
+	})
+}
+
+func (r *PgRepository) GetPreDispatchGateResult(ctx context.Context, tenantID, projectID, gateResultID uuid.UUID) (PreDispatchGateResult, error) {
+	row, err := r.q.GetProjectTaskDispatchGateResult(ctx, queries.GetProjectTaskDispatchGateResultParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        gateResultID,
+	})
+	if err != nil {
+		return PreDispatchGateResult{}, projectRepositoryError(err)
+	}
+	return preDispatchGateResultFromRecord(row)
+}
+
+func (r *PgRepository) GetPreDispatchGateResultByKey(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID, idempotencyKey string) (PreDispatchGateResult, error) {
+	row, err := r.q.GetProjectTaskDispatchGateResultByKey(ctx, queries.GetProjectTaskDispatchGateResultByKeyParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  projectTaskID,
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		return PreDispatchGateResult{}, projectRepositoryError(err)
+	}
+	return preDispatchGateResultFromRecord(row)
+}
+
+func (r *PgRepository) ListPreDispatchGateResults(ctx context.Context, req ListPreDispatchGateResultsRequest) ([]PreDispatchGateResult, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.q.ListProjectTaskDispatchGateResults(ctx, queries.ListProjectTaskDispatchGateResultsParams{
+		TenantID:      req.TenantID,
+		ProjectID:     req.ProjectID,
+		ProjectTaskID: req.ProjectTaskID,
+		Limit:         limit,
+		Offset:        offset,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return preDispatchGateResultsFromRecords(rows)
+}
+
+func (r *PgRepository) LinkPreDispatchGateAttempt(ctx context.Context, req LinkPreDispatchGateAttemptRequest) (PreDispatchGateResult, error) {
+	return withProjectQueries(ctx, r, "link pre-dispatch gate attempt", func(q *queries.Queries) (PreDispatchGateResult, error) {
+		if _, err := q.SetProjectTaskAttemptDispatchGate(ctx, queries.SetProjectTaskAttemptDispatchGateParams{
+			DispatchGateResultID: req.GateResultID,
+			TenantID:             req.TenantID,
+			ProjectTaskID:        req.ProjectTaskID,
+			ID:                   req.AttemptID,
+			ProjectID:            req.ProjectID,
+		}); err != nil {
+			return PreDispatchGateResult{}, projectRepositoryError(err)
+		}
+		row, err := q.LinkProjectTaskDispatchGateAttempt(ctx, queries.LinkProjectTaskDispatchGateAttemptParams{
+			AttemptID:     req.AttemptID,
+			TenantID:      req.TenantID,
+			ProjectID:     req.ProjectID,
+			ProjectTaskID: req.ProjectTaskID,
+			ID:            req.GateResultID,
+		})
+		if err != nil {
+			return PreDispatchGateResult{}, projectRepositoryError(err)
+		}
+		return preDispatchGateResultFromRecord(row)
+	})
+}
+
+func (r *PgRepository) LinkPreDispatchGateDecisionRequest(ctx context.Context, req LinkPreDispatchGateDecisionRequest) (PreDispatchGateResult, error) {
+	return withProjectQueries(ctx, r, "link pre-dispatch gate decision request", func(q *queries.Queries) (PreDispatchGateResult, error) {
+		row, err := q.LinkProjectTaskDispatchGateDecisionRequest(ctx, queries.LinkProjectTaskDispatchGateDecisionRequestParams{
+			DecisionRequestID: req.DecisionRequestID,
+			TenantID:          req.TenantID,
+			ProjectID:         req.ProjectID,
+			ProjectTaskID:     req.ProjectTaskID,
+			ID:                req.GateResultID,
+		})
+		if err != nil {
+			return PreDispatchGateResult{}, projectRepositoryError(err)
+		}
+		if _, err := q.SetProjectDecisionRequestDispatchGate(ctx, queries.SetProjectDecisionRequestDispatchGateParams{
+			DispatchGateResultID: req.GateResultID,
+			TenantID:             req.TenantID,
+			ProjectID:            req.ProjectID,
+			ProjectTaskID:        req.ProjectTaskID,
+			ID:                   req.DecisionRequestID,
+		}); err != nil {
+			return PreDispatchGateResult{}, projectRepositoryError(err)
+		}
+		return preDispatchGateResultFromRecord(row)
+	})
+}
+
+func (r *PgRepository) MoveProjectTaskToWaitingHumanForPreDispatchGate(ctx context.Context, req MoveProjectTaskToWaitingHumanForPreDispatchGateRequest) (ProjectTask, error) {
+	row, err := r.q.MovePlannedProjectTaskToWaitingHumanForGate(ctx, queries.MovePlannedProjectTaskToWaitingHumanForGateParams{
+		WaitingReason:              req.WaitingReason,
+		WaitingRequestID:           nullUUID(&req.DecisionRequestID),
+		LatestDispatchGateResultID: req.GateResultID,
+		LatestEventID:              nullUUID(req.EventID),
+		TenantID:                   req.TenantID,
+		ProjectID:                  req.ProjectID,
+		ID:                         req.ProjectTaskID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, attemptID uuid.UUID) (ProjectTaskAttempt, error) {
@@ -2698,6 +2903,9 @@ func (r *PgRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req
 			LeaseToken:        req.LeaseToken,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskAttemptWritebackResult{}, ErrProjectConflict
+			}
 			return ProjectTaskAttemptWritebackResult{}, err
 		}
 		attempt, err := projectTaskAttemptFromRecord(row)
@@ -3564,6 +3772,22 @@ func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, project
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, tenantID, projectID, approvalRequestID, projectTaskID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequestByApprovalAndTask(ctx, queries.GetProjectDecisionRequestByApprovalAndTaskParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalRequestID,
+		ProjectTaskID:     projectTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
 func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
 	row, err := r.q.ResolveProjectDecisionRequest(ctx, queries.ResolveProjectDecisionRequestParams{
 		TenantID:        req.TenantID,
@@ -4102,43 +4326,44 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		return ProjectTask{}, err
 	}
 	return ProjectTask{
-		ID:                        row.ID,
-		TenantID:                  row.TenantID,
-		ProjectID:                 row.ProjectID,
-		DemandID:                  ptrUUID(row.DemandID),
-		Title:                     row.Title,
-		Summary:                   ptrText(row.Summary),
-		Status:                    row.Status,
-		AssignedDigitalEmployeeID: ptrUUID(row.AssignedDigitalEmployeeID),
-		RuntimeTaskID:             ptrUUID(row.RuntimeTaskID),
-		DigitalEmployeeRunID:      ptrUUID(row.DigitalEmployeeRunID),
-		RiskLevel:                 ptrText(row.RiskLevel),
-		RequiresHumanApproval:     row.RequiresHumanApproval,
-		CoordinationJobID:         ptrUUID(row.CoordinationJobID),
-		RouteDecisionID:           ptrUUID(row.RouteDecisionID),
-		PlannedTaskKey:            ptrText(row.PlannedTaskKey),
-		TaskKind:                  ptrText(row.TaskKind),
-		StageIndex:                int32PtrFromSQL(row.StageIndex),
-		ExpectedOutputs:           expectedOutputs,
-		InputRequirements:         inputRequirements,
-		HandoffContract:           handoffContract,
-		PlannerMetadata:           plannerMetadata,
-		BlockedByTaskIDs:          []uuid.UUID{},
-		CurrentAttemptID:          ptrUUID(row.CurrentAttemptID),
-		AcceptedPlanRevisionID:    ptrUUID(row.AcceptedPlanRevisionID),
-		DecompositionClaimKey:     ptrText(row.DecompositionClaimKey),
-		AttemptCount:              row.AttemptCount,
-		MaxAttempts:               int32PtrFromSQL(row.MaxAttempts),
-		RetryNotBefore:            ptrTime(row.RetryNotBefore),
-		WaitingReason:             ptrText(row.WaitingReason),
-		WaitingRequestID:          ptrUUID(row.WaitingRequestID),
-		TerminalReason:            ptrText(row.TerminalReason),
-		TerminalEventID:           ptrUUID(row.TerminalEventID),
-		CancelledBy:               ptrText(row.CancelledBy),
-		FailedBy:                  ptrText(row.FailedBy),
-		StatusChangedAt:           row.StatusChangedAt.Time,
-		CreatedAt:                 row.CreatedAt.Time,
-		UpdatedAt:                 row.UpdatedAt.Time,
+		ID:                         row.ID,
+		TenantID:                   row.TenantID,
+		ProjectID:                  row.ProjectID,
+		DemandID:                   ptrUUID(row.DemandID),
+		Title:                      row.Title,
+		Summary:                    ptrText(row.Summary),
+		Status:                     row.Status,
+		AssignedDigitalEmployeeID:  ptrUUID(row.AssignedDigitalEmployeeID),
+		RuntimeTaskID:              ptrUUID(row.RuntimeTaskID),
+		DigitalEmployeeRunID:       ptrUUID(row.DigitalEmployeeRunID),
+		RiskLevel:                  ptrText(row.RiskLevel),
+		RequiresHumanApproval:      row.RequiresHumanApproval,
+		CoordinationJobID:          ptrUUID(row.CoordinationJobID),
+		RouteDecisionID:            ptrUUID(row.RouteDecisionID),
+		PlannedTaskKey:             ptrText(row.PlannedTaskKey),
+		TaskKind:                   ptrText(row.TaskKind),
+		StageIndex:                 int32PtrFromSQL(row.StageIndex),
+		ExpectedOutputs:            expectedOutputs,
+		InputRequirements:          inputRequirements,
+		HandoffContract:            handoffContract,
+		PlannerMetadata:            plannerMetadata,
+		BlockedByTaskIDs:           []uuid.UUID{},
+		CurrentAttemptID:           ptrUUID(row.CurrentAttemptID),
+		LatestDispatchGateResultID: ptrUUID(row.LatestDispatchGateResultID),
+		AcceptedPlanRevisionID:     ptrUUID(row.AcceptedPlanRevisionID),
+		DecompositionClaimKey:      ptrText(row.DecompositionClaimKey),
+		AttemptCount:               row.AttemptCount,
+		MaxAttempts:                int32PtrFromSQL(row.MaxAttempts),
+		RetryNotBefore:             ptrTime(row.RetryNotBefore),
+		WaitingReason:              ptrText(row.WaitingReason),
+		WaitingRequestID:           ptrUUID(row.WaitingRequestID),
+		TerminalReason:             ptrText(row.TerminalReason),
+		TerminalEventID:            ptrUUID(row.TerminalEventID),
+		CancelledBy:                ptrText(row.CancelledBy),
+		FailedBy:                   ptrText(row.FailedBy),
+		StatusChangedAt:            row.StatusChangedAt.Time,
+		CreatedAt:                  row.CreatedAt.Time,
+		UpdatedAt:                  row.UpdatedAt.Time,
 	}, nil
 }
 
@@ -4170,10 +4395,50 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		FailureFamily:                 ptrText(row.FailureFamily),
 		FailureMessage:                ptrText(row.FailureMessage),
 		IdempotencyKey:                row.IdempotencyKey,
+		DispatchGateResultID:          ptrUUID(row.DispatchGateResultID),
 		CreatedEventID:                ptrUUID(row.CreatedEventID),
 		TerminalEventID:               ptrUUID(row.TerminalEventID),
 		CreatedAt:                     row.CreatedAt.Time,
 		UpdatedAt:                     row.UpdatedAt.Time,
+	}, nil
+}
+
+func preDispatchGateResultFromRecord(row queries.ProjectTaskDispatchGateResult) (PreDispatchGateResult, error) {
+	checks, err := preDispatchGateChecksFromJSON(row.Checks)
+	if err != nil {
+		return PreDispatchGateResult{}, fmt.Errorf("checks: %w", err)
+	}
+	blockers, err := preDispatchGateBlockersFromJSON(row.Blockers)
+	if err != nil {
+		return PreDispatchGateResult{}, fmt.Errorf("blockers: %w", err)
+	}
+	humanAction, err := mapFromJSON(row.HumanActionRequest)
+	if err != nil {
+		return PreDispatchGateResult{}, fmt.Errorf("human_action_request: %w", err)
+	}
+	return PreDispatchGateResult{
+		ID:                     row.ID,
+		TenantID:               row.TenantID,
+		ProjectID:              row.ProjectID,
+		ProjectTaskID:          row.ProjectTaskID,
+		AcceptedPlanRevisionID: ptrUUID(row.AcceptedPlanRevisionID),
+		PlannedTaskKey:         ptrText(row.PlannedTaskKey),
+		SelectedEmployeeID:     row.SelectedEmployeeID,
+		AttemptNo:              row.AttemptNo,
+		DispatchReason:         row.DispatchReason,
+		IdempotencyKey:         row.IdempotencyKey,
+		DispatchToken:          row.DispatchToken,
+		Status:                 row.Status,
+		CheckedAt:              row.CheckedAt.Time,
+		Checks:                 checks,
+		Blockers:               blockers,
+		HumanActionRequest:     HumanActionRequest(humanAction),
+		RetryAfter:             ptrTime(row.RetryAfter),
+		AttemptID:              ptrUUID(row.AttemptID),
+		DecisionRequestID:      ptrUUID(row.DecisionRequestID),
+		CreatedEventID:         ptrUUID(row.CreatedEventID),
+		CreatedAt:              row.CreatedAt.Time,
+		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil
 }
 
@@ -4624,23 +4889,24 @@ func transferRequestFromRecord(row queries.ProjectTransferRequest) (TransferRequ
 
 func decisionRequestFromRecord(row queries.ProjectDecisionRequest) (DecisionRequest, error) {
 	return DecisionRequest{
-		ID:                row.ID,
-		TenantID:          row.TenantID,
-		ProjectID:         row.ProjectID,
-		ApprovalRequestID: row.ApprovalRequestID,
-		CoordinationJobID: ptrUUID(row.CoordinationJobID),
-		ProjectTaskID:     ptrUUID(row.ProjectTaskID),
-		TargetUserID:      row.TargetUserID,
-		DecisionType:      row.DecisionType,
-		TitleSnapshot:     row.TitleSnapshot,
-		SummarySnapshot:   ptrText(row.SummarySnapshot),
-		RiskLevelSnapshot: ptrText(row.RiskLevelSnapshot),
-		StatusSnapshot:    row.StatusSnapshot,
-		CreatedEventID:    ptrUUID(row.CreatedEventID),
-		ResolvedEventID:   ptrUUID(row.ResolvedEventID),
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
-		ResolvedAt:        ptrTime(row.ResolvedAt),
+		ID:                   row.ID,
+		TenantID:             row.TenantID,
+		ProjectID:            row.ProjectID,
+		ApprovalRequestID:    row.ApprovalRequestID,
+		CoordinationJobID:    ptrUUID(row.CoordinationJobID),
+		ProjectTaskID:        ptrUUID(row.ProjectTaskID),
+		TargetUserID:         row.TargetUserID,
+		DecisionType:         row.DecisionType,
+		TitleSnapshot:        row.TitleSnapshot,
+		SummarySnapshot:      ptrText(row.SummarySnapshot),
+		RiskLevelSnapshot:    ptrText(row.RiskLevelSnapshot),
+		StatusSnapshot:       row.StatusSnapshot,
+		CreatedEventID:       ptrUUID(row.CreatedEventID),
+		ResolvedEventID:      ptrUUID(row.ResolvedEventID),
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
+		ResolvedAt:           ptrTime(row.ResolvedAt),
+		DispatchGateResultID: ptrUUID(row.DispatchGateResultID),
 	}, nil
 }
 
@@ -4844,6 +5110,18 @@ func tasksFromRecords(rows []queries.ProjectTask) ([]ProjectTask, error) {
 		tasks = append(tasks, task)
 	}
 	return tasks, nil
+}
+
+func preDispatchGateResultsFromRecords(rows []queries.ProjectTaskDispatchGateResult) ([]PreDispatchGateResult, error) {
+	results := make([]PreDispatchGateResult, 0, len(rows))
+	for _, row := range rows {
+		result, err := preDispatchGateResultFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 func acceptedPlanProjectTaskIDs(tasks []ProjectTask) []uuid.UUID {
@@ -5150,6 +5428,20 @@ func jsonbArray(value []any, field string) ([]byte, error) {
 	return marshalJSON(value, field)
 }
 
+func preDispatchGateChecksJSON(value []PreDispatchGateCheck) ([]byte, error) {
+	if len(value) == 0 {
+		return []byte("[]"), nil
+	}
+	return marshalJSON(value, "checks")
+}
+
+func preDispatchGateBlockersJSON(value []PreDispatchGateBlocker) ([]byte, error) {
+	if len(value) == 0 {
+		return []byte("[]"), nil
+	}
+	return marshalJSON(value, "blockers")
+}
+
 func jsonbStringSlice(values []string, field string) ([]byte, error) {
 	if len(values) == 0 {
 		return []byte("[]"), nil
@@ -5206,6 +5498,32 @@ func anySliceFromJSON(raw []byte) ([]any, error) {
 		}
 		if values == nil {
 			values = []any{}
+		}
+	}
+	return values, nil
+}
+
+func preDispatchGateChecksFromJSON(raw []byte) ([]PreDispatchGateCheck, error) {
+	values := []PreDispatchGateCheck{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return nil, err
+		}
+		if values == nil {
+			values = []PreDispatchGateCheck{}
+		}
+	}
+	return values, nil
+}
+
+func preDispatchGateBlockersFromJSON(raw []byte) ([]PreDispatchGateBlocker, error) {
+	values := []PreDispatchGateBlocker{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return nil, err
+		}
+		if values == nil {
+			values = []PreDispatchGateBlocker{}
 		}
 	}
 	return values, nil

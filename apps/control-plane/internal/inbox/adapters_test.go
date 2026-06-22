@@ -464,6 +464,16 @@ func (r *approvalActionRepository) GetApprovalRequest(_ context.Context, tenantI
 	return approval.ApprovalRequest{ID: requestID, TenantID: tenantID}, nil
 }
 
+func (r *approvalActionRepository) GetApprovalRequestByResource(_ context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (approval.ApprovalRequest, error) {
+	return approval.ApprovalRequest{
+		ID:           resourceID,
+		TenantID:     tenantID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Status:       approval.ApprovalStatusPending,
+	}, nil
+}
+
 func (r *approvalActionRepository) ResolveApprovalRequest(_ context.Context, input approval.ResolveRequestInput, status approval.ApprovalStatus) (approval.ApprovalRequest, error) {
 	if r.resolveErr != nil {
 		return approval.ApprovalRequest{}, r.resolveErr

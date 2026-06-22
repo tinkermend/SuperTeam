@@ -384,6 +384,72 @@ func TestProjectTaskLivenessRouteUsesConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestProjectTaskDispatchGateRouteUsesConsoleAuth(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	projectID := uuid.New()
+	taskID := uuid.New()
+	gateID := uuid.New()
+	service := &routeProjectService{
+		projectID: projectID,
+		dispatchGates: []project.PreDispatchGateResult{{
+			ID:                 gateID,
+			TenantID:           uuid.MustParse(auth.DefaultTenantID),
+			ProjectID:          projectID,
+			ProjectTaskID:      taskID,
+			SelectedEmployeeID: uuid.New(),
+			AttemptNo:          1,
+			DispatchReason:     project.DispatchReasonRootReady,
+			Status:             project.PreDispatchGateStatusRetryLater,
+			CheckedAt:          time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC),
+			Blockers:           []project.PreDispatchGateBlocker{{Key: "runtime.node_offline", Severity: "transient", Retryable: true, Details: map[string]any{}}},
+			HumanActionRequest: map[string]any{},
+		}},
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/dispatch-gates", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected dispatch gate route to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.dispatchGateListReq.TenantID != expectedTenantID ||
+		service.dispatchGateListReq.ProjectID != projectID ||
+		service.dispatchGateListReq.ProjectTaskID != taskID ||
+		service.dispatchGateListReq.Limit != 50 {
+		t.Fatalf("expected dispatch gate tenant/project/task from route, got %#v", service.dispatchGateListReq)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("expected dispatch gate JSON object: %v", err)
+	}
+	items, ok := body["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one dispatch gate item, got %#v", body)
+	}
+	item := items[0].(map[string]any)
+	if item["id"] != gateID.String() || item["status"] != string(project.PreDispatchGateStatusRetryLater) {
+		t.Fatalf("unexpected dispatch gate route response: %#v", item)
+	}
+}
+
 func TestProjectExecutionTraceRouteUsesConsoleAuth(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -720,6 +786,8 @@ type routeProjectService struct {
 	planRevisionTenantID      uuid.UUID
 	planRevisionProjectID     uuid.UUID
 	planRevisionID            uuid.UUID
+	dispatchGates             []project.PreDispatchGateResult
+	dispatchGateListReq       project.ListPreDispatchGateResultsRequest
 	resolveDecisionReq        project.ResolveDecisionRequest
 	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
 	completeAttemptReq        project.CompleteProjectTaskAttemptRequest
@@ -926,6 +994,11 @@ func (s *routeProjectService) GetPlanRevision(ctx context.Context, tenantID, pro
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}, nil
+}
+
+func (s *routeProjectService) ListPreDispatchGateResults(ctx context.Context, req project.ListPreDispatchGateResultsRequest) ([]project.PreDispatchGateResult, error) {
+	s.dispatchGateListReq = req
+	return s.dispatchGates, nil
 }
 
 func (s *routeProjectService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.CoordinationJob, error) {

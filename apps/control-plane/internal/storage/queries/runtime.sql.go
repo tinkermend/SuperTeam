@@ -159,6 +159,34 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNod
 	return i, err
 }
 
+const GetRuntimeNodeByID = `-- name: GetRuntimeNodeByID :one
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
+WHERE id = $1::uuid
+  AND archived_at IS NULL
+`
+
+func (q *Queries) GetRuntimeNodeByID(ctx context.Context, id uuid.UUID) (RuntimeNode, error) {
+	row := q.db.QueryRow(ctx, GetRuntimeNodeByID, id)
+	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ListOnlineNodes = `-- name: ListOnlineNodes :many
 SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
 WHERE status = 'online'

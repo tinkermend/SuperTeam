@@ -3,10 +3,12 @@ package approval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -52,7 +54,19 @@ func (r *PgRepository) CreateApprovalRequest(ctx context.Context, input CreateRe
 func (r *PgRepository) GetApprovalRequest(ctx context.Context, tenantID, requestID uuid.UUID) (ApprovalRequest, error) {
 	row, err := r.q.GetApprovalRequest(ctx, queries.GetApprovalRequestParams{TenantID: tenantID, ID: requestID})
 	if err != nil {
-		return ApprovalRequest{}, err
+		return ApprovalRequest{}, approvalRepositoryError(err)
+	}
+	return requestFromRecord(row)
+}
+
+func (r *PgRepository) GetApprovalRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (ApprovalRequest, error) {
+	row, err := r.q.GetApprovalRequestByResource(ctx, queries.GetApprovalRequestByResourceParams{
+		TenantID:     tenantID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+	})
+	if err != nil {
+		return ApprovalRequest{}, approvalRepositoryError(err)
 	}
 	return requestFromRecord(row)
 }
@@ -212,4 +226,11 @@ func marshalJSON(value any, field string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: marshal json: %w", field, err)
 	}
 	return raw, nil
+}
+
+func approvalRepositoryError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrApprovalNotFound
+	}
+	return err
 }

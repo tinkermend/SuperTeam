@@ -1436,6 +1436,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 			Title:     "检查上线证据",
 			Content:   strPtr("需要确认测试报告和回滚方案。"),
 		},
+		members: []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
 			TenantID:                  tenantID,
@@ -1519,18 +1520,214 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Len(t, repo.projectTaskAttempts, 1)
 	require.Equal(t, attemptID, *repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, attemptID, repo.projectTaskAttempts[0].ID)
-	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched {
+	dispatchedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatched)
+	if len(dispatchedEvents) != 1 {
 		t.Fatalf("expected dispatched event, got %#v", repo.events)
 	}
-	require.Equal(t, "project_coordinator", repo.events[0].ActorType)
-	require.Equal(t, taskID.String(), repo.events[0].ActorID)
-	if repo.events[0].Payload["project_task_attempt_id"] != repo.projectTaskAttempts[0].ID.String() ||
-		repo.events[0].Payload["project_task_status"] != "queued" ||
-		repo.events[0].Payload["digital_employee_run_id"] != runID.String() ||
-		repo.events[0].Payload["runtime_task_id"] != runtimeTaskID.String() ||
-		repo.events[0].Payload["runtime_node_id"] != runtimeNodeID.String() {
-		t.Fatalf("expected run binding payload, got %#v", repo.events[0].Payload)
+	dispatchedEvent := dispatchedEvents[0]
+	require.Equal(t, "project_coordinator", dispatchedEvent.ActorType)
+	require.Equal(t, taskID.String(), dispatchedEvent.ActorID)
+	if dispatchedEvent.Payload["project_task_attempt_id"] != repo.projectTaskAttempts[0].ID.String() ||
+		dispatchedEvent.Payload["project_task_status"] != "queued" ||
+		dispatchedEvent.Payload["digital_employee_run_id"] != runID.String() ||
+		dispatchedEvent.Payload["runtime_task_id"] != runtimeTaskID.String() ||
+		dispatchedEvent.Payload["runtime_node_id"] != runtimeNodeID.String() {
+		t.Fatalf("expected run binding payload, got %#v", dispatchedEvent.Payload)
 	}
+}
+
+func TestProjectStoreDispatchProjectTaskRunsGateBeforeRunStart(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{
+		result: StartProjectTaskRunResult{
+			RunID:         runID,
+			RuntimeTaskID: runtimeTaskID,
+			RuntimeNodeID: runtimeNodeID,
+			NodeID:        "node-1",
+		},
+		onStart: func(req StartProjectTaskRunRequest) {
+			require.Len(t, repo.dispatchGateResults, 1, "gate must be recorded before run start")
+			require.Equal(t, project.PreDispatchGateStatusPassed, repo.dispatchGateResults[0].Status)
+		},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonDependencyUnlocked,
+	})
+	require.NoError(t, err)
+	require.Len(t, repo.dispatchGateResults, 1)
+	gate := repo.dispatchGateResults[0]
+	require.Equal(t, project.DispatchReasonDependencyUnlocked, gate.DispatchReason)
+	require.NotEmpty(t, gate.IdempotencyKey)
+	require.NotEmpty(t, gate.DispatchToken)
+	require.Len(t, starter.requests, 1)
+	require.Equal(t, project.DispatchReasonDependencyUnlocked, starter.requests[0].Metadata["dispatch_reason"])
+	require.Equal(t, gate.ID.String(), starter.requests[0].Metadata["dispatch_gate_result_id"])
+	require.Equal(t, gate.Status, starter.requests[0].Metadata["dispatch_gate_status"])
+	require.Equal(t, gate.IdempotencyKey, starter.requests[0].Metadata["dispatch_gate_idempotency_key"])
+	require.Equal(t, gate.DispatchToken, starter.requests[0].Metadata["dispatch_gate_dispatch_token"])
+	require.Len(t, repo.queueRequests, 1)
+	require.NotNil(t, repo.queueRequests[0].DispatchGateResultID)
+	require.Equal(t, gate.ID, *repo.queueRequests[0].DispatchGateResultID)
+	require.Equal(t, project.DispatchReasonDependencyUnlocked, repo.queueRequests[0].ExecutionContextPacket["dispatch_reason"])
+	require.Equal(t, gate.ID.String(), repo.queueRequests[0].ExecutionContextPacket["dispatch_gate_result_id"])
+	require.Equal(t, gate.Status, repo.queueRequests[0].ExecutionContextPacket["dispatch_gate_status"])
+	require.Equal(t, gate.IdempotencyKey, repo.queueRequests[0].ExecutionContextPacket["dispatch_gate_idempotency_key"])
+	require.Equal(t, gate.DispatchToken, repo.queueRequests[0].ExecutionContextPacket["dispatch_gate_dispatch_token"])
+	require.Len(t, repo.linkGateAttemptRequests, 1)
+	require.Equal(t, gate.ID, repo.linkGateAttemptRequests[0].GateResultID)
+	require.Equal(t, repo.projectTaskAttempts[0].ID, repo.linkGateAttemptRequests[0].AttemptID)
+	require.NotNil(t, repo.projectTaskAttempts[0].DispatchGateResultID)
+	require.Equal(t, gate.ID, *repo.projectTaskAttempts[0].DispatchGateResultID)
+	require.NotNil(t, repo.dispatchGateResults[0].AttemptID)
+	require.Equal(t, repo.projectTaskAttempts[0].ID, *repo.dispatchGateResults[0].AttemptID)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateChecked), 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
+}
+
+func TestProjectStoreDispatchProjectTaskWaitingHumanGateDoesNotStartRun(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+		}},
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Empty(t, starter.requests)
+	require.Empty(t, repo.queueRequests)
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.dispatchGateResults, 1)
+	gate := repo.dispatchGateResults[0]
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, gate.Status)
+	require.NotNil(t, gate.DecisionRequestID)
+	require.NotNil(t, approvals.record)
+	require.Equal(t, gate.ID, approvals.record.ResourceID)
+	require.Equal(t, project.ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingRequestID)
+	require.Equal(t, *gate.DecisionRequestID, *repo.tasks[0].WaitingRequestID)
+	require.NotNil(t, repo.tasks[0].LatestDispatchGateResultID)
+	require.Equal(t, gate.ID, *repo.tasks[0].LatestDispatchGateResultID)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateWaitingHuman), 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
+	require.Equal(t, 1, repo.getProjectCalls)
+	require.Zero(t, repo.getProjectDemandCalls)
+}
+
+func TestProjectStoreDispatchProjectTaskRetryLaterGateIsRetryable(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter).
+		WithPreDispatchGateReaders(projectStoreGateRuntimeReader{
+			runtime: project.PreDispatchRuntimeSnapshot{
+				NodeOnline:              true,
+				ProviderAvailable:       true,
+				WorkspaceReady:          true,
+				SlotAvailable:           false,
+				ContractVersionAccepted: true,
+			},
+		}, nil)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.ErrorIs(t, err, ErrProjectTaskDispatchRetryLater)
+	require.True(t, dispatchErrorRetryable(err))
+	require.Empty(t, starter.requests)
+	require.Empty(t, repo.queueRequests)
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.dispatchGateResults, 1)
+	require.Equal(t, project.PreDispatchGateStatusRetryLater, repo.dispatchGateResults[0].Status)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateRetryLater), 1)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
+	require.Equal(t, project.ProjectTaskStatusPlanned, repo.tasks[0].Status)
+	require.Zero(t, repo.getProjectCalls)
+	require.Zero(t, repo.getProjectDemandCalls)
 }
 
 func TestProjectStoreDispatchProjectTaskCreatesQueuedAttempt(t *testing.T) {
@@ -1545,6 +1742,7 @@ func TestProjectStoreDispatchProjectTaskCreatesQueuedAttempt(t *testing.T) {
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
 		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
 			TenantID:                  tenantID,
@@ -1675,6 +1873,7 @@ func TestProjectStoreDispatchProjectTaskRetriesDemandAdvanceAfterQueuedReplay(t 
 	repo := &projectStoreMemoryRepository{
 		projectRecord:    project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
 		demand:           project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:          []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		advanceDemandErr: advanceErr,
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
@@ -1698,7 +1897,8 @@ func TestProjectStoreDispatchProjectTaskRetriesDemandAdvanceAfterQueuedReplay(t 
 	require.ErrorIs(t, err, advanceErr)
 	require.Len(t, starter.requests, 1)
 	require.Len(t, repo.queueRequests, 1)
-	require.Len(t, repo.events, 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateChecked), 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
 	require.Equal(t, 1, repo.advanceDemandCalls)
 	require.Equal(t, project.ProjectTaskStatusQueued, repo.tasks[0].Status)
 
@@ -1708,7 +1908,8 @@ func TestProjectStoreDispatchProjectTaskRetriesDemandAdvanceAfterQueuedReplay(t 
 	require.Len(t, starter.requests, 1)
 	require.Len(t, repo.queueRequests, 1)
 	require.Empty(t, repo.bindRequests)
-	require.Len(t, repo.events, 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateChecked), 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
 	require.Equal(t, 2, repo.advanceDemandCalls)
 	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
 }
@@ -1725,6 +1926,7 @@ func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testin
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
 		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
 			TenantID:                  tenantID,
@@ -1772,6 +1974,7 @@ func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testi
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
 		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
 			TenantID:                  tenantID,
@@ -1793,11 +1996,12 @@ func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testi
 	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
 		t.Fatalf("expected planned unqueued task, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
 	}
-	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatchFailed {
+	dispatchFailedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatchFailed)
+	if len(dispatchFailedEvents) != 1 {
 		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
 	}
-	if repo.events[0].Payload["retryable"] != true {
-		t.Fatalf("expected retryable failure payload, got %#v", repo.events[0].Payload)
+	if dispatchFailedEvents[0].Payload["retryable"] != true {
+		t.Fatalf("expected retryable failure payload, got %#v", dispatchFailedEvents[0].Payload)
 	}
 }
 
@@ -1810,6 +2014,7 @@ func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
 		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
 			TenantID:                  tenantID,
@@ -1827,7 +2032,8 @@ func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable
 	if err == nil {
 		t.Fatal("expected dispatch error")
 	}
-	if len(repo.events) != 1 || repo.events[0].Payload["retryable"] != false {
+	dispatchFailedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatchFailed)
+	if len(dispatchFailedEvents) != 1 || dispatchFailedEvents[0].Payload["retryable"] != false {
 		t.Fatalf("expected non-retryable failure payload, got %#v", repo.events)
 	}
 	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
@@ -1989,6 +2195,8 @@ type projectStoreMemoryRepository struct {
 
 	bindRequests                          []project.BindProjectTaskRunRequest
 	queueRequests                         []project.QueueProjectTaskRequest
+	dispatchGateResults                   []project.PreDispatchGateResult
+	linkGateAttemptRequests               []project.LinkPreDispatchGateAttemptRequest
 	projectTaskAttempts                   []project.ProjectTaskAttempt
 	bindErr                               error
 	advanceDemandErr                      error
@@ -2009,6 +2217,9 @@ type projectStoreMemoryRepository struct {
 
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
+
+	getProjectCalls       int
+	getProjectDemandCalls int
 }
 
 type projectTaskStatusUpdateRecord struct {
@@ -2019,6 +2230,7 @@ type projectTaskStatusUpdateRecord struct {
 }
 
 func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
+	r.getProjectCalls++
 	if r.projectRecord.TenantID == tenantID && r.projectRecord.ID == projectID {
 		return r.projectRecord, nil
 	}
@@ -2067,6 +2279,7 @@ func (r *projectStoreMemoryRepository) CreateAcceptanceRecordWithEvent(ctx conte
 }
 
 func (r *projectStoreMemoryRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (project.ProjectDemand, error) {
+	r.getProjectDemandCalls++
 	if r.demand.TenantID == tenantID && r.demand.ID == demandID {
 		return r.demand, nil
 	}
@@ -2535,6 +2748,16 @@ func (r *projectStoreMemoryRepository) GetProjectTask(ctx context.Context, tenan
 	return project.ProjectTask{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTaskAttempt, error) {
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == tenantID && attempt.ProjectTaskID == projectTaskID &&
+			(attempt.Status == project.ProjectTaskAttemptStatusQueued || attempt.Status == project.ProjectTaskAttemptStatusRunning) {
+			return attempt, nil
+		}
+	}
+	return project.ProjectTaskAttempt{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, req project.BindProjectTaskRunRequest) (project.ProjectTask, error) {
 	r.bindRequests = append(r.bindRequests, req)
 	if r.bindErr != nil {
@@ -2556,6 +2779,169 @@ func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, r
 		task.UpdatedAt = time.Now().UTC()
 		r.tasks[i] = task
 		return task, nil
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) RecordPreDispatchGateResult(ctx context.Context, req project.RecordPreDispatchGateResultRequest) (project.PreDispatchGateResult, error) {
+	now := time.Now().UTC()
+	checkedAt := req.CheckedAt
+	if checkedAt.IsZero() {
+		checkedAt = now
+	}
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		for gateIndex, gate := range r.dispatchGateResults {
+			if gate.TenantID == req.TenantID && gate.ProjectID == req.ProjectID && gate.ProjectTaskID == req.ProjectTaskID && gate.IdempotencyKey == req.IdempotencyKey {
+				if gate.AttemptID != nil || gate.DecisionRequestID != nil {
+					return gate, nil
+				}
+				gate.Status = req.Status
+				gate.CheckedAt = checkedAt
+				gate.Checks = append([]project.PreDispatchGateCheck(nil), req.Checks...)
+				gate.Blockers = append([]project.PreDispatchGateBlocker(nil), req.Blockers...)
+				gate.HumanActionRequest = cloneHumanActionRequest(req.HumanActionRequest)
+				gate.RetryAfter = req.RetryAfter
+				gate.UpdatedAt = now
+				r.dispatchGateResults[gateIndex] = gate
+				r.tasks[index].LatestDispatchGateResultID = &gate.ID
+				return gate, nil
+			}
+		}
+		gate := project.PreDispatchGateResult{
+			ID:                     uuid.New(),
+			TenantID:               req.TenantID,
+			ProjectID:              req.ProjectID,
+			ProjectTaskID:          req.ProjectTaskID,
+			AcceptedPlanRevisionID: req.AcceptedPlanRevisionID,
+			PlannedTaskKey:         req.PlannedTaskKey,
+			SelectedEmployeeID:     req.SelectedEmployeeID,
+			AttemptNo:              req.AttemptNo,
+			DispatchReason:         req.DispatchReason,
+			IdempotencyKey:         req.IdempotencyKey,
+			DispatchToken:          req.DispatchToken,
+			Status:                 req.Status,
+			CheckedAt:              checkedAt,
+			Checks:                 append([]project.PreDispatchGateCheck(nil), req.Checks...),
+			Blockers:               append([]project.PreDispatchGateBlocker(nil), req.Blockers...),
+			HumanActionRequest:     cloneHumanActionRequest(req.HumanActionRequest),
+			RetryAfter:             req.RetryAfter,
+			CreatedEventID:         req.CreatedEventID,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		}
+		r.dispatchGateResults = append(r.dispatchGateResults, gate)
+		r.tasks[index].LatestDispatchGateResultID = &gate.ID
+		return gate, nil
+	}
+	return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) LinkPreDispatchGateAttempt(ctx context.Context, req project.LinkPreDispatchGateAttemptRequest) (project.PreDispatchGateResult, error) {
+	r.linkGateAttemptRequests = append(r.linkGateAttemptRequests, req)
+	gateIndex := -1
+	for index, gate := range r.dispatchGateResults {
+		if gate.TenantID == req.TenantID && gate.ProjectID == req.ProjectID && gate.ProjectTaskID == req.ProjectTaskID && gate.ID == req.GateResultID {
+			if gate.AttemptID != nil && *gate.AttemptID != req.AttemptID {
+				return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+			}
+			gateIndex = index
+			break
+		}
+	}
+	if gateIndex == -1 {
+		return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+	}
+	attemptIndex := -1
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			if attempt.DispatchGateResultID != nil && *attempt.DispatchGateResultID != req.GateResultID {
+				return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+			}
+			attemptIndex = index
+			break
+		}
+	}
+	if attemptIndex == -1 {
+		return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+	}
+	now := time.Now().UTC()
+	gate := r.dispatchGateResults[gateIndex]
+	gate.AttemptID = &req.AttemptID
+	gate.UpdatedAt = now
+	r.dispatchGateResults[gateIndex] = gate
+	attempt := r.projectTaskAttempts[attemptIndex]
+	attempt.DispatchGateResultID = &req.GateResultID
+	attempt.UpdatedAt = now
+	r.projectTaskAttempts[attemptIndex] = attempt
+	return gate, nil
+}
+
+func (r *projectStoreMemoryRepository) LinkPreDispatchGateDecisionRequest(ctx context.Context, req project.LinkPreDispatchGateDecisionRequest) (project.PreDispatchGateResult, error) {
+	gateIndex := -1
+	for index, gate := range r.dispatchGateResults {
+		if gate.TenantID == req.TenantID && gate.ProjectID == req.ProjectID && gate.ProjectTaskID == req.ProjectTaskID && gate.ID == req.GateResultID {
+			if gate.DecisionRequestID != nil && *gate.DecisionRequestID != req.DecisionRequestID {
+				return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+			}
+			gateIndex = index
+			break
+		}
+	}
+	if gateIndex == -1 {
+		return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+	}
+	decisionIndex := -1
+	for index, decision := range r.decisionRequests {
+		if decision.TenantID == req.TenantID && decision.ProjectID == req.ProjectID && decision.ID == req.DecisionRequestID {
+			if decision.ProjectTaskID == nil || *decision.ProjectTaskID != req.ProjectTaskID {
+				return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+			}
+			if decision.DispatchGateResultID != nil && *decision.DispatchGateResultID != req.GateResultID {
+				return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+			}
+			decisionIndex = index
+			break
+		}
+	}
+	if decisionIndex == -1 {
+		return project.PreDispatchGateResult{}, project.ErrProjectNotFound
+	}
+	now := time.Now().UTC()
+	gate := r.dispatchGateResults[gateIndex]
+	gate.DecisionRequestID = &req.DecisionRequestID
+	gate.UpdatedAt = now
+	r.dispatchGateResults[gateIndex] = gate
+	decision := r.decisionRequests[decisionIndex]
+	decision.DispatchGateResultID = &req.GateResultID
+	decision.UpdatedAt = now
+	r.decisionRequests[decisionIndex] = decision
+	return gate, nil
+}
+
+func (r *projectStoreMemoryRepository) MoveProjectTaskToWaitingHumanForPreDispatchGate(ctx context.Context, req project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest) (project.ProjectTask, error) {
+	for _, gate := range r.dispatchGateResults {
+		if gate.TenantID == req.TenantID && gate.ProjectID == req.ProjectID && gate.ProjectTaskID == req.ProjectTaskID && gate.ID == req.GateResultID {
+			for index, task := range r.tasks {
+				if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+					continue
+				}
+				if task.Status != project.ProjectTaskStatusPlanned && task.Status != project.ProjectTaskStatusWaitingHuman {
+					return project.ProjectTask{}, project.ErrProjectConflict
+				}
+				now := time.Now().UTC()
+				task.Status = project.ProjectTaskStatusWaitingHuman
+				task.WaitingReason = strPtr(req.WaitingReason)
+				task.WaitingRequestID = &req.DecisionRequestID
+				task.LatestDispatchGateResultID = &req.GateResultID
+				task.StatusChangedAt = now
+				task.UpdatedAt = now
+				r.tasks[index] = task
+				return task, nil
+			}
+		}
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
 }
@@ -2635,6 +3021,7 @@ func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.C
 			LeaseToken:                    req.LeaseToken,
 			LeaseExpiresAt:                req.LeaseExpiresAt,
 			IdempotencyKey:                req.IdempotencyKey,
+			DispatchGateResultID:          req.DispatchGateResultID,
 			CreatedEventID:                &event.ID,
 			CreatedAt:                     time.Now().UTC(),
 			UpdatedAt:                     time.Now().UTC(),
@@ -2675,6 +3062,9 @@ func projectStoreQueueTaskEventPayload(req project.QueueProjectTaskRequest, atte
 	}
 	if req.RuntimeNodeID != nil {
 		payload["runtime_node_id"] = req.RuntimeNodeID.String()
+	}
+	if req.DispatchGateResultID != nil {
+		payload["dispatch_gate_result_id"] = req.DispatchGateResultID.String()
 	}
 	return payload
 }
@@ -2805,6 +3195,7 @@ func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, t
 type projectStoreApprovalCreator struct {
 	approvalID uuid.UUID
 	last       approval.CreateRequestInput
+	record     *approval.ApprovalRequest
 	err        error
 }
 
@@ -2817,7 +3208,7 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 	if id == uuid.Nil {
 		id = uuid.New()
 	}
-	return &approval.ApprovalRequest{
+	request := &approval.ApprovalRequest{
 		ID:           id,
 		TenantID:     input.TenantID,
 		ResourceType: input.ResourceType,
@@ -2826,7 +3217,20 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 		DecisionType: input.DecisionType,
 		Title:        input.Title,
 		Status:       approval.ApprovalStatusPending,
-	}, nil
+	}
+	c.record = request
+	return request, nil
+}
+
+func (c *projectStoreApprovalCreator) GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*approval.ApprovalRequest, error) {
+	if c.record != nil &&
+		c.record.TenantID == tenantID &&
+		c.record.ResourceType == resourceType &&
+		c.record.ResourceID == resourceID &&
+		c.record.Status == approval.ApprovalStatusPending {
+		return c.record, nil
+	}
+	return nil, approval.ErrApprovalNotFound
 }
 
 type projectStoreDecisionInboxProjector struct {
@@ -2849,14 +3253,42 @@ type projectTaskRunStarterFake struct {
 	requests []StartProjectTaskRunRequest
 	result   StartProjectTaskRunResult
 	err      error
+	onStart  func(StartProjectTaskRunRequest)
 }
 
 func (f *projectTaskRunStarterFake) StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error) {
 	f.requests = append(f.requests, req)
+	if f.onStart != nil {
+		f.onStart(req)
+	}
 	if f.err != nil {
 		return StartProjectTaskRunResult{}, f.err
 	}
 	return f.result, nil
+}
+
+type projectStoreGateRuntimeReader struct {
+	employee project.PreDispatchEmployeeSnapshot
+	runtime  project.PreDispatchRuntimeSnapshot
+	err      error
+}
+
+func (r projectStoreGateRuntimeReader) GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error) {
+	if r.err != nil {
+		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, r.err
+	}
+	return r.employee, r.runtime, nil
+}
+
+func projectStoreExecutorMember(tenantID, projectID, employeeID uuid.UUID) project.ProjectMember {
+	return project.ProjectMember{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: project.PrincipalTypeDigitalEmployee,
+		PrincipalID:   employeeID,
+		ProjectRole:   project.ProjectRoleExecutor,
+		Status:        "active",
+	}
 }
 
 func projectStoreTask(tenantID, projectID, demandID, coordinationJobID, routeDecisionID, taskID uuid.UUID, status string) project.ProjectTask {

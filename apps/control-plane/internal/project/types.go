@@ -76,30 +76,35 @@ const (
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
-	ProjectEventWorkflowSignaled        ProjectEventType = "workflow.signaled"
-	ProjectEventCoordinationJobCreated  ProjectEventType = "coordination_job.created"
-	ProjectEventRouteDecisionCreated    ProjectEventType = "route_decision.created"
-	ProjectEventTaskCreated             ProjectEventType = "project_task.created"
-	ProjectEventTaskGraphPlanned        ProjectEventType = "project_task_graph.planned"
-	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
-	ProjectEventTaskDispatchFailed      ProjectEventType = "project_task.dispatch_failed"
-	ProjectEventTaskContractMissing     ProjectEventType = "project_task.contract_missing"
-	ProjectEventTaskWaitingHuman        ProjectEventType = "project_task.waiting_human"
-	ProjectEventTaskCancelled           ProjectEventType = "project_task.cancelled"
-	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"
-	ProjectEventTaskFailed              ProjectEventType = "project_task.failed"
-	ProjectEventTransferRequested       ProjectEventType = "transfer.requested"
-	ProjectEventDecisionRequested       ProjectEventType = "decision.requested"
-	ProjectEventDecisionSubmitted       ProjectEventType = "decision.submitted"
-	ProjectEventEvidenceLinked          ProjectEventType = "project.evidence.linked"
-	ProjectEventEvidenceVerified        ProjectEventType = "project.evidence.verified"
-	ProjectEventArtifactLinked          ProjectEventType = "project.artifact.linked"
-	ProjectEventReportLinked            ProjectEventType = "project.report.linked"
-	ProjectEventBudgetRecorded          ProjectEventType = "project.budget.recorded"
-	ProjectEventAcceptanceSubmitted     ProjectEventType = "project.acceptance.submitted"
-	ProjectEventArchiveSnapshotCreated  ProjectEventType = "project.archive_snapshot.created"
-	ProjectEventArchiveRetentionPending ProjectEventType = "project.archive.retention_pending"
-	ProjectEventLendingEmployeeSkipped  ProjectEventType = "project.lending.employee_skipped"
+	ProjectEventWorkflowSignaled               ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated         ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated           ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated                    ProjectEventType = "project_task.created"
+	ProjectEventTaskGraphPlanned               ProjectEventType = "project_task_graph.planned"
+	ProjectEventTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
+	ProjectEventTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
+	ProjectEventTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
+	ProjectEventTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
+	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
+	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
+	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
+	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTransferRequested              ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested              ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted              ProjectEventType = "decision.submitted"
+	ProjectEventEvidenceLinked                 ProjectEventType = "project.evidence.linked"
+	ProjectEventEvidenceVerified               ProjectEventType = "project.evidence.verified"
+	ProjectEventArtifactLinked                 ProjectEventType = "project.artifact.linked"
+	ProjectEventReportLinked                   ProjectEventType = "project.report.linked"
+	ProjectEventBudgetRecorded                 ProjectEventType = "project.budget.recorded"
+	ProjectEventAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
+	ProjectEventArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
+	ProjectEventLendingEmployeeSkipped         ProjectEventType = "project.lending.employee_skipped"
 )
 
 type EvidenceVerificationStatus string
@@ -278,43 +283,44 @@ type ProjectMember struct {
 }
 
 type ProjectTask struct {
-	ID                        uuid.UUID
-	TenantID                  uuid.UUID
-	ProjectID                 uuid.UUID
-	DemandID                  *uuid.UUID
-	Title                     string
-	Summary                   *string
-	Status                    string
-	AssignedDigitalEmployeeID *uuid.UUID
-	RuntimeTaskID             *uuid.UUID
-	DigitalEmployeeRunID      *uuid.UUID
-	RiskLevel                 *string
-	RequiresHumanApproval     bool
-	CoordinationJobID         *uuid.UUID
-	RouteDecisionID           *uuid.UUID
-	PlannedTaskKey            *string
-	TaskKind                  *string
-	StageIndex                *int32
-	ExpectedOutputs           []any
-	InputRequirements         map[string]any
-	HandoffContract           map[string]any
-	PlannerMetadata           map[string]any
-	BlockedByTaskIDs          []uuid.UUID
-	CurrentAttemptID          *uuid.UUID
-	AcceptedPlanRevisionID    *uuid.UUID
-	DecompositionClaimKey     *string
-	AttemptCount              int32
-	MaxAttempts               *int32
-	RetryNotBefore            *time.Time
-	WaitingReason             *string
-	WaitingRequestID          *uuid.UUID
-	TerminalReason            *string
-	TerminalEventID           *uuid.UUID
-	CancelledBy               *string
-	FailedBy                  *string
-	StatusChangedAt           time.Time
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
+	ID                         uuid.UUID
+	TenantID                   uuid.UUID
+	ProjectID                  uuid.UUID
+	DemandID                   *uuid.UUID
+	Title                      string
+	Summary                    *string
+	Status                     string
+	AssignedDigitalEmployeeID  *uuid.UUID
+	RuntimeTaskID              *uuid.UUID
+	DigitalEmployeeRunID       *uuid.UUID
+	RiskLevel                  *string
+	RequiresHumanApproval      bool
+	CoordinationJobID          *uuid.UUID
+	RouteDecisionID            *uuid.UUID
+	PlannedTaskKey             *string
+	TaskKind                   *string
+	StageIndex                 *int32
+	ExpectedOutputs            []any
+	InputRequirements          map[string]any
+	HandoffContract            map[string]any
+	PlannerMetadata            map[string]any
+	BlockedByTaskIDs           []uuid.UUID
+	CurrentAttemptID           *uuid.UUID
+	LatestDispatchGateResultID *uuid.UUID
+	AcceptedPlanRevisionID     *uuid.UUID
+	DecompositionClaimKey      *string
+	AttemptCount               int32
+	MaxAttempts                *int32
+	RetryNotBefore             *time.Time
+	WaitingReason              *string
+	WaitingRequestID           *uuid.UUID
+	TerminalReason             *string
+	TerminalEventID            *uuid.UUID
+	CancelledBy                *string
+	FailedBy                   *string
+	StatusChangedAt            time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type ProjectTaskExecutionPacket struct {
@@ -407,6 +413,8 @@ const (
 	HumanWaitReasonPermissionRequired = "permission_required"
 	HumanWaitReasonPlanInvalid        = "plan_invalid"
 	HumanWaitReasonAcceptanceRequired = "acceptance_required"
+	HumanWaitReasonRuntimeRecovery    = "runtime_recovery"
+	HumanWaitReasonBudgetApproval     = "budget_approval"
 )
 
 const (
@@ -440,6 +448,7 @@ type ProjectTaskAttempt struct {
 	FailureFamily                 *string
 	FailureMessage                *string
 	IdempotencyKey                string
+	DispatchGateResultID          *uuid.UUID
 	CreatedEventID                *uuid.UUID
 	TerminalEventID               *uuid.UUID
 	CreatedAt                     time.Time
@@ -460,12 +469,94 @@ type QueueProjectTaskRequest struct {
 	LeaseExpiresAt                *time.Time
 	ExecutionContextPacket        map[string]any
 	ExecutionContextPacketVersion string
+	DispatchGateResultID          *uuid.UUID
 }
 
 type QueueProjectTaskResult struct {
 	Task    ProjectTask
 	Attempt ProjectTaskAttempt
 	Event   ProjectEvent
+}
+
+type HumanActionRequest map[string]any
+
+type PreDispatchGateResult struct {
+	ID                     uuid.UUID
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	ProjectTaskID          uuid.UUID
+	AcceptedPlanRevisionID *uuid.UUID
+	PlannedTaskKey         *string
+	SelectedEmployeeID     uuid.UUID
+	AttemptNo              int32
+	DispatchReason         string
+	IdempotencyKey         string
+	DispatchToken          string
+	Status                 string
+	CheckedAt              time.Time
+	Checks                 []PreDispatchGateCheck
+	Blockers               []PreDispatchGateBlocker
+	HumanActionRequest     HumanActionRequest
+	RetryAfter             *time.Time
+	AttemptID              *uuid.UUID
+	DecisionRequestID      *uuid.UUID
+	CreatedEventID         *uuid.UUID
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type RecordPreDispatchGateResultRequest struct {
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	ProjectTaskID          uuid.UUID
+	AcceptedPlanRevisionID *uuid.UUID
+	PlannedTaskKey         *string
+	SelectedEmployeeID     uuid.UUID
+	AttemptNo              int32
+	DispatchReason         string
+	IdempotencyKey         string
+	DispatchToken          string
+	Status                 string
+	CheckedAt              time.Time
+	Checks                 []PreDispatchGateCheck
+	Blockers               []PreDispatchGateBlocker
+	HumanActionRequest     HumanActionRequest
+	RetryAfter             *time.Time
+	CreatedEventID         *uuid.UUID
+}
+
+type ListPreDispatchGateResultsRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	Limit         int32
+	Offset        int32
+}
+
+type LinkPreDispatchGateAttemptRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	GateResultID  uuid.UUID
+	AttemptID     uuid.UUID
+}
+
+type LinkPreDispatchGateDecisionRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	GateResultID      uuid.UUID
+	DecisionRequestID uuid.UUID
+}
+
+type MoveProjectTaskToWaitingHumanForPreDispatchGateRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	GateResultID      uuid.UUID
+	DecisionRequestID uuid.UUID
+	EventID           *uuid.UUID
+	WaitingReason     string
 }
 
 type ProjectTaskAttemptContextUpdate struct {
@@ -608,23 +699,24 @@ type TransferRequest struct {
 }
 
 type DecisionRequest struct {
-	ID                uuid.UUID
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	ApprovalRequestID uuid.UUID
-	CoordinationJobID *uuid.UUID
-	ProjectTaskID     *uuid.UUID
-	TargetUserID      uuid.UUID
-	DecisionType      string
-	TitleSnapshot     string
-	SummarySnapshot   *string
-	RiskLevelSnapshot *string
-	StatusSnapshot    string
-	CreatedEventID    *uuid.UUID
-	ResolvedEventID   *uuid.UUID
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ResolvedAt        *time.Time
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	ApprovalRequestID    uuid.UUID
+	CoordinationJobID    *uuid.UUID
+	ProjectTaskID        *uuid.UUID
+	TargetUserID         uuid.UUID
+	DecisionType         string
+	TitleSnapshot        string
+	SummarySnapshot      *string
+	RiskLevelSnapshot    *string
+	StatusSnapshot       string
+	CreatedEventID       *uuid.UUID
+	ResolvedEventID      *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ResolvedAt           *time.Time
+	DispatchGateResultID *uuid.UUID
 }
 
 type DecisionInboxProjector interface {

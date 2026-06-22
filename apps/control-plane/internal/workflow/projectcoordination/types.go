@@ -198,6 +198,18 @@ type ApplyFailureRecoveryDecisionResult struct {
 	ReadyTaskIDs []uuid.UUID
 }
 
+type ApplyPreDispatchGateDecisionInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	Decision          string
+	Payload           map[string]any
+}
+
+type ApplyPreDispatchGateDecisionResult struct {
+	ReadyTaskIDs []uuid.UUID
+}
+
 type FailureRecoveryAction struct {
 	Action               string
 	NewDigitalEmployeeID *uuid.UUID
@@ -211,9 +223,10 @@ type AppendProjectEventInput struct {
 }
 
 type DispatchProjectTaskInput struct {
-	TenantID  uuid.UUID
-	ProjectID uuid.UUID
-	TaskID    uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	TaskID         uuid.UUID
+	DispatchReason string
 }
 
 type StartProjectTaskRunRequest struct {
@@ -262,6 +275,8 @@ type ProjectTaskDispatchError struct {
 	FailureRecorded bool
 	Err             error
 }
+
+var ErrProjectTaskDispatchRetryLater = errors.New("project task dispatch retry later")
 
 func (e *ProjectTaskDispatchError) Error() string {
 	if e == nil || e.Err == nil {

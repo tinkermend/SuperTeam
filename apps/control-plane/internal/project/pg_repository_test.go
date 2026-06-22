@@ -432,6 +432,726 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestRecordPreDispatchGateResultIsIdempotent(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	acceptedPlanRevisionID := uuid.New()
+	plannedTaskKey := "gate-test-task"
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 gate 幂等写入",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		AcceptedPlanRevisionID:    &acceptedPlanRevisionID,
+		PlannedTaskKey:            &plannedTaskKey,
+	})
+	require.NoError(t, err)
+	retryAfter := time.Date(2026, 6, 21, 11, 30, 0, 0, time.UTC)
+	checkedAt := time.Date(2026, 6, 21, 11, 25, 0, 0, time.UTC)
+	idempotencyKey := "gate:" + task.ID.String() + ":attempt:1:runtime"
+
+	first, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		ProjectTaskID:          task.ID,
+		AcceptedPlanRevisionID: &acceptedPlanRevisionID,
+		PlannedTaskKey:         &plannedTaskKey,
+		SelectedEmployeeID:     employeeID,
+		AttemptNo:              1,
+		DispatchReason:         DispatchReasonRootReady,
+		IdempotencyKey:         idempotencyKey,
+		DispatchToken:          "dispatch-token-1",
+		Status:                 PreDispatchGateStatusRetryLater,
+		CheckedAt:              checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:     "runtime.ready",
+			Status:  "failed",
+			Details: map[string]any{"reason": "slot_unavailable"},
+		}},
+		Blockers: []PreDispatchGateBlocker{{
+			Key:       "runtime.slot_unavailable",
+			Severity:  "transient",
+			Retryable: true,
+			Details:   map[string]any{"retry": "later"},
+		}},
+		RetryAfter: &retryAfter,
+	})
+	require.NoError(t, err)
+
+	second, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		ProjectTaskID:          task.ID,
+		AcceptedPlanRevisionID: &acceptedPlanRevisionID,
+		PlannedTaskKey:         &plannedTaskKey,
+		SelectedEmployeeID:     employeeID,
+		AttemptNo:              1,
+		DispatchReason:         DispatchReasonRootReady,
+		IdempotencyKey:         idempotencyKey,
+		DispatchToken:          "dispatch-token-1",
+		Status:                 PreDispatchGateStatusPassed,
+		CheckedAt:              checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, PreDispatchGateStatusPassed, second.Status)
+	require.Nil(t, second.RetryAfter)
+	require.Empty(t, second.Blockers)
+	require.Len(t, second.Checks, 1)
+	require.Equal(t, "passed", second.Checks[0].Status)
+
+	results, err := repo.ListPreDispatchGateResults(context.Background(), ListPreDispatchGateResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: task.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, first.ID, results[0].ID)
+	require.Equal(t, PreDispatchGateStatusPassed, results[0].Status)
+
+	updatedTask, err := repo.GetProjectTask(context.Background(), tenantID, task.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updatedTask.LatestDispatchGateResultID)
+	require.Equal(t, first.ID, *updatedTask.LatestDispatchGateResultID)
+}
+
+func TestRecordPreDispatchGateResultReturnsLinkedGateWithoutOverwrite(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "linked gate replay",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	retryAfter := time.Date(2026, 6, 21, 13, 0, 0, 0, time.UTC)
+	checkedAt := time.Date(2026, 6, 21, 12, 45, 0, 0, time.UTC)
+	idempotencyKey := "gate:" + task.ID.String() + ":attempt:1:linked-replay"
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-linked-replay",
+		Status:             PreDispatchGateStatusRetryLater,
+		CheckedAt:          checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:     "runtime.ready",
+			Status:  "failed",
+			Details: map[string]any{"reason": "slot_unavailable"},
+		}},
+		Blockers: []PreDispatchGateBlocker{{
+			Key:       "runtime.slot_unavailable",
+			Severity:  "transient",
+			Retryable: true,
+		}},
+		RetryAfter: &retryAfter,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &runtimeNodeID,
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:linked-replay",
+		LeaseToken:           "lease-token-linked-replay",
+		DispatchGateResultID: &gate.ID,
+	})
+	require.NoError(t, err)
+
+	replayed, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-linked-replay",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, gate.ID, replayed.ID)
+	require.Equal(t, PreDispatchGateStatusRetryLater, replayed.Status)
+	require.NotNil(t, replayed.RetryAfter)
+	require.Equal(t, retryAfter, *replayed.RetryAfter)
+	require.Len(t, replayed.Blockers, 1)
+	require.Len(t, replayed.Checks, 1)
+	require.Equal(t, "failed", replayed.Checks[0].Status)
+	require.NotNil(t, replayed.AttemptID)
+	require.Equal(t, queued.Attempt.ID, *replayed.AttemptID)
+}
+
+func TestRecordPreDispatchGateResultUpdatesDecisionLinkedWaitingGate(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "decision linked gate replay",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		RequiresHumanApproval:     true,
+	})
+	require.NoError(t, err)
+	checkedAt := time.Date(2026, 6, 21, 12, 45, 0, 0, time.UTC)
+	idempotencyKey := "gate:" + task.ID.String() + ":attempt:1:decision-linked-replay"
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonHumanResolved,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-decision-linked-replay",
+		Status:             PreDispatchGateStatusWaitingHuman,
+		CheckedAt:          checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "failed",
+		}},
+		Blockers: []PreDispatchGateBlocker{{
+			Key:      "risk.approval_required",
+			Severity: "human",
+		}},
+		HumanActionRequest: HumanActionRequest{
+			"type": PreDispatchHumanActionRiskApproval,
+		},
+	})
+	require.NoError(t, err)
+	taskID := task.ID
+	decision, err := repo.CreateDecisionRequest(context.Background(), CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "project_task_approval",
+		TitleSnapshot:     "Approve dispatch gate",
+		StatusSnapshot:    "approved",
+	})
+	require.NoError(t, err)
+	linked, err := repo.LinkPreDispatchGateDecisionRequest(context.Background(), LinkPreDispatchGateDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     task.ID,
+		GateResultID:      gate.ID,
+		DecisionRequestID: decision.ID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, linked.DecisionRequestID)
+
+	replayed, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonHumanResolved,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-decision-linked-replay",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, gate.ID, replayed.ID)
+	require.Equal(t, PreDispatchGateStatusPassed, replayed.Status)
+	require.Nil(t, replayed.AttemptID)
+	require.NotNil(t, replayed.DecisionRequestID)
+	require.Equal(t, decision.ID, *replayed.DecisionRequestID)
+	require.Empty(t, replayed.Blockers)
+	require.Nil(t, replayed.HumanActionRequest)
+	require.Len(t, replayed.Checks, 1)
+	require.Equal(t, "passed", replayed.Checks[0].Status)
+}
+
+func TestRecordLinkedPreDispatchGateReplayDoesNotMoveLatest(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "linked gate replay keeps latest",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	checkedAt := time.Date(2026, 6, 21, 15, 0, 0, 0, time.UTC)
+	gateAKey := "gate:" + task.ID.String() + ":attempt:1:linked-latest-a"
+	gateA, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     gateAKey,
+		DispatchToken:      "dispatch-token-linked-latest-a",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+	_, err = repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: ptrUUIDValue(uuid.New()),
+		RuntimeTaskID:        ptrUUIDValue(uuid.New()),
+		RuntimeNodeID:        ptrUUIDValue(uuid.New()),
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:linked-latest-a",
+		LeaseToken:           "lease-token-linked-latest-a",
+		DispatchGateResultID: &gateA.ID,
+	})
+	require.NoError(t, err)
+	gateB, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          2,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     "gate:" + task.ID.String() + ":attempt:2:latest-b",
+		DispatchToken:      "dispatch-token-latest-b",
+		Status:             PreDispatchGateStatusRetryLater,
+		CheckedAt:          checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "failed",
+		}},
+	})
+	require.NoError(t, err)
+	latestBeforeReplay, err := repo.GetProjectTask(context.Background(), tenantID, task.ID)
+	require.NoError(t, err)
+	require.NotNil(t, latestBeforeReplay.LatestDispatchGateResultID)
+	require.Equal(t, gateB.ID, *latestBeforeReplay.LatestDispatchGateResultID)
+
+	replayed, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     gateAKey,
+		DispatchToken:      "dispatch-token-linked-latest-a",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt.Add(2 * time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, gateA.ID, replayed.ID)
+
+	latestAfterReplay, err := repo.GetProjectTask(context.Background(), tenantID, task.ID)
+	require.NoError(t, err)
+	require.NotNil(t, latestAfterReplay.LatestDispatchGateResultID)
+	require.Equal(t, gateB.ID, *latestAfterReplay.LatestDispatchGateResultID)
+}
+
+func TestRecordLinkedPreDispatchGateReplayRejectsWrongProject(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	wrongProjectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "linked gate replay wrong project",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	checkedAt := time.Date(2026, 6, 21, 15, 30, 0, 0, time.UTC)
+	idempotencyKey := "gate:" + task.ID.String() + ":attempt:1:wrong-project"
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-wrong-project",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+	_, err = repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: ptrUUIDValue(uuid.New()),
+		RuntimeTaskID:        ptrUUIDValue(uuid.New()),
+		RuntimeNodeID:        ptrUUIDValue(uuid.New()),
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:wrong-project",
+		LeaseToken:           "lease-token-wrong-project",
+		DispatchGateResultID: &gate.ID,
+	})
+	require.NoError(t, err)
+
+	_, err = repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          wrongProjectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-wrong-project",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.ErrorIs(t, err, ErrProjectNotFound)
+
+	found, err := repo.GetPreDispatchGateResultByKey(context.Background(), tenantID, projectID, task.ID, idempotencyKey)
+	require.NoError(t, err)
+	require.Equal(t, gate.ID, found.ID)
+	_, err = repo.GetPreDispatchGateResultByKey(context.Background(), tenantID, wrongProjectID, task.ID, idempotencyKey)
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+
+func TestMoveProjectTaskToWaitingHumanForPreDispatchGate(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	plannedTaskKey := "gate-wait-human"
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 gate 等待人类",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		PlannedTaskKey:            &plannedTaskKey,
+		RequiresHumanApproval:     true,
+	})
+	require.NoError(t, err)
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		PlannedTaskKey:     &plannedTaskKey,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     "gate:" + task.ID.String() + ":attempt:1:human",
+		DispatchToken:      "dispatch-token-human",
+		Status:             PreDispatchGateStatusWaitingHuman,
+		CheckedAt:          time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "failed",
+		}},
+		Blockers: []PreDispatchGateBlocker{{
+			Key:       "risk.approval_required",
+			Severity:  "human",
+			Retryable: false,
+		}},
+		HumanActionRequest: map[string]any{
+			"type":           PreDispatchHumanActionRiskApproval,
+			"waiting_reason": HumanWaitReasonApprovalRequired,
+		},
+	})
+	require.NoError(t, err)
+	decisionID := uuid.New()
+	eventID := uuid.New()
+
+	waiting, err := repo.MoveProjectTaskToWaitingHumanForPreDispatchGate(context.Background(), MoveProjectTaskToWaitingHumanForPreDispatchGateRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     task.ID,
+		GateResultID:      gate.ID,
+		DecisionRequestID: decisionID,
+		EventID:           &eventID,
+		WaitingReason:     HumanWaitReasonApprovalRequired,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, ProjectTaskStatusWaitingHuman, waiting.Status)
+	require.NotNil(t, waiting.WaitingRequestID)
+	require.Equal(t, decisionID, *waiting.WaitingRequestID)
+	require.NotNil(t, waiting.LatestDispatchGateResultID)
+	require.Equal(t, gate.ID, *waiting.LatestDispatchGateResultID)
+}
+
+func TestLinkPreDispatchGateResultToAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	plannedTaskKey := "gate-link-attempt"
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 gate 关联 attempt",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		PlannedTaskKey:            &plannedTaskKey,
+	})
+	require.NoError(t, err)
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		PlannedTaskKey:     &plannedTaskKey,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     "gate:" + task.ID.String() + ":attempt:1:passed",
+		DispatchToken:      "dispatch-token-passed",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          time.Date(2026, 6, 21, 12, 15, 0, 0, time.UTC),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &runtimeNodeID,
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:           "lease-token-gate",
+		DispatchGateResultID: &gate.ID,
+		ExecutionContextPacket: map[string]any{
+			"dispatch_gate_result_id": gate.ID.String(),
+		},
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, queued.Attempt.DispatchGateResultID)
+	require.Equal(t, gate.ID, *queued.Attempt.DispatchGateResultID)
+	require.NotNil(t, queued.Task.LatestDispatchGateResultID)
+	require.Equal(t, gate.ID, *queued.Task.LatestDispatchGateResultID)
+
+	linkedGate, err := repo.GetPreDispatchGateResult(context.Background(), tenantID, projectID, gate.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedGate.AttemptID)
+	require.Equal(t, queued.Attempt.ID, *linkedGate.AttemptID)
+}
+
+func TestLinkPreDispatchGateResultToAttemptRejectsWrongTaskAndUpdatesAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	taskA, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "gate task A",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	taskB, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "gate task B",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      taskA.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     "gate:" + taskA.ID.String() + ":attempt:1:wrong-attempt",
+		DispatchToken:      "dispatch-token-wrong-attempt",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          time.Date(2026, 6, 21, 13, 15, 0, 0, time.UTC),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "runtime.ready",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	wrongAttempt, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        taskB.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &runtimeNodeID,
+		IdempotencyKey:       "project-task:" + taskB.ID.String() + ":attempt:1:wrong-attempt",
+		LeaseToken:           "lease-token-wrong-attempt",
+	})
+	require.NoError(t, err)
+
+	_, err = repo.LinkPreDispatchGateAttempt(context.Background(), LinkPreDispatchGateAttemptRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskA.ID,
+		GateResultID:  gate.ID,
+		AttemptID:     wrongAttempt.Attempt.ID,
+	})
+	require.ErrorIs(t, err, ErrProjectNotFound)
+	unchangedGate, err := repo.GetPreDispatchGateResult(context.Background(), tenantID, projectID, gate.ID)
+	require.NoError(t, err)
+	require.Nil(t, unchangedGate.AttemptID)
+	unchangedAttempt, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, wrongAttempt.Attempt.ID)
+	require.NoError(t, err)
+	require.Nil(t, unchangedAttempt.DispatchGateResultID)
+
+	correctRunID := uuid.New()
+	correctRuntimeTaskID := uuid.New()
+	correctRuntimeNodeID := uuid.New()
+	correctAttempt, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        taskA.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &correctRunID,
+		RuntimeTaskID:        &correctRuntimeTaskID,
+		RuntimeNodeID:        &correctRuntimeNodeID,
+		IdempotencyKey:       "project-task:" + taskA.ID.String() + ":attempt:1:correct-attempt",
+		LeaseToken:           "lease-token-correct-attempt",
+	})
+	require.NoError(t, err)
+
+	linked, err := repo.LinkPreDispatchGateAttempt(context.Background(), LinkPreDispatchGateAttemptRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskA.ID,
+		GateResultID:  gate.ID,
+		AttemptID:     correctAttempt.Attempt.ID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, linked.AttemptID)
+	require.Equal(t, correctAttempt.Attempt.ID, *linked.AttemptID)
+	linkedAttempt, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, correctAttempt.Attempt.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedAttempt.DispatchGateResultID)
+	require.Equal(t, gate.ID, *linkedAttempt.DispatchGateResultID)
+}
+
+func TestLinkPreDispatchGateDecisionRequestRejectsWrongTask(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	taskA, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "gate decision task A",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	taskB, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "gate decision task B",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      taskA.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+		IdempotencyKey:     "gate:" + taskA.ID.String() + ":attempt:1:wrong-decision",
+		DispatchToken:      "dispatch-token-wrong-decision",
+		Status:             PreDispatchGateStatusWaitingHuman,
+		CheckedAt:          time.Date(2026, 6, 21, 13, 30, 0, 0, time.UTC),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "failed",
+		}},
+	})
+	require.NoError(t, err)
+	decision, err := repo.CreateDecisionRequest(context.Background(), CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskB.ID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "pre_dispatch_gate_review",
+		TitleSnapshot:     "Review task B",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+
+	_, err = repo.LinkPreDispatchGateDecisionRequest(context.Background(), LinkPreDispatchGateDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     taskA.ID,
+		GateResultID:      gate.ID,
+		DecisionRequestID: decision.ID,
+	})
+	require.ErrorIs(t, err, ErrProjectNotFound)
+	unchangedGate, err := repo.GetPreDispatchGateResult(context.Background(), tenantID, projectID, gate.ID)
+	require.NoError(t, err)
+	require.Nil(t, unchangedGate.DecisionRequestID)
+	unchangedDecision, err := repo.GetDecisionRequest(context.Background(), tenantID, projectID, decision.ID)
+	require.NoError(t, err)
+	require.Nil(t, unchangedDecision.DispatchGateResultID)
+}
+
 func TestStartProjectTaskAttemptAdvancesTaskAndAttempt(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	writebacks := repo.(ProjectTaskAttemptWritebackRepository)

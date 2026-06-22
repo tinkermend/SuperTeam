@@ -373,6 +373,38 @@ function createProjectFetcher(
     if (url.pathname.endsWith("/tasks") && method === "GET") {
       return jsonResponse([]);
     }
+    if (
+      url.pathname === "/api/v1/projects/project-1/tasks/task-1/dispatch-gates" &&
+      method === "GET"
+    ) {
+      return jsonResponse({
+        items: [
+          {
+            attempt_no: 1,
+            blockers: [
+              {
+                details: {},
+                key: "runtime.node_offline",
+                retryable: true,
+                severity: "transient",
+              },
+            ],
+            checked_at: "2026-06-21T12:00:00Z",
+            checks: [],
+            dispatch_reason: "root_ready",
+            human_action_request: {},
+            id: "dispatch-gate-1",
+            project_task_id: "task-1",
+            retry_after: "2026-06-21T12:02:00Z",
+            selected_employee_id: "de-1",
+            status: "retry_later",
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/dispatch-gates") && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
     if (url.pathname.endsWith("/events") && method === "GET") {
       return jsonResponse([]);
     }
@@ -390,6 +422,45 @@ function createProjectFetcher(
           title: "补充上线验收说明",
         },
       ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
+      return jsonResponse({
+        decision_requests: [],
+        edges: [],
+        employees: [],
+        execution_summaries: [],
+        nodes: [
+          {
+            expected_outputs: [],
+            handoff_contract: {},
+            id: "task-old",
+            input_requirements: {},
+            planner_metadata: {},
+            project_id: "project-1",
+            requires_human_approval: false,
+            stage_index: 0,
+            status: "completed",
+            tenant_id: "tenant-1",
+            title: "完成环境准备",
+          },
+          {
+            expected_outputs: [],
+            handoff_contract: {},
+            id: "task-1",
+            input_requirements: {},
+            planner_metadata: {},
+            project_id: "project-1",
+            requires_human_approval: true,
+            stage_index: 1,
+            status: "running",
+            tenant_id: "tenant-1",
+            title: "整理接入证据",
+          },
+        ],
+        recent_events: [],
+        runs: [],
+        stage_summaries: [],
+      });
     }
     if (url.pathname === "/api/v1/projects/project-1/route-decisions" && method === "GET") {
       return jsonResponse([
@@ -842,7 +913,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
     await expect.element(screen.getByText("项目已创建")).toBeInTheDocument();
-    await expect.element(screen.getByText("整理接入证据")).toBeInTheDocument();
+    await expect.element(screen.getByText("整理接入证据").first()).toBeInTheDocument();
     await expect.element(screen.getByText("补充上线验收说明")).toBeInTheDocument();
     await expect.element(screen.getByText("当前阶段")).toBeInTheDocument();
     await expect.element(screen.getByText("待人工处理")).toBeInTheDocument();
@@ -870,6 +941,35 @@ describe("ProjectsView", () => {
           );
         }),
       ).toBe(true);
+    });
+  });
+
+  it("shows the latest pre-dispatch gate status for a selected project task", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect.element(screen.getByText("Pre-dispatch gate")).toBeInTheDocument();
+    await expect.element(screen.getByText("Retry later")).toBeInTheDocument();
+    await expect.element(screen.getByText("runtime.node_offline")).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      const calls = fetchCalls(fetcher);
+      expect(
+        calls.some(([url, init]) => {
+          return (
+            String(url).endsWith(
+              "/api/v1/projects/project-1/tasks/task-1/dispatch-gates",
+            ) && init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+      expect(
+        calls.some(([url]) =>
+          String(url).endsWith(
+            "/api/v1/projects/project-1/tasks/task-old/dispatch-gates",
+          ),
+        ),
+      ).toBe(false);
     });
   });
 

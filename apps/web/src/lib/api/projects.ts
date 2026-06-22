@@ -257,6 +257,48 @@ export type ProjectTaskGraph = {
   stage_summaries?: ProjectTaskGraphStageSummary[];
 };
 
+export type DispatchGateStatus =
+  | "passed"
+  | "waiting_human"
+  | "blocked"
+  | "retry_later"
+  | "replan_required";
+
+export type DispatchGateCheck = {
+  key: string;
+  status: string;
+  details: Record<string, unknown>;
+};
+
+export type DispatchGateBlocker = {
+  key: string;
+  severity: string;
+  retryable: boolean;
+  details: Record<string, unknown>;
+};
+
+export type DispatchGateResult = {
+  id: string;
+  project_task_id: string;
+  accepted_plan_revision_id?: string | null;
+  planned_task_key?: string | null;
+  selected_employee_id: string;
+  attempt_no: number;
+  dispatch_reason: string;
+  status: DispatchGateStatus;
+  checked_at: string;
+  checks: DispatchGateCheck[];
+  blockers: DispatchGateBlocker[];
+  human_action_request: Record<string, unknown>;
+  retry_after?: string | null;
+  attempt_id?: string | null;
+  decision_request_id?: string | null;
+};
+
+export type DispatchGateListResponse = {
+  items: DispatchGateResult[];
+};
+
 export type ProjectEvent = {
   id: string;
   tenant_id: string;
@@ -1108,6 +1150,21 @@ export function getProjectTaskGraph(
     options,
     projectPath(projectId, `/task-graph${taskGraphQuery(filters)}`),
     "project task graph",
+  );
+}
+
+export function listProjectTaskDispatchGates(
+  options: ApiClientOptions,
+  projectId: string,
+  taskId: string,
+): Promise<DispatchGateListResponse> {
+  return getJson<DispatchGateListResponse>(
+    options,
+    projectPath(
+      projectId,
+      `/tasks/${encodeURIComponent(taskId)}/dispatch-gates`,
+    ),
+    "project task dispatch gates",
   );
 }
 

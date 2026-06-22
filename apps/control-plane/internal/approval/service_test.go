@@ -277,6 +277,28 @@ func (r *memoryRepository) GetApprovalRequest(_ context.Context, tenantID, reque
 	return request, nil
 }
 
+func (r *memoryRepository) GetApprovalRequestByResource(_ context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (ApprovalRequest, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var latest ApprovalRequest
+	for _, request := range r.requests {
+		if request.TenantID != tenantID ||
+			request.ResourceType != resourceType ||
+			request.ResourceID != resourceID ||
+			request.Status != ApprovalStatusPending {
+			continue
+		}
+		if latest.ID == uuid.Nil || request.CreatedAt.After(latest.CreatedAt) {
+			latest = request
+		}
+	}
+	if latest.ID == uuid.Nil {
+		return ApprovalRequest{}, ErrApprovalNotFound
+	}
+	return latest, nil
+}
+
 func (r *memoryRepository) ResolveApprovalRequest(_ context.Context, input ResolveRequestInput, status ApprovalStatus) (ApprovalRequest, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

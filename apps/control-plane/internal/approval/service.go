@@ -69,6 +69,18 @@ func (s *Service) GetRequest(ctx context.Context, tenantID, requestID uuid.UUID)
 	return &request, nil
 }
 
+func (s *Service) GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*ApprovalRequest, error) {
+	resourceType = strings.TrimSpace(resourceType)
+	if tenantID == uuid.Nil || resourceID == uuid.Nil || resourceType == "" {
+		return nil, ErrInvalidApprovalRequest
+	}
+	request, err := s.repository.GetApprovalRequestByResource(ctx, tenantID, resourceType, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	return &request, nil
+}
+
 func (s *Service) ResolveRequest(ctx context.Context, input ResolveRequestInput) (*ApprovalDecisionRecord, error) {
 	input.Comment = strings.TrimSpace(input.Comment)
 	if input.Payload == nil {

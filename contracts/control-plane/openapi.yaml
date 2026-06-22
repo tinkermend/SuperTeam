@@ -916,6 +916,31 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates:
+    get:
+      operationId: listProjectTaskDispatchGates
+      summary: List project task dispatch gate results
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Project task dispatch gate results
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DispatchGateResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/task-graph:
     get:
       operationId: getProjectTaskGraph
@@ -4025,6 +4050,12 @@ components:
         - success
         - warning
         - error
+      # Keep existing generated Go constant names stable when new enums are added.
+      x-enum-varnames:
+        - RuntimeEventSeverityInfo
+        - RuntimeEventSeveritySuccess
+        - RuntimeEventSeverityWarning
+        - RuntimeEventSeverityError
     RuntimeEventSource:
       type: string
       enum:
@@ -5503,6 +5534,106 @@ components:
         updated_at:
           type: string
           format: date-time
+    DispatchGateResult:
+      type: object
+      required:
+        - id
+        - project_task_id
+        - selected_employee_id
+        - attempt_no
+        - dispatch_reason
+        - status
+        - checked_at
+        - checks
+        - blockers
+        - human_action_request
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        accepted_plan_revision_id:
+          type: string
+          format: uuid
+          nullable: true
+        planned_task_key:
+          type: string
+          nullable: true
+        selected_employee_id:
+          type: string
+          format: uuid
+        attempt_no:
+          type: integer
+          format: int32
+        dispatch_reason:
+          type: string
+        status:
+          type: string
+          enum:
+            - passed
+            - waiting_human
+            - blocked
+            - retry_later
+            - replan_required
+        checked_at:
+          type: string
+          format: date-time
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchGateCheck"
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchGateBlocker"
+        human_action_request:
+          type: object
+          additionalProperties: true
+        retry_after:
+          type: string
+          format: date-time
+          nullable: true
+        attempt_id:
+          type: string
+          format: uuid
+          nullable: true
+        decision_request_id:
+          type: string
+          format: uuid
+          nullable: true
+    DispatchGateCheck:
+      type: object
+      required:
+        - key
+        - status
+        - details
+      properties:
+        key:
+          type: string
+        status:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    DispatchGateBlocker:
+      type: object
+      required:
+        - key
+        - severity
+        - retryable
+        - details
+      properties:
+        key:
+          type: string
+        severity:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: true
     ProjectExecutionSummary:
       type: object
       required:

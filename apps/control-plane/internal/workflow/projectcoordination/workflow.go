@@ -189,7 +189,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 	}
 	switch planRevision.Status {
 	case project.PlanRevisionStatusAccepted:
-		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending)
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending, project.DispatchReasonRootReady)
 	case project.PlanRevisionStatusPendingReview:
 		var review DecisionRequestResult
 		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestPlanRevisionReview, RequestPlanRevisionReviewInput{
@@ -211,7 +211,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 	}
 }
 
-func decomposeAndDispatchAcceptedPlan(ctx workflow.Context, input ProjectCoordinatorInput, pending pendingPlanRevisionReview) error {
+func decomposeAndDispatchAcceptedPlan(ctx workflow.Context, input ProjectCoordinatorInput, pending pendingPlanRevisionReview, dispatchReason string) error {
 	var tasks []ProjectTaskResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).DecomposeAcceptedPlanRevision, DecomposeAcceptedPlanRevisionInput{
 		TenantID:          input.TenantID,
@@ -230,7 +230,7 @@ func decomposeAndDispatchAcceptedPlan(ctx workflow.Context, input ProjectCoordin
 	if err != nil {
 		return err
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs); err != nil {
+	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs, dispatchReason); err != nil {
 		return err
 	}
 	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", pending.OutputEventIDs)
@@ -251,11 +251,21 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 		if err != nil {
 			return err
 		}
-		return dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs)
+		return dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs, project.DispatchReasonRetry)
 	}
 	if pending, ok := pendingAcceptance[signal.DecisionRequestID.String()]; ok {
 		delete(pendingAcceptance, signal.DecisionRequestID.String())
 		return applyProjectAcceptanceDecision(ctx, input.TenantID, pending.ProjectID, signal)
+	}
+	if workflow.GetVersion(ctx, "predispatch-gate-decision-rerun", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return appendSignalObservedEvent(ctx, input, "human decision submitted")
+	}
+	readyTaskIDs, err := applyPreDispatchGateDecision(ctx, input.TenantID, input.ProjectID, signal)
+	if err != nil {
+		return err
+	}
+	if len(readyTaskIDs) > 0 {
+		return dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs, project.DispatchReasonHumanResolved)
 	}
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
@@ -283,7 +293,7 @@ func handlePlanReviewDecision(ctx workflow.Context, input ProjectCoordinatorInpu
 		if resolved.PlanFingerprint != "" {
 			pending.PlanFingerprint = resolved.PlanFingerprint
 		}
-		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending)
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending, project.DispatchReasonHumanResolved)
 	}
 	if signal.Decision == project.PlanReviewDecisionRequestChanges {
 		nextPending, err := replanAfterPlanReviewChanges(ctx, input, signal, pending, outputEventIDs)
@@ -352,7 +362,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 		OutputEventIDs:    outputEventIDs,
 	}
 	if planRevision.Status == project.PlanRevisionStatusAccepted {
-		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, next)
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, next, project.DispatchReasonHumanResolved)
 	}
 	if planRevision.Status == project.PlanRevisionStatusPendingReview {
 		var review DecisionRequestResult
@@ -392,7 +402,7 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	if err != nil {
 		return nil, err
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs); err != nil {
+	if err := dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs, project.DispatchReasonDependencyUnlocked); err != nil {
 		return nil, err
 	}
 	// No further downstream to dispatch from this completion; if the whole project is
@@ -446,6 +456,20 @@ func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInpu
 func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
 	var result ApplyFailureRecoveryDecisionResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).ApplyFailureRecoveryDecision, ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: signal.DecisionRequestID,
+		Decision:          signal.Decision,
+		Payload:           signal.Payload,
+	}).Get(ctx, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadyTaskIDs, nil
+}
+
+func applyPreDispatchGateDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
+	var result ApplyPreDispatchGateDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ApplyPreDispatchGateDecision, ApplyPreDispatchGateDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: signal.DecisionRequestID,
@@ -513,12 +537,13 @@ func resolveReadyDownstream(ctx workflow.Context, tenantID, projectID, completed
 	return taskIDs, nil
 }
 
-func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) error {
+func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID, dispatchReason string) error {
 	for _, taskID := range taskIDs {
 		if err := workflow.ExecuteActivity(ctx, (*Activities).DispatchProjectTask, DispatchProjectTaskInput{
-			TenantID:  tenantID,
-			ProjectID: projectID,
-			TaskID:    taskID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			TaskID:         taskID,
+			DispatchReason: dispatchReason,
 		}).Get(ctx, nil); err != nil {
 			if !dispatchFailureRecorded(err) {
 				return err

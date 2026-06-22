@@ -69,6 +69,27 @@ func (r *PgRepository) GetNode(ctx context.Context, nodeID string) (NodeRecord, 
 	}, nil
 }
 
+func (r *PgRepository) GetNodeByID(ctx context.Context, id uuid.UUID) (NodeRecord, error) {
+	node, err := r.q.GetRuntimeNodeByID(ctx, id)
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	return NodeRecord{
+		ID:                 node.ID,
+		TenantID:           node.TenantID,
+		NodeID:             node.NodeID,
+		Name:               node.Name,
+		SupportedProviders: node.SupportedProviders,
+		MaxSlots:           node.MaxSlots,
+		CurrentLoad:        node.CurrentLoad,
+		Status:             node.Status,
+		Metadata:           node.Metadata,
+		LastHeartbeatAt:    node.LastHeartbeatAt,
+		CreatedAt:          node.CreatedAt,
+		UpdatedAt:          node.UpdatedAt,
+	}, nil
+}
+
 func (r *PgRepository) ListNodes(ctx context.Context, params ListNodesParams) ([]NodeRecord, error) {
 	nodes, err := r.q.ListRuntimeNodes(ctx, queries.ListRuntimeNodesParams{
 		Status: params.Status,

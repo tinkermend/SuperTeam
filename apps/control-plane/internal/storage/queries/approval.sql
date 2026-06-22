@@ -34,6 +34,15 @@ SELECT * FROM approval_requests
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetApprovalRequestByResource :one
+SELECT * FROM approval_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::uuid
+  AND status = 'pending'
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ResolveApprovalRequest :one
 UPDATE approval_requests
 SET status = sqlc.arg('status')::varchar,

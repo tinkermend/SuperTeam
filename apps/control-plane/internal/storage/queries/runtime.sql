@@ -65,6 +65,11 @@ SELECT * FROM runtime_nodes
 WHERE node_id = $1
   AND archived_at IS NULL;
 
+-- name: GetRuntimeNodeByID :one
+SELECT * FROM runtime_nodes
+WHERE id = sqlc.arg('id')::uuid
+  AND archived_at IS NULL;
+
 -- name: UpdateRuntimeNodeHeartbeat :one
 UPDATE runtime_nodes
 SET last_heartbeat_at = $2,

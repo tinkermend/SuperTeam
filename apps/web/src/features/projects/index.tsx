@@ -37,6 +37,7 @@ import {
   listProjectReports,
   listProjectRouteDecisions,
   listProjects,
+  listProjectTaskDispatchGates,
   listProjectTasks,
   listProjectTransferRequests,
   patchProjectEvidence,
@@ -49,6 +50,7 @@ import {
   type ListProjectsFilters,
   type ProjectEvidenceVerificationStatus,
   type ProjectExecutionTrace,
+  type ProjectTask,
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
@@ -260,7 +262,27 @@ export function ProjectsView({
     queryFn: () =>
       getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
         demandId: latestDemandId as string,
-      }),
+    }),
+    placeholderData: keepPreviousData,
+  });
+
+  const dispatchGateTask = selectDispatchGateTask({
+    activeTasks: overviewQuery.data?.active_tasks ?? [],
+    fallbackTasks: tasksQuery.data ?? [],
+    graphTasks: taskGraphQuery.data?.nodes ?? [],
+    projectId: effectiveProjectId,
+  });
+  const dispatchGateTaskId = dispatchGateTask?.id;
+
+  const dispatchGatesQuery = useQuery({
+    enabled: Boolean(effectiveProjectId) && Boolean(dispatchGateTaskId),
+    queryKey: ["project-task-dispatch-gates", effectiveProjectId, dispatchGateTaskId],
+    queryFn: () =>
+      listProjectTaskDispatchGates(
+        apiOptions,
+        effectiveProjectId as string,
+        dispatchGateTaskId as string,
+      ),
     placeholderData: keepPreviousData,
   });
 
@@ -428,6 +450,7 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-plan-revisions", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-task-dispatch-gates", projectId] }),
       ]);
     },
   });
@@ -586,6 +609,9 @@ export function ProjectsView({
   const projectArchiveSnapshots = (archiveSnapshotsQuery.data ?? []).filter(
     (snapshot) => snapshot.project_id === effectiveProjectId,
   );
+  const projectDispatchGates = (dispatchGatesQuery.data?.items ?? []).filter(
+    (gate) => gate.project_task_id === dispatchGateTaskId,
+  );
 
   return (
     <ProjectManagementShell
@@ -622,6 +648,8 @@ export function ProjectsView({
             coordinationJobs={projectCoordinationJobs}
             decisionRequests={projectDecisionRequests}
             demands={projectDemands}
+            dispatchGateTaskTitle={dispatchGateTask?.title}
+            dispatchGates={projectDispatchGates}
             evidence={projectEvidence}
             events={projectEvents}
             executionTrace={projectExecutionTrace}
@@ -705,4 +733,32 @@ function queryErrorMessage(error: unknown) {
     return error.message;
   }
   return "执行证据链加载失败";
+}
+
+function selectDispatchGateTask({
+  activeTasks,
+  fallbackTasks,
+  graphTasks,
+  projectId,
+}: {
+  activeTasks: ProjectTask[];
+  fallbackTasks: ProjectTask[];
+  graphTasks: ProjectTask[];
+  projectId?: string;
+}) {
+  if (!projectId) {
+    return undefined;
+  }
+  const candidates = [activeTasks, fallbackTasks, graphTasks]
+    .flat()
+    .filter((task) => task.project_id === projectId);
+  return (
+    candidates.find((task) => dispatchGateCandidateStatus(task.status)) ?? candidates[0]
+  );
+}
+
+function dispatchGateCandidateStatus(status: string) {
+  return !["accepted", "approved", "cancelled", "completed", "done", "success"].includes(
+    status,
+  );
 }

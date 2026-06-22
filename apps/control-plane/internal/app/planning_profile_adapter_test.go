@@ -2,11 +2,18 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/project"
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
 
 func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
@@ -82,6 +89,220 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	}, record.ReliabilitySignals)
 }
 
+func TestPreDispatchGateAdapterMapsEmployeeRuntimeFacts(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	nodeID := "runtime-node-gate-1"
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {
+				ID:       employeeID,
+				TenantID: tenantID,
+				Name:     "数据库员工",
+				Status:   employee.DigitalEmployeeStatusActive,
+			},
+		},
+		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
+			employeeID: {
+				DigitalEmployeeID: employeeID,
+				RuntimeNodeID:     runtimeNodeID,
+				ProviderType:      "codex",
+				AgentHomeDir:      "/var/superteam/agents/db",
+				RuntimeSelector:   map[string]any{"runtime_node_id": runtimeNodeID.String(), "node_id": nodeID},
+				Status:            employee.ExecutionInstanceStatusReady,
+			},
+		},
+	}
+	runtimeReader := &fakeGateRuntimeNodeReader{
+		nodes: map[string]runtimepkg.NodeRecord{
+			nodeID: {
+				ID:              runtimeNodeID,
+				TenantID:        tenantID,
+				NodeID:          nodeID,
+				MaxSlots:        4,
+				CurrentLoad:     2,
+				Status:          "online",
+				LastHeartbeatAt: timestamptz(now.Add(-30 * time.Second)),
+			},
+		},
+	}
+	adapter := preDispatchGateAdapter{
+		employees:    reader,
+		runtimeNodes: runtimeReader,
+		now:          func() time.Time { return now },
+	}
+
+	employeeSnapshot, runtimeSnapshot, err := adapter.GetEmployeeRuntimeSnapshot(context.Background(), tenantID, projectID, employeeID)
+
+	require.NoError(t, err)
+	require.Equal(t, employeeID, employeeSnapshot.ID)
+	require.Equal(t, "active", employeeSnapshot.Status)
+	require.True(t, employeeSnapshot.PolicyAllowed)
+	require.Equal(t, int32(1), employeeSnapshot.RequiredLoadSlots)
+	require.Equal(t, int32(2), employeeSnapshot.AvailableLoadSlots)
+	require.True(t, runtimeSnapshot.NodeOnline)
+	require.True(t, runtimeSnapshot.ProviderAvailable)
+	require.True(t, runtimeSnapshot.WorkspaceReady)
+	require.True(t, runtimeSnapshot.SlotAvailable)
+	require.True(t, runtimeSnapshot.ContractVersionAccepted)
+}
+
+func TestPreDispatchGateAdapterMapsRuntimeFactsWithoutRuntimeSelector(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {
+				ID:       employeeID,
+				TenantID: tenantID,
+				Status:   employee.DigitalEmployeeStatusActive,
+			},
+		},
+		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
+			employeeID: {
+				DigitalEmployeeID: employeeID,
+				RuntimeNodeID:     runtimeNodeID,
+				ProviderType:      "codex",
+				AgentHomeDir:      "/var/superteam/agents/db",
+				Status:            employee.ExecutionInstanceStatusReady,
+			},
+		},
+	}
+	runtimeReader := &fakeGateRuntimeNodeReader{
+		nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
+			runtimeNodeID: {
+				ID:                 runtimeNodeID,
+				TenantID:           tenantID,
+				NodeID:             "runtime-node-empty-selector",
+				SupportedProviders: []byte(`["codex"]`),
+				MaxSlots:           3,
+				CurrentLoad:        1,
+				Status:             "online",
+				LastHeartbeatAt:    timestamptz(now.Add(-30 * time.Second)),
+			},
+		},
+	}
+	adapter := preDispatchGateAdapter{
+		employees:    reader,
+		runtimeNodes: runtimeReader,
+		now:          func() time.Time { return now },
+	}
+
+	employeeSnapshot, runtimeSnapshot, err := adapter.GetEmployeeRuntimeSnapshot(context.Background(), tenantID, projectID, employeeID)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(2), employeeSnapshot.AvailableLoadSlots)
+	require.True(t, runtimeSnapshot.NodeOnline)
+	require.True(t, runtimeSnapshot.ProviderAvailable)
+	require.True(t, runtimeSnapshot.SlotAvailable)
+	require.Equal(t, 1, runtimeReader.getNodeByIDCalls)
+	require.Zero(t, runtimeReader.getNodeCalls)
+}
+
+func TestPreDispatchGateAdapterReportsMissingMCPBinding(t *testing.T) {
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	adapter := preDispatchGateAdapter{
+		capabilities: fakeGateCapabilityReader{
+			servers: []capability.MCPServer{
+				{Name: "postgres.reporting", Status: "active"},
+			},
+		},
+	}
+	task := project.ProjectTask{
+		InputRequirements: map[string]any{
+			"required_capabilities": []any{"database.read"},
+			"tool_requirements":     []any{"mcp:postgres.readonly", "mcp:postgres.reporting", "external:deploy", "malformed"},
+		},
+	}
+
+	capabilitySnapshot, toolSnapshot, err := adapter.GetEmployeeCapabilitySnapshot(context.Background(), tenantID, employeeID, task)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"database.read"}, capabilitySnapshot.Required)
+	require.Empty(t, capabilitySnapshot.Matched)
+	require.Empty(t, capabilitySnapshot.HardMissing)
+	require.Equal(t, []string{"mcp:postgres.readonly"}, toolSnapshot.MissingBindings)
+	require.Equal(t, []string{"external:deploy", "malformed"}, toolSnapshot.RetryableUnavailable)
+}
+
+func TestPreDispatchGateAdapterMarksRequiredToolsRetryableOnCapabilityError(t *testing.T) {
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	adapter := preDispatchGateAdapter{
+		capabilities: fakeGateCapabilityReader{err: errors.New("capability store unavailable")},
+	}
+	task := project.ProjectTask{
+		InputRequirements: map[string]any{
+			"tool_requirements": []any{"mcp:postgres.readonly", "external:deploy"},
+		},
+	}
+
+	capabilitySnapshot, toolSnapshot, err := adapter.GetEmployeeCapabilitySnapshot(context.Background(), tenantID, employeeID, task)
+
+	require.NoError(t, err)
+	require.Empty(t, capabilitySnapshot.Required)
+	require.Equal(t, []string{"mcp:postgres.readonly", "external:deploy"}, toolSnapshot.RetryableUnavailable)
+	require.Empty(t, toolSnapshot.MissingBindings)
+}
+
+func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {
+				ID:       employeeID,
+				TenantID: tenantID,
+				Status:   employee.DigitalEmployeeStatusActive,
+			},
+		},
+		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
+			employeeID: {
+				DigitalEmployeeID: employeeID,
+				RuntimeNodeID:     runtimeNodeID,
+				ProviderType:      "codex",
+				AgentHomeDir:      "/var/superteam/agents/db",
+				Status:            employee.ExecutionInstanceStatusActive,
+			},
+		},
+	}
+	adapter := preDispatchGateAdapter{
+		employees: reader,
+		runtimeNodes: &fakeGateRuntimeNodeReader{
+			nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
+				runtimeNodeID: {
+					ID:              runtimeNodeID,
+					TenantID:        tenantID,
+					NodeID:          "runtime-node-stale",
+					MaxSlots:        2,
+					CurrentLoad:     0,
+					Status:          "online",
+					LastHeartbeatAt: timestamptz(now.Add(-runtimeNodeHeartbeatTTL - time.Second)),
+				},
+			},
+		},
+		now: func() time.Time { return now },
+	}
+
+	employeeSnapshot, runtimeSnapshot, err := adapter.GetEmployeeRuntimeSnapshot(context.Background(), tenantID, projectID, employeeID)
+
+	require.NoError(t, err)
+	require.Equal(t, employeeID, employeeSnapshot.ID)
+	require.False(t, runtimeSnapshot.NodeOnline)
+	require.True(t, runtimeSnapshot.SlotAvailable)
+	require.True(t, runtimeSnapshot.ContractVersionAccepted)
+}
+
 type fakePlanningProfileEmployeeReader struct {
 	employees map[uuid.UUID]employee.DigitalEmployeeRecord
 	configs   map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord
@@ -115,4 +336,55 @@ func (r fakePlanningProfileEmployeeReader) GetDigitalEmployeeExecutionInstanceBy
 
 func (r fakePlanningProfileEmployeeReader) GetDigitalEmployeeOperationalSignals(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error) {
 	return r.signals, nil
+}
+
+type fakeGateRuntimeNodeReader struct {
+	nodes            map[string]runtimepkg.NodeRecord
+	nodesByID        map[uuid.UUID]runtimepkg.NodeRecord
+	getNodeCalls     int
+	getNodeByIDCalls int
+	err              error
+}
+
+func (r *fakeGateRuntimeNodeReader) GetNode(_ context.Context, nodeID string) (runtimepkg.NodeRecord, error) {
+	r.getNodeCalls++
+	if r.err != nil {
+		return runtimepkg.NodeRecord{}, r.err
+	}
+	node, ok := r.nodes[nodeID]
+	if !ok {
+		return runtimepkg.NodeRecord{}, pgx.ErrNoRows
+	}
+	return node, nil
+}
+
+func (r *fakeGateRuntimeNodeReader) GetNodeByID(_ context.Context, id uuid.UUID) (runtimepkg.NodeRecord, error) {
+	r.getNodeByIDCalls++
+	if r.err != nil {
+		return runtimepkg.NodeRecord{}, r.err
+	}
+	node, ok := r.nodesByID[id]
+	if !ok {
+		return runtimepkg.NodeRecord{}, pgx.ErrNoRows
+	}
+	return node, nil
+}
+
+type fakeGateCapabilityReader struct {
+	servers []capability.MCPServer
+	err     error
+}
+
+func (r fakeGateCapabilityReader) ListEffectiveMCPServers(_ context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	if req.TenantID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
+		return nil, errors.New("invalid request")
+	}
+	return append([]capability.MCPServer(nil), r.servers...), nil
+}
+
+func timestamptz(value time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: value, Valid: true}
 }

@@ -1130,6 +1130,7 @@ INSERT INTO project_task_attempts (
     lease_token,
     lease_expires_at,
     idempotency_key,
+    dispatch_gate_result_id,
     created_event_id
 ) VALUES (
     sqlc.arg('id')::uuid,
@@ -1145,6 +1146,7 @@ INSERT INTO project_task_attempts (
     sqlc.arg('lease_token')::varchar,
     sqlc.narg('lease_expires_at')::timestamptz,
     sqlc.arg('idempotency_key')::varchar,
+    sqlc.narg('dispatch_gate_result_id')::uuid,
     sqlc.narg('created_event_id')::uuid
 ) RETURNING *;
 
@@ -1152,6 +1154,26 @@ INSERT INTO project_task_attempts (
 SELECT * FROM project_task_attempts
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
+
+-- name: SetProjectTaskAttemptDispatchGate :one
+UPDATE project_task_attempts
+SET dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND EXISTS (
+      SELECT 1
+      FROM project_tasks
+      WHERE project_tasks.tenant_id = project_task_attempts.tenant_id
+        AND project_tasks.project_id = sqlc.arg('project_id')::uuid
+        AND project_tasks.id = project_task_attempts.project_task_id
+  )
+  AND (
+      project_task_attempts.dispatch_gate_result_id IS NULL
+      OR project_task_attempts.dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid
+  )
+RETURNING *;
 
 -- name: GetProjectTaskAttemptByIdempotencyKey :one
 SELECT * FROM project_task_attempts
@@ -1433,6 +1455,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetProjectDecisionRequestByApprovalAndTask :one
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND approval_request_id = sqlc.arg('approval_request_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ResolveProjectDecisionRequest :one
 UPDATE project_decision_requests
 SET status_snapshot = sqlc.arg('status_snapshot')::varchar,
@@ -1493,3 +1524,142 @@ INSERT INTO project_task_attempt_context_updates (
     sqlc.arg('delivery_mode')::varchar,
     sqlc.narg('created_event_id')::uuid
 ) RETURNING *;
+
+-- name: CreateProjectTaskDispatchGateResult :one
+INSERT INTO project_task_dispatch_gate_results (
+    id,
+    tenant_id,
+    project_id,
+    project_task_id,
+    accepted_plan_revision_id,
+    planned_task_key,
+    selected_employee_id,
+    attempt_no,
+    dispatch_reason,
+    idempotency_key,
+    dispatch_token,
+    status,
+    checked_at,
+    checks,
+    blockers,
+    human_action_request,
+    retry_after,
+    created_event_id
+) VALUES (
+    sqlc.arg('id')::uuid,
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('project_task_id')::uuid,
+    sqlc.narg('accepted_plan_revision_id')::uuid,
+    sqlc.narg('planned_task_key')::varchar,
+    sqlc.arg('selected_employee_id')::uuid,
+    sqlc.arg('attempt_no')::integer,
+    sqlc.arg('dispatch_reason')::varchar,
+    sqlc.arg('idempotency_key')::varchar,
+    sqlc.arg('dispatch_token')::varchar,
+    sqlc.arg('status')::varchar,
+    sqlc.arg('checked_at')::timestamptz,
+    sqlc.arg('checks')::jsonb,
+    sqlc.arg('blockers')::jsonb,
+    sqlc.arg('human_action_request')::jsonb,
+    sqlc.narg('retry_after')::timestamptz,
+    sqlc.narg('created_event_id')::uuid
+)
+ON CONFLICT (tenant_id, project_task_id, idempotency_key)
+DO UPDATE SET
+    status = EXCLUDED.status,
+    checked_at = EXCLUDED.checked_at,
+    checks = EXCLUDED.checks,
+    blockers = EXCLUDED.blockers,
+    human_action_request = EXCLUDED.human_action_request,
+    retry_after = EXCLUDED.retry_after,
+    created_event_id = COALESCE(project_task_dispatch_gate_results.created_event_id, EXCLUDED.created_event_id),
+    updated_at = NOW()
+WHERE project_task_dispatch_gate_results.attempt_id IS NULL
+  AND (
+    project_task_dispatch_gate_results.decision_request_id IS NULL
+    OR (
+      project_task_dispatch_gate_results.status = 'waiting_human'
+      AND EXCLUDED.status IN ('passed', 'blocked', 'retry_later', 'replan_required')
+    )
+  )
+RETURNING *;
+
+-- name: GetProjectTaskDispatchGateResult :one
+SELECT * FROM project_task_dispatch_gate_results
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
+-- name: GetProjectTaskDispatchGateResultByKey :one
+SELECT * FROM project_task_dispatch_gate_results
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND idempotency_key = sqlc.arg('idempotency_key')::varchar;
+
+-- name: ListProjectTaskDispatchGateResults :many
+SELECT * FROM project_task_dispatch_gate_results
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit')::integer
+OFFSET sqlc.arg('offset')::integer;
+
+-- name: LinkProjectTaskDispatchGateAttempt :one
+UPDATE project_task_dispatch_gate_results
+SET attempt_id = sqlc.arg('attempt_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND (attempt_id IS NULL OR attempt_id = sqlc.arg('attempt_id')::uuid)
+RETURNING *;
+
+-- name: LinkProjectTaskDispatchGateDecisionRequest :one
+UPDATE project_task_dispatch_gate_results
+SET decision_request_id = sqlc.arg('decision_request_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = sqlc.arg('decision_request_id')::uuid)
+RETURNING *;
+
+-- name: MarkProjectTaskLatestDispatchGate :one
+UPDATE project_tasks
+SET latest_dispatch_gate_result_id = sqlc.arg('latest_dispatch_gate_result_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: MovePlannedProjectTaskToWaitingHumanForGate :one
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = sqlc.arg('waiting_reason')::varchar,
+    waiting_request_id = sqlc.narg('waiting_request_id')::uuid,
+    latest_dispatch_gate_result_id = sqlc.arg('latest_dispatch_gate_result_id')::uuid,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('planned', 'waiting_human')
+RETURNING *;
+
+-- name: SetProjectDecisionRequestDispatchGate :one
+UPDATE project_decision_requests
+SET dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid)
+RETURNING *;
