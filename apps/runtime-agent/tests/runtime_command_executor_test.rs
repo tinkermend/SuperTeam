@@ -891,7 +891,7 @@ async fn project_task_completion_writeback_includes_structured_result_contract()
 }
 
 #[tokio::test]
-async fn project_task_completion_writeback_normalizes_legacy_string_refs_in_fallback_contract() {
+async fn project_task_completion_writeback_omits_result_contract_for_legacy_summary() {
     let summary = serde_json::json!({
         "conclusion": "legacy complete",
         "evidence_refs": ["artifact:report"],
@@ -901,18 +901,10 @@ async fn project_task_completion_writeback_normalizes_legacy_string_refs_in_fall
 
     let captured = run_project_task_completion_and_capture_writeback(Some(summary)).await;
 
-    let contract = captured
-        .get("result_contract")
-        .expect("fallback result_contract is sent");
-    assert_eq!(contract["status"], "completed");
-    assert_eq!(contract["summary"], "legacy complete");
-    assert_eq!(contract["evidence_refs"][0]["type"], "evidence");
-    assert_eq!(contract["evidence_refs"][0]["ref"], "artifact:report");
-    assert_eq!(contract["artifact_refs"][0]["type"], "artifact");
-    assert_eq!(
-        contract["artifact_refs"][0]["ref"],
-        "artifact:analysis-report"
-    );
+    assert!(captured.get("result_contract").is_none());
+    assert_eq!(captured["conclusion"], "legacy complete");
+    assert_eq!(captured["evidence_refs"][0], "artifact:report");
+    assert_eq!(captured["artifact_refs"][0], "artifact:analysis-report");
 }
 
 #[tokio::test]

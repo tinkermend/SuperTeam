@@ -2772,6 +2772,9 @@ func (s *Service) ResolveProjectTaskHumanWait(ctx context.Context, req ResolvePr
 }
 
 func projectTaskRequiresAcceptance(task ProjectTask, req CompleteProjectTaskAttemptRequest) bool {
+	if req.ResultContract != nil && req.ResultContract.HumanReviewRequest != nil {
+		return true
+	}
 	if task.RequiresHumanApproval {
 		return true
 	}

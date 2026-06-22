@@ -831,6 +831,48 @@ func TestCompleteProjectTaskAttemptStoresStructuredResultContract(t *testing.T) 
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
 }
 
+func TestCompleteProjectTaskAttemptResultContractHumanReviewRoutesToWaitingHuman(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := validCompletedTaskResultContract()
+	contract.HumanReviewRequest = &TaskResultHumanReviewRequest{
+		Reason:     "需要负责人确认验收口径",
+		Prompt:     "请确认是否接受该结果",
+		Options:    []string{"accept", "request_revision"},
+		RequiredBy: "human_owner",
+		ReviewType: "acceptance",
+	}
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-contract-human-review"),
+		Conclusion:                       "legacy conclusion",
+		RequiresHumanReview:              false,
+		ResultContract:                   &contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingRequestID)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, fixture.taskID, *repo.decisionRequests[0].ProjectTaskID)
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, contract, results[0].Contract)
+	require.Equal(t, TaskResultDecisionWaitingHumanReview, results[0].Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+}
+
 func TestCompleteProjectTaskAttemptInvalidResultContractDoesNotCommitTerminalWriteback(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)

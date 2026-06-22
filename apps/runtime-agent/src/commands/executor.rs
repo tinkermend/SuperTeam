@@ -1373,7 +1373,7 @@ fn project_task_complete_writeback(
             .and_then(|value| value.get("requires_human_review"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
-        result_contract: Some(result_contract),
+        result_contract,
     }
 }
 
@@ -1543,12 +1543,12 @@ fn parsed_result_contract(
     fallback_summary: &str,
     evidence_refs: &[serde_json::Value],
     artifact_refs: &[serde_json::Value],
-) -> TaskResultContract {
+) -> Option<TaskResultContract> {
     if let Some(contract) = value
         .and_then(|value| value.get("result_contract"))
         .and_then(serde_json::Value::as_object)
     {
-        return TaskResultContract {
+        return Some(TaskResultContract {
             status: contract
                 .get("status")
                 .and_then(serde_json::Value::as_str)
@@ -1600,26 +1600,10 @@ fn parsed_result_contract(
             failure: contract.get("failure").cloned(),
             replan_request: contract.get("replan_request").cloned(),
             cancellation: contract.get("cancellation").cloned(),
-        };
+        });
     }
 
-    TaskResultContract {
-        status: "completed".to_string(),
-        summary: fallback_summary.to_string(),
-        acceptance_results: Vec::new(),
-        evidence_refs: normalized_result_refs(evidence_refs, "evidence"),
-        artifact_refs: normalized_result_refs(artifact_refs, "artifact"),
-        changes_made: Vec::new(),
-        verification: Vec::new(),
-        risks: Vec::new(),
-        follow_up_requests: Vec::new(),
-        human_review_request: None,
-        revision_request: None,
-        blocker: None,
-        failure: None,
-        replan_request: None,
-        cancellation: None,
-    }
+    None
 }
 
 fn normalized_result_refs(
