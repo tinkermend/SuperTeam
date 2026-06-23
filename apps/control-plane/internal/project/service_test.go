@@ -811,6 +811,7 @@ func TestCompleteProjectTaskAttemptStoresStructuredResultContract(t *testing.T) 
 	})
 
 	require.NoError(t, err)
+	require.Equal(t, "完成分析", summary.Conclusion)
 	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
 		TenantID:      fixture.tenantID,
 		ProjectID:     fixture.projectID,
@@ -1391,34 +1392,112 @@ func requireSingleProjectTaskResult(t *testing.T, repo *projectTaskResultMemoryR
 	return results[0]
 }
 
-func TestCompleteProjectTaskAttemptInvalidResultContractDoesNotCommitTerminalWriteback(t *testing.T) {
+func TestCompleteProjectTaskAttemptInvalidResultContractRecordsRejectedResultAndWaitsHuman(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	contract := validCompletedTaskResultContract()
 	contract.Summary = ""
-	initialTask := repo.tasks[0]
-	initialAttempt := repo.projectTaskAttempts[0]
 	initialSummaryCount := len(repo.executionSummaries)
-	initialEventCount := len(repo.events)
 	initialLedgerCount := len(repo.executionLedgerEvents)
 
-	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-invalid-result"),
 		Conclusion:                       "legacy conclusion",
 		ResultContract:                   &contract,
 	})
 
-	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
-	require.Equal(t, initialTask.Status, repo.tasks[0].Status)
-	require.Equal(t, initialTask.CurrentAttemptID, repo.tasks[0].CurrentAttemptID)
-	require.Nil(t, repo.tasks[0].LatestTaskResultID)
-	require.Equal(t, initialAttempt.Status, repo.projectTaskAttempts[0].Status)
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonClarification, *repo.tasks[0].WaitingReason)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_clarification", repo.decisionRequests[0].DecisionType)
 	require.Len(t, repo.executionSummaries, initialSummaryCount)
-	require.Len(t, repo.events, initialEventCount)
-	require.Len(t, repo.executionLedgerEvents, initialLedgerCount)
-	require.Empty(t, repo.projectTaskResults)
+	require.Len(t, repo.executionLedgerEvents, initialLedgerCount+1)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, TaskResultDecisionValidationFailed, results[0].Decision)
+	require.Equal(t, "rejected", results[0].ValidationStatus)
+	require.Contains(t, results[0].ValidationErrors, "summary_required")
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestSubmitProjectTaskAttemptResultCompletedInvalidContractRecordsRejectedResultAndWaitsHuman(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := validCompletedTaskResultContract()
+	contract.Summary = ""
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-completed-invalid"),
+		ResultContract:                   contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonClarification, *repo.tasks[0].WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_clarification", repo.decisionRequests[0].DecisionType)
+	require.Empty(t, repo.executionSummaries)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+	require.Equal(t, "rejected", result.ValidationStatus)
+	require.Contains(t, result.ValidationErrors, "summary_required")
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
+}
+
+func TestSubmitProjectTaskAttemptResultInvalidRevisionContractRecordsRejectedResultAndWaitsHuman(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	contract := TaskResultContract{
+		Status:          TaskResultStatusRevisionNeeded,
+		Summary:         "需要修订但缺少原因",
+		RevisionRequest: &TaskResultRevisionRequest{},
+	}
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-revision-invalid"),
+		ResultContract:                   contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, "需要修订但缺少原因", summary.Conclusion)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].WaitingReason)
+	require.Equal(t, HumanWaitReasonClarification, *repo.tasks[0].WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_clarification", repo.decisionRequests[0].DecisionType)
+	require.Empty(t, repo.executionSummaries)
+
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+	require.Equal(t, "rejected", result.ValidationStatus)
+	require.Contains(t, result.ValidationErrors, "revision_reason_required")
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, result.ID, *repo.tasks[0].LatestTaskResultID)
 }
 
 func TestCompleteProjectTaskAttemptResultLinkFailureRollsBackTerminalWriteback(t *testing.T) {

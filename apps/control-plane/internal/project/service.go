@@ -1957,7 +1957,7 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		})
 	}
 	req.Conclusion = strings.TrimSpace(req.Conclusion)
-	if req.Conclusion == "" {
+	if req.ResultContract == nil && req.Conclusion == "" {
 		return nil, ErrInvalidProject
 	}
 	task, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
@@ -1969,6 +1969,20 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, err
 	}
 	req.DigitalEmployeeID = digitalEmployeeID
+	resultContract := req.ResultContract
+	if resultContract == nil {
+		legacyContract := TaskResultContractFromLegacyCompletion(req)
+		resultContract = &legacyContract
+	} else {
+		req.Conclusion = strings.TrimSpace(resultContract.Summary)
+	}
+	validation := ValidateTaskResultContract(task, *resultContract)
+	if !validation.Valid {
+		return s.recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract, validation)
+	}
+	if req.Conclusion == "" {
+		return nil, ErrInvalidProject
+	}
 	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
 	if err != nil {
 		return nil, err
@@ -2008,15 +2022,6 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		}, contract); err != nil {
 			return nil, err
 		}
-		return nil, ErrInvalidProjectEvidence
-	}
-	resultContract := req.ResultContract
-	if resultContract == nil {
-		legacyContract := TaskResultContractFromLegacyCompletion(req)
-		resultContract = &legacyContract
-	}
-	validation := ValidateTaskResultContract(task, *resultContract)
-	if !validation.Valid {
 		return nil, ErrInvalidProjectEvidence
 	}
 	recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *resultContract, validation)
@@ -2139,6 +2144,10 @@ func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req Submit
 	if err != nil {
 		return nil, err
 	}
+	validation := ValidateTaskResultContract(task, req.ResultContract)
+	if !validation.Valid {
+		return s.recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx, task, req.ProjectTaskAttemptRuntimeRequest, req.ResultContract, validation)
+	}
 	result, err := s.recordProjectTaskAttemptResult(ctx, task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, req.ResultContract)
 	if err != nil {
 		return nil, err
@@ -2167,6 +2176,22 @@ func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task Proje
 		return result, ErrInvalidProjectEvidence
 	}
 	return result, nil
+}
+
+func (s *Service) recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract, validation TaskResultValidation) (*ExecutionSummary, error) {
+	result, err := s.recordProjectTaskAttemptResult(ctx, task, runtimeReq, nil, nil, contract)
+	if err != nil && !errors.Is(err, ErrInvalidProjectEvidence) {
+		return nil, err
+	}
+	if err := s.routeRejectedProjectTaskAttemptResult(ctx, runtimeReq, result, contract, validation); err != nil {
+		return nil, err
+	}
+	return &ExecutionSummary{
+		TenantID:      runtimeReq.TenantID,
+		ProjectID:     task.ProjectID,
+		ProjectTaskID: runtimeReq.ProjectTaskID,
+		Conclusion:    taskResultValidationFailedSummary(contract, validation),
+	}, nil
 }
 
 func (s *Service) routeNonCompletedProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest, result ProjectTaskResult) error {
@@ -2223,6 +2248,42 @@ func (s *Service) routeNonCompletedProjectTaskAttemptResult(ctx context.Context,
 	default:
 		return ErrInvalidProjectEvidence
 	}
+}
+
+func (s *Service) routeRejectedProjectTaskAttemptResult(ctx context.Context, runtimeReq ProjectTaskAttemptRuntimeRequest, result ProjectTaskResult, contract TaskResultContract, validation TaskResultValidation) error {
+	_, err := s.WaitHumanProjectTaskAttempt(ctx, WaitHumanProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		Reason:                           HumanWaitReasonClarification,
+		Summary:                          taskResultValidationFailedSummary(contract, validation),
+		MissingContextRefs:               taskResultValidationHumanWaitContextRefs(result, contract, validation),
+		SuggestedResolutionOptions:       taskResultHumanWaitResolutionOptions(TaskResultDecisionValidationFailed),
+		ResultContract:                   &contract,
+	})
+	return err
+}
+
+func taskResultValidationFailedSummary(contract TaskResultContract, validation TaskResultValidation) string {
+	if summary := strings.TrimSpace(contract.Summary); summary != "" {
+		return summary
+	}
+	if len(validation.Errors) > 0 {
+		return "Task result failed validation: " + strings.Join(taskResultValidationErrors(validation.Errors), ", ")
+	}
+	return "Task result failed validation"
+}
+
+func taskResultValidationHumanWaitContextRefs(result ProjectTaskResult, contract TaskResultContract, validation TaskResultValidation) []any {
+	refs := taskResultHumanWaitContextRefs(result, contract)
+	if len(refs) == 0 {
+		return refs
+	}
+	context, ok := refs[0].(map[string]any)
+	if !ok {
+		return refs
+	}
+	context["validation_status"] = result.ValidationStatus
+	context["validation_errors"] = taskResultValidationErrors(validation.Errors)
+	return refs
 }
 
 func humanWaitReasonForTaskResultRevision(contract TaskResultContract) string {

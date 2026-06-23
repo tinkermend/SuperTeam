@@ -54,6 +54,7 @@ enum ProviderTerminalWritebackAction {
 #[derive(Debug, Default)]
 struct ProviderTerminalWritebackState {
     pending_completion: Option<ProviderTerminalCompletion>,
+    text_summary: String,
     failed: bool,
 }
 
@@ -64,10 +65,25 @@ impl ProviderTerminalWritebackState {
         provider_session_id: Option<&str>,
     ) -> Option<ProviderTerminalWritebackAction> {
         match event {
+            ProviderEvent::TextDelta { text } => {
+                if !self.failed {
+                    self.text_summary.push_str(text);
+                }
+                None
+            }
             ProviderEvent::TurnCompleted { summary } => {
                 if !self.failed {
+                    let summary = summary
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                        .or_else(|| {
+                            let text = self.text_summary.trim();
+                            (!text.is_empty()).then(|| text.to_string())
+                        });
                     self.pending_completion = Some(ProviderTerminalCompletion {
-                        summary: summary.clone(),
+                        summary,
                         provider_session_id: provider_session_id.map(ToString::to_string),
                     });
                 }
@@ -86,7 +102,18 @@ impl ProviderTerminalWritebackState {
         if self.failed {
             None
         } else {
-            self.pending_completion
+            let text_summary = self.text_summary.trim();
+            self.pending_completion.map(|mut completion| {
+                let has_summary = completion
+                    .summary
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|value| !value.is_empty());
+                if !has_summary && !text_summary.is_empty() {
+                    completion.summary = Some(text_summary.to_string());
+                }
+                completion
+            })
         }
     }
 }
@@ -1559,11 +1586,7 @@ fn parsed_result_contract(
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or(fallback_summary)
                 .to_string(),
-            acceptance_results: contract
-                .get("acceptance_results")
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
+            acceptance_results: normalized_acceptance_results(contract.get("acceptance_results")),
             evidence_refs: contract
                 .get("evidence_refs")
                 .and_then(serde_json::Value::as_array)
@@ -1604,6 +1627,51 @@ fn parsed_result_contract(
     }
 
     None
+}
+
+fn normalized_acceptance_results(value: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|items| items.iter().map(normalized_acceptance_result).collect())
+        .unwrap_or_default()
+}
+
+fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    let mut normalized = object.clone();
+    if let Some(refs) = object
+        .get("evidence_refs")
+        .and_then(serde_json::Value::as_array)
+    {
+        normalized.insert(
+            "evidence_refs".to_string(),
+            serde_json::Value::Array(
+                refs.iter()
+                    .filter_map(result_ref_string)
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    serde_json::Value::Object(normalized)
+}
+
+fn result_ref_string(value: &serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .and_then(|text| trimmed_optional(Some(text)))
+        .or_else(|| {
+            value.as_object().and_then(|object| {
+                ["ref", "uri", "url", "id"].iter().find_map(|key| {
+                    object
+                        .get(*key)
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|text| trimmed_optional(Some(text)))
+                })
+            })
+        })
 }
 
 fn normalized_result_refs(
@@ -1755,8 +1823,12 @@ async fn drain_provider_events(
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
+    let mut fallback_text_summary = String::new();
     while let Some(event) = events.next().await {
         let event = event?;
+        if let ProviderEvent::TextDelta { text } = &event {
+            fallback_text_summary.push_str(text);
+        }
         if let ProviderEvent::SessionStarted { session_id, .. } = &event {
             if latest_provider_session_id.as_deref() == Some(session_id.as_str()) {
                 continue;
@@ -1791,9 +1863,18 @@ async fn drain_provider_events(
             }
         }
     }
-    if let (Some(writeback), Some(completion)) =
+    if let (Some(writeback), Some(mut completion)) =
         (&writeback, terminal_writeback.finish_successful_stream())
     {
+        let has_summary = completion
+            .summary
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        let fallback_text = fallback_text_summary.trim();
+        if !has_summary && !fallback_text.is_empty() {
+            completion.summary = Some(fallback_text.to_string());
+        }
         writeback
             .complete(completion.summary, completion.provider_session_id)
             .await?;
@@ -1936,6 +2017,70 @@ mod tests {
         assert_eq!(
             completion.provider_session_id.as_deref(),
             Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn provider_terminal_writeback_uses_text_delta_when_completion_summary_empty() {
+        let mut state = ProviderTerminalWritebackState::default();
+
+        assert!(
+            state
+                .observe_event(
+                    &ProviderEvent::TextDelta {
+                        text: "{\"summary\":\"provider final answer\"}".to_string(),
+                    },
+                    Some("provider-session-1"),
+                )
+                .is_none()
+        );
+        assert!(
+            state
+                .observe_event(
+                    &ProviderEvent::TurnCompleted { summary: None },
+                    Some("provider-session-1")
+                )
+                .is_none()
+        );
+
+        let completion = state
+            .finish_successful_stream()
+            .expect("completion should use buffered provider text");
+        assert_eq!(
+            completion.summary.as_deref(),
+            Some("{\"summary\":\"provider final answer\"}")
+        );
+        assert_eq!(
+            completion.provider_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_acceptance_evidence_refs_to_strings() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "acceptance_results": [
+                    {
+                        "criterion": "return structured result",
+                        "status": "passed",
+                        "evidence_refs": [
+                            {"type": "runtime_result_payload", "ref": "final_answer.raw_json_object"},
+                            {"id": "evidence-2"}
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract =
+            parsed_result_contract(Some(&parsed), "done", &[], &[]).expect("contract should parse");
+
+        assert_eq!(
+            contract.acceptance_results[0]["evidence_refs"],
+            json!(["final_answer.raw_json_object", "evidence-2"])
         );
     }
 
