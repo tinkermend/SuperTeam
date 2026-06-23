@@ -117,6 +117,26 @@ func TestRuntimeCommandWritebackIdentityMismatchMapsTo403(t *testing.T) {
 	}
 }
 
+func TestRuntimeCommandWritebackRouterFallsBackWhenRunWritebackDoesNotOwnCommand(t *testing.T) {
+	primary := &fakeRuntimeCommandWritebackService{err: employee.ErrNotFound}
+	fallback := &fakeRuntimeCommandWritebackService{}
+	handler := NewRuntimeCommandWritebackHandler(NewRuntimeCommandWritebackRouter(primary, fallback))
+	req := runtimeCommandWritebackRequest(http.MethodPost, "/api/v1/runtime/commands/cmd-install/fail", "cmd-install", runtimeCommandWritebackTenantID, `{"status":"failed","error_message":"install failed"}`)
+	resp := httptest.NewRecorder()
+
+	handler.Fail(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected fallback writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(primary.calls) != 1 || primary.calls[0].method != "fail" {
+		t.Fatalf("expected primary fail attempt, got %#v", primary.calls)
+	}
+	if len(fallback.calls) != 1 || fallback.calls[0].method != "fail" {
+		t.Fatalf("expected fallback fail attempt, got %#v", fallback.calls)
+	}
+}
+
 func TestRuntimeCommandWritebackInvalidJSONMapsTo400(t *testing.T) {
 	service := &fakeRuntimeCommandWritebackService{}
 	handler := NewRuntimeCommandWritebackHandler(service)

@@ -23,6 +23,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -519,7 +520,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
-	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
+	genericCommandWritebackService := runtimecommand.NewWritebackService(runRepository)
+	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(handlers.NewRuntimeCommandWritebackRouter(runWritebackService, genericCommandWritebackService))
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
 	inboxHandler := inbox.NewHandler(inboxService)
 	auditHandler := audit.NewHandler(auditService)
