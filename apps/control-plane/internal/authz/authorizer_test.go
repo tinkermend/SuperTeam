@@ -279,6 +279,67 @@ func TestDBAuthorizerDeniesTenantAccessWithMismatchedTenantResourceID(t *testing
 	}
 }
 
+func TestDBAuthorizerAllowsSkillInstallForTenantOwnerOrAdmin(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	skillID := uuid.MustParse("00000000-0000-4000-8000-000000000101")
+	for _, role := range []string{RoleOwner, RoleAdmin} {
+		t.Run(role, func(t *testing.T) {
+			userID := uuid.New()
+			repo := &memoryRepository{
+				tenantRoles: map[string]string{
+					tenantID.String() + ":user:" + userID.String(): role,
+				},
+			}
+			authorizer := NewDBAuthorizer(repo)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   ActionSkillInstall,
+				Resource: ResourceRef{Type: ResourceSkill, ID: skillID.String()},
+				TenantID: tenantID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !decision.Allowed {
+				t.Fatalf("expected skill install to be allowed for %s, got %#v", role, decision)
+			}
+			if decision.MatchedRule != "tenant."+role {
+				t.Fatalf("expected tenant role rule, got %q", decision.MatchedRule)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerDeniesSkillInstallForInvalidSkillResource(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.New()
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionSkillInstall,
+		Resource: ResourceRef{Type: ResourceTeam, ID: uuid.NewString()},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected invalid skill resource to be denied, got %#v", decision)
+	}
+	if decision.Reason != ReasonInvalidResource {
+		t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
+	}
+}
+
 func TestDBAuthorizerRuntimeScopeManageRequiresTenantOwnerOrAdmin(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 

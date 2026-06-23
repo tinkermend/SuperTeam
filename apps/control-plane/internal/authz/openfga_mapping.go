@@ -83,7 +83,7 @@ func openFGARelationForAction(action string) (string, bool) {
 	case ActionRuntimeScopeManage, ActionAuthzCenterRead, ActionUserProjectTeamScopeRead, ActionUserProjectTeamScopeManage, ActionEmployeeCreate, ActionTeamCreate,
 		ActionTeamUpdate, ActionTeamDisable, ActionTeamArchive, ActionTeamRestore, ActionTeamMemberAdd, ActionTeamMemberRemove, ActionTeamMemberChangeRole,
 		ActionTeamMemberRequestPrivilegedRole, ActionTeamCapabilityBind, ActionTeamCapabilityUnbind, ActionTeamCapabilityManage, ActionTeamAuditRead,
-		ActionTeamLendingPolicyEdit, ActionTeamLendingRequestDecide:
+		ActionTeamLendingPolicyEdit, ActionTeamLendingRequestDecide, ActionSkillInstall:
 		return OpenFGARelationAdmin, true
 	case ActionTeamMemberApprovePrivilegedRole:
 		return OpenFGARelationOwner, true
@@ -123,6 +123,11 @@ func openFGAObjectForRequest(req CheckRequest) (string, bool) {
 			return "", false
 		}
 		return openFGAObject(ResourceTeam, req.Resource.ID), true
+	case ResourceSkill:
+		if req.Resource.ID == "" {
+			return "", false
+		}
+		return openFGAObject(ResourceSkill, req.Resource.ID), true
 	case ResourceConsole:
 		if req.TenantID == uuid.Nil {
 			return "", false

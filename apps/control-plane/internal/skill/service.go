@@ -41,13 +41,29 @@ type ObjectStore interface {
 	DeleteObject(ctx context.Context, key string) error
 }
 
+type Installer interface {
+	InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error)
+}
+
 type Service struct {
 	repository  Repository
 	objectStore ObjectStore
+	installer   Installer
 }
 
 func NewService(repository Repository, objectStore ObjectStore) *Service {
 	return &Service{repository: repository, objectStore: objectStore}
+}
+
+func (s *Service) SetInstallService(installer Installer) {
+	s.installer = installer
+}
+
+func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error) {
+	if s == nil || s.installer == nil {
+		return InstallSkillResult{}, fmt.Errorf("%w: skill install service is not configured", ErrInvalidInput)
+	}
+	return s.installer.InstallSkill(ctx, req)
 }
 
 func (s *Service) ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error) {

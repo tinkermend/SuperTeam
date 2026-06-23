@@ -346,6 +346,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
 	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	skillInstallService := skill.NewInstallService(skillRepository, runtimeCommands, skill.InstallServiceOptions{})
+	skillService.SetInstallService(skillInstallService)
 	runtimeService.SetRequiredToolsResolver(skillService)
 	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands, skillService)
 	if err != nil {

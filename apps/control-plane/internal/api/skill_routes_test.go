@@ -223,6 +223,44 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	}
 	assertLastSkillAuthzCheck(t, authorizer, authz.ActionEmployeeConfigCreate, authz.ResourceEmployee, employeeID.String(), expectedTenantID, nil)
 
+	installSkillID := uuid.New()
+	installEmployeeID := uuid.New()
+	installReq := httptest.NewRequest(http.MethodPost, "/api/v1/skills/"+installSkillID.String()+"/install", strings.NewReader(`{"target_scope":"employee","digital_employee_id":"`+installEmployeeID.String()+`","timeout_sec":7}`))
+	installReq.Header.Set("Content-Type", "application/json")
+	installReq.AddCookie(cookie)
+	installResp := httptest.NewRecorder()
+	server.ServeHTTP(installResp, installReq)
+	if installResp.Code != http.StatusCreated {
+		t.Fatalf("expected install skill to succeed, got %d: %s", installResp.Code, installResp.Body.String())
+	}
+	if service.installReq.TenantID != expectedTenantID || service.installReq.SkillID != installSkillID || service.installReq.DigitalEmployeeID != installEmployeeID || service.installReq.ActorUserID != user.ID || service.installReq.Timeout != 7_000_000_000 {
+		t.Fatalf("expected install skill request, got %#v", service.installReq)
+	}
+	assertLastSkillAuthzCheck(t, authorizer, authz.ActionSkillInstall, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
+
+	deniedService := &routeSkillService{}
+	deniedAuthorizer := &routeAuthorizer{allowed: true, denyActions: map[string]bool{authz.ActionSkillInstall: true}}
+	deniedServer := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		deniedAuthorizer,
+	)
+	deniedServer.SetSkillHandler(skill.NewHandler(deniedService))
+	deniedReq := httptest.NewRequest(http.MethodPost, "/api/v1/skills/"+installSkillID.String()+"/install", strings.NewReader(`{"target_scope":"employee","digital_employee_id":"`+installEmployeeID.String()+`"}`))
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedReq.AddCookie(cookie)
+	deniedResp := httptest.NewRecorder()
+	deniedServer.ServeHTTP(deniedResp, deniedReq)
+	if deniedResp.Code != http.StatusForbidden {
+		t.Fatalf("expected denied install to return 403, got %d: %s", deniedResp.Code, deniedResp.Body.String())
+	}
+	if deniedService.installCalled {
+		t.Fatal("expected denied install route not to call service")
+	}
+	assertLastSkillAuthzCheck(t, deniedAuthorizer, authz.ActionSkillInstall, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
+
 	employeeUnbindReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/skills/"+bindSkillID.String(), nil)
 	employeeUnbindReq.AddCookie(cookie)
 	employeeUnbindResp := httptest.NewRecorder()
@@ -290,6 +328,8 @@ type routeSkillService struct {
 	effectiveListReq  skill.ListEffectiveEmployeeSkillsRequest
 	employeeBindReq   skill.BindEmployeeSkillRequest
 	employeeUnbindReq skill.BindEmployeeSkillRequest
+	installReq        skill.InstallSkillRequest
+	installCalled     bool
 	teamBindErr       error
 	employeeBindErr   error
 	skillID           uuid.UUID
@@ -399,6 +439,29 @@ func (s *routeSkillService) ListEffectiveEmployeeSkills(_ context.Context, req s
 			Inherited:   false,
 			ReadOnly:    false,
 		},
+	}, nil
+}
+
+func (s *routeSkillService) InstallSkill(_ context.Context, req skill.InstallSkillRequest) (skill.InstallSkillResult, error) {
+	s.installCalled = true
+	s.installReq = req
+	return skill.InstallSkillResult{
+		SkillID:           req.SkillID,
+		TargetScope:       req.TargetScope,
+		TeamID:            req.TeamID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		InstalledCount:    1,
+		Installations: []skill.SkillInstallation{{
+			ID:                uuid.New(),
+			TenantID:          req.TenantID,
+			SkillID:           req.SkillID,
+			TargetScope:       req.TargetScope,
+			TeamID:            req.TeamID,
+			DigitalEmployeeID: req.DigitalEmployeeID,
+			ProviderType:      "codex",
+			InstalledPath:     "/home/agent/.agents/skills/diagnose",
+			InstalledBy:       req.ActorUserID,
+		}},
 	}, nil
 }
 

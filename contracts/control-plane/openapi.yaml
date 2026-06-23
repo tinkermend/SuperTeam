@@ -3236,6 +3236,37 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/skills/{skillId}/install:
+    post:
+      operationId: installSkill
+      summary: Install a skill onto team or employee Runtime targets
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstallSkillRequest"
+      responses:
+        "201":
+          description: Skill installation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstallSkillResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Skill installation failed before all targets completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstallSkillErrorResponse"
 components:
   parameters:
     Limit:
@@ -7691,6 +7722,160 @@ components:
           type: boolean
         read_only:
           type: boolean
+    InstallSkillRequest:
+      type: object
+      required:
+        - target_scope
+      properties:
+        target_scope:
+          type: string
+          enum:
+            - team
+            - employee
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        timeout_sec:
+          type: integer
+          format: int32
+          minimum: 0
+    InstallSkillResponse:
+      type: object
+      required:
+        - skill_id
+        - target_scope
+        - installed_count
+        - installations
+      properties:
+        skill_id:
+          type: string
+          format: uuid
+        target_scope:
+          type: string
+          enum:
+            - team
+            - employee
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        installed_count:
+          type: integer
+          format: int32
+        installations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillInstallation"
+        blocked_targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillInstallBlockedTarget"
+    SkillInstallation:
+      type: object
+      required:
+        - tenant_id
+        - skill_id
+        - target_scope
+        - provider_type
+        - installed_path
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        skill_id:
+          type: string
+          format: uuid
+        target_scope:
+          type: string
+          enum:
+            - team
+            - employee
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        employee_name:
+          type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        provider_type:
+          type: string
+          enum:
+            - opencode
+            - codex
+            - claude-code
+        installed_path:
+          type: string
+        archive_checksum_sha256:
+          type: string
+        installed_by:
+          type: string
+          format: uuid
+        installed_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    SkillInstallBlockedTarget:
+      type: object
+      required:
+        - reason_code
+        - message
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        employee_name:
+          type: string
+        provider_type:
+          type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        reason_code:
+          type: string
+        message:
+          type: string
+    InstallSkillErrorResponse:
+      type: object
+      required:
+        - error
+        - phase
+        - message
+        - blocked_targets
+      properties:
+        error:
+          type: string
+          enum:
+            - skill_install_failed
+        phase:
+          type: string
+          enum:
+            - preflight
+            - runtime_install
+            - timeout
+        message:
+          type: string
+        blocked_targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillInstallBlockedTarget"
     CredentialType:
       type: string
       enum:

@@ -633,6 +633,78 @@ func (e InboxItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for InstallSkillErrorResponseError.
+const (
+	SkillInstallFailed InstallSkillErrorResponseError = "skill_install_failed"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillErrorResponseError enum.
+func (e InstallSkillErrorResponseError) Valid() bool {
+	switch e {
+	case SkillInstallFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstallSkillErrorResponsePhase.
+const (
+	Preflight      InstallSkillErrorResponsePhase = "preflight"
+	RuntimeInstall InstallSkillErrorResponsePhase = "runtime_install"
+	Timeout        InstallSkillErrorResponsePhase = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillErrorResponsePhase enum.
+func (e InstallSkillErrorResponsePhase) Valid() bool {
+	switch e {
+	case Preflight:
+		return true
+	case RuntimeInstall:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstallSkillRequestTargetScope.
+const (
+	InstallSkillRequestTargetScopeEmployee InstallSkillRequestTargetScope = "employee"
+	InstallSkillRequestTargetScopeTeam     InstallSkillRequestTargetScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillRequestTargetScope enum.
+func (e InstallSkillRequestTargetScope) Valid() bool {
+	switch e {
+	case InstallSkillRequestTargetScopeEmployee:
+		return true
+	case InstallSkillRequestTargetScopeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstallSkillResponseTargetScope.
+const (
+	InstallSkillResponseTargetScopeEmployee InstallSkillResponseTargetScope = "employee"
+	InstallSkillResponseTargetScopeTeam     InstallSkillResponseTargetScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillResponseTargetScope enum.
+func (e InstallSkillResponseTargetScope) Valid() bool {
+	switch e {
+	case InstallSkillResponseTargetScopeEmployee:
+		return true
+	case InstallSkillResponseTargetScopeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MCPServerSourceScope.
 const (
 	MCPServerSourceScopeEmployee MCPServerSourceScope = "employee"
@@ -1119,6 +1191,45 @@ func (e RuntimeNodeStatus) Valid() bool {
 	case Offline:
 		return true
 	case Online:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillInstallationProviderType.
+const (
+	ClaudeCode SkillInstallationProviderType = "claude-code"
+	Codex      SkillInstallationProviderType = "codex"
+	Opencode   SkillInstallationProviderType = "opencode"
+)
+
+// Valid indicates whether the value is a known member of the SkillInstallationProviderType enum.
+func (e SkillInstallationProviderType) Valid() bool {
+	switch e {
+	case ClaudeCode:
+		return true
+	case Codex:
+		return true
+	case Opencode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillInstallationTargetScope.
+const (
+	SkillInstallationTargetScopeEmployee SkillInstallationTargetScope = "employee"
+	SkillInstallationTargetScopeTeam     SkillInstallationTargetScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the SkillInstallationTargetScope enum.
+func (e SkillInstallationTargetScope) Valid() bool {
+	switch e {
+	case SkillInstallationTargetScopeEmployee:
+		return true
+	case SkillInstallationTargetScopeTeam:
 		return true
 	default:
 		return false
@@ -2574,6 +2685,45 @@ type InboxSourceActionResult struct {
 	Status     string             `json:"status"`
 }
 
+// InstallSkillErrorResponse defines model for InstallSkillErrorResponse.
+type InstallSkillErrorResponse struct {
+	BlockedTargets []SkillInstallBlockedTarget    `json:"blocked_targets"`
+	Error          InstallSkillErrorResponseError `json:"error"`
+	Message        string                         `json:"message"`
+	Phase          InstallSkillErrorResponsePhase `json:"phase"`
+}
+
+// InstallSkillErrorResponseError defines model for InstallSkillErrorResponse.Error.
+type InstallSkillErrorResponseError string
+
+// InstallSkillErrorResponsePhase defines model for InstallSkillErrorResponse.Phase.
+type InstallSkillErrorResponsePhase string
+
+// InstallSkillRequest defines model for InstallSkillRequest.
+type InstallSkillRequest struct {
+	DigitalEmployeeId *openapi_types.UUID            `json:"digital_employee_id,omitempty"`
+	TargetScope       InstallSkillRequestTargetScope `json:"target_scope"`
+	TeamId            *openapi_types.UUID            `json:"team_id,omitempty"`
+	TimeoutSec        *int32                         `json:"timeout_sec,omitempty"`
+}
+
+// InstallSkillRequestTargetScope defines model for InstallSkillRequest.TargetScope.
+type InstallSkillRequestTargetScope string
+
+// InstallSkillResponse defines model for InstallSkillResponse.
+type InstallSkillResponse struct {
+	BlockedTargets    *[]SkillInstallBlockedTarget    `json:"blocked_targets,omitempty"`
+	DigitalEmployeeId *openapi_types.UUID             `json:"digital_employee_id,omitempty"`
+	Installations     []SkillInstallation             `json:"installations"`
+	InstalledCount    int32                           `json:"installed_count"`
+	SkillId           openapi_types.UUID              `json:"skill_id"`
+	TargetScope       InstallSkillResponseTargetScope `json:"target_scope"`
+	TeamId            *openapi_types.UUID             `json:"team_id,omitempty"`
+}
+
+// InstallSkillResponseTargetScope defines model for InstallSkillResponse.TargetScope.
+type InstallSkillResponseTargetScope string
+
 // MCPServer defines model for MCPServer.
 type MCPServer struct {
 	CreatedAt          *time.Time           `json:"created_at,omitempty"`
@@ -3610,6 +3760,42 @@ type SkillAgentBinding struct {
 	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
 	TeamName  *string             `json:"team_name,omitempty"`
 }
+
+// SkillInstallBlockedTarget defines model for SkillInstallBlockedTarget.
+type SkillInstallBlockedTarget struct {
+	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
+	EmployeeName      *string             `json:"employee_name,omitempty"`
+	Message           string              `json:"message"`
+	NodeId            *string             `json:"node_id,omitempty"`
+	ProviderType      *string             `json:"provider_type,omitempty"`
+	ReasonCode        string              `json:"reason_code"`
+	RuntimeNodeId     *openapi_types.UUID `json:"runtime_node_id,omitempty"`
+}
+
+// SkillInstallation defines model for SkillInstallation.
+type SkillInstallation struct {
+	ArchiveChecksumSha256 *string                       `json:"archive_checksum_sha256,omitempty"`
+	DigitalEmployeeId     *openapi_types.UUID           `json:"digital_employee_id,omitempty"`
+	EmployeeName          *string                       `json:"employee_name,omitempty"`
+	Id                    *openapi_types.UUID           `json:"id,omitempty"`
+	InstalledAt           *time.Time                    `json:"installed_at,omitempty"`
+	InstalledBy           *openapi_types.UUID           `json:"installed_by,omitempty"`
+	InstalledPath         string                        `json:"installed_path"`
+	Metadata              *map[string]interface{}       `json:"metadata,omitempty"`
+	NodeId                *string                       `json:"node_id,omitempty"`
+	ProviderType          SkillInstallationProviderType `json:"provider_type"`
+	RuntimeNodeId         *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
+	SkillId               openapi_types.UUID            `json:"skill_id"`
+	TargetScope           SkillInstallationTargetScope  `json:"target_scope"`
+	TeamId                *openapi_types.UUID           `json:"team_id,omitempty"`
+	TenantId              openapi_types.UUID            `json:"tenant_id"`
+}
+
+// SkillInstallationProviderType defines model for SkillInstallation.ProviderType.
+type SkillInstallationProviderType string
+
+// SkillInstallationTargetScope defines model for SkillInstallation.TargetScope.
+type SkillInstallationTargetScope string
 
 // SkillRuntimeDependencies defines model for SkillRuntimeDependencies.
 type SkillRuntimeDependencies struct {
@@ -4735,6 +4921,9 @@ type FailRuntimeTaskJSONRequestBody = FailTaskRequest
 // UploadSkillMultipartRequestBody defines body for UploadSkill for multipart/form-data ContentType.
 type UploadSkillMultipartRequestBody = UploadSkillRequest
 
+// InstallSkillJSONRequestBody defines body for InstallSkill for application/json ContentType.
+type InstallSkillJSONRequestBody = InstallSkillRequest
+
 // CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
 type CreateTaskJSONRequestBody = CreateTaskRequest
 
@@ -5589,6 +5778,9 @@ type ServerInterface interface {
 	// Get a skill with archive metadata and bindings
 	// (GET /api/v1/skills/{skillId})
 	GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// Install a skill onto team or employee Runtime targets
+	// (POST /api/v1/skills/{skillId}/install)
+	InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
 	// List tasks
 	// (GET /api/v1/tasks)
 	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
@@ -6426,6 +6618,12 @@ func (_ Unimplemented) DeleteSkill(w http.ResponseWriter, r *http.Request, skill
 // Get a skill with archive metadata and bindings
 // (GET /api/v1/skills/{skillId})
 func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Install a skill onto team or employee Runtime targets
+// (POST /api/v1/skills/{skillId}/install)
+func (_ Unimplemented) InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11362,6 +11560,32 @@ func (siw *ServerInterfaceWrapper) GetSkill(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// InstallSkill operation middleware
+func (siw *ServerInterfaceWrapper) InstallSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InstallSkill(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTasks operation middleware
 func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
 
@@ -13394,6 +13618,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills/{skillId}", wrapper.GetSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/skills/{skillId}/install", wrapper.InstallSkill)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)

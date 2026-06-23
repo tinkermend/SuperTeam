@@ -51,9 +51,10 @@ const (
 	ActionCredentialCreate = "credential.create"
 	ActionCredentialDelete = "credential.delete"
 
-	ActionSkillRead   = "skill.read"
-	ActionSkillUpload = "skill.upload"
-	ActionSkillDelete = "skill.delete"
+	ActionSkillRead    = "skill.read"
+	ActionSkillUpload  = "skill.upload"
+	ActionSkillDelete  = "skill.delete"
+	ActionSkillInstall = "skill.install"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"
