@@ -3267,6 +3267,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstallSkillErrorResponse"
+  /api/v1/skills/{skillId}/installations:
+    get:
+      operationId: listSkillInstallations
+      summary: List skill installation records
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "200":
+          description: Skill installation records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SkillInstallation"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     Limit:

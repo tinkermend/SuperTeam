@@ -5781,6 +5781,9 @@ type ServerInterface interface {
 	// Install a skill onto team or employee Runtime targets
 	// (POST /api/v1/skills/{skillId}/install)
 	InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// List skill installation records
+	// (GET /api/v1/skills/{skillId}/installations)
+	ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId)
 	// List tasks
 	// (GET /api/v1/tasks)
 	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
@@ -6624,6 +6627,12 @@ func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId 
 // Install a skill onto team or employee Runtime targets
 // (POST /api/v1/skills/{skillId}/install)
 func (_ Unimplemented) InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List skill installation records
+// (GET /api/v1/skills/{skillId}/installations)
+func (_ Unimplemented) ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11586,6 +11595,32 @@ func (siw *ServerInterfaceWrapper) InstallSkill(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListSkillInstallations operation middleware
+func (siw *ServerInterfaceWrapper) ListSkillInstallations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSkillInstallations(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTasks operation middleware
 func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
 
@@ -13621,6 +13656,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/skills/{skillId}/install", wrapper.InstallSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/installations", wrapper.ListSkillInstallations)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)

@@ -30,6 +30,7 @@ type HandlerService interface {
 	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 	InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error)
+	ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error)
 }
 
 type HTTPHandler struct {
@@ -187,6 +188,30 @@ func (h *HTTPHandler) InstallSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, installSkillResponseFromDomain(result))
+}
+
+func (h *HTTPHandler) ListSkillInstallations(w http.ResponseWriter, r *http.Request) {
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillRead, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill installation read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	installations, err := service.ListSkillInstallations(r.Context(), ListSkillInstallationsRequest{
+		TenantID: tenantID,
+		SkillID:  skillID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, skillInstallationResponses(installations))
 }
 
 func (h *HTTPHandler) ListTeamSkills(w http.ResponseWriter, r *http.Request) {

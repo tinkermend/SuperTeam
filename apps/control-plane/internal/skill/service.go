@@ -36,6 +36,10 @@ type RequiredToolsRepository interface {
 	ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)
 }
 
+type SkillInstallationsRepository interface {
+	ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error)
+}
+
 type ObjectStore interface {
 	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
 	DeleteObject(ctx context.Context, key string) error
@@ -64,6 +68,23 @@ func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (In
 		return InstallSkillResult{}, fmt.Errorf("%w: skill install service is not configured", ErrInvalidInput)
 	}
 	return s.installer.InstallSkill(ctx, req)
+}
+
+func (s *Service) ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	repository, ok := s.repository.(SkillInstallationsRepository)
+	if !ok {
+		return nil, fmt.Errorf("%w: skill installation repository is not configured", ErrInvalidInput)
+	}
+	return repository.ListSkillInstallations(ctx, req)
 }
 
 func (s *Service) ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error) {

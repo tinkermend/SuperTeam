@@ -253,6 +253,11 @@ type ListSkillInstallTargetsRequest struct {
 	DigitalEmployeeID uuid.UUID
 }
 
+type ListSkillInstallationsRequest struct {
+	TenantID uuid.UUID
+	SkillID  uuid.UUID
+}
+
 type CreateSkillInstallCommandReceiptRequest struct {
 	TenantID      uuid.UUID
 	CommandID     string

@@ -141,6 +141,68 @@ func TestInstallSkillHandlerMapsStructuredInstallErrorToConflict(t *testing.T) {
 	}
 }
 
+func TestListSkillInstallationsHandlerAuthorizesReadAndReturnsRows(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	skillID := uuid.New()
+	employeeID := uuid.New()
+	installationID := uuid.New()
+	service := &installHandlerService{
+		installations: []SkillInstallation{{
+			ID:                    installationID,
+			TenantID:              tenantID,
+			SkillID:               skillID,
+			TargetScope:           SkillInstallTargetEmployee,
+			DigitalEmployeeID:     employeeID,
+			EmployeeName:          "Review Agent",
+			RuntimeNodeID:         uuid.New(),
+			NodeID:                "node-a",
+			ProviderType:          "codex",
+			InstalledPath:         "/home/agent/.agents/skills/review",
+			ArchiveChecksumSHA256: "sha256-review",
+			InstalledBy:           userID,
+			InstalledAt:           time.Date(2026, 6, 24, 9, 0, 0, 0, time.UTC),
+			Metadata:              map[string]any{"command_id": "cmd-1"},
+		}},
+	}
+	authorizer := &installHandlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/skills/"+skillID.String()+"/installations", nil)
+	req = withSkillRouteContext(req, skillID)
+	req = req.WithContext(withInstallConsoleIdentity(req.Context(), tenantID, userID))
+	rec := httptest.NewRecorder()
+
+	handler.ListSkillInstallations(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if service.listInstallationsReq.TenantID != tenantID || service.listInstallationsReq.SkillID != skillID {
+		t.Fatalf("expected tenant skill request, got %#v", service.listInstallationsReq)
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionSkillRead || authorizer.checks[0].Resource.Type != authz.ResourceSkill || authorizer.checks[0].Resource.ID != skillID.String() {
+		t.Fatalf("expected skill read authorization, got %#v", authorizer.checks)
+	}
+	var body []struct {
+		ID                    string         `json:"id"`
+		DigitalEmployeeID     string         `json:"digital_employee_id"`
+		EmployeeName          string         `json:"employee_name"`
+		NodeID                string         `json:"node_id"`
+		ProviderType          string         `json:"provider_type"`
+		InstalledPath         string         `json:"installed_path"`
+		ArchiveChecksumSHA256 string         `json:"archive_checksum_sha256"`
+		Metadata              map[string]any `json:"metadata"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body) != 1 || body[0].ID != installationID.String() || body[0].DigitalEmployeeID != employeeID.String() || body[0].EmployeeName != "Review Agent" || body[0].NodeID != "node-a" || body[0].ProviderType != "codex" || body[0].InstalledPath == "" || body[0].ArchiveChecksumSHA256 != "sha256-review" || body[0].Metadata["command_id"] != "cmd-1" {
+		t.Fatalf("unexpected installation response: %#v", body)
+	}
+}
+
 func TestInstallSkillDelegatesToConfiguredInstaller(t *testing.T) {
 	tenantID := uuid.New()
 	skillID := uuid.New()
@@ -177,10 +239,40 @@ func TestInstallSkillDelegatesToConfiguredInstaller(t *testing.T) {
 	}
 }
 
+func TestListSkillInstallationsDelegatesToRepository(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	repository := &serviceInstallRepository{
+		installations: []SkillInstallation{{
+			ID:       uuid.New(),
+			TenantID: tenantID,
+			SkillID:  skillID,
+		}},
+	}
+	service := NewService(repository, nil)
+
+	installations, err := service.ListSkillInstallations(context.Background(), ListSkillInstallationsRequest{
+		TenantID: tenantID,
+		SkillID:  skillID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected repository success, got %v", err)
+	}
+	if repository.listInstallationsReq.TenantID != tenantID || repository.listInstallationsReq.SkillID != skillID {
+		t.Fatalf("repository received wrong request: %#v", repository.listInstallationsReq)
+	}
+	if len(installations) != 1 || installations[0].SkillID != skillID {
+		t.Fatalf("unexpected installations: %#v", installations)
+	}
+}
+
 type installHandlerService struct {
-	installReq InstallSkillRequest
-	result     InstallSkillResult
-	installErr error
+	installReq           InstallSkillRequest
+	listInstallationsReq ListSkillInstallationsRequest
+	result               InstallSkillResult
+	installations        []SkillInstallation
+	installErr           error
 }
 
 func (s *installHandlerService) ListSkills(context.Context, ListSkillsRequest) ([]*Skill, error) {
@@ -215,6 +307,10 @@ func (s *installHandlerService) InstallSkill(_ context.Context, req InstallSkill
 	s.installReq = req
 	return s.result, s.installErr
 }
+func (s *installHandlerService) ListSkillInstallations(_ context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
+	s.listInstallationsReq = req
+	return s.installations, nil
+}
 
 type installHandlerAuthorizer struct {
 	allowed bool
@@ -247,4 +343,48 @@ type serviceInstallDelegate struct {
 func (d *serviceInstallDelegate) InstallSkill(_ context.Context, req InstallSkillRequest) (InstallSkillResult, error) {
 	d.req = req
 	return d.result, d.err
+}
+
+type serviceInstallRepository struct {
+	listInstallationsReq ListSkillInstallationsRequest
+	installations        []SkillInstallation
+}
+
+func (r *serviceInstallRepository) ListSkills(context.Context, ListSkillsRequest) ([]*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) GetSkill(context.Context, GetSkillRequest) (*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) UpsertSkillPackage(context.Context, UpsertSkillPackageRequest) (*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) DeleteSkill(context.Context, DeleteSkillRequest) error { return nil }
+func (r *serviceInstallRepository) BindSkillToTeam(context.Context, BindTeamSkillRequest) (*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) UnbindSkillFromTeam(context.Context, BindTeamSkillRequest) error {
+	return nil
+}
+func (r *serviceInstallRepository) ListTeamSkills(context.Context, ListTeamSkillsRequest) ([]*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) BindSkillToEmployee(context.Context, BindEmployeeSkillRequest) (*Skill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) UnbindSkillFromEmployee(context.Context, BindEmployeeSkillRequest) error {
+	return nil
+}
+func (r *serviceInstallRepository) ListEffectiveEmployeeSkills(context.Context, ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]SkillRuntimeRecord, error) {
+	return nil, nil
+}
+func (r *serviceInstallRepository) IsSkillBoundToEmployeeTeam(context.Context, BindEmployeeSkillRequest) (bool, error) {
+	return false, nil
+}
+func (r *serviceInstallRepository) ListSkillInstallations(_ context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
+	r.listInstallationsReq = req
+	return r.installations, nil
 }

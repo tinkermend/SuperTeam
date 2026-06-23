@@ -519,6 +519,49 @@ WHERE de.tenant_id = $1
 	return targets, rows.Err()
 }
 
+func (r *PgRepository) ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT si.id, si.tenant_id, si.skill_id, si.target_scope,
+       COALESCE(si.team_id::text, '') AS team_id,
+       si.digital_employee_id,
+       COALESCE(de.name, '') AS employee_name,
+       si.runtime_node_id,
+       COALESCE(rn.node_id, '') AS node_id,
+       si.provider_type,
+       si.installed_path,
+       si.archive_checksum_sha256,
+       COALESCE(si.installed_by::text, '') AS installed_by,
+       si.installed_at,
+       COALESCE(si.metadata, '{}'::jsonb) AS metadata
+FROM skill_installations si
+LEFT JOIN digital_employees de
+  ON de.tenant_id = si.tenant_id
+ AND de.id = si.digital_employee_id
+LEFT JOIN runtime_nodes rn
+  ON rn.tenant_id = si.tenant_id
+ AND rn.id = si.runtime_node_id
+WHERE si.tenant_id = $1
+  AND si.skill_id = $2
+  AND si.deleted_at IS NULL
+ORDER BY si.installed_at DESC, si.updated_at DESC`, req.TenantID, req.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var installations []SkillInstallation
+	for rows.Next() {
+		item, err := scanSkillInstallation(rows)
+		if err != nil {
+			return nil, err
+		}
+		installations = append(installations, item)
+	}
+	return installations, rows.Err()
+}
+
 func (r *PgRepository) CreateInstallCommandReceipt(ctx context.Context, req CreateSkillInstallCommandReceiptRequest) error {
 	if r == nil || r.q == nil {
 		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
@@ -694,6 +737,59 @@ VALUES ($1, 'skill.install.failed', 'system', 'skill-install-service', 'skill.in
 		req.TenantID, req.SkillID.String(), payload,
 	)
 	return err
+}
+
+func scanSkillInstallation(row interface {
+	Scan(dest ...any) error
+}) (SkillInstallation, error) {
+	var item SkillInstallation
+	var targetScope string
+	var teamIDText string
+	var installedByText string
+	var metadataBytes []byte
+	if err := row.Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.SkillID,
+		&targetScope,
+		&teamIDText,
+		&item.DigitalEmployeeID,
+		&item.EmployeeName,
+		&item.RuntimeNodeID,
+		&item.NodeID,
+		&item.ProviderType,
+		&item.InstalledPath,
+		&item.ArchiveChecksumSHA256,
+		&installedByText,
+		&item.InstalledAt,
+		&metadataBytes,
+	); err != nil {
+		return SkillInstallation{}, err
+	}
+	item.TargetScope = SkillInstallTargetScope(targetScope)
+	if teamIDText != "" {
+		teamID, err := uuid.Parse(teamIDText)
+		if err != nil {
+			return SkillInstallation{}, err
+		}
+		item.TeamID = teamID
+	}
+	if installedByText != "" {
+		installedBy, err := uuid.Parse(installedByText)
+		if err != nil {
+			return SkillInstallation{}, err
+		}
+		item.InstalledBy = installedBy
+	}
+	if len(metadataBytes) > 0 {
+		if err := json.Unmarshal(metadataBytes, &item.Metadata); err != nil {
+			return SkillInstallation{}, err
+		}
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
 }
 
 func (r *PgRepository) ensureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
