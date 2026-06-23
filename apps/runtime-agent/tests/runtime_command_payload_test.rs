@@ -363,6 +363,20 @@ fn parses_sync_workspace_files_command_type() {
 }
 
 #[test]
+fn parses_install_skills_command_type() {
+    let raw = serde_json::json!({
+        "id": "cmd-install-skills",
+        "type": "install_skills",
+        "payload": {}
+    });
+    let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::InstallSkills
+    ));
+}
+
+#[test]
 fn rejects_unknown_command_type_for_workspace_materialization_payload() {
     let command = RuntimeCommand {
         id: "cmd-unknown".to_string(),

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 
+use crate::commands::install_skills::{InstallSkillsCommandPayload, install_skill_targets};
 use crate::commands::payload::{
     RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload,
     RuntimeStopSessionCommandPayload, SessionPolicyMode,
@@ -180,6 +181,7 @@ impl RuntimeCommandExecutor {
             | RuntimeCommandType::SendInput => self.handle_input_command(command).await,
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
+            RuntimeCommandType::InstallSkills => self.handle_install_skills(command).await,
             RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
             RuntimeCommandType::SyncWorkspaceFiles => {
                 self.handle_sync_workspace_files(command).await
@@ -619,6 +621,77 @@ impl RuntimeCommandExecutor {
         })
     }
 
+    async fn handle_install_skills(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let payload: InstallSkillsCommandPayload = match serde_json::from_value(command.payload) {
+            Ok(payload) => payload,
+            Err(error) => {
+                let error = self.recorded_error(
+                    &command.id,
+                    anyhow::anyhow!("invalid install_skills command payload: {error}"),
+                );
+                let message = error.to_string();
+                self.write_install_skills_failure(&command.id, message)
+                    .await?;
+                return Err(error);
+            }
+        };
+        if payload.command_id != command.id {
+            let error = self.recorded_error(
+                &command.id,
+                anyhow::anyhow!("command_id does not match runtime command id"),
+            );
+            let message = error.to_string();
+            self.write_install_skills_failure(&command.id, message)
+                .await?;
+            return Err(error);
+        }
+
+        let (s3_client, bucket) = match (&self.s3_client, &self.s3_bucket) {
+            (Some(s3_client), Some(bucket)) => (s3_client, bucket),
+            _ => {
+                let error = self.recorded_error(
+                    &command.id,
+                    anyhow::anyhow!(
+                        "install_skills requires S3 configuration but s3 client is not configured"
+                    ),
+                );
+                let message = error.to_string();
+                self.write_install_skills_failure(&command.id, message)
+                    .await?;
+                return Err(error);
+            }
+        };
+
+        let installed = match install_skill_targets(payload, s3_client, bucket).await {
+            Ok(installed) => installed,
+            Err(error) => {
+                let error = self.recorded_error(&command.id, error);
+                let message = error.to_string();
+                self.write_install_skills_failure(&command.id, message)
+                    .await?;
+                return Err(error);
+            }
+        };
+
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .complete_runtime_command(
+                    &command.id,
+                    &install_skills_completed_terminal(installed),
+                )
+                .await?;
+        }
+
+        Ok(RuntimeCommandOutcome {
+            command_id: command.id,
+            accepted: true,
+            run_id: None,
+        })
+    }
+
     fn ensure_instance_from_command(
         &self,
         command: &RuntimeCommand,
@@ -647,6 +720,19 @@ impl RuntimeCommandExecutor {
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .fail_runtime_command(command_id, &provisioning_failed_terminal(error_message))
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn write_install_skills_failure(
+        &self,
+        command_id: &str,
+        error_message: String,
+    ) -> anyhow::Result<()> {
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .fail_runtime_command(command_id, &install_skills_failed_terminal(error_message))
                 .await?;
         }
         Ok(())
@@ -977,6 +1063,45 @@ fn workspace_sync_failed_terminal(error_message: String) -> RuntimeCommandTermin
         error_message: Some(error_message),
         error_code: Some("workspace_sync_failed".to_string()),
         error_family: Some("workspace_materialization".to_string()),
+    }
+}
+
+fn install_skills_completed_terminal(
+    installed: Vec<crate::commands::install_skills::InstalledSkillTarget>,
+) -> RuntimeCommandTerminalWriteback {
+    let mut result = HashMap::new();
+    result.insert(
+        "installed".to_string(),
+        serde_json::to_value(installed).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
+    );
+    RuntimeCommandTerminalWriteback {
+        status: "completed".to_string(),
+        summary: Some("runtime skills installed".to_string()),
+        result: Some(result),
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: None,
+        error_code: None,
+        error_family: None,
+    }
+}
+
+fn install_skills_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
+    RuntimeCommandTerminalWriteback {
+        status: "failed".to_string(),
+        summary: None,
+        result: None,
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: Some(error_message),
+        error_code: Some("install_skills_failed".to_string()),
+        error_family: Some("runtime_skill_install".to_string()),
     }
 }
 
