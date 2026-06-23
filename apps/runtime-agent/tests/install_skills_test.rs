@@ -2,8 +2,8 @@ use std::path::Path;
 
 use serde_json::json;
 use superteam_runtime_agent::commands::install_skills::{
-    InstallSkillsCommandPayload, InstalledSkillTarget, SkillInstallRollback, provider_skill_dir,
-    validate_skill_key,
+    InstallSkillsCommandPayload, InstalledSkillTarget, SkillInstallRollback,
+    prepare_provider_skill_install_paths, provider_skill_dir, validate_skill_key,
 };
 
 #[test]
@@ -119,12 +119,13 @@ fn install_skills_installed_result_uses_control_plane_field_names() {
 #[test]
 fn install_skills_rollback_restores_old_dir_and_removes_new_dir() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let old_target = temp.path().join("old-target");
-    let new_target = temp.path().join("new-target");
+    let agent_home = temp.path().join("agent-home");
+    let old_target = agent_home.join(".agents").join("skills").join("old-target");
+    let new_target = agent_home.join(".agents").join("skills").join("new-target");
     std::fs::create_dir_all(&old_target).expect("old target dir");
     std::fs::write(old_target.join("SKILL.md"), "old").expect("old file");
 
-    let mut rollback = SkillInstallRollback::new(true);
+    let mut rollback = SkillInstallRollback::new(true, &agent_home).expect("rollback");
     rollback
         .prepare_target(&old_target)
         .expect("backup old target");
@@ -146,5 +147,71 @@ fn install_skills_rollback_restores_old_dir_and_removes_new_dir() {
     assert!(
         !new_target.exists(),
         "newly-created target should be removed by rollback"
+    );
+}
+
+#[test]
+fn install_skills_rejects_symlinked_provider_parent_escape() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let agent_home = temp.path().join("agent-home");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&agent_home).expect("agent home");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::os::unix::fs::symlink(&outside, agent_home.join(".agents"))
+        .expect("symlink provider root");
+
+    let error = prepare_provider_skill_install_paths(&agent_home, "codex", "code-review")
+        .expect_err("symlinked provider root should be rejected");
+
+    assert!(error.to_string().contains("symlink"));
+}
+
+#[test]
+fn install_skills_rejects_symlinked_skills_parent_escape() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let agent_home = temp.path().join("agent-home");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(agent_home.join(".agents")).expect("provider root");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::os::unix::fs::symlink(&outside, agent_home.join(".agents").join("skills"))
+        .expect("symlink skills root");
+
+    let error = prepare_provider_skill_install_paths(&agent_home, "codex", "code-review")
+        .expect_err("symlinked skills root should be rejected");
+
+    assert!(error.to_string().contains("symlink"));
+}
+
+#[test]
+fn install_skills_rollback_uses_owned_root_under_agent_home() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let agent_home = temp.path().join("agent-home");
+    let target = agent_home
+        .join(".agents")
+        .join("skills")
+        .join("code-review");
+    let rollback_root = agent_home.join(".skill-rollback");
+    std::fs::create_dir_all(&target).expect("target dir");
+    std::fs::write(target.join("SKILL.md"), "old").expect("old file");
+
+    let mut rollback = SkillInstallRollback::new(true, &agent_home).expect("rollback");
+    rollback.prepare_target(&target).expect("backup target");
+
+    assert!(rollback_root.is_dir(), "rollback root should be created");
+    let backup_entries = std::fs::read_dir(&rollback_root)
+        .expect("rollback root entries")
+        .count();
+    assert_eq!(backup_entries, 1);
+    assert!(!target.exists(), "target should be moved into owned backup");
+
+    rollback.rollback().expect("rollback");
+
+    assert_eq!(
+        std::fs::read_to_string(target.join("SKILL.md")).expect("restored file"),
+        "old"
+    );
+    assert!(
+        !rollback_root.exists(),
+        "rollback should clean its owned root"
     );
 }

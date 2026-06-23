@@ -47,7 +47,7 @@ pub async fn materialize_skill_to_dir(
     bucket: &str,
 ) -> Result<SyncedSkill> {
     validate_skill_key(&skill.skill_key)?;
-    ensure_safe_target_path(target_dir)?;
+    ensure_safe_install_path(target_dir, temp_root)?;
 
     let marker_path = target_dir.join(".skill-checksum");
     if let Ok(existing_hash) = fs::read_to_string(&marker_path) {
@@ -95,20 +95,7 @@ pub async fn materialize_skill_to_dir(
         );
     }
 
-    fs::create_dir_all(temp_root)?;
-    let temp_dir = temp_root.join(format!(
-        "{}-{}-{}",
-        std::process::id(),
-        skill.skill_key,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)?;
-    }
-    fs::create_dir_all(&temp_dir)?;
+    let mut temp_dir = create_skill_temp_dir(temp_root, &skill.skill_key)?;
 
     let cursor = Cursor::new(&archive_bytes);
     let mut archive = ZipArchive::new(cursor)
@@ -141,7 +128,7 @@ pub async fn materialize_skill_to_dir(
         }
 
         let relative = normalize_zip_path(&entry_name, &root_prefix)?;
-        let target = temp_dir.join(&relative);
+        let target = temp_dir.path().join(&relative);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -153,15 +140,15 @@ pub async fn materialize_skill_to_dir(
     }
 
     if file_count == 0 {
-        fs::remove_dir_all(&temp_dir)?;
         anyhow::bail!("skill archive contains no files: {}", skill.skill_key);
     }
 
     fs::write(
-        temp_dir.join(".skill-checksum"),
+        temp_dir.path().join(".skill-checksum"),
         &skill.archive_checksum_sha256,
     )?;
-    atomic_replace_dir(&temp_dir, target_dir)?;
+    atomic_replace_dir(temp_dir.path(), target_dir)?;
+    temp_dir.persist();
 
     Ok(SyncedSkill {
         skill_id: skill.skill_id.clone(),
@@ -197,6 +184,16 @@ pub fn remove_skill_dir_if_exists(path: &Path) -> Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).with_context(|| format!("inspect skill directory: {}", path.display())),
     }
+}
+
+pub fn ensure_safe_install_path(target_dir: &Path, temp_root: &Path) -> Result<()> {
+    let root = common_path_prefix(target_dir, temp_root)
+        .context("skill target and temp root do not share an agent home")?;
+    ensure_no_symlink_ancestors_under(&root, target_dir)?;
+    ensure_no_symlink_ancestors_under(&root, temp_root)?;
+    ensure_safe_target_path(target_dir)?;
+    ensure_safe_target_path(temp_root)?;
+    Ok(())
 }
 
 fn extract_object_key(uri: &str) -> Result<String> {
@@ -273,23 +270,116 @@ fn ensure_safe_target_path(path: &Path) -> Result<()> {
     }
 }
 
+fn common_path_prefix(left: &Path, right: &Path) -> Option<PathBuf> {
+    let mut prefix = PathBuf::new();
+    for (left_component, right_component) in left.components().zip(right.components()) {
+        if left_component == right_component {
+            prefix.push(left_component.as_os_str());
+        } else {
+            break;
+        }
+    }
+    (!prefix.as_os_str().is_empty()).then_some(prefix)
+}
+
+fn ensure_no_symlink_ancestors_under(root: &Path, path: &Path) -> Result<()> {
+    let relative = path.strip_prefix(root).with_context(|| {
+        format!(
+            "skill path must stay under install root: {}",
+            path.display()
+        )
+    })?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                anyhow::bail!(
+                    "skill path component must not be a symlink: {}",
+                    current.display()
+                );
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!("inspect skill path component: {}", current.display())
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+pub struct SkillTempDir {
+    path: PathBuf,
+    persist: bool,
+}
+
+impl SkillTempDir {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn persist(&mut self) {
+        self.persist = true;
+    }
+}
+
+impl Drop for SkillTempDir {
+    fn drop(&mut self) {
+        if !self.persist {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+pub fn create_skill_temp_dir(temp_root: &Path, skill_key: &str) -> Result<SkillTempDir> {
+    validate_skill_key(skill_key)?;
+    if let Some(parent) = temp_root.parent() {
+        ensure_no_symlink_ancestors_under(parent, temp_root)?;
+    }
+    fs::create_dir_all(temp_root)?;
+
+    for attempt in 0..16 {
+        let temp_dir = temp_root.join(format!(
+            "{}-{}-{}-{}",
+            std::process::id(),
+            skill_key,
+            attempt,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        match fs::create_dir(&temp_dir) {
+            Ok(()) => {
+                return Ok(SkillTempDir {
+                    path: temp_dir,
+                    persist: false,
+                });
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!("create skill temp directory: {}", temp_dir.display())
+                });
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "failed to create unique skill temp directory under {}",
+        temp_root.display()
+    )
+}
+
 fn atomic_replace_dir(temp_dir: &Path, target_dir: &Path) -> Result<()> {
     let parent = target_dir
         .parent()
         .context("skill target directory has no parent")?;
     fs::create_dir_all(parent)?;
-    let backup_dir = parent.join(format!(
-        ".{}-backup-{}-{}",
-        target_dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("skill"),
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
+    let backup_dir = reserve_atomic_replace_backup(parent, target_dir)?;
 
     let had_target = target_dir.exists();
     if had_target {
@@ -311,6 +401,46 @@ fn atomic_replace_dir(temp_dir: &Path, target_dir: &Path) -> Result<()> {
             Err(error).with_context(|| format!("install skill directory: {}", target_dir.display()))
         }
     }
+}
+
+fn reserve_atomic_replace_backup(parent: &Path, target_dir: &Path) -> Result<PathBuf> {
+    for attempt in 0..16 {
+        let backup_dir = parent.join(format!(
+            ".{}-backup-{}-{}-{}",
+            target_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("skill"),
+            std::process::id(),
+            attempt,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        match fs::create_dir(&backup_dir) {
+            Ok(()) => {
+                fs::remove_dir(&backup_dir).with_context(|| {
+                    format!(
+                        "release reserved skill replace backup: {}",
+                        backup_dir.display()
+                    )
+                })?;
+                return Ok(backup_dir);
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!("reserve skill replace backup: {}", backup_dir.display())
+                });
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "failed to reserve skill replace backup under {}",
+        parent.display()
+    )
 }
 
 fn count_materialized_files(path: &Path) -> Result<u64> {
@@ -405,5 +535,35 @@ mod tests {
     fn normalize_zip_path_rejects_traversal() {
         assert!(normalize_zip_path("../escape.md", "").is_err());
         assert!(normalize_zip_path("/absolute.md", "").is_err());
+    }
+
+    #[test]
+    fn skill_temp_dir_guard_removes_temp_dir_on_failure() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let temp_root = temp.path().join(".skill-tmp");
+        let temp_dir = create_skill_temp_dir(&temp_root, "code-review").expect("temp dir");
+        fs::write(temp_dir.path().join("partial"), "partial").expect("partial file");
+        let leaked_path = temp_dir.path().to_path_buf();
+
+        drop(temp_dir);
+
+        assert!(
+            !leaked_path.exists(),
+            "temporary skill directory should be removed when not persisted"
+        );
+    }
+
+    #[test]
+    fn skill_temp_dir_guard_persists_after_success() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let temp_root = temp.path().join(".skill-tmp");
+        let mut temp_dir = create_skill_temp_dir(&temp_root, "code-review").expect("temp dir");
+        fs::write(temp_dir.path().join("complete"), "complete").expect("complete file");
+        let path = temp_dir.path().to_path_buf();
+
+        temp_dir.persist();
+        drop(temp_dir);
+
+        assert!(path.exists(), "persisted skill temp dir should remain");
     }
 }
