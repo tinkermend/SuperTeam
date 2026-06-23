@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>项目管理 · SuperTeam · Soft-Flat v3</title>
+<style>
+  :root {
+    --bg:#f3f4f6; --card:#ffffff; --card-soft:#f7f8fa; --card-inner:#fafbfc;
+    --ink:#0b0d12; --ink-2:#697586; --ink-3:#9aa4b2; --line:#eef1f4; --line-2:#e6e9ee;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-grad:linear-gradient(140deg,#5b8bff 0%,#2f5fff 58%,#2348e0 100%); --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e4f6ee; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#e5484d; --danger-soft:#fde8e9; --info:#2f5fff; --info-soft:#e9efff;
+    --mute:#64748b; --mute-soft:#eef1f4; --purple:#7c5cff; --purple-soft:#efeaff;
+    --r-card:22px; --r-inner:15px; --r-chip:13px; --r-pill:9px; --r-btn:12px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+    --shadow-pop:0 10px 44px rgba(16,24,40,.12);
+    --mono:ui-monospace,"SFMono-Regular","Menlo","Cascadia Code",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  [data-theme="dark"]{
+    --bg:#0d1014; --card:#171b22; --card-soft:#1c212a; --card-inner:#1a1f27;
+    --ink:#f3f5f8; --ink-2:#9aa6b4; --ink-3:#6b7686; --line:#262c35; --line-2:#2e353f;
+    --brand:#5b8bff; --brand-soft:rgba(91,139,255,.16);
+    --ok:#34d399; --ok-soft:rgba(52,211,153,.15); --warn:#fbbf24; --warn-soft:rgba(251,191,36,.15);
+    --danger:#f87171; --danger-soft:rgba(248,113,113,.16); --info:#5b8bff; --info-soft:rgba(91,139,255,.16);
+    --mute:#94a3b8; --mute-soft:rgba(148,163,184,.14); --purple:#a78bfa; --purple-soft:rgba(167,139,250,.16);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .num{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);} a{color:inherit;text-decoration:none;}
+  .orb{position:fixed;right:-90px;bottom:-110px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#e7eaef 70%,#dfe3e9);box-shadow:0 30px 80px rgba(16,24,40,.08);z-index:0;pointer-events:none;opacity:.7;}
+  [data-theme="dark"] .orb{background:radial-gradient(circle at 35% 30%,#222934,#161b22 70%);opacity:.5;}
+
+  .topnav{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:30px;padding:14px 30px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(14px);}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;letter-spacing:-.02em;}
+  .logo .mk{width:26px;height:26px;border-radius:9px;background:var(--brand-grad);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 4px 12px rgba(47,95,255,.35);}
+  .menu{display:flex;gap:4px;margin-left:8px;}
+  .menu a{padding:8px 14px;border-radius:10px;color:var(--ink-2);font-weight:550;font-size:14px;}
+  .menu a:hover{background:var(--card);color:var(--ink);} .menu a.on{color:var(--ink);font-weight:650;}
+  .grow{flex:1;}
+  .tbtn{width:38px;height:38px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;border:none;font-size:15px;}
+  .tbtn:hover{color:var(--ink);}
+  .me{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 5px;background:var(--card);border-radius:13px;box-shadow:var(--shadow);}
+  .me .pic{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .me .nm{font-size:12.5px;font-weight:650;line-height:1.1;} .me .ro{font-size:11px;color:var(--ink-3);}
+
+  .wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:14px 30px 60px;}
+  .head{display:flex;align-items:center;gap:14px;margin:6px 0 22px;}
+  .back{width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:17px;}
+  .head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.03em;}
+  .head .new{margin-left:auto;display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;font-weight:650;font-size:13.5px;padding:11px 18px;border-radius:13px;border:none;cursor:pointer;box-shadow:0 8px 20px rgba(47,95,255,.3);}
+  .head .new:hover{background:var(--brand-deep);}
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .svg-sm{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .ico-sq{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;}
+  .t-blue{background:var(--info-soft);color:var(--info);} .t-green{background:var(--ok-soft);color:var(--ok);}
+  .t-amber{background:var(--warn-soft);color:var(--warn);} .t-purple{background:var(--purple-soft);color:var(--purple);}
+  .t-mute{background:var(--mute-soft);color:var(--mute);} .t-red{background:var(--danger-soft);color:var(--danger);}
+  .gbtn{width:34px;height:34px;border-radius:11px;background:var(--card-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;font-size:15px;}
+  .gbtn:hover{color:var(--ink);}
+
+  .hero{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:18px;margin-bottom:18px;}
+  @media(max-width:960px){.hero{grid-template-columns:1fr;}}
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 24px;}
+  .card-h{display:flex;align-items:center;gap:10px;margin-bottom:18px;} .card-h h3{margin:0;font-size:16px;font-weight:700;}
+  .corner{margin-left:auto;}
+  .seg-labels{display:flex;font-size:13px;color:var(--ink-2);font-weight:600;margin-bottom:8px;}
+  .segbar{display:flex;height:8px;border-radius:6px;overflow:hidden;gap:3px;margin-bottom:20px;}
+  .segbar i{display:block;height:100%;border-radius:6px;}
+  .mini-stats{display:flex;gap:12px;margin-bottom:20px;}
+  .mini{flex:1;background:var(--card-inner);border:1px solid var(--line);border-radius:var(--r-inner);padding:13px 15px;}
+  .mini .top{display:flex;align-items:center;gap:7px;font-size:18px;font-weight:750;} .mini .top .dot{width:7px;height:7px;border-radius:50%;}
+  .mini .lab{font-size:12.5px;color:var(--ink-2);margin-top:1px;}
+  .twostat{display:flex;gap:34px;}
+  .twostat .big{font-size:30px;font-weight:800;letter-spacing:-.02em;}
+  .twostat .sub{font-size:13px;color:var(--ink-2);align-self:flex-end;padding-bottom:6px;margin-left:-26px;}
+  .statcard .card-h{margin-bottom:12px;} .statcard .big{font-size:46px;font-weight:800;letter-spacing:-.03em;margin:4px 0 2px;}
+  .statcard .cap{font-size:13.5px;color:var(--ink-2);} .statcard .big.warn{color:var(--warn);}
+
+  .bluecard{grid-column:1 / -1;background:var(--brand-grad);color:#fff;border-radius:var(--r-card);box-shadow:0 18px 50px rgba(47,95,255,.32);
+    padding:24px 26px;display:grid;grid-template-columns:auto 1fr;gap:30px;align-items:center;}
+  @media(max-width:960px){.bluecard{grid-template-columns:1fr;}}
+  .bluecard .ttl{font-size:16px;font-weight:700;opacity:.95;margin-bottom:14px;display:flex;align-items:center;gap:10px;}
+  .ring{position:relative;width:150px;height:150px;} .ring svg{transform:rotate(-90deg);}
+  .ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .pct{font-size:36px;font-weight:800;} .ring .pct small{font-size:16px;font-weight:600;} .ring .cap{font-size:11.5px;opacity:.8;margin-top:2px;}
+  .blue-list{display:flex;flex-direction:column;gap:10px;}
+  .blue-row{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 15px;display:flex;align-items:center;gap:10px;}
+  .blue-row .d{width:7px;height:7px;border-radius:50%;background:#fff;}
+  .blue-row .v{font-weight:700;} .blue-row .l{opacity:.82;font-size:13px;} .blue-row .l b{font-weight:600;}
+
+  .filters{display:flex;align-items:center;gap:8px;margin:24px 0 16px;flex-wrap:wrap;}
+  .tab{padding:9px 15px;border-radius:11px;font-size:13.5px;font-weight:600;color:var(--ink-2);cursor:pointer;}
+  .tab.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow);}
+  .tab .c{color:var(--ink-3);margin-left:3px;} .tab.on .c{color:var(--brand);}
+  .srch{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:9px 14px;box-shadow:var(--shadow);color:var(--ink-3);min-width:200px;}
+  .srch input{border:none;outline:none;background:transparent;font:inherit;font-size:13.5px;color:var(--ink);width:100%;}
+  .sortby{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:9px 14px;box-shadow:var(--shadow);font-size:13.5px;color:var(--ink-2);font-weight:600;cursor:pointer;}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+  @media(max-width:1080px){.grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:680px){.grid{grid-template-columns:1fr;}}
+  .proj{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px;
+    display:flex;flex-direction:column;gap:15px;transition:transform .15s,box-shadow .15s;cursor:pointer;position:relative;overflow:hidden;}
+  .proj:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);}
+  .proj .stripe{position:absolute;left:0;top:0;bottom:0;width:4px;}
+  .proj-h{display:flex;align-items:flex-start;gap:12px;}
+  .proj-h .meta{flex:1;min-width:0;}
+  .proj-h .nm{font-size:16.5px;font-weight:800;letter-spacing:-.01em;}
+  .proj-h .id{font-size:11.5px;color:var(--ink-3);margin-top:2px;font-family:var(--mono);}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;}
+  .pill .d{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .p-ok{color:var(--ok);background:var(--ok-soft);} .p-info{color:var(--info);background:var(--info-soft);}
+  .p-warn{color:var(--warn);background:var(--warn-soft);} .p-danger{color:var(--danger);background:var(--danger-soft);} .p-mute{color:var(--mute);background:var(--mute-soft);}
+  .prog .l{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-bottom:6px;}
+  .prog .l b{color:var(--ink);font-weight:700;}
+  .prog .track{height:8px;border-radius:6px;background:var(--card-soft);overflow:hidden;} .prog .fill{height:100%;border-radius:6px;background:var(--brand);}
+  .kv{display:flex;flex-direction:column;gap:10px;}
+  .kv .row{display:flex;align-items:center;justify-content:space-between;font-size:13px;}
+  .kv .k{color:var(--ink-3);} .kv .v{font-weight:650;}
+  .owner{display:inline-flex;align-items:center;gap:7px;}
+  .owner .av{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+  .next{display:flex;align-items:center;gap:10px;padding-top:14px;border-top:1px solid var(--line);}
+  .next .nx{flex:1;min-width:0;font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .next .nx b{color:var(--ink);font-weight:650;}
+  .next .act{font-size:12.5px;font-weight:650;padding:7px 13px;border-radius:10px;border:none;cursor:pointer;}
+  .act-primary{background:var(--brand);color:#fff;} .act-primary:hover{background:var(--brand-deep);}
+  .act-danger{background:var(--danger-soft);color:var(--danger);}
+  .act-ghost{background:var(--card);border:1px solid var(--line-2)!important;color:var(--ink);}
+  .bchip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+
+  <nav class="topnav">
+    <div class="logo"><span class="mk">S</span> SuperTeam</div>
+    <div class="menu">
+      <a href="#">协调台</a>
+      <a href="projects.html" class="on">项目</a>
+      <a href="employees.html">数字员工</a>
+      <a href="skills.html">技能</a>
+      <a href="#">Runtime</a>
+      <a href="#">审计</a>
+    </div>
+    <div class="grow"></div>
+    <button class="tbtn" id="theme">◐</button>
+    <button class="tbtn">♪</button>
+    <div class="me"><div class="pic">林</div><div><div class="nm">林 Anna</div><div class="ro">平台管理员</div></div></div>
+  </nav>
+
+  <div class="wrap">
+    <div class="head">
+      <a href="#" class="back">‹</a>
+      <h1>项目管理</h1>
+      <button class="new"><svg class="svg-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 新建项目</button>
+    </div>
+
+    <div class="hero">
+      <div class="card">
+        <div class="card-h">
+          <div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8" rx="1"/><rect x="12" y="6" width="3" height="12" rx="1"/><rect x="17" y="13" width="3" height="5" rx="1"/></svg></div>
+          <h3>项目健康度</h3>
+          <div class="corner"><span class="gbtn">⋮</span></div>
+        </div>
+        <div class="seg-labels"><span style="flex:.62">进行中 62%</span><span style="flex:.24">待审批 24%</span><span style="flex:.14">受阻 14%</span></div>
+        <div class="segbar"><i style="flex:.62;background:var(--brand)"></i><i style="flex:.24;background:var(--warn)"></i><i style="flex:.14;background:var(--danger)"></i></div>
+        <div class="mini-stats">
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--danger)"></span>5</div><div class="lab">受阻项目</div></div>
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--warn)"></span>9</div><div class="lab">待审批/验收</div></div>
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--ok)"></span>23</div><div class="lab">健康推进</div></div>
+        </div>
+        <div class="twostat">
+          <div><div class="big num">37</div><div class="sub">进行中项目</div></div>
+          <div><div class="big num">7</div><div class="sub">本月已验收</div></div>
+        </div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h"><div class="ico-sq t-amber"><svg class="svg" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">待我审批 / 决策</div>
+        <div class="big warn num">4</div>
+        <div class="cap">2 个高风险 · 最久 38 分钟</div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h"><div class="ico-sq t-green"><svg class="svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">协调线程在线</div>
+        <div class="big num">37</div>
+        <div class="cap">Temporal Workflow 全部健康</div>
+      </div>
+
+      <div class="bluecard">
+        <div class="ring">
+          <svg width="150" height="150" viewBox="0 0 150 150">
+            <circle cx="75" cy="75" r="63" stroke="rgba(255,255,255,.22)" stroke-width="12" fill="none"/>
+            <circle cx="75" cy="75" r="63" stroke="#fff" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="396" stroke-dashoffset="142"/>
+          </svg>
+          <div class="mid"><div class="pct">64<small>%</small></div><div class="cap">$12.8k / $20k</div></div>
+        </div>
+        <div>
+          <div class="ttl"><svg class="svg-sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> 本月预算使用 · 按项目</div>
+          <div class="blue-list">
+            <div class="blue-row"><span class="d"></span><span class="v num">42% · $5.4k</span><span class="l">支付网关迁移 · <b>已近阈值</b></span></div>
+            <div class="blue-row"><span class="d"></span><span class="v num">23% · $2.9k</span><span class="l">客户数据治理 · <b>正常</b></span></div>
+            <div class="blue-row"><span class="d"></span><span class="v num">18% · $2.3k</span><span class="l">智能客服上线 · <b>正常</b></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <span class="tab on">全部 <span class="c">44</span></span>
+      <span class="tab">需我处理 <span class="c">5</span></span>
+      <span class="tab">进行中 <span class="c">37</span></span>
+      <span class="tab">待验收 <span class="c">7</span></span>
+      <span class="tab">受阻 <span class="c">5</span></span>
+      <div class="grow"></div>
+      <div class="srch"><svg class="svg-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="搜索项目、负责人、目标…"></div>
+      <div class="sortby">排序 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+    </div>
+
+    <div class="grid">
+      <div class="proj">
+        <div class="stripe" style="background:var(--danger)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">支付网关迁移</div><div class="id">prj_a91f…2c</div></div><span class="pill p-danger"><span class="d"></span>受阻 · 待审批</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>72%</b></div><div class="track"><div class="fill" style="width:72%;background:var(--danger)"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">林</span> 林Anna · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">3</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-danger">$5.4k / 6k</span></span></div>
+        </div>
+        <div class="next"><div class="nx" style="color:var(--danger)"><b>生产发布请求 · 不可逆</b></div><button class="act act-primary">审批</button></div>
+      </div>
+
+      <div class="proj">
+        <div class="stripe" style="background:var(--warn)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">客户数据导出治理</div><div class="id">prj_77be…0d</div></div><span class="pill p-warn"><span class="d"></span>待确认</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>48%</b></div><div class="track"><div class="fill" style="width:48%;background:var(--warn)"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">王</span> 王经理 · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">2</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-warn">$2.9k / 5k</span></span></div>
+        </div>
+        <div class="next"><div class="nx" style="color:var(--warn)"><b>权限提升 · 等待 38 分钟</b></div><button class="act act-primary">审批</button></div>
+      </div>
+
+      <div class="proj">
+        <div class="stripe" style="background:var(--brand)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">智能客服上线</div><div class="id">prj_5c10…9a</div></div><span class="pill p-info"><span class="d"></span>进行中</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>61%</b></div><div class="track"><div class="fill" style="width:61%"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">林</span> 林Anna · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">4</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-mute">$2.3k / 8k</span></span></div>
+        </div>
+        <div class="next"><div class="nx">下一步 <b>对话流回归测试</b></div><button class="act act-ghost">查看</button></div>
+      </div>
+
+      <div class="proj">
+        <div class="stripe" style="background:var(--danger)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">对账系统重构</div><div class="id">prj_30a2…f1</div></div><span class="pill p-danger"><span class="d"></span>测试失败</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>55%</b></div><div class="track"><div class="fill" style="width:55%;background:var(--danger)"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">张</span> 张总监 · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">2</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-mute">$1.8k / 7k</span></span></div>
+        </div>
+        <div class="next"><div class="nx" style="color:var(--danger)"><b>3 项断言失败 · 需业务判断</b></div><button class="act act-danger">处理</button></div>
+      </div>
+
+      <div class="proj">
+        <div class="stripe" style="background:var(--ok)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">需求文档体系建设</div><div class="id">prj_b8d4…6e</div></div><span class="pill p-ok"><span class="d"></span>待验收</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>94%</b></div><div class="track"><div class="fill" style="width:94%;background:var(--ok)"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">林</span> 林Anna · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">1</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-mute">$0.9k / 3k</span></span></div>
+        </div>
+        <div class="next"><div class="nx" style="color:var(--ok)"><b>交接包待验收 · 含 4 份证据</b></div><button class="act act-primary">验收</button></div>
+      </div>
+
+      <div class="proj">
+        <div class="stripe" style="background:var(--brand)"></div>
+        <div class="proj-h"><div class="meta"><div class="nm">运营周报自动化</div><div class="id">prj_2f1c…aa</div></div><span class="pill p-info"><span class="d"></span>进行中</span></div>
+        <div class="prog"><div class="l"><span>进度</span><b>38%</b></div><div class="track"><div class="fill" style="width:38%"></div></div></div>
+        <div class="kv">
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">孙</span> 孙主管 · 负责人</span></div>
+          <div class="row"><span class="k">活跃数字员工</span><span class="v num">2</span></div>
+          <div class="row"><span class="k">预算</span><span class="v"><span class="bchip p-mute">$0.6k / 4k</span></span></div>
+        </div>
+        <div class="next"><div class="nx">下一步 <b>数据源接入校验</b></div><button class="act act-ghost">查看</button></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+  </script>
+</body>
+</html>

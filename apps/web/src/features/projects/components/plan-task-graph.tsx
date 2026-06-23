@@ -1,9 +1,9 @@
 import { Bot, GitBranch, ShieldCheck } from "lucide-react";
 import {
-  LiquidCard,
-  SemanticIconTile,
-  StatusBadge,
-  type Tone,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  type V3Tone,
 } from "@/components/superteam";
 import type {
   ProjectTask,
@@ -38,9 +38,9 @@ export function PlanTaskGraph({
 }: PlanTaskGraphProps) {
   if (nodes.length === 0) {
     return (
-      <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">
+      <SoftCard className="p-6 text-sm text-v3-ink-2">
         {emptyLabel}
-      </LiquidCard>
+      </SoftCard>
     );
   }
 
@@ -76,22 +76,22 @@ export function PlanTaskGraph({
             ? "未分阶段"
             : stageTitle.get(stage) || `阶段 ${stage + 1}`;
         return (
-          <LiquidCard className="rounded-xl" key={stage}>
-            <div className="flex items-center justify-between gap-3 border-b p-4">
+          <SoftCard className="overflow-hidden" key={stage}>
+            <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
               <div className="flex min-w-0 items-center gap-2">
-                <SemanticIconTile tone="artifact" size="sm">
+                <IconTile tone="artifact" size="sm">
                   <GitBranch />
-                </SemanticIconTile>
+                </IconTile>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold tracking-normal">{heading}</h3>
-                  <p className="text-xs text-muted-foreground">
+                  <h3 className="text-sm font-semibold tracking-normal text-v3-ink">{heading}</h3>
+                  <p className="text-xs text-v3-ink-3">
                     {stageNodes.length} 个任务
                   </p>
                 </div>
               </div>
-              <StatusBadge tone="neutral">{stageNodes.length}</StatusBadge>
+              <StatusPill tone="mute">{stageNodes.length}</StatusPill>
             </div>
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {stageNodes.map((node) => {
                 const blockers = blockersByTask.get(node.id) ?? [];
                 const assignee = node.assigned_digital_employee_id
@@ -101,35 +101,35 @@ export function PlanTaskGraph({
                 return (
                   <div className="grid gap-2 p-4" key={node.id}>
                     <div className="flex items-start justify-between gap-3">
-                      <p className="line-clamp-2 text-sm font-medium">{node.title}</p>
-                      <StatusBadge tone={taskStatusTone(node.status)}>
+                      <p className="line-clamp-2 text-sm font-medium text-v3-ink">{node.title}</p>
+                      <StatusPill tone={taskStatusTone(node.status)}>
                         {node.status}
-                      </StatusBadge>
+                      </StatusPill>
                     </div>
                     {node.summary ? (
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                      <p className="line-clamp-2 text-xs text-v3-ink-2">
                         {node.summary}
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-v3-ink-2">
                       <span className="inline-flex items-center gap-1">
                         <Bot className="size-3.5" />
                         {assignee}
                       </span>
                       {node.risk_level ? (
-                        <StatusBadge tone={riskTone(node.risk_level)}>
+                        <StatusPill tone={riskTone(node.risk_level)}>
                           {`风险：${node.risk_level}`}
-                        </StatusBadge>
+                        </StatusPill>
                       ) : null}
                       {node.requires_human_approval ? (
-                        <StatusBadge tone="warning">
+                        <StatusPill tone="warn">
                           <ShieldCheck className="size-3.5" />
                           需审批
-                        </StatusBadge>
+                        </StatusPill>
                       ) : null}
                     </div>
                     {blockers.length > 0 ? (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-v3-ink-2">
                         {`依赖：${blockers.join("、")}`}
                       </p>
                     ) : null}
@@ -137,35 +137,35 @@ export function PlanTaskGraph({
                 );
               })}
             </div>
-          </LiquidCard>
+          </SoftCard>
         );
       })}
     </div>
   );
 }
 
-function taskStatusTone(status: string): Tone {
+function taskStatusTone(status: string): V3Tone {
   if (["completed", "accepted", "approved", "done", "success"].includes(status)) {
-    return "success";
+    return "ok";
   }
   if (["failed", "rejected", "cancelled", "blocked"].includes(status)) {
     return "danger";
   }
   if (["pending", "waiting", "review_required", "planning_pending"].includes(status)) {
-    return "warning";
+    return "warn";
   }
   if (["dispatchable", "running", "in_progress"].includes(status)) {
     return "info";
   }
-  return "neutral";
+  return "mute";
 }
 
-function riskTone(risk: string): Tone {
+function riskTone(risk: string): V3Tone {
   if (["high", "critical"].includes(risk)) {
     return "danger";
   }
   if (risk === "medium") {
-    return "warning";
+    return "warn";
   }
-  return "neutral";
+  return "mute";
 }

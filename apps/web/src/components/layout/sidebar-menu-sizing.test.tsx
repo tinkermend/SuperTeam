@@ -42,7 +42,7 @@ describe('sidebar menu sizing', () => {
     expect(labelStyle.fontSize).toBe('16px')
   })
 
-  it('keeps active menu labels crisp on the selected gradient', async () => {
+  it('uses the v3 blue soft active state for selected menu rows', async () => {
     await render(
       <SidebarProvider>
         <SidebarMenu>
@@ -74,10 +74,11 @@ describe('sidebar menu sizing', () => {
     const labelStyle = getComputedStyle(label as HTMLElement)
     const iconStyle = getComputedStyle(icon as SVGElement)
 
-    expect(buttonStyle.color).toBe('rgb(255, 255, 255)')
-    expect(labelStyle.color).toBe('rgb(255, 255, 255)')
+    expect(buttonStyle.backgroundColor).toBe('rgb(233, 239, 255)')
+    expect(buttonStyle.color).toBe('rgb(35, 72, 224)')
+    expect(labelStyle.color).toBe('rgb(35, 72, 224)')
     expect(labelStyle.textShadow).toBe('none')
-    expect(iconStyle.color).toBe('rgb(255, 255, 255)')
+    expect(iconStyle.color).toBe('rgb(35, 72, 224)')
   })
 
   it('keeps a badged inbox row at the standard navigation size', async () => {

@@ -75,6 +75,12 @@ describe("ProjectExecutionTracePanel", () => {
       .element(screen.getByText("正在加载执行证据链"))
       .toBeInTheDocument();
     await expect
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-loading-state"]'))
+      .toBeInTheDocument();
+    await expect
       .element(screen.getByText("暂无执行证据链"))
       .not.toBeInTheDocument();
   });
@@ -91,6 +97,9 @@ describe("ProjectExecutionTracePanel", () => {
 
     await expect
       .element(screen.getByText("执行证据链接口失败"))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-error-state"]'))
       .toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
     await expect
@@ -112,6 +121,11 @@ describe("ProjectExecutionTracePanel", () => {
     await expect
       .element(screen.getByText("provider_exit", { exact: true }))
       .toBeInTheDocument();
+    await expect
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .toBeInTheDocument();
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(5);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
     await expect
       .element(screen.getByLabelText("执行尝试 1"))
       .toBeInTheDocument();

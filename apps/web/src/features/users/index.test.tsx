@@ -419,6 +419,11 @@ describe("Users", () => {
     await expect.element(screen.getByText("operator@example.com").first()).toBeInTheDocument();
     await expect.element(screen.getByText("team.member.change_role", { exact: true }).first()).toBeInTheDocument();
     await expect.element(screen.getByText("Chrome 125 / macOS").first()).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-icon-tile"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
     await expect.element(screen.getByRole("link", { name: "去团队管理分配" })).toHaveAttribute("data-router-link", "true");
     await expect.element(screen.getByRole("link", { name: "查看权限中心" })).toHaveAttribute("data-router-link", "true");
 

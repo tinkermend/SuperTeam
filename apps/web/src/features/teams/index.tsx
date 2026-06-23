@@ -5,9 +5,13 @@ import { Plus, UsersRound } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
-import { SemanticIconTile } from "@/components/superteam/liquid-components";
+import {
+  IconTile,
+  V3Button,
+  V3ErrorState,
+  V3LoadingState,
+} from "@/components/superteam";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { Button } from "@/components/ui/button";
 import {
   archiveTeam,
   disableTeam,
@@ -93,22 +97,24 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <SemanticIconTile tone="info" size="lg">
+            <IconTile tone="info" size="lg">
               <UsersRound />
-            </SemanticIconTile>
+            </IconTile>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">团队管理</h1>
-              <p className="text-sm text-muted-foreground">
+              <h1 className="text-[28px] font-extrabold tracking-tight text-v3-ink">
+                团队管理
+              </h1>
+              <p className="text-[13px] text-v3-ink-2">
                 团队负责人、治理配置和协作边界。
               </p>
             </div>
           </div>
-          <Button asChild className="self-start sm:self-auto">
+          <V3Button asChild className="self-start sm:self-auto">
             <Link to="/teams/new">
               <Plus data-icon="inline-start" />
               新建团队
             </Link>
-          </Button>
+          </V3Button>
         </div>
 
         <TeamManagementToolbar
@@ -178,10 +184,10 @@ export function TeamDetailView({
       </Header>
       <Main>
         {overview.isLoading ? (
-          <p className="text-sm text-muted-foreground">加载中</p>
+          <V3LoadingState label="团队概览加载中" />
         ) : null}
         {overview.isError ? (
-          <p className="text-sm text-destructive">团队概览加载失败</p>
+          <V3ErrorState title="团队概览加载失败" />
         ) : null}
         {overview.data ? (
           <TeamDetailLayout

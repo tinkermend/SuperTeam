@@ -6,7 +6,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Loader2, LogIn } from 'lucide-react'
 import { useAuth } from '@/features/auth/use-auth'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { V3Button } from '@/components/superteam'
 import {
   Form,
   FormControl,
@@ -71,10 +71,10 @@ export function UserAuthForm({
           name='username'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>账号</FormLabel>
+              <FormLabel className='text-v3-ink-2'>账号</FormLabel>
               <FormControl>
                 <Input
-                  className='h-12 rounded-full px-5'
+                  className='h-12 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
                   placeholder='请输入账号'
                   {...field}
                 />
@@ -88,10 +88,10 @@ export function UserAuthForm({
           name='password'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>密码</FormLabel>
+              <FormLabel className='text-v3-ink-2'>密码</FormLabel>
               <FormControl>
                 <PasswordInput
-                  className='h-12 rounded-full px-5 pe-11'
+                  className='h-12 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 pe-11 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
                   placeholder='请输入密码'
                   {...field}
                 />
@@ -101,18 +101,21 @@ export function UserAuthForm({
           )}
         />
         {formError ? (
-          <p className='text-sm font-medium text-destructive' role='alert'>
+          <p
+            className='rounded-xl bg-v3-danger-soft px-3 py-2 text-sm font-bold text-v3-danger'
+            role='alert'
+          >
             {formError}
           </p>
         ) : null}
-        <Button className='mt-1 h-12 rounded-full text-base' disabled={isLoading}>
+        <V3Button className='mt-1 h-12 text-base' disabled={isLoading} type='submit'>
           {isLoading ? (
             <Loader2 className='animate-spin' data-icon='inline-start' />
           ) : (
             <LogIn data-icon='inline-start' />
           )}
           登录
-        </Button>
+        </V3Button>
       </form>
     </Form>
   )

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>技能管理 · SuperTeam · Soft-Flat v3</title>
+<style>
+  /* ============================================================
+     SuperTeam — Soft-Flat v3 (参考 PolicyPilot 风格)
+     柔和扁平 · 大圆角白卡 · 弥散浅阴影 · 黑粗大数字
+     一块蓝渐变 signature · squircle 图标芯片 · 软色状态 pill
+     ============================================================ */
+  :root {
+    --bg:#f3f4f6;
+    --card:#ffffff;
+    --card-soft:#f7f8fa;
+    --card-inner:#fafbfc;
+    --ink:#0b0d12;
+    --ink-2:#697586;
+    --ink-3:#9aa4b2;
+    --line:#eef1f4;
+    --line-2:#e6e9ee;
+
+    --brand:#2f5fff;
+    --brand-deep:#2348e0;
+    --brand-grad:linear-gradient(140deg,#5b8bff 0%,#2f5fff 58%,#2348e0 100%);
+    --brand-soft:#e9efff;
+
+    --ok:#15a06b;    --ok-soft:#e4f6ee;
+    --warn:#cf7a14;  --warn-soft:#fdf0db;
+    --danger:#e5484d;--danger-soft:#fde8e9;
+    --info:#2f5fff;  --info-soft:#e9efff;
+    --mute:#64748b;  --mute-soft:#eef1f4;
+    --purple:#7c5cff;--purple-soft:#efeaff;
+
+    --r-card:22px; --r-inner:15px; --r-chip:13px; --r-pill:9px; --r-btn:12px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+    --shadow-pop:0 10px 44px rgba(16,24,40,.12);
+    --mono:ui-monospace,"SFMono-Regular","Menlo","Cascadia Code",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  [data-theme="dark"]{
+    --bg:#0d1014; --card:#171b22; --card-soft:#1c212a; --card-inner:#1a1f27;
+    --ink:#f3f5f8; --ink-2:#9aa6b4; --ink-3:#6b7686;
+    --line:#262c35; --line-2:#2e353f;
+    --brand:#5b8bff; --brand-soft:rgba(91,139,255,.16);
+    --ok:#34d399; --ok-soft:rgba(52,211,153,.15);
+    --warn:#fbbf24; --warn-soft:rgba(251,191,36,.15);
+    --danger:#f87171;--danger-soft:rgba(248,113,113,.16);
+    --info:#5b8bff; --info-soft:rgba(91,139,255,.16);
+    --mute:#94a3b8; --mute-soft:rgba(148,163,184,.14);
+    --purple:#a78bfa;--purple-soft:rgba(167,139,250,.16);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);
+    -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .num{font-variant-numeric:tabular-nums;}
+  .mono{font-family:var(--mono);}
+  a{color:inherit;text-decoration:none;}
+
+  .orb{position:fixed;right:-90px;bottom:-110px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#e7eaef 70%,#dfe3e9);
+    box-shadow:0 30px 80px rgba(16,24,40,.08);z-index:0;pointer-events:none;opacity:.7;}
+  [data-theme="dark"] .orb{background:radial-gradient(circle at 35% 30%,#222934,#161b22 70%);opacity:.5;}
+
+  .topnav{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:30px;
+    padding:14px 30px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(14px);}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;letter-spacing:-.02em;}
+  .logo .mk{width:26px;height:26px;border-radius:9px;background:var(--brand-grad);display:flex;
+    align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 4px 12px rgba(47,95,255,.35);}
+  .menu{display:flex;gap:4px;margin-left:8px;}
+  .menu a{padding:8px 14px;border-radius:10px;color:var(--ink-2);font-weight:550;font-size:14px;}
+  .menu a:hover{background:var(--card);color:var(--ink);}
+  .menu a.on{color:var(--ink);font-weight:650;}
+  .grow{flex:1;}
+  .tbtn{width:38px;height:38px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;border:none;font-size:15px;}
+  .tbtn:hover{color:var(--ink);}
+  .me{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 5px;background:var(--card);border-radius:13px;box-shadow:var(--shadow);}
+  .me .pic{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#94a3b8,#475569);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .me .nm{font-size:12.5px;font-weight:650;line-height:1.1;}
+  .me .ro{font-size:11px;color:var(--ink-3);}
+
+  .wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:14px 30px 60px;}
+  .head{display:flex;align-items:center;gap:14px;margin:6px 0 22px;}
+  .back{width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:17px;}
+  .head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.03em;}
+  .head .new{margin-left:auto;display:inline-flex;align-items:center;gap:8px;background:var(--brand);
+    color:#fff;font-weight:650;font-size:13.5px;padding:11px 18px;border-radius:13px;border:none;cursor:pointer;box-shadow:0 8px 20px rgba(47,95,255,.3);}
+  .head .new:hover{background:var(--brand-deep);}
+
+  .hero{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:18px;margin-bottom:18px;}
+  @media(max-width:960px){.hero{grid-template-columns:1fr;}}
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 24px;}
+  .card-h{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+  .card-h h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.01em;}
+  .ico-sq{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;}
+  .corner{margin-left:auto;display:flex;gap:8px;}
+  .gbtn{width:34px;height:34px;border-radius:11px;background:var(--card-soft);display:flex;
+    align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;font-size:15px;}
+  .gbtn:hover{color:var(--ink);}
+
+  .seg-labels{display:flex;font-size:13px;color:var(--ink-2);font-weight:600;margin-bottom:8px;}
+  .segbar{display:flex;height:8px;border-radius:6px;overflow:hidden;gap:3px;margin-bottom:20px;}
+  .segbar i{display:block;height:100%;border-radius:6px;}
+  .mini-stats{display:flex;gap:12px;margin-bottom:20px;}
+  .mini{flex:1;background:var(--card-inner);border:1px solid var(--line);border-radius:var(--r-inner);padding:13px 15px;}
+  .mini .top{display:flex;align-items:center;gap:7px;font-size:18px;font-weight:750;}
+  .mini .top .dot{width:7px;height:7px;border-radius:50%;}
+  .mini .lab{font-size:12.5px;color:var(--ink-2);margin-top:1px;}
+  .twostat{display:flex;gap:34px;}
+  .twostat .big{font-size:30px;font-weight:800;letter-spacing:-.02em;}
+  .twostat .sub{font-size:13px;color:var(--ink-2);align-self:flex-end;padding-bottom:6px;margin-left:-26px;}
+
+  .statcard .big{font-size:46px;font-weight:800;letter-spacing:-.03em;margin:6px 0 2px;}
+  .statcard .cap{font-size:13.5px;color:var(--ink-2);}
+
+  .bluecard{grid-column:1 / -1;background:var(--brand-grad);color:#fff;border-radius:var(--r-card);
+    box-shadow:0 18px 50px rgba(47,95,255,.32);padding:24px 26px;display:grid;grid-template-columns:auto 1fr;gap:30px;align-items:center;}
+  @media(max-width:960px){.bluecard{grid-template-columns:1fr;}}
+  .bluecard .ttl{font-size:16px;font-weight:700;opacity:.95;margin-bottom:14px;display:flex;align-items:center;gap:10px;}
+  .ring{position:relative;width:160px;height:160px;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .pct{font-size:40px;font-weight:800;letter-spacing:-.02em;}
+  .ring .pct small{font-size:18px;font-weight:600;}
+  .ring .cap{font-size:12px;opacity:.8;margin-top:2px;}
+  .blue-list{display:flex;flex-direction:column;gap:10px;}
+  .blue-row{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 15px;display:flex;align-items:center;gap:10px;}
+  .blue-row .d{width:7px;height:7px;border-radius:50%;background:#fff;}
+  .blue-row .v{font-weight:700;}
+  .blue-row .l{opacity:.82;font-size:13px;}
+  .blue-row .l b{font-weight:600;}
+
+  .filters{display:flex;align-items:center;gap:8px;margin:24px 0 16px;flex-wrap:wrap;}
+  .tab{padding:9px 15px;border-radius:11px;font-size:13.5px;font-weight:600;color:var(--ink-2);cursor:pointer;}
+  .tab.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow);}
+  .tab .c{color:var(--ink-3);font-weight:600;margin-left:3px;}
+  .tab.on .c{color:var(--brand);}
+  .srch{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:9px 14px;box-shadow:var(--shadow);color:var(--ink-3);min-width:200px;}
+  .srch input{border:none;outline:none;background:transparent;font:inherit;font-size:13.5px;color:var(--ink);width:100%;}
+  .sortby{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:9px 14px;box-shadow:var(--shadow);font-size:13.5px;color:var(--ink-2);font-weight:600;cursor:pointer;}
+
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;}
+  @media(max-width:1180px){.grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:680px){.grid{grid-template-columns:1fr;}}
+  .skill{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px;
+    display:flex;flex-direction:column;gap:16px;transition:transform .15s,box-shadow .15s;cursor:pointer;}
+  .skill:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);}
+  .skill-h{display:flex;align-items:flex-start;gap:12px;}
+  .skill-h .meta{flex:1;min-width:0;}
+  .skill-h .nm{font-size:16px;font-weight:750;letter-spacing:-.01em;}
+  .skill-h .cat{font-size:12.5px;color:var(--ink-3);margin-top:2px;}
+  .kv{display:flex;flex-direction:column;gap:11px;}
+  .kv .row{display:flex;align-items:center;justify-content:space-between;font-size:13px;}
+  .kv .k{color:var(--ink-3);}
+  .kv .v{font-weight:650;}
+  .owner{display:inline-flex;align-items:center;gap:7px;}
+  .owner .av{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#94a3b8,#475569);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:8px;}
+  .pill .d{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .p-ok{color:var(--ok);background:var(--ok-soft);}
+  .p-info{color:var(--info);background:var(--info-soft);}
+  .p-mute{color:var(--mute);background:var(--mute-soft);}
+  .p-danger{color:var(--danger);background:var(--danger-soft);}
+  .p-warn{color:var(--warn);background:var(--warn-soft);}
+  .p-purple{color:var(--purple);background:var(--purple-soft);}
+  .skill-f{display:flex;align-items:center;gap:10px;padding-top:14px;border-top:1px solid var(--line);}
+  .spark{flex:1;height:30px;display:flex;align-items:flex-end;gap:3px;}
+  .spark i{flex:1;background:var(--brand-soft);border-radius:3px 3px 0 0;}
+  .spark i.hi{background:var(--brand);}
+  .use{font-size:12px;color:var(--ink-3);white-space:nowrap;}
+  .use b{color:var(--ink);font-weight:750;font-size:14px;}
+
+  .t-blue{background:var(--info-soft);color:var(--info);}
+  .t-green{background:var(--ok-soft);color:var(--ok);}
+  .t-amber{background:var(--warn-soft);color:var(--warn);}
+  .t-purple{background:var(--purple-soft);color:var(--purple);}
+  .t-mute{background:var(--mute-soft);color:var(--mute);}
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .svg-sm{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+
+  <nav class="topnav">
+    <div class="logo"><span class="mk">S</span> SuperTeam</div>
+    <div class="menu">
+      <a href="#">协调台</a>
+      <a href="projects.html">项目</a>
+      <a href="employees.html">数字员工</a>
+      <a href="skills.html" class="on">技能</a>
+      <a href="#">Runtime</a>
+      <a href="#">审计</a>
+    </div>
+    <div class="grow"></div>
+    <button class="tbtn" id="theme">◐</button>
+    <button class="tbtn">♪</button>
+    <div class="me"><div class="pic">林</div><div><div class="nm">林 Anna</div><div class="ro">平台管理员</div></div></div>
+  </nav>
+
+  <div class="wrap">
+    <div class="head">
+      <a href="#" class="back">‹</a>
+      <h1>技能管理</h1>
+      <button class="new"><svg class="svg-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 上架技能</button>
+    </div>
+
+    <div class="hero">
+      <div class="card">
+        <div class="card-h">
+          <div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z"/></svg></div>
+          <h3>技能健康度</h3>
+          <div class="corner"><span class="gbtn">⋮</span></div>
+        </div>
+        <div class="seg-labels"><span style="flex:.14">14%</span><span style="flex:.64">64%</span><span style="flex:.22">22%</span></div>
+        <div class="segbar"><i style="flex:.14;background:var(--warn)"></i><i style="flex:.64;background:#f4c430"></i><i style="flex:.22;background:var(--ok)"></i></div>
+        <div class="mini-stats">
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--danger)"></span>3</div><div class="lab">契约失效</div></div>
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--warn)"></span>11</div><div class="lab">待更新版本</div></div>
+          <div class="mini"><div class="top"><span class="dot" style="background:var(--ok)"></span>5</div><div class="lab">审核中</div></div>
+        </div>
+        <div class="twostat">
+          <div><div class="big num">96</div><div class="sub">已发布技能</div></div>
+          <div><div class="big num">24</div><div class="sub">草稿</div></div>
+        </div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h">
+          <div class="ico-sq t-green"><svg class="svg" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></svg></div>
+          <div class="corner"><span class="gbtn">↗</span></div>
+        </div>
+        <div class="cap">本月调用</div>
+        <div class="big num">38.4k</div>
+        <div class="cap">成功率 <b style="color:var(--ink)">98.6%</b></div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h">
+          <div class="ico-sq t-amber"><svg class="svg" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+          <div class="corner"><span class="gbtn">↗</span></div>
+        </div>
+        <div class="cap">待人工审核</div>
+        <div class="big num">5</div>
+        <div class="cap">最久已等 <b style="color:var(--ink)">2 天</b></div>
+      </div>
+
+      <div class="bluecard">
+        <div class="ring">
+          <svg width="160" height="160" viewBox="0 0 160 160">
+            <circle cx="80" cy="80" r="68" stroke="rgba(255,255,255,.22)" stroke-width="12" fill="none"/>
+            <circle cx="80" cy="80" r="68" stroke="#fff" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="427" stroke-dashoffset="277"/>
+          </svg>
+          <div class="mid"><div class="pct">35<small>%</small></div><div class="cap">代码类技能占比</div></div>
+        </div>
+        <div>
+          <div class="ttl"><svg class="svg-sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 3 4-6"/></svg> 调用量分布 · 近 30 天</div>
+          <div class="blue-list">
+            <div class="blue-row"><span class="d"></span><span class="v num">35% · 13.4k</span><span class="l">代码生成 · <b>claude-code / codex</b></span></div>
+            <div class="blue-row"><span class="d"></span><span class="v num">28% · 10.7k</span><span class="l">文档 / 需求拆解 · <b>spec-writer</b></span></div>
+            <div class="blue-row"><span class="d"></span><span class="v num">19% · 7.3k</span><span class="l">测试与验证 · <b>test-runner</b></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <span class="tab on">全部 <span class="c">120</span></span>
+      <span class="tab">已发布 <span class="c">96</span></span>
+      <span class="tab">审核中 <span class="c">5</span></span>
+      <span class="tab">草稿 <span class="c">24</span></span>
+      <span class="tab">已下架 <span class="c">8</span></span>
+      <div class="grow"></div>
+      <div class="srch"><svg class="svg-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="搜索技能、负责人、标签…"></div>
+      <div class="sortby">排序 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+    </div>
+
+    <div class="grid">
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></div>
+          <div class="meta"><div class="nm">代码实现 · claude-code</div><div class="cat">执行类 · Provider 技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v2.4.1</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">9,820</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">陈</span> 陈工</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-ok"><span class="d"></span>已发布</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:40%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:75%"></i><i style="height:55%"></i><i class="hi" style="height:90%"></i><i class="hi" style="height:80%"></i></div>
+          <div class="use">成功率 <b>99%</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-purple"><svg class="svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></div>
+          <div class="meta"><div class="nm">需求拆解与交接包</div><div class="cat">分析类 · 组合技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v1.8.0</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">7,310</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">林</span> 林Anna</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-ok"><span class="d"></span>已发布</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:55%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:50%"></i><i style="height:70%"></i><i class="hi" style="height:85%"></i><i class="hi" style="height:72%"></i></div>
+          <div class="use">成功率 <b>97%</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-amber"><svg class="svg" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div>
+          <div class="meta"><div class="nm">回归测试套件</div><div class="cat">验证类 · Provider 技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v3.0.2</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">5,140</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">吴</span> 吴工</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-info"><span class="d"></span>审核中</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:35%"></i><i style="height:50%"></i><i style="height:42%"></i><i style="height:60%"></i><i style="height:48%"></i><i class="hi" style="height:70%"></i><i class="hi" style="height:62%"></i></div>
+          <div class="use">成功率 <b>94%</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-green"><svg class="svg" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 4v6h-6"/></svg></div>
+          <div class="meta"><div class="nm">外部能力 · GitHub PR</div><div class="cat">能力接入 · Connector</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v1.2.0</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">3,902</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">赵</span> 赵工</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-ok"><span class="d"></span>已发布</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:60%"></i><i style="height:45%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:80%"></i><i class="hi" style="height:88%"></i><i class="hi" style="height:75%"></i></div>
+          <div class="use">成功率 <b>100%</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-mute"><svg class="svg" viewBox="0 0 24 24"><path d="M4 4h16v12H4z"/><path d="M2 20h20M8 16v4M16 16v4"/></svg></div>
+          <div class="meta"><div class="nm">部署发布编排</div><div class="cat">执行类 · 高风险技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v0.9.3</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">812</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">陈</span> 陈工</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-warn"><span class="d"></span>草稿</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:30%"></i><i style="height:38%"></i><i style="height:28%"></i><i style="height:45%"></i><i style="height:35%"></i><i class="hi" style="height:52%"></i><i class="hi" style="height:40%"></i></div>
+          <div class="use">需审批 <b>高风险</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="meta"><div class="nm">客户沟通摘要</div><div class="cat">分析类 · 组合技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v2.1.0</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">4,455</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">孙</span> 孙工</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-ok"><span class="d"></span>已发布</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:50%"></i><i style="height:62%"></i><i style="height:48%"></i><i style="height:68%"></i><i style="height:58%"></i><i class="hi" style="height:78%"></i><i class="hi" style="height:70%"></i></div>
+          <div class="use">成功率 <b>98%</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-mute"><svg class="svg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
+          <div class="meta"><div class="nm">数据导出 · PII</div><div class="cat">能力接入 · 受限技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v1.0.4</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">220</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">林</span> 林Anna</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-danger"><span class="d"></span>已下架</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:25%"></i><i style="height:20%"></i><i style="height:30%"></i><i style="height:18%"></i><i style="height:22%"></i><i style="height:15%"></i><i style="height:12%"></i></div>
+          <div class="use">权限 <b>受限</b></div>
+        </div>
+      </div>
+
+      <div class="skill">
+        <div class="skill-h">
+          <div class="ico-sq t-purple"><svg class="svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg></div>
+          <div class="meta"><div class="nm">上下文切片注入</div><div class="cat">平台类 · 系统技能</div></div>
+          <span class="gbtn">↗</span>
+        </div>
+        <div class="kv">
+          <div class="row"><span class="k">版本</span><span class="v mono">v4.2.0</span></div>
+          <div class="row"><span class="k">本月调用</span><span class="v num">12,030</span></div>
+          <div class="row"><span class="k">负责人</span><span class="owner"><span class="av">平</span> 平台</span></div>
+          <div class="row"><span class="k">状态</span><span class="pill p-ok"><span class="d"></span>已发布</span></div>
+        </div>
+        <div class="skill-f">
+          <div class="spark"><i style="height:65%"></i><i style="height:72%"></i><i style="height:60%"></i><i style="height:80%"></i><i style="height:70%"></i><i class="hi" style="height:92%"></i><i class="hi" style="height:85%"></i></div>
+          <div class="use">成功率 <b>99.9%</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+  </script>
+</body>
+</html>

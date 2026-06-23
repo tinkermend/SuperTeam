@@ -218,6 +218,17 @@ describe("RuntimeNodesView", () => {
     await expect.element(screen.getByText("Runtime command completed")).toBeVisible();
   });
 
+  it("renders runtime management with v3 soft-flat surfaces", async () => {
+    const { fetcher } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "Runtime 节点" })).toBeVisible();
+    await expect.element(screen.getByText("6 / 8")).toBeVisible();
+    expect(screen.container.querySelectorAll("[data-slot='v3-soft-card']").length).toBeGreaterThanOrEqual(4);
+    expect(screen.container.querySelector("[data-slot='v3-work-surface']")).not.toBeNull();
+    expect(screen.container.querySelector("[data-slot='v3-table']")).not.toBeNull();
+  });
+
   it("does not render out-of-scope runtime management surfaces", async () => {
     const { fetcher } = createRuntimeFetcher();
     const screen = await renderRuntimeNodesView(fetcher);

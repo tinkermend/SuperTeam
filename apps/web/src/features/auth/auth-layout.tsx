@@ -6,13 +6,16 @@ const LOGIN_DISPLAY_SRC = '/images/brand/jushu-platform-logo.png'
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className='superteam-auth-shell relative grid min-h-svh place-items-center overflow-x-hidden overflow-y-auto px-4 py-6 sm:py-10'>
+    <div
+      data-slot='v3-auth-shell'
+      className='relative grid min-h-svh place-items-center overflow-x-hidden overflow-y-auto bg-v3-bg px-4 py-6 text-v3-ink sm:py-10'
+    >
       <div className='relative z-10 flex w-full max-w-[27rem] flex-col items-center'>
-        <div className='relative mb-0 flex flex-col items-center text-center before:absolute before:inset-[-1.5rem] before:-z-10 before:rounded-full before:bg-[radial-gradient(circle,rgba(255,255,255,0.72)_0%,rgba(245,255,252,0.42)_46%,rgba(245,255,252,0)_72%)] before:content-[""] dark:before:bg-[radial-gradient(circle,rgba(14,165,153,0.22)_0%,rgba(15,23,42,0.18)_46%,rgba(15,23,42,0)_72%)]'>
+        <div className='mb-0 flex flex-col items-center text-center'>
           <img
             src={LOGIN_DISPLAY_SRC}
             alt='炬枢平台 - 新炬网络'
-            className='h-auto max-h-[54svh] w-[22rem] max-w-[88vw] object-contain opacity-100 contrast-[1.08] saturate-[1.08] drop-shadow-[0_18px_44px_rgba(15,118,110,0.24)] dark:brightness-[1.5] dark:contrast-[1.12] dark:saturate-[1.12] sm:w-[24rem]'
+            className='h-auto max-h-[54svh] w-[22rem] max-w-[88vw] object-contain opacity-100 drop-shadow-none contrast-[1.08] saturate-[1.08] dark:brightness-[1.24] dark:contrast-[1.08] dark:saturate-[1.08] sm:w-[24rem]'
           />
         </div>
         {children}

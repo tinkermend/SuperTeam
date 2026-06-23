@@ -144,6 +144,10 @@ describe("AccountSettings", () => {
     await expect.element(screen.getByText("operator@example.com")).toBeInTheDocument();
     await expect.element(screen.getByAltText("值班负责人 的头像")).toBeInTheDocument();
     await expect.element(screen.getByText("Chrome 125 / macOS")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringContaining("/api/auth/account/login-logs?limit=10&offset=0"),
       expect.any(Object),

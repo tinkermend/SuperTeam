@@ -3,8 +3,8 @@ import { render } from 'vitest-browser-react'
 import { SidebarInset } from '@/components/ui/sidebar'
 import './index.css'
 
-describe('liquid glass shell background styles', () => {
-  it('keeps the light shell aligned with the soft mint and warm cream reference palette', async () => {
+describe('authenticated v3 shell background styles', () => {
+  it('uses a neutral v3 shell background', async () => {
     await render(
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
         shell
@@ -18,37 +18,30 @@ describe('liquid glass shell background styles', () => {
     expect(sidebarWrapper).toBeInstanceOf(HTMLElement)
 
     const bodyBackground = getComputedStyle(document.body).backgroundImage
+    const bodyColor = getComputedStyle(document.body).backgroundColor
     const sidebarBackground = getComputedStyle(
       sidebarWrapper as HTMLElement
     ).backgroundImage
+    const sidebarColor = getComputedStyle(sidebarWrapper as HTMLElement)
+      .backgroundColor
 
-    expect(bodyBackground).toContain('circle at 18% 4%')
-    expect(bodyBackground).toContain('rgba(192, 246, 239, 0.36)')
-    expect(bodyBackground).toContain('circle at 58% 0%')
-    expect(bodyBackground).toContain('rgba(255, 239, 207, 0.5)')
-    expect(bodyBackground).toContain('circle at 94% 5%')
-    expect(bodyBackground).toContain('rgba(255, 244, 220, 0.44)')
-    expect(bodyBackground).toContain('rgba(202, 241, 238, 0.28)')
-    expect(sidebarBackground).toContain('circle at 18% 4%')
-    expect(sidebarBackground).toContain('rgba(192, 246, 239, 0.36)')
-    expect(sidebarBackground).toContain('circle at 58% 0%')
-    expect(sidebarBackground).toContain('rgba(255, 239, 207, 0.5)')
-    expect(sidebarBackground).toContain('circle at 94% 5%')
-    expect(sidebarBackground).toContain('rgba(255, 244, 220, 0.44)')
-    expect(sidebarBackground).toContain('rgba(202, 241, 238, 0.28)')
+    expect(bodyBackground).toBe('none')
+    expect(bodyColor).toBe('rgb(243, 244, 246)')
+    expect(sidebarBackground).toBe('none')
+    expect(sidebarColor).toBe('rgb(243, 244, 246)')
   })
 
-  it('uses the wrapper as the single authenticated shell background source', async () => {
+  it('keeps the header as a v3 white surface over the neutral shell', async () => {
     await render(
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
         <div className='peer' data-state='expanded' data-variant='inset' />
         <SidebarInset data-testid='sidebar-inset'>
-          <header data-testid='header' className='superteam-header-glass'>
+          <header data-testid='header' data-slot='v3-shell-header'>
             <button
               type='button'
               data-slot='button'
               data-testid='search'
-              className='superteam-search-glass'
+              className='bg-v3-card text-v3-ink-2'
             >
               Search
             </button>
@@ -69,30 +62,23 @@ describe('liquid glass shell background styles', () => {
     expect(header).toBeInstanceOf(HTMLElement)
     expect(search).toBeInstanceOf(HTMLElement)
 
-    const wrapperBackground = getComputedStyle(
-      sidebarWrapper as HTMLElement
-    ).backgroundImage
     const insetStyle = getComputedStyle(sidebarInset as HTMLElement)
     const headerStyle = getComputedStyle(header as HTMLElement)
-    const searchBackground = getComputedStyle(
-      search as HTMLElement
-    ).backgroundImage
+    const searchElement = search as HTMLElement
+    const searchStyle = getComputedStyle(searchElement)
 
-    expect(wrapperBackground).toContain('circle at 58% 0%')
-    expect(wrapperBackground).toContain('circle at 94% 5%')
     expect((sidebarInset as HTMLElement).className).not.toContain('shadow')
     expect(insetStyle.backgroundImage).toBe('none')
     expect(insetStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(insetStyle.boxShadow).toBe('none')
     expect(headerStyle.backgroundImage).toBe('none')
-    expect(headerStyle.borderBottomStyle).toBe('none')
-    expect(headerStyle.borderBottomWidth).toBe('0px')
-    expect(headerStyle.boxShadow).not.toContain('inset')
-    expect(searchBackground).toContain('rgba(255, 255, 255, 0.62)')
-    expect(searchBackground).not.toContain('rgba(255, 255, 255, 0.88)')
+    expect(headerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(headerStyle.borderBottomColor).toBe('rgb(238, 241, 244)')
+    expect(headerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.04)')
+    expect(searchStyle.backgroundColor).toBe('rgb(255, 255, 255)')
   })
 
-  it('keeps the sidebar panel softly tinted without a hard divider line', async () => {
+  it('keeps the sidebar panel white with a soft v3 divider and shadow', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
         <div
@@ -117,20 +103,10 @@ describe('liquid glass shell background styles', () => {
     const containerStyle = getComputedStyle(sidebarContainer as HTMLElement)
     const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
 
-    expect(containerStyle.borderInlineEndColor).toBe(
-      'rgba(156, 242, 218, 0.14)'
-    )
-    expect(containerStyle.boxShadow).toContain('rgba(255, 255, 255, 0.46)')
-    expect(innerStyle.borderInlineEndColor).toBe('rgba(255, 255, 255, 0.5)')
-    expect(innerStyle.backgroundColor).toBe('rgba(236, 250, 246, 0.64)')
-    expect(innerStyle.backgroundImage).toContain(
-      'rgba(192, 246, 239, 0.42)'
-    )
-    expect(innerStyle.backgroundImage).toContain(
-      'rgba(255, 244, 220, 0.34)'
-    )
-    expect(innerStyle.backgroundImage).not.toContain(
-      'rgba(255, 255, 255, 0.66)'
-    )
+    expect(containerStyle.borderInlineEndColor).toBe('rgb(223, 228, 234)')
+    expect(containerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.055)')
+    expect(innerStyle.borderInlineEndColor).toBe('rgb(238, 241, 244)')
+    expect(innerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(innerStyle.backgroundImage).toBe('none')
   })
 })

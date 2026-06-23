@@ -17,17 +17,22 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  LiquidCard,
-  LiquidTabsList,
-  LiquidTabsTrigger,
-  SemanticIconTile,
-  StatusBadge,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3Tone,
 } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -43,7 +48,6 @@ import {
   type ProjectTask,
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
-import { statusLabel, statusTone } from "./project-switcher-pane";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
@@ -74,6 +78,26 @@ type RevisionSelection = {
   projectId: string;
   revisionId?: string;
 };
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    acceptance: "验收中",
+    archived: "已归档",
+    configuring: "配置中",
+    draft: "草稿",
+    paused: "已暂停",
+    running: "运行中",
+  };
+  return labels[status] ?? status;
+}
+
+function statusTone(status: string): V3Tone {
+  if (status === "running") return "ok";
+  if (status === "archived") return "mute";
+  if (status === "paused" || status === "acceptance") return "warn";
+  if (status === "configuring" || status === "draft") return "info";
+  return "mute";
+}
 
 export function ProjectConfigView({
   apiBaseUrl,
@@ -292,11 +316,11 @@ export function ProjectConfigView({
       title="项目配置"
       description="成员、数字员工池、协调策略、审批规则和证据归档"
       actions={
-        <Button asChild variant="outline">
+        <V3Button asChild variant="outline">
           <Link params={{ projectId }} to="/projects/$projectId">
             返回运行详情
           </Link>
-        </Button>
+        </V3Button>
       }
     >
       {configQuery.isLoading ? <ProjectLoadingState /> : null}
@@ -305,45 +329,45 @@ export function ProjectConfigView({
       ) : null}
       {config ? (
         <div className="grid gap-4">
-          <LiquidCard className="rounded-xl p-5">
+          <SoftCard className="p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex min-w-0 items-start gap-3">
-                <SemanticIconTile tone="primary" size="lg">
+                <IconTile tone="brand" size="lg">
                   <GitBranch />
-                </SemanticIconTile>
+                </IconTile>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-xl font-semibold tracking-normal">
+                    <h2 className="truncate text-xl font-bold tracking-normal text-v3-ink">
                       {config.project.name}
                     </h2>
-                    <StatusBadge tone={statusTone(config.project.status)}>
+                    <StatusPill tone={statusTone(config.project.status)}>
                       {statusLabel(config.project.status)}
-                    </StatusBadge>
+                    </StatusPill>
                   </div>
-                  <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
                     {config.project.goal}
                   </p>
                 </div>
               </div>
-              <Button
+              <V3Button
                 disabled={configFieldsDisabled}
                 type="button"
                 onClick={saveConfig}
               >
                 <Check data-icon="inline-start" />
                 保存配置
-              </Button>
+              </V3Button>
             </div>
             {isArchived ? (
-              <Alert className="mt-4 border-[color:var(--superteam-warning)]/30 bg-white/70">
-                <Archive className="text-[color:var(--superteam-warning)]" />
+              <Alert className="mt-4 border-v3-warn/30 bg-v3-warn-soft text-v3-ink">
+                <Archive className="text-v3-warn" />
                 <AlertTitle>项目已归档</AlertTitle>
                 <AlertDescription>配置页只读，保存与成员替换已禁用。</AlertDescription>
               </Alert>
             ) : null}
             {isConfigDirty ? (
-              <Alert className="mt-4 border-[color:var(--superteam-info)]/30 bg-white/70">
-                <GitBranch className="text-[color:var(--superteam-info)]" />
+              <Alert className="mt-4 border-v3-info/30 bg-v3-info-soft text-v3-ink">
+                <GitBranch className="text-v3-info" />
                 <AlertTitle>协调 Workflow 将收到配置变更</AlertTitle>
                 <AlertDescription>
                   保存后会向当前项目协调 Workflow 发送策略变更 signal，新的项目任务将使用最新策略。
@@ -355,7 +379,7 @@ export function ProjectConfigView({
                 {error || updateMutation.error?.message}
               </p>
             ) : null}
-          </LiquidCard>
+          </SoftCard>
 
           <ProjectConfigRevisionHistory
             error={
@@ -374,18 +398,21 @@ export function ProjectConfigView({
           />
 
           <Tabs defaultValue="overview" className="gap-4">
-            <LiquidTabsList>
-              <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="members">成员</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="digital">数字员工池</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="coordination">协调策略</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="approval">审批规则</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="evidence">证据归档</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="history">任务历史</LiquidTabsTrigger>
-            </LiquidTabsList>
+            <TabsList
+              className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3"
+              data-slot="v3-tab-list"
+            >
+              <ProjectConfigTab value="overview">概览</ProjectConfigTab>
+              <ProjectConfigTab value="members">成员</ProjectConfigTab>
+              <ProjectConfigTab value="digital">数字员工池</ProjectConfigTab>
+              <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
+              <ProjectConfigTab value="approval">审批规则</ProjectConfigTab>
+              <ProjectConfigTab value="evidence">证据归档</ProjectConfigTab>
+              <ProjectConfigTab value="history">任务历史</ProjectConfigTab>
+            </TabsList>
 
             <TabsContent value="overview">
-              <LiquidCard className="rounded-xl p-5">
+              <SoftCard className="p-5">
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="项目名称">
                     <Input
@@ -463,7 +490,7 @@ export function ProjectConfigView({
                     />
                   </Field>
                 </div>
-              </LiquidCard>
+              </SoftCard>
             </TabsContent>
 
             <TabsContent value="members">
@@ -662,10 +689,28 @@ function parseMembers(value: string): ProjectMemberInput[] {
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <Label className="grid gap-2">
-      <span>{label}</span>
+    <Label className="grid gap-2 text-v3-ink">
+      <span className="text-[13px] font-semibold">{label}</span>
       {children}
     </Label>
+  );
+}
+
+function ProjectConfigTab({
+  children,
+  value,
+}: {
+  children: ReactNode;
+  value: string;
+}) {
+  return (
+    <TabsTrigger
+      className="h-auto rounded-[10px] px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
+      data-slot="v3-tab"
+      value={value}
+    >
+      {children}
+    </TabsTrigger>
   );
 }
 
@@ -683,10 +728,10 @@ function PolicyPanel({
   value: string;
 }) {
   return (
-    <LiquidCard className="rounded-xl p-5">
+    <SoftCard className="p-5">
       <div className="mb-4 flex items-center gap-2">
-        <span className="text-primary [&_svg]:size-4">{icon}</span>
-        <h3 className="font-semibold">{label}</h3>
+        <span className="text-v3-brand [&_svg]:size-4">{icon}</span>
+        <h3 className="font-semibold text-v3-ink">{label}</h3>
       </div>
       <Textarea
         aria-label={label}
@@ -695,7 +740,7 @@ function PolicyPanel({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
-    </LiquidCard>
+    </SoftCard>
   );
 }
 
@@ -717,19 +762,19 @@ function MemberJsonPanel({
   onSave: () => void;
 }) {
   return (
-    <LiquidCard className="rounded-xl p-5">
+    <SoftCard className="p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <UserRound className="size-4 text-primary" />
-          <h3 className="font-semibold">成员完整替换 JSON</h3>
+          <UserRound className="size-4 text-v3-brand" />
+          <h3 className="font-semibold text-v3-ink">成员完整替换 JSON</h3>
         </div>
-        <Button disabled={disabled || isSaving} type="button" onClick={onSave}>
+        <V3Button disabled={disabled || isSaving} type="button" onClick={onSave}>
           保存成员池
-        </Button>
+        </V3Button>
       </div>
       {showWorkflowImpactNotice ? (
-        <Alert className="mb-4 border-[color:var(--superteam-decision)]/30 bg-white/70">
-          <UserRound className="text-[color:var(--superteam-decision)]" />
+        <Alert className="mb-4 border-v3-ok/30 bg-v3-ok-soft text-v3-ink">
+          <UserRound className="text-v3-ok" />
           <AlertTitle>数字员工池变更将影响新任务</AlertTitle>
           <AlertDescription>
             保存成员后会向当前项目协调 Workflow 发送成员变更 signal，后续分派只能使用最新 active 数字员工池。
@@ -744,7 +789,7 @@ function MemberJsonPanel({
         onChange={(event) => onMembersChange(event.target.value)}
       />
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-    </LiquidCard>
+    </SoftCard>
   );
 }
 
@@ -758,64 +803,104 @@ function MembersPanel({
   title: string;
 }) {
   return (
-    <LiquidCard className="rounded-xl">
-      <div className="flex items-center justify-between gap-3 border-b p-4">
+    <WorkSurface>
+      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
         <div className="flex items-center gap-2">
-          <span className="text-primary [&_svg]:size-4">{icon}</span>
-          <h3 className="font-semibold">{title}</h3>
+          <span className="text-v3-brand [&_svg]:size-4">{icon}</span>
+          <h3 className="font-semibold text-v3-ink">{title}</h3>
         </div>
-        <span className="text-xs text-muted-foreground">{members.length} 个</span>
+        <StatusPill tone="mute">{members.length} 个</StatusPill>
       </div>
-      <div className="divide-y">
-        {members.length === 0 ? (
-          <div className="p-5 text-sm text-muted-foreground">暂无成员</div>
-        ) : (
-          members.map((member) => (
-            <div className="flex items-center justify-between gap-3 p-4" key={member.id}>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {member.display_name_snapshot || member.principal_id}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {member.project_role} · {member.principal_type}
-                </p>
-              </div>
-              <StatusBadge tone="neutral">{member.status}</StatusBadge>
-            </div>
-          ))
-        )}
-      </div>
-    </LiquidCard>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th>成员</V3Th>
+            <V3Th>角色</V3Th>
+            <V3Th>类型</V3Th>
+            <V3Th>状态</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.length === 0 ? (
+            <tr>
+              <V3Td colSpan={4}>
+                <V3EmptyState title="暂无成员" />
+              </V3Td>
+            </tr>
+          ) : (
+            members.map((member) => (
+              <V3Tr key={member.id}>
+                <V3Td className="min-w-[220px]">
+                  <p className="truncate font-bold text-v3-ink">
+                    {member.display_name_snapshot || member.principal_id}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-[12px] text-v3-ink-3">
+                    {member.principal_id}
+                  </p>
+                </V3Td>
+                <V3Td className="whitespace-nowrap text-v3-ink-2">
+                  {member.project_role}
+                </V3Td>
+                <V3Td className="whitespace-nowrap text-v3-ink-2">
+                  {member.principal_type}
+                </V3Td>
+                <V3Td>
+                  <StatusPill tone="mute">{member.status}</StatusPill>
+                </V3Td>
+              </V3Tr>
+            ))
+          )}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }
 
 function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
   return (
-    <LiquidCard className="rounded-xl">
-      <div className="flex items-center justify-between gap-3 border-b p-4">
+    <WorkSurface>
+      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
         <div className="flex items-center gap-2">
-          <ClipboardList className="size-4 text-primary" />
-          <h3 className="font-semibold">任务历史</h3>
+          <ClipboardList className="size-4 text-v3-brand" />
+          <h3 className="font-semibold text-v3-ink">任务历史</h3>
         </div>
-        <span className="text-xs text-muted-foreground">{tasks.length} 条</span>
+        <StatusPill tone="mute">{tasks.length} 条</StatusPill>
       </div>
-      <div className="divide-y">
-        {tasks.length === 0 ? (
-          <div className="p-5 text-sm text-muted-foreground">暂无任务历史</div>
-        ) : (
-          tasks.map((task) => (
-            <div className="grid gap-1 p-4" key={task.id}>
-              <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium">{task.title}</p>
-                <StatusBadge tone="info">{task.status}</StatusBadge>
-              </div>
-              <p className="line-clamp-2 text-xs text-muted-foreground">
-                {task.summary || "暂无摘要"}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-    </LiquidCard>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th>任务</V3Th>
+            <V3Th>状态</V3Th>
+            <V3Th>摘要</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.length === 0 ? (
+            <tr>
+              <V3Td colSpan={3}>
+                <V3EmptyState title="暂无任务历史" />
+              </V3Td>
+            </tr>
+          ) : (
+            tasks.map((task) => (
+              <V3Tr key={task.id}>
+                <V3Td className="min-w-[220px]">
+                  <p className="truncate font-bold text-v3-ink">{task.title}</p>
+                  <p className="mt-0.5 truncate font-mono text-[12px] text-v3-ink-3">
+                    {task.id}
+                  </p>
+                </V3Td>
+                <V3Td>
+                  <StatusPill tone="info">{task.status}</StatusPill>
+                </V3Td>
+                <V3Td className="min-w-[320px] whitespace-normal text-v3-ink-2">
+                  <p className="line-clamp-2">{task.summary || "暂无摘要"}</p>
+                </V3Td>
+              </V3Tr>
+            ))
+          )}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }

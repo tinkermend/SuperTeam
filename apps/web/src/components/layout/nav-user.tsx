@@ -35,26 +35,26 @@ export function NavUser() {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[var(--superteam-shadow-low)] data-[state=open]:bg-[color:var(--superteam-sidebar-active)] data-[state=open]:text-sidebar-accent-foreground"
+                className="border border-v3-line bg-v3-card-soft text-v3-ink shadow-v3 data-[state=open]:bg-v3-brand-soft data-[state=open]:text-v3-brand-deep"
               >
                 <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
+                  <AvatarFallback className="rounded-lg bg-v3-brand text-white">
                     {fallback}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-start text-sm leading-tight">
-                  <span className="truncate font-semibold text-foreground">
+                  <span className="truncate font-semibold text-v3-ink">
                     {displayName}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-xs text-v3-ink-2">
                     {displayEmail}
                   </span>
                 </div>
-                <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
+                <ChevronsUpDown className="ms-auto size-4 text-v3-ink-3" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[var(--superteam-shadow-mid)] backdrop-blur-xl"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop"
               side={isMobile ? "bottom" : "right"}
               align="end"
               sideOffset={4}
@@ -62,7 +62,7 @@ export function NavUser() {
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                   <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
+                    <AvatarFallback className="rounded-lg bg-v3-brand text-white">
                       {fallback}
                     </AvatarFallback>
                   </Avatar>

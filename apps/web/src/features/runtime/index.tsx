@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -14,13 +14,20 @@ import {
   Wifi,
 } from "lucide-react";
 import {
-  LiquidCard,
-  LiquidTabsList,
-  LiquidTabsTrigger,
-  MetricCard,
-  SemanticIconTile,
-  StatusBadge,
-  type Tone,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3MetricCard,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3Tone,
 } from "@/components/superteam";
 import {
   AlertDialog,
@@ -32,9 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -45,8 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -96,11 +100,11 @@ const severityLabel: Record<RuntimeEventSeverity, string> = {
   warning: "预警",
 };
 
-const severityTone: Record<RuntimeEventSeverity, Tone> = {
+const severityTone: Record<RuntimeEventSeverity, V3Tone> = {
   error: "danger",
   info: "info",
-  success: "success",
-  warning: "warning",
+  success: "ok",
+  warning: "warn",
 };
 
 const enrollmentStatusLabel: Record<RuntimeEnrollmentStatus, string> = {
@@ -110,12 +114,15 @@ const enrollmentStatusLabel: Record<RuntimeEnrollmentStatus, string> = {
   revoked: "已停用",
 };
 
-const enrollmentStatusTone: Record<RuntimeEnrollmentStatus, Tone> = {
-  approved: "success",
-  pending: "warning",
+const enrollmentStatusTone: Record<RuntimeEnrollmentStatus, V3Tone> = {
+  approved: "ok",
+  pending: "warn",
   rejected: "danger",
-  revoked: "neutral",
+  revoked: "mute",
 };
+
+const runtimeTabTriggerClass =
+  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-v3-card-soft data-[state=inactive]:hover:text-v3-ink";
 
 export function RuntimeNodesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -229,20 +236,20 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
         <ThemeSwitch />
       </Header>
       <Main>
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-5 text-v3-ink">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <SemanticIconTile tone="info" size="lg">
+              <IconTile tone="info" size="lg">
                 <Server />
-              </SemanticIconTile>
+              </IconTile>
               <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-normal">Runtime 节点</h1>
-                <p className="text-sm text-muted-foreground">
+                <h1 className="text-[28px] leading-tight font-extrabold tracking-tight text-v3-ink">Runtime 节点</h1>
+                <p className="mt-1 text-[13px] text-v3-ink-2">
                   运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。
                 </p>
               </div>
             </div>
-            <Button
+            <V3Button
               type="button"
               variant="outline"
               onClick={() => {
@@ -252,26 +259,23 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
             >
               <RefreshCw data-icon="inline-start" />
               刷新
-            </Button>
+            </V3Button>
           </div>
 
           {overview.isLoading ? (
-            <LiquidCard>
-              <CardContent className="py-8 text-sm text-muted-foreground">加载 Runtime 总览中</CardContent>
-            </LiquidCard>
+            <WorkSurface>
+              <V3LoadingState label="加载 Runtime 总览中" />
+            </WorkSurface>
           ) : null}
 
           {overview.isError ? (
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>Runtime 总览加载失败</AlertTitle>
-              <AlertDescription className="mt-2 flex flex-wrap items-center gap-3">
-                <span>请稍后重试，或检查 Control Plane Runtime API 是否可用。</span>
-                <Button size="sm" type="button" variant="outline" onClick={() => void overview.refetch()}>
-                  重试
-                </Button>
-              </AlertDescription>
-            </Alert>
+            <WorkSurface className="p-4">
+              <V3ErrorState
+                title="Runtime 总览加载失败"
+                description="请稍后重试，或检查 Control Plane Runtime API 是否可用。"
+                onRetry={() => void overview.refetch()}
+              />
+            </WorkSurface>
           ) : null}
 
           {overviewData ? (
@@ -279,16 +283,25 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
               <SummaryMetrics summary={overviewData.summary} />
 
               <Tabs defaultValue="overview" className="gap-4">
-                <LiquidCard>
-                  <CardContent className="p-2">
-                    <LiquidTabsList aria-label="Runtime 管理视图">
-                      <LiquidTabsTrigger value="overview">节点总览</LiquidTabsTrigger>
-                      <LiquidTabsTrigger value="enrollments">接入审批</LiquidTabsTrigger>
-                      <LiquidTabsTrigger value="capabilities">能力范围</LiquidTabsTrigger>
-                      <LiquidTabsTrigger value="events">事件审计</LiquidTabsTrigger>
-                    </LiquidTabsList>
-                  </CardContent>
-                </LiquidCard>
+                <div className="min-w-0 overflow-x-auto pb-1">
+                  <TabsList
+                    aria-label="Runtime 管理视图"
+                    className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3 sm:min-w-0"
+                  >
+                    <TabsTrigger className={runtimeTabTriggerClass} value="overview">
+                      节点总览
+                    </TabsTrigger>
+                    <TabsTrigger className={runtimeTabTriggerClass} value="enrollments">
+                      接入审批
+                    </TabsTrigger>
+                    <TabsTrigger className={runtimeTabTriggerClass} value="capabilities">
+                      能力范围
+                    </TabsTrigger>
+                    <TabsTrigger className={runtimeTabTriggerClass} value="events">
+                      事件审计
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
 
                 <TabsContent value="overview">
                   <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
@@ -434,42 +447,35 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
 function SummaryMetrics({ summary }: { summary: RuntimeOverviewSummary }) {
   return (
     <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]">
-      <MetricCard
-        description="在线节点 / 已登记节点"
+      <V3MetricCard
         icon={<Wifi />}
-        iconTone="success"
-        meta="心跳健康"
-        statusTone="success"
-        title="节点在线"
+        iconTone="ok"
+        label="节点在线"
         value={`${summary.online_nodes} / ${summary.total_nodes}`}
+        meta="在线节点 / 已登记节点 · 心跳健康"
       />
-      <MetricCard
-        description="等待人类确认的 Runtime 接入"
+      <V3MetricCard
         icon={<ShieldCheck />}
-        iconTone="decision"
-        meta="审批队列"
-        statusTone={summary.pending_enrollments > 0 ? "warning" : "success"}
-        title="待接入"
+        iconTone={summary.pending_enrollments > 0 ? "warn" : "ok"}
+        label="待接入"
         value={summary.pending_enrollments}
+        meta="等待人类确认的 Runtime 接入"
+        loud={summary.pending_enrollments > 0}
       />
-      <MetricCard
-        description="当前 Provider 会话占用"
+      <V3MetricCard
         icon={<Activity />}
         iconTone="info"
-        meta="执行中"
-        statusTone="info"
-        title="Provider 会话"
+        label="Provider 会话"
         value={summary.active_provider_sessions}
+        meta="当前 Provider 会话占用"
       />
-      <MetricCard
-        description="需要优先处理的阻断事件"
+      <V3MetricCard
         icon={<AlertTriangle />}
-        iconTone={summary.blocked_events > 0 ? "danger" : "neutral"}
-        isError={summary.blocked_events > 0}
-        meta={summary.blocked_events > 0 ? "需处理" : "无阻断"}
-        statusTone={summary.blocked_events > 0 ? "danger" : "success"}
-        title="阻断事件"
+        iconTone={summary.blocked_events > 0 ? "danger" : "mute"}
+        label="阻断事件"
         value={summary.blocked_events}
+        meta={summary.blocked_events > 0 ? "需要优先处理" : "无阻断事件"}
+        loud={summary.blocked_events > 0}
       />
     </div>
   );
@@ -499,25 +505,27 @@ function PendingEnrollmentPanel({
   showDescription?: boolean;
 }) {
   return (
-    <Card className="min-w-0 rounded-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck />
-          接入审批
-        </CardTitle>
-        {showDescription ? <CardDescription>确认节点来源和 Provider 能力后再批准接入。</CardDescription> : null}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {isLoading ? <EmptyLine>加载 Runtime 接入记录中</EmptyLine> : null}
-        {isError ? <p className="text-sm text-destructive">Runtime 接入记录加载失败</p> : null}
-        {!isLoading && enrollments.length === 0 ? <EmptyLine>暂无 Runtime 接入记录</EmptyLine> : null}
+    <SoftCard className="min-w-0 overflow-hidden">
+      <PanelHeader
+        icon={<ShieldCheck />}
+        title="接入审批"
+        description={showDescription ? "确认节点来源和 Provider 能力后再批准接入。" : undefined}
+      />
+      <div className="divide-y divide-v3-line">
+        {isLoading ? <V3LoadingState className="py-8" label="加载 Runtime 接入记录中" /> : null}
+        {isError ? (
+          <div className="p-4">
+            <V3ErrorState title="Runtime 接入记录加载失败" />
+          </div>
+        ) : null}
+        {!isLoading && enrollments.length === 0 ? <V3EmptyState title="暂无 Runtime 接入记录" /> : null}
         {enrollments.length > 0 ? (
           enrollments.map((enrollment) => (
             <EnrollmentRow key={enrollment.id} enrollment={enrollment} onApprove={onApprove} onReject={onReject} />
           ))
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </SoftCard>
   );
 }
 
@@ -534,32 +542,34 @@ function EnrollmentRow({
   const isPending = enrollment.status === "pending";
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-md border bg-card/70 p-3 md:flex-row md:items-center md:justify-between">
+    <div className="grid min-w-0 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-medium">{enrollment.node_id}</span>
-          <StatusBadge tone={enrollmentStatusTone[enrollment.status]}>{enrollmentStatusLabel[enrollment.status]}</StatusBadge>
+          <span className="truncate font-semibold text-v3-ink">{enrollment.node_id}</span>
+          <StatusPill tone={enrollmentStatusTone[enrollment.status]}>
+            {enrollmentStatusLabel[enrollment.status]}
+          </StatusPill>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-v3-ink-2">
           <span>创建：{formatTime(enrollment.created_at)}</span>
           <span>最近 hello：{formatTime(extras.lastHelloAt)}</span>
           <span>Slots：{extras.maxSlots ?? "-"}</span>
           <span>Provider：{extras.supportedProviders.length > 0 ? extras.supportedProviders.join(", ") : "-"}</span>
         </div>
         {enrollment.reject_reason ? (
-          <p className="mt-2 text-sm text-muted-foreground">拒绝原因：{enrollment.reject_reason}</p>
+          <p className="mt-2 text-sm text-v3-ink-2">拒绝原因：{enrollment.reject_reason}</p>
         ) : null}
       </div>
       {isPending ? (
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
+          <V3Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
             <Check data-icon="inline-start" />
             批准接入
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
+          </V3Button>
+          <V3Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
             <Ban data-icon="inline-start" />
             拒绝
-          </Button>
+          </V3Button>
         </div>
       ) : null}
     </div>
@@ -568,22 +578,34 @@ function EnrollmentRow({
 
 function NodeInventoryPanel({ nodes }: { nodes: RuntimeNodeResponse[] }) {
   return (
-    <Card className="min-w-0 rounded-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Server />
-          已登记节点
-        </CardTitle>
-        <CardDescription>按心跳、槽位占用和 Provider 覆盖观察当前执行面。</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {nodes.length === 0 ? (
-          <EmptyLine>暂无已登记 Runtime 节点</EmptyLine>
-        ) : (
-          nodes.map((node) => <NodeRow key={node.node_id} node={node} />)
-        )}
-      </CardContent>
-    </Card>
+    <WorkSurface className="min-w-0">
+      <PanelHeader
+        icon={<Server />}
+        title="已登记节点"
+        description="按心跳、槽位占用和 Provider 覆盖观察当前执行面。"
+      />
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th className="min-w-[260px]">节点</V3Th>
+            <V3Th>Provider</V3Th>
+            <V3Th>心跳</V3Th>
+            <V3Th className="min-w-[160px]">槽位占用</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {nodes.length === 0 ? (
+            <V3Tr>
+              <V3Td colSpan={4}>
+                <V3EmptyState title="暂无已登记 Runtime 节点" />
+              </V3Td>
+            </V3Tr>
+          ) : (
+            nodes.map((node) => <NodeRow key={node.node_id} node={node} />)
+          )}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }
 
@@ -591,35 +613,35 @@ function NodeRow({ node }: { node: RuntimeNodeResponse }) {
   const loadPercent = node.max_slots > 0 ? Math.min(100, Math.round((node.current_load / node.max_slots) * 100)) : 0;
 
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border bg-card/70 p-3 lg:grid-cols-[minmax(0,1fr)_12rem]">
-      <div className="min-w-0">
+    <V3Tr tone={node.status === "online" ? undefined : "warn"}>
+      <V3Td className="min-w-[260px]">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-medium">{node.name || node.node_id}</span>
-          <StatusBadge tone={node.status === "online" ? "success" : "neutral"}>
+          <span className="truncate font-semibold text-v3-ink">{node.name || node.node_id}</span>
+          <StatusPill tone={node.status === "online" ? "ok" : "mute"}>
             {node.status === "online" ? "在线" : "离线"}
-          </StatusBadge>
+          </StatusPill>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>节点 ID：{node.node_id}</span>
-          <span>Provider：{node.supported_providers.length > 0 ? node.supported_providers.join(", ") : "-"}</span>
-          <span>心跳：{formatTime(node.last_heartbeat_at)}</span>
-        </div>
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">槽位占用</span>
+        <p className="mt-1 truncate font-mono text-xs text-v3-ink-2">节点 ID：{node.node_id}</p>
+      </V3Td>
+      <V3Td className="text-v3-ink-2">
+        Provider：{node.supported_providers.length > 0 ? node.supported_providers.join(", ") : "-"}
+      </V3Td>
+      <V3Td className="tabular-nums text-v3-ink-2">{formatTime(node.last_heartbeat_at)}</V3Td>
+      <V3Td className="min-w-[160px]">
+        <div className="flex items-center justify-between gap-2 text-[13px]">
+          <span className="text-v3-ink-2">槽位</span>
           <span className="font-medium">
             {node.current_load} / {node.max_slots}
           </span>
         </div>
-        <div className="mt-2 h-2 rounded-full bg-muted">
+        <div className="mt-2 h-2 rounded-full bg-v3-card-soft">
           <div
-            className="h-2 rounded-full bg-[color:var(--superteam-info)]"
+            className="h-2 rounded-full bg-v3-info"
             style={{ width: `${loadPercent}%` }}
           />
         </div>
-      </div>
-    </div>
+      </V3Td>
+    </V3Tr>
   );
 }
 
@@ -631,38 +653,32 @@ function ProviderCapabilityPanel({
   compact?: boolean;
 }) {
   return (
-    <Card className="min-w-0 rounded-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Cpu />
-          能力范围
-        </CardTitle>
-        <CardDescription>Provider 类型、节点覆盖和健康可用性快照。</CardDescription>
-      </CardHeader>
-      <CardContent className={cn("grid gap-3", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
+    <SoftCard className="min-w-0 overflow-hidden">
+      <PanelHeader icon={<Cpu />} title="能力范围" description="Provider 类型、节点覆盖和健康可用性快照。" />
+      <div className={cn("grid gap-3 p-4", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
         {capabilities.length === 0 ? (
-          <EmptyLine>暂无 Provider 能力上报</EmptyLine>
+          <V3EmptyState className="lg:col-span-2" title="暂无 Provider 能力上报" />
         ) : (
           capabilities.map((capability) => <CapabilityRow key={capability.provider_type} capability={capability} />)
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SoftCard>
   );
 }
 
 function CapabilityRow({ capability }: { capability: RuntimeProviderCapabilitySummary }) {
   return (
-    <div className="min-w-0 rounded-md border bg-card/70 p-3">
+    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-medium">{capability.provider_type}</div>
-          <p className="mt-1 text-xs text-muted-foreground">最近上报：{formatTime(capability.last_seen_at)}</p>
+          <div className="truncate font-semibold text-v3-ink">{capability.provider_type}</div>
+          <p className="mt-1 text-xs text-v3-ink-2">最近上报：{formatTime(capability.last_seen_at)}</p>
         </div>
-        <StatusBadge tone={capability.healthy_count > 0 ? "success" : "warning"}>
+        <StatusPill tone={capability.healthy_count > 0 ? "ok" : "warn"}>
           健康 {capability.healthy_count}
-        </StatusBadge>
+        </StatusPill>
       </div>
-      <Separator className="my-3" />
+      <div className="my-3 border-t border-v3-line" />
       <div className="grid grid-cols-3 gap-2 text-sm">
         <MetricLite label="节点" value={capability.node_count} />
         <MetricLite label="可用" value={capability.available_count} />
@@ -674,22 +690,20 @@ function CapabilityRow({ capability }: { capability: RuntimeProviderCapabilitySu
 
 function RecentEventsPanel({ events }: { events: RuntimeEvent[] }) {
   return (
-    <Card className="min-w-0 rounded-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileClock />
-          最近事件
-        </CardTitle>
-        <CardDescription>来自 Runtime command、节点心跳和 Provider 会话的最新回传。</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <SoftCard className="min-w-0 overflow-hidden">
+      <PanelHeader
+        icon={<FileClock />}
+        title="最近事件"
+        description="来自 Runtime command、节点心跳和 Provider 会话的最新回传。"
+      />
+      <div className="divide-y divide-v3-line">
         {events.length === 0 ? (
-          <EmptyLine>暂无 Runtime 事件</EmptyLine>
+          <V3EmptyState title="暂无 Runtime 事件" />
         ) : (
           events.slice(0, 5).map((event) => <EventRow key={event.id} event={event} />)
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SoftCard>
   );
 }
 
@@ -715,15 +729,17 @@ function EventAuditPanel({
   onFilterChange: <Key extends keyof RuntimeEventFilters>(key: Key, value: RuntimeEventFilters[Key]) => void;
 }) {
   return (
-    <Card className="min-w-0 rounded-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileClock />
-          事件审计
-        </CardTitle>
-        <CardDescription>按事件类型、严重级别、Runtime 节点和 Provider 过滤最近事件。</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <WorkSurface className="min-w-0">
+      <div className="border-b border-v3-line p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <IconTile tone="info" size="sm">
+            <FileClock />
+          </IconTile>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-v3-ink">事件审计</h2>
+            <p className="mt-1 text-xs text-v3-ink-2">按事件类型、严重级别、Runtime 节点和 Provider 过滤最近事件。</p>
+          </div>
+        </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <RuntimeSelectFilter
             id="runtime-event-type"
@@ -754,21 +770,44 @@ function EventAuditPanel({
             onValueChange={(value) => onFilterChange("provider_type", value)}
           />
         </div>
+      </div>
 
-        {isLoading ? <EmptyLine>加载 Runtime 事件中</EmptyLine> : null}
-        {isError ? <p className="text-sm text-destructive">Runtime 事件加载失败</p> : null}
-        {!isLoading && events.length === 0 ? (
-          <EmptyLine>{hasAppliedFilter ? "筛选后无 Runtime 事件" : "暂无 Runtime 事件"}</EmptyLine>
-        ) : null}
-        {events.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            {events.map((event) => (
-              <EventRow key={event.id} event={event} showDetails />
-            ))}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th className="min-w-[240px]">事件</V3Th>
+            <V3Th>严重级别</V3Th>
+            <V3Th>来源</V3Th>
+            <V3Th>节点 / Provider</V3Th>
+            <V3Th>时间</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            <V3Tr>
+              <V3Td colSpan={5}>
+                <V3LoadingState className="py-8" label="加载 Runtime 事件中" />
+              </V3Td>
+            </V3Tr>
+          ) : null}
+          {isError ? (
+            <V3Tr tone="danger">
+              <V3Td colSpan={5}>
+                <V3ErrorState title="Runtime 事件加载失败" />
+              </V3Td>
+            </V3Tr>
+          ) : null}
+          {!isLoading && events.length === 0 ? (
+            <V3Tr>
+              <V3Td colSpan={5}>
+                <V3EmptyState title={hasAppliedFilter ? "筛选后无 Runtime 事件" : "暂无 Runtime 事件"} />
+              </V3Td>
+            </V3Tr>
+          ) : null}
+          {events.length > 0 ? events.map((event) => <EventAuditRow key={event.id} event={event} />) : null}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }
 
@@ -787,9 +826,11 @@ function RuntimeSelectFilter({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-xs font-semibold text-v3-ink-2">
+        {label}
+      </Label>
       <Select value={value ?? "all"} onValueChange={(nextValue) => onValueChange(nextValue === "all" ? undefined : nextValue)}>
-        <SelectTrigger id={id} className="w-full">
+        <SelectTrigger id={id} className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none">
           <SelectValue placeholder="全部" />
         </SelectTrigger>
         <SelectContent>
@@ -807,25 +848,80 @@ function RuntimeSelectFilter({
   );
 }
 
-function EventRow({ event, showDetails }: { event: RuntimeEvent; showDetails?: boolean }) {
+function EventRow({ event }: { event: RuntimeEvent }) {
   return (
-    <div className="flex min-w-0 gap-3 rounded-md border bg-card/70 p-3">
-      <SemanticIconTile tone={severityTone[event.severity]} size="sm">
+    <div className="flex min-w-0 gap-3 p-4">
+      <IconTile tone={severityTone[event.severity]} size="sm">
         {event.severity === "error" ? <AlertTriangle /> : <Clock />}
-      </SemanticIconTile>
+      </IconTile>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-medium">{event.title}</span>
-          <StatusBadge tone={severityTone[event.severity]}>{severityLabel[event.severity]}</StatusBadge>
+          <span className="truncate font-semibold text-v3-ink">{event.title}</span>
+          <StatusPill tone={severityTone[event.severity]}>{severityLabel[event.severity]}</StatusPill>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-v3-ink-2">
           <span>{event.event_type}</span>
           <span>{event.source}</span>
           <span>节点：{event.node_id ?? event.runtime_node_id ?? "-"}</span>
           <span>Provider：{event.provider_type ?? "-"}</span>
           <span>{formatTime(event.created_at)}</span>
         </div>
-        {showDetails && event.description ? <p className="mt-2 text-sm text-muted-foreground">{event.description}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function EventAuditRow({ event }: { event: RuntimeEvent }) {
+  return (
+    <V3Tr tone={event.severity === "error" ? "danger" : event.severity === "warning" ? "warn" : undefined}>
+      <V3Td className="min-w-[240px]">
+        <div className="flex min-w-0 items-start gap-3">
+          <IconTile tone={severityTone[event.severity]} size="sm">
+            {event.severity === "error" ? <AlertTriangle /> : <Clock />}
+          </IconTile>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-v3-ink">{event.title}</p>
+            {event.description ? <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">{event.description}</p> : null}
+          </div>
+        </div>
+      </V3Td>
+      <V3Td>
+        <StatusPill tone={severityTone[event.severity]}>{severityLabel[event.severity]}</StatusPill>
+      </V3Td>
+      <V3Td className="text-v3-ink-2">
+        <div className="grid gap-1">
+          <span>{event.event_type}</span>
+          <span className="text-xs">{event.source}</span>
+        </div>
+      </V3Td>
+      <V3Td className="text-v3-ink-2">
+        <div className="grid gap-1">
+          <span>节点：{event.node_id ?? event.runtime_node_id ?? "-"}</span>
+          <span>Provider：{event.provider_type ?? "-"}</span>
+        </div>
+      </V3Td>
+      <V3Td className="tabular-nums text-v3-ink-2">{formatTime(event.created_at)}</V3Td>
+    </V3Tr>
+  );
+}
+
+function PanelHeader({
+  description,
+  icon,
+  title,
+}: {
+  description?: string;
+  icon: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 border-b border-v3-line p-4">
+      <IconTile tone="info" size="sm">
+        {icon}
+      </IconTile>
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-v3-ink">{title}</h2>
+        {description ? <p className="mt-1 text-xs text-v3-ink-2">{description}</p> : null}
       </div>
     </div>
   );
@@ -833,20 +929,16 @@ function EventRow({ event, showDetails }: { event: RuntimeEvent; showDetails?: b
 
 function MetricLite({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md bg-muted/40 px-3 py-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-lg font-semibold tracking-normal">{value}</div>
+    <div className="rounded-[12px] bg-v3-card px-3 py-2">
+      <div className="text-xs text-v3-ink-2">{label}</div>
+      <div className="mt-1 text-lg font-bold tracking-normal text-v3-ink tabular-nums">{value}</div>
     </div>
   );
 }
 
-function EmptyLine({ children }: { children: string }) {
-  return <p className="rounded-md border border-dashed bg-muted/20 px-3 py-4 text-sm text-muted-foreground">{children}</p>;
-}
-
 function MutationErrorLine({ error, fallback }: { error: unknown; fallback: string }) {
   return (
-    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+    <p className="rounded-v3-inner bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
       {readErrorMessage(error, fallback)}
     </p>
   );

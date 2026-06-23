@@ -36,6 +36,22 @@ describe('UserAuthForm', () => {
     await expect.element(screen.getByText('请输入密码。')).toBeVisible()
   })
 
+  it('uses v3 form controls while keeping the accessible login form', async () => {
+    const screen = await render(<UserAuthForm />)
+
+    const username = screen.getByRole('textbox', { name: /^账号$/i })
+    await expect.element(username).toHaveClass('bg-v3-card-soft')
+    await expect.element(username).toHaveClass('rounded-xl')
+
+    const password = screen.getByLabelText(/^密码$/i)
+    await expect.element(password).toHaveClass('bg-v3-card-soft')
+    await expect.element(password).toHaveClass('rounded-xl')
+
+    const submit = screen.getByRole('button', { name: /^登录$/i })
+    await expect.element(submit).toHaveAttribute('data-slot', 'v3-button')
+    await expect.element(submit).toHaveAttribute('data-variant', 'primary')
+  })
+
   it('logs in with username and password, then navigates home', async () => {
     const screen = await render(<UserAuthForm />)
 

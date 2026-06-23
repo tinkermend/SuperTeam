@@ -7,21 +7,21 @@
 ## 按钮层级
 
 - 一个区域只应有一个最高权重主操作。
-- 主操作使用蓝绿色液态渐变，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
+- 主操作使用 v3 品牌蓝实底或 `--v3-brand-grad`，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
 - 次要操作使用 `secondary`、`outline` 或 `ghost`。
-- 危险操作使用 destructive 样式，不使用蓝绿色主按钮渐变。
+- 危险操作使用 destructive / `--v3-danger` 语义，不使用品牌主按钮样式。
 - 工具型操作优先使用图标按钮；不常见图标需要 tooltip 或可访问标签。
 
 ## 主按钮
 
-`PrimaryLiquidButton` / `.superteam-primary-action` 用于局部流程里的主要正向动作。
+主按钮使用 `Button` 的 v3 默认 variant，或在项目级组合场景中使用 `V3Button`。只用于局部流程里的主要正向动作。
 
 建议视觉：
 
-- 渐变：`#2CC7AA -> #16B89F -> #0A806F`，保持轻微深浅变化，不使用大面积浅色起点。
+- 品牌色：`--v3-brand`，需要 signature 强调时可使用 `--v3-brand-grad`。
 - 文字和图标对比度必须充足
-- 不使用左侧或顶部大块白色反光，不叠加强高光层。
-- glow 应柔和且受控，优先使用外阴影而不是内侧反光。
+- 不叠加高光层或局部装饰光效。
+- 阴影应柔和且受控，使用 `--v3-shadow` 或更轻的焦点 ring。
 - active 态应像按下，而不是跳动
 
 不要将主按钮用于失败、删除、撤销或不可逆危险操作。

@@ -1,12 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
-import { ShieldAlert, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import type { ApiClientOptions, AuthzMemberRecord } from "@/lib/api";
 import { listAuthzMembers } from "@/lib/api";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  IconTile,
+  StatusPill,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+} from "@/components/superteam";
 
 type MemberRolesProps = {
   apiOptions: ApiClientOptions;
@@ -19,66 +26,66 @@ export function MemberRoles({ apiOptions }: MemberRolesProps) {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <WorkSurface>
+      <div className="flex items-start gap-3 border-b border-v3-line px-5 py-4">
+        <IconTile tone="brand" size="sm">
           <Users />
-          成员角色
-        </CardTitle>
-        <CardDescription>当前只读展示成员、租户/团队角色和控制台访问能力。</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {membersQuery.isLoading ? (
-          <Skeleton className="h-40" />
-        ) : membersQuery.isError ? (
-          <Alert variant="destructive">
-            <ShieldAlert />
-            <AlertTitle>成员角色加载失败</AlertTitle>
-            <AlertDescription>请稍后刷新或检查 Control Plane 连接。</AlertDescription>
-          </Alert>
-        ) : (membersQuery.data?.items.length ?? 0) === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无成员角色记录。</p>
-        ) : (
-          <MemberRolesTable members={membersQuery.data?.items ?? []} />
-        )}
-      </CardContent>
-    </Card>
+        </IconTile>
+        <div>
+          <h2 className="text-base font-bold text-v3-ink">成员角色</h2>
+          <p className="mt-1 text-sm text-v3-ink-2">当前只读展示成员、租户/团队角色和控制台访问能力。</p>
+        </div>
+      </div>
+      {membersQuery.isLoading ? (
+        <V3LoadingState label="加载成员角色…" />
+      ) : membersQuery.isError ? (
+        <V3ErrorState
+          className="m-5"
+          title="成员角色加载失败"
+          description="请稍后刷新或检查 Control Plane 连接。"
+        />
+      ) : (membersQuery.data?.items.length ?? 0) === 0 ? (
+        <V3EmptyState title="暂无成员角色记录" description="授权成员同步后会显示在这里。" />
+      ) : (
+        <MemberRolesTable members={membersQuery.data?.items ?? []} />
+      )}
+    </WorkSurface>
   );
 }
 
 function MemberRolesTable({ members }: { members: AuthzMemberRecord[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>成员</TableHead>
-          <TableHead>账号状态</TableHead>
-          <TableHead>控制台</TableHead>
-          <TableHead>角色</TableHead>
-          <TableHead>最近拒绝原因</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <V3Table>
+      <thead>
+        <V3Tr>
+          <V3Th>成员</V3Th>
+          <V3Th>账号状态</V3Th>
+          <V3Th>控制台</V3Th>
+          <V3Th>角色</V3Th>
+          <V3Th>最近拒绝原因</V3Th>
+        </V3Tr>
+      </thead>
+      <tbody>
         {members.map((member) => (
-          <TableRow key={member.user_id}>
-            <TableCell>
+          <V3Tr key={member.user_id} tone={member.recent_denied_reason ? "warn" : undefined}>
+            <V3Td>
               <div className="flex flex-col gap-1">
-                <span className="font-medium">{member.display_name || member.username}</span>
-                <span className="text-xs text-muted-foreground">{member.email ?? member.user_id}</span>
+                <span className="font-semibold text-v3-ink">{member.display_name || member.username}</span>
+                <span className="text-xs text-v3-ink-3">{member.email ?? member.user_id}</span>
               </div>
-            </TableCell>
-            <TableCell>
-              <Badge variant={member.account_status === "active" ? "default" : "secondary"}>{member.account_status}</Badge>
-            </TableCell>
-            <TableCell>
-              <Badge variant={member.console_access ? "default" : "secondary"}>{member.console_access ? "允许" : "无访问"}</Badge>
-            </TableCell>
-            <TableCell>{formatMemberships(member)}</TableCell>
-            <TableCell className="max-w-72 truncate">{member.recent_denied_reason ?? "-"}</TableCell>
-          </TableRow>
+            </V3Td>
+            <V3Td>
+              <StatusPill tone={member.account_status === "active" ? "ok" : "mute"}>{member.account_status}</StatusPill>
+            </V3Td>
+            <V3Td>
+              <StatusPill tone={member.console_access ? "ok" : "mute"}>{member.console_access ? "允许" : "无访问"}</StatusPill>
+            </V3Td>
+            <V3Td>{formatMemberships(member)}</V3Td>
+            <V3Td className="max-w-72 truncate">{member.recent_denied_reason ?? "-"}</V3Td>
+          </V3Tr>
         ))}
-      </TableBody>
-    </Table>
+      </tbody>
+    </V3Table>
   );
 }
 

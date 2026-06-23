@@ -2,7 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Trash2, UserPlus, Bot, Users, Puzzle, TriangleAlert } from "lucide-react";
-import { MetricCard } from "@/components/superteam/liquid-components";
+import {
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3LoadingState,
+  V3MetricCard,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+} from "@/components/superteam";
 import {
   TeamRoleBadge,
   TeamRoleSelect,
@@ -10,9 +22,6 @@ import {
 } from "@/components/superteam/team-role";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import type { UserSummary } from "@/lib/api";
 import type { AllowedTeamAction, TeamMember, TeamOverview } from "@/lib/api/teams";
@@ -131,15 +140,16 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
     <div className="flex flex-col gap-6">
       {/* 核心指标 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard title="人类成员" value={member_count} icon={<Users />} meta="当前团队成员" />
-        <MetricCard title="数字员工" value={digital_employee_count} icon={<Bot />} meta="AI 代理执行引擎" />
-        <MetricCard title="绑定能力" value={capability_count} icon={<Puzzle />} meta="MCP 与外部工具" />
-        <MetricCard
-          title="待审批项"
+        <V3MetricCard label="人类成员" value={member_count} icon={<Users />} meta="当前团队成员" />
+        <V3MetricCard label="数字员工" value={digital_employee_count} icon={<Bot />} iconTone="info" meta="AI 代理执行引擎" />
+        <V3MetricCard label="绑定能力" value={capability_count} icon={<Puzzle />} iconTone="artifact" meta="MCP 与外部工具" />
+        <V3MetricCard
+          label="待审批项"
           value={pending_item_count}
           icon={<TriangleAlert />}
           meta="需人类介入决策"
-          statusTone={pending_item_count > 0 ? "warning" : "success"}
+          iconTone={pending_item_count > 0 ? "warn" : "ok"}
+          loud={pending_item_count > 0}
         />
       </div>
 
@@ -147,93 +157,101 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         {/* 左侧：统一混合列表 */}
         <div className="flex min-w-0 flex-col gap-4">
-          <Card className="rounded-2xl">
-            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+          <WorkSurface>
+            <div className="flex flex-col gap-3 border-b border-v3-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle>团队成员与代理</CardTitle>
-                <CardDescription className="mt-1">统一查看人类成员与数字员工。</CardDescription>
+                <h2 className="text-base font-bold text-v3-ink">团队成员与代理</h2>
+                <p className="mt-1 text-[13px] text-v3-ink-2">统一查看人类成员与数字员工。</p>
               </div>
-              <Button asChild size="sm" variant="outline">
+              <V3Button asChild size="sm" variant="outline">
                 <Link to="/employees/new">
                   <Bot data-icon="inline-start" className="mr-1" />
                   新建数字员工
                 </Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
+              </V3Button>
+            </div>
+            <div>
               {isLoadingList ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">加载数据中...</div>
+                <V3LoadingState label="加载团队成员与代理" />
               ) : unifiedList.length === 0 ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">团队暂无成员和代理。</div>
+                <V3EmptyState title="团队暂无成员和代理" />
               ) : (
-                <ul className="flex flex-col">
-                  {unifiedList.map((item, index) => (
-                    <li
-                      key={item.id}
-                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 hover:bg-muted/30 transition-colors ${
-                        index !== unifiedList.length - 1 ? "border-b" : ""
-                      }`}
-                    >
-                      {/* 左侧：头像与基本信息 */}
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        {item.type === "human" ? (
-                          <UserIdentity
-                            showSecondary
-                            user={{
-                              id: (item.originalData as TeamMember).user_id,
-                              username: (item.originalData as TeamMember).username,
-                              display_name: (item.originalData as TeamMember).display_name,
-                              email: (item.originalData as TeamMember).email,
-                              avatar: (item.originalData as TeamMember).avatar,
-                              status: (item.originalData as TeamMember).account_status || "active",
-                            }}
-                          />
-                        ) : (
-                          <div className="flex items-center gap-3 min-w-0">
-                            <EmployeeAvatar
-                              asset={employeeAvatarAsset(item.originalData as DigitalEmployee)}
-                              name={item.name}
-                              size="md"
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate font-medium leading-none">{item.name}</p>
-                              <p className="truncate text-sm text-muted-foreground mt-1.5">{item.description}</p>
-                            </div>
+                <V3Table>
+                  <thead>
+                    <tr>
+                      <V3Th>成员</V3Th>
+                      <V3Th>类型</V3Th>
+                      <V3Th>角色</V3Th>
+                      <V3Th className="text-right">操作</V3Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unifiedList.map((item) => (
+                      <V3Tr key={item.id}>
+                        <V3Td>
+                          <div className="flex min-w-0 items-center gap-3">
+                            {item.type === "human" ? (
+                              <UserIdentity
+                                showSecondary
+                                user={{
+                                  id: (item.originalData as TeamMember).user_id,
+                                  username: (item.originalData as TeamMember).username,
+                                  display_name: (item.originalData as TeamMember).display_name,
+                                  email: (item.originalData as TeamMember).email,
+                                  avatar: (item.originalData as TeamMember).avatar,
+                                  status: (item.originalData as TeamMember).account_status || "active",
+                                }}
+                              />
+                            ) : (
+                              <div className="flex min-w-0 items-center gap-3">
+                                <EmployeeAvatar
+                                  asset={employeeAvatarAsset(item.originalData as DigitalEmployee)}
+                                  name={item.name}
+                                  size="md"
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium leading-none text-v3-ink">{item.name}</p>
+                                  <p className="mt-1.5 truncate text-sm text-v3-ink-2">{item.description}</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-
-                      {/* 右侧：状态标签与操作 */}
-                      <div className="flex items-center gap-3 shrink-0">
-                        <Badge variant="outline" className={item.type === "human" ? "text-blue-600" : "text-emerald-600"}>
-                          {item.type === "human" ? "人类" : "数字员工"}
-                        </Badge>
-                        <TeamRoleBadge role={item.role as DirectTeamRole} />
-                        {item.type === "human" && (
-                          <Button 
-                            onClick={() => removeMutation.mutate(item.id)} 
-                            size="sm" 
-                            variant="ghost" 
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="size-4" />
-                            <span className="sr-only">移除</span>
-                          </Button>
-                        )}
-                        {item.type === "digital" && (
-                          <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
-                            <Link to="/employees/$employeeId" params={{ employeeId: item.id }}>
-                              管理
-                            </Link>
-                          </Button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                        </V3Td>
+                        <V3Td>
+                          <StatusPill tone={item.type === "human" ? "info" : "ok"}>
+                            {item.type === "human" ? "人类" : "数字员工"}
+                          </StatusPill>
+                        </V3Td>
+                        <V3Td>
+                          <TeamRoleBadge role={item.role as DirectTeamRole} />
+                        </V3Td>
+                        <V3Td className="text-right">
+                          {item.type === "human" ? (
+                            <V3Button
+                              aria-label={`移除 ${item.name}`}
+                              onClick={() => removeMutation.mutate(item.id)}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2 className="size-4" />
+                              <span className="sr-only">移除</span>
+                            </V3Button>
+                          ) : (
+                            <V3Button asChild size="sm" variant="ghost">
+                              <Link to="/employees/$employeeId" params={{ employeeId: item.id }}>
+                                管理
+                              </Link>
+                            </V3Button>
+                          )}
+                        </V3Td>
+                      </V3Tr>
+                    ))}
+                  </tbody>
+                </V3Table>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </WorkSurface>
         </div>
 
         {/* 右侧：添加成员面板 */}
@@ -283,12 +301,11 @@ function DirectAddPanel({
   }, [resetToken]);
 
   return (
-    <Card className="rounded-2xl">
-      <CardHeader>
-        <CardTitle className="text-base">直接添加人类成员</CardTitle>
-        <CardDescription>普通成员和只读观察者会立即生效。</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SoftCard className="p-5">
+      <div className="mb-4">
+        <h2 className="text-base font-bold text-v3-ink">直接添加人类成员</h2>
+        <p className="mt-1 text-[13px] text-v3-ink-2">普通成员和只读观察者会立即生效。</p>
+      </div>
         <form
           className="flex flex-col gap-3"
           onSubmit={(event) => {
@@ -320,12 +337,11 @@ function DirectAddPanel({
               value={role}
             />
           </div>
-          <Button disabled={!canAdd || isPending || !selectedUser} type="submit">
+          <V3Button disabled={!canAdd || isPending || !selectedUser} type="submit">
             <UserPlus data-icon="inline-start" className="mr-2" />
             添加成员
-          </Button>
+          </V3Button>
         </form>
-      </CardContent>
-    </Card>
+    </SoftCard>
   );
 }

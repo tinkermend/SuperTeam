@@ -963,6 +963,64 @@ describe("ProjectsView", () => {
     });
   });
 
+  it("renders the project list as a v3 work surface table", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeInTheDocument();
+
+    const listSurface = screen.container.querySelector('[data-testid="projects-v3-list"]');
+    expect(listSurface).toBeTruthy();
+    expect(listSurface?.querySelector('[data-slot="v3-work-surface"]')).toBeTruthy();
+    expect(listSurface?.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    expect(listSurface?.querySelectorAll("thead th").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("keeps project filtering and v3 pagination controls working", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("每页条数"), "1");
+
+    expect(screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent).toContain(
+      "客户接入验收",
+    );
+    expect(
+      screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent,
+    ).not.toContain("生产巡检整改");
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await vi.waitFor(() => {
+      const listText = screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent;
+      expect(listText).toContain("生产巡检整改");
+      expect(listText).not.toContain("客户接入验收");
+    });
+
+    await userEvent.fill(screen.getByLabelText("搜索项目"), "巡检");
+
+    await vi.waitFor(() => {
+      const listText = screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent;
+      expect(listText).toContain("生产巡检整改");
+      expect(listText).not.toContain("客户接入验收");
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects" &&
+            init?.method === "GET" &&
+            target.searchParams.get("q") === "巡检"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
   it("shows the latest pre-dispatch gate status for a selected project task", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");

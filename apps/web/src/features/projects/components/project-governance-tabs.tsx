@@ -1,5 +1,5 @@
-import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
+import { V3TabList, V3Tabs } from "@/components/superteam";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   CreateProjectAcceptanceInput,
   CreateProjectArchiveSnapshotInput,
@@ -19,6 +19,9 @@ import { ProjectArchivePanel } from "./project-archive-panel";
 import { ProjectArtifactReportPanel } from "./project-artifact-report-panel";
 import { ProjectBudgetPanel } from "./project-budget-panel";
 import { ProjectEvidencePanel } from "./project-evidence-panel";
+
+const governanceTabTriggerClass =
+  "h-auto flex-none shrink-0 rounded-[10px] border-0 bg-transparent px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none";
 
 type ProjectGovernanceTabsProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -67,26 +70,32 @@ export function ProjectGovernanceTabs({
   return (
     <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue="evidence">
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
-        <LiquidTabsList
+        <TabsList
           aria-label="项目详情治理视图"
-          className="w-max min-w-full max-w-none flex-nowrap"
+          className="h-auto w-max min-w-full max-w-none justify-start overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3"
         >
-          <LiquidTabsTrigger className="flex-none shrink-0" value="evidence">
-            证据链
-          </LiquidTabsTrigger>
-          <LiquidTabsTrigger className="flex-none shrink-0" value="artifacts">
-            工件报告
-          </LiquidTabsTrigger>
-          <LiquidTabsTrigger className="flex-none shrink-0" value="budget">
-            预算流水
-          </LiquidTabsTrigger>
-          <LiquidTabsTrigger className="flex-none shrink-0" value="acceptance">
-            验收结论
-          </LiquidTabsTrigger>
-          <LiquidTabsTrigger className="flex-none shrink-0" value="archive">
-            归档预览
-          </LiquidTabsTrigger>
-        </LiquidTabsList>
+          <V3Tabs
+            className="w-full min-w-0 bg-transparent p-0 shadow-none"
+          >
+            <V3TabList className="flex-nowrap">
+              <TabsTrigger className={governanceTabTriggerClass} value="evidence">
+                证据链
+              </TabsTrigger>
+              <TabsTrigger className={governanceTabTriggerClass} value="artifacts">
+                工件报告
+              </TabsTrigger>
+              <TabsTrigger className={governanceTabTriggerClass} value="budget">
+                预算流水
+              </TabsTrigger>
+              <TabsTrigger className={governanceTabTriggerClass} value="acceptance">
+                验收结论
+              </TabsTrigger>
+              <TabsTrigger className={governanceTabTriggerClass} value="archive">
+                归档预览
+              </TabsTrigger>
+            </V3TabList>
+          </V3Tabs>
+        </TabsList>
       </div>
 
       <TabsContent className="m-0" value="evidence">

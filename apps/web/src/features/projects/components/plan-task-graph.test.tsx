@@ -22,6 +22,9 @@ describe("PlanTaskGraph", () => {
   it("renders empty state when there are no nodes", async () => {
     const screen = await render(<PlanTaskGraph nodes={[]} />);
     await expect.element(screen.getByText("暂无协调任务计划")).toBeInTheDocument();
+    await expect
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .toBeInTheDocument();
   });
 
   it("groups tasks by stage and shows stage titles from summaries", async () => {
@@ -48,6 +51,8 @@ describe("PlanTaskGraph", () => {
     await expect.element(screen.getByText("阶段 2")).toBeInTheDocument();
     await expect.element(screen.getByText("需求分析")).toBeInTheDocument();
     await expect.element(screen.getByText("方案实现")).toBeInTheDocument();
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBe(2);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
   });
 
   it("annotates dependencies with blocker task titles", async () => {

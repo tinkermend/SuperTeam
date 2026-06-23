@@ -9,11 +9,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'superteam-primary-action shadow-none',
+          'bg-v3-brand text-white shadow-v3 hover:bg-v3-brand-deep focus-visible:ring-v3-brand/20 dark:focus-visible:ring-v3-brand/30',
         destructive:
           'bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
-          'superteam-liquid-pill bg-background/70 shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'border border-v3-line-strong bg-v3-card text-v3-ink shadow-v3 hover:bg-v3-card-soft hover:text-v3-ink dark:border-v3-line-strong dark:bg-v3-card dark:hover:bg-v3-card-soft',
         secondary:
           'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
         ghost:

@@ -1,7 +1,7 @@
 import { SearchIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSearch } from '@/context/search-provider'
-import { Button } from './ui/button'
+import { V3Button } from './superteam'
 
 export function Search({
   className = '',
@@ -10,11 +10,11 @@ export function Search({
 }: React.ComponentProps<'button'> & { placeholder?: string }) {
   const { setOpen } = useSearch()
   return (
-    <Button
+    <V3Button
       {...props}
       variant='outline'
       className={cn(
-        'superteam-search-glass group relative h-9 min-w-0 flex-1 justify-start rounded-lg text-sm font-normal text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-primary/30 sm:w-48 sm:pe-12 md:flex-none lg:w-72 xl:w-96',
+        'group relative h-9 min-w-0 flex-1 justify-start rounded-xl border-v3-line-strong bg-v3-card text-sm font-normal text-v3-ink-2 shadow-v3 hover:bg-v3-card-soft hover:text-v3-ink focus-visible:ring-v3-brand/30 sm:w-48 sm:pe-12 md:flex-none lg:w-72 xl:w-96',
         className
       )}
       aria-keyshortcuts='Meta+K Control+K'
@@ -26,9 +26,9 @@ export function Search({
         size={16}
       />
       <span className='ms-4 min-w-0 truncate'>{placeholder}</span>
-      <kbd className='pointer-events-none absolute inset-e-[0.35rem] top-[0.35rem] hidden h-5 items-center gap-1 rounded-md border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-primary-soft)] px-1.5 font-mono text-[10px] font-medium text-primary opacity-100 select-none sm:flex'>
+      <kbd className='pointer-events-none absolute inset-e-[0.35rem] top-[0.35rem] hidden h-5 items-center gap-1 rounded-md border border-v3-line bg-v3-brand-soft px-1.5 font-mono text-[10px] font-medium text-v3-brand-deep opacity-100 select-none sm:flex'>
         <span className='text-xs'>⌘</span>K
       </kbd>
-    </Button>
+    </V3Button>
   )
 }

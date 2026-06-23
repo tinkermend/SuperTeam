@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Check, Moon, Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/context/theme-provider'
-import { Button } from '@/components/ui/button'
+import { V3Button } from '@/components/superteam'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +16,9 @@ export function ThemeSwitch() {
   /* Update theme-color meta tag
    * when theme is updated */
   useEffect(() => {
-    const themeColor = theme === 'dark' ? '#071411' : '#f8fbf7'
+    const themeColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--v3-bg')
+      .trim()
     const metaThemeColor = document.querySelector("meta[name='theme-color']")
     if (metaThemeColor) metaThemeColor.setAttribute('content', themeColor)
   }, [theme])
@@ -24,15 +26,15 @@ export function ThemeSwitch() {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button
+        <V3Button
           variant='ghost'
           size='icon'
-          className='scale-95 rounded-full border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] text-muted-foreground shadow-none hover:bg-[color:var(--superteam-sidebar-hover)] hover:text-primary'
+          className='scale-95 rounded-xl border border-v3-line bg-v3-card-soft text-v3-ink-2 shadow-none hover:bg-v3-brand-soft hover:text-v3-brand-deep'
         >
           <Sun className='size-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90' />
           <Moon className='absolute size-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0' />
           <span className='sr-only'>Toggle theme</span>
-        </Button>
+        </V3Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
         <DropdownMenuItem onClick={() => setTheme('light')}>

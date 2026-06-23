@@ -558,6 +558,9 @@ describe("TaskLaunchView", () => {
     expect(getByText("提交前确认")).toBeTruthy();
     expect(getByText("保存草稿")).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
+    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-icon-tile"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-button"]').length).toBeGreaterThan(0);
 
     expect(queryByText("上下文边界")).toBeNull();
     expect(queryByText("备注")).toBeNull();

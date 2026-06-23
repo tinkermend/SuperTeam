@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ExecuteInboxActionInput, InboxAction, InboxItem } from "@/lib/api/inbox";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { V3Button, V3ErrorState } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
@@ -66,23 +65,21 @@ export function InboxActionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] sm:max-w-xl">
+      <DialogContent className="border-v3-line bg-v3-card text-v3-ink shadow-v3-pop sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{action ? action.label : "处理事项"}</DialogTitle>
           <DialogDescription>{item?.title ?? "确认本次收件箱处理动作。"}</DialogDescription>
         </DialogHeader>
         {submitError ? (
-          <Alert variant="destructive">
-            <AlertTitle>操作未完成</AlertTitle>
-            <AlertDescription>{submitError}</AlertDescription>
-          </Alert>
+          <V3ErrorState title="操作未完成" description={submitError} className="py-4" />
         ) : null}
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="inbox-action-comment">
+          <label className="text-sm font-semibold text-v3-ink" htmlFor="inbox-action-comment">
             处理意见{requiresComment ? "（必填）" : "（可选）"}
           </label>
           <Textarea
             aria-invalid={requiresComment && !comment.trim()}
+            className="min-h-28 rounded-v3-inner border-v3-line bg-v3-card-soft text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
             disabled={isSubmitting}
             id="inbox-action-comment"
             onChange={(event) => setComment(event.target.value)}
@@ -90,16 +87,16 @@ export function InboxActionDialog({
             value={comment}
           />
           {requiresComment && !comment.trim() ? (
-            <p className="text-xs text-destructive">该动作需要填写处理意见。</p>
+            <p className="text-xs font-semibold text-v3-danger">该动作需要填写处理意见。</p>
           ) : null}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+          <V3Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             取消
-          </Button>
-          <Button type="button" onClick={submit} disabled={!canSubmit || isSubmitting}>
+          </V3Button>
+          <V3Button type="button" onClick={submit} disabled={!canSubmit || isSubmitting}>
             {isSubmitting ? "提交中" : "提交"}
-          </Button>
+          </V3Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

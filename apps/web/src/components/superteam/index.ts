@@ -1,4 +1,4 @@
-export * from './liquid-components'
+export * from './v3-components'
 export * from "./team-icon-tile";
 export * from "./team-role";
 export * from "./user-identity";

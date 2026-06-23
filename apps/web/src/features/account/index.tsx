@@ -5,11 +5,21 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { SemanticIconTile, StatusBadge } from "@/components/superteam";
+import {
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+} from "@/components/superteam";
 import { UserIdentityAvatar, getUserIdentityLabel } from "@/components/superteam/user-identity";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -122,9 +132,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
           <ThemeSwitch />
         </Header>
         <Main className="min-w-0 overflow-x-hidden" fluid>
-          <Card className="rounded-md">
-            <CardContent className="p-6 text-sm text-muted-foreground">未登录</CardContent>
-          </Card>
+          <SoftCard className="p-6 text-sm text-v3-ink-2">未登录</SoftCard>
         </Main>
       </>
     );
@@ -142,31 +150,30 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
       <Main className="min-w-0 overflow-x-hidden" fluid>
         <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <SemanticIconTile tone="neutral" size="lg">
+            <IconTile tone="mute" size="lg">
               <UserRound />
-            </SemanticIconTile>
+            </IconTile>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-normal">账户设置</h1>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <h1 className="text-2xl font-bold tracking-normal text-v3-ink">账户设置</h1>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-v3-ink-2">
                 <span className="truncate">{identity.primary}</span>
                 <span aria-hidden="true">/</span>
                 <span className="truncate">{identity.secondary}</span>
               </div>
             </div>
           </div>
-          <StatusBadge tone={user.status === "active" ? "success" : "danger"}>{user.status}</StatusBadge>
+          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-          <Card className="min-w-0 rounded-md">
-            <CardHeader className="flex flex-row items-center gap-3">
+          <SoftCard className="min-w-0 p-6">
+            <div className="mb-5 flex items-center gap-3">
               <UserIdentityAvatar className="size-14" user={user} />
               <div className="min-w-0">
-                <CardTitle className="text-base">个人资料</CardTitle>
-                <p className="truncate text-sm text-muted-foreground">{user.username}</p>
+                <h2 className="text-base font-bold text-v3-ink">个人资料</h2>
+                <p className="truncate text-sm text-v3-ink-2">{user.username}</p>
               </div>
-            </CardHeader>
-            <CardContent>
+            </div>
               <form
                 className="grid gap-4 md:grid-cols-2"
                 onSubmit={(event) => {
@@ -198,27 +205,25 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
                   />
                 </Field>
                 <div className="flex items-center gap-3 md:col-span-2">
-                  <Button disabled={profileMutation.isPending} type="submit">
+                  <V3Button disabled={profileMutation.isPending} type="submit">
                     <Save data-icon="inline-start" />
                     保存资料
-                  </Button>
+                  </V3Button>
                   <MutationMessage
                     error={profileMutation.error}
                     message={profileMessage}
                   />
                 </div>
               </form>
-            </CardContent>
-          </Card>
+          </SoftCard>
 
-          <Card className="min-w-0 rounded-md">
-            <CardHeader className="flex flex-row items-center gap-3">
-              <SemanticIconTile tone="decision">
+          <SoftCard className="min-w-0 p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <IconTile tone="brand">
                 <KeyRound />
-              </SemanticIconTile>
-              <CardTitle className="text-base">密码</CardTitle>
-            </CardHeader>
-            <CardContent>
+              </IconTile>
+              <h2 className="text-base font-bold text-v3-ink">密码</h2>
+            </div>
               <form
                 className="grid gap-4"
                 onSubmit={(event) => {
@@ -244,45 +249,51 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
                   />
                 </Field>
                 <div className="flex items-center gap-3">
-                  <Button disabled={passwordMutation.isPending} type="submit">
+                  <V3Button disabled={passwordMutation.isPending} type="submit">
                     <ShieldCheck data-icon="inline-start" />
                     修改密码
-                  </Button>
+                  </V3Button>
                   <MutationMessage
                     error={passwordMutation.error}
                     message={passwordMessage}
                   />
                 </div>
               </form>
-            </CardContent>
-          </Card>
+          </SoftCard>
         </div>
 
-        <Card className="mt-4 rounded-md">
-          <CardHeader className="flex flex-row items-center gap-3">
-            <SemanticIconTile tone="artifact">
+        <SoftCard className="mt-4 min-w-0 p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <IconTile tone="artifact">
               <Clock3 />
-            </SemanticIconTile>
-            <CardTitle className="text-base">最近登录</CardTitle>
-          </CardHeader>
-          <CardContent>
+            </IconTile>
+            <h2 className="text-base font-bold text-v3-ink">最近登录</h2>
+          </div>
+          <WorkSurface>
             {loginLogsQuery.isError ? (
-              <Alert variant="destructive">
-                <AlertDescription>登录记录加载失败</AlertDescription>
-              </Alert>
+              <V3ErrorState title="登录记录加载失败" />
+            ) : loginLogsQuery.isLoading ? (
+              <V3LoadingState label="加载登录记录中" />
             ) : loginLogs.length === 0 ? (
-              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                {loginLogsQuery.isLoading ? "加载登录记录中" : "暂无登录记录"}
-              </div>
+              <V3EmptyState title="暂无登录记录" />
             ) : (
-              <div className="divide-y rounded-md border">
+              <V3Table>
+                <thead>
+                  <V3Tr>
+                    <V3Th>事件</V3Th>
+                    <V3Th>IP 地址</V3Th>
+                    <V3Th>时间</V3Th>
+                  </V3Tr>
+                </thead>
+                <tbody>
                 {loginLogs.map((record) => (
                   <LoginLogRow key={record.id} record={record} />
                 ))}
-              </div>
+                </tbody>
+              </V3Table>
             )}
-          </CardContent>
-        </Card>
+          </WorkSurface>
+        </SoftCard>
       </Main>
     </>
   );
@@ -310,23 +321,25 @@ function MutationMessage({ error, message }: { error: Error | null; message: str
     return <span className="text-sm text-destructive">{error.message}</span>;
   }
   if (message) {
-    return <span className="text-sm text-[color:var(--superteam-success)]">{message}</span>;
+    return <span className="text-sm text-v3-ok">{message}</span>;
   }
   return null;
 }
 
 function LoginLogRow({ record }: { record: LoginLogRecord }) {
   return (
-    <div className="grid gap-2 p-4 text-sm sm:grid-cols-[minmax(0,1fr)_180px_180px] sm:items-center">
-      <div className="min-w-0">
-        <div className="font-medium">{formatLoginEvent(record.event_type)}</div>
-        <div className="truncate text-muted-foreground">{record.user_agent ?? "未知设备"}</div>
-      </div>
-      <div className="text-muted-foreground">{record.client_ip ?? "未知 IP"}</div>
-      <time className="text-muted-foreground" dateTime={record.created_at}>
+    <V3Tr tone={record.result === "failed" ? "danger" : undefined}>
+      <V3Td className="min-w-56">
+        <div className="font-medium text-v3-ink">{formatLoginEvent(record.event_type)}</div>
+        <div className="truncate text-v3-ink-2">{record.user_agent ?? "未知设备"}</div>
+      </V3Td>
+      <V3Td className="text-v3-ink-2">{record.client_ip ?? "未知 IP"}</V3Td>
+      <V3Td className="text-v3-ink-2 tabular-nums">
+        <time dateTime={record.created_at}>
         {formatDateTime(record.created_at)}
       </time>
-    </div>
+      </V3Td>
+    </V3Tr>
   );
 }
 

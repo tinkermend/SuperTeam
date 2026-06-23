@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { SemanticIconTile } from "@/components/superteam/liquid-components";
+import { IconTile } from "@/components/superteam";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -293,9 +293,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       <Main>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <SemanticIconTile tone="primary" size="lg">
+            <IconTile tone="brand" size="lg">
               <Bot />
-            </SemanticIconTile>
+            </IconTile>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">创建数字员工</h1>
               <p className="text-sm text-muted-foreground">
@@ -595,9 +595,9 @@ function CreationPathPanel() {
   return (
     <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
       <div className="mb-3 flex items-center gap-2 px-1">
-        <SemanticIconTile tone="primary" size="sm">
+        <IconTile tone="brand" size="sm">
           <Sparkles />
-        </SemanticIconTile>
+        </IconTile>
         <div>
           <h2 className="text-base font-semibold">创建路径</h2>
           <p className="text-xs text-muted-foreground">先选入口，再进入配置。</p>
@@ -1038,9 +1038,9 @@ function CreationPreflightPanel({
     <aside className="grid content-start gap-4">
       <section className="rounded-md border bg-card/95 p-4 shadow-xs">
         <div className="mb-3 flex items-center gap-2">
-          <SemanticIconTile tone="success" size="sm">
+          <IconTile tone="ok" size="sm">
             <ShieldCheck />
-          </SemanticIconTile>
+          </IconTile>
           <div>
             <h2 className="text-base font-semibold">创建预检</h2>
             <p className="text-xs text-muted-foreground">来自 Control Plane 创建候选接口。</p>
@@ -1070,9 +1070,9 @@ function CreationPreflightPanel({
 
       <section className="rounded-md border bg-card/95 p-4 shadow-xs">
         <div className="mb-3 flex items-center gap-2">
-          <SemanticIconTile tone="artifact" size="sm">
+          <IconTile tone="artifact" size="sm">
             <Gauge />
-          </SemanticIconTile>
+          </IconTile>
           <div>
             <h2 className="text-base font-semibold">画像摘要</h2>
             <p className="text-xs text-muted-foreground">随配置实时更新。</p>
@@ -1693,8 +1693,8 @@ function stringValue(value: unknown) {
 }
 
 function checkDotClassName(status: string) {
-  if (status === "passed") return "bg-[color:var(--superteam-success)]";
-  if (status === "warning") return "bg-[color:var(--superteam-warning)]";
+  if (status === "passed") return "bg-v3-ok";
+  if (status === "warning") return "bg-v3-warn";
   return "bg-destructive";
 }
 

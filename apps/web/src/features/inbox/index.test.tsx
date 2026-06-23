@@ -215,6 +215,18 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
   });
 
+  it("renders the inbox with v3 Soft-Flat containers", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+
+    expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
+    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-tabs"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+  });
+
   it("renders read-only inbox items when API returns null actions", async () => {
     const itemWithNullActions = makeInboxItem({
       actions: null as unknown as InboxItem["actions"],

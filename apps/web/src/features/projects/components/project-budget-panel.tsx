@@ -1,18 +1,18 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { BadgeDollarSign } from "lucide-react";
 import {
-  LiquidCard,
-  SemanticIconTile,
-  StatusBadge,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
 } from "@/components/superteam";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type {
   ProjectBudgetLedgerEntry,
@@ -84,25 +84,18 @@ export function CostsProjectView({
 
   if (isInitialLoading) {
     return (
-      <LiquidCard className="rounded-xl p-5 text-sm text-muted-foreground">
-        正在加载项目成本数据...
-      </LiquidCard>
+      <SoftCard>
+        <V3LoadingState label="正在加载项目成本数据..." />
+      </SoftCard>
     );
   }
 
   if (error) {
     return (
-      <LiquidCard className="rounded-xl p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="font-semibold">项目成本加载失败</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              请稍后重试，或确认当前账号仍有项目访问权限。
-            </p>
-          </div>
-          <StatusBadge tone="danger">失败</StatusBadge>
-        </div>
-      </LiquidCard>
+      <V3ErrorState
+        title="项目成本加载失败"
+        description="请稍后重试，或确认当前账号仍有项目访问权限。"
+      />
     );
   }
 
@@ -110,7 +103,7 @@ export function CostsProjectView({
     <div className="space-y-3">
       {ledgerQuery.isFetching || summaryQuery.isFetching ? (
         <div className="flex justify-end">
-          <StatusBadge tone="info">刷新中</StatusBadge>
+          <StatusPill tone="info">刷新中</StatusPill>
         </div>
       ) : null}
       <ProjectBudgetPanel
@@ -134,89 +127,90 @@ export function ProjectBudgetPanel({
   };
 
   return (
-    <LiquidCard className="rounded-xl">
-      <div className="flex items-center justify-between gap-3 border-b p-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <SemanticIconTile tone="warning" size="sm">
-            <BadgeDollarSign />
-          </SemanticIconTile>
-          <div className="min-w-0">
-            <h3 className="font-semibold">预算流水</h3>
-            <p className="truncate text-xs text-muted-foreground">
-              Token、成本估算与实际消耗
-            </p>
+    <div className="grid gap-4">
+      <SoftCard className="overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <IconTile tone="warn" size="sm">
+              <BadgeDollarSign />
+            </IconTile>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-v3-ink">预算流水</h3>
+              <p className="truncate text-xs text-v3-ink-2">
+                Token、成本估算与实际消耗
+              </p>
+            </div>
           </div>
+          <StatusPill tone="warn">{summary.ledger_count} 条</StatusPill>
         </div>
-        <StatusBadge tone="warning">{summary.ledger_count} 条</StatusBadge>
-      </div>
 
-      <div className="grid gap-4 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
           <MetricBlock label="预估 Token" value={formatNumber(summary.estimated_tokens)} />
           <MetricBlock label="实际 Token" value={formatNumber(summary.actual_tokens)} />
           <MetricBlock label="预估成本" value={formatCost(summary.estimated_cost)} />
           <MetricBlock label="实际成本" value={formatCost(summary.actual_cost)} />
           <MetricBlock label="流水数" value={formatNumber(summary.ledger_count)} />
         </div>
+      </SoftCard>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>类型</TableHead>
-              <TableHead>来源</TableHead>
-              <TableHead>Token</TableHead>
-              <TableHead>成本</TableHead>
-              <TableHead className="min-w-[180px]">原因</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <WorkSurface>
+        <V3Table>
+          <thead>
+            <tr>
+              <V3Th>类型</V3Th>
+              <V3Th>来源</V3Th>
+              <V3Th>Token</V3Th>
+              <V3Th>成本</V3Th>
+              <V3Th className="min-w-[180px]">原因</V3Th>
+            </tr>
+          </thead>
+          <tbody>
             {budgetLedger.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  className="h-24 text-center text-sm text-muted-foreground"
-                  colSpan={5}
-                >
-                  暂无预算流水
-                </TableCell>
-              </TableRow>
+              <V3Tr>
+                <V3Td colSpan={5}>
+                  <V3EmptyState title="暂无预算流水" />
+                </V3Td>
+              </V3Tr>
             ) : (
               budgetLedger.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell>
-                    <StatusBadge tone="neutral">{entry.cost_type}</StatusBadge>
-                  </TableCell>
-                  <TableCell>{entry.source}</TableCell>
-                  <TableCell>
-                    <span className="font-mono text-xs">
+                <V3Tr key={entry.id}>
+                  <V3Td>
+                    <StatusPill tone="mute">{entry.cost_type}</StatusPill>
+                  </V3Td>
+                  <V3Td className="text-v3-ink-2">{entry.source}</V3Td>
+                  <V3Td>
+                    <span className="font-mono text-xs text-v3-ink tabular-nums">
                       {formatOptionalNumber(entry.estimated_tokens)} /{" "}
                       {formatOptionalNumber(entry.actual_tokens)}
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-mono text-xs">
+                  </V3Td>
+                  <V3Td>
+                    <span className="font-mono text-xs text-v3-ink tabular-nums">
                       {formatCost(entry.estimated_cost)} / {formatCost(entry.actual_cost)}
                     </span>
-                  </TableCell>
-                  <TableCell className="max-w-[260px] whitespace-normal">
-                    <span className="line-clamp-2 text-sm">
+                  </V3Td>
+                  <V3Td className="max-w-[260px] whitespace-normal">
+                    <span className="line-clamp-2 text-sm text-v3-ink-2">
                       {entry.reason || "未记录原因"}
                     </span>
-                  </TableCell>
-                </TableRow>
+                  </V3Td>
+                </V3Tr>
               ))
             )}
-          </TableBody>
-        </Table>
-      </div>
-    </LiquidCard>
+          </tbody>
+        </V3Table>
+      </WorkSurface>
+    </div>
   );
 }
 
 function MetricBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border bg-white/55 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate font-mono text-sm font-semibold">{value}</p>
+    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
+      <p className="text-xs text-v3-ink-2">{label}</p>
+      <p className="mt-2 truncate font-mono text-sm font-semibold text-v3-ink tabular-nums">
+        {value}
+      </p>
     </div>
   );
 }
