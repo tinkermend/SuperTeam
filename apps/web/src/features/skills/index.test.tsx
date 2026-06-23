@@ -22,6 +22,65 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@/components/ui/select", async () => {
+  const React = await import("react");
+  type SelectContextValue = {
+    onValueChange?: (value: string) => void;
+    value?: string;
+  };
+  const SelectContext = React.createContext<SelectContextValue>({});
+
+  return {
+    Select: ({
+      children,
+      disabled,
+      onValueChange,
+      value,
+    }: {
+      children: ReactNode;
+      disabled?: boolean;
+      onValueChange?: (value: string) => void;
+      value?: string;
+    }) => (
+      <SelectContext value={{ onValueChange, value }}>
+        <div aria-disabled={disabled || undefined} data-select-value={value}>
+          {children}
+        </div>
+      </SelectContext>
+    ),
+    SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    SelectGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    SelectItem: ({ children, value }: { children: ReactNode; value: string }) => {
+      const { onValueChange, value: selectedValue } = React.useContext(SelectContext);
+      return (
+        <button
+          aria-pressed={selectedValue === value}
+          onClick={() => onValueChange?.(value)}
+          type="button"
+        >
+          {children}
+        </button>
+      );
+    },
+    SelectLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    SelectScrollDownButton: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
+    SelectScrollUpButton: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
+    SelectSeparator: () => <hr />,
+    SelectTrigger: ({
+      "aria-label": ariaLabel,
+      children,
+    }: {
+      "aria-label"?: string;
+      children: ReactNode;
+    }) => (
+      <button aria-label={ariaLabel} type="button">
+        {children}
+      </button>
+    ),
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
+  };
+});
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a {...props} data-router-link="true" href={to}>{children}</a>
@@ -116,6 +175,37 @@ const teamsFixture = [
   { id: "team-2", tenant_id: "tenant-1", slug: "security", name: "安全治理", status: "active", member_count: 5, digital_employee_count: 2, capability_count: 4, governance_status: "active", pending_draft_count: 0, risk_summary: "高风险需审批" },
 ];
 
+const employeesFixture = [
+  {
+    id: "agent-1",
+    tenant_id: "tenant-1",
+    team_id: "team-2",
+    owner_user_id: "user-1",
+    employee_type: "analyst",
+    name: "需求澄清 Agent",
+    role: "需求澄清",
+    status: "active",
+    permission_policy: {},
+    context_policy: {},
+    approval_policy: {},
+    risk_level: "low",
+  },
+  {
+    id: "agent-2",
+    tenant_id: "tenant-1",
+    team_id: "team-1",
+    owner_user_id: "user-1",
+    employee_type: "coordinator",
+    name: "项目协调 Agent",
+    role: "项目协调",
+    status: "ready",
+    permission_policy: {},
+    context_policy: {},
+    approval_policy: {},
+    risk_level: "medium",
+  },
+];
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -140,8 +230,28 @@ function createSkillsFetcher() {
     if (url.pathname === "/api/v1/teams" && method === "GET") {
       return jsonResponse(teamsFixture);
     }
-  if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
-      return jsonResponse([]);
+    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employeesFixture);
+    }
+    if (url.pathname === "/api/v1/skills/skill-api-doc/install" && method === "POST") {
+      return jsonResponse({
+        skill_id: "skill-api-doc",
+        target_scope: "employee",
+        digital_employee_id: "agent-1",
+        installed_count: 1,
+        installations: [
+          {
+            digital_employee_id: "agent-1",
+            employee_name: "需求澄清 Agent",
+            provider_type: "codex",
+            runtime_node_id: "runtime-1",
+            node_id: "node-1",
+            installed_path: "/var/superteam/skills/skill-api-doc",
+            archive_checksum_sha256: "def456abc123",
+            installed_at: "2026-06-24T08:00:00Z",
+          },
+        ],
+      }, 201);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -189,10 +299,10 @@ describe("SkillsView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "技能市场" })).toBeVisible();
     await expect.element(screen.getByText("发现、校验并安装技能到团队或数字员工")).toBeVisible();
-    await expect.element(screen.getByText("可安装")).toBeVisible();
-    await expect.element(screen.getByText("需审批")).toBeVisible();
-    await expect.element(screen.getByText("团队绑定")).toBeVisible();
-    await expect.element(screen.getByText("数字员工绑定")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("可安装")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("需审批")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("团队绑定")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("数字员工绑定")).toBeVisible();
     await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
     await expect.element(screen.getByRole("columnheader", { name: "风险" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
@@ -251,5 +361,38 @@ describe("SkillsView", () => {
     );
     await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
     await expect.element(screen.getByText("接口文档生成")).toBeVisible();
+  });
+
+  it("opens the install dialog from the table install button", async () => {
+    const screen = await renderSkillsView();
+
+    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+
+    const dialog = screen.getByRole("dialog", { name: "安装技能" });
+    await expect.element(dialog).toBeVisible();
+    await expect.element(dialog.getByText("接口文档生成 · 1.2.1")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "确认安装" })).toBeDisabled();
+  });
+
+  it("submits the selected employee target and displays install success", async () => {
+    const fetcher = createSkillsFetcher();
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认安装" }));
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill-api-doc/install",
+      expect.objectContaining({
+        body: JSON.stringify({
+          target_scope: "employee",
+          digital_employee_id: "agent-1",
+          timeout_sec: 15,
+        }),
+        method: "POST",
+      }),
+    );
+    await expect.element(screen.getByText("已安装到 1 个目标")).toBeVisible();
   });
 });

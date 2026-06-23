@@ -3,6 +3,7 @@ import {
   bindEmployeeSkill,
   bindTeamSkill,
   deleteSkill,
+  installSkill,
   listEmployeeSkills,
   listSkills,
   listTeamSkills,
@@ -172,6 +173,64 @@ describe("skills API", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/skills/skill%201%2Fops",
       expect.objectContaining({ credentials: "include", method: "DELETE" }),
+    );
+  });
+
+  it("installs a skill with an encoded id and JSON target body", async () => {
+    const result = {
+      skill_id: "skill 1/ops",
+      target_scope: "employee",
+      digital_employee_id: "employee 1/primary",
+      installed_count: 1,
+      installations: [
+        {
+          digital_employee_id: "employee 1/primary",
+          employee_name: "需求澄清 Agent",
+          provider_type: "codex",
+          runtime_node_id: "runtime-1",
+          node_id: "node-1",
+          installed_path: "/var/superteam/skills/skill-1",
+          archive_checksum_sha256: "abc123def456",
+          installed_at: "2026-06-24T08:00:00Z",
+        },
+      ],
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        target_scope: "employee",
+        digital_employee_id: "employee 1/primary",
+        timeout_sec: 15,
+      });
+      return new Response(JSON.stringify(result), {
+        headers: { "content-type": "application/json" },
+        status: 201,
+      });
+    });
+
+    await expect(
+      installSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "skill 1/ops",
+        {
+          target_scope: "employee",
+          digital_employee_id: "employee 1/primary",
+          timeout_sec: 15,
+        },
+      ),
+    ).resolves.toEqual(result);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill%201%2Fops/install",
+      {
+        body: JSON.stringify({
+          target_scope: "employee",
+          digital_employee_id: "employee 1/primary",
+          timeout_sec: 15,
+        }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "POST",
+      },
     );
   });
 

@@ -72,6 +72,35 @@ export type UploadSkillInput = {
   tags?: string[];
 };
 
+export type SkillInstallTargetScope = "team" | "employee";
+
+export type InstallSkillInput = {
+  target_scope: SkillInstallTargetScope;
+  team_id?: string;
+  digital_employee_id?: string;
+  timeout_sec?: number;
+};
+
+export type SkillInstallation = {
+  digital_employee_id: string;
+  employee_name?: string;
+  provider_type: "opencode" | "codex" | "claude-code";
+  runtime_node_id: string;
+  node_id?: string;
+  installed_path: string;
+  archive_checksum_sha256: string;
+  installed_at?: string;
+};
+
+export type InstallSkillResult = {
+  skill_id: string;
+  target_scope: SkillInstallTargetScope;
+  team_id?: string;
+  digital_employee_id?: string;
+  installed_count: number;
+  installations: SkillInstallation[];
+};
+
 export async function deleteSkill(
   options: ApiClientOptions,
   skillId: string,
@@ -145,6 +174,23 @@ export async function uploadSkill(
   });
 
   return parseJson<Skill>(response, "upload skill");
+}
+
+export async function installSkill(
+  options: ApiClientOptions,
+  skillId: string,
+  input: InstallSkillInput,
+): Promise<InstallSkillResult> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}/install`), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "POST",
+  });
+
+  return parseJson<InstallSkillResult>(response, "install skill");
 }
 
 function cleanUploadList(items?: string[]): string[] {

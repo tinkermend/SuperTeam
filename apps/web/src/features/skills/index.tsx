@@ -53,6 +53,7 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
+import { SkillInstallDialog } from "./install-dialog";
 
 type SkillsViewProps = {
   apiBaseUrl: string;
@@ -111,6 +112,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedSkillId, setSelectedSkillId] = useState<string>();
+  const [installSkillId, setInstallSkillId] = useState<string>();
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
@@ -122,6 +124,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
 
   const skillRows = skills.data ?? [];
   const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? skillRows[0];
+  const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
   const metrics = useMemo(() => buildMarketMetrics(skillRows), [skillRows]);
   const filteredRows = useMemo(
@@ -218,12 +221,14 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                 ) : null}
                 {viewMode === "list" ? (
                   <SkillMarketTable
+                    onInstallSkill={setInstallSkillId}
                     onSelectSkill={setSelectedSkillId}
                     rows={pagedRows}
                     selectedSkillId={selectedSkill?.id}
                   />
                 ) : (
                   <SkillMarketGrid
+                    onInstallSkill={setInstallSkillId}
                     onSelectSkill={setSelectedSkillId}
                     rows={pagedRows}
                     selectedSkillId={selectedSkill?.id}
@@ -246,6 +251,17 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
           </WorkSurface>
         </div>
       </Main>
+      <SkillInstallDialog
+        apiBaseUrl={apiBaseUrl}
+        fetcher={fetcher}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setInstallSkillId(undefined);
+          }
+        }}
+        open={Boolean(installSkillTarget)}
+        skill={installSkillTarget}
+      />
     </>
   );
 }
@@ -408,10 +424,12 @@ function FilterSelect({
 }
 
 function SkillMarketTable({
+  onInstallSkill,
   onSelectSkill,
   rows,
   selectedSkillId,
 }: {
+  onInstallSkill: (id: string) => void;
   onSelectSkill: (id: string) => void;
   rows: Skill[];
   selectedSkillId?: string;
@@ -433,6 +451,7 @@ function SkillMarketTable({
         {rows.map((skill) => (
           <SkillMarketTableRow
             key={skill.id}
+            onInstallSkill={onInstallSkill}
             onSelectSkill={onSelectSkill}
             selected={selectedSkillId === skill.id}
             skill={skill}
@@ -451,10 +470,12 @@ function SkillMarketTable({
 }
 
 function SkillMarketTableRow({
+  onInstallSkill,
   onSelectSkill,
   selected,
   skill,
 }: {
+  onInstallSkill: (id: string) => void;
   onSelectSkill: (id: string) => void;
   selected: boolean;
   skill: Skill;
@@ -511,7 +532,10 @@ function SkillMarketTableRow({
           </V3Button>
           <V3Button
             aria-label={`安装 ${skill.name}`}
-            onClick={() => onSelectSkill(skill.id)}
+            onClick={() => {
+              onSelectSkill(skill.id);
+              onInstallSkill(skill.id);
+            }}
             size="sm"
             type="button"
           >
@@ -533,10 +557,12 @@ function SkillMarketTableRow({
 }
 
 function SkillMarketGrid({
+  onInstallSkill,
   onSelectSkill,
   rows,
   selectedSkillId,
 }: {
+  onInstallSkill: (id: string) => void;
   onSelectSkill: (id: string) => void;
   rows: Skill[];
   selectedSkillId?: string;
@@ -609,6 +635,7 @@ function SkillMarketGrid({
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectSkill(skill.id);
+                  onInstallSkill(skill.id);
                 }}
                 size="sm"
                 type="button"
