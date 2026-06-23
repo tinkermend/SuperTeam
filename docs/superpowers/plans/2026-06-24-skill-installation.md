@@ -6,6 +6,8 @@
 
 **Architecture:** Control Plane owns install preflight, authorization, Runtime command dispatch, synchronous wait, successful binding persistence, and failure audit logs. Runtime Agent owns provider-specific skill directory mapping, archive download, checksum validation, safe extraction, atomic replacement, and rollback for the current command. Web exposes one marketplace install flow and skill-detail installation visibility.
 
+**Atomicity & failure semantics:** "All-or-nothing" is guaranteed *per Runtime command* (one runtime node): a single node either fully materializes the skill or rolls back its own filesystem changes. Across multiple nodes (team-scope installs spanning several runtimes) there is no distributed rollback in this slice — the Control Plane has no uninstall command to compensate an already-applied remote node. Therefore: on any node failure the install fails as a whole, **no success rows or bindings are persisted**, and the failure audit record must surface the set of nodes that were already physically applied (`details.applied_nodes`, `details.requires_manual_cleanup`) so an operator can clean them up. Do not claim distributed atomicity; claim per-command atomicity plus explicit surfacing of partial physical state.
+
 **Tech Stack:** Go Control Plane with chi handlers, pgx/sqlc migrations and hand-written skill repository SQL, PostgreSQL, OpenAPI contract, Rust Runtime Agent, React/TanStack Query/TanStack Router, Vitest Browser, Cargo tests.
 
 ---
@@ -582,6 +584,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -833,6 +836,44 @@ func TestInstallSkillRuntimeFailureDoesNotPersistSuccess(t *testing.T) {
 		t.Fatalf("failure phase = %q, want runtime_install", got)
 	}
 }
+
+func TestInstallSkillTeamPartialNodeFailureDoesNotPersistAndSurfacesAppliedNodes(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	teamID := uuid.New()
+	repo := newInstallServiceRepoFixture(tenantID, skillID)
+	repo.targets = []SkillInstallTarget{
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex", AgentHomeDir: "/tmp/e1"},
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-2", ProviderType: "codex", AgentHomeDir: "/tmp/e2"},
+	}
+	// node-1 is dispatched/waited first (deterministic sorted node order), node-2 fails.
+	repo.waitHook = func(commandID string) {
+		if repo.receipts[commandID].NodeID == "node-2" {
+			repo.receipts[commandID].Status = "failed"
+			repo.receipts[commandID].ErrorMessage = "extract failed"
+		}
+	}
+	dispatcher := &installServiceDispatcher{connected: map[string]bool{"node-1": true, "node-2": true}}
+	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: 50 * time.Millisecond, PollInterval: time.Millisecond})
+
+	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetTeam, TeamID: teamID, ActorUserID: uuid.New(),
+	})
+	if err == nil {
+		t.Fatal("expected partial node failure error")
+	}
+	if len(repo.installations) != 0 || len(repo.teamBindings) != 0 || len(repo.employeeBindings) != 0 {
+		t.Fatalf("partial node failure must not persist success: repo=%#v", repo)
+	}
+	last := repo.failureLogs[len(repo.failureLogs)-1]
+	if last.Phase != InstallFailurePhaseRuntimeInstall {
+		t.Fatalf("failure phase = %q, want runtime_install", last.Phase)
+	}
+	applied, _ := last.Details["applied_nodes"].([]string)
+	if len(applied) != 1 || applied[0] != "node-1" {
+		t.Fatalf("expected node-1 surfaced as already-applied for manual cleanup, got %#v", last.Details["applied_nodes"])
+	}
+}
 ```
 
 Add this field and hook in the test fake:
@@ -870,12 +911,13 @@ if err != nil {
 	return result, err
 }
 installations := make([]SkillInstallation, 0, len(targets))
+appliedNodes := make([]string, 0, len(commands))
 for _, command := range commands {
 	waitCtx, cancel := context.WithTimeout(ctx, timeoutOrDefault(req.Timeout, s.timeout))
 	receipt, waitErr := s.repository.WaitForInstallCommand(waitCtx, req.TenantID, command.CommandID, s.pollInterval)
 	cancel()
 	if waitErr != nil {
-		_ = s.recordFailure(ctx, req, InstallFailurePhaseTimeout, "runtime_install_timeout", waitErr.Error(), command.CommandID, nil)
+		s.recordPartialFailure(ctx, req, InstallFailurePhaseTimeout, "runtime_install_timeout", waitErr.Error(), command.CommandID, appliedNodes)
 		return result, &InstallSkillError{Phase: InstallFailurePhaseTimeout, Message: waitErr.Error()}
 	}
 	if receipt.Status != "completed" {
@@ -883,10 +925,11 @@ for _, command := range commands {
 		if strings.TrimSpace(message) == "" {
 			message = "runtime install failed"
 		}
-		_ = s.recordFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_install_failed", message, command.CommandID, nil)
+		s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_install_failed", message, command.CommandID, appliedNodes)
 		return result, &InstallSkillError{Phase: InstallFailurePhaseRuntimeInstall, Message: message}
 	}
 	installations = append(installations, command.Installations...)
+	appliedNodes = append(appliedNodes, command.NodeID)
 }
 return s.repository.PersistInstallSuccess(ctx, PersistSkillInstallSuccessRequest{
 	TenantID: req.TenantID, SkillID: req.SkillID, TargetScope: req.TargetScope,
@@ -906,11 +949,17 @@ type dispatchedInstallCommand struct {
 
 func (s *InstallService) dispatchInstallCommands(ctx context.Context, req InstallSkillRequest, skill *Skill, targets []SkillInstallTarget) ([]dispatchedInstallCommand, error) {
 	grouped := map[string][]SkillInstallTarget{}
+	nodeOrder := make([]string, 0)
 	for _, target := range targets {
+		if _, seen := grouped[target.NodeID]; !seen {
+			nodeOrder = append(nodeOrder, target.NodeID)
+		}
 		grouped[target.NodeID] = append(grouped[target.NodeID], target)
 	}
+	sort.Strings(nodeOrder) // deterministic dispatch/wait order so partial-failure applied_nodes is stable
 	commands := make([]dispatchedInstallCommand, 0, len(grouped))
-	for nodeID, nodeTargets := range grouped {
+	for _, nodeID := range nodeOrder {
+		nodeTargets := grouped[nodeID]
 		commandID := newInstallCommandID()
 		payload := buildInstallCommandPayload(commandID, req.TenantID, skill, nodeTargets)
 		runtimeNodeID := nodeTargets[0].RuntimeNodeID
@@ -997,6 +1046,24 @@ func timeoutOrDefault(requested, fallback time.Duration) time.Duration {
 		return requested
 	}
 	return fallback
+}
+
+// recordPartialFailure logs a runtime/timeout failure and, when one or more
+// nodes already physically applied the skill, surfaces them for manual cleanup.
+// Cross-node rollback is out of scope for this slice (see "Atomicity & failure
+// semantics"); the error is intentionally not propagated so the caller still
+// returns the original install failure to the client.
+func (s *InstallService) recordPartialFailure(ctx context.Context, req InstallSkillRequest, phase InstallFailurePhase, reasonCode, message, commandID string, appliedNodes []string) {
+	details := map[string]any{}
+	if len(appliedNodes) > 0 {
+		details["applied_nodes"] = appliedNodes
+		details["requires_manual_cleanup"] = true
+	}
+	_ = s.repository.RecordInstallFailure(ctx, SkillInstallFailureLog{
+		TenantID: req.TenantID, SkillID: req.SkillID, TargetScope: req.TargetScope,
+		TeamID: req.TeamID, DigitalEmployeeID: req.DigitalEmployeeID,
+		Phase: phase, ReasonCode: reasonCode, Message: message, CommandID: commandID, Details: details,
+	})
 }
 
 func newInstallCommandID() string {
@@ -1224,7 +1291,7 @@ func (r *PgRepository) RecordInstallFailure(ctx context.Context, req SkillInstal
 		_, err = r.db.Exec(ctx, `
 INSERT INTO audit_events (tenant_id, event_type, actor_type, actor_id, action, resource_type, resource_id, details, created_at)
 VALUES ($1, 'skill.install.failed', 'system', 'skill-install-service', 'skill.install.failed', 'skill', $2, $3, NOW())`,
-		req.TenantID, req.SkillID, payload,
+		req.TenantID, req.SkillID.String(), payload,
 	)
 	return err
 }
@@ -1413,6 +1480,12 @@ type installSkillErrorResponse struct {
 	BlockedTargets []SkillInstallBlockedTarget `json:"blocked_targets,omitempty"`
 }
 ```
+
+**Authorization decision required before writing this handler.** The snippet below calls `authorizeSkillAction(..., authz.ActionTeamCapabilityBind, authz.ResourceRef{Type: authz.ResourceSkill, ...})`. But `team.capability.bind` is modeled against a **Team** resource (`authorizer_test.go` shows it rejects non-team resources), and there is no `skill.install` action today. For employee-scope installs the request body carries no `team_id` at all, so it is undefined which team the check runs against. Resolve one of:
+- add a dedicated `skill.install` action and authorize against the skill, or
+- resolve the target team(s) from the install targets first and authorize `team.capability.bind` against each resolved Team resource.
+
+Confirm the chosen model against `apps/control-plane/internal/authz/` and add an authz-coverage case in `skill_routes_test.go` (allow + deny) before locking in the handler. Do not ship the `ActionTeamCapabilityBind` + `ResourceSkill` pairing as-is.
 
 Add handler:
 
@@ -1747,6 +1820,19 @@ Expected: commit includes API, service wiring, contract, and generated outputs.
 - Modify: `apps/runtime-agent/src/skills.rs`
 - Create: `apps/runtime-agent/tests/install_skills_test.rs`
 - Modify: `apps/runtime-agent/tests/runtime_command_payload_test.rs`
+
+- [ ] **Step 0: Verify the codex skill directory against the live provider adapter**
+
+The design spec maps `codex` → `.agents/skills/<slug>/` (citing `developers.openai.com/codex/skills`), but this repo's own codex assets live under `.codex/skills/` (e.g. `.codex/skills/superteam-completion-check`). Installing to a directory the codex provider does not actually read is a silent, hard-to-debug failure. The design spec states a codex provider adapter already exists, so it — not the spec table — is the source of truth.
+
+Before writing any path mapping, confirm where the existing codex adapter loads skills from:
+
+```bash
+rg -n "\.codex/skills|\.agents/skills|skills" apps/runtime-agent/src --glob '*codex*'
+rg -rn "skill" apps/runtime-agent/src/providers 2>/dev/null | rg -i "dir|path|home"
+```
+
+Expected: identify the directory the running codex provider reads. If it is `.codex/skills`, change `codex` to `.codex/skills` in **all five** places that hardcode it: the Go service test (`/tmp/employee/.agents/skills/review`), `providerSkillPath` in `install_service.go`, `provider_skill_dir` in `install_skills.rs`, the Rust mapping test, and the Step 9 E2E expectation. Do not proceed on the spec table alone; if the adapter location cannot be confirmed from code, treat codex as blocked and do a real codex provider smoke (per project rules) before baking the path in.
 
 - [ ] **Step 1: Add failing provider directory mapping tests**
 
