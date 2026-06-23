@@ -19,7 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listDigitalEmployees } from "@/lib/api/employees";
-import { installSkill, type InstallSkillResult, type Skill, type SkillInstallTargetScope } from "@/lib/api/skills";
+import {
+  InstallSkillError,
+  installSkill,
+  type InstallSkillResult,
+  type Skill,
+  type SkillInstallBlockedTarget,
+  type SkillInstallTargetScope,
+} from "@/lib/api/skills";
 import { listTeams } from "@/lib/api/teams";
 import { cn } from "@/lib/utils";
 
@@ -68,12 +75,12 @@ export function SkillInstallDialog({
   const apiOptions: ApiOpts = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
 
   const teams = useQuery({
-    enabled: open,
+    enabled: open && targetScope === "team",
     queryKey: ["teams"],
     queryFn: () => listTeams(apiOptions),
   });
   const employees = useQuery({
-    enabled: open,
+    enabled: open && targetScope === "employee",
     queryKey: ["digital-employees"],
     queryFn: () => listDigitalEmployees(apiOptions),
   });
@@ -89,9 +96,9 @@ export function SkillInstallDialog({
 
   const selectedTargetId = targetScope === "team" ? selectedTeamId : selectedEmployeeId;
   const targetLoadError =
-    teams.error instanceof Error
+    targetScope === "team" && teams.error instanceof Error
       ? teams.error.message
-      : employees.error instanceof Error
+      : targetScope === "employee" && employees.error instanceof Error
         ? employees.error.message
         : undefined;
   const mutation = useMutation({
@@ -114,6 +121,7 @@ export function SkillInstallDialog({
     },
   });
 
+  const installError = mutation.error instanceof InstallSkillError ? mutation.error : undefined;
   const mutationError = mutation.error instanceof Error ? mutation.error.message : undefined;
   const canSubmit = Boolean(skill && selectedTargetId) && !mutation.isPending;
 
@@ -233,8 +241,16 @@ export function SkillInstallDialog({
             </div>
           ) : null}
           {mutationError ? (
-            <div className="rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm font-semibold text-v3-danger">
-              {mutationError}
+            <div className="space-y-3 rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
+              <div className="font-semibold">{mutationError}</div>
+              {installError?.phase ? (
+                <div className="font-mono text-[11px] uppercase tracking-normal text-v3-danger/80">
+                  {installError.phase}
+                </div>
+              ) : null}
+              {installError?.blockedTargets.length ? (
+                <BlockedTargetList blockedTargets={installError.blockedTargets} />
+              ) : null}
             </div>
           ) : null}
           {installResult ? (
@@ -265,4 +281,38 @@ export function SkillInstallDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function BlockedTargetList({ blockedTargets }: { blockedTargets: SkillInstallBlockedTarget[] }) {
+  return (
+    <div className="space-y-2">
+      {blockedTargets.map((target, index) => (
+        <div
+          className="rounded-lg border border-v3-danger/20 bg-v3-card px-3 py-2 text-v3-ink"
+          data-testid="skill-install-blocked-target"
+          key={`${target.digital_employee_id ?? target.node_id ?? target.reason_code}-${index}`}
+        >
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-v3-ink">
+                {target.employee_name || target.digital_employee_id || "未知目标"}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-v3-ink-2">{target.message}</div>
+            </div>
+            <span className="shrink-0 rounded-lg bg-v3-danger-soft px-2 py-1 font-mono text-[11px] font-bold text-v3-danger">
+              {target.reason_code}
+            </span>
+          </div>
+          {providerNodeLabel(target) ? (
+            <div className="mt-2 font-mono text-[11px] text-v3-ink-3">{providerNodeLabel(target)}</div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function providerNodeLabel(target: SkillInstallBlockedTarget) {
+  const parts = [target.provider_type, target.node_id ?? target.runtime_node_id].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
 }

@@ -4,6 +4,7 @@ import {
   bindTeamSkill,
   deleteSkill,
   installSkill,
+  InstallSkillError,
   listEmployeeSkills,
   listSkills,
   listTeamSkills,
@@ -232,6 +233,58 @@ describe("skills API", () => {
         method: "POST",
       },
     );
+  });
+
+  it("preserves structured install failure details from backend conflicts", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: "skill_install_failed",
+          phase: "preflight",
+          message: "技能安装预检失败",
+          blocked_targets: [
+            {
+              digital_employee_id: "employee-1",
+              employee_name: "需求澄清 Agent",
+              provider_type: "codex",
+              runtime_node_id: "runtime-1",
+              node_id: "node-a",
+              reason_code: "runtime_disconnected",
+              message: "运行节点未连接",
+            },
+          ],
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 409,
+        },
+      ),
+    );
+
+    await expect(
+      installSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "skill-1",
+        { target_scope: "employee", digital_employee_id: "employee-1" },
+      ),
+    ).rejects.toMatchObject({
+      name: "InstallSkillError",
+      status: 409,
+      code: "skill_install_failed",
+      phase: "preflight",
+      message: "技能安装预检失败",
+      blockedTargets: [
+        expect.objectContaining({
+          digital_employee_id: "employee-1",
+          employee_name: "需求澄清 Agent",
+          provider_type: "codex",
+          runtime_node_id: "runtime-1",
+          node_id: "node-a",
+          reason_code: "runtime_disconnected",
+          message: "运行节点未连接",
+        }),
+      ],
+    } satisfies Partial<InstallSkillError>);
   });
 
   it("lists binds and unbinds team skills with encoded path segments", async () => {
