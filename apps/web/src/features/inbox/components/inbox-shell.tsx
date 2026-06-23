@@ -1,6 +1,5 @@
 import { AlertTriangle, Inbox, RotateCcw, ShieldCheck } from "lucide-react";
 import {
-  IconTile,
   SoftCard,
   StatusPill,
   V3Button,
@@ -96,20 +95,8 @@ export function InboxShell({
           <V3PageHeader
             title="收件箱"
             subtitle="需要你处理、确认或继续追踪的事项。"
-            back={
-              <IconTile tone="brand" size="lg">
-                <Inbox />
-              </IconTile>
-            }
-            action={
-              data ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill tone="info">开放 {data.summary.open_count}</StatusPill>
-                  <StatusPill tone="danger">高风险 {data.summary.high_risk_count}</StatusPill>
-                  <StatusPill tone="warn">阻断 {data.summary.blocked_count}</StatusPill>
-                </div>
-              ) : null
-            }
+            icon={<Inbox />}
+            iconTone="brand"
           />
         </SoftCard>
 

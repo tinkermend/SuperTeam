@@ -202,6 +202,9 @@ describe("SkillsView", () => {
   it("uses shared v3 controls for the primary action and view switcher", async () => {
     const screen = await renderSkillsView();
 
+    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
+
     const uploadLink = screen.getByRole("link", { name: "上传技能" });
     await expect.element(uploadLink).toHaveAttribute("data-slot", "v3-button");
     await expect.element(uploadLink).toHaveAttribute("data-variant", "primary");

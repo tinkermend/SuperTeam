@@ -220,11 +220,30 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
+    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
     expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-tabs"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+  });
+
+  it("keeps summary metrics in cards instead of repeating them in the page header", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+
+    const pageHeader = document.body.querySelector('[data-slot="v3-page-header"]');
+    expect(pageHeader).not.toBeNull();
+    expect(pageHeader?.textContent).not.toContain("开放 1");
+    expect(pageHeader?.textContent).not.toContain("高风险 1");
+    expect(pageHeader?.textContent).not.toContain("阻断 1");
+    const metricLabels = Array.from(document.body.querySelectorAll('[data-slot="v3-soft-card"] p'))
+      .map((node) => node.textContent?.trim())
+      .filter(Boolean);
+    expect(metricLabels).toContain("开放事项");
+    expect(metricLabels).toContain("高风险");
+    expect(metricLabels).toContain("阻断");
   });
 
   it("renders read-only inbox items when API returns null actions", async () => {

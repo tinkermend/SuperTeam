@@ -101,6 +101,7 @@ describe("Dashboard", () => {
     await expect.element(screen.getByText("登录失败")).toBeVisible();
 
     expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-signature-card"]')).not.toBeNull();
     expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();

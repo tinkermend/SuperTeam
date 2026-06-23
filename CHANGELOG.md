@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-23 15:16：统一 Web 菜单页标题区：`V3PageHeader` 增加受控 `icon`/`iconTone`/`actions` 入口，工作台、技能市场与收件箱页头使用统一图标样式；收件箱移除页头右侧与下方指标卡重复的开放/高风险/阻断摘要。验证：Dashboard/Skills/Inbox 定向浏览器测试 20 项通过，`corepack pnpm --filter ./apps/web run typecheck`、`git diff --check` 通过；真实运行 Web 下打开 `/`、`/skills`、`/inbox` 确认页头图标和统计分布正确。
 - 2026-06-23 11:33：SuperTeam Web 全站 v3 Soft-Flat 迁移收口：所有业务页面与 Shell 使用 `--v3-*` token 和 `components/superteam` v3 组件，删除旧液态/玻璃组件导出、组件测试、样式 token、全局旧 class 与过时原型目录；设计系统文档改为 v3 唯一基线。验证：旧组件符号与旧样式前缀 grep 归零，`corepack pnpm --filter ./apps/web run typecheck`、`run build`、`run test`、`git diff --check` 通过；重启真实 Control Plane/Web 后用 Playwright 登录 admin/admin 打开 22 个主菜单路由，均 HTTP 200、无旧 class/slot、无页面 JS 错误。
 
 ### Fixed

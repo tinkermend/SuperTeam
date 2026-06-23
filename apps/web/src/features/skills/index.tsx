@@ -29,6 +29,7 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
+  V3PageHeader,
   V3Segmented,
   V3Table,
   V3Td,
@@ -141,21 +142,20 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
       </Header>
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <header className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-[1.7rem] font-extrabold tracking-tight text-v3-ink">技能市场</h1>
-              <p className="mt-1 text-sm text-v3-ink-2">发现、校验并安装技能到团队或数字员工</p>
-            </div>
-            <V3Button
-              asChild
-              className="h-11 self-start px-5"
-            >
+          <V3PageHeader
+            icon={<Blocks />}
+            iconTone="artifact"
+            title="技能市场"
+            subtitle="发现、校验并安装技能到团队或数字员工"
+            actions={
+              <V3Button asChild className="h-11 self-start px-5">
               <Link to="/skills/upload">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
               </Link>
-            </V3Button>
-          </header>
+              </V3Button>
+            }
+          />
 
           <section
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"

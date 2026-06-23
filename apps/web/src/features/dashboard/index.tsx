@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Clock3, LogIn, ShieldCheck, Users } from "lucide-react";
+import { Activity, Clock3, LayoutDashboard, LogIn, ShieldCheck, Users } from "lucide-react";
 import { useAuth } from "@/features/auth/use-auth";
 import type { LoginLogRecord } from "@/lib/api";
 import { getHealth, listLoginLogs } from "@/lib/api";
@@ -57,6 +57,8 @@ export function Dashboard() {
         <V3PageHeader
           title="工作台"
           subtitle={`欢迎回来，${displayName}。`}
+          icon={<LayoutDashboard />}
+          iconTone="brand"
           action={
             <StatusPill tone={healthQuery.data?.status === "ok" ? "ok" : "mute"}>
               Control Plane {healthStatus}

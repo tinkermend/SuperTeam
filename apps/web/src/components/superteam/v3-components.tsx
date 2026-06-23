@@ -463,21 +463,30 @@ function V3PageHeader({
   title,
   subtitle,
   action,
+  actions,
+  icon,
+  iconTone = "brand",
   back,
 }: {
   className?: string;
   title: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
+  actions?: ReactNode;
+  icon?: ReactNode;
+  iconTone?: V3Tone;
   back?: ReactNode;
 }) {
+  const leading = back ?? (icon ? <IconTile tone={iconTone} size="lg">{icon}</IconTile> : null);
+  const trailing = actions ?? action;
+
   return (
     <header
       data-slot="v3-page-header"
       className={cn("flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between", className)}
     >
       <div className="flex min-w-0 items-center gap-3">
-        {back}
+        {leading}
         <div className="min-w-0">
           <h1 className="text-[28px] leading-tight font-extrabold tracking-tight text-v3-ink">
             {title}
@@ -485,7 +494,7 @@ function V3PageHeader({
           {subtitle ? <p className="mt-1 text-[13px] text-v3-ink-2">{subtitle}</p> : null}
         </div>
       </div>
-      {action ? <div className="flex shrink-0 gap-2">{action}</div> : null}
+      {trailing ? <div className="flex shrink-0 gap-2">{trailing}</div> : null}
     </header>
   );
 }
