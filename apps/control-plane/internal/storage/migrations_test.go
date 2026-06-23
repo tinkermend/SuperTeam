@@ -1054,6 +1054,23 @@ func TestSkillInstallationsMigration(t *testing.T) {
 		"CREATE INDEX idx_skill_installations_employee",
 		"CREATE INDEX idx_skill_installations_team",
 		"COMMENT ON TABLE skill_installations IS",
+		"COMMENT ON COLUMN skill_installations.id IS",
+		"COMMENT ON COLUMN skill_installations.tenant_id IS",
+		"COMMENT ON COLUMN skill_installations.skill_id IS",
+		"COMMENT ON COLUMN skill_installations.target_scope IS",
+		"COMMENT ON COLUMN skill_installations.team_id IS",
+		"COMMENT ON COLUMN skill_installations.digital_employee_id IS",
+		"COMMENT ON COLUMN skill_installations.runtime_node_id IS",
+		"COMMENT ON COLUMN skill_installations.provider_type IS",
+		"COMMENT ON COLUMN skill_installations.installed_path IS",
+		"COMMENT ON COLUMN skill_installations.archive_checksum_sha256 IS",
+		"COMMENT ON COLUMN skill_installations.status IS",
+		"COMMENT ON COLUMN skill_installations.installed_by IS",
+		"COMMENT ON COLUMN skill_installations.installed_at IS",
+		"COMMENT ON COLUMN skill_installations.metadata IS",
+		"COMMENT ON COLUMN skill_installations.created_at IS",
+		"COMMENT ON COLUMN skill_installations.updated_at IS",
+		"COMMENT ON COLUMN skill_installations.deleted_at IS",
 	} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected skill installations migration to contain %q", expected)
@@ -1065,6 +1082,8 @@ func TestSkillInstallationsMigration(t *testing.T) {
 		"ON DELETE CASCADE",
 		"BIGSERIAL",
 		"status VARCHAR(40) NOT NULL DEFAULT 'failed'",
+		"skill_installations_provider_supported",
+		"provider_type IN ('opencode', 'codex', 'claude-code')",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("skill installations migration must not contain %q", forbidden)
