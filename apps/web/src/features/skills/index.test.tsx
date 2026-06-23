@@ -424,6 +424,16 @@ describe("SkillsView", () => {
 
     await expect.element(screen.getByRole("button", { name: "平台工程" })).toBeVisible();
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await expect.element(screen.getByRole("dialog", { name: "安装技能" })).toBeVisible();
+
+    expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(1);
+
+    await userEvent.click(screen.getByRole("radio", { name: /团队/ }));
+    await expect.element(screen.getByRole("button", { name: "平台工程" })).toBeVisible();
+    expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(2);
   });
 
   it("submits the selected employee target and displays install success", async () => {

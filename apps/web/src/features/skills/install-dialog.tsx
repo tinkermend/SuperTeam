@@ -125,8 +125,22 @@ export function SkillInstallDialog({
   const mutationError = mutation.error instanceof Error ? mutation.error.message : undefined;
   const canSubmit = Boolean(skill && selectedTargetId) && !mutation.isPending;
 
+  const resetDialogState = () => {
+    setInstallResult(null);
+    setSelectedTeamId("");
+    setSelectedEmployeeId("");
+    setTargetScope("employee");
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      resetDialogState();
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="gap-0 overflow-hidden rounded-[var(--v3-r-card)] border-v3-line bg-v3-card p-0 text-v3-ink shadow-v3-pop sm:max-w-xl">
         <DialogHeader className="border-b border-v3-line px-5 py-4 text-left">
           <div className="flex min-w-0 items-start gap-3">
@@ -267,7 +281,7 @@ export function SkillInstallDialog({
           ) : null}
           <V3Button
             disabled={mutation.isPending}
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             type="button"
             variant="outline"
           >
