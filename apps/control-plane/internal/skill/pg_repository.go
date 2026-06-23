@@ -599,6 +599,45 @@ func (r *PgRepository) MarkInstallCommandFailed(ctx context.Context, tenantID uu
 	return err
 }
 
+func (r *PgRepository) MarkInstallCommandTimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error {
+	if r == nil || r.db == nil || r.q == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+	receipt, err := qtx.GetRuntimeCommandReceiptByCommandIDForUpdate(ctx, queries.GetRuntimeCommandReceiptByCommandIDForUpdateParams{
+		TenantID:  tenantID,
+		CommandID: commandID,
+	})
+	if err != nil {
+		return mapNoRows(err)
+	}
+	if isTerminalReceiptStatus(receipt.Status) {
+		err = tx.Commit(ctx)
+		return err
+	}
+	_, err = qtx.UpdateRuntimeCommandReceiptStatus(ctx, queries.UpdateRuntimeCommandReceiptStatusParams{
+		Status:       "timed_out",
+		Result:       nil,
+		ErrorMessage: pgtype.Text{String: message, Valid: strings.TrimSpace(message) != ""},
+		TenantID:     tenantID,
+		CommandID:    commandID,
+	})
+	if err != nil {
+		return err
+	}
+	err = tx.Commit(ctx)
+	return err
+}
+
 func (r *PgRepository) WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error) {
 	if r == nil || r.q == nil {
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)

@@ -193,7 +193,7 @@ func TestInstallSkillRuntimeFailureDoesNotPersistSuccess(t *testing.T) {
 	}
 }
 
-func TestInstallSkillTeamPartialNodeFailureDoesNotPersistAndSurfacesAppliedNodes(t *testing.T) {
+func TestInstallSkillTeamPreflightRejectsMultipleRuntimeNodesBeforeDispatch(t *testing.T) {
 	tenantID := uuid.New()
 	skillID := uuid.New()
 	teamID := uuid.New()
@@ -201,101 +201,164 @@ func TestInstallSkillTeamPartialNodeFailureDoesNotPersistAndSurfacesAppliedNodes
 	repo.targets = []SkillInstallTarget{
 		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex", AgentHomeDir: "/tmp/e1"},
 		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-2", ProviderType: "codex", AgentHomeDir: "/tmp/e2"},
-	}
-	repo.waitHook = func(commandID string) {
-		if repo.receipts[commandID].NodeID == "node-2" {
-			repo.receipts[commandID].Status = "failed"
-			repo.receipts[commandID].ErrorMessage = "extract failed"
-		}
 	}
 	dispatcher := &installServiceDispatcher{connected: map[string]bool{"node-1": true, "node-2": true}}
 	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: 50 * time.Millisecond, PollInterval: time.Millisecond})
 
-	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+	result, err := service.InstallSkill(context.Background(), InstallSkillRequest{
 		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetTeam, TeamID: teamID, ActorUserID: uuid.New(),
 	})
 	if err == nil {
-		t.Fatal("expected partial node failure error")
+		t.Fatal("expected team multi-node preflight error")
+	}
+	var installErr *InstallSkillError
+	if !errors.As(err, &installErr) {
+		t.Fatalf("expected InstallSkillError, got %T: %v", err, err)
+	}
+	if installErr.Phase != InstallFailurePhasePreflight {
+		t.Fatalf("phase = %q, want preflight", installErr.Phase)
+	}
+	if len(result.BlockedTargets) != 2 {
+		t.Fatalf("expected both targets blocked, got %#v", result.BlockedTargets)
+	}
+	for _, blocker := range result.BlockedTargets {
+		if blocker.ReasonCode != "team_install_multiple_runtime_nodes" {
+			t.Fatalf("blocker reason = %q, want team_install_multiple_runtime_nodes", blocker.ReasonCode)
+		}
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("multi-node team preflight failure must not dispatch commands: %#v", dispatcher.commands)
+	}
+	if len(repo.receipts) != 0 {
+		t.Fatalf("multi-node team preflight failure must not create command receipts: %#v", repo.receipts)
 	}
 	if len(repo.installations) != 0 || len(repo.teamBindings) != 0 || len(repo.employeeBindings) != 0 {
-		t.Fatalf("partial node failure must not persist success: repo=%#v", repo)
+		t.Fatalf("multi-node team preflight failure must not persist success: repo=%#v", repo)
+	}
+	if len(repo.failureLogs) != 1 {
+		t.Fatalf("expected one failure log, got %#v", repo.failureLogs)
 	}
 	last := repo.failureLogs[len(repo.failureLogs)-1]
-	if last.Phase != InstallFailurePhaseRuntimeInstall {
-		t.Fatalf("failure phase = %q, want runtime_install", last.Phase)
-	}
-	applied, _ := last.Details["applied_nodes"].([]string)
-	if len(applied) != 1 || applied[0] != "node-1" {
-		t.Fatalf("expected node-1 surfaced as already-applied for manual cleanup, got %#v", last.Details["applied_nodes"])
-	}
-	if cleanup, _ := last.Details["requires_manual_cleanup"].(bool); !cleanup {
-		t.Fatalf("expected requires_manual_cleanup, got %#v", last.Details)
+	if last.Phase != InstallFailurePhasePreflight || last.ReasonCode != "team_install_multiple_runtime_nodes" {
+		t.Fatalf("failure = (%q, %q), want (preflight, team_install_multiple_runtime_nodes)", last.Phase, last.ReasonCode)
 	}
 }
 
-func TestInstallSkillTeamLaterDispatchFailureRecordsAppliedNodes(t *testing.T) {
+func TestInstallSkillTeamSingleRuntimeNodeDispatchesOnceAndPersistsAllTargets(t *testing.T) {
 	tenantID := uuid.New()
 	skillID := uuid.New()
 	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
 	repo := newInstallServiceRepoFixture(tenantID, skillID)
 	repo.targets = []SkillInstallTarget{
-		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex", AgentHomeDir: "/tmp/e1"},
-		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-2", ProviderType: "codex", AgentHomeDir: "/tmp/e2"},
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: runtimeNodeID, NodeID: "node-1", ProviderType: "codex", AgentHomeDir: "/tmp/e1"},
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: runtimeNodeID, NodeID: "node-1", ProviderType: "claude-code", AgentHomeDir: "/tmp/e2"},
 	}
-	dispatcher := &installServiceDispatcher{
-		connected:         map[string]bool{"node-1": true, "node-2": true},
-		dispatchErrByNode: map[string]error{"node-2": errors.New("runtime socket closed")},
-	}
+	dispatcher := &installServiceDispatcher{connected: map[string]bool{"node-1": true}}
 	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: 50 * time.Millisecond, PollInterval: time.Millisecond})
 
-	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+	result, err := service.InstallSkill(context.Background(), InstallSkillRequest{
 		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetTeam, TeamID: teamID, ActorUserID: uuid.New(),
 	})
+	if err != nil {
+		t.Fatalf("install skill: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one runtime command for same-node team, got %#v", dispatcher.commands)
+	}
+	if result.InstalledCount != 2 || len(repo.installations) != 2 {
+		t.Fatalf("expected two installations, result=%#v repo=%#v", result, repo.installations)
+	}
+	if len(repo.teamBindings) != 1 || repo.teamBindings[0].TeamID != teamID {
+		t.Fatalf("expected one team binding, got %#v", repo.teamBindings)
+	}
+	if len(repo.employeeBindings) != 0 {
+		t.Fatalf("team install must not create employee bindings directly: %#v", repo.employeeBindings)
+	}
+}
+
+func TestInstallSkillTimeoutMarksCommandReceiptTimedOut(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	employeeID := uuid.New()
+	repo := newInstallServiceRepoFixture(tenantID, skillID)
+	repo.targets = []SkillInstallTarget{{
+		TenantID: tenantID, TeamID: uuid.New(), DigitalEmployeeID: employeeID,
+		RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex",
+		AgentHomeDir: "/tmp/employee",
+	}}
+	repo.waitUntilContextDone = true
+	dispatcher := &installServiceDispatcher{connected: map[string]bool{"node-1": true}}
+	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: time.Millisecond, PollInterval: time.Millisecond})
+
+	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetEmployee,
+		DigitalEmployeeID: employeeID, ActorUserID: uuid.New(),
+	})
 	if err == nil {
-		t.Fatal("expected later dispatch failure error")
+		t.Fatal("expected timeout error")
 	}
-	if len(repo.installations) != 0 || len(repo.teamBindings) != 0 || len(repo.employeeBindings) != 0 {
-		t.Fatalf("dispatch failure after partial apply must not persist success: repo=%#v", repo)
+	if len(repo.receipts) != 1 {
+		t.Fatalf("expected one command receipt, got %#v", repo.receipts)
 	}
-	if len(repo.failureLogs) == 0 {
-		t.Fatal("expected dispatch failure log")
+	for _, receipt := range repo.receipts {
+		if receipt.Status != "timed_out" {
+			t.Fatalf("receipt status = %q, want timed_out", receipt.Status)
+		}
+		if receipt.ErrorMessage == "" {
+			t.Fatalf("expected timeout error message to be preserved: %#v", receipt)
+		}
 	}
-	last := repo.failureLogs[len(repo.failureLogs)-1]
-	if last.Phase != InstallFailurePhaseRuntimeInstall || last.ReasonCode != "runtime_dispatch_failed" {
-		t.Fatalf("failure = (%q, %q), want (runtime_install, runtime_dispatch_failed)", last.Phase, last.ReasonCode)
+	if len(repo.installations) != 0 || len(repo.employeeBindings) != 0 {
+		t.Fatalf("timeout must not persist success, repo=%#v", repo)
 	}
-	if last.CommandID == "" {
-		t.Fatal("expected failure log to include failed dispatch command_id")
+}
+
+func TestInstallSkillWaitErrorDoesNotMarkCommandReceiptTimedOut(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	employeeID := uuid.New()
+	repo := newInstallServiceRepoFixture(tenantID, skillID)
+	repo.targets = []SkillInstallTarget{{
+		TenantID: tenantID, TeamID: uuid.New(), DigitalEmployeeID: employeeID,
+		RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex",
+		AgentHomeDir: "/tmp/employee",
+	}}
+	repo.waitErr = ErrNotFound
+	dispatcher := &installServiceDispatcher{connected: map[string]bool{"node-1": true}}
+	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: time.Second, PollInterval: time.Millisecond})
+
+	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetEmployee,
+		DigitalEmployeeID: employeeID, ActorUserID: uuid.New(),
+	})
+	if err == nil {
+		t.Fatal("expected wait error")
 	}
-	failedReceipt := repo.receipts[last.CommandID]
-	if failedReceipt == nil {
-		t.Fatalf("expected failed receipt for command %q", last.CommandID)
+	if len(repo.receipts) != 1 {
+		t.Fatalf("expected one command receipt, got %#v", repo.receipts)
 	}
-	if failedReceipt.NodeID != "node-2" {
-		t.Fatalf("failed receipt node = %q, want node-2", failedReceipt.NodeID)
-	}
-	if failedReceipt.Status != "failed" || failedReceipt.ErrorMessage != "runtime socket closed" {
-		t.Fatalf("failed receipt = (%q, %q), want (failed, runtime socket closed)", failedReceipt.Status, failedReceipt.ErrorMessage)
-	}
-	applied, _ := last.Details["applied_nodes"].([]string)
-	if len(applied) != 1 || applied[0] != "node-1" {
-		t.Fatalf("expected node-1 surfaced as already-applied for manual cleanup, got %#v", last.Details["applied_nodes"])
-	}
-	if cleanup, _ := last.Details["requires_manual_cleanup"].(bool); !cleanup {
-		t.Fatalf("expected requires_manual_cleanup, got %#v", last.Details)
+	for _, receipt := range repo.receipts {
+		if receipt.Status != "pending" {
+			t.Fatalf("receipt status = %q, want pending", receipt.Status)
+		}
+		if receipt.ErrorMessage != "" {
+			t.Fatalf("receipt error message = %q, want empty", receipt.ErrorMessage)
+		}
 	}
 }
 
 type installServiceRepo struct {
-	skill            *Skill
-	targets          []SkillInstallTarget
-	receipts         map[string]*RuntimeInstallCommandReceipt
-	waitHook         func(commandID string)
-	waitErr          error
-	installations    []SkillInstallation
-	teamBindings     []BindTeamSkillRequest
-	employeeBindings []BindEmployeeSkillRequest
-	failureLogs      []SkillInstallFailureLog
+	skill                *Skill
+	targets              []SkillInstallTarget
+	receipts             map[string]*RuntimeInstallCommandReceipt
+	waitHook             func(commandID string)
+	waitUntilContextDone bool
+	waitErr              error
+	installations        []SkillInstallation
+	teamBindings         []BindTeamSkillRequest
+	employeeBindings     []BindEmployeeSkillRequest
+	failureLogs          []SkillInstallFailureLog
 }
 
 func newInstallServiceRepoFixture(tenantID, skillID uuid.UUID) *installServiceRepo {
@@ -339,9 +402,26 @@ func (r *installServiceRepo) MarkInstallCommandFailed(ctx context.Context, tenan
 	return nil
 }
 
+func (r *installServiceRepo) MarkInstallCommandTimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error {
+	receipt := r.receipts[commandID]
+	if receipt == nil {
+		return ErrNotFound
+	}
+	if isTerminalReceiptStatus(receipt.Status) {
+		return nil
+	}
+	receipt.Status = "timed_out"
+	receipt.ErrorMessage = message
+	return nil
+}
+
 func (r *installServiceRepo) WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error) {
 	if r.waitErr != nil {
 		return nil, r.waitErr
+	}
+	if r.waitUntilContextDone {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 	if r.waitHook != nil {
 		r.waitHook(commandID)

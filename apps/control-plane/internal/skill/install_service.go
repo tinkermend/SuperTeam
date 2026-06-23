@@ -29,6 +29,7 @@ type InstallRepository interface {
 	ListInstallTargets(ctx context.Context, req ListSkillInstallTargetsRequest) ([]SkillInstallTarget, error)
 	CreateInstallCommandReceipt(ctx context.Context, req CreateSkillInstallCommandReceiptRequest) error
 	MarkInstallCommandFailed(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error
+	MarkInstallCommandTimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error
 	WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error)
 	PersistInstallSuccess(ctx context.Context, req PersistSkillInstallSuccessRequest) (InstallSkillResult, error)
 	RecordInstallFailure(ctx context.Context, req SkillInstallFailureLog) error
@@ -89,7 +90,7 @@ func (s *InstallService) InstallSkill(ctx context.Context, req InstallSkillReque
 		return InstallSkillResult{}, err
 	}
 
-	blockers := s.preflight(skill, targets)
+	blockers := s.preflight(req.TargetScope, skill, targets)
 	result := InstallSkillResult{
 		SkillID:           req.SkillID,
 		TargetScope:       req.TargetScope,
@@ -162,6 +163,9 @@ func (s *InstallService) installTargetsSequentially(ctx context.Context, req Ins
 		receipt, waitErr := s.repository.WaitForInstallCommand(waitCtx, req.TenantID, command.CommandID, s.pollInterval)
 		cancel()
 		if waitErr != nil {
+			if errors.Is(waitErr, context.DeadlineExceeded) {
+				_ = s.repository.MarkInstallCommandTimedOut(ctx, req.TenantID, command.CommandID, waitErr.Error())
+			}
 			s.recordPartialFailure(ctx, req, InstallFailurePhaseTimeout, "runtime_install_timeout", waitErr.Error(), command.CommandID, appliedNodes)
 			return nil, &InstallSkillError{Phase: InstallFailurePhaseTimeout, Message: waitErr.Error()}
 		}
@@ -318,7 +322,7 @@ func newInstallCommandID() string {
 	return "cmd-" + uuid.NewString()
 }
 
-func (s *InstallService) preflight(skill *Skill, targets []SkillInstallTarget) []SkillInstallBlockedTarget {
+func (s *InstallService) preflight(targetScope SkillInstallTargetScope, skill *Skill, targets []SkillInstallTarget) []SkillInstallBlockedTarget {
 	if skill == nil || strings.TrimSpace(skill.ArchiveObjectRef) == "" || strings.TrimSpace(skill.ArchiveChecksum) == "" || skill.ArchiveSizeBytes <= 0 || skill.ArchiveFileCount <= 0 {
 		return []SkillInstallBlockedTarget{{
 			ReasonCode: "skill_archive_missing",
@@ -333,7 +337,11 @@ func (s *InstallService) preflight(skill *Skill, targets []SkillInstallTarget) [
 	}
 
 	blockers := make([]SkillInstallBlockedTarget, 0)
+	runtimeNodeIDs := make(map[uuid.UUID]struct{})
 	for _, target := range targets {
+		if target.RuntimeNodeID != uuid.Nil {
+			runtimeNodeIDs[target.RuntimeNodeID] = struct{}{}
+		}
 		if target.RuntimeNodeID == uuid.Nil || strings.TrimSpace(target.NodeID) == "" {
 			blockers = append(blockers, blockedTarget(target, "runtime_missing", "digital employee has no active Runtime"))
 			continue
@@ -349,6 +357,11 @@ func (s *InstallService) preflight(skill *Skill, targets []SkillInstallTarget) [
 		if !s.dispatcher.IsConnected(target.NodeID) {
 			blockers = append(blockers, blockedTarget(target, "runtime_not_connected", "Runtime is not connected"))
 			continue
+		}
+	}
+	if len(blockers) == 0 && targetScope == SkillInstallTargetTeam && len(runtimeNodeIDs) > 1 {
+		for _, target := range targets {
+			blockers = append(blockers, blockedTarget(target, "team_install_multiple_runtime_nodes", "team install requires all targets to share one connected Runtime node"))
 		}
 	}
 	return blockers
