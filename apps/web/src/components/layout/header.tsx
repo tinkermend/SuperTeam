@@ -25,8 +25,9 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
 
   return (
     <header
+      data-slot='v3-shell-header'
       className={cn(
-        'superteam-header-glass z-50 h-16',
+        'z-50 h-16 border-b border-v3-line bg-v3-card text-v3-ink shadow-v3',
         fixed && 'header-fixed peer/header sticky top-0 w-[inherit]',
         offset > 10 && fixed ? 'shadow-sm' : 'shadow-none',
         className
@@ -38,16 +39,16 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
           'relative flex h-full items-center gap-3 px-4 py-3 sm:gap-4',
           offset > 10 &&
             fixed &&
-            'after:absolute after:inset-0 after:-z-10 after:bg-[color:var(--superteam-glass-bg)] after:backdrop-blur-xl'
+            'after:absolute after:inset-0 after:-z-10 after:bg-v3-card/90 after:backdrop-blur-md'
         )}
       >
         <SidebarTrigger
           variant='ghost'
-          className='rounded-lg border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] text-muted-foreground shadow-none hover:bg-[color:var(--superteam-sidebar-hover)] hover:text-primary max-md:scale-125'
+          className='rounded-xl border border-v3-line bg-v3-card-soft text-v3-ink-2 shadow-none hover:bg-v3-brand-soft hover:text-v3-brand-deep max-md:scale-125'
         />
         <Separator
           orientation='vertical'
-          className='h-6 bg-[color:var(--superteam-glass-border)]'
+          className='h-6 bg-v3-line-strong'
         />
         {children}
       </div>

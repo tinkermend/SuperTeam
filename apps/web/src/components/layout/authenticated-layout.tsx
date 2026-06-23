@@ -38,14 +38,18 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   return (
     <SearchProvider>
       <LayoutProvider>
-        <SidebarProvider defaultOpen={defaultOpen}>
+        <SidebarProvider
+          data-slot='v3-authenticated-shell'
+          defaultOpen={defaultOpen}
+          className='bg-v3-bg text-v3-ink'
+        >
           <SkipToMain />
           <AppSidebar />
           <SidebarInset
             className={cn(
               // Set content container, so we can use container queries
               '@container/content',
-              'min-w-0 overflow-x-hidden',
+              'min-w-0 overflow-x-hidden bg-v3-bg text-v3-ink',
 
               // If layout is fixed, set the height
               // to 100svh to prevent overflow

@@ -2,11 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Gauge, ShieldAlert, ShieldCheck, Sigma } from "lucide-react";
 import type { ApiClientOptions, AuthzDecisionRecord } from "@/lib/api";
 import { getAuthzOverview } from "@/lib/api";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  IconTile,
+  StatusPill,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3MetricCard,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
 
 type AuthorizationOverviewProps = {
   apiOptions: ApiClientOptions;
@@ -22,7 +31,9 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
     return (
       <div className="grid gap-4 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-28" />
+          <WorkSurface key={index}>
+            <V3LoadingState className="py-9" label="加载授权概览…" />
+          </WorkSurface>
         ))}
       </div>
     );
@@ -30,26 +41,38 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
 
   if (overviewQuery.isError) {
     return (
-      <Alert variant="destructive">
-        <ShieldAlert />
-        <AlertTitle>授权概览加载失败</AlertTitle>
-        <AlertDescription>请稍后刷新或检查 Control Plane 连接。</AlertDescription>
-      </Alert>
+      <V3ErrorState
+        title="授权概览加载失败"
+        description="请稍后刷新或检查 Control Plane 连接。"
+      />
     );
   }
 
   const overview = overviewQuery.data;
 
   if (!overview) {
-    return <p className="text-sm text-muted-foreground">暂无授权概览。</p>;
+    return (
+      <WorkSurface>
+        <V3EmptyState icon={<ShieldAlert />} title="暂无授权概览" description="授权引擎尚未返回概览数据。" />
+      </WorkSurface>
+    );
   }
 
-  const metricCards = [
+  const metricCards: Array<{
+    description: string;
+    details?: Array<{ label: string; value: string }>;
+    icon: typeof ShieldCheck;
+    iconTone: V3Tone;
+    loud?: boolean;
+    title: string;
+    value: string;
+  }> = [
     {
       title: "授权引擎",
       value: overview.engine.engine,
       description: engineStatusDescription(overview.engine),
       icon: ShieldCheck,
+      iconTone: overview.engine.status === "ok" ? "ok" : "warn",
       details: engineDetails(overview.engine),
     },
     {
@@ -57,18 +80,23 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
       value: formatNumber(overview.totals.total),
       description: "全部授权决策",
       icon: Sigma,
+      iconTone: "info",
     },
     {
       title: "拒绝次数",
       value: formatNumber(overview.totals.denied),
       description: `${formatNumber(overview.totals.allowed)} 次允许`,
       icon: ShieldAlert,
+      iconTone: overview.totals.denied > 0 ? "danger" : "ok",
+      loud: overview.totals.denied > 0,
     },
     {
       title: "拒绝率",
       value: formatRate(overview.totals.denied_rate),
       description: "Denied / Total",
       icon: Gauge,
+      iconTone: overview.totals.denied_rate > 0 ? "warn" : "ok",
+      loud: overview.totals.denied_rate > 0,
     },
   ];
 
@@ -79,79 +107,82 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
           const Icon = metric.icon;
 
           return (
-            <Card key={metric.title}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Icon />
-                  {metric.title}
-                </CardTitle>
-                <CardDescription>{metric.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold">{metric.value}</div>
-                {metric.details ? (
-                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+            <V3MetricCard
+              key={metric.title}
+              icon={<Icon />}
+              iconTone={metric.iconTone}
+              label={metric.title}
+              value={metric.value}
+              loud={metric.loud}
+              meta={
+                metric.details ? (
+                  <>
+                    {metric.description}
                     {metric.details.map((detail) => (
-                      <div key={detail.label} className="flex items-start justify-between gap-3">
-                        <span>{detail.label}</span>
-                        <span className="max-w-40 break-all text-right font-mono">{detail.value}</span>
-                      </div>
+                      <span key={detail.label} className="block max-w-full truncate font-mono">
+                        {detail.label}: {detail.value}
+                      </span>
                     ))}
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
+                  </>
+                ) : (
+                  metric.description
+                )
+              }
+            />
           );
         })}
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>最近授权事件</CardTitle>
-          <CardDescription>授权引擎返回的最近决策记录。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {overview.recent_events.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无最近授权事件。</p>
-          ) : (
-            <RecentEventsTable events={overview.recent_events} />
-          )}
-        </CardContent>
-      </Card>
+      <WorkSurface>
+        <div className="flex items-start gap-3 border-b border-v3-line px-5 py-4">
+          <IconTile tone="info" size="sm">
+            <ShieldCheck />
+          </IconTile>
+          <div>
+            <h2 className="text-base font-bold text-v3-ink">最近授权事件</h2>
+            <p className="mt-1 text-sm text-v3-ink-2">授权引擎返回的最近决策记录。</p>
+          </div>
+        </div>
+        {overview.recent_events.length === 0 ? (
+          <V3EmptyState title="暂无最近授权事件" description="新的授权决策会显示在这里。" />
+        ) : (
+          <RecentEventsTable events={overview.recent_events} />
+        )}
+      </WorkSurface>
     </div>
   );
 }
 
 function RecentEventsTable({ events }: { events: AuthzDecisionRecord[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>时间</TableHead>
-          <TableHead>结果</TableHead>
-          <TableHead>动作</TableHead>
-          <TableHead>资源</TableHead>
-          <TableHead>原因</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <V3Table>
+      <thead>
+        <V3Tr>
+          <V3Th>时间</V3Th>
+          <V3Th>结果</V3Th>
+          <V3Th>动作</V3Th>
+          <V3Th>资源</V3Th>
+          <V3Th>原因</V3Th>
+        </V3Tr>
+      </thead>
+      <tbody>
         {events.map((event) => (
-          <TableRow key={event.id}>
-            <TableCell>{formatTime(event.created_at)}</TableCell>
-            <TableCell>
+          <V3Tr key={event.id} tone={event.result === "succeeded" ? undefined : "danger"}>
+            <V3Td className="whitespace-nowrap tabular-nums">{formatTime(event.created_at)}</V3Td>
+            <V3Td>
               <DecisionBadge result={event.result} />
-            </TableCell>
-            <TableCell>{event.action}</TableCell>
-            <TableCell>{formatResource(event.resource_type, event.resource_id)}</TableCell>
-            <TableCell className="max-w-64 truncate">{event.reason ?? "-"}</TableCell>
-          </TableRow>
+            </V3Td>
+            <V3Td>{event.action}</V3Td>
+            <V3Td>{formatResource(event.resource_type, event.resource_id)}</V3Td>
+            <V3Td className="max-w-64 truncate">{event.reason ?? "-"}</V3Td>
+          </V3Tr>
         ))}
-      </TableBody>
-    </Table>
+      </tbody>
+    </V3Table>
   );
 }
 
 function DecisionBadge({ result }: { result: AuthzDecisionRecord["result"] }) {
-  return <Badge variant={result === "succeeded" ? "default" : "destructive"}>{result === "succeeded" ? "允许" : "拒绝"}</Badge>;
+  return <StatusPill tone={result === "succeeded" ? "ok" : "danger"}>{result === "succeeded" ? "允许" : "拒绝"}</StatusPill>;
 }
 
 function formatNumber(value: number) {

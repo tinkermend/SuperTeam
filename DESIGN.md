@@ -12,17 +12,40 @@ SuperTeam Web 是企业级控制台，用于管理、观察、审批和验收 AI
 
 设计目标是：克制配色、清晰层级、稳定布局、高信息密度和可审计的操作反馈。视觉可以有科技感，但必须优先服务任务流、审批、运行状态、工件和审计等后台工作场景。
 
-## 当前目标风格
+## 当前目标风格（v3 · Soft-Flat）
 
-SuperTeam Web 当前优先采用“近白浅底 + 冷色柔光 + 液态玻璃卡片 + 蓝绿色主强调 + 彩色语义图标”的视觉方向。整体应明亮、现代、轻量、有质感，但不能变成高饱和、强霓虹、营销页或纯装饰界面。
+SuperTeam Web 的目标风格为 **“软扁平 + 蓝色主强调 + 一套语言两种容器 + 彩色语义状态”**：近白冷灰打底、大圆角白卡、极淡弥散阴影、黑色粗体大数字配灰色小标签，每个概览屏允许一块蓝色渐变卡作为 signature。整体明亮、克制、扁平、有质感，但不做高饱和、强霓虹、营销页或纯装饰界面。
+
+v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` 仅作为视觉参考（dashboard / project-detail / skills / employees / projects），不得复制其中的内联 CSS 或把原型样式当作新的规则文件。
 
 设计尺度：
 
-- **密度**：后台工具优先，紧凑但不拥挤，首屏直接呈现工作对象、状态和操作。
-- **色彩**：页面 70% 使用白色/近白色/淡青绿/淡蓝背景，20% 使用灰蓝文字与边框，10% 用于主色和语义色。
-- **质感**：液态玻璃用于 Shell、导航、顶部栏、选择器、卡片、轻量面板和悬浮层；表格、表单、日志和审计明细必须保持高可读性。
-- **圆角**：遵循 `--radius` 体系。卡片、按钮、输入框、菜单和弹窗保持同一套圆角比例。
-- **动效**：只服务状态反馈和层级变化，不做营销式入场动画或装饰性动效。
+- **主色**：品牌主色为蓝色 `#2F5FFF`（深色端 `#2348E0`）。蓝色是“挣来的强调色”，只用于品牌、主操作、激活、焦点和 signature 渐变，不做环境色泛蓝。
+- **中性**：页面底色用真正中性的冷灰（不带色相），白卡叠淡阴影。约 70% 中性面、20% 灰蓝文字与边框、10% 主色与语义色。
+- **密度**：后台工具优先，密集数据区紧凑但不拥挤，首屏直接呈现工作对象、状态和操作；密集表格提供“舒适 / 紧凑”密度切换。
+- **质感**：扁平为主，柔只在“容器外壳”（卡片圆角 + 弥散阴影）；顶栏可保留轻量半透明手势，内容区必须实底高对比。
+- **圆角**：卡片 `~22px`、内层 `~14px`、pill `~8px`、按钮 `~12px`，遵循 `--radius` 体系成比例派生。
+- **动效**：只服务状态反馈和层级变化（如实时状态变化、卡片 hover 上浮），不做营销式入场动画或装饰性动效。
+
+## 容器选择规则（v3 核心不变量）
+
+一套设计语言，两种容器，按“是否需要逐行扫读与比较”二选一，二者共用同一套 token、同一个蓝、同一组语义状态色：
+
+- **柔和卡片（Soft Card）**——用于页面外壳、概览指标、实体目录（项目 / 数字员工 / 技能）、详情头卡、signature 渐变。圆角白卡 + 弥散阴影，自带“状态 + 关键指标 + 一个主操作”。
+- **脆数据面（Work Surface / 密集表格）**——用于需要逐行扫读比较的数据本体（任务表、审计流水、日志、证据、diff）。实底高对比、不透明、不模糊、`tabular-nums`、等宽 UUID/路径、sticky 表头、危险行左侧实色 accent bar，配密度切换。
+
+融合方式：**密集表格被装进同一张柔和白卡里 = 软壳装脆数据**。外壳负责层级与质感，一旦进入逐行内容，背景必须实底高对比。详见 `docs/design-system/surfaces.md` 与 `docs/design-system/data-display.md`。
+
+## Token 落地策略
+
+v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
+
+## 落地策略
+
+- **统一基线**：新增页面、被触达页面和设计文档都按 v3 Soft-Flat 表达，不再把非 v3 视觉作为可选目标。
+- **组件沉淀**：以 `apps/web/src/components/superteam/` 的项目级组合组件承载柔和卡片、脆数据面、状态 pill、空状态和浮层骨架。
+- **验证纪律**：每次页面改造都走与改动范围匹配的真实端到端验证，不在 mock/组件测试层面声明完成。
+- **跨会话约定**：其他任务会话若基于本风格构建新功能/菜单页，应先读本文件“容器选择规则 / Token 落地策略 / 落地策略”和 `docs/design-system/` 下的 `tokens.md`、`surfaces.md`、`data-display.md`，再复用项目级 v3 组件与 `theme.css` 的 `--v3-*` token，不在单页重造卡片、表格、pill 或浮层样式。
 
 ## 不变量
 
@@ -30,17 +53,20 @@ SuperTeam Web 当前优先采用“近白浅底 + 冷色柔光 + 液态玻璃卡
 - **主栈一致**：优先使用 `apps/web/src/styles/theme.css` 的 token、`apps/web/src/components/superteam/` 的组合组件和 `apps/web/src/components/ui/` 的 shadcn/Radix primitive。
 - **组件优先复用**：跨页面出现的视觉模式、状态标签、图标容器、空状态、错误提示和面板布局，应优先沉淀成复用组件。
 - **状态可解释**：运行中、待确认、失败、受限、已完成、需人工处理等状态必须在视觉上可区分，并配有可追踪的原因、时间或下一步动作。
-- **渐进迁移**：旧页面不需要一次性重写；新增页面和重构页面应逐步向本设计语言靠拢。
+- **统一演进**：新增页面和重构页面必须使用 v3 设计语言；清理存量页面时同步移除非 v3 视觉依赖。
 
 ## 文档路由
+
+> **v3 优先级声明**：构建或改造页面时，视觉以 `DESIGN.md`（容器选择规则）+ `tokens.md` / `surfaces.md` / `data-display.md` + `components/superteam/` 的项目级组件 + `theme.css` 的 `--v3-*` token 为准。其他组件族文档若出现非 v3 视觉描述，以本声明和这三份 v3 子文档为准；保留其结构、可访问性、焦点、禁用、错误态、密度和图标语义规则。
 
 按任务读取最小必要上下文：
 
 | 任务内容 | 必读文档 |
 | --- | --- |
+| 基于 v3 风格构建新功能/菜单页（跨会话冷启动） | `DESIGN.md`（容器选择规则 / Token 落地策略 / 落地策略）、`docs/design-system/tokens.md`、`surfaces.md`、`data-display.md` |
 | 判断整体视觉方向、避免业务内容污染设计规范 | `DESIGN.md`、`docs/design-system/principles.md` |
 | 调整颜色、radius、shadow、语义色、Tailwind token | `docs/design-system/tokens.md` |
-| 调整页面背景、Shell 质感、卡片、面板、玻璃拟态 | `docs/design-system/surfaces.md` |
+| 调整页面背景、Shell 质感、卡片、面板、顶栏半透明手势 | `docs/design-system/surfaces.md` |
 | 调整按钮、图标按钮、链接、主操作、危险操作 | `docs/design-system/actions.md` |
 | 调整侧栏、顶部栏、菜单、Tabs、导航选中态 | `docs/design-system/navigation.md` |
 | 调整 Input、Textarea、Select、表单布局、字段错误 | `docs/design-system/forms.md` |
@@ -48,7 +74,6 @@ SuperTeam Web 当前优先采用“近白浅底 + 冷色柔光 + 液态玻璃卡
 | 调整表格、列表、Badge、状态、指标卡、图表、拓扑、数据展示 | `docs/design-system/data-display.md` |
 | 调整图标尺寸、图标颜色、图标容器、语义图标 | `docs/design-system/icons.md` |
 | 调整字体层级、间距密度、页面布局、移动端和文字溢出 | `docs/design-system/layout-density.md` |
-| 生成或验证静态设计原型，检查拆分规范是否足够 | `docs/prototypes/design-system/README.md` |
 | 校验设计文档引用、原型依赖版本和常见漂移 | `docs/design-system/verify-design-system.mjs` |
 
 ## 事实源
@@ -57,15 +82,15 @@ SuperTeam Web 当前优先采用“近白浅底 + 冷色柔光 + 液态玻璃卡
 - `apps/web/src/components/ui/`：shadcn/Radix primitive 层。除全站基础行为外，不承载业务组合组件。
 - `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。
 - `docs/design-system/`：可读设计规范。文档指导实现，但不能取代代码 token 的事实源。
-- `docs/prototypes/design-system/`：静态原型验证 kit，用于检查规范拆分是否可生成一致界面；不是生产组件库。
+- `docs/prototypes/design-direction-v3/`：v3 视觉方向参考；不是生产组件库，也不是 token 事实源。
 
-如需扩展项目级 token，优先在 `apps/web/src/styles/theme.css` 中补充语义变量，再通过 Tailwind token 使用。不要在单个页面内复制一组玻璃拟态 class。
+如需扩展项目级 token，优先在 `apps/web/src/styles/theme.css` 中补充语义变量，再通过 Tailwind token 使用。不要在单个页面内复制一组独立视觉 class。
 
 ## 禁止事项
 
 - 不要把与当前功能无关的任务、指标、事件、模型、平台状态等内容写入业务页面。
 - 不要为了追求视觉效果而牺牲当前项目真实信息架构。
-- 不要在每个页面复制一套独立的玻璃卡片和渐变按钮 class。
+- 不要在每个页面复制一套独立的卡片、状态 pill 和渐变按钮 class。
 - 不要大面积使用装饰性光斑、orb、bokeh 或无意义插画。
 - 不要把页面做成营销首页，后台页面必须服务于实际工作流。
 - 不要用不可维护的绝对定位堆叠核心内容，除非是明确的图形/拓扑画布。

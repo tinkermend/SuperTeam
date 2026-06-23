@@ -1,4 +1,4 @@
-import type { Tone } from "@/components/superteam";
+import type { V3Tone } from "@/components/superteam";
 import type { WorkflowInstanceStatus } from "@/lib/api/projects";
 
 export function workflowStatusLabel(status: WorkflowInstanceStatus): string {
@@ -22,20 +22,20 @@ export function workflowStatusLabel(status: WorkflowInstanceStatus): string {
   }
 }
 
-export function workflowStatusTone(status: WorkflowInstanceStatus): Tone {
+export function workflowStatusTone(status: WorkflowInstanceStatus): V3Tone {
   switch (status) {
     case "completed":
-      return "success";
+      return "ok";
     case "cancelled":
     case "failed":
       return "danger";
     case "planning":
     case "waiting_human":
-      return "warning";
+      return "warn";
     case "running":
       return "info";
     case "unknown":
-      return "neutral";
+      return "mute";
     default:
       return status satisfies never;
   }

@@ -28,11 +28,15 @@ import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
-  LiquidCard,
-  MetricCard,
-  SemanticIconTile,
-  StatusBadge,
-  type Tone,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3MetricCard,
+  type V3Tone,
 } from "@/components/superteam";
 import {
   getDigitalEmployeeOverview,
@@ -71,19 +75,19 @@ const operationalStatusLabel: Record<DigitalEmployeeOperationalStatus, string> =
   needs_configuration: "待配置",
 };
 
-const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, Tone> = {
+const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3Tone> = {
   working: "info",
-  idle: "success",
-  queued: "warning",
-  waiting_human: "warning",
+  idle: "ok",
+  queued: "warn",
+  waiting_human: "warn",
   error: "danger",
-  unavailable: "neutral",
-  needs_configuration: "neutral",
+  unavailable: "mute",
+  needs_configuration: "mute",
 };
 
 type OperationalStatusPresentation = {
   label: string;
-  tone: Tone;
+  tone: V3Tone;
 };
 
 function operationalStatusPresentation(status?: string): OperationalStatusPresentation {
@@ -94,7 +98,7 @@ function operationalStatusPresentation(status?: string): OperationalStatusPresen
     };
   }
 
-  return { label: "状态未知", tone: "neutral" };
+  return { label: "状态未知", tone: "mute" };
 }
 
 function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {
@@ -180,9 +184,9 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <SemanticIconTile tone="primary" size="lg">
+              <IconTile tone="brand" size="lg">
                 <Bot />
-              </SemanticIconTile>
+              </IconTile>
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold tracking-normal">数字员工</h1>
                 <p className="text-sm text-muted-foreground">业务身份、执行实例和运行状态</p>
@@ -213,7 +217,9 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
               </div>
               <div className="min-w-0 xl:col-start-1 xl:row-start-2">
                 {items.length === 0 ? (
-                  <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">暂无数字员工</LiquidCard>
+                  <SoftCard>
+                    <V3EmptyState title="暂无数字员工" />
+                  </SoftCard>
                 ) : (
                   <div className="flex flex-col gap-4">
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -239,21 +245,12 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
             </div>
           ) : null}
           {overview.isLoading ? (
-            <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">加载中...</LiquidCard>
+            <SoftCard>
+              <V3LoadingState label="加载数字员工..." />
+            </SoftCard>
           ) : null}
           {overview.isError ? (
-            <LiquidCard className="flex flex-col gap-3 rounded-xl p-6">
-              <p className="text-sm font-medium text-destructive">加载失败</p>
-              <Button
-                className="w-fit"
-                size="sm"
-                type="button"
-                variant="outline"
-                onClick={() => void overview.refetch()}
-              >
-                重试
-              </Button>
-            </LiquidCard>
+            <V3ErrorState title="加载失败" onRetry={() => void overview.refetch()} />
           ) : null}
         </div>
       </Main>
@@ -347,7 +344,7 @@ function EmployeeFilterPanel({
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
-    <LiquidCard className="rounded-xl">
+    <SoftCard className="rounded-v3-card">
       <div className="flex flex-col gap-4 p-4">
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(132px,1fr))]">
           <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
@@ -411,39 +408,39 @@ function EmployeeFilterPanel({
           />
         </div>
       </div>
-    </LiquidCard>
+    </SoftCard>
   );
 }
 
 function WorkbenchMetrics({ overview }: { overview: DigitalEmployeeOverview }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      <MetricCard
-        title="就绪"
+      <V3MetricCard
+        label="就绪"
         value={formatNumber(overview.summary.ready_count)}
         icon={<Check />}
-        iconTone="success"
+        iconTone="ok"
       />
-      <MetricCard
-        title="待绑定"
+      <V3MetricCard
+        label="待绑定"
         value={formatNumber(overview.summary.pending_runtime_binding_count)}
         icon={<LinkIcon />}
-        iconTone="warning"
+        iconTone="warn"
       />
-      <MetricCard
-        title="异常"
+      <V3MetricCard
+        label="异常"
         value={formatNumber(overview.summary.error_count)}
         icon={<AlertTriangle />}
         iconTone="danger"
       />
-      <MetricCard
-        title="配置待审批"
+      <V3MetricCard
+        label="配置待审批"
         value={formatNumber(overview.summary.pending_config_approval_count)}
         icon={<ClipboardCheck />}
         iconTone="artifact"
       />
-      <MetricCard
-        title="运行失败"
+      <V3MetricCard
+        label="运行失败"
         value={formatNumber(overview.summary.failed_recent_run_count)}
         icon={<XCircle />}
         iconTone="danger"
@@ -478,12 +475,12 @@ function EmployeeWorkbenchCard({
       }}
       tabIndex={0}
       className={cn(
-        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-lg border border-border/70 bg-card/90 p-4 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-superteam-menu-accent/50 hover:shadow-[var(--superteam-shadow-mid)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/50 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
         selected &&
-          "border-superteam-menu-accent bg-superteam-primary-soft/40 shadow-[var(--superteam-shadow-glow)]",
+          "border-v3-brand bg-v3-brand-soft/45 shadow-v3-pop",
       )}
     >
-      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-superteam-menu-accent" /> : null}
+      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
       <div className="flex items-start gap-3 pl-1">
         <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
         <div className="min-w-0 flex-1">
@@ -497,7 +494,7 @@ function EmployeeWorkbenchCard({
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
-              <StatusBadge tone={operationalStatus.tone}>{operationalStatus.label}</StatusBadge>
+              <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
             </div>
           </div>
         </div>
@@ -551,7 +548,7 @@ function BudgetBar({ summary }: { summary: DigitalEmployeeOverviewItem["budget_s
         <div
           className={cn(
             "h-full rounded-full",
-            summary.limit_exceeded ? "bg-destructive" : "bg-[var(--superteam-menu-accent)]",
+            summary.limit_exceeded ? "bg-v3-danger" : "bg-v3-brand",
           )}
           style={{ width: `${percent}%` }}
         />
@@ -568,14 +565,14 @@ function QueueRow({
 }: {
   action: string;
   label: string;
-  tone: Tone;
+  tone: V3Tone;
   value: number;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-t py-3 first:border-t-0 first:pt-0">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <StatusBadge tone={tone}>{formatNumber(value)}</StatusBadge>
+          <StatusPill tone={tone}>{formatNumber(value)}</StatusPill>
           <p className="truncate text-sm font-medium">{label}</p>
         </div>
         <p className="text-xs text-muted-foreground">{formatNumber(value)} 个数字员工</p>
@@ -602,7 +599,7 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate font-semibold">{identity.name}</p>
-            <StatusBadge tone={operationalStatus.tone}>{operationalStatus.label}</StatusBadge>
+            <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
@@ -625,7 +622,7 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
                 <span
                   className={cn(
                     "mt-1 size-2 rounded-full",
-                    event.status === "failed" ? "bg-destructive" : "bg-[var(--superteam-menu-accent)]",
+                    event.status === "failed" ? "bg-v3-danger" : "bg-v3-brand",
                   )}
                 />
                 <div className="min-w-0 flex-1">
@@ -639,9 +636,9 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
           </ol>
         )}
       </div>
-      <Button className="w-full" type="button" variant="outline">
+      <V3Button className="w-full" type="button" variant="outline">
         查看审计
-      </Button>
+      </V3Button>
     </div>
   );
 }
@@ -655,7 +652,7 @@ function WorkbenchRail({
 }) {
   return (
     <aside className="flex min-w-0 flex-col gap-4">
-      <LiquidCard className="rounded-xl p-4">
+      <SoftCard className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">待处理队列</h2>
         </div>
@@ -663,7 +660,7 @@ function WorkbenchRail({
           label="待绑定 Runtime"
           value={overview.queue_summary.pending_runtime_binding_count}
           action="绑定"
-          tone="warning"
+          tone="warn"
         />
         <QueueRow label="配置过期" value={overview.queue_summary.stale_config_count} action="审批" tone="artifact" />
         <QueueRow
@@ -672,14 +669,14 @@ function WorkbenchRail({
           action="查看"
           tone="danger"
         />
-      </LiquidCard>
-      <LiquidCard className="rounded-xl p-4">
+      </SoftCard>
+      <SoftCard className="p-4">
         {selectedItem ? (
           <SelectedEmployeePanel item={selectedItem} />
         ) : (
           <p className="text-sm text-muted-foreground">暂无选中员工</p>
         )}
-      </LiquidCard>
+      </SoftCard>
     </aside>
   );
 }

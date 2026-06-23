@@ -3,9 +3,19 @@ import { useQueries } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Bot, Building2, ChevronRight, Users } from "lucide-react";
 import {
-  TeamIconTile,
+  getTeamDisplayConfig,
   type TeamDisplayMetadata,
 } from "@/components/superteam/team-icon-tile";
+import {
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
 import {
   Tooltip,
   TooltipContent,
@@ -19,7 +29,6 @@ import {
 } from "@/components/superteam/user-identity";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { listDigitalEmployees } from "@/lib/api/employees";
 import type { DigitalEmployee } from "@/lib/api/employees";
@@ -59,17 +68,17 @@ function SummaryStats({
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
-      <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-3.5 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+      <StatusPill tone="info" showDot={false}>
         <Building2 className="size-3.5" />
         {teams.length} 个团队
-      </span>
-      <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-3.5 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+      </StatusPill>
+      <StatusPill tone="ok" showDot={false}>
         <Users className="size-3.5" />
         {totalDigitalEmployees} 位 agent
-      </span>
-      <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-3.5 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+      </StatusPill>
+      <StatusPill tone="mute" showDot={false}>
         {visibleDigitalEmployees} 位代表成员展示中
-      </span>
+      </StatusPill>
     </div>
   );
 }
@@ -95,7 +104,7 @@ function DigitalEmployeeAvatar({
     >
       <EmployeeAvatar asset={asset} name={employee.name} size="sm" />
       {/* AI badge */}
-      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-sm bg-blue-500 px-1 py-px text-[9px] font-bold leading-none text-white z-10 shadow-sm border border-background">
+      <span className="absolute -bottom-1 left-1/2 z-10 -translate-x-1/2 rounded-sm border border-v3-card bg-v3-brand px-1 py-px text-[9px] font-bold leading-none text-white shadow-v3">
         AI
       </span>
     </div>
@@ -161,11 +170,11 @@ function PlaceholderAvatarStack({ count }: { count: number }) {
       <div className="flex -space-x-2">
         {Array.from({ length: visible }).map((_, i) => (
           <div
-            className="flex size-9 items-center justify-center rounded-full border border-border bg-muted ring-2 ring-background"
+            className="flex size-9 items-center justify-center rounded-full border border-v3-line bg-v3-card-soft ring-2 ring-v3-card"
             // eslint-disable-next-line react/no-array-index-key
             key={i}
           >
-            <Bot className="size-4 text-muted-foreground/50" />
+            <Bot className="size-4 text-v3-ink-3" />
           </div>
         ))}
       </div>
@@ -188,8 +197,8 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
   if (owners.length === 0) {
     return (
       <div className="flex items-center gap-3 py-2">
-        <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-border bg-muted/50">
-          <Users className="size-4 text-muted-foreground/60" />
+        <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-v3-line-strong bg-v3-card-soft">
+          <Users className="size-4 text-v3-ink-3" />
         </div>
         <span className="text-sm text-muted-foreground">未设置负责人</span>
       </div>
@@ -203,8 +212,8 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
       <div className="flex items-center gap-3 py-2">
         <UserIdentityAvatar className="size-10" user={owner} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{label.primary}</div>
-          <div className="truncate text-xs text-muted-foreground">
+          <div className="truncate text-sm font-medium text-v3-ink">{label.primary}</div>
+          <div className="truncate text-xs text-v3-ink-2">
             {label.secondary}
           </div>
         </div>
@@ -263,14 +272,14 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
       </TooltipProvider>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">
+        <div className="truncate text-sm font-medium text-v3-ink">
           {owners
             .slice(0, 2)
             .map((o) => getUserIdentityLabel(o).primary)
             .join("、")}
           {owners.length > 2 ? ` 等 ${owners.length} 人` : ""}
         </div>
-        <div className="truncate text-xs text-muted-foreground">
+        <div className="truncate text-xs text-v3-ink-2">
           联席负责人
         </div>
       </div>
@@ -328,6 +337,8 @@ function TeamCard({
   team: TeamListItem;
 }) {
   const metadata = (team.metadata ?? {}) as TeamDisplayMetadata;
+  const displayConfig = getTeamDisplayConfig(metadata);
+  const TeamIcon = displayConfig.Icon;
   const levelLabel = `L${index + 1}`;
   const visibleCount = digitalEmployees
     ? Math.min(digitalEmployees.length, MAX_VISIBLE_EMPLOYEE_AVATARS)
@@ -337,31 +348,30 @@ function TeamCard({
     : team.digital_employee_count;
 
   return (
-    <div
+    <SoftCard
       className={cn(
-        "group flex flex-col rounded-2xl border border-superteam-primary-soft/80 bg-gradient-to-br from-background via-background/95 to-superteam-primary-soft/40 shadow-sm shadow-superteam-menu-accent/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--superteam-shadow-mid)] hover:border-superteam-menu-accent/40 hover:to-superteam-primary-soft/60 overflow-hidden ring-1 ring-white/60",
-        isHighlighted && "ring-2 ring-superteam-menu-accent",
+        "group flex min-h-[260px] flex-col overflow-hidden transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-v3-pop",
+        isHighlighted && "ring-2 ring-v3-brand",
       )}
     >
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3 px-5 pt-5">
         <div className="flex items-center gap-3">
-          <TeamIconTile className="size-10 [&_svg]:size-5" metadata={metadata} />
+          <IconTile aria-label={displayConfig.label} role="img" tone={teamDisplayTone(displayConfig.tone)}>
+            <TeamIcon aria-hidden="true" />
+          </IconTile>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold leading-tight">
+            <h3 className="truncate text-base font-bold leading-tight text-v3-ink">
               {team.name}
             </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-v3-ink-2">
               {team.digital_employee_count} 位数字员工
             </p>
           </div>
         </div>
-        <Badge
-          className="shrink-0 tabular-nums"
-          variant="outline"
-        >
+        <StatusPill className="shrink-0 tabular-nums" tone="mute" showDot={false}>
           {levelLabel}
-        </Badge>
+        </StatusPill>
       </div>
 
       {/* ── Human Owner ────────────────────────────────────────── */}
@@ -371,7 +381,7 @@ function TeamCard({
 
       {/* ── Representative Digital Employees ────────────────────── */}
       <div className="mt-auto flex flex-col gap-2 px-5 pb-2 pt-3">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-v3-ink-2">
           <span>代表成员</span>
           <span className="tabular-nums">
             显示 {visibleCount} / {totalCount}
@@ -391,15 +401,27 @@ function TeamCard({
 
       {/* ── Footer ─────────────────────────────────────────────── */}
       <Link
-        className="flex items-center justify-between border-t border-border/40 bg-gradient-to-b from-transparent to-superteam-primary-soft/30 px-5 py-3.5 text-sm font-medium text-superteam-primary-deep transition-all duration-300 hover:bg-superteam-primary-soft/80"
+        className="flex items-center justify-between border-t border-v3-line bg-v3-card-soft px-5 py-3.5 text-sm font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
         params={{ teamId: team.id }}
         to="/teams/$teamId"
       >
         查看完整部门
         <ChevronRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
       </Link>
-    </div>
+    </SoftCard>
   );
+}
+
+function teamDisplayTone(tone: string): V3Tone {
+  const toneMap: Record<string, V3Tone> = {
+    blue: "brand",
+    cyan: "info",
+    neutral: "mute",
+    teal: "ok",
+    violet: "artifact",
+  };
+
+  return toneMap[tone] ?? "mute";
 }
 
 // ---------------------------------------------------------------------------
@@ -459,26 +481,25 @@ export function TeamCardGrid({
   // ── Loading / Error / Empty states ──────────────────────────
   if (isLoading) {
     return (
-      <div className="flex min-h-[240px] items-center justify-center rounded-xl border bg-card/60 text-sm text-muted-foreground">
-        加载中…
-      </div>
+      <WorkSurface>
+        <V3LoadingState label="团队列表加载中" />
+      </WorkSurface>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex min-h-[240px] items-center justify-center rounded-xl border bg-card/60 text-sm text-destructive">
-        团队列表加载失败
-      </div>
+      <WorkSurface>
+        <V3ErrorState title="团队列表加载失败" />
+      </WorkSurface>
     );
   }
 
   if (teams.length === 0) {
     return (
-      <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 rounded-xl border bg-card/60 text-sm text-muted-foreground">
-        <Building2 className="size-8 text-muted-foreground/40" />
-        暂无团队
-      </div>
+      <WorkSurface>
+        <V3EmptyState icon={<Building2 />} title="暂无团队" />
+      </WorkSurface>
     );
   }
 

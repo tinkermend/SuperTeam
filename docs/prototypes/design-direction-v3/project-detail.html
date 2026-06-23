@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>项目详情 · 融合模式 · SuperTeam v3</title>
+<style>
+  /* Fusion v3 — 下钻页: 柔和外壳(头卡+signature+Tabs) 包住 密集表格(任务本体) */
+  :root {
+    --bg:#f3f4f6; --card:#ffffff; --card-soft:#f7f8fa; --card-inner:#fafbfc;
+    --ink:#0b0d12; --ink-2:#697586; --ink-3:#9aa4b2; --line:#eef1f4; --line-2:#e6e9ee; --line-strong:#dfe4ea;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-grad:linear-gradient(140deg,#5b8bff 0%,#2f5fff 58%,#2348e0 100%); --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e4f6ee; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#e5484d; --danger-soft:#fde8e9; --info:#2f5fff; --info-soft:#e9efff;
+    --mute:#64748b; --mute-soft:#eef1f4; --purple:#7c5cff; --purple-soft:#efeaff;
+    --r-card:22px; --r-inner:14px; --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+    --mono:ui-monospace,"SFMono-Regular","Menlo","Cascadia Code",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --row-py:11px; --row-fs:13px;
+  }
+  [data-density="compact"]{--row-py:6px;--row-fs:12.5px;}
+  [data-theme="dark"]{
+    --bg:#0d1014; --card:#171b22; --card-soft:#1c212a; --card-inner:#1a1f27;
+    --ink:#f3f5f8; --ink-2:#9aa6b4; --ink-3:#6b7686; --line:#262c35; --line-2:#2e353f; --line-strong:#333b45;
+    --brand:#5b8bff; --brand-soft:rgba(91,139,255,.16);
+    --ok:#34d399; --ok-soft:rgba(52,211,153,.15); --warn:#fbbf24; --warn-soft:rgba(251,191,36,.15);
+    --danger:#f87171; --danger-soft:rgba(248,113,113,.16); --info:#5b8bff; --info-soft:rgba(91,139,255,.16);
+    --mute:#94a3b8; --mute-soft:rgba(148,163,184,.14); --purple:#a78bfa; --purple-soft:rgba(167,139,250,.16);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .num{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);} a{color:inherit;text-decoration:none;}
+  .orb{position:fixed;right:-90px;bottom:-110px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#e7eaef 70%,#dfe3e9);box-shadow:0 30px 80px rgba(16,24,40,.08);z-index:0;pointer-events:none;opacity:.7;}
+  [data-theme="dark"] .orb{background:radial-gradient(circle at 35% 30%,#222934,#161b22 70%);opacity:.5;}
+
+  .topnav{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:30px;padding:14px 30px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(14px);}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;letter-spacing:-.02em;}
+  .logo .mk{width:26px;height:26px;border-radius:9px;background:var(--brand-grad);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 4px 12px rgba(47,95,255,.35);}
+  .menu{display:flex;gap:4px;margin-left:8px;}
+  .menu a{padding:8px 14px;border-radius:10px;color:var(--ink-2);font-weight:550;font-size:14px;}
+  .menu a:hover{background:var(--card);color:var(--ink);} .menu a.on{color:var(--ink);font-weight:650;}
+  .grow{flex:1;}
+  .tbtn{width:38px;height:38px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;border:none;font-size:15px;}
+  .me{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 5px;background:var(--card);border-radius:13px;box-shadow:var(--shadow);}
+  .me .pic{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .me .nm{font-size:12.5px;font-weight:650;line-height:1.1;} .me .ro{font-size:11px;color:var(--ink-3);}
+
+  .wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:14px 30px 60px;}
+  .crumb{display:flex;align-items:center;gap:10px;margin:6px 0 16px;color:var(--ink-3);font-size:12.5px;}
+  .back{width:34px;height:34px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:15px;}
+  .crumb a:hover{color:var(--ink);}
+
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .svg-sm{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;}
+  .pill .d{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .p-ok{color:var(--ok);background:var(--ok-soft);} .p-info{color:var(--info);background:var(--info-soft);}
+  .p-warn{color:var(--warn);background:var(--warn-soft);} .p-danger{color:var(--danger);background:var(--danger-soft);} .p-mute{color:var(--mute);background:var(--mute-soft);}
+
+  .hero{display:grid;grid-template-columns:1fr 300px;gap:18px;margin-bottom:18px;}
+  @media(max-width:900px){.hero{grid-template-columns:1fr;}}
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);}
+  .phead{padding:24px 26px;}
+  .phead .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+  .phead .ttl{flex:1;}
+  .phead h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.03em;display:flex;align-items:center;gap:10px;}
+  .phead .id{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:4px;}
+  .phead .act{display:flex;gap:8px;}
+  .btn{font-size:13px;font-weight:650;padding:9px 15px;border-radius:11px;border:none;cursor:pointer;}
+  .btn.primary{background:var(--brand);color:#fff;box-shadow:0 8px 18px rgba(47,95,255,.28);} .btn.primary:hover{background:var(--brand-deep);}
+  .btn.ghost{background:var(--card);border:1px solid var(--line-2);color:var(--ink);}
+  .metarow{display:flex;flex-wrap:wrap;gap:26px;}
+  .metarow .m .k{font-size:11.5px;color:var(--ink-3);} .metarow .m .v{font-size:14px;font-weight:700;margin-top:3px;display:flex;align-items:center;gap:7px;}
+  .av{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+  .prog{margin-top:20px;} .prog .l{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2);margin-bottom:7px;} .prog .l b{color:var(--ink);font-weight:700;}
+  .prog .track{height:9px;border-radius:6px;background:var(--card-soft);overflow:hidden;} .prog .fill{height:100%;border-radius:6px;background:var(--brand);}
+
+  .bluecard{background:var(--brand-grad);color:#fff;border-radius:var(--r-card);box-shadow:0 18px 50px rgba(47,95,255,.32);
+    padding:22px;display:flex;flex-direction:column;align-items:center;text-align:center;justify-content:center;}
+  .ring{position:relative;width:140px;height:140px;} .ring svg{transform:rotate(-90deg);}
+  .ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .pct{font-size:34px;font-weight:800;} .ring .pct small{font-size:15px;}
+  .bluecard .lab{font-size:13px;opacity:.92;margin-top:12px;font-weight:700;} .bluecard .sub{font-size:12px;opacity:.78;margin-top:2px;}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+  @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;}
+  .stat .v{font-size:26px;font-weight:800;letter-spacing:-.02em;} .stat .l{font-size:12.5px;color:var(--ink-2);margin-top:2px;}
+  .stat .v.warn{color:var(--warn);} .stat .v.danger{color:var(--danger);}
+
+  .tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--card);padding:5px;border-radius:14px;box-shadow:var(--shadow);width:fit-content;flex-wrap:wrap;}
+  .tabs button{border:none;background:transparent;color:var(--ink-2);font:inherit;font-size:13.5px;font-weight:650;padding:8px 16px;border-radius:10px;cursor:pointer;}
+  .tabs button.on{background:var(--brand-soft);color:var(--brand-deep);}
+
+  .panel{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+  .panel-h{display:flex;align-items:center;gap:10px;padding:16px 20px;}
+  .panel-h h3{margin:0;font-size:15px;font-weight:750;}
+  .panel-h .right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .srch{display:flex;align-items:center;gap:7px;background:var(--card-soft);border-radius:10px;padding:7px 12px;color:var(--ink-3);min-width:180px;}
+  .srch input{border:none;outline:none;background:transparent;font:inherit;font-size:13px;color:var(--ink);width:100%;}
+  .seg{display:inline-flex;background:var(--card-soft);border-radius:9px;padding:2px;}
+  .seg button{border:none;background:transparent;color:var(--ink-2);font:inherit;font-size:12px;font-weight:650;padding:5px 10px;border-radius:7px;cursor:pointer;}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(16,24,40,.12);}
+
+  .tbl-wrap{overflow:auto;}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--row-fs);}
+  thead th{position:sticky;top:0;z-index:1;text-align:left;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--ink-3);background:var(--card-soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line-strong);padding:9px 16px;white-space:nowrap;}
+  tbody td{padding:var(--row-py) 16px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tbody tr:hover td{background:var(--card-inner);}
+  tbody tr:last-child td{border-bottom:none;}
+  tr.danger td{background:var(--danger-soft);} tr.danger td:first-child{box-shadow:inset 3px 0 0 var(--danger);}
+  tr.warn td:first-child{box-shadow:inset 3px 0 0 var(--warn);}
+  .id{font-family:var(--mono);font-size:12px;color:var(--brand-deep);}
+  .task{font-weight:600;}
+  .who{display:inline-flex;align-items:center;gap:7px;}
+  .who .fc{width:22px;height:22px;border-radius:7px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;}
+  .mini-prog{display:flex;align-items:center;gap:8px;min-width:96px;}
+  .mini-prog .t{flex:1;height:6px;border-radius:4px;background:var(--card-soft);overflow:hidden;} .mini-prog .f{height:100%;border-radius:4px;background:var(--brand);}
+  .mini-prog .pc{font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink-2);font-weight:600;}
+  .budget{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;}
+  .time{font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap;}
+  .rowact{font-size:12px;font-weight:700;padding:5px 11px;border-radius:9px;cursor:pointer;background:var(--card);border:1px solid var(--line-2);color:var(--ink);}
+  .rowact.primary{background:var(--brand);color:#fff;border-color:transparent;} .rowact.danger{background:var(--danger-soft);color:var(--danger);border-color:transparent;}
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+
+  <nav class="topnav">
+    <div class="logo"><span class="mk">S</span> SuperTeam</div>
+    <div class="menu">
+      <a href="dashboard.html">协调台</a>
+      <a href="projects.html" class="on">项目</a>
+      <a href="employees.html">数字员工</a>
+      <a href="skills.html">技能</a>
+      <a href="#">Runtime</a>
+      <a href="#">审计</a>
+    </div>
+    <div class="grow"></div>
+    <button class="tbtn" id="theme">◐</button>
+    <button class="tbtn">♪</button>
+    <div class="me"><div class="pic">林</div><div><div class="nm">林 Anna</div><div class="ro">平台管理员</div></div></div>
+  </nav>
+
+  <div class="wrap">
+    <div class="crumb"><a href="projects.html" class="back">‹</a><a href="projects.html">项目</a> / <span style="color:var(--ink-2)">支付网关迁移</span></div>
+
+    <div class="hero">
+      <div class="card phead">
+        <div class="top">
+          <div class="ttl">
+            <h1>支付网关迁移 <span class="pill p-danger"><span class="d"></span>受阻 · 待审批</span></h1>
+            <div class="id">prj_a91f2c00 · 协调线程 project-coordinator:a91f</div>
+          </div>
+          <div class="act">
+            <button class="btn ghost">补证</button>
+            <button class="btn primary">审批发布</button>
+          </div>
+        </div>
+        <div class="metarow">
+          <div class="m"><div class="k">人类负责人</div><div class="v"><span class="av">林</span> 林Anna</div></div>
+          <div class="m"><div class="k">验收人</div><div class="v"><span class="av" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">王</span> 王经理</div></div>
+          <div class="m"><div class="k">活跃数字员工</div><div class="v num">3</div></div>
+          <div class="m"><div class="k">目标</div><div class="v">Q3 完成网关切换</div></div>
+        </div>
+        <div class="prog">
+          <div class="l"><span>整体进度</span><b>72%</b></div>
+          <div class="track"><div class="fill" style="width:72%;background:var(--danger)"></div></div>
+        </div>
+      </div>
+
+      <div class="bluecard">
+        <div class="ring">
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r="58" stroke="rgba(255,255,255,.22)" stroke-width="12" fill="none"/>
+            <circle cx="70" cy="70" r="58" stroke="#fff" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="364" stroke-dashoffset="36"/>
+          </svg>
+          <div class="mid"><div class="pct">90<small>%</small></div></div>
+        </div>
+        <div class="lab">预算 $5.4k / $6k</div>
+        <div class="sub">已近阈值 · 预计今日触顶</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="v num">12</div><div class="l">任务总数</div></div>
+      <div class="stat"><div class="v num">3</div><div class="l">进行中</div></div>
+      <div class="stat"><div class="v danger num">2</div><div class="l">受阻 / 失败</div></div>
+      <div class="stat"><div class="v num">7</div><div class="l">已完成</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="on">任务 · 12</button>
+      <button>审计流水 · 184</button>
+      <button>工件 · 9</button>
+      <button>证据 · 6</button>
+      <button>成员 · 5</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">
+        <h3>任务列表</h3>
+        <div class="right">
+          <div class="srch"><svg class="svg-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="按任务、数字员工、状态筛选…"></div>
+          <div class="seg" id="density"><button data-d="comfortable" class="on">舒适</button><button data-d="compact">紧凑</button></div>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>任务</th><th>对象</th><th style="width:160px">负责数字员工</th><th style="width:104px">状态</th>
+              <th style="width:130px">进度</th><th style="width:110px">预算</th><th style="width:120px">更新时间</th><th style="width:80px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="danger">
+              <td class="task">生产发布编排</td>
+              <td class="id">tsk_a91f01</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#34d399,#15a06b)">DP</span> deploy-bot</span></td>
+              <td><span class="pill p-danger"><span class="d"></span>待审批</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:95%;background:var(--danger)"></div></div><span class="pc">95%</span></div></td>
+              <td class="budget">$1.2k</td>
+              <td class="time">2 分钟前</td>
+              <td><button class="rowact primary">审批</button></td>
+            </tr>
+            <tr class="danger">
+              <td class="task">对账接口回归测试</td>
+              <td class="id">tsk_30a2f1</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#f4c430,#cf7a14)">TR</span> test-runner</span></td>
+              <td><span class="pill p-danger"><span class="d"></span>失败</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:55%;background:var(--danger)"></div></div><span class="pc">55%</span></div></td>
+              <td class="budget">$0.4k</td>
+              <td class="time">6 分钟前</td>
+              <td><button class="rowact danger">处理</button></td>
+            </tr>
+            <tr>
+              <td class="task">支付接口层实现</td>
+              <td class="id">tsk_2f1caa</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">CC</span> api-builder</span></td>
+              <td><span class="pill p-info"><span class="d"></span>运行中</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:68%"></div></div><span class="pc">68%</span></div></td>
+              <td class="budget">$1.5k</td>
+              <td class="time">刚刚</td>
+              <td><button class="rowact">查看</button></td>
+            </tr>
+            <tr class="warn">
+              <td class="task">回滚预案校验</td>
+              <td class="id">tsk_77be0d</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">CC</span> api-builder</span></td>
+              <td><span class="pill p-warn"><span class="d"></span>待确认</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:40%;background:var(--warn)"></div></div><span class="pc">40%</span></div></td>
+              <td class="budget">$0.3k</td>
+              <td class="time">22 分钟前</td>
+              <td><button class="rowact">查看</button></td>
+            </tr>
+            <tr>
+              <td class="task">迁移方案需求拆解</td>
+              <td class="id">tsk_b8d46e</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#a78bfa,#7c5cff)">SW</span> spec-writer</span></td>
+              <td><span class="pill p-ok"><span class="d"></span>已完成</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:100%;background:var(--ok)"></div></div><span class="pc">100%</span></div></td>
+              <td class="budget">$0.5k</td>
+              <td class="time">2 小时前</td>
+              <td><button class="rowact">查看</button></td>
+            </tr>
+            <tr>
+              <td class="task">数据库迁移脚本</td>
+              <td class="id">tsk_5c109a</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">CC</span> api-builder</span></td>
+              <td><span class="pill p-ok"><span class="d"></span>已完成</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:100%;background:var(--ok)"></div></div><span class="pc">100%</span></div></td>
+              <td class="budget">$0.7k</td>
+              <td class="time">5 小时前</td>
+              <td><button class="rowact">查看</button></td>
+            </tr>
+            <tr>
+              <td class="task">支付对账报表生成</td>
+              <td class="id">tsk_90ab34</td>
+              <td><span class="who"><span class="fc" style="background:linear-gradient(135deg,#94a3b8,#475569)">CS</span> comms-summarizer</span></td>
+              <td><span class="pill p-mute"><span class="d"></span>排队中</span></td>
+              <td><div class="mini-prog"><div class="t"><div class="f" style="width:0%"></div></div><span class="pc">0%</span></div></td>
+              <td class="budget">—</td>
+              <td class="time">待分派</td>
+              <td><button class="rowact">分派</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
+    const seg=document.getElementById('density');
+    seg.onclick=e=>{const b=e.target.closest('button');if(!b)return;seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.dataset.density=b.dataset.d;};
+    document.querySelectorAll('.tabs button').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+  </script>
+</body>
+</html>

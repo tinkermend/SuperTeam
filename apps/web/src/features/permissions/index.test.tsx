@@ -178,6 +178,16 @@ async function renderPermissionsCenter(fetcher = createAuthzFetcher().fetcher) {
   );
 }
 
+async function expectV3Surface() {
+  await vi.waitFor(() => {
+    expect(
+      document.body.querySelector(
+        '[data-slot="v3-soft-card"], [data-slot="v3-work-surface"], [data-slot="v3-table"], [data-slot="v3-status-pill"], [data-slot="v3-icon-tile"]',
+      ),
+    ).not.toBeNull();
+  });
+}
+
 describe("PermissionsCenter", () => {
   it("renders five tabs", async () => {
     const screen = await renderPermissionsCenter();
@@ -194,6 +204,47 @@ describe("PermissionsCenter", () => {
     }
 
     await expect.element(screen.getByText(/^db$/)).toBeVisible();
+  });
+
+  it("uses v3 Soft-Flat entry controls", async () => {
+    const screen = await renderPermissionsCenter();
+
+    await expect.element(screen.getByText(/^db$/)).toBeVisible();
+
+    const iconTile = document.body.querySelector('[data-slot="v3-icon-tile"]');
+    const tabSurface = document.body.querySelector('[data-slot="tabs-list"]');
+
+    expect(iconTile).not.toBeNull();
+    expect(iconTile?.className).toContain("bg-v3-artifact-soft");
+    expect(tabSurface).not.toBeNull();
+    expect(tabSurface?.className).toContain("bg-v3-card");
+    expect(tabSurface?.className).toContain("shadow-v3");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Runtime 范围" }));
+    await expect.element(screen.getByLabelText("Runtime Node ID")).toBeVisible();
+  });
+
+  it("renders every permissions tab with v3 surfaces only", async () => {
+    const screen = await renderPermissionsCenter();
+
+    await expect.element(screen.getByText(/^db$/)).toBeVisible();
+    await expectV3Surface();
+
+    await userEvent.click(screen.getByRole("tab", { name: "授权审计" }));
+    await expect.element(screen.getByRole("heading", { name: "授权审计" })).toBeVisible();
+    await expectV3Surface();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Runtime 范围" }));
+    await expect.element(screen.getByLabelText("Runtime Node ID")).toBeVisible();
+    await expectV3Surface();
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员角色" }));
+    await expect.element(screen.getByRole("heading", { name: "成员角色" })).toBeVisible();
+    await expectV3Surface();
+
+    await userEvent.click(screen.getByRole("tab", { name: "权限诊断" }));
+    await expect.element(screen.getByLabelText("Actor ID")).toBeVisible();
+    await expectV3Surface();
   });
 
   it("submits permission diagnostics", async () => {

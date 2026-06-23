@@ -1,14 +1,15 @@
-import { Inbox, RotateCcw } from "lucide-react";
+import { AlertTriangle, Inbox, RotateCcw, ShieldCheck } from "lucide-react";
 import {
-  LiquidCard,
-  LiquidTabsList,
-  LiquidTabsTrigger,
-  SemanticIconTile,
-  StatusBadge,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3MetricCard,
+  V3PageHeader,
+  V3StateSurface,
+  V3Tabs,
+  V3Tab,
 } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs } from "@/components/ui/tabs";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -91,34 +91,78 @@ export function InboxShell({
         <Search />
         <ThemeSwitch />
       </Header>
-      <Main>
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <SemanticIconTile tone="decision" size="lg">
+      <Main className="space-y-5 text-v3-ink">
+        <SoftCard className="p-5">
+          <V3PageHeader
+            title="收件箱"
+            subtitle="需要你处理、确认或继续追踪的事项。"
+            back={
+              <IconTile tone="brand" size="lg">
                 <Inbox />
-              </SemanticIconTile>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-normal">收件箱</h1>
-                <p className="text-sm text-muted-foreground">需要你处理的事项</p>
-              </div>
-            </div>
-            {data ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone="decision">开放 {data.summary.open_count}</StatusBadge>
-                <StatusBadge tone="danger">高风险 {data.summary.high_risk_count}</StatusBadge>
-                <StatusBadge tone="warning">阻断 {data.summary.blocked_count}</StatusBadge>
-              </div>
-            ) : null}
+              </IconTile>
+            }
+            action={
+              data ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusPill tone="info">开放 {data.summary.open_count}</StatusPill>
+                  <StatusPill tone="danger">高风险 {data.summary.high_risk_count}</StatusPill>
+                  <StatusPill tone="warn">阻断 {data.summary.blocked_count}</StatusPill>
+                </div>
+              ) : null
+            }
+          />
+        </SoftCard>
+
+        {data ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            <V3MetricCard
+              icon={<Inbox />}
+              iconTone="info"
+              label="开放事项"
+              value={data.summary.open_count}
+              meta={view === "mine" ? "我的待处理队列" : "团队待处理队列"}
+              loud={data.summary.open_count > 0}
+            />
+            <V3MetricCard
+              icon={<AlertTriangle />}
+              iconTone="danger"
+              label="高风险"
+              value={data.summary.high_risk_count}
+              meta="需优先确认"
+              loud={data.summary.high_risk_count > 0}
+            />
+            <V3MetricCard
+              icon={<ShieldCheck />}
+              iconTone="warn"
+              label="阻断"
+              value={data.summary.blocked_count}
+              meta="等待人工判断"
+              loud={data.summary.blocked_count > 0}
+            />
           </div>
+        ) : null}
 
-          <Tabs value={view} onValueChange={(value) => onViewChange(value as InboxViewMode)}>
-            <LiquidTabsList className="max-w-md">
-              <LiquidTabsTrigger value="mine">我的待办</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="team">团队待办</LiquidTabsTrigger>
-            </LiquidTabsList>
-          </Tabs>
-
+        <SoftCard className="flex flex-col gap-4 p-4">
+          <V3Tabs role="tablist" aria-label="收件箱视图">
+            <V3Tab
+              type="button"
+              role="tab"
+              active={view === "mine"}
+              aria-selected={view === "mine"}
+              onClick={() => onViewChange("mine")}
+            >
+              我的待办
+            </V3Tab>
+            <V3Tab
+              type="button"
+              role="tab"
+              active={view === "team"}
+              aria-selected={view === "team"}
+              onClick={() => onViewChange("team")}
+            >
+              团队待办
+            </V3Tab>
+          </V3Tabs>
           <InboxFilters
             filters={filters}
             onFilterChange={onFilterChange}
@@ -126,50 +170,37 @@ export function InboxShell({
             uuidFilterDrafts={uuidFilterDrafts}
             uuidFilterErrors={uuidFilterErrors}
           />
+        </SoftCard>
 
-          {mutationError ? (
-            <Alert variant="destructive">
-              <AlertTitle>操作未完成</AlertTitle>
-              <AlertDescription>{mutationError.message}</AlertDescription>
-            </Alert>
-          ) : null}
+        {mutationError ? (
+          <div className="rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger" role="alert">
+            <p className="font-bold">操作未完成</p>
+            <p className="mt-1 text-v3-ink-2">{mutationError.message}</p>
+          </div>
+        ) : null}
 
-          {error && !data ? (
-            <Alert variant="destructive">
-              <AlertTitle>收件箱加载失败</AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-3">
-                <span>{error.message}</span>
-                <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-                  重试
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : null}
+        {isFetching && hasItems ? (
+          <StatusPill tone="info" className="w-fit">正在刷新</StatusPill>
+        ) : null}
 
-          {isFetching && hasItems ? (
-            <div className="text-xs text-muted-foreground">正在刷新</div>
+        <V3StateSurface
+          isLoading={isLoading && !data}
+          isError={Boolean(error && !data)}
+          error={error}
+          empty={Boolean(data && !hasItems)}
+          onRetry={onRetry}
+          emptyState={
+            <SoftCard>
+              <div className="px-6 py-12 text-center text-sm text-v3-ink-2">
+                当前没有需要处理的事项。
+              </div>
+            </SoftCard>
+          }
+        >
+          {data && hasItems ? (
+            <InboxItemList items={data.items} onAction={onAction} view={view} />
           ) : null}
-
-          {isLoading && !data ? (
-            <LiquidCard>
-              <CardContent className="py-8 text-sm text-muted-foreground">
-                加载收件箱中
-              </CardContent>
-            </LiquidCard>
-          ) : null}
-
-          {data ? (
-            hasItems ? (
-              <InboxItemList items={data.items} onAction={onAction} view={view} />
-            ) : (
-              <LiquidCard>
-                <CardContent className="py-8 text-sm text-muted-foreground">
-                  当前没有需要处理的事项。
-                </CardContent>
-              </LiquidCard>
-            )
-          ) : null}
-        </div>
+        </V3StateSurface>
       </Main>
     </>
   );
@@ -220,7 +251,7 @@ function InboxFilters({
   );
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border bg-card/60 p-3 shadow-sm backdrop-blur-sm xl:flex-row xl:items-end">
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
       <div className="flex flex-1 flex-col gap-2">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <FilterSelect
@@ -257,20 +288,21 @@ function InboxFilters({
           />
         </div>
         {hasUuidFilterError ? (
-          <p className="text-xs text-destructive" role="alert">
+          <p className="text-xs font-semibold text-v3-danger" role="alert">
             请输入有效 UUID
           </p>
         ) : null}
       </div>
-      <Button
-        className="h-9 shrink-0"
+      <V3Button
+        className="shrink-0"
         onClick={onReset}
         type="button"
         variant="outline"
+        size="sm"
       >
         <RotateCcw className="size-4" />
         重置筛选
-      </Button>
+      </V3Button>
     </div>
   );
 }
@@ -292,14 +324,14 @@ function FilterSelect<Value extends string>({
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground" htmlFor={selectId}>
+      <label className="text-[13px] font-semibold text-v3-ink-2" htmlFor={selectId}>
         {label}
       </label>
       <Select value={value} onValueChange={onValueChange}>
         <SelectTrigger
           id={selectId}
           aria-label={label}
-          className="h-9 w-full rounded-full bg-background/70 shadow-none"
+          className="h-10 w-full rounded-xl border-v3-line bg-v3-card-soft text-v3-ink shadow-none"
         >
           <SelectValue />
         </SelectTrigger>
@@ -330,13 +362,13 @@ function FilterInput({ invalid = false, label, onValueChange, placeholder, value
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground" htmlFor={inputId}>
+      <label className="text-[13px] font-semibold text-v3-ink-2" htmlFor={inputId}>
         {label}
       </label>
       <Input
         aria-invalid={invalid || undefined}
         id={inputId}
-        className="h-9 rounded-full bg-background/70 shadow-none"
+        className="h-10 rounded-xl border-v3-line bg-v3-card-soft text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
         onChange={(event) => onValueChange(event.target.value)}
         placeholder={placeholder}
         value={value}

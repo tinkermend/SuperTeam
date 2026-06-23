@@ -389,6 +389,16 @@ describe("ProjectConfigView", () => {
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "任务历史" })).toBeInTheDocument();
+    const container = screen.container;
+    expect(container.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(
+      0,
+    );
+    expect(container.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(
+      0,
+    );
+    expect(container.querySelectorAll('[data-slot="v3-tab"]').length).toBeGreaterThan(
+      0,
+    );
     await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "human-owner-2");
     await userEvent.fill(screen.getByLabelText("Leader 用户 ID"), "leader-user-2");
     await userEvent.fill(screen.getByLabelText("验收人用户 ID"), "acceptance-user-2");
@@ -540,5 +550,23 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("button", { name: "保存成员池" }))
       .toBeDisabled();
+  });
+
+  it("renders member pool and task history as v3 work surfaces", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "数字员工池" }));
+
+    expect(
+      screen.container.querySelector('[data-slot="v3-work-surface"]'),
+    ).toBeTruthy();
+    expect(screen.container.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "任务历史" }));
+
+    expect(screen.container.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    await expect.element(screen.getByText("整理历史任务")).toBeInTheDocument();
   });
 });

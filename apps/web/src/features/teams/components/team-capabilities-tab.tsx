@@ -2,10 +2,20 @@ import { Boxes, KeyRound, Network, Plus, ShieldCheck, Trash2 } from "lucide-reac
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  IconTile,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -126,80 +136,66 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <LiquidCard className="min-w-0 rounded-xl">
-        <CardHeader className="gap-3 pb-3">
-          <PanelTitle
-            icon={<Boxes />}
-            meta={`${teamSkills.data?.length ?? 0} 个已安装`}
-            title="公共技能"
-            tone="artifact"
-          />
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <section className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">已安装</h3>
-              {teamSkills.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
-            </div>
-            <div className="flex flex-col gap-2">
-              {teamSkills.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-              {teamSkills.isError ? <p className="text-sm text-destructive">公共技能加载失败</p> : null}
-              {unbindSkillMutation.isError ? <p className="text-sm text-destructive">公共技能移除失败</p> : null}
-              {!teamSkills.isLoading && !teamSkills.isError && (teamSkills.data?.length ?? 0) === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无公共技能</p>
-              ) : null}
-              {(teamSkills.data ?? []).map((skill) => (
-                <SkillRow
-                  actionLabel={`移除 ${skill.name}`}
-                  canEdit={canEdit}
-                  key={skill.id}
-                  onAction={() => unbindSkillMutation.mutate(skill.id)}
-                  pending={unbindSkillMutation.isPending}
-                  skill={skill}
-                  variant="installed"
-                />
-              ))}
-            </div>
+      <WorkSurface className="min-w-0">
+        <PanelHeader
+          icon={<Boxes />}
+          meta={`${teamSkills.data?.length ?? 0} 个已安装`}
+          title="公共技能"
+          tone="artifact"
+        />
+        <div className="flex flex-col gap-5 p-4">
+          <section className="flex flex-col gap-3">
+            <SectionTitle
+              isFetching={teamSkills.isFetching}
+              title="已安装"
+            />
+            {unbindSkillMutation.isError ? (
+              <V3ErrorState title="公共技能移除失败" />
+            ) : null}
+            <SkillTable
+              actionLabel={(skill) => `移除 ${skill.name}`}
+              canEdit={canEdit}
+              emptyTitle="暂无公共技能"
+              isError={teamSkills.isError}
+              isLoading={teamSkills.isLoading}
+              onAction={(skill) => unbindSkillMutation.mutate(skill.id)}
+              pending={unbindSkillMutation.isPending}
+              skills={teamSkills.data ?? []}
+              variant="installed"
+            />
           </section>
 
-          <section className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">技能市场</h3>
-              {marketplace.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
-            </div>
-            <div className="flex flex-col gap-2">
-              {marketplace.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-              {marketplace.isError ? <p className="text-sm text-destructive">技能市场加载失败</p> : null}
-              {bindSkillMutation.isError ? <p className="text-sm text-destructive">技能安装失败</p> : null}
-              {!marketplace.isLoading && !marketplace.isError && availableSkills.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无可安装技能</p>
-              ) : null}
-              {availableSkills.map((skill) => (
-                <SkillRow
-                  actionLabel={`安装 ${skill.name}`}
-                  canEdit={canEdit}
-                  key={skill.id}
-                  onAction={() => bindSkillMutation.mutate(skill.id)}
-                  pending={bindSkillMutation.isPending}
-                  skill={skill}
-                  variant="available"
-                />
-              ))}
-            </div>
+          <section className="flex flex-col gap-3">
+            <SectionTitle
+              isFetching={marketplace.isFetching}
+              title="技能市场"
+            />
+            {bindSkillMutation.isError ? (
+              <V3ErrorState title="技能安装失败" />
+            ) : null}
+            <SkillTable
+              actionLabel={(skill) => `安装 ${skill.name}`}
+              canEdit={canEdit}
+              emptyTitle="暂无可安装技能"
+              isError={marketplace.isError}
+              isLoading={marketplace.isLoading}
+              onAction={(skill) => bindSkillMutation.mutate(skill.id)}
+              pending={bindSkillMutation.isPending}
+              skills={availableSkills}
+              variant="available"
+            />
           </section>
-        </CardContent>
-      </LiquidCard>
+        </div>
+      </WorkSurface>
 
-      <LiquidCard className="min-w-0 rounded-xl">
-        <CardHeader className="gap-3 pb-3">
-          <PanelTitle
-            icon={<Network />}
-            meta={`${mcpServers.data?.length ?? 0} 个服务`}
-            title="公共 MCP"
-            tone="info"
-          />
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+      <WorkSurface className="min-w-0">
+        <PanelHeader
+          icon={<Network />}
+          meta={`${mcpServers.data?.length ?? 0} 个服务`}
+          title="公共 MCP"
+          tone="info"
+        />
+        <div className="flex flex-col gap-4 p-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="min-w-0 space-y-2">
               <Label htmlFor="team-mcp-name">MCP 名称</Label>
@@ -242,68 +238,94 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
               </Select>
             </div>
             <div className="flex min-w-0 items-end">
-              <Button className="w-full" disabled={!canCreateMcp} onClick={() => createMcpMutation.mutate()} type="button">
+              <V3Button className="w-full" disabled={!canCreateMcp} onClick={() => createMcpMutation.mutate()} type="button">
                 <Plus data-icon="inline-start" />
                 添加公共 MCP
-              </Button>
+              </V3Button>
             </div>
           </div>
-          {createMcpMutation.isError ? <p className="text-sm text-destructive">公共 MCP 添加失败</p> : null}
+          {createMcpMutation.isError ? (
+            <V3ErrorState title="公共 MCP 添加失败" />
+          ) : null}
 
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">已配置</h3>
-              {mcpServers.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
-            </div>
-            {mcpServers.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-            {mcpServers.isError ? <p className="text-sm text-destructive">公共 MCP 加载失败</p> : null}
-            {deleteMcpMutation.isError ? <p className="text-sm text-destructive">公共 MCP 移除失败</p> : null}
-            {!mcpServers.isLoading && !mcpServers.isError && (mcpServers.data?.length ?? 0) === 0 ? (
-              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无公共 MCP</p>
+          <section className="flex flex-col gap-3">
+            <SectionTitle
+              isFetching={mcpServers.isFetching}
+              title="已配置"
+            />
+            {deleteMcpMutation.isError ? (
+              <V3ErrorState title="公共 MCP 移除失败" />
             ) : null}
-            {(mcpServers.data ?? []).map((server) => (
-              <div
-                className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-                key={server.id}
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <SemanticIconTile tone="info" size="sm">
-                    <Network />
-                  </SemanticIconTile>
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium">{server.name}</p>
-                      <StatusBadge tone={server.status === "active" ? "success" : "neutral"}>{serverStatusLabel(server.status)}</StatusBadge>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">{server.url}</p>
-                    {server.credential_name ? (
-                      <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                        <KeyRound className="size-3 shrink-0" />
-                        <span className="truncate">{server.credential_name} ****{server.credential_last_four}</span>
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <Button
-                  aria-label={`移除 MCP ${server.name}`}
-                  disabled={!canEdit || deleteMcpMutation.isPending}
-                  onClick={() => deleteMcpMutation.mutate(server.id)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </LiquidCard>
+            {mcpServers.isLoading ? (
+              <V3LoadingState label="公共 MCP 加载中" />
+            ) : mcpServers.isError ? (
+              <V3ErrorState title="公共 MCP 加载失败" />
+            ) : (mcpServers.data?.length ?? 0) === 0 ? (
+              <V3EmptyState title="暂无公共 MCP" />
+            ) : (
+              <V3Table>
+                <thead>
+                  <tr>
+                    <V3Th>服务</V3Th>
+                    <V3Th>凭据</V3Th>
+                    <V3Th>状态</V3Th>
+                    <V3Th className="text-right">操作</V3Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(mcpServers.data ?? []).map((server) => (
+                    <V3Tr key={server.id}>
+                      <V3Td>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <IconTile tone="info" size="sm">
+                            <Network />
+                          </IconTile>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-v3-ink">{server.name}</p>
+                            <p className="truncate text-xs text-v3-ink-2">{server.url}</p>
+                          </div>
+                        </div>
+                      </V3Td>
+                      <V3Td>
+                        {server.credential_name ? (
+                          <span className="flex min-w-0 items-center gap-1 text-xs text-v3-ink-2">
+                            <KeyRound className="size-3 shrink-0" />
+                            <span className="truncate">{server.credential_name} ****{server.credential_last_four}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-v3-ink-3">无凭据</span>
+                        )}
+                      </V3Td>
+                      <V3Td>
+                        <StatusPill tone={server.status === "active" ? "ok" : "mute"}>
+                          {serverStatusLabel(server.status)}
+                        </StatusPill>
+                      </V3Td>
+                      <V3Td className="text-right">
+                        <V3Button
+                          aria-label={`移除 MCP ${server.name}`}
+                          disabled={!canEdit || deleteMcpMutation.isPending}
+                          onClick={() => deleteMcpMutation.mutate(server.id)}
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 />
+                        </V3Button>
+                      </V3Td>
+                    </V3Tr>
+                  ))}
+                </tbody>
+              </V3Table>
+            )}
+          </section>
+        </div>
+      </WorkSurface>
     </div>
   );
 }
 
-function PanelTitle({
+function PanelHeader({
   icon,
   meta,
   title,
@@ -315,17 +337,92 @@ function PanelTitle({
   tone: "artifact" | "info";
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3">
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-v3-line px-5 py-4">
       <div className="flex min-w-0 items-center gap-3">
-        <SemanticIconTile tone={tone} size="sm">
+        <IconTile tone={tone} size="sm">
           {icon}
-        </SemanticIconTile>
-        <CardTitle aria-level={2} className="truncate text-base" role="heading">
+        </IconTile>
+        <h2 className="truncate text-base font-bold text-v3-ink">
           {title}
-        </CardTitle>
+        </h2>
       </div>
-      <StatusBadge tone={tone}>{meta}</StatusBadge>
+      <StatusPill tone={tone}>{meta}</StatusPill>
     </div>
+  );
+}
+
+function SectionTitle({
+  isFetching,
+  title,
+}: {
+  isFetching: boolean;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-sm font-bold text-v3-ink">{title}</h3>
+      {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
+    </div>
+  );
+}
+
+function SkillTable({
+  actionLabel,
+  canEdit,
+  emptyTitle,
+  isError,
+  isLoading,
+  onAction,
+  pending,
+  skills,
+  variant,
+}: {
+  actionLabel: (skill: Skill) => string;
+  canEdit: boolean;
+  emptyTitle: string;
+  isError: boolean;
+  isLoading: boolean;
+  onAction: (skill: Skill) => void;
+  pending: boolean;
+  skills: Skill[];
+  variant: "available" | "installed";
+}) {
+  if (isLoading) {
+    return <V3LoadingState label="公共技能加载中" />;
+  }
+
+  if (isError) {
+    return <V3ErrorState title={variant === "installed" ? "公共技能加载失败" : "技能市场加载失败"} />;
+  }
+
+  if (skills.length === 0) {
+    return <V3EmptyState title={emptyTitle} />;
+  }
+
+  return (
+    <V3Table>
+      <thead>
+        <tr>
+          <V3Th>技能</V3Th>
+          <V3Th>版本</V3Th>
+          <V3Th>风险</V3Th>
+          <V3Th className="text-right">操作</V3Th>
+        </tr>
+      </thead>
+      <tbody>
+        {skills.map((skill) => (
+          <SkillRow
+            actionLabel={actionLabel(skill)}
+            canEdit={canEdit}
+            key={skill.id}
+            onAction={() => onAction(skill)}
+            pending={pending}
+            skill={skill}
+            variant={variant}
+          />
+        ))}
+      </tbody>
+    </V3Table>
   );
 }
 
@@ -345,29 +442,35 @@ function SkillRow({
   variant: "available" | "installed";
 }) {
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <SemanticIconTile tone={variant === "installed" ? "success" : "artifact"} size="sm">
-          {variant === "installed" ? <ShieldCheck /> : <Boxes />}
-        </SemanticIconTile>
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{skill.name}</p>
-            <Badge variant="outline" className="shrink-0">
-              {skill.version}
-            </Badge>
-            <StatusBadge tone={skillRiskTone(skill.risk_level)}>
-              {skillRiskLabel(skill.risk_level)}
-            </StatusBadge>
+    <V3Tr>
+      <V3Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <IconTile tone={variant === "installed" ? "ok" : "artifact"} size="sm">
+            {variant === "installed" ? <ShieldCheck /> : <Boxes />}
+          </IconTile>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-v3-ink">{skill.name}</p>
+            <p className="truncate text-xs text-v3-ink-2">{skill.description}</p>
           </div>
-          <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
         </div>
-      </div>
-      <Button disabled={!canEdit || pending} onClick={onAction} size="sm" type="button" variant={variant === "installed" ? "ghost" : "outline"}>
-        {variant === "installed" ? <Trash2 data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-        {actionLabel}
-      </Button>
-    </div>
+      </V3Td>
+      <V3Td>
+        <StatusPill tone="mute" showDot={false}>
+          {skill.version}
+        </StatusPill>
+      </V3Td>
+      <V3Td>
+        <StatusPill tone={skillRiskTone(skill.risk_level)}>
+          {skillRiskLabel(skill.risk_level)}
+        </StatusPill>
+      </V3Td>
+      <V3Td className="text-right">
+        <V3Button disabled={!canEdit || pending} onClick={onAction} size="sm" type="button" variant={variant === "installed" ? "ghost" : "outline"}>
+          {variant === "installed" ? <Trash2 data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
+          {actionLabel}
+        </V3Button>
+      </V3Td>
+    </V3Tr>
   );
 }
 
@@ -375,14 +478,14 @@ function credentialLabel(credential: UserCredential) {
   return `${credential.name} ****${credential.last_four}`;
 }
 
-function skillRiskTone(riskLevel: string) {
+function skillRiskTone(riskLevel: string): V3Tone {
   if (riskLevel === "high") {
     return "danger";
   }
   if (riskLevel === "medium") {
-    return "warning";
+    return "warn";
   }
-  return "neutral";
+  return "mute";
 }
 
 function skillRiskLabel(riskLevel: string) {

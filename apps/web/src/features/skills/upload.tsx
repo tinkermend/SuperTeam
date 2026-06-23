@@ -20,8 +20,11 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import {
-  LiquidCard,
-  SemanticIconTile,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  type V3Tone,
 } from "@/components/superteam";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -111,7 +114,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
         <Search />
         <ThemeSwitch />
       </Header>
-      <Main className="min-w-0 overflow-x-hidden bg-[linear-gradient(180deg,rgba(248,251,255,0.72),rgba(255,255,255,0.96))]">
+      <Main className="min-w-0 overflow-x-hidden bg-v3-bg">
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
@@ -136,7 +139,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
           <PackageStatusBand file={file} packageDisplayName={packageDisplayName} onFileChange={setFile} />
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-            <LiquidCard className="min-w-0 rounded-lg border-border/70 bg-background/86 py-0 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+            <SoftCard className="min-w-0 overflow-hidden py-0">
               <CardContent className="p-0">
                 <section className="p-5">
                   <SectionTitle
@@ -188,16 +191,16 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     label="风险等级"
                     required
                   >
-                    <div className="grid h-10 grid-cols-3 rounded-md border bg-background/90 p-1" role="group" aria-label="风险等级">
+                    <div className="grid h-10 grid-cols-3 rounded-xl bg-v3-card-soft p-1" role="group" aria-label="风险等级">
                       {riskOptions.map((option) => (
                         <button
                           className={cn(
-                            "rounded-sm text-sm font-medium transition-colors",
+                            "rounded-[10px] text-sm font-medium transition-colors",
                             riskLevel === option.value && option.value === "medium"
-                              ? "border border-amber-300 bg-amber-50 text-amber-800"
+                              ? "bg-v3-warn-soft text-v3-warn"
                               : riskLevel === option.value
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground hover:bg-muted",
+                                ? "bg-v3-brand text-white"
+                                : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink",
                           )}
                           key={option.value}
                           onClick={() => setRiskLevel(option.value)}
@@ -263,24 +266,24 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </FormRow>
 
                   <div className="mt-4 flex items-start gap-2 border-t pt-4 text-sm text-muted-foreground">
-                    <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <Info className="mt-0.5 size-4 shrink-0 text-v3-info" />
                     <span>仅声明变量名，运行时由数字员工配置注入值。以上依赖为声明，不校验值；运行时由安装方或平台提供对应值。</span>
                   </div>
                 </section>
               </CardContent>
-            </LiquidCard>
+            </SoftCard>
 
             <aside className="min-w-0">
-              <LiquidCard className="sticky top-4 rounded-lg border-border/70 bg-background/86 py-0 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+              <SoftCard className="sticky top-4 py-0">
                 <CardContent className="flex flex-col gap-4 p-5 text-sm">
                   <h2 className="text-base font-semibold tracking-normal">发布摘要</h2>
                   <div className={cn(
                     "flex items-start gap-3 rounded-md border p-3",
                     canPublish
-                      ? "border-emerald-200 bg-emerald-50/80 text-emerald-900"
+                      ? "border-v3-ok/30 bg-v3-ok-soft text-v3-ok"
                       : "border-border bg-muted/40 text-muted-foreground",
                   )}>
-                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-v3-ok" />
                     <div>
                       <p className="text-lg font-semibold tracking-normal">{canPublish ? "可发布" : "待完善"}</p>
                       <p className="mt-1 text-xs">{canPublish ? "元数据与依赖声明已就绪" : "请选择 zip 包并填写技能中文名称"}</p>
@@ -291,15 +294,15 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <SummaryRow icon={<FileArchive />} label="归档包" value={file ? `${file.name}（${formatBytes(file.size)}）` : "未选择"} />
                     <SummaryRow icon={<PackageCheck />} label="技能包描述名称" value={packageDisplayName || "待生成"} />
                     <SummaryRow icon={<BadgeCheck />} label="技能中文名称" value={name.trim() || "待填写"} />
-                    <SummaryRow icon={<ShieldCheck />} label="风险等级" value={riskLabel(riskLevel)} valueTone={riskLevel === "medium" ? "warning" : undefined} />
+                    <SummaryRow icon={<ShieldCheck />} label="风险等级" value={riskLabel(riskLevel)} valueTone={riskLevel === "medium" ? "warn" : undefined} />
                     <SummaryRow icon={<Tag />} label="标签" value={tagItems.length ? tagItems.join(", ") : "未设置"} />
                     <SummaryRow icon={<Terminal />} label="依赖声明" value={`${dependencyCount} 项`} valueTone="info" />
                     <SummarySubRow label="CLI 依赖" value={runtimeToolItems.length ? runtimeToolItems.join(", ") : "未声明"} />
                     <SummarySubRow label="环境变量" value={runtimeEnvItems.length ? runtimeEnvItems.join(", ") : "未声明"} />
                   </div>
 
-                  <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50/80 p-3 text-xs leading-5 text-sky-900">
-                    <Info className="mt-0.5 size-4 shrink-0 text-sky-600" />
+                  <div className="flex items-start gap-2 rounded-md border border-v3-info/20 bg-v3-info-soft p-3 text-xs leading-5 text-v3-ink">
+                    <Info className="mt-0.5 size-4 shrink-0 text-v3-info" />
                     <p>
                       发布后，平台将从 SKILL.md 读取并补齐技能名称与描述（如未填写）。
                       <br />
@@ -312,18 +315,18 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                       <AlertDescription>{upload.error.message}</AlertDescription>
                     </Alert>
                   ) : null}
-                  <Button
+                  <V3Button
                     data-skill-upload-publish
                     disabled={!canPublish || upload.isPending}
-                    className="h-11 !rounded-md !bg-[linear-gradient(135deg,#0e7490_0%,#0f766e_100%)] text-base !text-white !shadow-[0_12px_24px_rgba(8,145,178,0.24)] hover:!bg-[linear-gradient(135deg,#155e75_0%,#115e59_100%)] disabled:!bg-muted disabled:!text-muted-foreground disabled:!shadow-none"
+                    className="h-11 text-base"
                     onClick={() => upload.mutate()}
                     type="button"
                   >
                     <Rocket data-icon="inline-start" />
                     发布到技能市场
-                  </Button>
+                  </V3Button>
                 </CardContent>
-              </LiquidCard>
+              </SoftCard>
             </aside>
           </div>
         </div>
@@ -342,7 +345,7 @@ function PackageStatusBand({
   packageDisplayName: string;
 }) {
   return (
-    <LiquidCard className="rounded-lg border-border/70 bg-background/88 py-0 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+    <SoftCard className="py-0">
       <CardContent className="p-5">
         <Label className="sr-only" htmlFor="skill-upload-file">技能 zip 包</Label>
         <input
@@ -355,7 +358,7 @@ function PackageStatusBand({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(220px,300px)_minmax(360px,auto)] lg:items-center">
           <div className="flex min-w-0 items-center gap-4">
             <label
-              className="flex size-[68px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-teal-600 text-primary-foreground shadow-[0_12px_28px_rgba(8,145,178,0.22)] transition hover:scale-[1.02]"
+              className="flex size-[68px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-v3-inner bg-v3-brand text-white shadow-v3 transition hover:scale-[1.02]"
               htmlFor="skill-upload-file"
             >
               <FileArchive className="size-7" />
@@ -378,49 +381,28 @@ function PackageStatusBand({
                 <p className="truncate text-lg font-medium text-muted-foreground">
                   {packageDisplayName || "选择 zip 后自动生成"}
                 </p>
-                <Pencil className="size-4 shrink-0 text-primary" />
+                <Pencil className="size-4 shrink-0 text-v3-brand" />
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <StatusPill icon={<CircleCheck />} tone={file ? "success" : "info"}>
+            <StatusPill tone={file ? "ok" : "info"}>
+              <CircleCheck className="size-4" />
               {file ? "ZIP 已选择" : "等待 ZIP"}
             </StatusPill>
-            <StatusPill icon={<CircleCheck />} tone={file ? "success" : "info"}>
+            <StatusPill tone={file ? "ok" : "info"}>
+              <CircleCheck className="size-4" />
               {file ? "包含 SKILL.md" : "需包含 SKILL.md"}
             </StatusPill>
-            <StatusPill icon={<ShieldCheck />} tone="info">
+            <StatusPill tone="info">
+              <ShieldCheck className="size-4" />
               服务端发布校验
             </StatusPill>
           </div>
         </div>
       </CardContent>
-    </LiquidCard>
-  );
-}
-
-function StatusPill({
-  children,
-  icon,
-  tone,
-}: {
-  children: ReactNode;
-  icon: ReactNode;
-  tone: "success" | "info";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-medium",
-        tone === "success"
-          ? "border-emerald-200 bg-emerald-50/80 text-emerald-700"
-          : "border-cyan-200 bg-cyan-50/80 text-cyan-700",
-      )}
-    >
-      <span className="[&_svg]:size-4">{icon}</span>
-      {children}
-    </span>
+    </SoftCard>
   );
 }
 
@@ -435,9 +417,9 @@ function SectionTitle({
 }) {
   return (
     <div className="mb-4 flex min-w-0 items-center gap-3">
-      <SemanticIconTile className="size-8 rounded-lg [&_svg]:size-4" tone="primary">
+      <IconTile className="size-8 rounded-lg [&_svg]:size-4" tone="brand">
         {icon}
-      </SemanticIconTile>
+      </IconTile>
       <div className="min-w-0">
         <h2 className="text-lg font-semibold tracking-normal text-foreground">{title}</h2>
         {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
@@ -602,7 +584,7 @@ function SummaryRow({
   icon: ReactNode;
   label: string;
   value: string;
-  valueTone?: "warning" | "info";
+  valueTone?: V3Tone;
 }) {
   return (
     <div className="grid grid-cols-[18px_minmax(110px,1fr)_minmax(0,1.35fr)] items-center gap-3">
@@ -610,17 +592,7 @@ function SummaryRow({
       <span className="text-foreground">{label}</span>
       {valueTone ? (
         <span className="min-w-0 justify-self-end">
-          <Badge
-            className={cn(
-              "rounded-md px-2.5 py-1 shadow-none",
-              valueTone === "warning"
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-sky-200 bg-sky-50 text-sky-700",
-            )}
-            variant="outline"
-          >
-            {value}
-          </Badge>
+          <StatusPill tone={valueTone}>{value}</StatusPill>
         </span>
       ) : (
         <span className="min-w-0 truncate text-right text-muted-foreground">{value}</span>

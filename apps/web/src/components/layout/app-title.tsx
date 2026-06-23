@@ -29,14 +29,14 @@ export function AppTitle() {
                 src={BRAND_MARK_SRC}
                 alt=""
                 aria-hidden="true"
-                className="h-14 w-14 object-contain opacity-100 drop-shadow-[0_10px_22px_rgba(15,118,110,0.16)] dark:brightness-[1.12] dark:saturate-[1.08] group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:w-10"
+                className="h-14 w-14 object-contain opacity-100 drop-shadow-none dark:brightness-[1.12] dark:saturate-[1.08] group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:w-10"
               />
             </span>
             <span className="flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-[1.25rem] font-semibold leading-[1.1] text-[#0a806f] dark:text-teal-100">
+              <span className="truncate text-[1.25rem] font-semibold leading-[1.1] text-v3-brand-deep">
                 炬枢平台
               </span>
-              <span className="mt-1.5 text-[0.82rem] font-medium leading-none text-slate-500 dark:text-slate-400">
+              <span className="mt-1.5 text-[0.82rem] font-medium leading-none text-v3-ink-2">
                 新炬网络
               </span>
             </span>

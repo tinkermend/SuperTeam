@@ -1,10 +1,5 @@
 import { useSearch } from '@tanstack/react-router'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { SoftCard } from '@/components/superteam'
 import { AuthLayout } from '../auth-layout'
 import { UserAuthForm } from './components/user-auth-form'
 
@@ -13,16 +8,14 @@ export function SignIn() {
 
   return (
     <AuthLayout>
-      <Card className='superteam-auth-card w-full gap-5 rounded-[2rem] px-1 py-7'>
-        <CardHeader className='items-center text-center'>
-          <CardTitle className='text-2xl tracking-normal text-foreground'>
+      <SoftCard className='w-full p-7'>
+        <div className='mb-5 text-center'>
+          <h1 className='text-2xl font-extrabold tracking-tight text-v3-ink'>
             账号登录
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UserAuthForm redirectTo={redirect} />
-        </CardContent>
-      </Card>
+          </h1>
+        </div>
+        <UserAuthForm redirectTo={redirect} />
+      </SoftCard>
     </AuthLayout>
   )
 }

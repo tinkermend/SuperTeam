@@ -21,15 +21,15 @@ Toast 只承载短反馈，不替代页面内错误、表单校验和需要决�
 
 ## Dialog 容器
 
-`SuperteamDialog` / `.superteam-dialog-*` 是 Dialog、AlertDialog、短表单和确认框的项目级组合样式，负责遮罩、玻璃容器、标题区、内容区、底部操作区和关闭按钮；不得定义业务字段。
+Dialog、AlertDialog、短表单和确认框应优先复用 `components/superteam` 的 v3 组合组件；组件不足时在 `v3-components.tsx` 扩展。项目级组合样式负责遮罩、实底容器、标题区、内容区、底部操作区和关闭按钮；不得定义业务字段。
 
-Dialog 和 AlertDialog 应采用浅色液态玻璃外壳：
+Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
 
-- 背景：`rgba(255,255,255,0.82)` 到 `rgba(255,255,255,0.9)`
-- 边框：`var(--superteam-glass-border)`
-- 内侧高光：克制的白色边缘
-- 阴影：普通弹窗不超过 `var(--superteam-shadow-mid)`
-- 避免回到原始 shadcn 的 `bg-background p-6 shadow-lg` 质感
+- 背景：`--v3-card`
+- 边框：`--v3-line` / `--v3-line-strong`
+- 圆角：`--v3-r-card`
+- 阴影：普通弹窗不超过 `--v3-shadow-pop`
+- 避免在单个弹窗内重造独立背景、边框或阴影体系
 
 宽度按内容复杂度分级：
 
@@ -41,7 +41,7 @@ Dialog 和 AlertDialog 应采用浅色液态玻璃外壳：
 
 ## 遮罩
 
-- 使用低压暗化和背景模糊，例如冷灰/青黑半透明底叠加 `backdrop-filter: blur(12px) saturate(1.1)`。
+- 使用低压暗化和可选背景模糊，例如冷灰/青黑半透明底叠加轻量 `backdrop-filter`。
 - 遮罩服务聚焦，不制造舞台灯光。
 - 避免厚重黑幕、高饱和背景或装饰光效。
 
@@ -58,7 +58,7 @@ Dialog 和 AlertDialog 应采用浅色液态玻璃外壳：
 - 关闭按钮必须是独立图标按钮。
 - 使用 `lucide-react`。
 - 提供可访问名称。
-- 具备轻量玻璃 hover、清晰 focus-visible 和必要的 disabled 状态。
+- 具备 v3 轻量 hover、清晰 focus-visible 和必要的 disabled 状态。
 - 避免裸露、过大、过浅或未样式化的默认关闭图标。
 
 ## 内容区
@@ -76,7 +76,7 @@ Dialog 和 AlertDialog 应采用浅色液态玻璃外壳：
 - 业务需要时，可在左侧放可选说明或状态。
 - 移动端按钮可纵向堆叠或全宽显示。
 - 只有一个操作拥有最高视觉权重。
-- 主操作使用蓝绿色液态主按钮。
+- 主操作使用 v3 品牌蓝按钮。
 - 取消和次要操作使用 outline、secondary 或 ghost。
 - 危险动作使用 destructive 语义，不套用主色渐变。
 
@@ -89,5 +89,5 @@ Dialog 和 AlertDialog 应采用浅色液态玻璃外壳：
 ## Popover、Dropdown 与 Tooltip
 
 - 这些轻量浮层应比 Dialog 更轻。
-- 使用更小圆角、更弱阴影和更少玻璃高光。
+- 使用更小圆角、更弱阴影和更紧凑的 v3 实底面。
 - 不要把轻量浮层做成完整弹窗质感。

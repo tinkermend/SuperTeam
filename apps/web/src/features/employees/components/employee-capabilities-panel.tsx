@@ -15,7 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
+import {
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createEmployeeMcpBinding,
@@ -187,7 +197,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <LiquidCard className="min-w-0 rounded-xl">
+      <SoftCard className="min-w-0">
         <CardHeader className="gap-3 pb-3">
           <PanelTitle
             icon={<Boxes />}
@@ -200,7 +210,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">已生效技能</h3>
-              {employeeSkills.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+              {employeeSkills.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
             </div>
             <div className="flex flex-col gap-2">
               {employeeSkills.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
@@ -243,7 +253,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">技能市场</h3>
-              {marketplace.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+              {marketplace.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
             </div>
             <div className="flex flex-col gap-2">
               {marketplace.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
@@ -263,9 +273,9 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
             </div>
           </section>
         </CardContent>
-      </LiquidCard>
+      </SoftCard>
 
-      <LiquidCard className="min-w-0 rounded-xl">
+      <SoftCard className="min-w-0">
         <CardHeader className="gap-3 pb-3">
           <PanelTitle
             icon={<Network />}
@@ -329,7 +339,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">已生效 MCP</h3>
-              {effectiveMcp.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+              {effectiveMcp.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
             </div>
             {effectiveMcp.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
             {effectiveMcp.isError ? <p className="text-sm text-destructive">MCP 加载失败</p> : null}
@@ -347,7 +357,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
             ))}
           </div>
         </CardContent>
-      </LiquidCard>
+      </SoftCard>
     </div>
   );
 }
@@ -361,17 +371,17 @@ function PanelTitle({
   icon: ReactNode;
   meta: string;
   title: string;
-  tone: "artifact" | "info";
+  tone: Extract<V3Tone, "artifact" | "info">;
 }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
-        <SemanticIconTile tone={tone} size="sm">
+        <IconTile tone={tone} size="sm">
           {icon}
-        </SemanticIconTile>
+        </IconTile>
         <CardTitle className="truncate text-base">{title}</CardTitle>
       </div>
-      <StatusBadge tone={tone}>{meta}</StatusBadge>
+      <StatusPill tone={tone}>{meta}</StatusPill>
     </div>
   );
 }
@@ -389,21 +399,21 @@ function EmployeeSkillRow({
   return (
     <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="flex min-w-0 items-start gap-3">
-        <SemanticIconTile tone={entry.inherited ? "neutral" : "success"} size="sm">
+        <IconTile tone={entry.inherited ? "mute" : "ok"} size="sm">
           <ShieldCheck />
-        </SemanticIconTile>
+        </IconTile>
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{entry.skill.name}</p>
-            {entry.inherited ? <StatusBadge tone="neutral">团队继承</StatusBadge> : null}
+            {entry.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
             <Badge variant="outline" className="shrink-0">
               {entry.skill.version}
             </Badge>
-            <StatusBadge tone={skillRiskTone(entry.skill.risk_level)}>
+            <StatusPill tone={skillRiskTone(entry.skill.risk_level)}>
               {skillRiskLabel(entry.skill.risk_level)}
-            </StatusBadge>
-            {skillLoadStatusBadges(entry).map((status) => (
-              <StatusBadge key={status.label} tone={status.tone}>{status.label}</StatusBadge>
+            </StatusPill>
+            {skillLoadStatePills(entry).map((status) => (
+              <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>
             ))}
           </div>
           <p className="truncate text-xs text-muted-foreground">{entry.skill.description}</p>
@@ -450,10 +460,10 @@ function EmployeeEnvironmentPanel({
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <KeyRound className="size-4 text-[color:var(--superteam-decision)]" />
+          <KeyRound className="size-4 text-v3-ok" />
           环境变量
         </h3>
-        {isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+        {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
       </div>
       {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
       {isError ? <p className="text-sm text-destructive">环境变量加载失败</p> : null}
@@ -461,58 +471,63 @@ function EmployeeEnvironmentPanel({
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无员工环境变量</p>
       ) : null}
       {envVars.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border">
-          <div className="grid min-w-[760px] grid-cols-[150px_90px_minmax(140px,1fr)_150px_260px] border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <span>名称</span>
-            <span>状态</span>
-            <span>指纹</span>
-            <span>更新时间</span>
-            <span>操作</span>
-          </div>
-          {envVars.map((envVar) => (
-            <div
-              className="grid min-w-[760px] grid-cols-[150px_90px_minmax(140px,1fr)_150px_260px] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0"
-              key={envVar.name}
-            >
-              <span className="truncate font-medium">{envVar.name}</span>
-              <span>
-                <StatusBadge tone={envVar.configured ? "success" : "warning"}>
-                  {envVar.configured ? "已配置" : "缺失"}
-                </StatusBadge>
-              </span>
-              <span className="truncate font-mono text-xs text-muted-foreground">{envVar.fingerprint || "-"}</span>
-              <span className="truncate text-xs text-muted-foreground">{formatDateTime(envVar.updated_at)}</span>
-              <span className="flex items-center gap-2">
-                <Input
-                  aria-label={`替换 ${envVar.name}`}
-                  className="h-8"
-                  onChange={(event) => onReplacementValueChange(envVar.name, event.target.value)}
-                  type="password"
-                  value={replacementValues[envVar.name] ?? ""}
-                />
-                <Button
-                  disabled={pendingReplace || !(replacementValues[envVar.name] ?? "")}
-                  onClick={() => onReplace(envVar.name, envVar.sensitive)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  替换
-                </Button>
-                <Button
-                  aria-label={`删除环境变量 ${envVar.name}`}
-                  disabled={pendingDelete}
-                  onClick={() => onDelete(envVar.name)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 />
-                </Button>
-              </span>
-            </div>
-          ))}
-        </div>
+        <WorkSurface>
+          <V3Table>
+            <thead>
+              <tr>
+                <V3Th>名称</V3Th>
+                <V3Th>状态</V3Th>
+                <V3Th>指纹</V3Th>
+                <V3Th>更新时间</V3Th>
+                <V3Th className="min-w-[260px]">操作</V3Th>
+              </tr>
+            </thead>
+            <tbody>
+              {envVars.map((envVar) => (
+                <V3Tr key={envVar.name}>
+                  <V3Td className="font-medium">{envVar.name}</V3Td>
+                  <V3Td>
+                    <StatusPill tone={envVar.configured ? "ok" : "warn"}>
+                      {envVar.configured ? "已配置" : "缺失"}
+                    </StatusPill>
+                  </V3Td>
+                  <V3Td className="font-mono text-xs text-v3-ink-2">{envVar.fingerprint || "-"}</V3Td>
+                  <V3Td className="text-xs text-v3-ink-2">{formatDateTime(envVar.updated_at)}</V3Td>
+                  <V3Td>
+                    <span className="flex items-center gap-2">
+                      <Input
+                        aria-label={`替换 ${envVar.name}`}
+                        className="h-8"
+                        onChange={(event) => onReplacementValueChange(envVar.name, event.target.value)}
+                        type="password"
+                        value={replacementValues[envVar.name] ?? ""}
+                      />
+                      <Button
+                        disabled={pendingReplace || !(replacementValues[envVar.name] ?? "")}
+                        onClick={() => onReplace(envVar.name, envVar.sensitive)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        替换
+                      </Button>
+                      <Button
+                        aria-label={`删除环境变量 ${envVar.name}`}
+                        disabled={pendingDelete}
+                        onClick={() => onDelete(envVar.name)}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </span>
+                  </V3Td>
+                </V3Tr>
+              ))}
+            </tbody>
+          </V3Table>
+        </WorkSurface>
       ) : null}
     </section>
   );
@@ -530,9 +545,9 @@ function SkillInstallRow({
   return (
     <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="flex min-w-0 items-start gap-3">
-        <SemanticIconTile tone="artifact" size="sm">
+        <IconTile tone="artifact" size="sm">
           <Boxes />
-        </SemanticIconTile>
+        </IconTile>
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{skill.name}</p>
@@ -564,16 +579,16 @@ function McpRow({
   return (
     <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="flex min-w-0 items-start gap-3">
-        <SemanticIconTile tone={server.inherited ? "neutral" : "info"} size="sm">
+        <IconTile tone={server.inherited ? "mute" : "info"} size="sm">
           <Network />
-        </SemanticIconTile>
+        </IconTile>
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{server.name}</p>
-            {server.inherited ? <StatusBadge tone="neutral">团队继承</StatusBadge> : null}
-            <StatusBadge tone={server.status === "active" ? "success" : "neutral"}>
+            {server.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
+            <StatusPill tone={server.status === "active" ? "ok" : "mute"}>
               {serverStatusLabel(server.status)}
-            </StatusBadge>
+            </StatusPill>
           </div>
           <p className="truncate text-xs text-muted-foreground">{server.url}</p>
           {server.credential_name ? (
@@ -604,8 +619,8 @@ function credentialLabel(credential: UserCredential) {
 
 function skillRiskTone(riskLevel: string) {
   if (riskLevel === "high") return "danger";
-  if (riskLevel === "medium") return "warning";
-  return "neutral";
+  if (riskLevel === "medium") return "warn";
+  return "mute";
 }
 
 function skillRiskLabel(riskLevel: string) {
@@ -618,7 +633,7 @@ function skillRiskLabel(riskLevel: string) {
   return labels[riskLevel] ?? riskLevel;
 }
 
-function skillLoadStatusBadges(entry: EffectiveEmployeeSkill): Array<{ label: string; tone: "success" | "warning" | "info" | "neutral" }> {
+function skillLoadStatePills(entry: EffectiveEmployeeSkill): Array<{ label: string; tone: V3Tone }> {
   const status = entry.runtime_dependency_status;
   const missingTools = status?.missing_tools ?? [];
   const missingEnv = status?.missing_env ?? [];
@@ -626,10 +641,10 @@ function skillLoadStatusBadges(entry: EffectiveEmployeeSkill): Array<{ label: st
     (entry.skill.runtime_dependencies?.tools?.length ?? 0) + (entry.skill.runtime_dependencies?.env?.length ?? 0);
 
   if (missingTools.length > 0 || status?.load_status === "missing_tools" || status?.load_status === "missing_runtime_tools") {
-    return [{ label: `缺少 Runtime 工具${missingTools.length ? `：${missingTools.join(",")}` : ""}`, tone: "warning" }];
+    return [{ label: `缺少 Runtime 工具${missingTools.length ? `：${missingTools.join(",")}` : ""}`, tone: "warn" }];
   }
   if (missingEnv.length > 0 || status?.load_status === "missing_env" || status?.load_status === "missing_employee_env") {
-    return [{ label: `缺少员工环境变量${missingEnv.length ? `：${missingEnv.join(",")}` : ""}`, tone: "warning" }];
+    return [{ label: `缺少员工环境变量${missingEnv.length ? `：${missingEnv.join(",")}` : ""}`, tone: "warn" }];
   }
   if (status?.load_status === "pending_runtime" || status?.load_status === "waiting_runtime_report") {
     return [{ label: "等待 Runtime 上报", tone: "info" }];
@@ -637,7 +652,7 @@ function skillLoadStatusBadges(entry: EffectiveEmployeeSkill): Array<{ label: st
   if (!status?.load_status && dependencyCount > 0) {
     return [{ label: "等待 Runtime 上报", tone: "info" }];
   }
-  return [{ label: "可加载", tone: "success" }];
+  return [{ label: "可加载", tone: "ok" }];
 }
 
 function formatDateTime(value?: string) {

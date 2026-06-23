@@ -353,6 +353,19 @@ describe("WorkflowView", () => {
     expect(urls.some((url) => url.includes("/task-graph"))).toBe(false);
   });
 
+  it("renders workflow entrance with v3 soft-flat containers", async () => {
+    const screen = await renderWorkflowView({ demandId: undefined });
+
+    await expect.element(screen.getByRole("heading", { name: "流程编排" })).toBeVisible();
+    await expect.element(screen.getByRole("table", { name: "流程实例列表" })).toBeVisible();
+
+    expect(document.body.querySelector('[data-slot="v3-soft-card"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+    expect(document.body.innerHTML).not.toContain(["superteam", ""].join("-"));
+  });
+
   it("shows optional SLA priority and risk on workflow cards only when present", async () => {
     const screen = await renderWorkflowView({
       demandId: undefined,
@@ -409,6 +422,9 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+    expect(document.body.querySelector('[data-slot="v3-soft-card"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-icon-tile"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
 
     // 节点详情仅在点击节点后以弹窗形式出现，进入页面时不预选、不渲染固定卡片
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();

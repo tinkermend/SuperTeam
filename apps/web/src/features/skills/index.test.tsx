@@ -23,8 +23,8 @@ vi.mock("@/components/theme-switch", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a data-router-link="true" href={to}>{children}</a>
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
+    <a {...props} data-router-link="true" href={to}>{children}</a>
   ),
 }));
 
@@ -147,6 +147,34 @@ function createSkillsFetcher() {
   });
 }
 
+function createPendingSkillsFetcher() {
+  let resolveSkills: (response: Response) => void = () => {};
+  const pendingSkills = new Promise<Response>((resolve) => {
+    resolveSkills = resolve;
+  });
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/v1/skills") {
+      return pendingSkills;
+    }
+    return jsonResponse([]);
+  });
+  return {
+    fetcher,
+    resolveSkills: () => resolveSkills(jsonResponse([])),
+  };
+}
+
+function createFailingSkillsFetcher() {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/v1/skills") {
+      return jsonResponse({ error: "skills API offline" }, 503);
+    }
+    return jsonResponse([]);
+  });
+}
+
 async function renderSkillsView(fetcher = createSkillsFetcher()) {
   return render(
     <QueryClientProvider client={createQueryClient()}>
@@ -169,6 +197,34 @@ describe("SkillsView", () => {
     await expect.element(screen.getByRole("columnheader", { name: "风险" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
+  });
+
+  it("uses shared v3 controls for the primary action and view switcher", async () => {
+    const screen = await renderSkillsView();
+
+    const uploadLink = screen.getByRole("link", { name: "上传技能" });
+    await expect.element(uploadLink).toHaveAttribute("data-slot", "v3-button");
+    await expect.element(uploadLink).toHaveAttribute("data-variant", "primary");
+
+    const viewSwitcher = document.body.querySelector('[data-slot="v3-segmented"][aria-label="技能视图"]');
+    expect(viewSwitcher).not.toBeNull();
+  });
+
+  it("renders a v3 loading state inside the page shell", async () => {
+    const pending = createPendingSkillsFetcher();
+    const loadingScreen = await renderSkillsView(pending.fetcher);
+    await expect.element(loadingScreen.getByText("加载技能数据…")).toBeVisible();
+    expect(document.body.querySelector('[data-slot="v3-loading-state"]')).not.toBeNull();
+
+    pending.resolveSkills();
+    loadingScreen.unmount();
+  });
+
+  it("renders a v3 error state inside the page shell", async () => {
+    const errorScreen = await renderSkillsView(createFailingSkillsFetcher());
+    await expect.element(errorScreen.getByText("技能数据加载失败")).toBeVisible();
+    await expect.element(errorScreen.getByText(/skills API offline/)).toBeVisible();
+    expect(document.body.querySelector('[data-slot="v3-error-state"]')).not.toBeNull();
   });
 
   it("uses router navigation for the upload page without designing that flow here", async () => {

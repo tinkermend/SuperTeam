@@ -8,10 +8,10 @@ import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LiquidTabsList, LiquidTabsTrigger, SemanticIconTile } from "@/components/superteam/liquid-components";
+import { IconTile } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createDigitalEmployeeConfigRevision,
@@ -307,9 +307,9 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       <Main>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <SemanticIconTile tone="primary" size="lg">
+            <IconTile tone="brand" size="lg">
               <Bot />
-            </SemanticIconTile>
+            </IconTile>
             <div>
               <h1 className="text-2xl font-bold">{employee.data?.name ?? "数字员工配置"}</h1>
               <p className="text-sm text-muted-foreground">配置员工技能、策略和输出契约</p>
@@ -328,11 +328,29 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
 
         {employee.data ? (
           <Tabs defaultValue="instructions" className="gap-4">
-            <LiquidTabsList aria-label="数字员工配置视图" className="max-w-3xl">
-              <LiquidTabsTrigger value="instructions">宪法/人格</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="capabilities">能力设置</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="advanced">高级配置</LiquidTabsTrigger>
-            </LiquidTabsList>
+            <TabsList
+              aria-label="数字员工配置视图"
+              className="h-auto max-w-3xl flex-wrap justify-start gap-1 rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3"
+            >
+              <TabsTrigger
+                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
+                value="instructions"
+              >
+                宪法/人格
+              </TabsTrigger>
+              <TabsTrigger
+                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
+                value="capabilities"
+              >
+                能力设置
+              </TabsTrigger>
+              <TabsTrigger
+                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
+                value="advanced"
+              >
+                高级配置
+              </TabsTrigger>
+            </TabsList>
             <TabsContent value="instructions">
               <InstructionFilesPanel apiOptions={apiOptions} employeeId={employeeId} />
             </TabsContent>

@@ -2,7 +2,7 @@ import Editor from "@monaco-editor/react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
+import { IconTile, SoftCard, StatusPill } from "@/components/superteam";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -210,19 +210,19 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
   };
 
   return (
-    <LiquidCard className="rounded-xl">
+    <SoftCard>
       <CardHeader className="gap-3 pb-3">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <SemanticIconTile tone="decision" size="sm">
+            <IconTile tone="ok" size="sm">
               <FileText />
-            </SemanticIconTile>
+            </IconTile>
             <div className="min-w-0">
               <CardTitle className="truncate text-base">宪法/人格文件</CardTitle>
               <p className="text-xs text-muted-foreground">维护员工个人指令、边界和输出约定。</p>
             </div>
           </div>
-          {filesQuery.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+          {filesQuery.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
@@ -336,12 +336,12 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
             ) : (
               <span className="text-xs text-muted-foreground">本地新文件，保存后生效。</span>
             )}
-            {isDirty ? <StatusBadge tone="warning">未保存</StatusBadge> : null}
-            {!isDirty && saveFile.isSuccess ? <StatusBadge tone="success">已保存</StatusBadge> : null}
+            {isDirty ? <StatusPill tone="warn">未保存</StatusPill> : null}
+            {!isDirty && saveFile.isSuccess ? <StatusPill tone="ok">已保存</StatusPill> : null}
             {saveFile.isError ? <span className="text-sm text-destructive">保存失败</span> : null}
           </div>
         </section>
       </CardContent>
-    </LiquidCard>
+    </SoftCard>
   );
 }

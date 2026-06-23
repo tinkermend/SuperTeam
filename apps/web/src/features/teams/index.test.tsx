@@ -861,6 +861,9 @@ describe("TeamsView", () => {
     
     const levelLabels = screen.getByText("L1").all();
     await expect.element(levelLabels[0]).toBeVisible();
+
+    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
   });
 
 
@@ -941,6 +944,10 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("button", { name: "归档团队" }))
       .toBeVisible();
+
+    expect(document.querySelectorAll('[data-slot="v3-tabs"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
   });
 
   it("calls lifecycle APIs from detail actions", async () => {

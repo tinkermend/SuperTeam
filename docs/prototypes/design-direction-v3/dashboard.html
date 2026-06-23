@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>协调台 · 融合模式 · SuperTeam v3</title>
+<style>
+  /* ============================================================
+     SuperTeam — Fusion v3
+     一套语言两种容器: 柔和卡片(外壳/概览) + 密集表格(数据本体)
+     表格被装进同一张柔和白卡 = 软壳 + 脆数据
+     共用 token / 同一个蓝 / 同一组语义状态色
+     ============================================================ */
+  :root {
+    --bg:#f3f4f6; --card:#ffffff; --card-soft:#f7f8fa; --card-inner:#fafbfc; --row-alt:#f8fafc;
+    --ink:#0b0d12; --ink-2:#697586; --ink-3:#9aa4b2; --line:#eef1f4; --line-2:#e6e9ee; --line-strong:#dfe4ea;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-grad:linear-gradient(140deg,#5b8bff 0%,#2f5fff 58%,#2348e0 100%); --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e4f6ee; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#e5484d; --danger-soft:#fde8e9; --info:#2f5fff; --info-soft:#e9efff;
+    --mute:#64748b; --mute-soft:#eef1f4; --purple:#7c5cff; --purple-soft:#efeaff;
+    --r-card:22px; --r-inner:14px; --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+    --shadow-pop:0 10px 44px rgba(16,24,40,.12);
+    --mono:ui-monospace,"SFMono-Regular","Menlo","Cascadia Code",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --row-py:11px; --row-fs:13px;
+  }
+  [data-density="compact"]{--row-py:6px;--row-fs:12.5px;}
+  [data-theme="dark"]{
+    --bg:#0d1014; --card:#171b22; --card-soft:#1c212a; --card-inner:#1a1f27; --row-alt:#151a21;
+    --ink:#f3f5f8; --ink-2:#9aa6b4; --ink-3:#6b7686; --line:#262c35; --line-2:#2e353f; --line-strong:#333b45;
+    --brand:#5b8bff; --brand-soft:rgba(91,139,255,.16);
+    --ok:#34d399; --ok-soft:rgba(52,211,153,.15); --warn:#fbbf24; --warn-soft:rgba(251,191,36,.15);
+    --danger:#f87171; --danger-soft:rgba(248,113,113,.16); --info:#5b8bff; --info-soft:rgba(91,139,255,.16);
+    --mute:#94a3b8; --mute-soft:rgba(148,163,184,.14); --purple:#a78bfa; --purple-soft:rgba(167,139,250,.16);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .num{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);} a{color:inherit;text-decoration:none;}
+  .orb{position:fixed;right:-90px;bottom:-110px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#e7eaef 70%,#dfe3e9);box-shadow:0 30px 80px rgba(16,24,40,.08);z-index:0;pointer-events:none;opacity:.7;}
+  [data-theme="dark"] .orb{background:radial-gradient(circle at 35% 30%,#222934,#161b22 70%);opacity:.5;}
+
+  .topnav{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:30px;padding:14px 30px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(14px);}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;letter-spacing:-.02em;}
+  .logo .mk{width:26px;height:26px;border-radius:9px;background:var(--brand-grad);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 4px 12px rgba(47,95,255,.35);}
+  .menu{display:flex;gap:4px;margin-left:8px;}
+  .menu a{padding:8px 14px;border-radius:10px;color:var(--ink-2);font-weight:550;font-size:14px;}
+  .menu a:hover{background:var(--card);color:var(--ink);} .menu a.on{color:var(--ink);font-weight:650;}
+  .grow{flex:1;}
+  .tbtn{width:38px;height:38px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;border:none;font-size:15px;}
+  .tbtn:hover{color:var(--ink);}
+  .me{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 5px;background:var(--card);border-radius:13px;box-shadow:var(--shadow);}
+  .me .pic{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .me .nm{font-size:12.5px;font-weight:650;line-height:1.1;} .me .ro{font-size:11px;color:var(--ink-3);}
+
+  .wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:14px 30px 60px;}
+  .head{display:flex;align-items:center;gap:14px;margin:6px 0 22px;}
+  .head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.03em;}
+  .head .sub{font-size:13.5px;color:var(--ink-2);margin-top:3px;}
+  .live{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);background:var(--card);padding:8px 13px;border-radius:11px;box-shadow:var(--shadow);}
+  .live .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent);animation:pulse 2s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 50%,transparent);}70%{box-shadow:0 0 0 7px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .svg-sm{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .ico-sq{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;}
+  .t-blue{background:var(--info-soft);color:var(--info);} .t-green{background:var(--ok-soft);color:var(--ok);}
+  .t-amber{background:var(--warn-soft);color:var(--warn);} .t-purple{background:var(--purple-soft);color:var(--purple);}
+  .t-mute{background:var(--mute-soft);color:var(--mute);}
+  .gbtn{width:34px;height:34px;border-radius:11px;background:var(--card-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;font-size:15px;}
+  .gbtn:hover{color:var(--ink);}
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:18px;}
+  @media(max-width:960px){.metrics{grid-template-columns:repeat(2,1fr);}}
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px;}
+  .mcard .card-h{display:flex;align-items:center;margin-bottom:10px;}
+  .mcard .corner{margin-left:auto;}
+  .mcard .cap{font-size:13px;color:var(--ink-2);}
+  .mcard .big{font-size:40px;font-weight:800;letter-spacing:-.03em;margin:4px 0 2px;}
+  .mcard .delta{font-size:12.5px;color:var(--ink-3);} .mcard .delta b{font-weight:700;}
+  .mcard.loud{background:linear-gradient(180deg,var(--warn-soft),var(--card) 60%);}
+  .mcard.loud .big{color:var(--warn);}
+
+  .cols{display:grid;grid-template-columns:1.55fr 1fr;gap:18px;}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr;}}
+  .panel{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+  .panel-h{display:flex;align-items:center;gap:10px;padding:18px 20px 14px;}
+  .panel-h h3{margin:0;font-size:16px;font-weight:750;}
+  .panel-h .badge-c{font-size:11.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:20px;padding:2px 9px;}
+  .panel-h .right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .seg{display:inline-flex;background:var(--card-soft);border-radius:9px;padding:2px;}
+  .seg button{border:none;background:transparent;color:var(--ink-2);font:inherit;font-size:12px;font-weight:650;padding:5px 10px;border-radius:7px;cursor:pointer;}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(16,24,40,.12);}
+  .panel-h a.more{font-size:12.5px;font-weight:650;color:var(--brand);}
+
+  .tbl-wrap{overflow:auto;}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--row-fs);}
+  thead th{position:sticky;top:0;z-index:1;text-align:left;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--ink-3);background:var(--card-soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line-strong);padding:9px 14px;white-space:nowrap;}
+  tbody td{padding:var(--row-py) 14px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tbody tr:hover td{background:var(--card-inner);}
+  tbody tr:last-child td{border-bottom:none;}
+  tr.danger td{background:var(--danger-soft);}
+  tr.danger td:first-child{box-shadow:inset 3px 0 0 var(--danger);}
+  tr.warn td:first-child{box-shadow:inset 3px 0 0 var(--warn);}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;}
+  .pill .d{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .p-ok{color:var(--ok);background:var(--ok-soft);} .p-info{color:var(--info);background:var(--info-soft);}
+  .p-warn{color:var(--warn);background:var(--warn-soft);} .p-danger{color:var(--danger);background:var(--danger-soft);} .p-mute{color:var(--mute);background:var(--mute-soft);}
+  .id{font-family:var(--mono);font-size:12px;color:var(--brand-deep);}
+  .item{font-weight:600;} .item .s{display:block;font-size:11.5px;color:var(--ink-3);font-weight:500;}
+  .wait{font-variant-numeric:tabular-nums;color:var(--ink-2);}
+  .rowact{font-size:12px;font-weight:700;padding:5px 12px;border-radius:9px;border:none;cursor:pointer;background:var(--brand);color:#fff;}
+  .rowact.ghost{background:var(--card);border:1px solid var(--line-2);color:var(--ink);}
+  .rowact.danger{background:var(--danger-soft);color:var(--danger);}
+
+  .stream{padding:4px 6px 12px;max-height:430px;overflow:auto;}
+  .ev{display:flex;gap:12px;padding:9px 14px;}
+  .ev .tl{display:flex;flex-direction:column;align-items:center;flex:none;width:12px;}
+  .ev .node{width:9px;height:9px;border-radius:50%;margin-top:5px;background:var(--ink-3);box-shadow:0 0 0 3px var(--card);}
+  .ev .line{width:2px;flex:1;background:var(--line);margin-top:2px;} .ev:last-child .line{display:none;}
+  .ev.fresh .node{background:var(--brand);box-shadow:0 0 0 3px var(--card),0 0 0 6px var(--brand-soft);}
+  .ev .tx{font-size:13px;padding-bottom:2px;} .ev .tx .who{font-weight:700;} .ev .tx .t{color:var(--ink-3);font-size:11px;margin-left:6px;}
+  .ev .tx .det{color:var(--ink-2);font-size:12px;margin-top:1px;}
+  .arrow{color:var(--ink-3);padding:0 2px;}
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+
+  <nav class="topnav">
+    <div class="logo"><span class="mk">S</span> SuperTeam</div>
+    <div class="menu">
+      <a href="dashboard.html" class="on">协调台</a>
+      <a href="projects.html">项目</a>
+      <a href="employees.html">数字员工</a>
+      <a href="skills.html">技能</a>
+      <a href="project-detail.html">项目详情</a>
+      <a href="#">审计</a>
+    </div>
+    <div class="grow"></div>
+    <button class="tbtn" id="theme">◐</button>
+    <button class="tbtn">♪</button>
+    <div class="me"><div class="pic">林</div><div><div class="nm">林 Anna</div><div class="ro">平台管理员</div></div></div>
+  </nav>
+
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>协调台</h1>
+        <div class="sub">作为人类负责人，这里只呈现需要你判断、审批或关注的事。</div>
+      </div>
+      <span class="live"><span class="pulse"></span> 实时 · 4 个 Runtime 在线</span>
+    </div>
+
+    <div class="metrics">
+      <div class="card mcard">
+        <div class="card-h"><div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="14" width="3" height="4" rx="1"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">进行中任务</div>
+        <div class="big num">37</div>
+        <div class="delta">较昨日 <b style="color:var(--ok)">+6</b> · 5 个跨节点</div>
+      </div>
+      <div class="card mcard loud">
+        <div class="card-h"><div class="ico-sq t-amber"><svg class="svg" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">待我审批 / 决策</div>
+        <div class="big num">4</div>
+        <div class="delta">2 个高风险 · 最久等 <b>38 分钟</b></div>
+      </div>
+      <div class="card mcard">
+        <div class="card-h"><div class="ico-sq t-green"><svg class="svg" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">Runtime 节点</div>
+        <div class="big num">4 / 5</div>
+        <div class="delta">1 个离线 · 容量利用 <b>62%</b></div>
+      </div>
+      <div class="card mcard">
+        <div class="card-h"><div class="ico-sq t-purple"><svg class="svg" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">本周预算</div>
+        <div class="big num">$1.28k</div>
+        <div class="delta">配额 $2k · 已用 <b>64%</b></div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel">
+        <div class="panel-h">
+          <h3>需要我处理</h3><span class="badge-c">5</span>
+          <div class="right">
+            <div class="seg" id="density"><button data-d="comfortable" class="on">舒适</button><button data-d="compact">紧凑</button></div>
+            <a class="more" href="#">全部 →</a>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr><th>事项</th><th>对象</th><th>风险</th><th style="width:90px">等待</th><th style="width:70px"></th></tr>
+            </thead>
+            <tbody>
+              <tr class="danger">
+                <td class="item">生产发布请求<span class="s">deploy-bot · 支付网关迁移</span></td>
+                <td class="id">apr_a91f7d2c</td>
+                <td><span class="pill p-danger"><span class="d"></span>高风险·不可逆</span></td>
+                <td class="wait">2 分钟</td>
+                <td><button class="rowact">审批</button></td>
+              </tr>
+              <tr class="warn">
+                <td class="item">权限提升 · 读取 PII<span class="s">export-agent · 客户数据导出</span></td>
+                <td class="id">tsk_77be0d31</td>
+                <td><span class="pill p-warn"><span class="d"></span>待确认</span></td>
+                <td class="wait">38 分钟</td>
+                <td><button class="rowact">审批</button></td>
+              </tr>
+              <tr class="danger">
+                <td class="item">回归测试失败，需业务判断<span class="s">test-runner · 对账系统重构</span></td>
+                <td class="id">tsk_30a2bbf1</td>
+                <td><span class="pill p-danger"><span class="d"></span>失败</span></td>
+                <td class="wait">6 分钟</td>
+                <td><button class="rowact danger">处理</button></td>
+              </tr>
+              <tr class="warn">
+                <td class="item">预算将达 80% 阈值<span class="s">协调线程 · 支付网关迁移</span></td>
+                <td class="id">prj_5c109a8b</td>
+                <td><span class="pill p-warn"><span class="d"></span>预警</span></td>
+                <td class="wait">—</td>
+                <td><button class="rowact ghost">查看</button></td>
+              </tr>
+              <tr>
+                <td class="item">需求交接包待验收<span class="s">spec-writer · 含 4 份证据</span></td>
+                <td class="id">art_b8d46e09</td>
+                <td><span class="pill p-ok"><span class="d"></span>待验收</span></td>
+                <td class="wait">12 分钟</td>
+                <td><button class="rowact ghost">验收</button></td>
+              </tr>
+              <tr>
+                <td class="item">数字员工申请扩容执行槽<span class="s">api-builder · node-2</span></td>
+                <td class="id">req_2f10aa</td>
+                <td><span class="pill p-mute"><span class="d"></span>常规</span></td>
+                <td class="wait">25 分钟</td>
+                <td><button class="rowact ghost">查看</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h">
+          <h3>协调线程 · 实时活动</h3>
+          <div class="right"><a class="more" href="#">完整审计 →</a></div>
+        </div>
+        <div class="stream">
+          <div class="ev fresh"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">api-builder</span> 任务 <span style="color:var(--ink-3)">运行中</span> <span class="arrow">→</span> <span class="pill p-ok"><span class="d"></span>已完成</span> <span class="t">刚刚</span>
+            <div class="det">产出 <span class="mono">art_2f1c…aa</span> · 用时 4m12s</div></div></div>
+          <div class="ev fresh"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">协调线程</span> 分派任务给 <span class="who">test-runner</span> <span class="t">12 秒前</span>
+            <div class="det">RouteDecision <span class="mono">rd_90ab…34</span></div></div></div>
+          <div class="ev"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">deploy-bot</span> 提交 <span class="pill p-danger"><span class="d"></span>审批请求</span> <span class="t">1 分钟前</span>
+            <div class="det">生产发布 · 等待负责人确认</div></div></div>
+          <div class="ev"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">test-runner</span> 任务 <span class="pill p-danger"><span class="d"></span>失败</span> <span class="t">6 分钟前</span>
+            <div class="det">3 项断言失败 · 已生成证据包</div></div></div>
+          <div class="ev"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">node-2</span> 续租成功 <span class="t">8 分钟前</span>
+            <div class="det">租约 <span class="mono">lease_4f…</span> · TTL 90s</div></div></div>
+          <div class="ev"><div class="tl"><div class="node"></div><div class="line"></div></div>
+            <div class="tx"><span class="who">spec-writer</span> 回写关键结论 <span class="t">14 分钟前</span>
+            <div class="det">上下文切片更新 · 写入全局上下文</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
+    const seg=document.getElementById('density');
+    seg.onclick=e=>{const b=e.target.closest('button');if(!b)return;seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.dataset.density=b.dataset.d;};
+  </script>
+</body>
+</html>

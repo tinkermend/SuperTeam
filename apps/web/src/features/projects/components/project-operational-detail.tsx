@@ -14,8 +14,13 @@ import {
   Settings2,
   UserRound,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
+import {
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  type V3Tone,
+} from "@/components/superteam";
 import type {
   Project,
   ProjectAcceptanceRecord,
@@ -42,6 +47,7 @@ import type {
   ProjectPlanRevision,
   ProjectReportRef,
   ProjectRouteDecision,
+  ProjectStatus,
   ProjectTask,
   ProjectTaskGraph,
   ProjectTransferRequest,
@@ -49,7 +55,6 @@ import type {
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { PlanTaskGraph } from "./plan-task-graph";
-import { statusLabel, statusTone } from "./project-switcher-pane";
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -131,9 +136,9 @@ export function ProjectOperationalDetail({
 }: ProjectOperationalDetailProps) {
   if (!project) {
     return (
-      <LiquidCard className="flex min-h-[460px] items-center justify-center rounded-xl p-8 text-sm text-muted-foreground">
+      <SoftCard className="flex min-h-[460px] items-center justify-center p-8 text-sm text-v3-ink-2">
         从左侧选择一个项目查看运行详情
-      </LiquidCard>
+      </SoftCard>
     );
   }
 
@@ -156,36 +161,36 @@ export function ProjectOperationalDetail({
 
   return (
     <div className="grid min-w-0 gap-4">
-      <LiquidCard className="rounded-xl p-5">
+      <SoftCard className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <SemanticIconTile tone="primary" size="lg">
+            <IconTile tone="brand" size="lg">
               <Activity />
-            </SemanticIconTile>
+            </IconTile>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-xl font-semibold tracking-normal">
                   {project.name}
                 </h2>
-                <StatusBadge tone={statusTone(project.status)}>
-                  {statusLabel(project.status)}
-                </StatusBadge>
+                <StatusPill tone={projectStatusTone(project.status)}>
+                  {projectStatusLabel(project.status)}
+                </StatusPill>
               </div>
-              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
                 {project.goal}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
+            <V3Button
               disabled={isArchived}
               type="button"
               onClick={onSubmitDemand}
             >
               <FileText data-icon="inline-start" />
               提交需求
-            </Button>
-            <Button asChild variant="outline">
+            </V3Button>
+            <V3Button asChild variant="outline">
               <Link
                 params={{ projectId: project.id }}
                 to="/projects/$projectId/config"
@@ -193,20 +198,20 @@ export function ProjectOperationalDetail({
                 <Settings2 data-icon="inline-start" />
                 配置
               </Link>
-            </Button>
-            <Button asChild variant="outline">
+            </V3Button>
+            <V3Button asChild variant="outline">
               <Link search={{ project_id: project.id }} to="/audit">
                 <History data-icon="inline-start" />
                 审计
               </Link>
-            </Button>
-            <Button asChild variant="outline">
+            </V3Button>
+            <V3Button asChild variant="outline">
               <Link search={{ project_id: project.id }} to="/costs">
                 <FileCheck2 data-icon="inline-start" />
                 成本
               </Link>
-            </Button>
-            <Button
+            </V3Button>
+            <V3Button
               disabled={isArchived}
               type="button"
               variant="outline"
@@ -214,7 +219,7 @@ export function ProjectOperationalDetail({
             >
               <Archive data-icon="inline-start" />
               归档
-            </Button>
+            </V3Button>
           </div>
         </div>
 
@@ -240,11 +245,11 @@ export function ProjectOperationalDetail({
             value={`${activeTasks.length} 个`}
           />
         </div>
-      </LiquidCard>
+      </SoftCard>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="grid min-w-0 gap-4">
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<GitBranch />}
               title="计划版本"
@@ -259,22 +264,22 @@ export function ProjectOperationalDetail({
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge tone={planRevisionTone(latestPlanRevision.status)}>
+                      <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
                         {latestPlanRevision.status}
-                      </StatusBadge>
+                      </StatusPill>
                       {latestPlanRevision.review_required ? (
-                        <StatusBadge tone="warning">需人工复核</StatusBadge>
+                        <StatusPill tone="warn">需人工复核</StatusPill>
                       ) : (
-                        <StatusBadge tone="success">自动接受</StatusBadge>
+                        <StatusPill tone="ok">自动接受</StatusPill>
                       )}
                     </div>
-                    <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
                       {planRevisionSummary(latestPlanRevision)}
                     </p>
                   </div>
                   {latestPlanReviewDecision ? (
                     <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button
+                      <V3Button
                         aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
                         size="sm"
                         type="button"
@@ -283,8 +288,8 @@ export function ProjectOperationalDetail({
                         }
                       >
                         批准
-                      </Button>
-                      <Button
+                      </V3Button>
+                      <V3Button
                         aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
                         size="sm"
                         type="button"
@@ -297,8 +302,8 @@ export function ProjectOperationalDetail({
                         }
                       >
                         要求修改
-                      </Button>
-                      <Button
+                      </V3Button>
+                      <V3Button
                         aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
                         size="sm"
                         type="button"
@@ -308,7 +313,7 @@ export function ProjectOperationalDetail({
                         }
                       >
                         拒绝
-                      </Button>
+                      </V3Button>
                     </div>
                   ) : null}
                 </div>
@@ -329,7 +334,7 @@ export function ProjectOperationalDetail({
                     value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
                   />
                 </div>
-                <div className="divide-y rounded-lg border">
+                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
                   {planRevisionTasks(latestPlanRevision)
                     .slice(0, 4)
                     .map((task, index) => (
@@ -341,9 +346,9 @@ export function ProjectOperationalDetail({
                           <p className="min-w-0 line-clamp-2 text-sm font-medium">
                             {planRevisionTaskTitle(task)}
                           </p>
-                          <StatusBadge tone={planRevisionTaskRiskTone(task)}>
+                          <StatusPill tone={planRevisionTaskRiskTone(task)}>
                             {planRevisionTaskRisk(task)}
-                          </StatusBadge>
+                          </StatusPill>
                         </div>
                         <RuntimeMeta
                           label="能力"
@@ -363,14 +368,14 @@ export function ProjectOperationalDetail({
             ) : (
               <EmptyLine label="暂无计划版本" />
             )}
-          </LiquidCard>
+          </SoftCard>
 
           {taskGraph && taskGraph.nodes.length > 0 ? (
             <div className="grid gap-2">
               <div className="flex items-center gap-2 px-1">
-                <ClipboardList className="size-4 text-muted-foreground" />
+                <ClipboardList className="size-4 text-v3-ink-2" />
                 <h3 className="text-sm font-semibold tracking-normal">任务计划</h3>
-                <StatusBadge tone="neutral">{`${taskGraph.nodes.length} 项`}</StatusBadge>
+                <StatusPill tone="mute">{`${taskGraph.nodes.length} 项`}</StatusPill>
               </div>
               <PlanTaskGraph
                 nodes={taskGraph.nodes}
@@ -380,13 +385,13 @@ export function ProjectOperationalDetail({
               />
             </div>
           ) : (
-            <LiquidCard className="rounded-xl">
+            <SoftCard className="overflow-hidden">
               <PanelHeader
                 icon={<ClipboardList />}
                 title="任务计划"
                 meta={`${activeTasks.length} 项`}
               />
-              <div className="divide-y">
+              <div className="divide-y divide-v3-line">
                 {activeTasks.length === 0 ? (
                   <EmptyLine label="当前项目暂无活跃任务" />
                 ) : (
@@ -396,16 +401,16 @@ export function ProjectOperationalDetail({
                         <p className="min-w-0 truncate text-sm font-medium">
                           {task.title}
                         </p>
-                        <StatusBadge tone="info">{task.status}</StatusBadge>
+                        <StatusPill tone="info">{task.status}</StatusPill>
                       </div>
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                      <p className="line-clamp-2 text-xs text-v3-ink-2">
                         {task.summary || "等待项目协调线程分派执行对象"}
                       </p>
                     </div>
                   ))
                 )}
               </div>
-            </LiquidCard>
+            </SoftCard>
           )}
 
           <DispatchGateSummary
@@ -413,13 +418,13 @@ export function ProjectOperationalDetail({
             taskTitle={dispatchGateTaskTitle}
           />
 
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<UserRound />}
               title="人类决策队列"
               meta={`${decisionRequests.length} 项`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {decisionRequests.length === 0 ? (
                 <EmptyLine label="当前没有待处理的人类决策" />
               ) : (
@@ -430,28 +435,28 @@ export function ProjectOperationalDetail({
                         <p className="truncate text-sm font-medium">
                           {decision.title_snapshot}
                         </p>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
                           {decision.summary_snapshot &&
                           decision.summary_snapshot !== decision.title_snapshot
                             ? decision.summary_snapshot
                             : "等待负责人处理"}
                         </p>
                       </div>
-                      <StatusBadge tone={decisionTone(decision.status_snapshot)}>
+                      <StatusPill tone={decisionTone(decision.status_snapshot)}>
                         {decision.status_snapshot}
-                      </StatusBadge>
+                      </StatusPill>
                     </div>
                     {decision.status_snapshot === "pending" ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button
+                        <V3Button
                           aria-label={`批准：${decision.title_snapshot}`}
                           size="sm"
                           type="button"
                           onClick={() => onResolveDecision(decision.id, "approved")}
                         >
                           批准
-                        </Button>
-                        <Button
+                        </V3Button>
+                        <V3Button
                           aria-label={`要求补证：${decision.title_snapshot}`}
                           size="sm"
                           type="button"
@@ -461,22 +466,22 @@ export function ProjectOperationalDetail({
                           }
                         >
                           要求补证
-                        </Button>
+                        </V3Button>
                       </div>
                     ) : null}
                   </div>
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
 
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<GitBranch />}
               title="路由决策"
               meta={`${routeDecisions.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {routeDecisions.length === 0 ? (
                 <EmptyLine label="暂无路由决策" />
               ) : (
@@ -487,9 +492,9 @@ export function ProjectOperationalDetail({
                         {decision.reason}
                       </p>
                       {decision.requires_human_review ? (
-                        <StatusBadge tone="warning">需人工复核</StatusBadge>
+                        <StatusPill tone="warn">需人工复核</StatusPill>
                       ) : (
-                        <StatusBadge tone="success">已规划</StatusBadge>
+                        <StatusPill tone="ok">已规划</StatusPill>
                       )}
                     </div>
                     <RuntimeMeta
@@ -504,7 +509,7 @@ export function ProjectOperationalDetail({
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
 
           <ProjectExecutionTracePanel
             errorMessage={executionTraceErrorMessage}
@@ -534,31 +539,31 @@ export function ProjectOperationalDetail({
             taskCount={tasks.length}
           />
 
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<History />}
               title="事件流"
               meta={`${recentEvents.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {recentEvents.length === 0 ? (
                 <EmptyLine label="暂无项目事件" />
               ) : (
                 recentEvents.slice(0, 8).map((event) => (
                   <div className="flex gap-3 p-4" key={event.id}>
-                    <span className="mt-1 size-2 rounded-full bg-primary" />
+                    <span className="mt-1 size-2 rounded-full bg-v3-brand" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium">{event.event_type}</p>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-v3-ink-2">
                           #{event.sequence_number}
                         </span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
                         {event.summary || "项目事件已记录"}
                       </p>
                       {event.resource_type || event.resource_id ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-xs text-v3-ink-2">
                           {event.resource_type ?? "resource"} ·{" "}
                           {event.resource_id ?? "-"}
                         </p>
@@ -568,17 +573,17 @@ export function ProjectOperationalDetail({
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
         </section>
 
         <aside className="grid min-w-0 gap-4">
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<GitBranch />}
               title="协调任务"
               meta={`${coordinationJobs.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {coordinationJobs.length === 0 ? (
                 <EmptyLine label="暂无协调任务" />
               ) : (
@@ -588,24 +593,24 @@ export function ProjectOperationalDetail({
                       <p className="min-w-0 truncate text-sm font-medium">
                         {job.job_type}
                       </p>
-                      <StatusBadge tone={jobTone(job.status)}>{job.status}</StatusBadge>
+                      <StatusPill tone={jobTone(job.status)}>{job.status}</StatusPill>
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-v3-ink-2">
                       {job.workflow_id}
                     </p>
                   </div>
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
 
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<FileCheck2 />}
               title="执行摘要"
               meta={`${executionSummaries.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {executionSummaries.length === 0 ? (
                 <EmptyLine label="暂无执行回写摘要" />
               ) : (
@@ -616,9 +621,9 @@ export function ProjectOperationalDetail({
                         {summary.conclusion}
                       </p>
                       {summary.requires_human_review ? (
-                        <StatusBadge tone="warning">需复核</StatusBadge>
+                        <StatusPill tone="warn">需复核</StatusPill>
                       ) : (
-                        <StatusBadge tone="success">已回写</StatusBadge>
+                        <StatusPill tone="ok">已回写</StatusPill>
                       )}
                     </div>
                     <RuntimeMeta
@@ -626,7 +631,7 @@ export function ProjectOperationalDetail({
                       value={summary.digital_employee_id}
                     />
                     {summary.recommended_next_action ? (
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                      <p className="line-clamp-2 text-xs text-v3-ink-2">
                         {summary.recommended_next_action}
                       </p>
                     ) : null}
@@ -634,15 +639,15 @@ export function ProjectOperationalDetail({
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
 
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<Bot />}
               title="转派请求"
               meta={`${transferRequests.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {transferRequests.length === 0 ? (
                 <EmptyLine label="暂无转派请求" />
               ) : (
@@ -652,9 +657,9 @@ export function ProjectOperationalDetail({
                       <p className="min-w-0 line-clamp-2 text-sm font-medium">
                         {request.reason}
                       </p>
-                      <StatusBadge tone={requestTone(request.status)}>
+                      <StatusPill tone={requestTone(request.status)}>
                         {request.status}
-                      </StatusBadge>
+                      </StatusPill>
                     </div>
                     <RuntimeMeta
                       label="发起员工"
@@ -668,7 +673,7 @@ export function ProjectOperationalDetail({
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
 
           <MemberPanel
             icon={<UserRound />}
@@ -680,7 +685,7 @@ export function ProjectOperationalDetail({
             members={digitalPool}
             title="数字员工池"
           />
-          <LiquidCard className="rounded-xl">
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<GitBranch />}
               title="协调线程"
@@ -690,18 +695,18 @@ export function ProjectOperationalDetail({
               <p className="truncate text-sm font-medium">
                 {project.coordination_workflow_id}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-v3-ink-2">
                 虚拟协调线程，仅作为项目 Workflow 元数据展示。
               </p>
             </div>
-          </LiquidCard>
-          <LiquidCard className="rounded-xl">
+          </SoftCard>
+          <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<FileText />}
               title="需求记录"
               meta={`${demands.length} 条`}
             />
-            <div className="divide-y">
+            <div className="divide-y divide-v3-line">
               {demands.length === 0 ? (
                 <EmptyLine label="暂无提交到项目的需求" />
               ) : (
@@ -711,16 +716,16 @@ export function ProjectOperationalDetail({
                       <p className="truncate text-sm font-medium">
                         {demand.title}
                       </p>
-                      <StatusBadge tone="neutral">{demand.source_type}</StatusBadge>
+                      <StatusPill tone="mute">{demand.source_type}</StatusPill>
                     </div>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
+                    <p className="line-clamp-2 text-xs text-v3-ink-2">
                       {demand.content || "需求内容已记录"}
                     </p>
                   </div>
                 ))
               )}
             </div>
-          </LiquidCard>
+          </SoftCard>
         </aside>
       </div>
     </div>
@@ -747,26 +752,26 @@ function DispatchGateSummary({
   };
 
   return (
-    <section className="border-t border-border px-1 py-4">
+    <SoftCard className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium text-foreground">Pre-dispatch gate</h3>
+          <h3 className="text-sm font-semibold text-v3-ink">Pre-dispatch gate</h3>
           {taskTitle ? (
-            <p className="mt-1 truncate text-xs text-muted-foreground">{taskTitle}</p>
+            <p className="mt-1 truncate text-xs text-v3-ink-2">{taskTitle}</p>
           ) : null}
         </div>
-        <StatusBadge tone={dispatchGateTone(latest.status)}>
+        <StatusPill tone={dispatchGateTone(latest.status)}>
           {statusLabel[latest.status]}
-        </StatusBadge>
+        </StatusPill>
       </div>
       {latest.blockers.length > 0 ? (
         <ul className="mt-3 space-y-2">
           {latest.blockers.map((blocker) => (
             <li
-              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground"
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-v3-ink-2"
               key={`${latest.id}-${blocker.key}`}
             >
-              <span className="min-w-0 break-all font-mono text-xs text-foreground">
+              <span className="min-w-0 break-all font-mono text-xs text-v3-ink">
                 {blocker.key}
               </span>
               <span className="text-xs">
@@ -777,11 +782,11 @@ function DispatchGateSummary({
         </ul>
       ) : null}
       {latest.retry_after ? (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-v3-ink-2">
           Retry after {formatDateTime(latest.retry_after)}
         </p>
       ) : null}
-    </section>
+    </SoftCard>
   );
 }
 
@@ -795,12 +800,14 @@ function FactTile({
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border bg-white/55 p-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="[&_svg]:size-3.5">{icon}</span>
+    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
+      <div className="flex items-center gap-2 text-xs text-v3-ink-2">
+        <IconTile tone="mute" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
+          {icon}
+        </IconTile>
         {label}
       </div>
-      <p className="mt-2 truncate text-sm font-semibold">{value}</p>
+      <p className="mt-2 truncate text-sm font-semibold text-v3-ink">{value}</p>
     </div>
   );
 }
@@ -815,12 +822,14 @@ function PanelHeader({
   title: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b p-4">
+    <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
       <div className="flex items-center gap-2">
-        <span className="text-primary [&_svg]:size-4">{icon}</span>
-        <h3 className="font-semibold">{title}</h3>
+        <IconTile tone="brand" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
+          {icon}
+        </IconTile>
+        <h3 className="font-semibold text-v3-ink">{title}</h3>
       </div>
-      <span className="text-xs text-muted-foreground">{meta}</span>
+      <StatusPill tone="mute" showDot={false}>{meta}</StatusPill>
     </div>
   );
 }
@@ -835,34 +844,34 @@ function MemberPanel({
   title: string;
 }) {
   return (
-    <LiquidCard className="rounded-xl">
+    <SoftCard className="overflow-hidden">
       <PanelHeader icon={icon} title={title} meta={`${members.length} 个`} />
-      <div className="divide-y">
+      <div className="divide-y divide-v3-line">
         {members.length === 0 ? (
           <EmptyLine label={`${title}为空`} />
         ) : (
           members.slice(0, 6).map((member) => (
             <div className="flex items-center justify-between gap-3 p-4" key={member.id}>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
+                <p className="truncate text-sm font-medium text-v3-ink">
                   {member.display_name_snapshot || member.principal_id}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="truncate text-xs text-v3-ink-2">
                   {member.project_role} · {member.principal_type}
                 </p>
               </div>
-              <ExternalLink className="size-3.5 text-muted-foreground" />
+              <ExternalLink className="size-3.5 text-v3-ink-2" />
             </div>
           ))
         )}
       </div>
-    </LiquidCard>
+    </SoftCard>
   );
 }
 
 function EmptyLine({ label }: { label: string }) {
   return (
-    <div className="flex min-h-24 items-center justify-center p-4 text-sm text-muted-foreground">
+    <div className="flex min-h-24 items-center justify-center p-4 text-sm text-v3-ink-2">
       {label}
     </div>
   );
@@ -871,14 +880,34 @@ function EmptyLine({ label }: { label: string }) {
 function RuntimeMeta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate font-medium">{value}</span>
+      <span className="shrink-0 text-v3-ink-2">{label}</span>
+      <span className="min-w-0 truncate font-medium text-v3-ink">{value}</span>
     </div>
   );
 }
 
 function formatIdList(ids: string[]) {
   return ids.length > 0 ? ids.join("、") : "未指定";
+}
+
+function projectStatusLabel(status: ProjectStatus | string) {
+  const labels: Record<string, string> = {
+    acceptance: "验收中",
+    archived: "已归档",
+    configuring: "配置中",
+    draft: "草稿",
+    paused: "已暂停",
+    running: "运行中",
+  };
+  return labels[status] ?? status;
+}
+
+function projectStatusTone(status: ProjectStatus | string): V3Tone {
+  if (status === "running") return "ok";
+  if (status === "archived") return "mute";
+  if (status === "paused" || status === "acceptance") return "warn";
+  if (status === "configuring" || status === "draft") return "info";
+  return "mute";
 }
 
 function selectLatestPlanRevision(revisions: ProjectPlanRevision[]) {
@@ -948,28 +977,28 @@ function planRevisionTaskRisk(task: Record<string, unknown>) {
   return stringField(task, "risk_level") || "normal";
 }
 
-function planRevisionTaskRiskTone(task: Record<string, unknown>) {
+function planRevisionTaskRiskTone(task: Record<string, unknown>): V3Tone {
   const risk = planRevisionTaskRisk(task);
   if (risk === "critical" || risk === "high") {
     return "danger";
   }
   if (risk === "medium") {
-    return "warning";
+    return "warn";
   }
-  return "neutral";
+  return "mute";
 }
 
-function planRevisionTone(status: string) {
+function planRevisionTone(status: string): V3Tone {
   if (status === "accepted" || status === "decomposed") {
-    return "success";
+    return "ok";
   }
   if (status === "pending_review" || status === "decomposing") {
-    return "warning";
+    return "warn";
   }
   if (status === "rejected" || status === "validation_failed") {
     return "danger";
   }
-  return "neutral";
+  return "mute";
 }
 
 function formatShortList(values: string[]) {
@@ -996,22 +1025,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function decisionTone(status: string) {
+function decisionTone(status: string): V3Tone {
   if (status === "pending") {
-    return "warning";
+    return "warn";
   }
   if (status === "approved") {
-    return "success";
+    return "ok";
   }
   if (status === "rejected") {
     return "danger";
   }
-  return "neutral";
+  return "mute";
 }
 
-function jobTone(status: string) {
+function jobTone(status: string): V3Tone {
   if (status === "completed" || status === "succeeded") {
-    return "success";
+    return "ok";
   }
   if (status === "failed") {
     return "danger";
@@ -1019,30 +1048,30 @@ function jobTone(status: string) {
   if (status === "running" || status === "started") {
     return "info";
   }
-  return "neutral";
+  return "mute";
 }
 
-function requestTone(status: string) {
+function requestTone(status: string): V3Tone {
   if (status === "approved" || status === "resolved") {
-    return "success";
+    return "ok";
   }
   if (status === "rejected" || status === "failed") {
     return "danger";
   }
-  return "warning";
+  return "warn";
 }
 
-function dispatchGateTone(status: DispatchGateStatus) {
+function dispatchGateTone(status: DispatchGateStatus): V3Tone {
   if (status === "passed") {
-    return "success";
+    return "ok";
   }
   if (status === "retry_later" || status === "waiting_human") {
-    return "warning";
+    return "warn";
   }
   if (status === "blocked" || status === "replan_required") {
     return "danger";
   }
-  return "neutral";
+  return "mute";
 }
 
 function formatDateTime(value?: string | null) {

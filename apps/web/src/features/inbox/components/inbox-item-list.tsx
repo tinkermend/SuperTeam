@@ -1,13 +1,17 @@
 import { AlertTriangle, ArrowUpRight, Clock, FileText } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
-  LiquidCard,
-  SemanticIconTile,
-  StatusBadge,
-  type Tone,
+  IconTile,
+  StatusPill,
+  V3Button,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
+  type V3ButtonVariant,
+  type V3Tone,
 } from "@/components/superteam";
-import { Button } from "@/components/ui/button";
-import { CardContent } from "@/components/ui/card";
 import type { InboxAction, InboxItem, InboxViewMode } from "@/lib/api/inbox";
 import { cn } from "@/lib/utils";
 
@@ -24,90 +28,122 @@ const riskLabel: Record<string, string> = {
   medium: "中风险",
 };
 
-const riskTone: Record<string, Tone> = {
+const riskTone: Record<string, V3Tone> = {
   blocked: "danger",
   high: "danger",
-  low: "neutral",
-  medium: "warning",
+  low: "mute",
+  medium: "warn",
+};
+
+const actionToneVariant: Record<string, V3ButtonVariant> = {
+  danger: "danger",
+  destructive: "danger",
+  primary: "primary",
+  success: "outline",
+  warning: "outline",
 };
 
 const actionToneClass: Record<string, string> = {
-  danger: "border-destructive/30 text-destructive hover:bg-destructive/10",
-  destructive: "border-destructive/30 text-destructive hover:bg-destructive/10",
-  primary: "border-primary/30 text-primary hover:bg-primary/10",
-  success: "border-[color:var(--superteam-success)]/30 text-[color:var(--superteam-success)] hover:bg-[color:var(--superteam-success)]/10",
-  warning: "border-[color:var(--superteam-warning)]/30 text-[color:var(--superteam-warning)] hover:bg-[color:var(--superteam-warning)]/10",
+  primary: "",
+  success: "border-v3-ok text-v3-ok hover:bg-v3-ok-soft",
+  warning: "border-v3-warn text-v3-warn hover:bg-v3-warn-soft",
 };
 
 export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
   return (
-    <LiquidCard>
-      <CardContent className="divide-y divide-border/70 p-0">
-        {items.map((item) => {
-          const actions = Array.isArray(item.actions) ? item.actions : [];
-          const contextLabel = formatContext(item);
+    <WorkSurface>
+      <div className="flex flex-col gap-1 border-b border-v3-line px-5 py-4">
+        <h2 className="text-lg font-extrabold text-v3-ink">待处理事项</h2>
+        <p className="text-[13px] text-v3-ink-2">逐项查看来源、风险、时间和可执行动作。</p>
+      </div>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th className="min-w-[22rem]">事项</V3Th>
+            <V3Th className="min-w-[16rem]">上下文</V3Th>
+            <V3Th>更新时间</V3Th>
+            <V3Th className="text-right">操作</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const actions = Array.isArray(item.actions) ? item.actions : [];
+            const contextLabel = formatContext(item);
+            const rowTone = item.risk_level === "blocked" || item.risk_level === "high" ? "danger" : item.risk_level === "medium" ? "warn" : undefined;
 
-          return (
-            <article key={item.id} className="flex min-w-0 flex-col gap-3 px-4 py-4 md:px-5">
-              <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  <SemanticIconTile tone={item.risk_level === "high" ? "danger" : "decision"} size="sm">
-                    {item.risk_level === "high" ? <AlertTriangle /> : <FileText />}
-                  </SemanticIconTile>
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h2 className="min-w-0 text-base font-semibold tracking-normal text-foreground">
-                        {item.title}
-                      </h2>
-                      {item.risk_level ? (
-                        <StatusBadge tone={riskTone[item.risk_level] ?? "neutral"}>
-                          {riskLabel[item.risk_level] ?? item.risk_level}
-                        </StatusBadge>
+            return (
+              <V3Tr key={item.id} tone={rowTone}>
+                <V3Td>
+                  <div className="flex min-w-0 gap-3">
+                    <IconTile tone={item.risk_level === "high" || item.risk_level === "blocked" ? "danger" : "info"} size="sm">
+                      {item.risk_level === "high" || item.risk_level === "blocked" ? <AlertTriangle /> : <FileText />}
+                    </IconTile>
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h2 className="min-w-0 text-[15px] font-bold text-v3-ink">
+                          {item.title}
+                        </h2>
+                        {item.risk_level ? (
+                          <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
+                            {riskLabel[item.risk_level] ?? item.risk_level}
+                          </StatusPill>
+                        ) : null}
+                      </div>
+                      {item.summary ? (
+                        <p className="mt-1 max-w-[38rem] text-[13px] leading-5 text-v3-ink-2">
+                          {item.summary}
+                        </p>
                       ) : null}
                     </div>
-                    {item.summary ? (
-                      <p className="text-sm leading-6 text-muted-foreground">{item.summary}</p>
+                  </div>
+                </V3Td>
+                <V3Td>
+                  <div className="flex min-w-0 flex-col gap-1 text-[13px] text-v3-ink-2">
+                    {contextLabel ? <span className="truncate font-semibold text-v3-ink">{contextLabel}</span> : null}
+                    {item.source_task_id ? (
+                      <span className="truncate font-mono text-xs text-v3-ink-3">任务 {item.source_task_id}</span>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      {contextLabel ? <span>{contextLabel}</span> : null}
-                      {item.source_task_id ? <span>任务 {item.source_task_id}</span> : null}
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="size-3.5" />
-                        {formatDateTime(item.last_activity_at)}
-                      </span>
-                      <Link
-                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                        to={resolveInboxHref(item)}
-                      >
-                        查看上下文
-                        <ArrowUpRight className="size-3.5" />
-                      </Link>
+                    <Link
+                      className="inline-flex w-fit items-center gap-1 font-semibold text-v3-brand-deep hover:text-v3-brand"
+                      to={resolveInboxHref(item)}
+                    >
+                      查看上下文
+                      <ArrowUpRight aria-hidden className="size-3.5" />
+                    </Link>
+                  </div>
+                </V3Td>
+                <V3Td className="whitespace-nowrap text-v3-ink-2 tabular-nums">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock aria-hidden className="size-3.5" />
+                    {formatDateTime(item.last_activity_at)}
+                  </span>
+                </V3Td>
+                <V3Td>
+                  {view === "mine" && actions.length > 0 ? (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {actions.map((action) => (
+                        <V3Button
+                          className={cn(actionToneClass[action.tone])}
+                          key={action.key}
+                          onClick={() => onAction(item, action)}
+                          size="sm"
+                          type="button"
+                          variant={actionToneVariant[action.tone] ?? "outline"}
+                        >
+                          {action.label}
+                        </V3Button>
+                      ))}
                     </div>
-                  </div>
-                </div>
-
-                {view === "mine" && actions.length > 0 ? (
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                    {actions.map((action) => (
-                      <Button
-                        className={cn(actionToneClass[action.tone])}
-                        key={action.key}
-                        onClick={() => onAction(item, action)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        {action.label}
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </article>
-          );
-        })}
-      </CardContent>
-    </LiquidCard>
+                  ) : (
+                    <span className="block text-right text-xs font-semibold text-v3-ink-3">只读</span>
+                  )}
+                </V3Td>
+              </V3Tr>
+            );
+          })}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }
 

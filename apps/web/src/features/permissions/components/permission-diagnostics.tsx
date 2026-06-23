@@ -3,13 +3,10 @@ import { useMutation } from "@tanstack/react-query";
 import { ShieldQuestion } from "lucide-react";
 import type { ApiClientOptions, CheckPermissionRequest, CheckPermissionResponse } from "@/lib/api";
 import { checkPermission } from "@/lib/api";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
 
 type PermissionDiagnosticsProps = {
   apiOptions: ApiClientOptions;
@@ -40,6 +37,9 @@ const actionOptions: CheckPermissionRequest["action"][] = [
   "team.capability.unbind",
   "team.audit.read",
 ];
+const fieldClassName =
+  "rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none focus-visible:ring-v3-brand/60 focus-visible:ring-offset-v3-bg";
+const labelClassName = "text-[13px] font-semibold text-v3-ink-2";
 
 export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps) {
   const [actorType, setActorType] = useState("user");
@@ -128,20 +128,21 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <SoftCard className="p-5">
+        <div className="mb-5 flex items-start gap-3">
+          <IconTile tone="warn" size="sm">
             <ShieldQuestion />
-            权限诊断
-          </CardTitle>
-          <CardDescription>用当前授权引擎检查 Actor 对资源动作的访问结果。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-3 md:grid-cols-2" noValidate onSubmit={handleSubmit}>
+          </IconTile>
+          <div>
+            <h2 className="text-base font-bold text-v3-ink">权限诊断</h2>
+            <p className="mt-1 text-sm text-v3-ink-2">用当前授权引擎检查 Actor 对资源动作的访问结果。</p>
+          </div>
+        </div>
+        <form className="grid gap-3 md:grid-cols-2" noValidate onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-actor-type">Actor 类型</Label>
+              <Label className={labelClassName} htmlFor="diagnostic-actor-type">Actor 类型</Label>
               <Select value={actorType} onValueChange={setActorType}>
-                <SelectTrigger id="diagnostic-actor-type" className="w-full">
+                <SelectTrigger id="diagnostic-actor-type" className={`${fieldClassName} w-full`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -154,13 +155,13 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-actor-id">Actor ID</Label>
-              <Input id="diagnostic-actor-id" required aria-invalid={Boolean(formError && !trimmedActorId)} value={actorId} onChange={(event) => setActorId(event.target.value)} />
+              <Label className={labelClassName} htmlFor="diagnostic-actor-id">Actor ID</Label>
+              <Input className={fieldClassName} id="diagnostic-actor-id" required aria-invalid={Boolean(formError && !trimmedActorId)} value={actorId} onChange={(event) => setActorId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-action">动作</Label>
+              <Label className={labelClassName} htmlFor="diagnostic-action">动作</Label>
               <Select value={action} onValueChange={(value) => handleActionChange(value as CheckPermissionRequest["action"])}>
-                <SelectTrigger id="diagnostic-action" className="w-full">
+                <SelectTrigger id="diagnostic-action" className={`${fieldClassName} w-full`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -175,31 +176,30 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-resource-type">资源类型</Label>
-              <Input id="diagnostic-resource-type" required aria-invalid={Boolean(formError && !expectedResourceTypes(action).includes(resourceType.trim()))} value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
+              <Label className={labelClassName} htmlFor="diagnostic-resource-type">资源类型</Label>
+              <Input className={fieldClassName} id="diagnostic-resource-type" required aria-invalid={Boolean(formError && !expectedResourceTypes(action).includes(resourceType.trim()))} value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-resource-id">资源 ID</Label>
-              <Input id="diagnostic-resource-id" required aria-invalid={Boolean(formError && !trimmedResourceId)} value={resourceId} onChange={(event) => setResourceId(event.target.value)} />
+              <Label className={labelClassName} htmlFor="diagnostic-resource-id">资源 ID</Label>
+              <Input className={fieldClassName} id="diagnostic-resource-id" required aria-invalid={Boolean(formError && !trimmedResourceId)} value={resourceId} onChange={(event) => setResourceId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-tenant-id">租户 ID</Label>
-              <Input id="diagnostic-tenant-id" required aria-invalid={Boolean(formError && !trimmedTenantId)} value={tenantId} onChange={(event) => handleTenantIdChange(event.target.value)} />
+              <Label className={labelClassName} htmlFor="diagnostic-tenant-id">租户 ID</Label>
+              <Input className={fieldClassName} id="diagnostic-tenant-id" required aria-invalid={Boolean(formError && !trimmedTenantId)} value={tenantId} onChange={(event) => handleTenantIdChange(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="diagnostic-team-id">团队 ID</Label>
-              <Input id="diagnostic-team-id" required={usesTeamResource(action, resourceType)} aria-invalid={Boolean(formError && usesTeamResource(action, resourceType) && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
+              <Label className={labelClassName} htmlFor="diagnostic-team-id">团队 ID</Label>
+              <Input className={fieldClassName} id="diagnostic-team-id" required={usesTeamResource(action, resourceType)} aria-invalid={Boolean(formError && usesTeamResource(action, resourceType) && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
             </div>
             <div className="flex items-end">
-              <Button type="submit" disabled={checkMutation.isPending}>
+              <V3Button type="submit" disabled={checkMutation.isPending}>
                 开始诊断
-              </Button>
+              </V3Button>
             </div>
-          </form>
-          {formError ? <p className="mt-3 text-sm text-destructive">{formError}</p> : null}
-          {checkMutation.isError ? <p className="mt-3 text-sm text-destructive">权限诊断失败。</p> : null}
-        </CardContent>
-      </Card>
+        </form>
+        {formError ? <p className="mt-3 text-sm text-v3-danger">{formError}</p> : null}
+        {checkMutation.isError ? <p className="mt-3 text-sm text-v3-danger">权限诊断失败。</p> : null}
+      </SoftCard>
       <DiagnosticsResult result={checkMutation.data} />
     </div>
   );
@@ -349,37 +349,30 @@ function validateDiagnosticForm({
 function DiagnosticsResult({ result }: { result?: CheckPermissionResponse }) {
   if (!result) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>诊断结果</CardTitle>
-          <CardDescription>提交后展示授权引擎、命中规则和快照。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">暂无诊断结果。</p>
-        </CardContent>
-      </Card>
+      <SoftCard className="p-5">
+        <h2 className="text-base font-bold text-v3-ink">诊断结果</h2>
+        <p className="mt-1 text-sm text-v3-ink-2">提交后展示授权引擎、命中规则和快照。</p>
+        <div className="mt-6 rounded-v3-inner bg-v3-card-soft px-4 py-8 text-center text-sm text-v3-ink-3">
+          暂无诊断结果。
+        </div>
+      </SoftCard>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-3">
-          <span>诊断结果</span>
-          <Badge variant={result.allowed ? "default" : "destructive"}>{result.allowed ? "允许" : "拒绝"}</Badge>
-        </CardTitle>
-        <CardDescription>{result.engine}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Alert>
-          <AlertTitle>{result.reason}</AlertTitle>
-          <AlertDescription>
-            命中规则：{result.matched_rule || "-"}
-            <br />
-            快照字段：{result.snapshot ? Object.keys(result.snapshot).length : 0}
-          </AlertDescription>
-        </Alert>
-      </CardContent>
-    </Card>
+    <SoftCard className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-v3-ink">诊断结果</h2>
+          <p className="mt-1 text-sm text-v3-ink-2">{result.engine}</p>
+        </div>
+        <StatusPill tone={result.allowed ? "ok" : "danger"}>{result.allowed ? "允许" : "拒绝"}</StatusPill>
+      </div>
+      <div className="mt-5 rounded-v3-inner bg-v3-card-soft p-4">
+        <p className="text-sm font-bold text-v3-ink">{result.reason}</p>
+        <p className="mt-2 text-sm text-v3-ink-2">命中规则：{result.matched_rule || "-"}</p>
+        <p className="mt-1 text-sm text-v3-ink-2">快照字段：{result.snapshot ? Object.keys(result.snapshot).length : 0}</p>
+      </div>
+    </SoftCard>
   );
 }

@@ -4,7 +4,7 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { SemanticIconTile } from "@/components/superteam";
+import { IconTile } from "@/components/superteam";
 
 type TaskLaunchShellProps = {
   children: ReactNode;
@@ -26,13 +26,13 @@ export function TaskLaunchShell({
       <Main>
         <div className="flex flex-col gap-5">
           <div className="flex min-w-0 items-center gap-3">
-            <SemanticIconTile tone="primary" size="lg">
+            <IconTile tone="brand" size="lg">
               <SendHorizontal />
-            </SemanticIconTile>
+            </IconTile>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-normal">{title}</h1>
+              <h1 className="text-2xl font-extrabold tracking-normal text-v3-ink">{title}</h1>
               {description ? (
-                <p className="text-sm text-muted-foreground">{description}</p>
+                <p className="text-sm text-v3-ink-2">{description}</p>
               ) : null}
             </div>
           </div>

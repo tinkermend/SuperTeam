@@ -8,7 +8,7 @@
 
 `apps/web/src/styles/theme.css` 是 token 的代码事实源。本文件只说明使用意图，不覆盖 CSS 文件。
 
-静态原型使用 `docs/prototypes/design-system/design-system-prototypes.css` 镜像浅色 token，目的是验证设计文档拆分后的生成效果；如果 token 变化，先更新 `theme.css`，再同步原型 CSS。
+`docs/prototypes/design-direction-v3/` 仅作为视觉参考，不是 token 事实源；如果 token 变化，先更新 `theme.css`，再同步本文件。
 
 ## 核心 Token
 
@@ -19,53 +19,62 @@
 - `--card` / `--card-foreground`：卡片和面板表面。
 - `--popover` / `--popover-foreground`：浮层表面。
 - `--border` / `--input` / `--ring`：边框、表单控件和焦点状态。
-- `--sidebar-*`：侧边栏及其状态，应表达浅色液态玻璃侧栏，而不是深色实心侧栏。
+- `--sidebar-*`：侧边栏及其状态，应表达浅色 Soft-Flat Shell，而不是深色实心侧栏。
 - `--chart-*`：图表和辅助可视化颜色，应接近语义色。
 - `--radius`：基础圆角。
 
-## 推荐色彩基准
+## v3 色彩基准（当前唯一基线，Soft-Flat 蓝）
 
-| 用途 | 建议色值 | 使用范围 |
-| --- | --- | --- |
-| 品牌主色 | `#2CC7AA` | 主按钮、导航激活、焦点态、关键链接 |
-| 品牌深色 | `#0A806F` | 主按钮渐变终点、强调文字、焦点边缘 |
-| 主色浅背景 | `#E6FBF5` | 激活菜单、选中表格行、轻量提示背景 |
-| Shell 淡色背景 | `#F8FBF7` / `#EEF8F4` | 页面底色、侧栏玻璃底色 |
-| 信息 / Runtime | `#0891B2` | Runtime、信息提示、连接状态 |
-| 成功 / 审批通过 | `#16A34A` | 成功、健康、已通过 |
-| 预警 / 外部能力 | `#F59E0B` | 提醒、等待、外部能力调用 |
-| 危险 / 风险 | `#EF4444` | 失败、危险、高风险、阻断 |
-| 工件 / 智能工作项 | `#8B5CF6` | 工件、生成物、智能处理结果 |
-| 决策 / 人类确认 | `#10B981` | 决策请求、确认、人工验收 |
-| 中性 / 审计 | `#64748B` | 审计、历史、说明、弱状态 |
+v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` token 的浅色基准（暗色端在 `theme.css` 的 `.dark`/`[data-theme=dark]` 内另给一套）：
 
-色彩比例建议：页面 70% 使用白色/近白色/淡青绿/淡蓝背景，20% 使用灰蓝文字与边框，10% 用于主色和语义色。
+| 用途 | 浅色基准 | 软底（soft） | 使用范围 |
+| --- | --- | --- | --- |
+| 品牌主色 `--v3-brand` | `#2F5FFF` | `#E9EFFF` | 主按钮、导航激活、焦点、关键链接、signature 渐变起点 |
+| 品牌深色 `--v3-brand-deep` | `#2348E0` | — | 渐变终点、强调文字、按钮 hover、焦点边缘 |
+| 中性底 `--v3-bg` | `#F3F4F6` | — | 页面底色（真正中性冷灰，不带色相） |
+| 卡片面 `--v3-card` | `#FFFFFF` | `--v3-card-soft #F7F8FA` | 柔和卡片、面板、表格容器外壳 |
+| 主文字 `--v3-ink` | `#0B0D12` | `--v3-ink-2 #697586` / `--v3-ink-3 #9AA4B2` | 黑色粗体大数字与标题、次级、三级文字 |
+| 边框 `--v3-line` | `#EEF1F4` | `--v3-line-strong #DFE4EA` | 卡片内分隔线、表格行线、表头底线 |
+| 运行 / 信息 `--v3-info` | `#2563EB` | `#E8EFFD` | 运行中、队列、Runtime、系统信息 |
+| 成功 / 通过 `--v3-ok` | `#15A06B` | `#E4F6EE` | 成功、在线、健康、已通过、验收通过 |
+| 预警 / 等待 `--v3-warn` | `#CF7A14` | `#FDF0DB` | SLA、待处理、待确认、阈值预警 |
+| 危险 / 阻断 `--v3-danger` | `#E5484D` | `#FDE8E9` | 失败、高风险、不可逆、阻断、危险操作 |
+| 工件 / 产物 `--v3-artifact` | `#7C5CFF` | `#EFEAFF` | Artifact、报告、附件、生成物 |
+| 中性 / 审计 `--v3-mute` | `#64748B` | `#EEF1F4` | 审计、历史、说明、低优先级、排队 |
+
+注意：v3 把“颜色 = 紧迫度/状态”收敛为 5 个状态色（info/ok/warn/danger/mute）+ artifact，**类别（task/runtime/employee 等）改用图标 + 文字编码，不再每类各占一个色**。色彩比例：约 70% 中性面、20% 灰蓝文字与边框、10% 主色与语义色。
+
+### v3 圆角、阴影、字体
+
+- 圆角：`--v3-r-card ~22px`、`--v3-r-inner ~14px`、pill `~8px`、按钮 `~12px`。
+- 阴影（弥散浅）：`--v3-shadow: 0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055)`；hover 上浮用更强一档。
+- 数字：比较场景一律 `font-variant-numeric: tabular-nums`；ID / UUID / 路径 / 哈希用等宽字体 `--mono`。
 
 ## 项目级语义变量
 
 优先通过 `theme.css` 使用或扩展项目变量，不要在页面内重复拼复杂视觉 class：
 
-- `--superteam-shell-bg`
-- `--superteam-glass-bg`
-- `--superteam-liquid-bg`
-- `--superteam-liquid-strong-bg`
-- `--superteam-glass-border`
-- `--superteam-glass-highlight`
-- `--superteam-shadow-low`
-- `--superteam-shadow-mid`
-- `--superteam-shadow-glow`
-- `--superteam-menu-accent-soft`
-- `--superteam-menu-accent`
-- `--superteam-menu-accent-deep`
-- `--superteam-sidebar-active`
-- `--superteam-sidebar-hover`
-- `--superteam-info`
-- `--superteam-success`
-- `--superteam-warning`
-- `--superteam-danger`
-- `--superteam-artifact`
-- `--superteam-decision`
-- `--superteam-neutral`
+- `--v3-brand`
+- `--v3-brand-deep`
+- `--v3-bg`
+- `--v3-card`
+- `--v3-card-soft`
+- `--v3-card-inner`
+- `--v3-ink`
+- `--v3-ink-2`
+- `--v3-ink-3`
+- `--v3-line`
+- `--v3-line-strong`
+- `--v3-info`
+- `--v3-ok`
+- `--v3-warn`
+- `--v3-danger`
+- `--v3-artifact`
+- `--v3-mute`
+- `--v3-r-card`
+- `--v3-r-inner`
+- `--v3-shadow`
+- `--v3-shadow-hover`
 
 ## 使用规则
 
@@ -74,4 +83,4 @@
 - 语义色优先出现在图标、状态点、Badge、边框和小面积背景中。
 - 不在单个功能里新增近似重复色。
 - 默认工作区背景不使用深色。
-- 暗色主题必须使用独立暗色玻璃值，不复用浅色主题的大面积白色/绿色高光。
+- 暗色主题必须使用独立暗色值，不复用浅色主题的大面积白色高光。

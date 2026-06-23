@@ -10,6 +10,7 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusPill, type V3Tone } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError } from "@/lib/api/client";
@@ -208,7 +209,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                     <h2 className="text-base font-semibold">当前运行</h2>
                     <p className="text-sm text-muted-foreground">最新一次数字员工执行事实。</p>
                   </div>
-                  {selectedRun ? <RunStatusBadge status={selectedRun.status} /> : null}
+                  {selectedRun ? <RunStatusPill status={selectedRun.status} /> : null}
                 </div>
                 {runs.isLoading ? <p className="text-sm text-muted-foreground">运行加载中</p> : null}
                 {runs.isError ? <p className="text-sm text-destructive">运行加载失败</p> : null}
@@ -356,11 +357,11 @@ function SummaryItem({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function RunStatusBadge({ status }: { status: DigitalEmployeeRunStatus }) {
+function RunStatusPill({ status }: { status: DigitalEmployeeRunStatus }) {
   const label = runStatusLabel(status);
-  const variant = isFailedRun(status) ? "destructive" : status === "completed" ? "default" : "secondary";
+  const tone: V3Tone = isFailedRun(status) ? "danger" : status === "completed" ? "ok" : "mute";
 
-  return <Badge variant={variant}>{label}</Badge>;
+  return <StatusPill tone={tone}>{label}</StatusPill>;
 }
 
 function FailureBlock({ run }: { run: DigitalEmployeeRun }) {

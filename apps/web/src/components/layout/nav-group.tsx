@@ -35,16 +35,16 @@ import {
 } from './types'
 
 const navIconColors: Record<NavIconTone, string> = {
-  primary: 'var(--superteam-primary)',
-  task: 'var(--superteam-task)',
-  employee: 'var(--superteam-employee)',
-  workflow: 'var(--superteam-workflow)',
-  capability: 'var(--superteam-capability)',
-  approval: 'var(--superteam-approval)',
-  runtime: 'var(--superteam-runtime)',
-  permission: 'var(--superteam-permission)',
-  audit: 'var(--superteam-audit)',
-  neutral: 'var(--superteam-neutral)',
+  primary: 'var(--v3-brand)',
+  task: 'var(--v3-info)',
+  employee: 'var(--v3-ok)',
+  workflow: 'var(--v3-info)',
+  capability: 'var(--v3-warn)',
+  approval: 'var(--v3-ok)',
+  runtime: 'var(--v3-info)',
+  permission: 'var(--v3-artifact)',
+  audit: 'var(--v3-mute)',
+  neutral: 'var(--v3-mute)',
 }
 
 export function NavGroup({ title, items }: NavGroupProps) {
@@ -74,7 +74,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
 
 function NavBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className='ms-auto rounded-full border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-sidebar-active)] px-1.5 py-0 text-xs text-primary shadow-none'>
+    <Badge className='ms-auto rounded-lg border border-v3-line bg-v3-brand-soft px-1.5 py-0 text-xs text-v3-brand-deep shadow-none'>
       {children}
     </Badge>
   )
@@ -190,7 +190,7 @@ function SidebarMenuCollapsedDropdown({
             <DropdownMenuItem key={`${sub.title}-${sub.url}`} asChild>
               <Link
                 to={sub.url}
-                className={`${checkIsActive(href, sub) ? 'bg-secondary' : ''}`}
+                className={`${checkIsActive(href, sub) ? 'bg-v3-brand-soft text-v3-brand-deep' : ''}`}
               >
                 <NavIcon item={sub} />
                 <span className='max-w-52 text-wrap'>{sub.title}</span>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>数字员工 · SuperTeam · Soft-Flat v3</title>
+<style>
+  :root {
+    --bg:#f3f4f6; --card:#ffffff; --card-soft:#f7f8fa; --card-inner:#fafbfc;
+    --ink:#0b0d12; --ink-2:#697586; --ink-3:#9aa4b2; --line:#eef1f4; --line-2:#e6e9ee;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-grad:linear-gradient(140deg,#5b8bff 0%,#2f5fff 58%,#2348e0 100%); --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e4f6ee; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#e5484d; --danger-soft:#fde8e9; --info:#2f5fff; --info-soft:#e9efff;
+    --mute:#64748b; --mute-soft:#eef1f4; --purple:#7c5cff; --purple-soft:#efeaff;
+    --r-card:22px; --r-inner:15px; --r-chip:13px; --r-pill:9px; --r-btn:12px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+    --shadow-pop:0 10px 44px rgba(16,24,40,.12);
+    --mono:ui-monospace,"SFMono-Regular","Menlo","Cascadia Code",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  [data-theme="dark"]{
+    --bg:#0d1014; --card:#171b22; --card-soft:#1c212a; --card-inner:#1a1f27;
+    --ink:#f3f5f8; --ink-2:#9aa6b4; --ink-3:#6b7686; --line:#262c35; --line-2:#2e353f;
+    --brand:#5b8bff; --brand-soft:rgba(91,139,255,.16);
+    --ok:#34d399; --ok-soft:rgba(52,211,153,.15); --warn:#fbbf24; --warn-soft:rgba(251,191,36,.15);
+    --danger:#f87171; --danger-soft:rgba(248,113,113,.16); --info:#5b8bff; --info-soft:rgba(91,139,255,.16);
+    --mute:#94a3b8; --mute-soft:rgba(148,163,184,.14); --purple:#a78bfa; --purple-soft:rgba(167,139,250,.16);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 36px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .num{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);} a{color:inherit;text-decoration:none;}
+  .orb{position:fixed;right:-90px;bottom:-110px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffffff,#e7eaef 70%,#dfe3e9);box-shadow:0 30px 80px rgba(16,24,40,.08);z-index:0;pointer-events:none;opacity:.7;}
+  [data-theme="dark"] .orb{background:radial-gradient(circle at 35% 30%,#222934,#161b22 70%);opacity:.5;}
+
+  .topnav{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:30px;padding:14px 30px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(14px);}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;letter-spacing:-.02em;}
+  .logo .mk{width:26px;height:26px;border-radius:9px;background:var(--brand-grad);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 4px 12px rgba(47,95,255,.35);}
+  .menu{display:flex;gap:4px;margin-left:8px;}
+  .menu a{padding:8px 14px;border-radius:10px;color:var(--ink-2);font-weight:550;font-size:14px;}
+  .menu a:hover{background:var(--card);color:var(--ink);} .menu a.on{color:var(--ink);font-weight:650;}
+  .grow{flex:1;}
+  .tbtn{width:38px;height:38px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;border:none;font-size:15px;}
+  .tbtn:hover{color:var(--ink);}
+  .me{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 5px;background:var(--card);border-radius:13px;box-shadow:var(--shadow);}
+  .me .pic{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#94a3b8,#475569);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .me .nm{font-size:12.5px;font-weight:650;line-height:1.1;} .me .ro{font-size:11px;color:var(--ink-3);}
+
+  .wrap{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:14px 30px 60px;}
+  .head{display:flex;align-items:center;gap:14px;margin:6px 0 22px;}
+  .back{width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:17px;}
+  .head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.03em;}
+  .head .new{margin-left:auto;display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;font-weight:650;font-size:13.5px;padding:11px 18px;border-radius:13px;border:none;cursor:pointer;box-shadow:0 8px 20px rgba(47,95,255,.3);}
+  .head .new:hover{background:var(--brand-deep);}
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .svg-sm{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .ico-sq{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;}
+  .t-blue{background:var(--info-soft);color:var(--info);} .t-green{background:var(--ok-soft);color:var(--ok);}
+  .t-amber{background:var(--warn-soft);color:var(--warn);} .t-purple{background:var(--purple-soft);color:var(--purple);}
+  .t-mute{background:var(--mute-soft);color:var(--mute);}
+  .gbtn{width:34px;height:34px;border-radius:11px;background:var(--card-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;font-size:15px;}
+  .gbtn:hover{color:var(--ink);}
+
+  .hero{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:18px;margin-bottom:24px;}
+  @media(max-width:1100px){.hero{grid-template-columns:1fr 1fr;}}
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:22px 24px;}
+  .bluecard{background:var(--brand-grad);color:#fff;border-radius:var(--r-card);box-shadow:0 18px 50px rgba(47,95,255,.32);padding:22px 24px;display:flex;align-items:center;gap:22px;}
+  .ring{position:relative;width:120px;height:120px;flex:none;} .ring svg{transform:rotate(-90deg);}
+  .ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .pct{font-size:30px;font-weight:800;} .ring .pct small{font-size:15px;font-weight:600;} .ring .cap{font-size:11px;opacity:.85;}
+  .bluecard .ttl{font-size:15px;font-weight:700;opacity:.95;margin-bottom:8px;}
+  .bluecard .meta{font-size:13px;opacity:.85;line-height:1.7;} .bluecard .meta b{font-weight:750;}
+  .statcard .card-h{display:flex;align-items:center;margin-bottom:12px;} .statcard .corner{margin-left:auto;}
+  .statcard .big{font-size:42px;font-weight:800;letter-spacing:-.03em;margin:2px 0;}
+  .statcard .cap{font-size:13px;color:var(--ink-2);} .statcard .big.warn{color:var(--warn);}
+
+  .layout{display:grid;grid-template-columns:1fr 360px;gap:20px;}
+  @media(max-width:1100px){.layout{grid-template-columns:1fr;}}
+
+  .filters{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+  .tab{padding:9px 15px;border-radius:11px;font-size:13.5px;font-weight:600;color:var(--ink-2);cursor:pointer;}
+  .tab.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow);}
+  .tab .c{color:var(--ink-3);margin-left:3px;} .tab.on .c{color:var(--brand);}
+  .srch{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:9px 14px;box-shadow:var(--shadow);color:var(--ink-3);min-width:180px;}
+  .srch input{border:none;outline:none;background:transparent;font:inherit;font-size:13.5px;color:var(--ink);width:100%;}
+
+  .egrid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
+  @media(max-width:680px){.egrid{grid-template-columns:1fr;}}
+  .emp{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px;transition:transform .15s,box-shadow .15s;cursor:pointer;}
+  .emp:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);}
+  .emp-h{display:flex;align-items:flex-start;gap:13px;margin-bottom:16px;}
+  .face{width:50px;height:50px;border-radius:15px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex:none;position:relative;}
+  .face .live{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;border:3px solid var(--card);}
+  .emp-h .meta{flex:1;min-width:0;}
+  .emp-h .nm{font-size:16px;font-weight:750;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;}
+  .emp-h .role{font-size:12.5px;color:var(--ink-3);margin-top:2px;}
+  .dd{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:10px;padding:6px 11px;font-size:12.5px;font-weight:650;color:var(--ink);cursor:pointer;background:var(--card);}
+  .dd .svg-sm{stroke:var(--ink-3);}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;}
+  .pill .d{width:5px;height:5px;border-radius:50%;background:currentColor;}
+  .p-ok{color:var(--ok);background:var(--ok-soft);} .p-info{color:var(--info);background:var(--info-soft);}
+  .p-warn{color:var(--warn);background:var(--warn-soft);} .p-danger{color:var(--danger);background:var(--danger-soft);} .p-mute{color:var(--mute);background:var(--mute-soft);}
+  .stats3{display:flex;gap:10px;margin-bottom:14px;}
+  .stats3 .s{flex:1;background:var(--card-inner);border:1px solid var(--line);border-radius:var(--r-inner);padding:11px 13px;}
+  .stats3 .s .v{font-size:20px;font-weight:800;letter-spacing:-.02em;} .stats3 .s .l{font-size:11.5px;color:var(--ink-3);margin-top:1px;}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+  .tag{font-size:11.5px;font-weight:600;color:var(--ink-2);background:var(--card-soft);border:1px solid var(--line);border-radius:8px;padding:4px 9px;}
+  .emp-f{display:flex;align-items:center;gap:10px;padding-top:14px;border-top:1px solid var(--line);}
+  .emp-f .cur{flex:1;font-size:12.5px;color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .emp-f .cur b{color:var(--ink);font-weight:650;}
+  .btn-ghost{font-size:12.5px;font-weight:650;padding:7px 14px;border-radius:10px;border:1px solid var(--line-2);background:var(--card);color:var(--ink);cursor:pointer;}
+  .btn-ghost:hover{border-color:var(--ink-3);}
+
+  .side .card{margin-bottom:18px;}
+  .side h3{margin:0 0 4px;font-size:16px;font-weight:750;}
+  .side .sub{font-size:12.5px;color:var(--ink-3);margin-bottom:16px;}
+  .prow{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .prow:last-child{border-bottom:none;}
+  .prow .av{width:34px;height:34px;border-radius:10px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:none;}
+  .prow .b{flex:1;min-width:0;} .prow .b .n{font-size:13.5px;font-weight:650;} .prow .b .m{font-size:11.5px;color:var(--ink-3);}
+  .dashed{display:flex;align-items:center;gap:11px;border:1.5px dashed var(--brand);border-radius:14px;padding:12px 14px;background:var(--brand-soft);margin-top:6px;}
+  .dashed .ic{width:34px;height:34px;border-radius:10px;background:var(--card);border:1.5px dashed var(--brand);display:flex;align-items:center;justify-content:center;color:var(--brand);flex:none;}
+  .dashed .t{flex:1;} .dashed .t .n{font-size:13px;font-weight:700;} .dashed .t .m{font-size:11.5px;color:var(--ink-2);}
+  .bars{display:flex;flex-direction:column;gap:13px;}
+  .barrow .l{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;} .barrow .l b{font-weight:700;}
+  .barrow .track{height:8px;border-radius:6px;background:var(--card-soft);overflow:hidden;} .barrow .fill{height:100%;border-radius:6px;}
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+
+  <nav class="topnav">
+    <div class="logo"><span class="mk">S</span> SuperTeam</div>
+    <div class="menu">
+      <a href="#">协调台</a>
+      <a href="projects.html">项目</a>
+      <a href="employees.html" class="on">数字员工</a>
+      <a href="skills.html">技能</a>
+      <a href="#">Runtime</a>
+      <a href="#">审计</a>
+    </div>
+    <div class="grow"></div>
+    <button class="tbtn" id="theme">◐</button>
+    <button class="tbtn">♪</button>
+    <div class="me"><div class="pic">林</div><div><div class="nm">林 Anna</div><div class="ro">平台管理员</div></div></div>
+  </nav>
+
+  <div class="wrap">
+    <div class="head">
+      <a href="#" class="back">‹</a>
+      <h1>数字员工</h1>
+      <button class="new"><svg class="svg-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 新建数字员工</button>
+    </div>
+
+    <div class="hero">
+      <div class="bluecard">
+        <div class="ring">
+          <svg width="120" height="120" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" stroke="rgba(255,255,255,.22)" stroke-width="11" fill="none"/>
+            <circle cx="60" cy="60" r="50" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="103"/>
+          </svg>
+          <div class="mid"><div class="pct">67<small>%</small></div><div class="cap">执行槽占用</div></div>
+        </div>
+        <div>
+          <div class="ttl">数字员工在岗</div>
+          <div class="meta">在岗 <b>18</b> · 忙碌 <b>12</b> · 空闲 <b>6</b><br>跨 <b>4</b> 个 Runtime 节点调度<br>本周完成任务 <b>342</b></div>
+        </div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h"><div class="ico-sq t-green"><svg class="svg" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">数字员工总数</div>
+        <div class="big num">24</div>
+        <div class="cap">本月 <b style="color:var(--ok)">+3</b></div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h"><div class="ico-sq t-blue"><svg class="svg" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">平均成功率</div>
+        <div class="big num">97.4%</div>
+        <div class="cap">近 7 天</div>
+      </div>
+
+      <div class="card statcard">
+        <div class="card-h"><div class="ico-sq t-amber"><svg class="svg" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div><div class="corner"><span class="gbtn">↗</span></div></div>
+        <div class="cap">异常 / 受限</div>
+        <div class="big warn num">2</div>
+        <div class="cap">需人工介入</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <span class="tab on">全部 <span class="c">24</span></span>
+      <span class="tab">执行型 <span class="c">14</span></span>
+      <span class="tab">分析型 <span class="c">6</span></span>
+      <span class="tab">忙碌 <span class="c">12</span></span>
+      <span class="tab">异常 <span class="c">2</span></span>
+      <div class="grow"></div>
+      <div class="srch"><svg class="svg-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="搜索数字员工…"></div>
+    </div>
+
+    <div class="layout">
+      <div class="egrid">
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">CC<span class="live" style="background:var(--ok)"></span></div>
+            <div class="meta"><div class="nm">api-builder <span class="pill p-ok"><span class="d"></span>忙碌</span></div><div class="role">执行型 · claude-code Provider</div></div>
+            <div class="dd">执行 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">3</div><div class="l">进行中</div></div><div class="s"><div class="v num">128</div><div class="l">已完成</div></div><div class="s"><div class="v num">99%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">代码实现</span><span class="tag">单测</span><span class="tag">PR 提交</span><span class="tag">+2</span></div>
+          <div class="emp-f"><div class="cur">当前 <b>支付网关迁移 · 接口层</b></div><button class="btn-ghost">查看</button></div>
+        </div>
+
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#a78bfa,#7c5cff)">SW<span class="live" style="background:var(--ok)"></span></div>
+            <div class="meta"><div class="nm">spec-writer <span class="pill p-ok"><span class="d"></span>忙碌</span></div><div class="role">分析型 · 组合技能</div></div>
+            <div class="dd">分析 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">2</div><div class="l">进行中</div></div><div class="s"><div class="v num">87</div><div class="l">已完成</div></div><div class="s"><div class="v num">97%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">需求拆解</span><span class="tag">交接包</span><span class="tag">上下文回写</span></div>
+          <div class="emp-f"><div class="cur">当前 <b>客户需求澄清 · 第 2 轮</b></div><button class="btn-ghost">查看</button></div>
+        </div>
+
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#f4c430,#cf7a14)">TR<span class="live" style="background:var(--danger)"></span></div>
+            <div class="meta"><div class="nm">test-runner <span class="pill p-danger"><span class="d"></span>失败暂停</span></div><div class="role">验证型 · Provider 技能</div></div>
+            <div class="dd">执行 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">1</div><div class="l">进行中</div></div><div class="s"><div class="v num">203</div><div class="l">已完成</div></div><div class="s"><div class="v num">94%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">回归测试</span><span class="tag">断言校验</span><span class="tag">失败证据</span></div>
+          <div class="emp-f"><div class="cur" style="color:var(--danger)"><b>3 项断言失败 · 等待业务判断</b></div><button class="btn-ghost">处理</button></div>
+        </div>
+
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#34d399,#15a06b)">DP<span class="live" style="background:var(--warn)"></span></div>
+            <div class="meta"><div class="nm">deploy-bot <span class="pill p-warn"><span class="d"></span>待审批</span></div><div class="role">执行型 · 高风险技能</div></div>
+            <div class="dd">执行 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">1</div><div class="l">进行中</div></div><div class="s"><div class="v num">42</div><div class="l">已完成</div></div><div class="s"><div class="v num">100%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">发布编排</span><span class="tag">回滚</span><span class="tag">受限权限</span></div>
+          <div class="emp-f"><div class="cur" style="color:var(--warn)"><b>生产发布 · 等待负责人确认</b></div><button class="btn-ghost">审批</button></div>
+        </div>
+
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#94a3b8,#475569)">CS<span class="live" style="background:var(--ink-3)"></span></div>
+            <div class="meta"><div class="nm">comms-summarizer <span class="pill p-mute"><span class="d"></span>空闲</span></div><div class="role">分析型 · 组合技能</div></div>
+            <div class="dd">分析 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">0</div><div class="l">进行中</div></div><div class="s"><div class="v num">156</div><div class="l">已完成</div></div><div class="s"><div class="v num">98%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">沟通摘要</span><span class="tag">会议纪要</span></div>
+          <div class="emp-f"><div class="cur">可分派 · 空闲 22 分钟</div><button class="btn-ghost">派单</button></div>
+        </div>
+
+        <div class="emp">
+          <div class="emp-h">
+            <div class="face" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">EX<span class="live" style="background:var(--danger)"></span></div>
+            <div class="meta"><div class="nm">export-agent <span class="pill p-danger"><span class="d"></span>受限</span></div><div class="role">能力接入 · 受限技能</div></div>
+            <div class="dd">执行 <svg class="svg-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="stats3"><div class="s"><div class="v num">0</div><div class="l">进行中</div></div><div class="s"><div class="v num">31</div><div class="l">已完成</div></div><div class="s"><div class="v num">96%</div><div class="l">成功率</div></div></div>
+          <div class="tags"><span class="tag">数据导出</span><span class="tag">PII 受控</span></div>
+          <div class="emp-f"><div class="cur" style="color:var(--danger)"><b>权限不足 · 申请提权中</b></div><button class="btn-ghost">查看</button></div>
+        </div>
+      </div>
+
+      <div class="side">
+        <div class="card">
+          <h3>空闲可调度</h3>
+          <div class="sub">点击数字员工头像即可分派至待处理任务。</div>
+          <div class="prow"><div class="av" style="background:linear-gradient(135deg,#94a3b8,#475569)">CS</div><div class="b"><div class="n">comms-summarizer</div><div class="m">分析型 · 空闲 22 分钟</div></div><span class="pill p-mute"><span class="d"></span>空闲</span></div>
+          <div class="prow"><div class="av" style="background:linear-gradient(135deg,#5b8bff,#2348e0)">RV</div><div class="b"><div class="n">review-agent</div><div class="m">审核型 · 空闲 5 分钟</div></div><span class="pill p-mute"><span class="d"></span>空闲</span></div>
+          <div class="prow"><div class="av" style="background:linear-gradient(135deg,#a78bfa,#7c5cff)">DC</div><div class="b"><div class="n">doc-checker</div><div class="m">验证型 · 空闲 1 小时</div></div><span class="pill p-mute"><span class="d"></span>空闲</span></div>
+          <div class="dashed">
+            <div class="ic"><svg class="svg-sm" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></div>
+            <div class="t"><div class="n">3 个待分派任务</div><div class="m">点击头像即可指派执行员工。</div></div>
+            <span class="gbtn">+</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>角色分布</h3>
+          <div class="sub">数字员工只作为可调度执行员工，人类管理职责不在此建模。</div>
+          <div class="bars">
+            <div class="barrow"><div class="l"><span>执行型</span><b class="num">14</b></div><div class="track"><div class="fill" style="width:58%;background:var(--brand)"></div></div></div>
+            <div class="barrow"><div class="l"><span>分析型</span><b class="num">6</b></div><div class="track"><div class="fill" style="width:25%;background:var(--purple)"></div></div></div>
+            <div class="barrow"><div class="l"><span>验证型</span><b class="num">3</b></div><div class="track"><div class="fill" style="width:12%;background:var(--warn)"></div></div></div>
+            <div class="barrow"><div class="l"><span>审核型</span><b class="num">1</b></div><div class="track"><div class="fill" style="width:5%;background:var(--ok)"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+  </script>
+</body>
+</html>
