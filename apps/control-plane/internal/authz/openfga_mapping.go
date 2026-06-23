@@ -124,6 +124,12 @@ func openFGAObjectForRequest(req CheckRequest) (string, bool) {
 		}
 		return openFGAObject(ResourceTeam, req.Resource.ID), true
 	case ResourceSkill:
+		if req.Action == ActionSkillInstall {
+			if req.TenantID == uuid.Nil {
+				return "", false
+			}
+			return openFGAObject(ResourceTenant, req.TenantID.String()), true
+		}
 		if req.Resource.ID == "" {
 			return "", false
 		}

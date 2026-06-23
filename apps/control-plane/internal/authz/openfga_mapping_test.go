@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -58,7 +59,38 @@ func TestOpenFGACheckForSkillInstall(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "user:"+userID.String(), check.User)
 	require.Equal(t, "admin", check.Relation)
-	require.Equal(t, "skill:"+skillID.String(), check.Object)
+	require.Equal(t, "tenant:"+tenantID.String(), check.Object)
+	require.NotContains(t, check.Object, "skill:")
+}
+
+func TestOpenFGACheckForSkillInstallRequiresTenant(t *testing.T) {
+	skillID := uuid.MustParse("00000000-0000-4000-8000-000000000020")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+
+	_, ok := OpenFGACheckForRequest(CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionSkillInstall,
+		Resource: ResourceRef{Type: ResourceSkill, ID: skillID.String()},
+	})
+
+	require.False(t, ok)
+}
+
+func TestOpenFGACheckForSkillInstallUsesModeledObjectType(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	skillID := uuid.MustParse("00000000-0000-4000-8000-000000000020")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+
+	check, ok := OpenFGACheckForRequest(CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionSkillInstall,
+		Resource: ResourceRef{Type: ResourceSkill, ID: skillID.String()},
+		TenantID: tenantID,
+	})
+
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(check.Object, "tenant:"))
+	require.False(t, strings.HasPrefix(check.Object, "skill:"), "openfga/model.fga has no skill object type")
 }
 
 func TestOpenFGATuplesForTenantMembershipAndProjectTeamScope(t *testing.T) {
