@@ -26,6 +26,7 @@ import {
   SoftCard,
   StatusPill,
   V3Button,
+  V3EmptyState,
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
@@ -50,7 +51,7 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { listSkills, type Skill } from "@/lib/api/skills";
+import { listSkillInstallations, listSkills, type Skill, type SkillInstallation } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
@@ -125,6 +126,11 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const skillRows = skills.data ?? [];
   const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? skillRows[0];
   const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
+  const skillInstallations = useQuery({
+    enabled: Boolean(selectedSkill && skills.data),
+    queryKey: ["skill", selectedSkill?.id, "installations"],
+    queryFn: () => listSkillInstallations(apiOptions, selectedSkill!.id),
+  });
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
   const metrics = useMemo(() => buildMarketMetrics(skillRows), [skillRows]);
   const filteredRows = useMemo(
@@ -249,6 +255,16 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
               </>
             )}
           </WorkSurface>
+
+          {selectedSkill ? (
+            <SelectedSkillInstallations
+              installations={skillInstallations.data ?? []}
+              isError={skillInstallations.isError}
+              isLoading={skillInstallations.isPending}
+              errorMessage={skillInstallations.error instanceof Error ? skillInstallations.error.message : undefined}
+              skill={selectedSkill}
+            />
+          ) : null}
         </div>
       </Main>
       <SkillInstallDialog
@@ -276,6 +292,107 @@ function SkillMarketMetric({ metric }: { metric: MetricDefinition }) {
       loud={metric.loud}
       value={metric.value}
     />
+  );
+}
+
+function SelectedSkillInstallations({
+  errorMessage,
+  installations,
+  isError,
+  isLoading,
+  skill,
+}: {
+  errorMessage?: string;
+  installations: SkillInstallation[];
+  isError: boolean;
+  isLoading: boolean;
+  skill: Skill;
+}) {
+  return (
+    <WorkSurface
+      aria-label={`${skill.name} 安装记录`}
+      className="min-w-0 overflow-hidden"
+      role="region"
+    >
+      <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <SkillIcon skill={skill} size="sm" />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-bold text-v3-ink">安装记录</h2>
+            <p className="mt-1 min-w-0 text-[13px] leading-5 text-v3-ink-2">
+              <span className="font-semibold text-v3-ink">{skill.name}</span>
+              <span className="px-2 text-v3-ink-3">·</span>
+              <span className="font-mono">{skill.version}</span>
+            </p>
+          </div>
+        </div>
+        <StatusPill tone={installations.length > 0 ? "ok" : "info"}>
+          {installations.length} 个目标
+        </StatusPill>
+      </div>
+
+      {isLoading ? (
+        <V3LoadingState className="py-8" label="加载安装记录…" />
+      ) : isError ? (
+        <div className="p-4">
+          <V3ErrorState
+            title="安装记录加载失败"
+            description={errorMessage ?? "请检查技能安装记录接口。"}
+          />
+        </div>
+      ) : installations.length === 0 ? (
+        <V3EmptyState
+          className="py-10"
+          title="暂无安装记录"
+          description="成功安装到运行节点后会显示物理安装事实。"
+        />
+      ) : (
+        <div className="divide-y divide-v3-line">
+          {installations.map((installation, index) => (
+            <SkillInstallationRow
+              installation={installation}
+              key={installation.id ?? `${installation.digital_employee_id ?? installation.node_id ?? "target"}-${index}`}
+            />
+          ))}
+        </div>
+      )}
+    </WorkSurface>
+  );
+}
+
+function SkillInstallationRow({ installation }: { installation: SkillInstallation }) {
+  return (
+    <div className="grid min-w-0 gap-3 px-4 py-3 text-[13px] md:grid-cols-[minmax(160px,1.1fr)_minmax(150px,0.9fr)_minmax(220px,1.4fr)] md:items-center">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-bold text-v3-ink">{installationTargetLabel(installation)}</span>
+          <StatusPill tone={providerTone(installation.provider_type)}>{installation.provider_type}</StatusPill>
+        </div>
+        {installation.digital_employee_id && installation.employee_name ? (
+          <div className="mt-1 truncate font-mono text-[11px] text-v3-ink-3">
+            {installation.digital_employee_id}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-w-0 space-y-1">
+        <div className="truncate font-mono text-xs text-v3-ink-2">{runtimeNodeLabel(installation)}</div>
+        {installation.installed_at ? (
+          <div className="truncate font-mono text-[11px] text-v3-ink-3">{installation.installed_at}</div>
+        ) : null}
+      </div>
+
+      <div className="min-w-0 space-y-1">
+        <div className="truncate rounded-lg bg-v3-mute-soft px-2 py-1 font-mono text-xs text-v3-ink">
+          {installation.installed_path}
+        </div>
+        {installation.archive_checksum_sha256 ? (
+          <div className="truncate font-mono text-[11px] text-v3-ink-3">
+            {installation.archive_checksum_sha256}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -775,6 +892,20 @@ function SkillIcon({ size = "default", skill }: { size?: "sm" | "default"; skill
       <Icon />
     </IconTile>
   );
+}
+
+function installationTargetLabel(installation: SkillInstallation) {
+  return installation.employee_name || installation.digital_employee_id || installation.node_id || installation.runtime_node_id || "未知目标";
+}
+
+function runtimeNodeLabel(installation: SkillInstallation) {
+  return [installation.runtime_node_id, installation.node_id].filter(Boolean).join(" · ") || "未记录运行节点";
+}
+
+function providerTone(providerType: SkillInstallation["provider_type"]): V3Tone {
+  if (providerType === "codex") return "brand";
+  if (providerType === "claude-code") return "artifact";
+  return "info";
 }
 
 function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {

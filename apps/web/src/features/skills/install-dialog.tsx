@@ -116,7 +116,7 @@ export function SkillInstallDialog({
       setInstallResult(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["skills"] }),
-        queryClient.invalidateQueries({ queryKey: ["skill", skill?.id] }),
+        queryClient.invalidateQueries({ queryKey: ["skill", skill?.id, "installations"] }),
       ]);
     },
   });

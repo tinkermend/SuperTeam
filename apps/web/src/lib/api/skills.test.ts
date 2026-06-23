@@ -6,6 +6,7 @@ import {
   installSkill,
   InstallSkillError,
   listEmployeeSkills,
+  listSkillInstallations,
   listSkills,
   listTeamSkills,
   unbindEmployeeSkill,
@@ -231,6 +232,39 @@ describe("skills API", () => {
         credentials: "include",
         headers: { accept: "application/json", "content-type": "application/json" },
         method: "POST",
+      },
+    );
+  });
+
+  it("lists successful physical installations with an encoded skill id", async () => {
+    const rows = [
+      {
+        id: "installation-1",
+        skill_id: "skill 1/ops",
+        digital_employee_id: "employee-1",
+        employee_name: "需求澄清 Agent",
+        provider_type: "codex",
+        runtime_node_id: "runtime-1",
+        node_id: "node-1",
+        installed_path: "/var/superteam/skills/skill-1",
+        archive_checksum_sha256: "abc123def456",
+        installed_at: "2026-06-24T08:00:00Z",
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(rows), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(listSkillInstallations({ baseUrl: "http://control-plane.local", fetcher }, "skill 1/ops")).resolves.toEqual(rows);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill%201%2Fops/installations",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
       },
     );
   });

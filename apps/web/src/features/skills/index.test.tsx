@@ -253,6 +253,28 @@ function createSkillsFetcher() {
         ],
       }, 201);
     }
+    if (url.pathname === "/api/v1/skills/skill-requirement/installations" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "installation-1",
+          skill_id: "skill-requirement",
+          digital_employee_id: "agent-1",
+          employee_name: "需求澄清 Agent",
+          provider_type: "codex",
+          runtime_node_id: "runtime-1",
+          node_id: "node-1",
+          installed_path: "/var/superteam/skills/requirement-clarifier",
+          archive_checksum_sha256: "abc123def456",
+          installed_at: "2026-06-24T08:00:00Z",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/skills/skill-api-doc/installations" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/v1/skills/skill-incident-review/installations" && method === "GET") {
+      return jsonResponse([]);
+    }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
 }
@@ -312,6 +334,9 @@ function createInstallConflictFetcher() {
           },
         ],
       }, 409);
+    }
+    if (url.pathname.endsWith("/installations") && method === "GET") {
+      return jsonResponse([]);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -396,7 +421,38 @@ describe("SkillsView", () => {
       expect.objectContaining({ method: "GET" }),
     );
     await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
-    await expect.element(screen.getByText("接口文档生成")).toBeVisible();
+    await expect.element(screen.getByRole("table").getByText("接口文档生成")).toBeVisible();
+  });
+
+  it("loads installation records when selecting a skill detail in the current page", async () => {
+    const fetcher = createSkillsFetcher();
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "查看详情 需求澄清助手" }));
+
+    const installationsRegion = screen.getByRole("region", { name: "需求澄清助手 安装记录" });
+    await expect.element(installationsRegion).toBeVisible();
+    await expect.element(installationsRegion.getByText("1.3.0")).toBeVisible();
+    await expect.element(installationsRegion.getByText("1 个目标")).toBeVisible();
+    await expect.element(installationsRegion.getByText("需求澄清 Agent")).toBeVisible();
+    await expect.element(installationsRegion.getByText("codex")).toBeVisible();
+    await expect.element(installationsRegion.getByText("runtime-1 · node-1")).toBeVisible();
+    await expect.element(installationsRegion.getByText("/var/superteam/skills/requirement-clarifier")).toBeVisible();
+    await expect.element(installationsRegion.getByText("2026-06-24T08:00:00Z")).toBeVisible();
+    await expect.element(installationsRegion.getByText("abc123def456")).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill-requirement/installations",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("renders an empty installation state for a selected skill without physical records", async () => {
+    const screen = await renderSkillsView();
+
+    await userEvent.click(screen.getByRole("button", { name: "查看详情 接口文档生成" }));
+
+    await expect.element(screen.getByRole("region", { name: "接口文档生成 安装记录" })).toBeVisible();
+    await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
   });
 
   it("opens the install dialog from the table install button", async () => {
@@ -440,6 +496,10 @@ describe("SkillsView", () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
+    await userEvent.click(screen.getByRole("button", { name: "查看详情 接口文档生成" }));
+    await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
+    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(1);
+
     await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
     await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
     await userEvent.click(screen.getByRole("button", { name: "确认安装" }));
@@ -456,6 +516,9 @@ describe("SkillsView", () => {
       }),
     );
     await expect.element(screen.getByText("已安装到 1 个目标")).toBeVisible();
+    await vi.waitFor(() => {
+      expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(2);
+    });
   });
 
   it("renders blocked target details when install returns a structured conflict", async () => {

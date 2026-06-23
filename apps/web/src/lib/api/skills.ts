@@ -240,6 +240,21 @@ export async function installSkill(
   return parseJson<InstallSkillResult>(response, "install skill");
 }
 
+export async function listSkillInstallations(
+  options: ApiClientOptions,
+  skillId: string,
+): Promise<SkillInstallation[]> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}/installations`), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "GET",
+  });
+
+  return parseJson<SkillInstallation[]>(response, "skill installations");
+}
+
 async function parseInstallSkillError(response: Response): Promise<never> {
   const contentType = response.headers.get("content-type") ?? "";
   if (response.status === 409 && contentType.includes("application/json")) {
