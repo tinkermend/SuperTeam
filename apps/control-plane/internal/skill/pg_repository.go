@@ -542,6 +542,20 @@ func (r *PgRepository) CreateInstallCommandReceipt(ctx context.Context, req Crea
 	return err
 }
 
+func (r *PgRepository) MarkInstallCommandFailed(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error {
+	if r == nil || r.q == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	_, err := r.q.UpdateRuntimeCommandReceiptStatus(ctx, queries.UpdateRuntimeCommandReceiptStatusParams{
+		Status:       "failed",
+		Result:       nil,
+		ErrorMessage: pgtype.Text{String: message, Valid: strings.TrimSpace(message) != ""},
+		TenantID:     tenantID,
+		CommandID:    commandID,
+	})
+	return err
+}
+
 func (r *PgRepository) WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error) {
 	if r == nil || r.q == nil {
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)

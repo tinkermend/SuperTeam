@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,6 +28,7 @@ type InstallRepository interface {
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	ListInstallTargets(ctx context.Context, req ListSkillInstallTargetsRequest) ([]SkillInstallTarget, error)
 	CreateInstallCommandReceipt(ctx context.Context, req CreateSkillInstallCommandReceiptRequest) error
+	MarkInstallCommandFailed(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error
 	WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error)
 	PersistInstallSuccess(ctx context.Context, req PersistSkillInstallSuccessRequest) (InstallSkillResult, error)
 	RecordInstallFailure(ctx context.Context, req SkillInstallFailureLog) error
@@ -122,6 +124,25 @@ type dispatchedInstallCommand struct {
 	Installations []SkillInstallation
 }
 
+type dispatchInstallCommandError struct {
+	CommandID string
+	Err       error
+}
+
+func (e *dispatchInstallCommandError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *dispatchInstallCommandError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 func (s *InstallService) installTargetsSequentially(ctx context.Context, req InstallSkillRequest, skill *Skill, targets []SkillInstallTarget) ([]SkillInstallation, error) {
 	grouped, nodeOrder := groupInstallTargetsByNode(targets)
 	installations := make([]SkillInstallation, 0, len(targets))
@@ -129,7 +150,12 @@ func (s *InstallService) installTargetsSequentially(ctx context.Context, req Ins
 	for _, nodeID := range nodeOrder {
 		command, err := s.dispatchInstallCommand(ctx, req, skill, nodeID, grouped[nodeID])
 		if err != nil {
-			s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_dispatch_failed", err.Error(), "", appliedNodes)
+			var dispatchErr *dispatchInstallCommandError
+			commandID := ""
+			if errors.As(err, &dispatchErr) {
+				commandID = dispatchErr.CommandID
+			}
+			s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_dispatch_failed", err.Error(), commandID, appliedNodes)
 			return nil, err
 		}
 		waitCtx, cancel := context.WithTimeout(ctx, timeoutOrDefault(req.Timeout, s.timeout))
@@ -186,7 +212,8 @@ func (s *InstallService) dispatchInstallCommand(ctx context.Context, req Install
 		return dispatchedInstallCommand{}, err
 	}
 	if err := s.dispatcher.Dispatch(ctx, nodeID, command); err != nil {
-		return dispatchedInstallCommand{}, err
+		_ = s.repository.MarkInstallCommandFailed(ctx, req.TenantID, commandID, err.Error())
+		return dispatchedInstallCommand{}, &dispatchInstallCommandError{CommandID: commandID, Err: err}
 	}
 	return dispatchedInstallCommand{
 		CommandID:     commandID,

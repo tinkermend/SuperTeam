@@ -264,6 +264,19 @@ func TestInstallSkillTeamLaterDispatchFailureRecordsAppliedNodes(t *testing.T) {
 	if last.Phase != InstallFailurePhaseRuntimeInstall || last.ReasonCode != "runtime_dispatch_failed" {
 		t.Fatalf("failure = (%q, %q), want (runtime_install, runtime_dispatch_failed)", last.Phase, last.ReasonCode)
 	}
+	if last.CommandID == "" {
+		t.Fatal("expected failure log to include failed dispatch command_id")
+	}
+	failedReceipt := repo.receipts[last.CommandID]
+	if failedReceipt == nil {
+		t.Fatalf("expected failed receipt for command %q", last.CommandID)
+	}
+	if failedReceipt.NodeID != "node-2" {
+		t.Fatalf("failed receipt node = %q, want node-2", failedReceipt.NodeID)
+	}
+	if failedReceipt.Status != "failed" || failedReceipt.ErrorMessage != "runtime socket closed" {
+		t.Fatalf("failed receipt = (%q, %q), want (failed, runtime socket closed)", failedReceipt.Status, failedReceipt.ErrorMessage)
+	}
 	applied, _ := last.Details["applied_nodes"].([]string)
 	if len(applied) != 1 || applied[0] != "node-1" {
 		t.Fatalf("expected node-1 surfaced as already-applied for manual cleanup, got %#v", last.Details["applied_nodes"])
@@ -313,6 +326,16 @@ func (r *installServiceRepo) CreateInstallCommandReceipt(ctx context.Context, re
 		CommandID: req.CommandID, Status: "pending", RuntimeNodeID: req.RuntimeNodeID,
 		NodeID: req.NodeID, Payload: req.Payload,
 	}
+	return nil
+}
+
+func (r *installServiceRepo) MarkInstallCommandFailed(ctx context.Context, tenantID uuid.UUID, commandID string, message string) error {
+	receipt := r.receipts[commandID]
+	if receipt == nil {
+		return ErrNotFound
+	}
+	receipt.Status = "failed"
+	receipt.ErrorMessage = message
 	return nil
 }
 
