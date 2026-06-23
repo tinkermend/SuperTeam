@@ -95,6 +95,23 @@ func TestSkillInstallationsMigration(t *testing.T) {
 		"CREATE INDEX idx_skill_installations_employee",
 		"CREATE INDEX idx_skill_installations_team",
 		"COMMENT ON TABLE skill_installations IS",
+		"COMMENT ON COLUMN skill_installations.id IS",
+		"COMMENT ON COLUMN skill_installations.tenant_id IS",
+		"COMMENT ON COLUMN skill_installations.skill_id IS",
+		"COMMENT ON COLUMN skill_installations.target_scope IS",
+		"COMMENT ON COLUMN skill_installations.team_id IS",
+		"COMMENT ON COLUMN skill_installations.digital_employee_id IS",
+		"COMMENT ON COLUMN skill_installations.runtime_node_id IS",
+		"COMMENT ON COLUMN skill_installations.provider_type IS",
+		"COMMENT ON COLUMN skill_installations.installed_path IS",
+		"COMMENT ON COLUMN skill_installations.archive_checksum_sha256 IS",
+		"COMMENT ON COLUMN skill_installations.status IS",
+		"COMMENT ON COLUMN skill_installations.installed_by IS",
+		"COMMENT ON COLUMN skill_installations.installed_at IS",
+		"COMMENT ON COLUMN skill_installations.metadata IS",
+		"COMMENT ON COLUMN skill_installations.created_at IS",
+		"COMMENT ON COLUMN skill_installations.updated_at IS",
+		"COMMENT ON COLUMN skill_installations.deleted_at IS",
 	} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected skill installations migration to contain %q", expected)
@@ -106,6 +123,8 @@ func TestSkillInstallationsMigration(t *testing.T) {
 		"ON DELETE CASCADE",
 		"BIGSERIAL",
 		"status VARCHAR(40) NOT NULL DEFAULT 'failed'",
+		"skill_installations_provider_supported",
+		"provider_type IN ('opencode', 'codex', 'claude-code')",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("skill installations migration must not contain %q", forbidden)
@@ -148,7 +167,6 @@ CREATE TABLE skill_installations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
     CONSTRAINT skill_installations_scope_supported CHECK (target_scope IN ('team', 'employee')),
-    CONSTRAINT skill_installations_provider_supported CHECK (provider_type IN ('opencode', 'codex', 'claude-code')),
     CONSTRAINT skill_installations_status_supported CHECK (status = 'installed'),
     CONSTRAINT skill_installations_installed_path_not_blank CHECK (btrim(installed_path) <> ''),
     CONSTRAINT skill_installations_checksum_not_blank CHECK (btrim(archive_checksum_sha256) <> '')
@@ -171,9 +189,23 @@ CREATE INDEX idx_skill_installations_team
     WHERE deleted_at IS NULL;
 
 COMMENT ON TABLE skill_installations IS '技能物理安装记录，只保存已成功写入数字员工 workspace 的安装事实';
+COMMENT ON COLUMN skill_installations.id IS '技能物理安装记录 ID';
+COMMENT ON COLUMN skill_installations.tenant_id IS '安装记录所属租户 ID';
+COMMENT ON COLUMN skill_installations.skill_id IS '被安装的技能包 ID';
 COMMENT ON COLUMN skill_installations.target_scope IS '安装请求目标范围，team 表示团队批量安装，employee 表示单个数字员工安装';
+COMMENT ON COLUMN skill_installations.team_id IS '团队批量安装来源团队 ID，单员工安装时可为空';
+COMMENT ON COLUMN skill_installations.digital_employee_id IS '实际写入技能目录的数字员工 ID';
+COMMENT ON COLUMN skill_installations.runtime_node_id IS '执行本次物理安装的 Runtime 节点 ID';
+COMMENT ON COLUMN skill_installations.provider_type IS 'Provider 类型，由服务端注册表和安装前置校验控制';
 COMMENT ON COLUMN skill_installations.installed_path IS 'Runtime Agent 实际写入的 provider 官方技能目录';
+COMMENT ON COLUMN skill_installations.archive_checksum_sha256 IS '安装时使用的技能 zip 包 SHA256 校验值';
+COMMENT ON COLUMN skill_installations.status IS '安装事实状态；此表只保存 installed 成功记录';
+COMMENT ON COLUMN skill_installations.installed_by IS '触发安装的人类用户 ID 或系统操作者 ID';
+COMMENT ON COLUMN skill_installations.installed_at IS 'Runtime 确认物理安装成功的时间';
 COMMENT ON COLUMN skill_installations.metadata IS '安装命令、Runtime 回执和排障扩展信息';
+COMMENT ON COLUMN skill_installations.created_at IS '安装记录创建时间';
+COMMENT ON COLUMN skill_installations.updated_at IS '安装记录最后更新时间';
+COMMENT ON COLUMN skill_installations.deleted_at IS '安装记录软删除时间；为空表示当前有效';
 ```
 
 - [ ] **Step 4: Run the migration test and verify it passes**
