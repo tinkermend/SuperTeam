@@ -56,11 +56,11 @@
   }
 
   [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
-    border-inline-end: 1px solid var(--v3-line);
+    border-inline-end: 0;
     background: var(--v3-card);
     background-color: var(--v3-card);
     backdrop-filter: none;
-    box-shadow: inset 1px 0 0 var(--v3-line);
+    box-shadow: none;
   }
 
   [data-slot='v3-shell-header'] {
@@ -246,10 +246,10 @@
   }
 
   .dark [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
-    border-inline-end: 1px solid var(--v3-line);
+    border-inline-end: 0;
     background: var(--v3-card);
     background-color: var(--v3-card);
-    box-shadow: inset 1px 0 0 var(--v3-line);
+    box-shadow: none;
   }
 
   .dark [data-slot='card'] {

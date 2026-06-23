@@ -1,9 +1,36 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
-import { SidebarInset } from '@/components/ui/sidebar'
+import { Sidebar, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import './index.css'
 
 describe('authenticated v3 shell background styles', () => {
+  function forceDesktopSidebar() {
+    const originalMatchMedia = window.matchMedia
+
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+
+    return () => {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      })
+    }
+  }
+
   it('uses a neutral v3 shell background', async () => {
     await render(
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
@@ -26,9 +53,9 @@ describe('authenticated v3 shell background styles', () => {
       .backgroundColor
 
     expect(bodyBackground).toBe('none')
-    expect(bodyColor).toBe('rgb(243, 244, 246)')
+    expect(bodyColor).toBe('rgb(248, 250, 252)')
     expect(sidebarBackground).toBe('none')
-    expect(sidebarColor).toBe('rgb(243, 244, 246)')
+    expect(sidebarColor).toBe('rgb(248, 250, 252)')
   })
 
   it('keeps the header as a v3 white surface over the neutral shell', async () => {
@@ -78,7 +105,41 @@ describe('authenticated v3 shell background styles', () => {
     expect(searchStyle.backgroundColor).toBe('rgb(255, 255, 255)')
   })
 
-  it('keeps the sidebar panel white with a soft v3 divider and no heavy shadow', async () => {
+  it('keeps inset sidebars flush instead of adding a floating inner layer', async () => {
+    const restoreMatchMedia = forceDesktopSidebar()
+
+    try {
+      await render(
+        <SidebarProvider>
+          <Sidebar collapsible='icon' variant='inset'>
+            Sidebar
+          </Sidebar>
+        </SidebarProvider>
+      )
+    } finally {
+      restoreMatchMedia()
+    }
+
+    const sidebarContainer = document.querySelector(
+      '[data-slot="sidebar-container"]'
+    )
+    const sidebarGap = document.querySelector('[data-slot="sidebar-gap"]')
+
+    expect(sidebarContainer).toBeInstanceOf(HTMLElement)
+    expect(sidebarGap).toBeInstanceOf(HTMLElement)
+
+    const containerStyle = getComputedStyle(sidebarContainer as HTMLElement)
+
+    expect(containerStyle.paddingTop).toBe('0px')
+    expect(containerStyle.paddingRight).toBe('0px')
+    expect(containerStyle.paddingBottom).toBe('0px')
+    expect(containerStyle.paddingLeft).toBe('0px')
+    expect((sidebarGap as HTMLElement).className).not.toContain(
+      '--spacing(4)'
+    )
+  })
+
+  it('keeps the sidebar panel white with one soft v3 divider and no heavy shadow', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
         <div
@@ -103,9 +164,11 @@ describe('authenticated v3 shell background styles', () => {
     const containerStyle = getComputedStyle(sidebarContainer as HTMLElement)
     const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
 
+    expect(containerStyle.borderInlineEndWidth).toBe('1px')
     expect(containerStyle.borderInlineEndColor).toBe('rgb(223, 228, 234)')
     expect(containerStyle.boxShadow).toBe('none')
-    expect(innerStyle.borderInlineEndColor).toBe('rgb(238, 241, 244)')
+    expect(innerStyle.borderInlineEndWidth).toBe('0px')
+    expect(innerStyle.boxShadow).toBe('none')
     expect(innerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
     expect(innerStyle.backgroundImage).toBe('none')
   })

@@ -1,6 +1,6 @@
 :root {
   --radius: 0.625rem;
-  --background: #f3f4f6;
+  --background: #f8fafc;
   --foreground: #0b0d12;
   --card: #ffffff;
   --card-foreground: #0b0d12;
@@ -34,7 +34,7 @@
   --sidebar-ring: var(--ring);
 
   /* v3 Soft-Flat design tokens */
-  --v3-bg: #f3f4f6;
+  --v3-bg: #f8fafc;
   --v3-card: #ffffff;
   --v3-card-soft: #f7f8fa;
   --v3-card-inner: #fafbfc;
