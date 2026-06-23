@@ -68,6 +68,75 @@ func TestProjectStoreRunPreDispatchGatePersistsPassedResult(t *testing.T) {
 	require.Equal(t, project.ProjectEventTaskDispatchGateChecked, repo.events[0].EventType)
 }
 
+func TestProjectStoreRunPreDispatchGateRequiresAcceptedDependencyResult(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	dependencyID := uuid.New()
+	employeeID := uuid.New()
+	fixedNow := time.Date(2026, 6, 21, 11, 30, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Dispatch after dependency acceptance",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+		},
+		dependencies: []project.ProjectTaskDependency{{
+			ID:              uuid.New(),
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			DependentTaskID: taskID,
+			BlockerTaskID:   dependencyID,
+		}},
+		dependencyTasks: map[uuid.UUID]project.ProjectTask{
+			dependencyID: {
+				ID:        dependencyID,
+				TenantID:  tenantID,
+				ProjectID: projectID,
+				Title:     "Dependency",
+				Status:    project.ProjectTaskStatusCompleted,
+				UpdatedAt: fixedNow,
+			},
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+	input := DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID}
+
+	missing, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusBlocked, missing.Gate.Status)
+	require.False(t, missing.AllowRunStart)
+	require.Len(t, missing.Gate.Blockers, 1)
+	require.Equal(t, "dependency.not_ready", missing.Gate.Blockers[0].Key)
+
+	repo.setDependencyLatestResult(dependencyID, preDispatchGateTaskResult(tenantID, projectID, dependencyID, project.TaskResultDecisionWaitingHumanReview, "accepted", fixedNow.Add(time.Minute)))
+	waitingHuman, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusBlocked, waitingHuman.Gate.Status)
+	require.False(t, waitingHuman.AllowRunStart)
+
+	repo.setDependencyLatestResult(dependencyID, preDispatchGateTaskResult(tenantID, projectID, dependencyID, project.TaskResultDecisionCompleteAccepted, "accepted", fixedNow.Add(2*time.Minute)))
+	accepted, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusPassed, accepted.Gate.Status)
+	require.True(t, accepted.AllowRunStart)
+}
+
 func TestProjectStoreRunPreDispatchGateDoesNotDuplicateGateEventOnReplay(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -868,6 +937,7 @@ type preDispatchGateRepositoryFake struct {
 	currentAttempt      *project.ProjectTaskAttempt
 	dependencies        []project.ProjectTaskDependency
 	dependencyTasks     map[uuid.UUID]project.ProjectTask
+	projectTaskResults  []project.ProjectTaskResult
 	members             []project.ProjectMember
 	events              []project.ProjectEvent
 	gates               []project.PreDispatchGateResult
@@ -924,6 +994,16 @@ func (r *preDispatchGateRepositoryFake) ListProjectTaskDependencies(ctx context.
 	return result, nil
 }
 
+func (r *preDispatchGateRepositoryFake) ListProjectTaskResults(ctx context.Context, req project.ListProjectTaskResultsRequest) ([]project.ProjectTaskResult, error) {
+	results := make([]project.ProjectTaskResult, 0, len(r.projectTaskResults))
+	for _, result := range r.projectTaskResults {
+		if result.TenantID == req.TenantID && result.ProjectID == req.ProjectID && result.ProjectTaskID == req.ProjectTaskID {
+			results = append(results, result)
+		}
+	}
+	return results, nil
+}
+
 func (r *preDispatchGateRepositoryFake) ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectMember, error) {
 	result := make([]project.ProjectMember, 0)
 	for _, member := range r.members {
@@ -932,6 +1012,38 @@ func (r *preDispatchGateRepositoryFake) ListProjectMembers(ctx context.Context, 
 		}
 	}
 	return result, nil
+}
+
+func preDispatchGateTaskResult(tenantID, projectID, taskID uuid.UUID, decision project.TaskResultDecision, validationStatus string, at time.Time) project.ProjectTaskResult {
+	return project.ProjectTaskResult{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    taskID,
+		ResultStatus:     project.TaskResultStatusCompleted,
+		ValidationStatus: validationStatus,
+		Decision:         decision,
+		Contract: project.TaskResultContract{
+			Status:  project.TaskResultStatusCompleted,
+			Summary: "dependency result",
+		},
+		CreatedAt: at,
+		UpdatedAt: at,
+	}
+}
+
+func (r *preDispatchGateRepositoryFake) setDependencyLatestResult(taskID uuid.UUID, result project.ProjectTaskResult) {
+	r.projectTaskResults = append(r.projectTaskResults, result)
+	if r.dependencyTasks == nil {
+		return
+	}
+	task, ok := r.dependencyTasks[taskID]
+	if !ok {
+		return
+	}
+	task.LatestTaskResultID = &result.ID
+	task.UpdatedAt = result.UpdatedAt
+	r.dependencyTasks[taskID] = task
 }
 
 func (r *preDispatchGateRepositoryFake) AppendProjectEvent(ctx context.Context, req project.AppendProjectEventRequest) (project.ProjectEvent, error) {

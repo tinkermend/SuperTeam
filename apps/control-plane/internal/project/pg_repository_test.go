@@ -382,6 +382,409 @@ func TestCreateProjectTaskPersistsGraphContractFields(t *testing.T) {
 	require.Equal(t, "test", task.PlannerMetadata["planner"])
 }
 
+func TestPgRepositoryRecordProjectTaskResultIsIdempotentAndLinksLatest(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		Title:                 "持久化结果契约",
+		Status:                ProjectTaskStatusPlanned,
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	contract := TaskResultContract{Status: TaskResultStatusCompleted, Summary: "完成结果"}
+	first, err := repo.RecordProjectTaskResult(context.Background(), RecordProjectTaskResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		ResultStatus:       TaskResultStatusCompleted,
+		ValidationStatus:   "accepted",
+		Decision:           TaskResultDecisionCompleteAccepted,
+		Contract:           contract,
+		ValidationWarnings: []string{"manual-check"},
+		IdempotencyKey:     "attempt-result-1",
+	})
+	require.NoError(t, err)
+
+	second, err := repo.RecordProjectTaskResult(context.Background(), RecordProjectTaskResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		ResultStatus:       TaskResultStatusCompleted,
+		ValidationStatus:   "accepted",
+		Decision:           TaskResultDecisionCompleteAccepted,
+		Contract:           contract,
+		ValidationWarnings: []string{"manual-check"},
+		IdempotencyKey:     "attempt-result-1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, contract, second.Contract)
+	require.Equal(t, []string{"manual-check"}, second.ValidationWarnings)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: task.ID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, first.ID, results[0].ID)
+
+	updated, err := repo.LinkProjectTaskLatestResult(context.Background(), tenantID, projectID, task.ID, first.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updated.LatestTaskResultID)
+	require.Equal(t, first.ID, *updated.LatestTaskResultID)
+}
+
+func TestPgRepositoryListUnresolvedBlockersRequiresAcceptedLatestResult(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	createTask := func(title, status string) ProjectTask {
+		task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     title,
+			Status:    status,
+		})
+		require.NoError(t, err)
+		return task
+	}
+	recordLatestResult := func(task ProjectTask, decision TaskResultDecision, validationStatus string) {
+		result, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+			TenantID:         tenantID,
+			ProjectID:        projectID,
+			ProjectTaskID:    task.ID,
+			ResultStatus:     TaskResultStatusCompleted,
+			ValidationStatus: validationStatus,
+			Decision:         decision,
+			Contract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "dependency result",
+			},
+			IdempotencyKey: "dependency-result-" + task.ID.String(),
+		})
+		require.NoError(t, err)
+		_, err = repo.LinkProjectTaskLatestResult(ctx, tenantID, projectID, task.ID, result.ID)
+		require.NoError(t, err)
+	}
+	createDependency := func(dependent, blocker ProjectTask) {
+		_, err := pgRepo.CreateProjectTaskDependency(ctx, CreateProjectTaskDependencyRequest{
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			DependentTaskID: dependent.ID,
+			BlockerTaskID:   blocker.ID,
+		})
+		require.NoError(t, err)
+	}
+
+	noResultBlocker := createTask("completed blocker without result", ProjectTaskStatusCompleted)
+	waitingResultBlocker := createTask("completed blocker waiting human", ProjectTaskStatusCompleted)
+	acceptedBlocker := createTask("completed blocker accepted", ProjectTaskStatusCompleted)
+	noResultDependent := createTask("dependent blocked by missing result", ProjectTaskStatusPlanned)
+	waitingResultDependent := createTask("dependent blocked by waiting result", ProjectTaskStatusPlanned)
+	acceptedDependent := createTask("dependent with accepted result", ProjectTaskStatusPlanned)
+	createDependency(noResultDependent, noResultBlocker)
+	createDependency(waitingResultDependent, waitingResultBlocker)
+	createDependency(acceptedDependent, acceptedBlocker)
+	recordLatestResult(waitingResultBlocker, TaskResultDecisionWaitingHumanReview, "accepted")
+	recordLatestResult(acceptedBlocker, TaskResultDecisionCompleteAccepted, "accepted")
+
+	unresolved, err := repo.ListUnresolvedBlockersForTasks(ctx, tenantID, projectID, []uuid.UUID{
+		noResultDependent.ID,
+		waitingResultDependent.ID,
+		acceptedDependent.ID,
+	})
+
+	require.NoError(t, err)
+	byDependent := map[uuid.UUID]ProjectTaskDependencyReadiness{}
+	for _, blocker := range unresolved {
+		byDependent[blocker.DependentTaskID] = blocker
+	}
+	require.Contains(t, byDependent, noResultDependent.ID)
+	require.Equal(t, noResultBlocker.ID, byDependent[noResultDependent.ID].BlockerTaskID)
+	require.Contains(t, byDependent, waitingResultDependent.ID)
+	require.Equal(t, waitingResultBlocker.ID, byDependent[waitingResultDependent.ID].BlockerTaskID)
+	require.NotContains(t, byDependent, acceptedDependent.ID)
+}
+
+func TestPgRepositoryCreateProjectDemandSummaryIsIdempotent(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+
+	req := CreateProjectDemandSummaryRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		DemandID:           demandID,
+		Status:             "completed",
+		Conclusion:         "需求已完成",
+		SummaryPayload:     map[string]any{"accepted": true, "tasks": []any{"persist-result"}},
+		AcceptanceRequired: true,
+		IdempotencyKey:     "demand-summary-1",
+	}
+	first, err := repo.CreateProjectDemandSummary(context.Background(), req)
+	require.NoError(t, err)
+	second, err := repo.CreateProjectDemandSummary(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+
+	latest, err := repo.GetLatestProjectDemandSummary(context.Background(), tenantID, projectID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, latest.ID)
+	require.Equal(t, true, latest.SummaryPayload["accepted"])
+	require.Equal(t, []any{"persist-result"}, latest.SummaryPayload["tasks"])
+}
+
+func TestProjectTaskResultPaginationDefaultsCapsAndNormalizesOffset(t *testing.T) {
+	limit, offset := normalizeProjectTaskResultPagination(0, -5)
+	require.Equal(t, int32(50), limit)
+	require.Equal(t, int32(0), offset)
+
+	limit, offset = normalizeProjectTaskResultPagination(500, 7)
+	require.Equal(t, int32(200), limit)
+	require.Equal(t, int32(7), offset)
+
+	limit, offset = normalizeProjectTaskResultPagination(25, 3)
+	require.Equal(t, int32(25), limit)
+	require.Equal(t, int32(3), offset)
+}
+
+func TestRecordProjectTaskResultRejectsDirectLinkIDs(t *testing.T) {
+	repo := NewPgRepository(queries.New(noRowsDB{}))
+	linkID := uuid.New()
+	req := RecordProjectTaskResultRequest{
+		TenantID:         uuid.New(),
+		ProjectID:        uuid.New(),
+		ProjectTaskID:    uuid.New(),
+		ResultStatus:     TaskResultStatusBlocked,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionBlockedWaitingHuman,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待人工判断",
+		},
+		IdempotencyKey:    "direct-link-rejected",
+		DecisionRequestID: &linkID,
+	}
+
+	_, err := repo.RecordProjectTaskResult(context.Background(), req)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	req.DecisionRequestID = nil
+	req.RevisionTaskID = &linkID
+	_, err = repo.RecordProjectTaskResult(context.Background(), req)
+	require.ErrorIs(t, err, ErrProjectConflict)
+}
+
+func TestProjectTaskResultInsertDoesNotAcceptLinkColumns(t *testing.T) {
+	body, err := os.ReadFile("../storage/queries/project.sql")
+	require.NoError(t, err)
+	block := sqlQueryBlock(t, string(body), "-- name: CreateProjectTaskResult :one", "-- name: LinkProjectTaskLatestResult :one")
+
+	require.NotContains(t, block, "decision_request_id")
+	require.NotContains(t, block, "revision_task_id")
+}
+
+func TestProjectTaskResultLinksAreConsistencySafeQueries(t *testing.T) {
+	body, err := os.ReadFile("../storage/queries/project.sql")
+	require.NoError(t, err)
+	sql := string(body)
+
+	for _, fragment := range []string{
+		"-- name: LinkProjectTaskResultDecisionRequest :one",
+		"AND (decision_request_id IS NULL OR decision_request_id = sqlc.arg('decision_request_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_decision_requests",
+		"project_decision_requests.tenant_id = sqlc.arg('tenant_id')::uuid",
+		"project_decision_requests.project_id = sqlc.arg('project_id')::uuid",
+		"project_decision_requests.id = sqlc.arg('decision_request_id')::uuid",
+		"project_decision_requests.project_task_id = project_task_results.project_task_id",
+		"-- name: LinkDecisionRequestProjectTaskResult :one",
+		"SET project_task_result_id = sqlc.arg('project_task_result_id')::uuid",
+		"AND (project_task_result_id IS NULL OR project_task_result_id = sqlc.arg('project_task_result_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_task_results",
+		"-- name: LinkProjectTaskResultRevisionTask :one",
+		"AND (revision_task_id IS NULL OR revision_task_id = sqlc.arg('revision_task_id')::uuid)",
+		"EXISTS (\n    SELECT 1 FROM project_tasks",
+		"project_tasks.tenant_id = sqlc.arg('tenant_id')::uuid",
+		"project_tasks.project_id = sqlc.arg('project_id')::uuid",
+		"project_tasks.id = sqlc.arg('revision_task_id')::uuid",
+		"project_tasks.revision_of_task_id = project_task_results.project_task_id",
+	} {
+		require.Contains(t, sql, fragment)
+	}
+}
+
+func sqlQueryBlock(t *testing.T, sql, start, end string) string {
+	t.Helper()
+
+	startIndex := strings.Index(sql, start)
+	require.NotEqual(t, -1, startIndex)
+	endIndex := strings.Index(sql[startIndex:], end)
+	require.NotEqual(t, -1, endIndex)
+	return sql[startIndex : startIndex+endIndex]
+}
+
+func TestProjectTaskResultLinksAreIdempotentAndConflictSafe(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		Title:                 "result link source",
+		Status:                ProjectTaskStatusPlanned,
+		RequiresHumanApproval: true,
+	})
+	require.NoError(t, err)
+	result, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    task.ID,
+		ResultStatus:     TaskResultStatusRevisionNeeded,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionRevisionTask,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusRevisionNeeded,
+			Summary: "需要修订",
+		},
+		IdempotencyKey: "link-result-1",
+	})
+	require.NoError(t, err)
+
+	otherSourceTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "other source task",
+		Status:    ProjectTaskStatusPlanned,
+	})
+	require.NoError(t, err)
+	wrongRevisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "wrong source revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &otherSourceTask.ID,
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, wrongRevisionTask.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	revisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &task.ID,
+	})
+	require.NoError(t, err)
+	linkedRevision, err := repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, revisionTask.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedRevision.RevisionTaskID)
+	require.Equal(t, revisionTask.ID, *linkedRevision.RevisionTaskID)
+	linkedRevision, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, revisionTask.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedRevision.RevisionTaskID)
+	require.Equal(t, revisionTask.ID, *linkedRevision.RevisionTaskID)
+	otherRevisionTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Title:            "other revision task",
+		Status:           ProjectTaskStatusPlanned,
+		RevisionOfTaskID: &task.ID,
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, result.ID, otherRevisionTask.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	taskID := task.ID
+	otherTaskID := otherSourceTask.ID
+	wrongDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &otherTaskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review wrong task result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, wrongDecision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	decision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	linkedDecision, err := repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, decision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedDecision.DecisionRequestID)
+	require.Equal(t, decision.ID, *linkedDecision.DecisionRequestID)
+	linkedDecision, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, decision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedDecision.DecisionRequestID)
+	require.Equal(t, decision.ID, *linkedDecision.DecisionRequestID)
+
+	otherDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review result differently",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, result.ID, otherDecision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	secondResult, err := repo.RecordProjectTaskResult(ctx, RecordProjectTaskResultRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    task.ID,
+		ResultStatus:     TaskResultStatusBlocked,
+		ValidationStatus: "accepted",
+		Decision:         TaskResultDecisionBlockedWaitingHuman,
+		Contract: TaskResultContract{
+			Status:  TaskResultStatusBlocked,
+			Summary: "等待人工判断",
+		},
+		IdempotencyKey: "link-result-2",
+	})
+	require.NoError(t, err)
+	_, err = repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, secondResult.ID, decision.ID)
+	require.ErrorIs(t, err, ErrProjectConflict)
+	freshDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_result_review",
+		TitleSnapshot:     "Review second result",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	linkedSecond, err := repo.LinkProjectTaskResultDecisionRequest(ctx, tenantID, projectID, secondResult.ID, freshDecision.ID)
+	require.NoError(t, err)
+	require.NotNil(t, linkedSecond.DecisionRequestID)
+	require.Equal(t, freshDecision.ID, *linkedSecond.DecisionRequestID)
+}
+
 func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -3069,6 +3472,34 @@ func (r *memoryRepository) GetProjectTaskGraph(ctx context.Context, req GetProje
 	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
 }
 
+func (r *memoryRepository) RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error) {
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error) {
+	return ProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error) {
+	return ProjectDemandSummary{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error) {
+	return ProjectDemandSummary{}, ErrProjectNotFound
+}
+
 func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	t.Helper()
 
@@ -3094,6 +3525,8 @@ func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		for _, statement := range []string{
+			"DELETE FROM project_demand_summaries WHERE tenant_id = $1",
+			"DELETE FROM project_task_results WHERE tenant_id = $1",
 			"DELETE FROM project_task_attempts WHERE tenant_id = $1",
 			"DELETE FROM project_execution_summaries WHERE tenant_id = $1",
 			"DELETE FROM project_decision_requests WHERE tenant_id = $1",

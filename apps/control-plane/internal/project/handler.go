@@ -63,6 +63,10 @@ type HandlerService interface {
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error)
 }
 
+type projectTaskAttemptResultSubmitter interface {
+	SubmitProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest) (*ExecutionSummary, error)
+}
+
 type HTTPHandler struct {
 	service HandlerService
 }
@@ -1043,6 +1047,35 @@ func (h *HTTPHandler) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.
 		MissingInformation:               body.MissingInformation,
 		RecommendedNextAction:            body.RecommendedNextAction,
 		RequiresHumanReview:              body.RequiresHumanReview,
+		ResultContract:                   body.ResultContract,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *HTTPHandler) SubmitProjectTaskAttemptResult(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
+	if !ok {
+		return
+	}
+	submitter, ok := service.(projectTaskAttemptResultSubmitter)
+	if !ok {
+		http.Error(w, "project task result service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var body submitProjectTaskAttemptResultBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if _, err := submitter.SubmitProjectTaskAttemptResult(r.Context(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		ResultContract:                   body.ResultContract,
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -1068,6 +1101,7 @@ func (h *HTTPHandler) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Requ
 		FailureSummary:                   body.FailureSummary,
 		FailureFamily:                    body.FailureFamily,
 		Retryable:                        body.Retryable,
+		ResultContract:                   body.ResultContract,
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -1095,6 +1129,7 @@ func (h *HTTPHandler) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http
 		Summary:                          body.Summary,
 		MissingContextRefs:               body.MissingContextRefs,
 		SuggestedResolutionOptions:       body.SuggestedResolutionOptions,
+		ResultContract:                   body.ResultContract,
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -1409,30 +1444,38 @@ type renewProjectTaskAttemptLeaseBody struct {
 
 type completeProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
-	Conclusion            string         `json:"conclusion"`
-	EvidenceRefs          []any          `json:"evidence_refs"`
-	ArtifactRefs          []any          `json:"artifact_refs"`
-	ConfidenceFactors     map[string]any `json:"confidence_factors"`
-	Uncertainty           string         `json:"uncertainty"`
-	MissingInformation    []any          `json:"missing_information"`
-	RecommendedNextAction string         `json:"recommended_next_action"`
-	RequiresHumanReview   bool           `json:"requires_human_review"`
+	Conclusion            string              `json:"conclusion"`
+	EvidenceRefs          []any               `json:"evidence_refs"`
+	ArtifactRefs          []any               `json:"artifact_refs"`
+	ConfidenceFactors     map[string]any      `json:"confidence_factors"`
+	Uncertainty           string              `json:"uncertainty"`
+	MissingInformation    []any               `json:"missing_information"`
+	RecommendedNextAction string              `json:"recommended_next_action"`
+	RequiresHumanReview   bool                `json:"requires_human_review"`
+	ResultContract        *TaskResultContract `json:"result_contract"`
+}
+
+type submitProjectTaskAttemptResultBody struct {
+	ProjectTaskAttemptRuntimeBody
+	ResultContract TaskResultContract `json:"result_contract"`
 }
 
 type failProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
-	FailureSummary string `json:"failure_summary"`
-	FailureFamily  string `json:"failure_family"`
-	Retryable      *bool  `json:"retryable"`
+	FailureSummary string              `json:"failure_summary"`
+	FailureFamily  string              `json:"failure_family"`
+	Retryable      *bool               `json:"retryable"`
+	ResultContract *TaskResultContract `json:"result_contract"`
 }
 
 type waitHumanProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
-	DigitalEmployeeID          uuid.UUID `json:"digital_employee_id"`
-	Reason                     string    `json:"reason"`
-	Summary                    string    `json:"summary"`
-	MissingContextRefs         []any     `json:"missing_context_refs"`
-	SuggestedResolutionOptions []string  `json:"suggested_resolution_options"`
+	DigitalEmployeeID          uuid.UUID           `json:"digital_employee_id"`
+	Reason                     string              `json:"reason"`
+	Summary                    string              `json:"summary"`
+	MissingContextRefs         []any               `json:"missing_context_refs"`
+	SuggestedResolutionOptions []string            `json:"suggested_resolution_options"`
+	ResultContract             *TaskResultContract `json:"result_contract"`
 }
 
 type createEvidenceBody struct {

@@ -1211,6 +1211,9 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
+	if err := s.ensureFinalDemandSummariesForAcceptance(ctx, input.TenantID, input.ProjectID); err != nil {
+		return DecisionRequestResult{}, err
+	}
 	if _, err := s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusRunning)}, string(project.ProjectStatusAcceptance)); err != nil {
 		if errors.Is(err, project.ErrProjectNotFound) {
 			// Already in acceptance/terminal: a review is already pending or resolved.
@@ -1268,10 +1271,433 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 	}
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
-			return DecisionRequestResult{}, err
+			return DecisionRequestResult{ID: decision.ID}, nil
 		}
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) ensureFinalDemandSummariesForAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	const demandPageLimit int32 = 100
+	for offset := int32(0); ; offset += demandPageLimit {
+		demands, err := s.repository.ListProjectDemands(ctx, tenantID, projectID, demandPageLimit, offset)
+		if err != nil {
+			return err
+		}
+		for _, demand := range demands {
+			if !projectDemandTerminalStatus(demand.Status) {
+				continue
+			}
+			if err := s.ensureFinalDemandSummary(ctx, demand); err != nil {
+				return err
+			}
+		}
+		if len(demands) < int(demandPageLimit) {
+			return nil
+		}
+	}
+}
+
+func (s *ProjectStore) ensureFinalDemandSummary(ctx context.Context, demand project.ProjectDemand) error {
+	idempotencyKey := "final-demand-summary:" + demand.ID.String()
+	if latest, err := s.repository.GetLatestProjectDemandSummary(ctx, demand.TenantID, demand.ProjectID, demand.ID); err == nil {
+		if latest.IdempotencyKey == idempotencyKey {
+			_, err = s.ensureFinalDemandSummaryCreatedEvent(ctx, demand, latest, idempotencyKey)
+			return err
+		}
+		return nil
+	} else if !errors.Is(err, project.ErrProjectNotFound) {
+		return err
+	}
+	tasks, err := s.listDemandSummaryTasks(ctx, demand.TenantID, demand.ProjectID, demand.ID)
+	if err != nil {
+		return err
+	}
+	taskFacts := make([]demandSummaryTaskFact, 0, len(tasks))
+	for _, task := range tasks {
+		latestResult, err := s.latestTaskResult(ctx, task)
+		if err != nil {
+			return err
+		}
+		taskFacts = append(taskFacts, demandSummaryTaskFact{Task: task, LatestResult: latestResult})
+	}
+	payload, conclusion := buildFinalDemandSummaryPayload(demand, taskFacts)
+	summary, err := s.repository.CreateProjectDemandSummary(ctx, project.CreateProjectDemandSummaryRequest{
+		TenantID:           demand.TenantID,
+		ProjectID:          demand.ProjectID,
+		DemandID:           demand.ID,
+		Status:             string(demand.Status),
+		Conclusion:         conclusion,
+		SummaryPayload:     payload,
+		AcceptanceRequired: true,
+		IdempotencyKey:     idempotencyKey,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = s.ensureFinalDemandSummaryCreatedEvent(ctx, demand, summary, idempotencyKey)
+	return err
+}
+
+func (s *ProjectStore) ensureFinalDemandSummaryCreatedEvent(ctx context.Context, demand project.ProjectDemand, summary project.ProjectDemandSummary, idempotencyKey string) (project.ProjectEvent, error) {
+	return s.ensureCoordinatorProjectEvent(ctx, demand.TenantID, demand.ProjectID, project.ProjectEventDemandSummaryCreated, "demand_summary:"+demand.ID.String(), "需求最终总结已生成", map[string]any{
+		"demand_id":       demand.ID.String(),
+		"demand_status":   string(demand.Status),
+		"summary_id":      summary.ID.String(),
+		"idempotency_key": idempotencyKey,
+	})
+}
+
+func (s *ProjectStore) listDemandSummaryTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]project.ProjectTask, error) {
+	const pageLimit int32 = 100
+	tasks := make([]project.ProjectTask, 0)
+	for offset := int32(0); ; offset += pageLimit {
+		page, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, pageLimit, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, task := range page {
+			if task.DemandID != nil && *task.DemandID == demandID {
+				tasks = append(tasks, task)
+			}
+		}
+		if len(page) < int(pageLimit) {
+			return tasks, nil
+		}
+	}
+}
+
+func (s *ProjectStore) latestTaskResult(ctx context.Context, task project.ProjectTask) (*project.ProjectTaskResult, error) {
+	if task.LatestTaskResultID == nil || *task.LatestTaskResultID == uuid.Nil {
+		return nil, nil
+	}
+	const pageLimit int32 = 100
+	for offset := int32(0); ; offset += pageLimit {
+		results, err := s.repository.ListProjectTaskResults(ctx, project.ListProjectTaskResultsRequest{
+			TenantID:      task.TenantID,
+			ProjectID:     task.ProjectID,
+			ProjectTaskID: task.ID,
+			Limit:         pageLimit,
+			Offset:        offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, result := range results {
+			if result.ID == *task.LatestTaskResultID {
+				copyResult := result
+				return &copyResult, nil
+			}
+		}
+		if len(results) < int(pageLimit) {
+			return nil, nil
+		}
+	}
+}
+
+type demandSummaryTaskFact struct {
+	Task         project.ProjectTask
+	LatestResult *project.ProjectTaskResult
+}
+
+func buildFinalDemandSummaryPayload(demand project.ProjectDemand, taskFacts []demandSummaryTaskFact) (map[string]any, string) {
+	taskStatuses := make([]map[string]any, 0, len(taskFacts))
+	completedTasks := make([]map[string]any, 0)
+	unfinishedTasks := make([]map[string]any, 0)
+	evidenceRefs := make([]map[string]any, 0)
+	artifactRefs := make([]map[string]any, 0)
+	humanDecisionRefs := make([]map[string]any, 0)
+	validationResults := make([]map[string]any, 0)
+	changes := make([]map[string]any, 0)
+	actualVerification := make([]map[string]any, 0)
+	remainingRisks := make([]map[string]any, 0)
+	suggestedNextSteps := make([]map[string]any, 0)
+	seenDecisionRefs := map[string]struct{}{}
+
+	for _, fact := range taskFacts {
+		taskPayload := demandSummaryTaskPayload(fact.Task, fact.LatestResult)
+		taskStatuses = append(taskStatuses, taskPayload)
+		if demandSummaryTaskAccepted(fact) {
+			completedTasks = append(completedTasks, taskPayload)
+		} else {
+			unfinishedTasks = append(unfinishedTasks, taskPayload)
+		}
+		if fact.Task.WaitingRequestID != nil && *fact.Task.WaitingRequestID != uuid.Nil {
+			addDecisionRef(&humanDecisionRefs, seenDecisionRefs, *fact.Task.WaitingRequestID, fact.Task.ID, "task_waiting_request")
+		}
+		if fact.LatestResult == nil {
+			continue
+		}
+		result := *fact.LatestResult
+		if result.DecisionRequestID != nil && *result.DecisionRequestID != uuid.Nil {
+			addDecisionRef(&humanDecisionRefs, seenDecisionRefs, *result.DecisionRequestID, fact.Task.ID, "task_result_decision")
+		}
+		for _, ref := range result.Contract.EvidenceRefs {
+			evidenceRefs = append(evidenceRefs, taskResultRefPayload(ref, fact.Task.ID))
+		}
+		for _, ref := range result.Contract.ArtifactRefs {
+			artifactRefs = append(artifactRefs, taskResultRefPayload(ref, fact.Task.ID))
+		}
+		for _, acceptance := range result.Contract.AcceptanceResults {
+			validationResults = append(validationResults, taskResultAcceptancePayload(acceptance, fact.Task.ID))
+		}
+		for _, change := range result.Contract.ChangesMade {
+			changes = append(changes, taskResultChangePayload(change, fact.Task.ID))
+		}
+		for _, verification := range result.Contract.Verification {
+			actualVerification = append(actualVerification, taskResultVerificationPayload(verification, fact.Task.ID))
+		}
+		for _, risk := range result.Contract.Risks {
+			remainingRisks = append(remainingRisks, taskResultRiskPayload(risk, fact.Task.ID))
+		}
+		for _, followUp := range result.Contract.FollowUpRequests {
+			suggestedNextSteps = append(suggestedNextSteps, taskResultFollowUpPayload(followUp, fact.Task.ID))
+		}
+		if result.Contract.Failure != nil && strings.TrimSpace(result.Contract.Failure.RecoveryRecommendation) != "" {
+			suggestedNextSteps = append(suggestedNextSteps, map[string]any{
+				"task_id": fact.Task.ID.String(),
+				"type":    "failure_recovery",
+				"summary": result.Contract.Failure.RecoveryRecommendation,
+			})
+		}
+	}
+
+	payload := map[string]any{
+		"demand_id":            demand.ID.String(),
+		"original_goal":        demand.Title,
+		"status":               string(demand.Status),
+		"conclusion":           demandSummaryConclusion(demand.Status, len(completedTasks), len(unfinishedTasks)),
+		"task_statuses":        taskStatuses,
+		"completed_tasks":      completedTasks,
+		"unfinished_tasks":     unfinishedTasks,
+		"evidence_refs":        evidenceRefs,
+		"artifact_refs":        artifactRefs,
+		"human_decision_refs":  humanDecisionRefs,
+		"validation_results":   validationResults,
+		"changes":              changes,
+		"actual_verification":  actualVerification,
+		"remaining_risks":      remainingRisks,
+		"suggested_next_steps": suggestedNextSteps,
+	}
+	if demand.Content != nil {
+		payload["original_goal_content"] = *demand.Content
+	}
+	if len(demand.SourceRefs) > 0 {
+		payload["source_refs"] = demand.SourceRefs
+	}
+	if len(demand.Attachments) > 0 {
+		payload["attachments"] = demand.Attachments
+	}
+	return payload, payload["conclusion"].(string)
+}
+
+func projectDemandTerminalStatus(status project.ProjectDemandStatus) bool {
+	switch status {
+	case project.ProjectDemandStatusCompleted, project.ProjectDemandStatusFailed, project.ProjectDemandStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func demandSummaryTaskAccepted(fact demandSummaryTaskFact) bool {
+	return fact.Task.Status == project.ProjectTaskStatusCompleted &&
+		fact.LatestResult != nil &&
+		project.ProjectTaskResultAcceptedForDependencyUnlock(*fact.LatestResult)
+}
+
+func demandSummaryTaskPayload(task project.ProjectTask, latestResult *project.ProjectTaskResult) map[string]any {
+	payload := map[string]any{
+		"task_id": task.ID.String(),
+		"title":   task.Title,
+		"status":  task.Status,
+	}
+	if task.TaskKind != nil {
+		payload["task_kind"] = *task.TaskKind
+	}
+	if task.LatestTaskResultID != nil && *task.LatestTaskResultID != uuid.Nil {
+		payload["latest_task_result_id"] = task.LatestTaskResultID.String()
+	}
+	if latestResult != nil {
+		payload["result_status"] = string(latestResult.ResultStatus)
+		payload["result_decision"] = string(latestResult.Decision)
+		payload["validation_status"] = latestResult.ValidationStatus
+		payload["result_summary"] = latestResult.Contract.Summary
+	}
+	return payload
+}
+
+func demandSummaryConclusion(status project.ProjectDemandStatus, completedCount, unfinishedCount int) string {
+	return "demand " + string(status) + " with " + strconv.Itoa(completedCount) + " completed task(s), " + strconv.Itoa(unfinishedCount) + " unfinished task(s)"
+}
+
+func addDecisionRef(items *[]map[string]any, seen map[string]struct{}, decisionRequestID, taskID uuid.UUID, source string) {
+	key := decisionRequestID.String()
+	if _, ok := seen[key]; ok {
+		return
+	}
+	seen[key] = struct{}{}
+	*items = append(*items, map[string]any{
+		"decision_request_id": decisionRequestID.String(),
+		"task_id":             taskID.String(),
+		"source":              source,
+	})
+}
+
+func taskResultRefPayload(ref project.TaskResultRef, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{"task_id": taskID.String()}
+	if ref.ID != "" {
+		payload["id"] = ref.ID
+	}
+	if ref.Kind != "" {
+		payload["kind"] = ref.Kind
+	}
+	if ref.Type != "" {
+		payload["type"] = ref.Type
+	}
+	if ref.Ref != "" {
+		payload["ref"] = ref.Ref
+	}
+	if ref.URI != "" {
+		payload["uri"] = ref.URI
+	}
+	if ref.URL != "" {
+		payload["url"] = ref.URL
+	}
+	if ref.Title != "" {
+		payload["title"] = ref.Title
+	}
+	if ref.Summary != "" {
+		payload["summary"] = ref.Summary
+	}
+	if len(ref.Metadata) > 0 {
+		payload["metadata"] = ref.Metadata
+	}
+	return payload
+}
+
+func taskResultAcceptancePayload(result project.TaskResultAcceptanceResult, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{
+		"task_id": taskID.String(),
+		"status":  string(result.Status),
+	}
+	if result.ID != "" {
+		payload["id"] = result.ID
+	}
+	if result.Criterion != "" {
+		payload["criterion"] = result.Criterion
+	}
+	if result.CriterionID != "" {
+		payload["criterion_id"] = result.CriterionID
+	}
+	if result.Name != "" {
+		payload["name"] = result.Name
+	}
+	if result.Summary != "" {
+		payload["summary"] = result.Summary
+	}
+	if len(result.EvidenceRefs) > 0 {
+		payload["evidence_refs"] = append([]string(nil), result.EvidenceRefs...)
+	}
+	if result.HumanAcceptedReason != "" {
+		payload["human_accepted_reason"] = result.HumanAcceptedReason
+	}
+	return payload
+}
+
+func taskResultChangePayload(change project.TaskResultChange, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{"task_id": taskID.String()}
+	if change.Type != "" {
+		payload["type"] = change.Type
+	}
+	if change.Ref != "" {
+		payload["ref"] = change.Ref
+	}
+	if change.Summary != "" {
+		payload["summary"] = change.Summary
+	}
+	if len(change.Files) > 0 {
+		payload["files"] = append([]string(nil), change.Files...)
+	}
+	if len(change.ArtifactRefs) > 0 {
+		refs := make([]map[string]any, 0, len(change.ArtifactRefs))
+		for _, ref := range change.ArtifactRefs {
+			refs = append(refs, taskResultRefPayload(ref, taskID))
+		}
+		payload["artifact_refs"] = refs
+	}
+	return payload
+}
+
+func taskResultVerificationPayload(verification project.TaskResultVerification, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{
+		"task_id": taskID.String(),
+		"status":  string(verification.Status),
+	}
+	if verification.Type != "" {
+		payload["type"] = verification.Type
+	}
+	if verification.Ref != "" {
+		payload["ref"] = verification.Ref
+	}
+	if verification.Summary != "" {
+		payload["summary"] = verification.Summary
+	}
+	if verification.Method != "" {
+		payload["method"] = verification.Method
+	}
+	if len(verification.EvidenceRefs) > 0 {
+		refs := make([]map[string]any, 0, len(verification.EvidenceRefs))
+		for _, ref := range verification.EvidenceRefs {
+			refs = append(refs, taskResultRefPayload(ref, taskID))
+		}
+		payload["evidence_refs"] = refs
+	}
+	return payload
+}
+
+func taskResultRiskPayload(risk project.TaskResultRisk, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{"task_id": taskID.String()}
+	if risk.Summary != "" {
+		payload["summary"] = risk.Summary
+	}
+	if risk.Description != "" {
+		payload["description"] = risk.Description
+	}
+	if risk.Severity != "" {
+		payload["severity"] = risk.Severity
+	}
+	if risk.Level != "" {
+		payload["level"] = risk.Level
+	}
+	if risk.Mitigation != "" {
+		payload["mitigation"] = risk.Mitigation
+	}
+	if risk.RequiresHumanReview {
+		payload["requires_human_review"] = true
+	}
+	return payload
+}
+
+func taskResultFollowUpPayload(followUp project.TaskResultFollowUpRequest, taskID uuid.UUID) map[string]any {
+	payload := map[string]any{"task_id": taskID.String()}
+	if followUp.Type != "" {
+		payload["type"] = followUp.Type
+	}
+	if followUp.Summary != "" {
+		payload["summary"] = followUp.Summary
+	}
+	if followUp.RequiredBy != "" {
+		payload["required_by"] = followUp.RequiredBy
+	}
+	if len(followUp.MissingInformation) > 0 {
+		refs := make([]map[string]any, 0, len(followUp.MissingInformation))
+		for _, ref := range followUp.MissingInformation {
+			refs = append(refs, taskResultRefPayload(ref, taskID))
+		}
+		payload["missing_information"] = refs
+	}
+	return payload
 }
 
 // ApplyProjectAcceptanceDecision closes the acceptance loop: accept archives the project

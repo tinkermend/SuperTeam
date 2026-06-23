@@ -14,6 +14,7 @@ use crate::controlplane::models::{
     EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
     ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RuntimeCommand,
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    TaskResultContract,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -53,6 +54,7 @@ enum ProviderTerminalWritebackAction {
 #[derive(Debug, Default)]
 struct ProviderTerminalWritebackState {
     pending_completion: Option<ProviderTerminalCompletion>,
+    text_summary: String,
     failed: bool,
 }
 
@@ -63,10 +65,25 @@ impl ProviderTerminalWritebackState {
         provider_session_id: Option<&str>,
     ) -> Option<ProviderTerminalWritebackAction> {
         match event {
+            ProviderEvent::TextDelta { text } => {
+                if !self.failed {
+                    self.text_summary.push_str(text);
+                }
+                None
+            }
             ProviderEvent::TurnCompleted { summary } => {
                 if !self.failed {
+                    let summary = summary
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                        .or_else(|| {
+                            let text = self.text_summary.trim();
+                            (!text.is_empty()).then(|| text.to_string())
+                        });
                     self.pending_completion = Some(ProviderTerminalCompletion {
-                        summary: summary.clone(),
+                        summary,
                         provider_session_id: provider_session_id.map(ToString::to_string),
                     });
                 }
@@ -85,7 +102,18 @@ impl ProviderTerminalWritebackState {
         if self.failed {
             None
         } else {
-            self.pending_completion
+            let text_summary = self.text_summary.trim();
+            self.pending_completion.map(|mut completion| {
+                let has_summary = completion
+                    .summary
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|value| !value.is_empty());
+                if !has_summary && !text_summary.is_empty() {
+                    completion.summary = Some(text_summary.to_string());
+                }
+                completion
+            })
         }
     }
 }
@@ -1298,6 +1326,8 @@ fn project_task_complete_writeback(
         ));
     }
     let artifact_refs = parsed_array(parsed.as_ref(), "artifact_refs");
+    let result_contract =
+        parsed_result_contract(parsed.as_ref(), &conclusion, &evidence_refs, &artifact_refs);
     let missing_information = parsed_array(parsed.as_ref(), "missing_information");
     let recommended_next_action = parsed_string(parsed.as_ref(), "recommended_next_action")
         .or_else(|| {
@@ -1370,6 +1400,7 @@ fn project_task_complete_writeback(
             .and_then(|value| value.get("requires_human_review"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
+        result_contract,
     }
 }
 
@@ -1429,6 +1460,7 @@ fn project_task_wait_human_writeback(
             "suggested_resolution_options",
         )
         .unwrap_or_else(|| vec!["resume_same_task".to_string()]),
+        result_contract: None,
     })
 }
 
@@ -1533,6 +1565,163 @@ fn parsed_confidence_factors(
     factors
 }
 
+fn parsed_result_contract(
+    value: Option<&serde_json::Value>,
+    fallback_summary: &str,
+    evidence_refs: &[serde_json::Value],
+    artifact_refs: &[serde_json::Value],
+) -> Option<TaskResultContract> {
+    if let Some(contract) = value
+        .and_then(|value| value.get("result_contract"))
+        .and_then(serde_json::Value::as_object)
+    {
+        return Some(TaskResultContract {
+            status: contract
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("completed")
+                .to_string(),
+            summary: contract
+                .get("summary")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(fallback_summary)
+                .to_string(),
+            acceptance_results: normalized_acceptance_results(contract.get("acceptance_results")),
+            evidence_refs: contract
+                .get("evidence_refs")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_else(|| normalized_result_refs(evidence_refs, "evidence")),
+            artifact_refs: contract
+                .get("artifact_refs")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_else(|| normalized_result_refs(artifact_refs, "artifact")),
+            changes_made: contract
+                .get("changes_made")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            verification: contract
+                .get("verification")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            risks: contract
+                .get("risks")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            follow_up_requests: contract
+                .get("follow_up_requests")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            human_review_request: contract.get("human_review_request").cloned(),
+            revision_request: contract.get("revision_request").cloned(),
+            blocker: contract.get("blocker").cloned(),
+            failure: contract.get("failure").cloned(),
+            replan_request: contract.get("replan_request").cloned(),
+            cancellation: contract.get("cancellation").cloned(),
+        });
+    }
+
+    None
+}
+
+fn normalized_acceptance_results(value: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|items| items.iter().map(normalized_acceptance_result).collect())
+        .unwrap_or_default()
+}
+
+fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    let mut normalized = object.clone();
+    if let Some(refs) = object
+        .get("evidence_refs")
+        .and_then(serde_json::Value::as_array)
+    {
+        normalized.insert(
+            "evidence_refs".to_string(),
+            serde_json::Value::Array(
+                refs.iter()
+                    .filter_map(result_ref_string)
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    serde_json::Value::Object(normalized)
+}
+
+fn result_ref_string(value: &serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .and_then(|text| trimmed_optional(Some(text)))
+        .or_else(|| {
+            value.as_object().and_then(|object| {
+                ["ref", "uri", "url", "id"].iter().find_map(|key| {
+                    object
+                        .get(*key)
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|text| trimmed_optional(Some(text)))
+                })
+            })
+        })
+}
+
+fn normalized_result_refs(
+    values: &[serde_json::Value],
+    default_type: &str,
+) -> Vec<serde_json::Value> {
+    values
+        .iter()
+        .filter_map(|value| normalized_result_ref(value, default_type))
+        .collect()
+}
+
+fn normalized_result_ref(
+    value: &serde_json::Value,
+    default_type: &str,
+) -> Option<serde_json::Value> {
+    if let Some(text) = value.as_str().and_then(|text| trimmed_optional(Some(text))) {
+        let mut object = serde_json::Map::new();
+        object.insert(
+            "type".to_string(),
+            serde_json::Value::String(default_type.to_string()),
+        );
+        object.insert("ref".to_string(), serde_json::Value::String(text));
+        return Some(serde_json::Value::Object(object));
+    }
+
+    let object = value.as_object()?;
+    let reference = ["ref", "uri", "url", "id"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(serde_json::Value::as_str))
+        .and_then(|text| trimmed_optional(Some(text)))?;
+    let result_type = object
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+        .unwrap_or_else(|| default_type.to_string());
+
+    let mut result = serde_json::Map::new();
+    result.insert("type".to_string(), serde_json::Value::String(result_type));
+    result.insert("ref".to_string(), serde_json::Value::String(reference));
+    if let Some(summary) = object
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+    {
+        result.insert("summary".to_string(), serde_json::Value::String(summary));
+    }
+    Some(serde_json::Value::Object(result))
+}
+
 fn trimmed_optional(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -1581,6 +1770,7 @@ fn project_task_fail_writeback(
         failure_summary: error_message.trim().to_string(),
         failure_family: failure_family.to_string(),
         retryable,
+        result_contract: None,
     }
 }
 
@@ -1633,8 +1823,12 @@ async fn drain_provider_events(
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
+    let mut fallback_text_summary = String::new();
     while let Some(event) = events.next().await {
         let event = event?;
+        if let ProviderEvent::TextDelta { text } = &event {
+            fallback_text_summary.push_str(text);
+        }
         if let ProviderEvent::SessionStarted { session_id, .. } = &event {
             if latest_provider_session_id.as_deref() == Some(session_id.as_str()) {
                 continue;
@@ -1669,9 +1863,18 @@ async fn drain_provider_events(
             }
         }
     }
-    if let (Some(writeback), Some(completion)) =
+    if let (Some(writeback), Some(mut completion)) =
         (&writeback, terminal_writeback.finish_successful_stream())
     {
+        let has_summary = completion
+            .summary
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        let fallback_text = fallback_text_summary.trim();
+        if !has_summary && !fallback_text.is_empty() {
+            completion.summary = Some(fallback_text.to_string());
+        }
         writeback
             .complete(completion.summary, completion.provider_session_id)
             .await?;
@@ -1814,6 +2017,70 @@ mod tests {
         assert_eq!(
             completion.provider_session_id.as_deref(),
             Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn provider_terminal_writeback_uses_text_delta_when_completion_summary_empty() {
+        let mut state = ProviderTerminalWritebackState::default();
+
+        assert!(
+            state
+                .observe_event(
+                    &ProviderEvent::TextDelta {
+                        text: "{\"summary\":\"provider final answer\"}".to_string(),
+                    },
+                    Some("provider-session-1"),
+                )
+                .is_none()
+        );
+        assert!(
+            state
+                .observe_event(
+                    &ProviderEvent::TurnCompleted { summary: None },
+                    Some("provider-session-1")
+                )
+                .is_none()
+        );
+
+        let completion = state
+            .finish_successful_stream()
+            .expect("completion should use buffered provider text");
+        assert_eq!(
+            completion.summary.as_deref(),
+            Some("{\"summary\":\"provider final answer\"}")
+        );
+        assert_eq!(
+            completion.provider_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_acceptance_evidence_refs_to_strings() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "acceptance_results": [
+                    {
+                        "criterion": "return structured result",
+                        "status": "passed",
+                        "evidence_refs": [
+                            {"type": "runtime_result_payload", "ref": "final_answer.raw_json_object"},
+                            {"id": "evidence-2"}
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract =
+            parsed_result_contract(Some(&parsed), "done", &[], &[]).expect("contract should parse");
+
+        assert_eq!(
+            contract.acceptance_results[0]["evidence_refs"],
+            json!(["final_answer.raw_json_object", "evidence-2"])
         );
     }
 

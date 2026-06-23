@@ -216,6 +216,38 @@ pub struct ProjectTaskStartWriteback {
     pub provider_session_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TaskResultContract {
+    pub status: String,
+    pub summary: String,
+    #[serde(default)]
+    pub acceptance_results: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub evidence_refs: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub artifact_refs: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub changes_made: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub verification: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub risks: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub follow_up_requests: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub human_review_request: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub revision_request: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub blocker: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub failure: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub replan_request: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cancellation: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTaskCompleteWriteback {
     pub project_task_id: String,
@@ -232,6 +264,8 @@ pub struct ProjectTaskCompleteWriteback {
     pub missing_information: Vec<serde_json::Value>,
     pub recommended_next_action: String,
     pub requires_human_review: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub result_contract: Option<TaskResultContract>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -243,6 +277,8 @@ pub struct ProjectTaskFailWriteback {
     pub failure_summary: String,
     pub failure_family: String,
     pub retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub result_contract: Option<TaskResultContract>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -258,6 +294,8 @@ pub struct ProjectTaskWaitHumanWriteback {
     pub summary: String,
     pub missing_context_refs: Vec<serde_json::Value>,
     pub suggested_resolution_options: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub result_contract: Option<TaskResultContract>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeCommandType {

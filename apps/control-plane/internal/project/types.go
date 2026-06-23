@@ -93,6 +93,18 @@ const (
 	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
 	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
+	ProjectEventTaskResultRecorded             ProjectEventType = "project_task.result.recorded"
+	ProjectEventTaskResultAccepted             ProjectEventType = "project_task.result.accepted"
+	ProjectEventTaskResultRejected             ProjectEventType = "project_task.result.rejected"
+	ProjectEventTaskResultBlocked              ProjectEventType = "project_task.result.blocked"
+	ProjectEventTaskResultRetryableFailed      ProjectEventType = "project_task.result.retryable_failed"
+	ProjectEventTaskResultFailedRetryable      ProjectEventType = ProjectEventTaskResultRetryableFailed
+	ProjectEventTaskResultValidationFailed     ProjectEventType = "project_task.result.validation_failed"
+	ProjectEventTaskRevisionRequested          ProjectEventType = "project_task.revision.requested"
+	ProjectEventTaskRevisionCreated            ProjectEventType = "project_task.revision.created"
+	ProjectEventTaskReplanRequested            ProjectEventType = "project_task.replan.requested"
+	ProjectEventDemandSummaryCreated           ProjectEventType = "demand.summary.created"
 	ProjectEventTransferRequested              ProjectEventType = "transfer.requested"
 	ProjectEventDecisionRequested              ProjectEventType = "decision.requested"
 	ProjectEventDecisionSubmitted              ProjectEventType = "decision.submitted"
@@ -307,6 +319,8 @@ type ProjectTask struct {
 	BlockedByTaskIDs           []uuid.UUID
 	CurrentAttemptID           *uuid.UUID
 	LatestDispatchGateResultID *uuid.UUID
+	LatestTaskResultID         *uuid.UUID
+	RevisionOfTaskID           *uuid.UUID
 	AcceptedPlanRevisionID     *uuid.UUID
 	DecompositionClaimKey      *string
 	AttemptCount               int32
@@ -321,6 +335,43 @@ type ProjectTask struct {
 	StatusChangedAt            time.Time
 	CreatedAt                  time.Time
 	UpdatedAt                  time.Time
+}
+
+type ProjectTaskResult struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      uuid.UUID
+	AttemptID          *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	ResultStatus       TaskResultStatus
+	ValidationStatus   string
+	Decision           TaskResultDecision
+	Contract           TaskResultContract
+	ValidationErrors   []string
+	ValidationWarnings []string
+	IdempotencyKey     string
+	DecisionRequestID  *uuid.UUID
+	RevisionTaskID     *uuid.UUID
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type ProjectDemandSummary struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	Status             string
+	Conclusion         string
+	SummaryPayload     map[string]any
+	ReportRefID        *uuid.UUID
+	AcceptanceRequired bool
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type ProjectTaskExecutionPacket struct {
@@ -1079,6 +1130,7 @@ type CompleteProjectTaskAttemptRequest struct {
 	MissingInformation    []any
 	RecommendedNextAction string
 	RequiresHumanReview   bool
+	ResultContract        *TaskResultContract
 }
 
 type FailProjectTaskRequest struct {
@@ -1095,6 +1147,7 @@ type FailProjectTaskAttemptRequest struct {
 	FailureSummary    string
 	FailureFamily     string
 	Retryable         *bool
+	ResultContract    *TaskResultContract
 }
 
 type WaitHumanProjectTaskAttemptRequest struct {
@@ -1104,6 +1157,12 @@ type WaitHumanProjectTaskAttemptRequest struct {
 	Summary                    string
 	MissingContextRefs         []any
 	SuggestedResolutionOptions []string
+	ResultContract             *TaskResultContract
+}
+
+type SubmitProjectTaskAttemptResultRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	ResultContract TaskResultContract
 }
 
 type ResolveProjectTaskHumanWaitRequest struct {

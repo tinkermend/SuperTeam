@@ -1146,6 +1146,60 @@ func (e SubmitProjectDemandRequestReviewerSelectionReason) Valid() bool {
 	}
 }
 
+// Defines values for TaskResultCriterionStatus.
+const (
+	TaskResultCriterionStatusFailed          TaskResultCriterionStatus = "failed"
+	TaskResultCriterionStatusHumanOverridden TaskResultCriterionStatus = "human_overridden"
+	TaskResultCriterionStatusNeedsHuman      TaskResultCriterionStatus = "needs_human"
+	TaskResultCriterionStatusNotApplicable   TaskResultCriterionStatus = "not_applicable"
+	TaskResultCriterionStatusPassed          TaskResultCriterionStatus = "passed"
+)
+
+// Valid indicates whether the value is a known member of the TaskResultCriterionStatus enum.
+func (e TaskResultCriterionStatus) Valid() bool {
+	switch e {
+	case TaskResultCriterionStatusFailed:
+		return true
+	case TaskResultCriterionStatusHumanOverridden:
+		return true
+	case TaskResultCriterionStatusNeedsHuman:
+		return true
+	case TaskResultCriterionStatusNotApplicable:
+		return true
+	case TaskResultCriterionStatusPassed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TaskResultStatus.
+const (
+	TaskResultStatusBlocked        TaskResultStatus = "blocked"
+	TaskResultStatusCancelled      TaskResultStatus = "cancelled"
+	TaskResultStatusCompleted      TaskResultStatus = "completed"
+	TaskResultStatusFailed         TaskResultStatus = "failed"
+	TaskResultStatusRevisionNeeded TaskResultStatus = "revision_needed"
+)
+
+// Valid indicates whether the value is a known member of the TaskResultStatus enum.
+func (e TaskResultStatus) Valid() bool {
+	switch e {
+	case TaskResultStatusBlocked:
+		return true
+	case TaskResultStatusCancelled:
+		return true
+	case TaskResultStatusCompleted:
+		return true
+	case TaskResultStatusFailed:
+		return true
+	case TaskResultStatusRevisionNeeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TaskStatus.
 const (
 	TaskStatusCancelled TaskStatus = "cancelled"
@@ -1587,6 +1641,7 @@ type CompleteProjectTaskAttemptRequest struct {
 	ProviderSessionId     *string                 `json:"provider_session_id,omitempty"`
 	RecommendedNextAction *string                 `json:"recommended_next_action,omitempty"`
 	RequiresHumanReview   *bool                   `json:"requires_human_review,omitempty"`
+	ResultContract        *TaskResultContract     `json:"result_contract,omitempty"`
 	RuntimeNodeId         openapi_types.UUID      `json:"runtime_node_id"`
 	Uncertainty           *string                 `json:"uncertainty,omitempty"`
 }
@@ -2381,14 +2436,15 @@ type ExecutionLedgerEvent struct {
 
 // FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
 type FailProjectTaskAttemptRequest struct {
-	FailureFamily     string             `json:"failure_family"`
-	FailureSummary    string             `json:"failure_summary"`
-	IdempotencyKey    string             `json:"idempotency_key"`
-	LeaseToken        string             `json:"lease_token"`
-	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
-	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
-	Retryable         *bool              `json:"retryable,omitempty"`
-	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+	FailureFamily     string              `json:"failure_family"`
+	FailureSummary    string              `json:"failure_summary"`
+	IdempotencyKey    string              `json:"idempotency_key"`
+	LeaseToken        string              `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID  `json:"project_task_id"`
+	ProviderSessionId *string             `json:"provider_session_id,omitempty"`
+	ResultContract    *TaskResultContract `json:"result_contract,omitempty"`
+	Retryable         *bool               `json:"retryable,omitempty"`
+	RuntimeNodeId     openapi_types.UUID  `json:"runtime_node_id"`
 }
 
 // FailProjectTaskRequest defines model for FailProjectTaskRequest.
@@ -3589,6 +3645,16 @@ type SubmitProjectDemandRequest struct {
 // SubmitProjectDemandRequestReviewerSelectionReason defines model for SubmitProjectDemandRequest.ReviewerSelectionReason.
 type SubmitProjectDemandRequestReviewerSelectionReason string
 
+// SubmitProjectTaskAttemptResultRequest defines model for SubmitProjectTaskAttemptResultRequest.
+type SubmitProjectTaskAttemptResultRequest struct {
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+	ResultContract    TaskResultContract `json:"result_contract"`
+	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+}
+
 // Task defines model for Task.
 type Task struct {
 	AssignedNodeId *string                 `json:"assigned_node_id,omitempty"`
@@ -3608,6 +3674,47 @@ type Task struct {
 	UpdatedAt      *time.Time              `json:"updated_at,omitempty"`
 	WorkspacePath  *string                 `json:"workspace_path,omitempty"`
 }
+
+// TaskResultAcceptanceResult defines model for TaskResultAcceptanceResult.
+type TaskResultAcceptanceResult struct {
+	Criterion           string                    `json:"criterion"`
+	EvidenceRefs        []string                  `json:"evidence_refs"`
+	HumanAcceptedReason *string                   `json:"human_accepted_reason,omitempty"`
+	Notes               *string                   `json:"notes,omitempty"`
+	Status              TaskResultCriterionStatus `json:"status"`
+}
+
+// TaskResultContract defines model for TaskResultContract.
+type TaskResultContract struct {
+	AcceptanceResults  []TaskResultAcceptanceResult `json:"acceptance_results"`
+	ArtifactRefs       []TaskResultRef              `json:"artifact_refs"`
+	Blocker            *map[string]interface{}      `json:"blocker,omitempty"`
+	Cancellation       *map[string]interface{}      `json:"cancellation,omitempty"`
+	ChangesMade        *[]map[string]interface{}    `json:"changes_made,omitempty"`
+	EvidenceRefs       []TaskResultRef              `json:"evidence_refs"`
+	Failure            *map[string]interface{}      `json:"failure,omitempty"`
+	FollowUpRequests   *[]map[string]interface{}    `json:"follow_up_requests,omitempty"`
+	HumanReviewRequest *map[string]interface{}      `json:"human_review_request,omitempty"`
+	ReplanRequest      *map[string]interface{}      `json:"replan_request,omitempty"`
+	RevisionRequest    *map[string]interface{}      `json:"revision_request,omitempty"`
+	Risks              []map[string]interface{}     `json:"risks"`
+	Status             TaskResultStatus             `json:"status"`
+	Summary            string                       `json:"summary"`
+	Verification       []map[string]interface{}     `json:"verification"`
+}
+
+// TaskResultCriterionStatus defines model for TaskResultCriterionStatus.
+type TaskResultCriterionStatus string
+
+// TaskResultRef defines model for TaskResultRef.
+type TaskResultRef struct {
+	Ref     string  `json:"ref"`
+	Summary *string `json:"summary,omitempty"`
+	Type    string  `json:"type"`
+}
+
+// TaskResultStatus defines model for TaskResultStatus.
+type TaskResultStatus string
 
 // TaskStatus defines model for TaskStatus.
 type TaskStatus string
@@ -3932,6 +4039,7 @@ type WaitHumanProjectTaskAttemptRequest struct {
 	ProjectTaskId              openapi_types.UUID                       `json:"project_task_id"`
 	ProviderSessionId          *string                                  `json:"provider_session_id,omitempty"`
 	Reason                     WaitHumanProjectTaskAttemptRequestReason `json:"reason"`
+	ResultContract             *TaskResultContract                      `json:"result_contract,omitempty"`
 	RuntimeNodeId              openapi_types.UUID                       `json:"runtime_node_id"`
 	SuggestedResolutionOptions *[]string                                `json:"suggested_resolution_options,omitempty"`
 	Summary                    string                                   `json:"summary"`
@@ -4599,6 +4707,9 @@ type FailProjectTaskAttemptJSONRequestBody = FailProjectTaskAttemptRequest
 
 // RenewProjectTaskAttemptLeaseJSONRequestBody defines body for RenewProjectTaskAttemptLease for application/json ContentType.
 type RenewProjectTaskAttemptLeaseJSONRequestBody = RenewProjectTaskAttemptLeaseRequest
+
+// SubmitProjectTaskAttemptResultJSONRequestBody defines body for SubmitProjectTaskAttemptResult for application/json ContentType.
+type SubmitProjectTaskAttemptResultJSONRequestBody = SubmitProjectTaskAttemptResultRequest
 
 // StartProjectTaskAttemptJSONRequestBody defines body for StartProjectTaskAttempt for application/json ContentType.
 type StartProjectTaskAttemptJSONRequestBody = StartProjectTaskAttemptRequest
@@ -5433,6 +5544,9 @@ type ServerInterface interface {
 	// Renew a ProjectTask attempt lease
 	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/lease)
 	RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Submit a structured ProjectTask result contract
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/result)
+	SubmitProjectTaskAttemptResult(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
 	// Mark a ProjectTask attempt as started by Runtime
 	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/started)
 	StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
@@ -6222,6 +6336,12 @@ func (_ Unimplemented) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Req
 // Renew a ProjectTask attempt lease
 // (POST /api/v1/runtime/project-task-attempts/{attemptId}/lease)
 func (_ Unimplemented) RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a structured ProjectTask result contract
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/result)
+func (_ Unimplemented) SubmitProjectTaskAttemptResult(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10694,6 +10814,32 @@ func (siw *ServerInterfaceWrapper) RenewProjectTaskAttemptLease(w http.ResponseW
 	handler.ServeHTTP(w, r)
 }
 
+// SubmitProjectTaskAttemptResult operation middleware
+func (siw *ServerInterfaceWrapper) SubmitProjectTaskAttemptResult(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitProjectTaskAttemptResult(w, r, attemptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // StartProjectTaskAttempt operation middleware
 func (siw *ServerInterfaceWrapper) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
 
@@ -13203,6 +13349,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/lease", wrapper.RenewProjectTaskAttemptLease)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/result", wrapper.SubmitProjectTaskAttemptResult)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/started", wrapper.StartProjectTaskAttempt)

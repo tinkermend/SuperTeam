@@ -349,6 +349,10 @@ fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
 }
 
+fn shell_quote_str(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
     let tokens: Vec<&str> = args.split_whitespace().collect();
     let first_index = tokens
@@ -786,6 +790,20 @@ async fn wait_for_project_task_writeback(
     panic!("project task complete writeback was not received");
 }
 
+async fn wait_for_captured_events(
+    slot: Arc<Mutex<Vec<CapturedWriteback>>>,
+    expected_count: usize,
+) -> Vec<CapturedWriteback> {
+    for _ in 0..100 {
+        let events = slot.lock().expect("events lock").clone();
+        if events.len() >= expected_count {
+            return events;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("runtime command events were not received");
+}
+
 fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
     headers
         .get(key)
@@ -813,6 +831,98 @@ fn project_task_attempt_metadata(expected_outputs: Vec<&str>) -> Value {
         "input_requirements": {},
         "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
     })
+}
+
+async fn run_project_task_completion_and_capture_writeback(summary: Option<String>) -> Value {
+    let temp = TempDir::new().expect("tempdir");
+    let result_line = serde_json::json!({
+        "type": "result",
+        "result": summary.unwrap_or_else(|| "provider completed".to_string())
+    })
+    .to_string();
+    let script = format!(
+        "#!/usr/bin/env bash\nprintf '%s\\n' '{{\"type\":\"system\",\"session_id\":\"session-result-contract\"}}'\nprintf '%s\\n' '{}'\n",
+        result_line
+    );
+    let fake_claude = make_script(temp.path(), "fake-claude-result-contract", &script);
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-result-contract",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "result_contract",
+        "acceptance_results",
+        "evidence_refs",
+    ]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let captured = wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    http_server.task.abort();
+    captured.payload
+}
+
+#[tokio::test]
+async fn project_task_completion_writeback_includes_structured_result_contract() {
+    let summary = serde_json::json!({
+        "result_contract": {
+            "status": "completed",
+            "summary": "完成分析",
+            "acceptance_results": [
+                {"criterion": "输出结论", "status": "passed", "evidence_refs": ["artifact:report"]}
+            ],
+            "evidence_refs": [{"type": "report", "ref": "artifact:report"}],
+            "artifact_refs": [],
+            "verification": [{"type": "command", "status": "passed", "summary": "命令通过"}],
+            "risks": []
+        }
+    })
+    .to_string();
+
+    let captured = run_project_task_completion_and_capture_writeback(Some(summary)).await;
+
+    let contract = captured
+        .get("result_contract")
+        .expect("result_contract is sent");
+    assert_eq!(contract["status"], "completed");
+    assert_eq!(contract["summary"], "完成分析");
+    assert_eq!(contract["acceptance_results"][0]["criterion"], "输出结论");
+}
+
+#[tokio::test]
+async fn project_task_completion_writeback_omits_result_contract_for_legacy_summary() {
+    let summary = serde_json::json!({
+        "conclusion": "legacy complete",
+        "evidence_refs": ["artifact:report"],
+        "artifact_refs": ["artifact:analysis-report"]
+    })
+    .to_string();
+
+    let captured = run_project_task_completion_and_capture_writeback(Some(summary)).await;
+
+    assert!(captured.get("result_contract").is_none());
+    assert_eq!(captured["conclusion"], "legacy complete");
+    assert_eq!(captured["evidence_refs"][0], "artifact:report");
+    assert_eq!(captured["artifact_refs"][0], "artifact:analysis-report");
 }
 
 #[tokio::test]
@@ -1408,6 +1518,169 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
         final_snapshot.provider_session_id.as_deref(),
         Some("codex-runtime-session")
     );
+}
+
+#[tokio::test]
+async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty() {
+    let temp = TempDir::new().expect("tempdir");
+    let task_result = json!({
+        "conclusion": "Codex produced a structured task result.",
+        "result_contract": {
+            "status": "completed",
+            "summary": "Codex produced a structured task result.",
+            "acceptance_results": [
+                {
+                    "criterion": "execution_summary",
+                    "status": "passed",
+                    "evidence_refs": [
+                        {
+                            "type": "log",
+                            "ref": "runtime-command://cmd-codex-project-task"
+                        }
+                    ]
+                }
+            ],
+            "evidence_refs": [
+                {
+                    "type": "log",
+                    "ref": "runtime-command://cmd-codex-project-task"
+                }
+            ],
+            "artifact_refs": [],
+            "verification": [
+                {
+                    "type": "provider_output",
+                    "status": "passed",
+                    "summary": "Fake Codex item.completed output was parsed."
+                }
+            ],
+            "risks": []
+        },
+        "evidence_refs": [
+            {
+                "type": "log",
+                "ref": "runtime-command://cmd-codex-project-task"
+            }
+        ],
+        "artifact_refs": [],
+        "recommended_next_action": "Continue project coordination with the next ready task."
+    })
+    .to_string();
+    let session_line = json!({
+        "type": "thread.started",
+        "thread": {"id": "codex-project-session"}
+    })
+    .to_string();
+    let item_line = json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_0",
+            "type": "agent_message",
+            "text": task_result
+        }
+    })
+    .to_string();
+    let completion_line = json!({"type": "turn.completed"}).to_string();
+    let fake_codex = make_script(
+        temp.path(),
+        "fake-codex-project-task",
+        &format!(
+            "#!/usr/bin/env bash\nprintf '%s\\n' {}\nprintf '%s\\n' {}\nprintf '%s\\n' {}\n",
+            shell_quote_str(&session_line),
+            shell_quote_str(&item_line),
+            shell_quote_str(&completion_line)
+        ),
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let mut config = RuntimeConfig::default();
+    config.runs.log_dir = temp.path().join("run-logs");
+    config.workspace.base_dir = temp.path().join("workspaces");
+    config.providers.claude_code.enabled = false;
+    config.providers.claude_code.binary_path = temp.path().join("missing-claude");
+    config.providers.opencode.enabled = false;
+    config.providers.opencode.binary_path = temp.path().join("missing-opencode");
+    config.providers.codex.enabled = true;
+    config.providers.codex.binary_path = fake_codex;
+    let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = with_provider_type(
+        session_command_in_home(
+            &home,
+            "cmd-codex-project-task",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("complete the project task"),
+            None,
+        ),
+        "codex",
+    );
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "result_contract",
+        "acceptance_results",
+        "evidence_refs",
+    ]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("codex project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let events = wait_for_captured_events(capture.events.clone(), 3).await;
+    assert_eq!(events[0].payload["event_type"], "session_started");
+    assert_eq!(events[1].payload["event_type"], "text_delta");
+    assert!(
+        events[1].payload["payload"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("Codex produced a structured task result.")),
+        "text_delta event should carry the Codex item.completed text: {}",
+        events[1].payload
+    );
+    assert_eq!(events[2].payload["event_type"], "turn_completed");
+    assert!(
+        events[2].payload["payload"]
+            .as_object()
+            .is_some_and(|payload| payload.is_empty()),
+        "turn_completed event should have an empty payload: {}",
+        events[2].payload
+    );
+
+    let command_complete = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(command_complete.command_id, "cmd-codex-project-task");
+    assert!(
+        command_complete
+            .payload
+            .get("summary")
+            .and_then(Value::as_str)
+            .is_some_and(|summary| summary.contains("Codex produced a structured task result.")),
+        "command completion should use Codex item.completed text as summary: {}",
+        command_complete.payload
+    );
+
+    let project_complete =
+        wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    assert_eq!(
+        project_complete.payload["conclusion"],
+        "Codex produced a structured task result."
+    );
+    assert_eq!(
+        project_complete.payload["result_contract"]["summary"],
+        "Codex produced a structured task result."
+    );
+    assert_eq!(
+        project_complete.payload["result_contract"]["acceptance_results"][0]["evidence_refs"][0],
+        "runtime-command://cmd-codex-project-task"
+    );
+
+    http_server.task.abort();
 }
 
 #[tokio::test]

@@ -123,7 +123,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $4::uuid
   AND id = $5::uuid
   AND status IN ('planned', 'pending')
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type AssignProjectTaskParams struct {
@@ -182,6 +182,8 @@ func (q *Queries) AssignProjectTask(ctx context.Context, arg AssignProjectTaskPa
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -207,7 +209,7 @@ WHERE tenant_id = $4::uuid
       digital_employee_run_id IS NULL
       OR digital_employee_run_id = $2::uuid
   )
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type BindProjectTaskRunParams struct {
@@ -268,6 +270,8 @@ func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRun
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -620,7 +624,7 @@ INSERT INTO project_decision_requests (
     $10::varchar,
     $11::varchar,
     $12::uuid
-) RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id
+) RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
 `
 
 type CreateProjectDecisionRequestParams struct {
@@ -673,6 +677,7 @@ func (q *Queries) CreateProjectDecisionRequest(ctx context.Context, arg CreatePr
 		&i.UpdatedAt,
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
 	)
 	return i, err
 }
@@ -751,6 +756,71 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		&i.Priority,
 		&i.RiskLevel,
 		&i.Status,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectDemandSummary = `-- name: CreateProjectDemandSummary :one
+INSERT INTO project_demand_summaries (
+    tenant_id, project_id, demand_id, status, conclusion, summary_payload,
+    report_ref_id, acceptance_required, idempotency_key, created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::varchar,
+    $5::text,
+    $6::jsonb,
+    $7::uuid,
+    $8::boolean,
+    $9::varchar,
+    $10::uuid
+) ON CONFLICT (tenant_id, demand_id, idempotency_key)
+DO UPDATE SET updated_at = project_demand_summaries.updated_at
+RETURNING id, tenant_id, project_id, demand_id, status, conclusion, summary_payload, report_ref_id, acceptance_required, idempotency_key, created_event_id, created_at, updated_at
+`
+
+type CreateProjectDemandSummaryParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	DemandID           uuid.UUID     `json:"demand_id"`
+	Status             string        `json:"status"`
+	Conclusion         string        `json:"conclusion"`
+	SummaryPayload     []byte        `json:"summary_payload"`
+	ReportRefID        uuid.NullUUID `json:"report_ref_id"`
+	AcceptanceRequired bool          `json:"acceptance_required"`
+	IdempotencyKey     string        `json:"idempotency_key"`
+	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectDemandSummary(ctx context.Context, arg CreateProjectDemandSummaryParams) (ProjectDemandSummary, error) {
+	row := q.db.QueryRow(ctx, CreateProjectDemandSummary,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.Status,
+		arg.Conclusion,
+		arg.SummaryPayload,
+		arg.ReportRefID,
+		arg.AcceptanceRequired,
+		arg.IdempotencyKey,
+		arg.CreatedEventID,
+	)
+	var i ProjectDemandSummary
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Status,
+		&i.Conclusion,
+		&i.SummaryPayload,
+		&i.ReportRefID,
+		&i.AcceptanceRequired,
+		&i.IdempotencyKey,
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1237,6 +1307,7 @@ INSERT INTO project_tasks (
     planned_task_key,
     task_kind,
     stage_index,
+    revision_of_task_id,
     accepted_plan_revision_id,
     decomposition_claim_key,
     title,
@@ -1261,20 +1332,21 @@ INSERT INTO project_tasks (
     $7::varchar,
     $8::integer,
     $9::uuid,
-    $10::varchar,
+    $10::uuid,
     $11::varchar,
-    $12::text,
-    $13::varchar,
-    $14::uuid,
+    $12::varchar,
+    $13::text,
+    $14::varchar,
     $15::uuid,
     $16::uuid,
-    $17::varchar,
-    COALESCE($18::boolean, false),
-    COALESCE($19::jsonb, '[]'::jsonb),
-    COALESCE($20::jsonb, '{}'::jsonb),
+    $17::uuid,
+    $18::varchar,
+    COALESCE($19::boolean, false),
+    COALESCE($20::jsonb, '[]'::jsonb),
     COALESCE($21::jsonb, '{}'::jsonb),
-    COALESCE($22::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+    COALESCE($22::jsonb, '{}'::jsonb),
+    COALESCE($23::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type CreateProjectTaskParams struct {
@@ -1286,6 +1358,7 @@ type CreateProjectTaskParams struct {
 	PlannedTaskKey            pgtype.Text   `json:"planned_task_key"`
 	TaskKind                  pgtype.Text   `json:"task_kind"`
 	StageIndex                pgtype.Int4   `json:"stage_index"`
+	RevisionOfTaskID          uuid.NullUUID `json:"revision_of_task_id"`
 	AcceptedPlanRevisionID    uuid.NullUUID `json:"accepted_plan_revision_id"`
 	DecompositionClaimKey     pgtype.Text   `json:"decomposition_claim_key"`
 	Title                     string        `json:"title"`
@@ -1312,6 +1385,7 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 		arg.PlannedTaskKey,
 		arg.TaskKind,
 		arg.StageIndex,
+		arg.RevisionOfTaskID,
 		arg.AcceptedPlanRevisionID,
 		arg.DecompositionClaimKey,
 		arg.Title,
@@ -1367,6 +1441,8 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -1708,6 +1784,104 @@ func (q *Queries) CreateProjectTaskDispatchGateResult(ctx context.Context, arg C
 	return i, err
 }
 
+const CreateProjectTaskResult = `-- name: CreateProjectTaskResult :one
+INSERT INTO project_task_results (
+    tenant_id, project_id, project_task_id, attempt_id, execution_summary_id,
+    result_status, validation_status, decision, contract_payload, validation_errors,
+    validation_warnings, idempotency_key, human_review_request, replan_request,
+    revision_request, created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::uuid,
+    $6::varchar,
+    $7::varchar,
+    $8::varchar,
+    $9::jsonb,
+    COALESCE($10::jsonb, '[]'::jsonb),
+    COALESCE($11::jsonb, '[]'::jsonb),
+    $12::varchar,
+    COALESCE($13::jsonb, '{}'::jsonb),
+    COALESCE($14::jsonb, '{}'::jsonb),
+    COALESCE($15::jsonb, '{}'::jsonb),
+    $16::uuid
+) ON CONFLICT (
+    tenant_id,
+    project_task_id,
+    COALESCE(attempt_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    idempotency_key
+)
+DO UPDATE SET updated_at = project_task_results.updated_at
+RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
+`
+
+type CreateProjectTaskResultParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	ProjectTaskID      uuid.UUID     `json:"project_task_id"`
+	AttemptID          uuid.NullUUID `json:"attempt_id"`
+	ExecutionSummaryID uuid.NullUUID `json:"execution_summary_id"`
+	ResultStatus       string        `json:"result_status"`
+	ValidationStatus   string        `json:"validation_status"`
+	Decision           string        `json:"decision"`
+	ContractPayload    []byte        `json:"contract_payload"`
+	ValidationErrors   []byte        `json:"validation_errors"`
+	ValidationWarnings []byte        `json:"validation_warnings"`
+	IdempotencyKey     string        `json:"idempotency_key"`
+	HumanReviewRequest []byte        `json:"human_review_request"`
+	ReplanRequest      []byte        `json:"replan_request"`
+	RevisionRequest    []byte        `json:"revision_request"`
+	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectTaskResult(ctx context.Context, arg CreateProjectTaskResultParams) (ProjectTaskResult, error) {
+	row := q.db.QueryRow(ctx, CreateProjectTaskResult,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ProjectTaskID,
+		arg.AttemptID,
+		arg.ExecutionSummaryID,
+		arg.ResultStatus,
+		arg.ValidationStatus,
+		arg.Decision,
+		arg.ContractPayload,
+		arg.ValidationErrors,
+		arg.ValidationWarnings,
+		arg.IdempotencyKey,
+		arg.HumanReviewRequest,
+		arg.ReplanRequest,
+		arg.RevisionRequest,
+		arg.CreatedEventID,
+	)
+	var i ProjectTaskResult
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.AttemptID,
+		&i.ExecutionSummaryID,
+		&i.ResultStatus,
+		&i.ValidationStatus,
+		&i.Decision,
+		&i.ContractPayload,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.IdempotencyKey,
+		&i.HumanReviewRequest,
+		&i.ReplanRequest,
+		&i.RevisionRequest,
+		&i.CreatedEventID,
+		&i.DecisionRequestID,
+		&i.RevisionTaskID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProjectTransferRequest = `-- name: CreateProjectTransferRequest :one
 INSERT INTO project_transfer_requests (
     tenant_id,
@@ -2038,6 +2212,42 @@ func (q *Queries) GetLatestProjectConfigRevisionNumber(ctx context.Context, arg 
 	return max_revision, err
 }
 
+const GetLatestProjectDemandSummary = `-- name: GetLatestProjectDemandSummary :one
+SELECT id, tenant_id, project_id, demand_id, status, conclusion, summary_payload, report_ref_id, acceptance_required, idempotency_key, created_event_id, created_at, updated_at FROM project_demand_summaries
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetLatestProjectDemandSummaryParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	DemandID  uuid.UUID `json:"demand_id"`
+}
+
+func (q *Queries) GetLatestProjectDemandSummary(ctx context.Context, arg GetLatestProjectDemandSummaryParams) (ProjectDemandSummary, error) {
+	row := q.db.QueryRow(ctx, GetLatestProjectDemandSummary, arg.TenantID, arg.ProjectID, arg.DemandID)
+	var i ProjectDemandSummary
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Status,
+		&i.Conclusion,
+		&i.SummaryPayload,
+		&i.ReportRefID,
+		&i.AcceptanceRequired,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const GetLatestProjectEventSequence = `-- name: GetLatestProjectEventSequence :one
 SELECT COALESCE(MAX(sequence_number), 0)::bigint AS max_sequence
 FROM project_events
@@ -2135,7 +2345,7 @@ func (q *Queries) GetProjectCoordinationJobByTrigger(ctx context.Context, arg Ge
 }
 
 const GetProjectDecisionRequest = `-- name: GetProjectDecisionRequest :one
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND id = $3::uuid
@@ -2169,12 +2379,13 @@ func (q *Queries) GetProjectDecisionRequest(ctx context.Context, arg GetProjectD
 		&i.UpdatedAt,
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
 	)
 	return i, err
 }
 
 const GetProjectDecisionRequestByApprovalAndTask = `-- name: GetProjectDecisionRequestByApprovalAndTask :one
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND approval_request_id = $3::uuid
@@ -2217,6 +2428,7 @@ func (q *Queries) GetProjectDecisionRequestByApprovalAndTask(ctx context.Context
 		&i.UpdatedAt,
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
 	)
 	return i, err
 }
@@ -2469,7 +2681,7 @@ func (q *Queries) GetProjectRouteDecisionByCoordinationJob(ctx context.Context, 
 }
 
 const GetProjectTask = `-- name: GetProjectTask :one
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -2521,6 +2733,8 @@ func (q *Queries) GetProjectTask(ctx context.Context, arg GetProjectTaskParams) 
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -2769,6 +2983,63 @@ func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetPro
 	return runtime_node_id, err
 }
 
+const LinkDecisionRequestProjectTaskResult = `-- name: LinkDecisionRequestProjectTaskResult :one
+UPDATE project_decision_requests
+SET project_task_result_id = $1::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND (project_task_result_id IS NULL OR project_task_result_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_task_results
+    WHERE project_task_results.tenant_id = $2::uuid
+      AND project_task_results.project_id = $3::uuid
+      AND project_task_results.id = $1::uuid
+      AND project_task_results.project_task_id = project_decision_requests.project_task_id
+  )
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+`
+
+type LinkDecisionRequestProjectTaskResultParams struct {
+	ProjectTaskResultID uuid.UUID `json:"project_task_result_id"`
+	TenantID            uuid.UUID `json:"tenant_id"`
+	ProjectID           uuid.UUID `json:"project_id"`
+	DecisionRequestID   uuid.UUID `json:"decision_request_id"`
+}
+
+func (q *Queries) LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, LinkDecisionRequestProjectTaskResult,
+		arg.ProjectTaskResultID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DecisionRequestID,
+	)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
+	)
+	return i, err
+}
+
 const LinkProjectTaskDispatchGateAttempt = `-- name: LinkProjectTaskDispatchGateAttempt :one
 UPDATE project_task_dispatch_gate_results
 SET attempt_id = $1::uuid,
@@ -2881,6 +3152,191 @@ func (q *Queries) LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context
 	return i, err
 }
 
+const LinkProjectTaskLatestResult = `-- name: LinkProjectTaskLatestResult :one
+UPDATE project_tasks
+SET latest_task_result_id = $1::uuid
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND project_id = $4::uuid
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
+`
+
+type LinkProjectTaskLatestResultParams struct {
+	TaskResultID  uuid.UUID `json:"task_result_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) LinkProjectTaskLatestResult(ctx context.Context, arg LinkProjectTaskLatestResultParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, LinkProjectTaskLatestResult,
+		arg.TaskResultID,
+		arg.TenantID,
+		arg.ProjectTaskID,
+		arg.ProjectID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalReason,
+		&i.TerminalEventID,
+		&i.CancelledBy,
+		&i.FailedBy,
+		&i.StatusChangedAt,
+		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
+	)
+	return i, err
+}
+
+const LinkProjectTaskResultDecisionRequest = `-- name: LinkProjectTaskResultDecisionRequest :one
+UPDATE project_task_results
+SET decision_request_id = $1::uuid
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_decision_requests
+    WHERE project_decision_requests.tenant_id = $2::uuid
+      AND project_decision_requests.project_id = $3::uuid
+      AND project_decision_requests.id = $1::uuid
+      AND project_decision_requests.project_task_id = project_task_results.project_task_id
+  )
+RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
+`
+
+type LinkProjectTaskResultDecisionRequestParams struct {
+	DecisionRequestID uuid.UUID `json:"decision_request_id"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+	ProjectID         uuid.UUID `json:"project_id"`
+	ID                uuid.UUID `json:"id"`
+}
+
+func (q *Queries) LinkProjectTaskResultDecisionRequest(ctx context.Context, arg LinkProjectTaskResultDecisionRequestParams) (ProjectTaskResult, error) {
+	row := q.db.QueryRow(ctx, LinkProjectTaskResultDecisionRequest,
+		arg.DecisionRequestID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectTaskResult
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.AttemptID,
+		&i.ExecutionSummaryID,
+		&i.ResultStatus,
+		&i.ValidationStatus,
+		&i.Decision,
+		&i.ContractPayload,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.IdempotencyKey,
+		&i.HumanReviewRequest,
+		&i.ReplanRequest,
+		&i.RevisionRequest,
+		&i.CreatedEventID,
+		&i.DecisionRequestID,
+		&i.RevisionTaskID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const LinkProjectTaskResultRevisionTask = `-- name: LinkProjectTaskResultRevisionTask :one
+UPDATE project_task_results
+SET revision_task_id = $1::uuid
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND (revision_task_id IS NULL OR revision_task_id = $1::uuid)
+  AND EXISTS (
+    SELECT 1 FROM project_tasks
+    WHERE project_tasks.tenant_id = $2::uuid
+      AND project_tasks.project_id = $3::uuid
+      AND project_tasks.id = $1::uuid
+      AND project_tasks.revision_of_task_id = project_task_results.project_task_id
+  )
+RETURNING id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at
+`
+
+type LinkProjectTaskResultRevisionTaskParams struct {
+	RevisionTaskID uuid.UUID `json:"revision_task_id"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	ProjectID      uuid.UUID `json:"project_id"`
+	ID             uuid.UUID `json:"id"`
+}
+
+func (q *Queries) LinkProjectTaskResultRevisionTask(ctx context.Context, arg LinkProjectTaskResultRevisionTaskParams) (ProjectTaskResult, error) {
+	row := q.db.QueryRow(ctx, LinkProjectTaskResultRevisionTask,
+		arg.RevisionTaskID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectTaskResult
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.AttemptID,
+		&i.ExecutionSummaryID,
+		&i.ResultStatus,
+		&i.ValidationStatus,
+		&i.Decision,
+		&i.ContractPayload,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.IdempotencyKey,
+		&i.HumanReviewRequest,
+		&i.ReplanRequest,
+		&i.RevisionRequest,
+		&i.CreatedEventID,
+		&i.DecisionRequestID,
+		&i.RevisionTaskID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ListDemandLaunchCoordinationJobs = `-- name: ListDemandLaunchCoordinationJobs :many
 SELECT id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at FROM project_coordination_jobs
 WHERE tenant_id = $1::uuid
@@ -2941,7 +3397,7 @@ func (q *Queries) ListDemandLaunchCoordinationJobs(ctx context.Context, arg List
 }
 
 const ListDemandLaunchDecisionRequests = `-- name: ListDemandLaunchDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND (
@@ -2994,6 +3450,7 @@ func (q *Queries) ListDemandLaunchDecisionRequests(ctx context.Context, arg List
 			&i.UpdatedAt,
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
+			&i.ProjectTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -3074,7 +3531,7 @@ func (q *Queries) ListDemandLaunchProjectEvents(ctx context.Context, arg ListDem
 }
 
 const ListDemandLaunchProjectTasks = `-- name: ListDemandLaunchProjectTasks :many
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND demand_id = $3::uuid
@@ -3142,6 +3599,8 @@ func (q *Queries) ListDemandLaunchProjectTasks(ctx context.Context, arg ListDema
 			&i.FailedBy,
 			&i.StatusChangedAt,
 			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -3298,7 +3757,7 @@ func (q *Queries) ListProjectCoordinationJobs(ctx context.Context, arg ListProje
 }
 
 const ListProjectDecisionRequests = `-- name: ListProjectDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY created_at DESC
@@ -3345,6 +3804,7 @@ func (q *Queries) ListProjectDecisionRequests(ctx context.Context, arg ListProje
 			&i.UpdatedAt,
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
+			&i.ProjectTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -3854,7 +4314,7 @@ func (q *Queries) ListProjectTaskDispatchGateResults(ctx context.Context, arg Li
 }
 
 const ListProjectTaskGraphDecisionRequests = `-- name: ListProjectTaskGraphDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND (
@@ -3904,6 +4364,7 @@ func (q *Queries) ListProjectTaskGraphDecisionRequests(ctx context.Context, arg 
 			&i.UpdatedAt,
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
+			&i.ProjectTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -4044,8 +4505,73 @@ func (q *Queries) ListProjectTaskGraphReplayEvents(ctx context.Context, arg List
 	return items, nil
 }
 
+const ListProjectTaskResults = `-- name: ListProjectTaskResults :many
+SELECT id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at FROM project_task_results
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = $3::uuid
+ORDER BY created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListProjectTaskResultsParams struct {
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	Offset        int32     `json:"offset"`
+	Limit         int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectTaskResults(ctx context.Context, arg ListProjectTaskResultsParams) ([]ProjectTaskResult, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskResults,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ProjectTaskID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTaskResult{}
+	for rows.Next() {
+		var i ProjectTaskResult
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.AttemptID,
+			&i.ExecutionSummaryID,
+			&i.ResultStatus,
+			&i.ValidationStatus,
+			&i.Decision,
+			&i.ContractPayload,
+			&i.ValidationErrors,
+			&i.ValidationWarnings,
+			&i.IdempotencyKey,
+			&i.HumanReviewRequest,
+			&i.ReplanRequest,
+			&i.RevisionRequest,
+			&i.CreatedEventID,
+			&i.DecisionRequestID,
+			&i.RevisionTaskID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectTasks = `-- name: ListProjectTasks :many
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND ($3::varchar IS NULL OR status = $3::varchar)
@@ -4115,6 +4641,8 @@ func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksPara
 			&i.FailedBy,
 			&i.StatusChangedAt,
 			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -4127,7 +4655,7 @@ func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksPara
 }
 
 const ListProjectTasksByAcceptedPlanRevision = `-- name: ListProjectTasksByAcceptedPlanRevision :many
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND demand_id = $3::uuid
@@ -4195,6 +4723,8 @@ func (q *Queries) ListProjectTasksByAcceptedPlanRevision(ctx context.Context, ar
 			&i.FailedBy,
 			&i.StatusChangedAt,
 			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -4207,7 +4737,7 @@ func (q *Queries) ListProjectTasksByAcceptedPlanRevision(ctx context.Context, ar
 }
 
 const ListProjectTasksByCoordinationJob = `-- name: ListProjectTasksByCoordinationJob :many
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND coordination_job_id = $3::uuid
@@ -4268,6 +4798,8 @@ func (q *Queries) ListProjectTasksByCoordinationJob(ctx context.Context, arg Lis
 			&i.FailedBy,
 			&i.StatusChangedAt,
 			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -4280,7 +4812,7 @@ func (q *Queries) ListProjectTasksByCoordinationJob(ctx context.Context, arg Lis
 }
 
 const ListProjectTasksByDemand = `-- name: ListProjectTasksByDemand :many
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND demand_id = $3::uuid
@@ -4341,6 +4873,8 @@ func (q *Queries) ListProjectTasksByDemand(ctx context.Context, arg ListProjectT
 			&i.FailedBy,
 			&i.StatusChangedAt,
 			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
 		); err != nil {
 			return nil, err
 		}
@@ -4476,15 +5010,39 @@ const ListUnresolvedBlockersForTasks = `-- name: ListUnresolvedBlockersForTasks 
 SELECT
     d.dependent_task_id,
     d.blocker_task_id,
-    b.status AS blocker_status
+    b.status AS blocker_status,
+    b.latest_task_result_id,
+    latest_result.result_status AS latest_result_status,
+    latest_result.decision AS latest_result_decision,
+    latest_result.validation_status AS latest_result_validation_status,
+    CASE
+        WHEN b.status = 'completed'
+         AND latest_result.id IS NOT NULL
+         AND latest_result.result_status = 'completed'
+         AND latest_result.decision = 'complete_accepted'
+         AND latest_result.validation_status = 'accepted'
+        THEN true
+        ELSE false
+    END AS acceptance_satisfied
 FROM project_task_dependencies d
 JOIN project_tasks b
   ON b.tenant_id = d.tenant_id
  AND b.id = d.blocker_task_id
+LEFT JOIN project_task_results latest_result
+  ON latest_result.tenant_id = b.tenant_id
+ AND latest_result.project_id = b.project_id
+ AND latest_result.project_task_id = b.id
+ AND latest_result.id = b.latest_task_result_id
 WHERE d.tenant_id = $1::uuid
   AND d.project_id = $2::uuid
   AND d.dependent_task_id = ANY($3::uuid[])
-  AND b.status <> 'completed'
+  AND NOT (
+        b.status = 'completed'
+        AND latest_result.id IS NOT NULL
+        AND latest_result.result_status = 'completed'
+        AND latest_result.decision = 'complete_accepted'
+        AND latest_result.validation_status = 'accepted'
+    )
 ORDER BY d.dependent_task_id, d.created_at ASC
 `
 
@@ -4495,9 +5053,14 @@ type ListUnresolvedBlockersForTasksParams struct {
 }
 
 type ListUnresolvedBlockersForTasksRow struct {
-	DependentTaskID uuid.UUID `json:"dependent_task_id"`
-	BlockerTaskID   uuid.UUID `json:"blocker_task_id"`
-	BlockerStatus   string    `json:"blocker_status"`
+	DependentTaskID              uuid.UUID     `json:"dependent_task_id"`
+	BlockerTaskID                uuid.UUID     `json:"blocker_task_id"`
+	BlockerStatus                string        `json:"blocker_status"`
+	LatestTaskResultID           uuid.NullUUID `json:"latest_task_result_id"`
+	LatestResultStatus           pgtype.Text   `json:"latest_result_status"`
+	LatestResultDecision         pgtype.Text   `json:"latest_result_decision"`
+	LatestResultValidationStatus pgtype.Text   `json:"latest_result_validation_status"`
+	AcceptanceSatisfied          bool          `json:"acceptance_satisfied"`
 }
 
 func (q *Queries) ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error) {
@@ -4509,7 +5072,16 @@ func (q *Queries) ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUn
 	items := []ListUnresolvedBlockersForTasksRow{}
 	for rows.Next() {
 		var i ListUnresolvedBlockersForTasksRow
-		if err := rows.Scan(&i.DependentTaskID, &i.BlockerTaskID, &i.BlockerStatus); err != nil {
+		if err := rows.Scan(
+			&i.DependentTaskID,
+			&i.BlockerTaskID,
+			&i.BlockerStatus,
+			&i.LatestTaskResultID,
+			&i.LatestResultStatus,
+			&i.LatestResultDecision,
+			&i.LatestResultValidationStatus,
+			&i.AcceptanceSatisfied,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -4691,7 +5263,7 @@ decision_blockers AS (
         item.updated_at AS blocker_updated_at
     FROM (
         SELECT
-            dr.id, dr.tenant_id, dr.project_id, dr.approval_request_id, dr.coordination_job_id, dr.project_task_id, dr.target_user_id, dr.decision_type, dr.title_snapshot, dr.summary_snapshot, dr.risk_level_snapshot, dr.status_snapshot, dr.created_event_id, dr.resolved_event_id, dr.created_at, dr.updated_at, dr.resolved_at, dr.dispatch_gate_result_id,
+            dr.id, dr.tenant_id, dr.project_id, dr.approval_request_id, dr.coordination_job_id, dr.project_task_id, dr.target_user_id, dr.decision_type, dr.title_snapshot, dr.summary_snapshot, dr.risk_level_snapshot, dr.status_snapshot, dr.created_event_id, dr.resolved_event_id, dr.created_at, dr.updated_at, dr.resolved_at, dr.dispatch_gate_result_id, dr.project_task_result_id,
             COALESCE(pt.demand_id, rd.demand_id) AS demand_id
         FROM project_decision_requests dr
         LEFT JOIN project_tasks pt
@@ -4978,7 +5550,7 @@ func (q *Queries) LockProjectEventSequence(ctx context.Context, arg LockProjectE
 }
 
 const LockProjectTaskForQueue = `-- name: LockProjectTaskForQueue :one
-SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id FROM project_tasks
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND id = $3::uuid
@@ -5033,6 +5605,8 @@ func (q *Queries) LockProjectTaskForQueue(ctx context.Context, arg LockProjectTa
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5164,7 +5738,7 @@ SET latest_dispatch_gate_result_id = $1::uuid,
 WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type MarkProjectTaskLatestDispatchGateParams struct {
@@ -5221,6 +5795,8 @@ func (q *Queries) MarkProjectTaskLatestDispatchGate(ctx context.Context, arg Mar
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5238,7 +5814,7 @@ WHERE tenant_id = $5::uuid
   AND project_id = $6::uuid
   AND id = $7::uuid
   AND status IN ('planned', 'waiting_human')
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type MovePlannedProjectTaskToWaitingHumanForGateParams struct {
@@ -5301,6 +5877,8 @@ func (q *Queries) MovePlannedProjectTaskToWaitingHumanForGate(ctx context.Contex
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5316,7 +5894,7 @@ SET status = 'waiting_human',
 WHERE tenant_id = $4::uuid
   AND id = $5::uuid
   AND status IN ('queued', 'running')
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type MoveProjectTaskToWaitingHumanParams struct {
@@ -5375,6 +5953,8 @@ func (q *Queries) MoveProjectTaskToWaitingHuman(ctx context.Context, arg MovePro
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5446,7 +6026,7 @@ WHERE tenant_id = $5::uuid
   AND project_id = $6::uuid
   AND id = $7::uuid
   AND status IN ('planned', 'waiting_human')
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type QueueProjectTaskParams struct {
@@ -5509,6 +6089,8 @@ func (q *Queries) QueueProjectTask(ctx context.Context, arg QueueProjectTaskPara
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5662,7 +6244,7 @@ WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
   AND status_snapshot = 'pending'
-RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
 `
 
 type ResolveProjectDecisionRequestParams struct {
@@ -5701,6 +6283,7 @@ func (q *Queries) ResolveProjectDecisionRequest(ctx context.Context, arg Resolve
 		&i.UpdatedAt,
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
 	)
 	return i, err
 }
@@ -5811,7 +6394,7 @@ SET status = 'queued',
 WHERE tenant_id = $4::uuid
   AND id = $5::uuid
   AND status IN ('running', 'waiting_human')
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type ScheduleProjectTaskRetryParams struct {
@@ -5870,6 +6453,8 @@ func (q *Queries) ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProj
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }
@@ -5883,7 +6468,7 @@ WHERE tenant_id = $2::uuid
   AND project_task_id = $4::uuid
   AND id = $5::uuid
   AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = $1::uuid)
-RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
 `
 
 type SetProjectDecisionRequestDispatchGateParams struct {
@@ -5922,6 +6507,7 @@ func (q *Queries) SetProjectDecisionRequestDispatchGate(ctx context.Context, arg
 		&i.UpdatedAt,
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
 	)
 	return i, err
 }
@@ -6268,7 +6854,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $3::uuid
   AND id = $4::uuid
   AND status = ANY($5::varchar[])
-RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id
 `
 
 type UpdateProjectTaskStatusParams struct {
@@ -6327,6 +6913,8 @@ func (q *Queries) UpdateProjectTaskStatus(ctx context.Context, arg UpdateProject
 		&i.FailedBy,
 		&i.StatusChangedAt,
 		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
 	)
 	return i, err
 }

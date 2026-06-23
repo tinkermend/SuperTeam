@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,13 @@ type Repository interface {
 	GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error)
+	RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error)
+	ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error)
+	LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error)
+	LinkProjectTaskResultDecisionRequest(ctx context.Context, tenantID, projectID, resultID, decisionRequestID uuid.UUID) (ProjectTaskResult, error)
+	LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (ProjectTaskResult, error)
+	CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error)
+	GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error)
 	QueueProjectTaskWithAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error)
 	RecordPreDispatchGateResult(ctx context.Context, req RecordPreDispatchGateResultRequest) (PreDispatchGateResult, error)
 	GetPreDispatchGateResult(ctx context.Context, tenantID, projectID, gateResultID uuid.UUID) (PreDispatchGateResult, error)
@@ -123,10 +131,22 @@ type ProjectTaskAttemptWritebackRepository interface {
 	StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error)
 	RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error)
 	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+	CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error)
 	CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error)
+	CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error)
 	WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error)
+}
+
+type CompleteProjectTaskAttemptResultWritebackRequest struct {
+	Complete CompleteProjectTaskAttemptRequest
+	Result   RecordProjectTaskResultRequest
+}
+
+type CompleteProjectTaskAttemptAcceptanceResultWritebackRequest struct {
+	Acceptance CompleteProjectTaskAttemptAcceptanceWritebackRequest
+	Result     RecordProjectTaskResultRequest
 }
 
 type ProviderEventExecutionLedgerRepository interface {
@@ -242,6 +262,7 @@ type CreateProjectTaskRequest struct {
 	PlannedTaskKey            *string
 	TaskKind                  *string
 	StageIndex                *int32
+	RevisionOfTaskID          *uuid.UUID
 	AcceptedPlanRevisionID    *uuid.UUID
 	DecompositionClaimKey     *string
 	ExpectedOutputs           []any
@@ -249,6 +270,45 @@ type CreateProjectTaskRequest struct {
 	HandoffContract           map[string]any
 	PlannerMetadata           map[string]any
 	BlockedByTaskIDs          []uuid.UUID
+}
+
+type RecordProjectTaskResultRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      uuid.UUID
+	AttemptID          *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	ResultStatus       TaskResultStatus
+	ValidationStatus   string
+	Decision           TaskResultDecision
+	Contract           TaskResultContract
+	ValidationErrors   []string
+	ValidationWarnings []string
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
+	DecisionRequestID  *uuid.UUID
+	RevisionTaskID     *uuid.UUID
+}
+
+type ListProjectTaskResultsRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	Limit         int32
+	Offset        int32
+}
+
+type CreateProjectDemandSummaryRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	Status             string
+	Conclusion         string
+	SummaryPayload     map[string]any
+	ReportRefID        *uuid.UUID
+	AcceptanceRequired bool
+	IdempotencyKey     string
+	CreatedEventID     *uuid.UUID
 }
 
 type CreateProjectTaskGraphRequest struct {
@@ -308,9 +368,22 @@ type ProjectTaskGraphTaskResult struct {
 }
 
 type ProjectTaskDependencyReadiness struct {
-	DependentTaskID uuid.UUID
-	BlockerTaskID   uuid.UUID
-	BlockerStatus   string
+	DependentTaskID              uuid.UUID
+	BlockerTaskID                uuid.UUID
+	BlockerStatus                string
+	LatestTaskResultID           *uuid.UUID
+	LatestResultStatus           TaskResultStatus
+	LatestResultDecision         TaskResultDecision
+	LatestResultValidationStatus string
+	AcceptanceSatisfied          bool
+}
+
+// ProjectTaskResultAcceptedForDependencyUnlock reports whether a structured task
+// result is strong enough to release downstream dependency gates.
+func ProjectTaskResultAcceptedForDependencyUnlock(result ProjectTaskResult) bool {
+	return result.ResultStatus == TaskResultStatusCompleted &&
+		result.Decision == TaskResultDecisionCompleteAccepted &&
+		strings.EqualFold(strings.TrimSpace(result.ValidationStatus), "accepted")
 }
 
 type ProjectTaskCompletionContract struct {

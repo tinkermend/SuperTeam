@@ -5,17 +5,46 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
+
+func TestGeneratedTaskResultSchemasExposeOnlyPlannedPublicFields(t *testing.T) {
+	requireGeneratedFields := func(model any, expected []string) {
+		t.Helper()
+		typ := reflect.TypeOf(model)
+		fields := make([]string, 0, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			fields = append(fields, typ.Field(i).Name)
+		}
+		if !reflect.DeepEqual(fields, expected) {
+			t.Fatalf("expected generated fields %v, got %v", expected, fields)
+		}
+	}
+
+	requireGeneratedFields(gen.TaskResultAcceptanceResult{}, []string{
+		"Criterion",
+		"EvidenceRefs",
+		"HumanAcceptedReason",
+		"Notes",
+		"Status",
+	})
+	requireGeneratedFields(gen.TaskResultRef{}, []string{
+		"Ref",
+		"Summary",
+		"Type",
+	})
+}
 
 func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
@@ -685,6 +714,63 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesProjectTaskAttemptResultUseRuntimeSessionAuth(t *testing.T) {
+	runtimeAuth := &routeRuntimeSessionAuth{
+		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		runtimeNodeID: uuid.New(),
+		sessionID:     uuid.New(),
+		nodeID:        "runtime-node-1",
+		token:         "runtime-session-token",
+	}
+	service := &routeProjectService{}
+	server := NewServerWithAuthzAndRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		nil,
+		nil,
+		runtimeAuth,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	projectTaskID := uuid.New()
+	attemptID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/result", strings.NewReader(`{
+		"project_task_id":"`+projectTaskID.String()+`",
+		"lease_token":"lease-token-result",
+		"runtime_node_id":"`+runtimeAuth.runtimeNodeID.String()+`",
+		"idempotency_key":"attempt-result-route-test",
+		"result_contract":{
+			"status":"completed",
+			"summary":"结构化结果",
+			"acceptance_results":[{"criterion":"输出结论","status":"passed","evidence_refs":["artifact:report"]}],
+			"evidence_refs":[{"type":"report","ref":"artifact:report"}],
+			"artifact_refs":[],
+			"verification":[],
+			"risks":[]
+		}
+	}`))
+	req.Header.Set("Authorization", "Bearer runtime-session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected project task result to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.submitProjectTaskAttemptResultReq.TenantID != runtimeAuth.tenantID ||
+		service.submitProjectTaskAttemptResultReq.RuntimeNodeID != runtimeAuth.runtimeNodeID ||
+		service.submitProjectTaskAttemptResultReq.AttemptID != attemptID ||
+		service.submitProjectTaskAttemptResultReq.ProjectTaskID != projectTaskID ||
+		service.submitProjectTaskAttemptResultReq.LeaseToken != "lease-token-result" ||
+		service.submitProjectTaskAttemptResultReq.IdempotencyKey != "attempt-result-route-test" {
+		t.Fatalf("expected runtime context/path/body in result attempt request, got %#v", service.submitProjectTaskAttemptResultReq)
+	}
+	if service.submitProjectTaskAttemptResultReq.ResultContract.Status != project.TaskResultStatusCompleted {
+		t.Fatalf("expected completed result contract, got %#v", service.submitProjectTaskAttemptResultReq.ResultContract)
+	}
+}
+
 func TestProjectWorkflowSignalRetryRouteUsesConsoleAuth(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -766,47 +852,48 @@ func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
 }
 
 type routeProjectService struct {
-	projectID                 uuid.UUID
-	createReq                 project.CreateProjectRequest
-	listReq                   project.ListProjectsRequest
-	workflowInstancesReq      project.ListWorkflowInstancesRequest
-	overviewTenantID          uuid.UUID
-	overviewProjectID         uuid.UUID
-	overviewCalls             int
-	eventsTenantID            uuid.UUID
-	eventsProjectID           uuid.UUID
-	eventsLimit               int32
-	eventsOffset              int32
-	latestConfigRevisionCalls int
-	submitDemandReq           project.SubmitProjectDemandRequest
-	routeDecisionTenantID     uuid.UUID
-	routeDecisionProjectID    uuid.UUID
-	routeDecisionLimit        int32
-	planRevisionListReq       project.ListPlanRevisionsRequest
-	planRevisionTenantID      uuid.UUID
-	planRevisionProjectID     uuid.UUID
-	planRevisionID            uuid.UUID
-	dispatchGates             []project.PreDispatchGateResult
-	dispatchGateListReq       project.ListPreDispatchGateResultsRequest
-	resolveDecisionReq        project.ResolveDecisionRequest
-	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
-	completeAttemptReq        project.CompleteProjectTaskAttemptRequest
-	createEvidenceReq         project.CreateEvidenceRefServiceRequest
-	patchEvidenceReq          project.PatchEvidenceRequest
-	budgetSummaryTenantID     uuid.UUID
-	budgetSummaryProjectID    uuid.UUID
-	createAcceptanceReq       project.CreateAcceptanceServiceRequest
-	createArchiveReq          project.CreateArchiveSnapshotServiceRequest
-	configRevisionTenantID    uuid.UUID
-	configRevisionProjectID   uuid.UUID
-	configRevisionID          uuid.UUID
-	launchDetailTenantID      uuid.UUID
-	launchDetailDemandID      uuid.UUID
-	taskLiveness              []project.ProjectTaskLiveness
-	taskLivenessTenantID      uuid.UUID
-	taskLivenessProjectID     uuid.UUID
-	executionTraceReq         project.GetExecutionTraceRequest
-	archiveErr                error
+	projectID                         uuid.UUID
+	createReq                         project.CreateProjectRequest
+	listReq                           project.ListProjectsRequest
+	workflowInstancesReq              project.ListWorkflowInstancesRequest
+	overviewTenantID                  uuid.UUID
+	overviewProjectID                 uuid.UUID
+	overviewCalls                     int
+	eventsTenantID                    uuid.UUID
+	eventsProjectID                   uuid.UUID
+	eventsLimit                       int32
+	eventsOffset                      int32
+	latestConfigRevisionCalls         int
+	submitDemandReq                   project.SubmitProjectDemandRequest
+	routeDecisionTenantID             uuid.UUID
+	routeDecisionProjectID            uuid.UUID
+	routeDecisionLimit                int32
+	planRevisionListReq               project.ListPlanRevisionsRequest
+	planRevisionTenantID              uuid.UUID
+	planRevisionProjectID             uuid.UUID
+	planRevisionID                    uuid.UUID
+	dispatchGates                     []project.PreDispatchGateResult
+	dispatchGateListReq               project.ListPreDispatchGateResultsRequest
+	resolveDecisionReq                project.ResolveDecisionRequest
+	retryWorkflowSignalReq            project.RetryWorkflowSignalRequest
+	completeAttemptReq                project.CompleteProjectTaskAttemptRequest
+	submitProjectTaskAttemptResultReq project.SubmitProjectTaskAttemptResultRequest
+	createEvidenceReq                 project.CreateEvidenceRefServiceRequest
+	patchEvidenceReq                  project.PatchEvidenceRequest
+	budgetSummaryTenantID             uuid.UUID
+	budgetSummaryProjectID            uuid.UUID
+	createAcceptanceReq               project.CreateAcceptanceServiceRequest
+	createArchiveReq                  project.CreateArchiveSnapshotServiceRequest
+	configRevisionTenantID            uuid.UUID
+	configRevisionProjectID           uuid.UUID
+	configRevisionID                  uuid.UUID
+	launchDetailTenantID              uuid.UUID
+	launchDetailDemandID              uuid.UUID
+	taskLiveness                      []project.ProjectTaskLiveness
+	taskLivenessTenantID              uuid.UUID
+	taskLivenessProjectID             uuid.UUID
+	executionTraceReq                 project.GetExecutionTraceRequest
+	archiveErr                        error
 }
 
 func (s *routeProjectService) ensureProjectID() uuid.UUID {
@@ -1066,6 +1153,11 @@ func (s *routeProjectService) RenewProjectTaskAttemptLease(ctx context.Context, 
 func (s *routeProjectService) CompleteProjectTaskAttempt(ctx context.Context, req project.CompleteProjectTaskAttemptRequest) (*project.ExecutionSummary, error) {
 	s.completeAttemptReq = req
 	return &project.ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, Conclusion: req.Conclusion}, nil
+}
+
+func (s *routeProjectService) SubmitProjectTaskAttemptResult(ctx context.Context, req project.SubmitProjectTaskAttemptResultRequest) (*project.ExecutionSummary, error) {
+	s.submitProjectTaskAttemptResultReq = req
+	return &project.ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, Conclusion: req.ResultContract.Summary}, nil
 }
 
 func (s *routeProjectService) FailProjectTaskAttempt(ctx context.Context, req project.FailProjectTaskAttemptRequest) (*project.ProjectTask, error) {
