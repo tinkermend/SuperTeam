@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -460,6 +462,226 @@ ORDER BY s.slug ASC`, tenantID, digitalEmployeeID)
 	return records, rows.Err()
 }
 
+func (r *PgRepository) ListInstallTargets(ctx context.Context, req ListSkillInstallTargetsRequest) ([]SkillInstallTarget, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	var rows pgx.Rows
+	var err error
+	if req.TargetScope == SkillInstallTargetTeam {
+		rows, err = r.db.Query(ctx, `
+SELECT de.tenant_id, de.team_id, de.id, de.name,
+       dei.runtime_node_id, rn.node_id, dei.provider_type, dei.agent_home_dir
+FROM digital_employees de
+JOIN digital_employee_execution_instances dei
+  ON dei.tenant_id = de.tenant_id
+ AND dei.digital_employee_id = de.id
+ AND dei.deleted_at IS NULL
+ AND dei.status IN ('ready', 'active')
+JOIN runtime_nodes rn
+  ON rn.tenant_id = de.tenant_id
+ AND rn.id = dei.runtime_node_id
+ AND rn.archived_at IS NULL
+WHERE de.tenant_id = $1
+  AND de.team_id = $2
+  AND de.deleted_at IS NULL
+ORDER BY de.name ASC`, req.TenantID, req.TeamID)
+	} else {
+		rows, err = r.db.Query(ctx, `
+SELECT de.tenant_id, de.team_id, de.id, de.name,
+       dei.runtime_node_id, rn.node_id, dei.provider_type, dei.agent_home_dir
+FROM digital_employees de
+JOIN digital_employee_execution_instances dei
+  ON dei.tenant_id = de.tenant_id
+ AND dei.digital_employee_id = de.id
+ AND dei.deleted_at IS NULL
+ AND dei.status IN ('ready', 'active')
+JOIN runtime_nodes rn
+  ON rn.tenant_id = de.tenant_id
+ AND rn.id = dei.runtime_node_id
+ AND rn.archived_at IS NULL
+WHERE de.tenant_id = $1
+  AND de.id = $2
+  AND de.deleted_at IS NULL`, req.TenantID, req.DigitalEmployeeID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var targets []SkillInstallTarget
+	for rows.Next() {
+		var target SkillInstallTarget
+		if err := rows.Scan(&target.TenantID, &target.TeamID, &target.DigitalEmployeeID, &target.EmployeeName, &target.RuntimeNodeID, &target.NodeID, &target.ProviderType, &target.AgentHomeDir); err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	return targets, rows.Err()
+}
+
+func (r *PgRepository) CreateInstallCommandReceipt(ctx context.Context, req CreateSkillInstallCommandReceiptRequest) error {
+	if r == nil || r.q == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	payload, err := json.Marshal(req.Payload)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateRuntimeCommandReceipt(ctx, queries.CreateRuntimeCommandReceiptParams{
+		TenantID:      req.TenantID,
+		CommandID:     req.CommandID,
+		CommandType:   req.CommandType,
+		RuntimeNodeID: req.RuntimeNodeID,
+		NodeID:        req.NodeID,
+		ResourceType:  "skill",
+		ResourceID:    req.ResourceID,
+		Status:        "pending",
+		Payload:       payload,
+		DispatchedAt:  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	return err
+}
+
+func (r *PgRepository) WaitForInstallCommand(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeInstallCommandReceipt, error) {
+	if r == nil || r.q == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	if interval <= 0 {
+		interval = defaultInstallPollInterval
+	}
+	for {
+		row, err := r.q.GetRuntimeCommandReceiptByCommandID(ctx, queries.GetRuntimeCommandReceiptByCommandIDParams{TenantID: tenantID, CommandID: commandID})
+		if err != nil {
+			return nil, mapNoRows(err)
+		}
+		receipt := &RuntimeInstallCommandReceipt{
+			CommandID:     row.CommandID,
+			Status:        row.Status,
+			RuntimeNodeID: row.RuntimeNodeID,
+			NodeID:        row.NodeID,
+			ErrorMessage:  textFromPg(row.ErrorMessage),
+		}
+		_ = json.Unmarshal(row.Payload, &receipt.Payload)
+		_ = json.Unmarshal(row.Result, &receipt.Result)
+		if isTerminalReceiptStatus(receipt.Status) {
+			return receipt, nil
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (r *PgRepository) PersistInstallSuccess(ctx context.Context, req PersistSkillInstallSuccessRequest) (result InstallSkillResult, err error) {
+	if r == nil || r.db == nil {
+		return InstallSkillResult{}, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return InstallSkillResult{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	if req.TargetScope == SkillInstallTargetTeam {
+		if _, err = tx.Exec(ctx, `
+INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+VALUES ($1,$2,$3)
+ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID); err != nil {
+			return InstallSkillResult{}, err
+		}
+	} else {
+		for _, installation := range req.Installations {
+			if _, err = tx.Exec(ctx, `
+INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)
+VALUES ($1,$2,$3,'enabled')
+ON CONFLICT (tenant_id, skill_id, digital_employee_id)
+DO UPDATE SET status='enabled', updated_at=NOW()`, req.TenantID, req.SkillID, installation.DigitalEmployeeID); err != nil {
+				return InstallSkillResult{}, err
+			}
+		}
+	}
+	for _, item := range req.Installations {
+		metadata, marshalErr := json.Marshal(item.Metadata)
+		if marshalErr != nil {
+			err = marshalErr
+			return InstallSkillResult{}, err
+		}
+		_, err = tx.Exec(ctx, `
+INSERT INTO skill_installations (
+    tenant_id, skill_id, target_scope, team_id, digital_employee_id, runtime_node_id,
+    provider_type, installed_path, archive_checksum_sha256, status, installed_by,
+    installed_at, metadata, updated_at, deleted_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'installed',$10,$11,$12,NOW(),NULL)
+ON CONFLICT (tenant_id, skill_id, digital_employee_id) WHERE deleted_at IS NULL
+DO UPDATE SET
+    target_scope = EXCLUDED.target_scope,
+    team_id = EXCLUDED.team_id,
+    runtime_node_id = EXCLUDED.runtime_node_id,
+    provider_type = EXCLUDED.provider_type,
+    installed_path = EXCLUDED.installed_path,
+    archive_checksum_sha256 = EXCLUDED.archive_checksum_sha256,
+    status = 'installed',
+    installed_by = EXCLUDED.installed_by,
+    installed_at = EXCLUDED.installed_at,
+    metadata = EXCLUDED.metadata,
+    updated_at = NOW(),
+    deleted_at = NULL`,
+			req.TenantID, req.SkillID, req.TargetScope, nullUUID(item.TeamID), item.DigitalEmployeeID,
+			item.RuntimeNodeID, item.ProviderType, item.InstalledPath, item.ArchiveChecksumSHA256,
+			nullUUID(req.InstalledBy), item.InstalledAt, metadata,
+		)
+		if err != nil {
+			return InstallSkillResult{}, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return InstallSkillResult{}, err
+	}
+	err = nil
+	return InstallSkillResult{
+		SkillID:        req.SkillID,
+		TargetScope:    req.TargetScope,
+		TeamID:         req.TeamID,
+		InstalledCount: len(req.Installations),
+		Installations:  req.Installations,
+	}, nil
+}
+
+func (r *PgRepository) RecordInstallFailure(ctx context.Context, req SkillInstallFailureLog) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"skill_id":            req.SkillID,
+		"target_scope":        req.TargetScope,
+		"team_id":             req.TeamID,
+		"digital_employee_id": req.DigitalEmployeeID,
+		"runtime_node_id":     req.RuntimeNodeID,
+		"provider_type":       req.ProviderType,
+		"phase":               req.Phase,
+		"reason_code":         req.ReasonCode,
+		"message":             req.Message,
+		"command_id":          req.CommandID,
+		"details":             req.Details,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
+INSERT INTO audit_events (tenant_id, event_type, actor_type, actor_id, action, resource_type, resource_id, details, created_at)
+VALUES ($1, 'skill.install.failed', 'system', 'skill-install-service', 'skill.install.failed', 'skill', $2, $3, NOW())`,
+		req.TenantID, req.SkillID.String(), payload,
+	)
+	return err
+}
+
 func (r *PgRepository) ensureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
 	var id uuid.UUID
 	err := r.db.QueryRow(ctx, `
@@ -659,6 +881,22 @@ func mapNoRows(err error) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+func textFromPg(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
+}
+
+func isTerminalReceiptStatus(status string) bool {
+	switch status {
+	case "completed", "failed", "cancelled", "timed_out":
+		return true
+	default:
+		return false
+	}
 }
 
 func nullUUID(value uuid.UUID) any {
