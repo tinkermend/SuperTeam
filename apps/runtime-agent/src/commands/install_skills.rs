@@ -13,6 +13,8 @@ use crate::skills::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstallSkillsCommandPayload {
     pub command_id: String,
+    pub tenant_id: String,
+    pub skill: RuntimeSkillPayload,
     #[serde(default)]
     pub rollback_on_failure: bool,
     pub targets: Vec<InstallSkillTargetPayload>,
@@ -20,19 +22,22 @@ pub struct InstallSkillsCommandPayload {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstallSkillTargetPayload {
+    pub team_id: String,
+    pub digital_employee_id: String,
     pub agent_home_dir: String,
     pub provider_type: String,
-    pub skill: RuntimeSkillPayload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledSkillTarget {
+    pub team_id: String,
+    pub digital_employee_id: String,
     pub agent_home_dir: String,
     pub provider_type: String,
     pub skill_key: String,
-    pub path: String,
-    pub checksum: String,
-    pub file_count: u64,
+    pub installed_path: String,
+    pub archive_checksum_sha256: String,
+    pub archive_file_count: i64,
 }
 
 pub fn provider_skill_dir(
@@ -67,7 +72,7 @@ pub async fn install_skill_targets(
     }
 
     let mut installed = Vec::with_capacity(payload.targets.len());
-    let mut changed_dirs = Vec::new();
+    let mut rollback = SkillInstallRollback::new(payload.rollback_on_failure);
 
     for target in payload.targets {
         let agent_home_dir = PathBuf::from(&target.agent_home_dir);
@@ -76,29 +81,32 @@ pub async fn install_skill_targets(
                 "agent_home_dir does not exist or is not a directory: {}",
                 agent_home_dir.display()
             );
-            rollback_if_requested(payload.rollback_on_failure, &changed_dirs)?;
+            rollback.rollback()?;
             return Err(error);
         }
 
         let target_dir = match provider_skill_dir(
             &agent_home_dir,
             &target.provider_type,
-            &target.skill.skill_key,
+            &payload.skill.skill_key,
         ) {
             Ok(target_dir) => target_dir,
             Err(error) => {
-                rollback_if_requested(payload.rollback_on_failure, &changed_dirs)?;
+                rollback.rollback()?;
                 return Err(error);
             }
         };
-        let was_current = existing_checksum(&target_dir)
-            .is_some_and(|checksum| checksum == target.skill.archive_checksum_sha256);
         let temp_root = agent_home_dir.join(".skill-tmp");
+        let was_current = existing_checksum(&target_dir)
+            .is_some_and(|checksum| checksum == payload.skill.archive_checksum_sha256);
+        if !was_current {
+            rollback.prepare_target(&target_dir)?;
+        }
 
         let synced = match materialize_skill_to_dir(
             &target_dir,
             &temp_root,
-            &target.skill,
+            &payload.skill,
             s3_client,
             bucket,
         )
@@ -106,25 +114,24 @@ pub async fn install_skill_targets(
         {
             Ok(synced) => synced,
             Err(error) => {
-                rollback_if_requested(payload.rollback_on_failure, &changed_dirs)?;
+                rollback.rollback()?;
                 return Err(error);
             }
         };
 
-        if !was_current {
-            changed_dirs.push(target_dir.clone());
-        }
-
         installed.push(InstalledSkillTarget {
+            team_id: target.team_id,
+            digital_employee_id: target.digital_employee_id,
             agent_home_dir: target.agent_home_dir,
             provider_type: target.provider_type,
             skill_key: synced.skill_key,
-            path: target_dir.to_string_lossy().into_owned(),
-            checksum: synced.content_hash,
-            file_count: synced.file_count,
+            installed_path: target_dir.to_string_lossy().into_owned(),
+            archive_checksum_sha256: synced.content_hash,
+            archive_file_count: payload.skill.archive_file_count,
         });
     }
 
+    rollback.commit()?;
     Ok(installed)
 }
 
@@ -132,15 +139,106 @@ fn existing_checksum(target_dir: &Path) -> Option<String> {
     fs::read_to_string(target_dir.join(".skill-checksum")).ok()
 }
 
-fn rollback_if_requested(rollback_on_failure: bool, changed_dirs: &[PathBuf]) -> Result<()> {
-    if !rollback_on_failure {
-        return Ok(());
+#[derive(Debug)]
+pub struct SkillInstallRollback {
+    enabled: bool,
+    entries: Vec<RollbackEntry>,
+    committed: bool,
+}
+
+#[derive(Debug)]
+struct RollbackEntry {
+    target_dir: PathBuf,
+    backup_dir: Option<PathBuf>,
+}
+
+impl SkillInstallRollback {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            entries: Vec::new(),
+            committed: false,
+        }
     }
 
-    for dir in changed_dirs.iter().rev() {
-        remove_skill_dir_if_exists(dir)
-            .with_context(|| format!("rollback installed skill directory: {}", dir.display()))?;
+    pub fn prepare_target(&mut self, target_dir: &Path) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self
+            .entries
+            .iter()
+            .any(|entry| entry.target_dir == target_dir)
+        {
+            return Ok(());
+        }
+
+        let backup_dir = if target_dir.exists() {
+            let backup_dir = rollback_backup_dir(target_dir, self.entries.len())?;
+            fs::rename(target_dir, &backup_dir)
+                .with_context(|| format!("backup skill directory: {}", target_dir.display()))?;
+            Some(backup_dir)
+        } else {
+            None
+        };
+        self.entries.push(RollbackEntry {
+            target_dir: target_dir.to_path_buf(),
+            backup_dir,
+        });
+        Ok(())
     }
 
-    Ok(())
+    pub fn rollback(mut self) -> Result<()> {
+        if !self.enabled || self.committed {
+            return Ok(());
+        }
+
+        for entry in self.entries.iter().rev() {
+            remove_skill_dir_if_exists(&entry.target_dir)?;
+            if let Some(backup_dir) = &entry.backup_dir {
+                if let Some(parent) = entry.target_dir.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("create rollback parent: {}", entry.target_dir.display())
+                    })?;
+                }
+                fs::rename(backup_dir, &entry.target_dir).with_context(|| {
+                    format!("restore skill directory: {}", entry.target_dir.display())
+                })?;
+            }
+        }
+        self.committed = true;
+        Ok(())
+    }
+
+    pub fn commit(mut self) -> Result<()> {
+        for entry in &self.entries {
+            if let Some(backup_dir) = &entry.backup_dir {
+                remove_skill_dir_if_exists(backup_dir).with_context(|| {
+                    format!("cleanup skill rollback backup: {}", backup_dir.display())
+                })?;
+            }
+        }
+        self.committed = true;
+        Ok(())
+    }
+}
+
+fn rollback_backup_dir(target_dir: &Path, index: usize) -> Result<PathBuf> {
+    let parent = target_dir
+        .parent()
+        .context("skill target directory has no parent")?;
+    fs::create_dir_all(parent)?;
+    Ok(parent.join(format!(
+        ".{}-rollback-{}-{}-{}",
+        target_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("skill"),
+        std::process::id(),
+        index,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )))
 }
