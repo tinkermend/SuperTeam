@@ -1025,6 +1025,53 @@ func TestSkillArchiveStorageMigrationRefactorsStorageModel(t *testing.T) {
 	}
 }
 
+func TestSkillInstallationsMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/035_skill_installations.sql")
+	if err != nil {
+		t.Fatalf("read skill installations migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE skill_installations",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"skill_id UUID NOT NULL",
+		"target_scope VARCHAR(40) NOT NULL",
+		"team_id UUID",
+		"digital_employee_id UUID NOT NULL",
+		"runtime_node_id UUID NOT NULL",
+		"provider_type VARCHAR(80) NOT NULL",
+		"installed_path TEXT NOT NULL",
+		"archive_checksum_sha256 VARCHAR(64) NOT NULL",
+		"status VARCHAR(40) NOT NULL DEFAULT 'installed'",
+		"installed_by UUID",
+		"installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"deleted_at TIMESTAMPTZ",
+		"CREATE UNIQUE INDEX uq_skill_installations_active_employee",
+		"CREATE INDEX idx_skill_installations_skill",
+		"CREATE INDEX idx_skill_installations_employee",
+		"CREATE INDEX idx_skill_installations_team",
+		"COMMENT ON TABLE skill_installations IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected skill installations migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"CREATE TYPE skill_install",
+		"ON DELETE CASCADE",
+		"BIGSERIAL",
+		"status VARCHAR(40) NOT NULL DEFAULT 'failed'",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("skill installations migration must not contain %q", forbidden)
+		}
+	}
+}
+
 func TestDigitalEmployeeCreationQueriesHandlePolicyReasonsAndAbortAnchoring(t *testing.T) {
 	body, err := os.ReadFile("queries/employee_execution.sql")
 	if err != nil {

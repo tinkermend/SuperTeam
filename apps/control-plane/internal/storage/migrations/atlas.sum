@@ -1,4 +1,4 @@
-h1:VzqV3DUxGSQIV2kUhZkuRtns3LkTLey1Xoq+x+wFhbc=
+h1:uc1qK3tyU6XTyPZuQm2OpcJ3Scqs3FZ7atOf72+VUPw=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -33,3 +33,4 @@ h1:VzqV3DUxGSQIV2kUhZkuRtns3LkTLey1Xoq+x+wFhbc=
 032_project_task_dispatch_gates.sql h1:aIJ/e0qZIYHISUPhr9VqHJRIv0a6viv02ag/xhJknTo=
 033_digital_employee_env_and_skill_dependencies.sql h1:Kn5fxRlYXjPIS5oyLN8RX9KRuUhmKv+DG3F/+2wQM/M=
 034_project_task_results.sql h1:naScmu8o+gbGGqR16jHeWtwZZ+cOFC5kDPaVnIH67xA=
+035_skill_installations.sql h1:mR3h2BfXew2plDOMqQIgvIGAel+SpueNVt6Yms4Itvg=
