@@ -101,31 +101,9 @@ func (s *InstallService) InstallSkill(ctx context.Context, req InstallSkillReque
 		return result, &InstallSkillError{Phase: InstallFailurePhasePreflight, Message: message, BlockedTargets: blockers}
 	}
 
-	commands, err := s.dispatchInstallCommands(ctx, req, skill, targets)
+	installations, err := s.installTargetsSequentially(ctx, req, skill, targets)
 	if err != nil {
-		_ = s.recordFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_dispatch_failed", err.Error(), "", nil)
 		return result, err
-	}
-	installations := make([]SkillInstallation, 0, len(targets))
-	appliedNodes := make([]string, 0, len(commands))
-	for _, command := range commands {
-		waitCtx, cancel := context.WithTimeout(ctx, timeoutOrDefault(req.Timeout, s.timeout))
-		receipt, waitErr := s.repository.WaitForInstallCommand(waitCtx, req.TenantID, command.CommandID, s.pollInterval)
-		cancel()
-		if waitErr != nil {
-			s.recordPartialFailure(ctx, req, InstallFailurePhaseTimeout, "runtime_install_timeout", waitErr.Error(), command.CommandID, appliedNodes)
-			return result, &InstallSkillError{Phase: InstallFailurePhaseTimeout, Message: waitErr.Error()}
-		}
-		if receipt.Status != "completed" {
-			message := receipt.ErrorMessage
-			if strings.TrimSpace(message) == "" {
-				message = "runtime install failed"
-			}
-			s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_install_failed", message, command.CommandID, appliedNodes)
-			return result, &InstallSkillError{Phase: InstallFailurePhaseRuntimeInstall, Message: message}
-		}
-		installations = append(installations, command.Installations...)
-		appliedNodes = append(appliedNodes, command.NodeID)
 	}
 	return s.repository.PersistInstallSuccess(ctx, PersistSkillInstallSuccessRequest{
 		TenantID:      req.TenantID,
@@ -144,7 +122,38 @@ type dispatchedInstallCommand struct {
 	Installations []SkillInstallation
 }
 
-func (s *InstallService) dispatchInstallCommands(ctx context.Context, req InstallSkillRequest, skill *Skill, targets []SkillInstallTarget) ([]dispatchedInstallCommand, error) {
+func (s *InstallService) installTargetsSequentially(ctx context.Context, req InstallSkillRequest, skill *Skill, targets []SkillInstallTarget) ([]SkillInstallation, error) {
+	grouped, nodeOrder := groupInstallTargetsByNode(targets)
+	installations := make([]SkillInstallation, 0, len(targets))
+	appliedNodes := make([]string, 0, len(nodeOrder))
+	for _, nodeID := range nodeOrder {
+		command, err := s.dispatchInstallCommand(ctx, req, skill, nodeID, grouped[nodeID])
+		if err != nil {
+			s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_dispatch_failed", err.Error(), "", appliedNodes)
+			return nil, err
+		}
+		waitCtx, cancel := context.WithTimeout(ctx, timeoutOrDefault(req.Timeout, s.timeout))
+		receipt, waitErr := s.repository.WaitForInstallCommand(waitCtx, req.TenantID, command.CommandID, s.pollInterval)
+		cancel()
+		if waitErr != nil {
+			s.recordPartialFailure(ctx, req, InstallFailurePhaseTimeout, "runtime_install_timeout", waitErr.Error(), command.CommandID, appliedNodes)
+			return nil, &InstallSkillError{Phase: InstallFailurePhaseTimeout, Message: waitErr.Error()}
+		}
+		if receipt.Status != "completed" {
+			message := receipt.ErrorMessage
+			if strings.TrimSpace(message) == "" {
+				message = "runtime install failed"
+			}
+			s.recordPartialFailure(ctx, req, InstallFailurePhaseRuntimeInstall, "runtime_install_failed", message, command.CommandID, appliedNodes)
+			return nil, &InstallSkillError{Phase: InstallFailurePhaseRuntimeInstall, Message: message}
+		}
+		installations = append(installations, command.Installations...)
+		appliedNodes = append(appliedNodes, command.NodeID)
+	}
+	return installations, nil
+}
+
+func groupInstallTargetsByNode(targets []SkillInstallTarget) (map[string][]SkillInstallTarget, []string) {
 	grouped := map[string][]SkillInstallTarget{}
 	nodeOrder := make([]string, 0)
 	for _, target := range targets {
@@ -154,39 +163,37 @@ func (s *InstallService) dispatchInstallCommands(ctx context.Context, req Instal
 		grouped[target.NodeID] = append(grouped[target.NodeID], target)
 	}
 	sort.Strings(nodeOrder)
+	return grouped, nodeOrder
+}
 
-	commands := make([]dispatchedInstallCommand, 0, len(grouped))
-	for _, nodeID := range nodeOrder {
-		nodeTargets := grouped[nodeID]
-		commandID := newInstallCommandID()
-		payload := buildInstallCommandPayload(commandID, req.TenantID, skill, nodeTargets)
-		runtimeNodeID := nodeTargets[0].RuntimeNodeID
-		if err := s.repository.CreateInstallCommandReceipt(ctx, CreateSkillInstallCommandReceiptRequest{
-			TenantID:      req.TenantID,
-			CommandID:     commandID,
-			CommandType:   "install_skills",
-			RuntimeNodeID: runtimeNodeID,
-			NodeID:        nodeID,
-			ResourceID:    req.SkillID,
-			Payload:       payload,
-		}); err != nil {
-			return nil, err
-		}
-		command, err := runtimeInstallCommand(commandID, payload)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.dispatcher.Dispatch(ctx, nodeID, command); err != nil {
-			return nil, err
-		}
-		commands = append(commands, dispatchedInstallCommand{
-			CommandID:     commandID,
-			RuntimeNodeID: runtimeNodeID,
-			NodeID:        nodeID,
-			Installations: expectedInstallations(req, skill, nodeTargets, commandID),
-		})
+func (s *InstallService) dispatchInstallCommand(ctx context.Context, req InstallSkillRequest, skill *Skill, nodeID string, nodeTargets []SkillInstallTarget) (dispatchedInstallCommand, error) {
+	commandID := newInstallCommandID()
+	payload := buildInstallCommandPayload(commandID, req.TenantID, skill, nodeTargets)
+	runtimeNodeID := nodeTargets[0].RuntimeNodeID
+	if err := s.repository.CreateInstallCommandReceipt(ctx, CreateSkillInstallCommandReceiptRequest{
+		TenantID:      req.TenantID,
+		CommandID:     commandID,
+		CommandType:   "install_skills",
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        nodeID,
+		ResourceID:    req.SkillID,
+		Payload:       payload,
+	}); err != nil {
+		return dispatchedInstallCommand{}, err
 	}
-	return commands, nil
+	command, err := runtimeInstallCommand(commandID, payload)
+	if err != nil {
+		return dispatchedInstallCommand{}, err
+	}
+	if err := s.dispatcher.Dispatch(ctx, nodeID, command); err != nil {
+		return dispatchedInstallCommand{}, err
+	}
+	return dispatchedInstallCommand{
+		CommandID:     commandID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        nodeID,
+		Installations: expectedInstallations(req, skill, nodeTargets, commandID),
+	}, nil
 }
 
 func buildInstallCommandPayload(commandID string, tenantID uuid.UUID, skill *Skill, targets []SkillInstallTarget) map[string]any {

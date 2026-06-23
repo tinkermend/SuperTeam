@@ -20,7 +20,7 @@ type PgRepository struct {
 	q  *queries.Queries
 }
 
-func NewPgRepository(db *pgxpool.Pool, querySources ...*queries.Queries) Repository {
+func NewPgRepository(db *pgxpool.Pool, querySources ...*queries.Queries) *PgRepository {
 	var q *queries.Queries
 	if len(querySources) > 0 {
 		q = querySources[0]

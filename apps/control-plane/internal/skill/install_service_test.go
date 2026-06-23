@@ -233,6 +233,46 @@ func TestInstallSkillTeamPartialNodeFailureDoesNotPersistAndSurfacesAppliedNodes
 	}
 }
 
+func TestInstallSkillTeamLaterDispatchFailureRecordsAppliedNodes(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	teamID := uuid.New()
+	repo := newInstallServiceRepoFixture(tenantID, skillID)
+	repo.targets = []SkillInstallTarget{
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex", AgentHomeDir: "/tmp/e1"},
+		{TenantID: tenantID, TeamID: teamID, DigitalEmployeeID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-2", ProviderType: "codex", AgentHomeDir: "/tmp/e2"},
+	}
+	dispatcher := &installServiceDispatcher{
+		connected:         map[string]bool{"node-1": true, "node-2": true},
+		dispatchErrByNode: map[string]error{"node-2": errors.New("runtime socket closed")},
+	}
+	service := NewInstallService(repo, dispatcher, InstallServiceOptions{Timeout: 50 * time.Millisecond, PollInterval: time.Millisecond})
+
+	_, err := service.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID: tenantID, SkillID: skillID, TargetScope: SkillInstallTargetTeam, TeamID: teamID, ActorUserID: uuid.New(),
+	})
+	if err == nil {
+		t.Fatal("expected later dispatch failure error")
+	}
+	if len(repo.installations) != 0 || len(repo.teamBindings) != 0 || len(repo.employeeBindings) != 0 {
+		t.Fatalf("dispatch failure after partial apply must not persist success: repo=%#v", repo)
+	}
+	if len(repo.failureLogs) == 0 {
+		t.Fatal("expected dispatch failure log")
+	}
+	last := repo.failureLogs[len(repo.failureLogs)-1]
+	if last.Phase != InstallFailurePhaseRuntimeInstall || last.ReasonCode != "runtime_dispatch_failed" {
+		t.Fatalf("failure = (%q, %q), want (runtime_install, runtime_dispatch_failed)", last.Phase, last.ReasonCode)
+	}
+	applied, _ := last.Details["applied_nodes"].([]string)
+	if len(applied) != 1 || applied[0] != "node-1" {
+		t.Fatalf("expected node-1 surfaced as already-applied for manual cleanup, got %#v", last.Details["applied_nodes"])
+	}
+	if cleanup, _ := last.Details["requires_manual_cleanup"].(bool); !cleanup {
+		t.Fatalf("expected requires_manual_cleanup, got %#v", last.Details)
+	}
+}
+
 type installServiceRepo struct {
 	skill            *Skill
 	targets          []SkillInstallTarget
@@ -312,8 +352,9 @@ func (r *installServiceRepo) RecordInstallFailure(ctx context.Context, req Skill
 }
 
 type installServiceDispatcher struct {
-	connected map[string]bool
-	commands  []cpruntime.RuntimeCommand
+	connected         map[string]bool
+	dispatchErrByNode map[string]error
+	commands          []cpruntime.RuntimeCommand
 }
 
 func (d *installServiceDispatcher) IsConnected(nodeID string) bool {
@@ -321,6 +362,9 @@ func (d *installServiceDispatcher) IsConnected(nodeID string) bool {
 }
 
 func (d *installServiceDispatcher) Dispatch(ctx context.Context, nodeID string, command cpruntime.RuntimeCommand) error {
+	if err := d.dispatchErrByNode[nodeID]; err != nil {
+		return err
+	}
 	d.commands = append(d.commands, command)
 	return nil
 }
