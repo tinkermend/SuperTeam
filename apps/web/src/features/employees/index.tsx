@@ -204,18 +204,13 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
 
           {overview.data ? (
             <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+              <div className="flex min-w-0 flex-col gap-4">
                 <EmployeeFilterPanel
                   filters={filters}
                   filterOptions={filterOptions}
                   onFilterChange={handleFilterChange}
                   onSearchChange={handleSearchChange}
                 />
-              </div>
-              <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
-                <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
-              </div>
-              <div className="min-w-0 xl:col-start-1 xl:row-start-2">
                 {items.length === 0 ? (
                   <SoftCard>
                     <V3EmptyState title="暂无数字员工" />
@@ -241,6 +236,9 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                     />
                   </div>
                 )}
+              </div>
+              <div className="min-w-0">
+                <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
               </div>
             </div>
           ) : null}
@@ -280,7 +278,7 @@ function EmployeeCardPagination({
   const canNext = offset + limit < totalCount;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-v3-inner border border-v3-line bg-v3-card px-4 py-3 shadow-v3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">
           第 {formatNumber(start)}-{formatNumber(end)} 条，共 {formatNumber(totalCount)} 个
@@ -291,7 +289,7 @@ function EmployeeCardPagination({
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">每页</span>
           <Select value={String(limit)} onValueChange={onPageSizeChange}>
-            <SelectTrigger aria-label="每页数量" className="h-9 w-[84px] rounded-full bg-background/70 shadow-none">
+            <SelectTrigger aria-label="每页数量" className="h-9 w-[84px] rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -700,7 +698,7 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
         <SelectTrigger
           id={selectId}
           aria-label={label}
-          className="h-9 w-full rounded-full bg-background/70 shadow-none"
+          className="h-9 w-full rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft"
         >
           <SelectValue placeholder="全部" />
         </SelectTrigger>

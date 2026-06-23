@@ -19,6 +19,7 @@ const requiredDesignDocs = [
   "principles.md",
   "surfaces.md",
   "tokens.md",
+  "visual-language.md",
 ];
 
 function relative(filePath) {
@@ -51,6 +52,10 @@ function resolveInstalledLucideVersion() {
 }
 
 async function listPrototypePages() {
+  if (!(await exists(prototypeDir))) {
+    return [];
+  }
+
   const entries = await fs.readdir(prototypeDir, { withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".html") && !entry.name.startsWith("_"))
@@ -93,6 +98,11 @@ async function verifyDesignDocs(failures) {
 }
 
 async function verifyPrototypeKit(failures, warnings) {
+  if (!(await exists(prototypeDir))) {
+    warnings.push(`Prototype kit directory not found; skipped prototype verification: ${relative(prototypeDir)}`);
+    return;
+  }
+
   const readmePath = path.join(prototypeDir, "README.md");
   const cssPath = path.join(prototypeDir, "design-system-prototypes.css");
   const verifyPath = path.join(prototypeDir, "verify-prototypes.mjs");

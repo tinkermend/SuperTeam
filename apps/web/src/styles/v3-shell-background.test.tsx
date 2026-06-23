@@ -78,7 +78,7 @@ describe('authenticated v3 shell background styles', () => {
     expect(searchStyle.backgroundColor).toBe('rgb(255, 255, 255)')
   })
 
-  it('keeps the sidebar panel white with a soft v3 divider and shadow', async () => {
+  it('keeps the sidebar panel white with a soft v3 divider and no heavy shadow', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
         <div
@@ -104,7 +104,7 @@ describe('authenticated v3 shell background styles', () => {
     const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
 
     expect(containerStyle.borderInlineEndColor).toBe('rgb(223, 228, 234)')
-    expect(containerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.055)')
+    expect(containerStyle.boxShadow).toBe('none')
     expect(innerStyle.borderInlineEndColor).toBe('rgb(238, 241, 244)')
     expect(innerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
     expect(innerStyle.backgroundImage).toBe('none')

@@ -91,3 +91,12 @@ Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
 - 这些轻量浮层应比 Dialog 更轻。
 - 使用更小圆角、更弱阴影和更紧凑的 v3 实底面。
 - 不要把轻量浮层做成完整弹窗质感。
+
+## 命令菜单
+
+顶部 Command Center 展开的搜索结果、快捷动作和任务发起建议使用 Popover / Command Menu 级别的轻量浮层。
+
+- 容器使用 `--v3-card` 实底、`--v3-line` 边框和轻量阴影，不使用大面积蓝紫渐变或透明科技面板。
+- 分组标题、快捷键 keycap、状态 pill 和图标容器应复用 `navigation.md`、`actions.md`、`data-display.md` 的规则。
+- 命令项 hover 和 active 态只改变背景、边框或左侧品牌线，不改变行高。
+- 命令菜单只组织当前可执行入口、搜索结果和真实状态，不新增业务字段或伪造数据。

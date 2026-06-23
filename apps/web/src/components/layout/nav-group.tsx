@@ -28,24 +28,10 @@ import {
 } from '../ui/dropdown-menu'
 import {
   type NavCollapsible,
-  type NavIconTone,
   type NavItem,
   type NavLink,
   type NavGroup as NavGroupProps,
 } from './types'
-
-const navIconColors: Record<NavIconTone, string> = {
-  primary: 'var(--v3-brand)',
-  task: 'var(--v3-info)',
-  employee: 'var(--v3-ok)',
-  workflow: 'var(--v3-info)',
-  capability: 'var(--v3-warn)',
-  approval: 'var(--v3-ok)',
-  runtime: 'var(--v3-info)',
-  permission: 'var(--v3-artifact)',
-  audit: 'var(--v3-mute)',
-  neutral: 'var(--v3-mute)',
-}
 
 export function NavGroup({ title, items }: NavGroupProps) {
   const { state, isMobile } = useSidebar()
@@ -74,7 +60,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
 
 function NavBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className='ms-auto rounded-lg border border-v3-line bg-v3-brand-soft px-1.5 py-0 text-xs text-v3-brand-deep shadow-none'>
+    <Badge className='ms-auto h-5 min-w-5 rounded-full border border-transparent bg-v3-brand-soft px-1.5 py-0 text-xs font-bold leading-none text-v3-brand-deep shadow-none'>
       {children}
     </Badge>
   )
@@ -88,9 +74,7 @@ function NavIcon({ item }: { item: NavItem }) {
   return (
     <Icon
       aria-hidden='true'
-      style={{
-        color: navIconColors[item.iconTone ?? 'neutral'],
-      }}
+      data-nav-icon-tone={item.iconTone ?? 'neutral'}
     />
   )
 }

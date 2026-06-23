@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { IconTile, SoftCard, V3Button } from "@/components/superteam";
+import { IconTile, SignatureCard, SoftCard, V3Button } from "@/components/superteam";
 import type {
   Project,
   ProjectDemandSourceType,
@@ -229,10 +229,20 @@ export function TaskLaunchForm({
           </div>
 
           <Label className="grid gap-3">
-            <span className="text-base font-semibold text-v3-ink">
-              描述你的需求 <span className="text-destructive">*</span>
-            </span>
-            <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block text-base font-extrabold tracking-normal text-v3-ink">
+                  中枢指令区
+                </span>
+                <span className="mt-1 block text-sm text-v3-ink-2">
+                  描述你的需求 <span className="text-destructive">*</span>
+                </span>
+              </div>
+              <span className="rounded-lg bg-v3-brand-soft px-2.5 py-1 text-xs font-bold text-v3-brand-deep">
+                Command Center
+              </span>
+            </div>
+            <div className="rounded-v3-inner border border-v3-line-strong bg-v3-card p-3 shadow-[inset_3px_0_0_var(--v3-brand)] transition-shadow focus-within:border-v3-brand focus-within:ring-2 focus-within:ring-v3-brand/25">
               <Textarea
                 aria-label="需求描述"
                 className="min-h-[clamp(8rem,24dvh,14rem)] resize-y border-0 bg-transparent px-1 py-1 text-base leading-8 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:ring-0"
@@ -259,85 +269,103 @@ export function TaskLaunchForm({
             </div>
           </Label>
 
-          <div
-            className="grid gap-3 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3 md:grid-cols-[minmax(16rem,1.25fr)_minmax(13rem,1fr)_minmax(7rem,0.34fr)_minmax(9rem,0.42fr)] xl:items-end"
-            data-testid="task-launch-parameters"
-          >
-            <LaunchSelect
-              icon={<FolderOpen className="size-4" />}
-              label="项目"
-              required
+          <section className="grid gap-3 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-extrabold tracking-normal text-v3-ink">编排参数</h3>
+                <p className="mt-0.5 text-xs text-v3-ink-2">
+                  先固定项目、审核与风险边界，再交给协调线程拆解。
+                </p>
+              </div>
+              <span className="rounded-lg border border-v3-line-strong bg-v3-card px-2.5 py-1 text-xs font-bold text-v3-ink-2">
+                Project routing
+              </span>
+            </div>
+            <div
+              className="grid gap-3 md:grid-cols-[minmax(16rem,1.25fr)_minmax(13rem,1fr)_minmax(7rem,0.34fr)_minmax(9rem,0.42fr)] xl:items-end"
+              data-testid="task-launch-parameters"
             >
-              <Select value={projectId} onValueChange={handleProjectChange}>
-                <SelectTrigger aria-label="项目" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
-                  <SelectValue placeholder="选择项目" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeProjects.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </LaunchSelect>
+              <LaunchSelect
+                icon={<FolderOpen className="size-4" />}
+                label="项目"
+                required
+              >
+                <Select value={projectId} onValueChange={handleProjectChange}>
+                  <SelectTrigger aria-label="项目" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
+                    <SelectValue placeholder="选择项目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeProjects.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </LaunchSelect>
 
-            <LaunchSelect
-              icon={<UserRoundCheck className="size-4" />}
-              label="审核人"
-              required
-            >
-              <Select value={selectedReviewerId} onValueChange={setReviewerId}>
-                <SelectTrigger aria-label="审核人" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
-                  <SelectValue placeholder="选择审核人" />
-                </SelectTrigger>
-                <SelectContent>
-                  {humanReviewers.map((member) => (
-                    <SelectItem key={member.id} value={member.principal_id}>
-                      {reviewerLabel(member)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </LaunchSelect>
+              <LaunchSelect
+                icon={<UserRoundCheck className="size-4" />}
+                label="审核人"
+                required
+              >
+                <Select value={selectedReviewerId} onValueChange={setReviewerId}>
+                  <SelectTrigger aria-label="审核人" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
+                    <SelectValue placeholder="选择审核人" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {humanReviewers.map((member) => (
+                      <SelectItem key={member.id} value={member.principal_id}>
+                        {reviewerLabel(member)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </LaunchSelect>
 
-            <LaunchSelect
-              icon={<GitBranch className="size-4" />}
-              label="优先级"
-              required
-            >
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger aria-label="优先级" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
-                  <SelectValue placeholder="选择优先级" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="high">高</SelectItem>
-                  <SelectItem value="medium">中</SelectItem>
-                  <SelectItem value="low">低</SelectItem>
-                </SelectContent>
-              </Select>
-            </LaunchSelect>
+              <LaunchSelect
+                icon={<GitBranch className="size-4" />}
+                label="优先级"
+                required
+              >
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger aria-label="优先级" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
+                    <SelectValue placeholder="选择优先级" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">高</SelectItem>
+                    <SelectItem value="medium">中</SelectItem>
+                    <SelectItem value="low">低</SelectItem>
+                  </SelectContent>
+                </Select>
+              </LaunchSelect>
 
-            <LaunchSelect
-              icon={<CircleAlert className="size-4" />}
-              label="风险级别"
-              required
-            >
-              <Select value={riskLevel} onValueChange={setRiskLevel}>
-                <SelectTrigger aria-label="风险级别" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
-                  <SelectValue placeholder="选择风险级别" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="medium">中风险</SelectItem>
-                  <SelectItem value="low">低风险</SelectItem>
-                  <SelectItem value="high">高风险</SelectItem>
-                </SelectContent>
-              </Select>
-            </LaunchSelect>
-          </div>
+              <LaunchSelect
+                icon={<CircleAlert className="size-4" />}
+                label="风险级别"
+                required
+              >
+                <Select value={riskLevel} onValueChange={setRiskLevel}>
+                  <SelectTrigger aria-label="风险级别" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
+                    <SelectValue placeholder="选择风险级别" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="medium">中风险</SelectItem>
+                    <SelectItem value="low">低风险</SelectItem>
+                    <SelectItem value="high">高风险</SelectItem>
+                  </SelectContent>
+                </Select>
+              </LaunchSelect>
+            </div>
+          </section>
 
           <div className="grid gap-3">
-            <span className="text-sm font-semibold text-v3-ink">补充资料（可选）</span>
+            <div className="min-w-0">
+              <h3 className="text-sm font-extrabold tracking-normal text-v3-ink">协同资料</h3>
+              <p className="mt-0.5 text-xs text-v3-ink-2">
+                把执行需要的附件、链接或知识库材料挂到同一条需求上。
+              </p>
+            </div>
             <div className="grid gap-3 md:grid-cols-3">
               <ReferenceButton
                 description="上传文件或截图"
@@ -457,32 +485,38 @@ function LaunchGuidance() {
 
   return (
     <aside className="grid content-start gap-4">
-      <SoftCard className="p-5 xl:p-6">
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-4 text-v3-brand" />
-          <h2 className="text-xl font-extrabold tracking-normal text-v3-ink">提交后会发生什么</h2>
+      <SignatureCard className="p-6 xl:p-7">
+        <div className="flex items-center gap-2 text-v3-brand-deep">
+          <Sparkles className="size-4" />
+          <h2 className="text-lg font-bold tracking-normal text-v3-ink">提交后会发生什么</h2>
         </div>
-        <div className="mt-6 grid gap-5 xl:mt-8 xl:gap-7">
+        <p className="mt-2 text-sm leading-6 text-v3-ink-2">
+          一次需求提交，触发四步自动协调编排。
+        </p>
+        <ol className="mt-7 grid gap-6">
           {steps.map((step, index) => (
-            <div className="grid grid-cols-[48px_1fr] gap-4" key={step.title}>
-              <div className="text-3xl font-extrabold tracking-normal text-v3-brand tabular-nums">
-                {String(index + 1).padStart(2, "0")}
+            <li className="grid grid-cols-[auto_1fr] gap-4" key={step.title}>
+              <div className="flex flex-col items-center">
+                <span className="grid size-11 place-items-center rounded-2xl bg-v3-brand-soft text-lg font-extrabold tabular-nums text-v3-brand-deep ring-1 ring-[color:var(--v3-signature-border)] [&_svg]:size-5">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                {index < steps.length - 1 ? (
+                  <span aria-hidden className="mt-1 w-px flex-1 bg-v3-line-strong" />
+                ) : null}
               </div>
-              <div className="grid grid-cols-[44px_1fr] gap-4">
-                <IconTile size="sm" tone={step.tone}>
-                  {step.icon}
-                </IconTile>
-                <div className="min-w-0 border-b border-v3-line pb-6 last:border-b-0 last:pb-0">
-                  <h3 className="text-sm font-semibold text-v3-ink">{step.title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-v3-ink-2">
-                    {step.description}
-                  </p>
+              <div className="min-w-0 pb-1">
+                <div className="flex items-center gap-2 text-v3-ink">
+                  <span className="[&_svg]:size-4 text-v3-brand">{step.icon}</span>
+                  <h3 className="text-[15px] font-bold tracking-normal">{step.title}</h3>
                 </div>
+                <p className="mt-1.5 text-[13px] leading-6 text-v3-ink-2">
+                  {step.description}
+                </p>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
-      </SoftCard>
+        </ol>
+      </SignatureCard>
 
       <SoftCard className="p-5">
         <div className="flex items-start gap-3">

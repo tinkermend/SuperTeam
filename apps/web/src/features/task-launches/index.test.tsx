@@ -547,6 +547,9 @@ describe("TaskLaunchView", () => {
 
     await vi.waitFor(() => expect(getByText("提交后会发生什么")).toBeTruthy());
 
+    expect(getByText("中枢指令区")).toBeTruthy();
+    expect(getByText("编排参数")).toBeTruthy();
+    expect(getByText("协同资料")).toBeTruthy();
     expect(getByText("01")).toBeTruthy();
     expect(getByText("写入项目需求")).toBeTruthy();
     expect(getByText("02")).toBeTruthy();

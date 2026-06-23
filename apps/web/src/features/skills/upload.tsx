@@ -21,6 +21,7 @@ import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import {
   IconTile,
+  SignatureCard,
   SoftCard,
   StatusPill,
   V3Button,
@@ -136,7 +137,14 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
             </Button>
           </div>
 
-          <PackageStatusBand file={file} packageDisplayName={packageDisplayName} onFileChange={setFile} />
+          <PackageStatusBand
+            canPublish={canPublish}
+            dependencyCount={dependencyCount}
+            file={file}
+            metadataReady={Boolean(name.trim())}
+            packageDisplayName={packageDisplayName}
+            onFileChange={setFile}
+          />
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
             <SoftCard className="min-w-0 overflow-hidden py-0">
@@ -155,7 +163,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   >
                     <div className="relative">
                       <Input
-                        className="h-10 bg-background/90 pr-14"
+                        className="h-10 pr-14"
                         id="skill-upload-name"
                         onChange={(event) => setName(event.target.value)}
                         placeholder="例如：接口文档生成"
@@ -174,7 +182,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   >
                     <div className="relative">
                       <Textarea
-                        className="min-h-20 resize-none bg-background/90 pr-16 leading-6"
+                        className="min-h-20 resize-none pr-16 leading-6"
                         id="skill-upload-description"
                         onChange={(event) => setDescription(event.target.value)}
                         placeholder="描述技能解决的问题、输入输出和适用场景。"
@@ -195,12 +203,10 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                       {riskOptions.map((option) => (
                         <button
                           className={cn(
-                            "rounded-[10px] text-sm font-medium transition-colors",
-                            riskLevel === option.value && option.value === "medium"
-                              ? "bg-v3-warn-soft text-v3-warn"
-                              : riskLevel === option.value
-                                ? "bg-v3-brand text-white"
-                                : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink",
+                            "rounded-[10px] text-sm font-semibold transition-colors",
+                            riskLevel === option.value
+                              ? "bg-v3-brand text-white shadow-v3"
+                              : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink",
                           )}
                           key={option.value}
                           onClick={() => setRiskLevel(option.value)}
@@ -219,7 +225,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   >
                     <div className="space-y-2">
                       <Input
-                        className="h-10 bg-background/90"
+                        className="h-10"
                         id="skill-upload-tags"
                         onChange={(event) => setTags(event.target.value)}
                         placeholder="文档生成,API,OpenAPI"
@@ -336,73 +342,157 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
 }
 
 function PackageStatusBand({
+  canPublish,
+  dependencyCount,
   file,
+  metadataReady,
   onFileChange,
   packageDisplayName,
 }: {
+  canPublish: boolean;
+  dependencyCount: number;
   file: File | null;
+  metadataReady: boolean;
   onFileChange: (file: File | null) => void;
   packageDisplayName: string;
 }) {
+  const releaseSteps = [
+    {
+      description: file ? file.name : "等待 ZIP",
+      done: Boolean(file),
+      label: "上传文件",
+    },
+    {
+      description: packageDisplayName || "选择后解析",
+      done: Boolean(file),
+      label: "解析信息",
+    },
+    {
+      description: metadataReady ? "名称已填写" : "待填写名称",
+      done: metadataReady,
+      label: "完善资料",
+    },
+    {
+      description: dependencyCount ? "依赖声明已记录" : "可稍后声明",
+      done: true,
+      label: "校验依赖",
+    },
+    {
+      description: canPublish ? "可以发布" : "等待就绪",
+      done: canPublish,
+      label: "发布确认",
+    },
+  ];
+
   return (
-    <SoftCard className="py-0">
-      <CardContent className="p-5">
-        <Label className="sr-only" htmlFor="skill-upload-file">技能 zip 包</Label>
-        <input
-          accept=".zip,application/zip"
-          className="sr-only"
-          id="skill-upload-file"
-          onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-          type="file"
-        />
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(220px,300px)_minmax(360px,auto)] lg:items-center">
-          <div className="flex min-w-0 items-center gap-4">
-            <label
-              className="flex size-[68px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-v3-inner bg-v3-brand text-white shadow-v3 transition hover:scale-[1.02]"
-              htmlFor="skill-upload-file"
-            >
-              <FileArchive className="size-7" />
-              <span className="mt-1 text-xs font-bold tracking-normal">ZIP</span>
-            </label>
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-foreground">
-                {file?.name ?? "选择技能 zip 包"}
+    <SignatureCard className="p-6 lg:p-7">
+      <Label className="sr-only" htmlFor="skill-upload-file">技能 zip 包</Label>
+      <input
+        accept=".zip,application/zip"
+        className="sr-only"
+        id="skill-upload-file"
+        onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+        type="file"
+      />
+      <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)] xl:items-center">
+        <div className="flex min-w-0 items-center gap-4">
+          <label
+            className="flex size-[76px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl text-white shadow-[0_10px_24px_-6px_rgba(47,95,255,0.5)] transition hover:scale-[1.03]"
+            htmlFor="skill-upload-file"
+            style={{ background: "var(--v3-brand-grad)" }}
+          >
+            <FileArchive className="size-7" />
+            <span className="mt-1 text-xs font-bold tracking-normal">ZIP</span>
+          </label>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-extrabold tracking-tight text-v3-ink">
+              {file?.name ?? "选择技能 zip 包"}
+            </p>
+            <p className="mt-1 text-sm text-v3-ink-2">
+              {file ? formatBytes(file.size) : "拖拽或点击上传，必须包含 SKILL.md"}
+            </p>
+            <div className="mt-2 flex min-w-0 items-center gap-2 text-v3-ink-2">
+              <span className="text-xs uppercase tracking-wide text-v3-ink-3">包名</span>
+              <p className="truncate text-sm font-semibold text-v3-ink">
+                {packageDisplayName || "选择 zip 后自动生成"}
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {file ? formatBytes(file.size) : "必须包含 SKILL.md"}
-              </p>
+              <Pencil className="size-3.5 shrink-0 text-v3-brand" />
             </div>
-          </div>
-
-          <div className="flex min-w-0 items-center gap-5 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">技能包描述名称</p>
-              <div className="mt-1 flex min-w-0 items-center gap-2">
-                <p className="truncate text-lg font-medium text-muted-foreground">
-                  {packageDisplayName || "选择 zip 后自动生成"}
-                </p>
-                <Pencil className="size-4 shrink-0 text-v3-brand" />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <StatusPill tone={file ? "ok" : "info"}>
-              <CircleCheck className="size-4" />
-              {file ? "ZIP 已选择" : "等待 ZIP"}
-            </StatusPill>
-            <StatusPill tone={file ? "ok" : "info"}>
-              <CircleCheck className="size-4" />
-              {file ? "包含 SKILL.md" : "需包含 SKILL.md"}
-            </StatusPill>
-            <StatusPill tone="info">
-              <ShieldCheck className="size-4" />
-              服务端发布校验
-            </StatusPill>
           </div>
         </div>
-      </CardContent>
-    </SoftCard>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <SignaturePill done={Boolean(file)} label={file ? "ZIP 已选择" : "等待 ZIP"} />
+          <SignaturePill done={Boolean(file)} label={file ? "包含 SKILL.md" : "需包含 SKILL.md"} />
+          <SignaturePill done label="服务端发布校验" icon={<ShieldCheck className="size-3.5" />} />
+        </div>
+      </div>
+      <div className="mt-6 border-t border-[color:var(--v3-signature-border)] pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-sm font-extrabold tracking-normal text-v3-ink">发布链路</h2>
+            <p className="mt-0.5 text-xs text-v3-ink-2">
+              上传、解析、资料补全、依赖检查与最终动作收束到同一条链路。
+            </p>
+          </div>
+          <span className="rounded-lg bg-v3-brand-soft px-2.5 py-1 text-xs font-bold text-v3-brand-deep">
+            {canPublish ? "Ready" : "Preparing"}
+          </span>
+        </div>
+        <ol className="mt-4 grid gap-2 sm:grid-cols-5">
+          {releaseSteps.map((step, index) => (
+            <li
+              className={cn(
+                "min-w-0 rounded-xl border p-3",
+                step.done
+                  ? "border-[color:var(--v3-signature-border)] bg-v3-card text-v3-ink"
+                  : "border-v3-line bg-v3-card-soft text-v3-ink-2",
+              )}
+              key={step.label}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "grid size-6 shrink-0 place-items-center rounded-lg text-xs font-extrabold tabular-nums",
+                    step.done
+                      ? "bg-v3-brand text-white"
+                      : "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong",
+                  )}
+                >
+                  {index + 1}
+                </span>
+                <span className="truncate text-sm font-bold">{step.label}</span>
+              </div>
+              <p className="mt-2 truncate text-xs text-v3-ink-2">{step.description}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </SignatureCard>
+  );
+}
+
+function SignaturePill({
+  done,
+  icon,
+  label,
+}: {
+  done: boolean;
+  icon?: ReactNode;
+  label: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold",
+        done
+          ? "bg-v3-brand-soft text-v3-brand-deep ring-1 ring-[color:var(--v3-signature-border)]"
+          : "bg-v3-card-soft text-v3-ink-3",
+      )}
+    >
+      {icon ?? <CircleCheck className="size-3.5" />}
+      {label}
+    </span>
   );
 }
 
@@ -489,7 +579,7 @@ function DependencyInput({
   };
 
   return (
-    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border bg-background/90 px-2 py-1.5 focus-within:border-primary/50 focus-within:ring-[3px] focus-within:ring-primary/15">
+    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-v3-line-strong bg-v3-card px-2 py-1.5 focus-within:border-v3-brand focus-within:ring-2 focus-within:ring-v3-brand/25">
       {committedItems.map((item) => (
         <Badge className="h-7 gap-1 rounded-md border-border/80 bg-background px-2.5 text-sm font-medium shadow-none" key={item} variant="outline">
           {item}

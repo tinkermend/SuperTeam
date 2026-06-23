@@ -7,7 +7,7 @@
 ## 按钮层级
 
 - 一个区域只应有一个最高权重主操作。
-- 主操作使用 v3 品牌蓝实底或 `--v3-brand-grad`，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
+- 主操作默认使用 v3 品牌蓝实底；只有 signature 场景才使用克制的 `--v3-brand-grad`，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
 - 次要操作使用 `secondary`、`outline` 或 `ghost`。
 - 危险操作使用 destructive / `--v3-danger` 语义，不使用品牌主按钮样式。
 - 工具型操作优先使用图标按钮；不常见图标需要 tooltip 或可访问标签。
@@ -18,13 +18,23 @@
 
 建议视觉：
 
-- 品牌色：`--v3-brand`，需要 signature 强调时可使用 `--v3-brand-grad`。
+- 品牌色：`--v3-brand`，需要 signature 强调时可使用小面积 `--v3-brand-grad`。
 - 文字和图标对比度必须充足
 - 不叠加高光层或局部装饰光效。
 - 阴影应柔和且受控，使用 `--v3-shadow` 或更轻的焦点 ring。
 - active 态应像按下，而不是跳动
 
 不要将主按钮用于失败、删除、撤销或不可逆危险操作。
+
+## 命令中心与任务发起
+
+顶部搜索、任务发起入口和命令菜单属于同一套 Command Center 语言。
+
+- 顶部命令中心是全局入口，任务发起页的核心输入区是页面级命令面板；两者共享品牌 focus ring、keycap、线性图标和状态 pill。
+- 命令项使用“图标容器 + 主文案 + 次级说明 + 可选状态 pill”的结构，不能靠不同颜色图标表达业务类别。
+- 任务发起页可以用品牌左边线、节点提示和工具按钮栏强化“发起调度”的感觉，但不改变提交 payload、字段含义或执行模式。
+- 快捷键、计数和 loading 文案保持宽度稳定，避免输入区或工具栏跳动。
+- 命令菜单里的危险动作必须使用 destructive 语义，并和普通搜索建议区分。
 
 ## 次要与 Ghost 操作
 

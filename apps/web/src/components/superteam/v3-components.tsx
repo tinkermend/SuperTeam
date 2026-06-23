@@ -156,18 +156,73 @@ function V3MetricCard({
   );
 }
 
-/** 蓝渐变 signature 卡：每个概览屏最多一块，承载环形进度/聚合分布。 */
+/**
+ * 矩枢 signature 卡：实底 + 品牌顶线 + 低对比网格 + 节点/短路径。
+ * 每个概览屏最多一块，靠控制平面母题建立识别，不使用大面积渐变或装饰光斑。
+ * 每个概览屏最多一块，承载该页最有故事性的信息。子元素文字默认继承深色 ink。
+ */
 function SignatureCard({ className, children, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="v3-signature-card"
       className={cn(
-        "rounded-v3-card p-6 text-white shadow-v3-pop",
+        "relative isolate overflow-hidden rounded-v3-card p-6 text-[color:var(--v3-signature-ink)] shadow-v3-pop",
+        "border border-[color:var(--v3-signature-border)]",
         className,
       )}
-      style={{ background: "var(--v3-brand-grad)" }}
+      style={{ backgroundColor: "var(--v3-signature-surface)" }}
       {...props}
     >
+      {/* 顶部品牌色 accent 条：让 signature 一眼区别于普通白卡 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
+        style={{ background: "var(--v3-brand-grad)" }}
+      />
+      {/* 细网格纹理 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-20"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, var(--v3-signature-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--v3-signature-grid) 1px, transparent 1px)",
+          backgroundSize: "22px 22px",
+          maskImage: "linear-gradient(135deg, #000 0%, rgba(0,0,0,0.68) 42%, transparent 86%)",
+          WebkitMaskImage:
+            "linear-gradient(135deg, #000 0%, rgba(0,0,0,0.68) 42%, transparent 86%)",
+        }}
+      />
+      {/* 轻量 surface wash，降低纯白卡与网格之间的生硬感 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{ background: "var(--v3-signature-wash)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-8 top-8 -z-10 h-px w-28"
+        style={{ background: "var(--v3-signature-route)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-[7.5rem] top-8 -z-10 size-2 rounded-full"
+        style={{ background: "var(--v3-signature-node)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-8 top-8 -z-10 size-2 rounded-full"
+        style={{ background: "var(--v3-signature-node)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-8 top-8 -z-10 h-16 w-px"
+        style={{ background: "var(--v3-signature-route)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-8 top-[5.75rem] -z-10 size-2 rounded-full"
+        style={{ background: "var(--v3-signature-node)" }}
+      />
       {children}
     </div>
   );

@@ -1,26 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildSidebarData, sidebarData } from './data/sidebar-data'
 
-const expectedIconTones = new Map([
-  ['工作台', 'primary'],
-  ['收件箱', 'approval'],
-  ['任务发起', 'task'],
-  ['数字员工', 'employee'],
-  ['技能管理', 'capability'],
-  ['项目管理', 'workflow'],
-  ['团队管理', 'permission'],
-  ['流程编排', 'workflow'],
-  ['自动化任务', 'workflow'],
-  ['外部能力', 'capability'],
-  ['协作集成', 'approval'],
-  ['审批中心', 'approval'],
-  ['Runtime 节点', 'runtime'],
-  ['权限中心', 'permission'],
-  ['成本管理', 'audit'],
-  ['用户管理', 'neutral'],
-  ['审计日志', 'audit'],
-])
-
 describe('sidebarData', () => {
   it('places inbox between dashboard and task launch in the workspace group', () => {
     const workspaceItems = sidebarData.navGroups.find(
@@ -39,17 +19,17 @@ describe('sidebarData', () => {
     expect(workspaceItems?.[1]).toMatchObject({
       title: '收件箱',
       url: '/inbox',
-      iconTone: 'approval',
+      iconTone: 'neutral',
     })
     expect(workspaceItems?.[2]).toMatchObject({
       title: '任务发起',
       url: '/task-launches',
-      iconTone: 'task',
+      iconTone: 'neutral',
     })
     expect(workspaceItems?.[6]).toMatchObject({
       title: '团队管理',
       url: '/teams',
-      iconTone: 'permission',
+      iconTone: 'neutral',
     })
   })
 
@@ -69,22 +49,21 @@ describe('sidebarData', () => {
     expect(coreItems?.[1]).toMatchObject({
       title: '自动化任务',
       url: '/automations',
-      iconTone: 'workflow',
+      iconTone: 'neutral',
     })
     expect(coreItems?.[2]).toMatchObject({
       title: '外部能力',
       url: '/capabilities',
-      iconTone: 'capability',
+      iconTone: 'neutral',
     })
   })
 
-  it('assigns each primary menu item a design-system icon tone', () => {
+  it('keeps normal navigation icons neutral instead of assigning per-module colors', () => {
     const items = sidebarData.navGroups.flatMap((group) => group.items)
 
     for (const item of items) {
-      const expectedTone = expectedIconTones.get(item.title)
-      expect(expectedTone, `${item.title} should have an expected tone`).toBe(
-        item.iconTone
+      expect(item.iconTone, `${item.title} should use the neutral nav tone`).toBe(
+        'neutral'
       )
     }
   })
@@ -119,7 +98,7 @@ describe('sidebarData', () => {
     expect(platformItems?.[1]).toMatchObject({
       title: '成本管理',
       url: '/costs',
-      iconTone: 'audit',
+      iconTone: 'neutral',
     })
   })
 })

@@ -10,7 +10,7 @@ import {
 import '@/styles/index.css'
 
 describe('sidebar menu sizing', () => {
-  it('uses 16px labels and a taller menu row for expanded navigation', async () => {
+  it('uses compact 15px labels and a 44px menu row for expanded navigation', async () => {
     await render(
       <SidebarProvider>
         <SidebarMenu>
@@ -38,11 +38,11 @@ describe('sidebar menu sizing', () => {
     const labelStyle = getComputedStyle(label as HTMLElement)
 
     expect(buttonStyle.height).toBe('44px')
-    expect(buttonStyle.fontSize).toBe('16px')
-    expect(labelStyle.fontSize).toBe('16px')
+    expect(buttonStyle.fontSize).toBe('15px')
+    expect(labelStyle.fontSize).toBe('15px')
   })
 
-  it('uses the v3 blue soft active state for selected menu rows', async () => {
+  it('uses a restrained node-active state for selected menu rows', async () => {
     await render(
       <SidebarProvider>
         <SidebarMenu>
@@ -73,12 +73,21 @@ describe('sidebar menu sizing', () => {
     const buttonStyle = getComputedStyle(button as HTMLElement)
     const labelStyle = getComputedStyle(label as HTMLElement)
     const iconStyle = getComputedStyle(icon as SVGElement)
+    const beforeStyle = getComputedStyle(button as HTMLElement, '::before')
 
     expect(buttonStyle.backgroundColor).toBe('rgb(233, 239, 255)')
     expect(buttonStyle.color).toBe('rgb(35, 72, 224)')
+    expect(buttonStyle.boxShadow).toBe('none')
+    expect(beforeStyle.content).not.toBe('none')
+    expect(beforeStyle.width).toBe('3px')
+    expect(beforeStyle.height).toBe('20px')
+    expect(beforeStyle.backgroundColor).toBe('rgb(47, 95, 255)')
     expect(labelStyle.color).toBe('rgb(35, 72, 224)')
+    expect(labelStyle.fontWeight).toBe('600')
     expect(labelStyle.textShadow).toBe('none')
     expect(iconStyle.color).toBe('rgb(35, 72, 224)')
+    expect(iconStyle.width).toBe('20px')
+    expect(iconStyle.height).toBe('20px')
   })
 
   it('keeps a badged inbox row at the standard navigation size', async () => {
@@ -89,7 +98,7 @@ describe('sidebar menu sizing', () => {
             <SidebarMenuButton data-testid='badged-sidebar-menu-button'>
               <Activity />
               <span>收件箱</span>
-              <span className='ms-auto rounded-full px-1.5 py-0 text-xs'>
+              <span className='ms-auto h-5 min-w-5 rounded-full bg-v3-brand-soft px-1.5 py-0 text-xs font-bold text-v3-brand-deep'>
                 12
               </span>
             </SidebarMenuButton>
@@ -117,7 +126,39 @@ describe('sidebar menu sizing', () => {
     const badgeStyle = getComputedStyle(badge as HTMLElement)
 
     expect(buttonStyle.height).toBe('44px')
-    expect(labelStyle.fontSize).toBe('16px')
+    expect(labelStyle.fontSize).toBe('15px')
+    expect(badgeStyle.minWidth).toBe('20px')
+    expect(badgeStyle.height).toBe('20px')
+    expect(badgeStyle.backgroundColor).toBe('rgb(233, 239, 255)')
+    expect(badgeStyle.color).toBe('rgb(35, 72, 224)')
     expect(badgeStyle.fontSize).toBe('12px')
+    expect(badgeStyle.fontWeight).toBe('700')
+  })
+
+  it('keeps default navigation icons neutral until hover or active states', async () => {
+    await render(
+      <SidebarProvider>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton data-testid='neutral-sidebar-menu-button'>
+              <Activity />
+              <span>外部能力</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarProvider>
+    )
+
+    const icon = document.querySelector(
+      '[data-testid="neutral-sidebar-menu-button"] svg'
+    )
+
+    expect(icon).toBeInstanceOf(SVGElement)
+
+    const iconStyle = getComputedStyle(icon as SVGElement)
+
+    expect(iconStyle.color).toBe('rgb(100, 116, 139)')
+    expect(iconStyle.width).toBe('20px')
+    expect(iconStyle.height).toBe('20px')
   })
 })

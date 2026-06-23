@@ -52,7 +52,7 @@
 
   [data-slot='sidebar-container'] {
     border-inline-end: 1px solid var(--v3-line-strong);
-    box-shadow: var(--v3-shadow);
+    box-shadow: none;
   }
 
   [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
@@ -60,9 +60,7 @@
     background: var(--v3-card);
     background-color: var(--v3-card);
     backdrop-filter: none;
-    box-shadow:
-      inset 1px 0 0 var(--v3-line),
-      var(--v3-shadow);
+    box-shadow: inset 1px 0 0 var(--v3-line);
   }
 
   [data-slot='v3-shell-header'] {
@@ -73,16 +71,16 @@
   }
 
   [data-sidebar='header'] {
-    padding: 1rem 0.875rem 0.75rem;
+    padding: 0.75rem 1rem 0.625rem;
   }
 
   [data-sidebar='content'] {
-    gap: 0.75rem;
-    padding-inline: 0.75rem;
+    gap: 0.25rem;
+    padding-inline: 1rem;
   }
 
   [data-sidebar='footer'] {
-    padding: 0.75rem 0.875rem 1rem;
+    padding: 0.75rem 1rem 1rem;
   }
 
   [data-state='collapsed'][data-collapsible='icon'] [data-sidebar='header'],
@@ -116,12 +114,17 @@
   }
 
   [data-slot='sidebar-group-label'] {
-    height: 1.875rem;
-    padding-inline: 0.625rem;
+    height: 1.75rem;
+    margin-block-start: 0.75rem;
+    padding-inline: 0.875rem;
     color: var(--v3-ink-3);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0;
+  }
+
+  [data-slot='sidebar-group']:first-child [data-slot='sidebar-group-label'] {
+    margin-block-start: 0;
   }
 
   [data-slot='sidebar-menu'] {
@@ -132,10 +135,12 @@
     position: relative;
     height: 2.75rem;
     border: 1px solid transparent;
-    border-radius: calc(var(--radius) + 0.45rem);
+    border-radius: 12px;
     color: var(--v3-ink-2);
-    font-size: 1rem;
-    line-height: 1.5rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.375rem;
+    box-shadow: none !important;
     transition:
       background-color 160ms ease,
       border-color 160ms ease,
@@ -143,28 +148,58 @@
       box-shadow 160ms ease;
   }
 
+  [data-slot='sidebar-menu-button'] svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--v3-mute);
+    stroke-width: 1.8;
+  }
+
+  [data-slot='sidebar-menu-button'] > span {
+    font-size: inherit;
+  }
+
   [data-slot='sidebar-menu-button']:hover {
-    border-color: var(--v3-line);
-    background: var(--v3-card-soft);
-    color: var(--v3-ink);
+    border-color: transparent;
+    background: #f5f8ff;
+    color: var(--v3-brand-deep);
+    box-shadow: none;
+  }
+
+  [data-slot='sidebar-menu-button']:hover svg {
+    color: var(--v3-brand-deep);
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] {
-    border-color: var(--v3-brand-soft);
+    border-color: transparent;
     background: var(--v3-brand-soft);
     color: var(--v3-brand-deep);
-    box-shadow: var(--v3-shadow);
+    font-weight: 600;
+    box-shadow: none !important;
     text-shadow: none;
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true']::before {
-    content: none;
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    width: 3px;
+    height: 20px;
+    border-radius: 999px;
+    background-color: var(--v3-brand);
+    transform: translateY(-50%);
+    pointer-events: none;
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] > span,
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] svg {
     color: var(--v3-brand-deep) !important;
     text-shadow: none;
+  }
+
+  [data-state='collapsed'][data-collapsible='icon'] [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true']::before {
+    inset-inline-start: 0;
   }
 
   [data-slot='sidebar-menu-sub'] {
@@ -207,16 +242,14 @@
 
   .dark [data-slot='sidebar-container'] {
     border-inline-end: 1px solid var(--v3-line-strong);
-    box-shadow: var(--v3-shadow);
+    box-shadow: none;
   }
 
   .dark [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 1px solid var(--v3-line);
     background: var(--v3-card);
     background-color: var(--v3-card);
-    box-shadow:
-      inset 1px 0 0 var(--v3-line),
-      var(--v3-shadow);
+    box-shadow: inset 1px 0 0 var(--v3-line);
   }
 
   .dark [data-slot='card'] {

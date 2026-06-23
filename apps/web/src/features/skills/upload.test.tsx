@@ -135,6 +135,12 @@ describe("SkillUploadView", () => {
     await expect.element(screen.getByText("ZIP 已选择")).toBeVisible();
     await expect.element(screen.getByText("包含 SKILL.md")).toBeVisible();
     await expect.element(screen.getByText("服务端发布校验")).toBeVisible();
+    await expect.element(screen.getByText("发布链路")).toBeVisible();
+    await expect.element(screen.getByText("上传文件")).toBeVisible();
+    await expect.element(screen.getByText("解析信息")).toBeVisible();
+    await expect.element(screen.getByText("完善资料")).toBeVisible();
+    await expect.element(screen.getByText("校验依赖")).toBeVisible();
+    await expect.element(screen.getByText("发布确认")).toBeVisible();
     await expect.element(screen.getByText("可发布")).toBeVisible();
     await expect.element(screen.getByText("元数据与依赖声明已就绪")).toBeVisible();
     await expect.element(screen.getByText("skill-api-doc.zip（3 B）")).toBeVisible();

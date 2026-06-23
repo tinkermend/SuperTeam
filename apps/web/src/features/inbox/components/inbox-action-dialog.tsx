@@ -79,7 +79,7 @@ export function InboxActionDialog({
           </label>
           <Textarea
             aria-invalid={requiresComment && !comment.trim()}
-            className="min-h-28 rounded-v3-inner border-v3-line bg-v3-card-soft text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
+            className="min-h-28 rounded-v3-inner border-v3-line-strong bg-v3-card text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-2 focus-visible:ring-v3-brand/25 aria-invalid:border-v3-danger"
             disabled={isSubmitting}
             id="inbox-action-comment"
             onChange={(event) => setComment(event.target.value)}

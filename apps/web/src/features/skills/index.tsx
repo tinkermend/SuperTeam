@@ -392,7 +392,7 @@ function FilterSelect({
     <Select onValueChange={onValueChange} value={value}>
       <SelectTrigger
         aria-label={label}
-        className="w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card-soft lg:w-[124px]"
+        className="w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft lg:w-[124px]"
       >
         <SelectValue />
       </SelectTrigger>
@@ -686,7 +686,7 @@ function SkillMarketPagination({
         <Select onValueChange={(value) => onPageSizeChange(Number(value))} value={`${pageSize}`}>
           <SelectTrigger
             aria-label="每页条数"
-            className="w-[112px] rounded-xl border-v3-line-strong bg-v3-card-soft"
+            className="w-[112px] rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft"
           >
             <SelectValue />
           </SelectTrigger>

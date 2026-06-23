@@ -24,13 +24,13 @@
   --chart-4: #cf7a14;
   --chart-5: #7c5cff;
 
-  --sidebar: var(--background);
+  --sidebar: #ffffff;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-border: var(--v3-line-strong);
   --sidebar-ring: var(--ring);
 
   /* v3 Soft-Flat design tokens */
@@ -47,6 +47,14 @@
   --v3-brand-deep: #2348e0;
   --v3-brand-soft: #e9efff;
   --v3-brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+  --v3-signature-surface: #f8faff;
+  --v3-signature-wash: linear-gradient(135deg, rgba(47, 95, 255, 0.08), rgba(248, 250, 255, 0) 46%);
+  --v3-signature-grid: rgba(47, 95, 255, 0.08);
+  --v3-signature-route: rgba(47, 95, 255, 0.22);
+  --v3-signature-node: rgba(47, 95, 255, 0.42);
+  --v3-signature-border: rgba(47, 95, 255, 0.20);
+  --v3-signature-ink: #0b0d12;
+  --v3-signature-ink-2: #5b667a;
   --v3-info: #2563eb;
   --v3-info-soft: #e8effd;
   --v3-ok: #15a06b;
@@ -104,6 +112,14 @@
   --v3-brand-deep: #93b4ff;
   --v3-brand-soft: rgba(91, 139, 255, 0.16);
   --v3-brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+  --v3-signature-surface: #141a23;
+  --v3-signature-wash: linear-gradient(135deg, rgba(91, 139, 255, 0.14), rgba(20, 26, 35, 0) 48%);
+  --v3-signature-grid: rgba(124, 150, 255, 0.10);
+  --v3-signature-route: rgba(124, 150, 255, 0.26);
+  --v3-signature-node: rgba(124, 150, 255, 0.46);
+  --v3-signature-border: rgba(124, 150, 255, 0.24);
+  --v3-signature-ink: #f3f5f8;
+  --v3-signature-ink-2: rgba(214, 222, 244, 0.62);
   --v3-info: #60a5fa;
   --v3-info-soft: rgba(96, 165, 250, 0.16);
   --v3-ok: #34d399;
