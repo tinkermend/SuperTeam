@@ -455,6 +455,23 @@ describe("SkillsView", () => {
     await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
   });
 
+  it("hides stale installation records when filters remove the selected skill from visible results", async () => {
+    const fetcher = createSkillsFetcher();
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "查看详情 需求澄清助手" }));
+    await expect.element(screen.getByRole("region", { name: "需求澄清助手 安装记录" })).toBeVisible();
+    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "有依赖" }));
+
+    await expect.element(screen.getByText("暂无匹配技能，请调整搜索或筛选条件")).toBeVisible();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[aria-label="需求澄清助手 安装记录"]')).toBeNull();
+    });
+    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
+  });
+
   it("opens the install dialog from the table install button", async () => {
     const screen = await renderSkillsView();
 

@@ -124,19 +124,19 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   });
 
   const skillRows = skills.data ?? [];
-  const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? skillRows[0];
-  const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
-  const skillInstallations = useQuery({
-    enabled: Boolean(selectedSkill && skills.data),
-    queryKey: ["skill", selectedSkill?.id, "installations"],
-    queryFn: () => listSkillInstallations(apiOptions, selectedSkill!.id),
-  });
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
   const metrics = useMemo(() => buildMarketMetrics(skillRows), [skillRows]);
   const filteredRows = useMemo(
     () => filterSkills(skillRows, { dependencyFilter, riskFilter, scopeFilter, statusFilter }),
     [dependencyFilter, riskFilter, scopeFilter, skillRows, statusFilter],
   );
+  const selectedSkill = filteredRows.find((skill) => skill.id === selectedSkillId) ?? filteredRows[0];
+  const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
+  const skillInstallations = useQuery({
+    enabled: Boolean(selectedSkill && skills.data),
+    queryKey: ["skill", selectedSkill?.id, "installations"],
+    queryFn: () => listSkillInstallations(apiOptions, selectedSkill!.id),
+  });
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const activePage = Math.min(page, pageCount);
   const pagedRows = filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize);
