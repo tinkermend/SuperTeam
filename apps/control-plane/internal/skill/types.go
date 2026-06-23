@@ -157,3 +157,142 @@ type EffectiveEmployeeSkill struct {
 	Inherited   bool
 	ReadOnly    bool
 }
+
+type SkillInstallTargetScope string
+
+const (
+	SkillInstallTargetTeam     SkillInstallTargetScope = "team"
+	SkillInstallTargetEmployee SkillInstallTargetScope = "employee"
+)
+
+type InstallFailurePhase string
+
+const (
+	InstallFailurePhasePreflight      InstallFailurePhase = "preflight"
+	InstallFailurePhaseRuntimeInstall InstallFailurePhase = "runtime_install"
+	InstallFailurePhaseTimeout        InstallFailurePhase = "timeout"
+)
+
+type InstallSkillRequest struct {
+	TenantID          uuid.UUID
+	SkillID           uuid.UUID
+	TargetScope       SkillInstallTargetScope
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	ActorUserID       uuid.UUID
+	Timeout           time.Duration
+}
+
+type SkillInstallTarget struct {
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	EmployeeName      string
+	RuntimeNodeID     uuid.UUID
+	NodeID            string
+	ProviderType      string
+	AgentHomeDir      string
+}
+
+type SkillInstallation struct {
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	SkillID               uuid.UUID
+	TargetScope           SkillInstallTargetScope
+	TeamID                uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	EmployeeName          string
+	RuntimeNodeID         uuid.UUID
+	NodeID                string
+	ProviderType          string
+	InstalledPath         string
+	ArchiveChecksumSHA256 string
+	InstalledBy           uuid.UUID
+	InstalledAt           time.Time
+	Metadata              map[string]any
+}
+
+type InstallSkillResult struct {
+	SkillID           uuid.UUID
+	TargetScope       SkillInstallTargetScope
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	InstalledCount    int
+	Installations     []SkillInstallation
+	BlockedTargets    []SkillInstallBlockedTarget
+}
+
+type SkillInstallBlockedTarget struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	EmployeeName      string    `json:"employee_name,omitempty"`
+	ProviderType      string    `json:"provider_type,omitempty"`
+	RuntimeNodeID     uuid.UUID `json:"runtime_node_id,omitempty"`
+	NodeID            string    `json:"node_id,omitempty"`
+	ReasonCode        string    `json:"reason_code"`
+	Message           string    `json:"message"`
+}
+
+type InstallSkillError struct {
+	Phase          InstallFailurePhase
+	Message        string
+	BlockedTargets []SkillInstallBlockedTarget
+}
+
+func (e *InstallSkillError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+type ListSkillInstallTargetsRequest struct {
+	TenantID          uuid.UUID
+	SkillID           uuid.UUID
+	TargetScope       SkillInstallTargetScope
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+type CreateSkillInstallCommandReceiptRequest struct {
+	TenantID      uuid.UUID
+	CommandID     string
+	CommandType   string
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+	ResourceID    uuid.UUID
+	Payload       map[string]any
+}
+
+type RuntimeInstallCommandReceipt struct {
+	CommandID     string
+	Status        string
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+	Payload       map[string]any
+	Result        map[string]any
+	ErrorMessage  string
+}
+
+type PersistSkillInstallSuccessRequest struct {
+	TenantID      uuid.UUID
+	SkillID       uuid.UUID
+	TargetScope   SkillInstallTargetScope
+	TeamID        uuid.UUID
+	InstalledBy   uuid.UUID
+	Installations []SkillInstallation
+}
+
+type SkillInstallFailureLog struct {
+	TenantID          uuid.UUID
+	SkillID           uuid.UUID
+	TargetScope       SkillInstallTargetScope
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	RuntimeNodeID     uuid.UUID
+	ProviderType      string
+	Phase             InstallFailurePhase
+	ReasonCode        string
+	Message           string
+	CommandID         string
+	Details           map[string]any
+}
