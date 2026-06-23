@@ -28,6 +28,13 @@ describe("navigation rules", () => {
 
     expect(violations).toEqual([]);
   });
+
+  it("does not mount TanStack development corner badges", () => {
+    const violations = sourceFiles()
+      .flatMap(({ path, source }) => findTanStackDevtoolsMounts(path, source));
+
+    expect(violations).toEqual([]);
+  });
 });
 
 function sourceFiles() {
@@ -77,6 +84,21 @@ function findInternalLocationNavigation(filePath: string, source: string): strin
     /\b(?:window\.)?location\.href\s*=\s*["']\//g,
     /\b(?:window\.)?location\.assign\(\s*["']\//g,
     /\b(?:window\.)?location\.replace\(\s*["']\//g,
+  ];
+
+  return patterns.flatMap((pattern) =>
+    Array.from(source.matchAll(pattern), (match) => (
+      `${filePath}:${lineNumberAt(source, match.index ?? 0)} ${match[0].trim()}`
+    )),
+  );
+}
+
+function findTanStackDevtoolsMounts(filePath: string, source: string): string[] {
+  const patterns = [
+    /@tanstack\/react-query-devtools/g,
+    /@tanstack\/react-router-devtools/g,
+    /<ReactQueryDevtools\b/g,
+    /<TanStackRouterDevtools\b/g,
   ];
 
   return patterns.flatMap((pattern) =>
