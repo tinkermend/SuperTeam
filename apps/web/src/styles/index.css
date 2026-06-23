@@ -101,12 +101,12 @@
     justify-content: center;
   }
 
-  [data-state='collapsed'][data-collapsible='icon'] [data-slot='sidebar-menu-button'] {
+  [data-state='collapsed'][data-collapsible='icon'] [data-sidebar='menu-button'] {
     margin-inline: auto;
   }
 
-  [data-state='collapsed'][data-collapsible='icon'] [data-slot='sidebar-menu-button'] > :not(:first-child) {
-    display: none;
+  [data-state='collapsed'][data-collapsible='icon'] [data-sidebar='menu-button'] > :not(:first-child) {
+    display: none !important;
   }
 
   [data-slot='sidebar-group'] {
