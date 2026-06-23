@@ -215,3 +215,23 @@ fn install_skills_rollback_uses_owned_root_under_agent_home() {
         "rollback should clean its owned root"
     );
 }
+
+#[test]
+fn install_skills_prepare_paths_creates_missing_agent_home() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let agent_home = temp.path().join("new-agent-home");
+
+    let paths = prepare_provider_skill_install_paths(&agent_home, "codex", "code-review")
+        .expect("missing agent home should be created for skill installation");
+
+    assert!(agent_home.is_dir(), "agent home should be created");
+    assert_eq!(paths.canonical_agent_home, agent_home.canonicalize().unwrap());
+    assert_eq!(
+        paths.target_dir,
+        paths
+            .canonical_agent_home
+            .join(".agents")
+            .join("skills")
+            .join("code-review")
+    );
+}

@@ -77,7 +77,9 @@ pub fn prepare_provider_skill_install_paths(
     skill_key: &str,
 ) -> Result<ProviderSkillInstallPaths> {
     validate_skill_key(skill_key)?;
-    reject_symlink(agent_home_dir)?;
+    reject_symlink_if_exists(agent_home_dir)?;
+    fs::create_dir_all(agent_home_dir)
+        .with_context(|| format!("create agent_home_dir: {}", agent_home_dir.display()))?;
     let canonical_agent_home = agent_home_dir
         .canonicalize()
         .with_context(|| format!("canonicalize agent_home_dir: {}", agent_home_dir.display()))?;
@@ -365,18 +367,6 @@ fn provider_root_name(provider_type: &str) -> Result<&'static str> {
         "claude-code" => Ok(".claude"),
         _ => anyhow::bail!("unsupported provider_type for skill install: {provider_type}"),
     }
-}
-
-fn reject_symlink(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)
-        .with_context(|| format!("inspect skill path: {}", path.display()))?;
-    if metadata.file_type().is_symlink() {
-        anyhow::bail!(
-            "skill path component must not be a symlink: {}",
-            path.display()
-        );
-    }
-    Ok(())
 }
 
 fn reject_symlink_if_exists(path: &Path) -> Result<()> {
