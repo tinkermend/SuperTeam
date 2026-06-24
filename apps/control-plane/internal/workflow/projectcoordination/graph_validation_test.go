@@ -7,6 +7,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestValidateTaskGraphErrorCarriesFieldLevelReason(t *testing.T) {
+	employeeID := uuid.New()
+	stranger := uuid.New()
+	plan := validGraphPlan(employeeID)
+	plan.Tasks[0].SelectedEmployeeID = stranger
+
+	err := ValidateRouteDecisionGraph(plan, []uuid.UUID{employeeID}, GraphValidationPolicy{MaxTasks: 10})
+
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "not in the active executor pool")
+	require.Contains(t, err.Error(), stranger.String())
+}
+
 func TestValidateTaskGraphRejectsCycle(t *testing.T) {
 	employeeID := uuid.New()
 	plan := RouteDecisionPlan{Reason: "cycle", Tasks: []PlannedTask{

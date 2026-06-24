@@ -23,6 +23,19 @@ var (
 
 const maxChatCompletionResponseBytes = 1 << 20
 
+// maxPlannerErrorContentBytes bounds how much of the raw model response is
+// attached to a decode/validation error, so a rejected plan is diagnosable from
+// logs without dumping an unbounded reasoning transcript.
+const maxPlannerErrorContentBytes = 2000
+
+func plannerContentExcerpt(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) > maxPlannerErrorContentBytes {
+		return trimmed[:maxPlannerErrorContentBytes] + "…(truncated)"
+	}
+	return trimmed
+}
+
 // defaultPlannerRequestTimeout is generous because the planner targets a reasoning
 // model, whose chain-of-thought on a full project planning prompt routinely takes far
 // longer than a non-reasoning completion before it emits the final JSON content.
@@ -111,7 +124,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
-			lastErr = err
+			lastErr = fmt.Errorf("planner response decode failed: %w; raw response: %s", err, plannerContentExcerpt(content))
 			continue
 		}
 		ApplyTaskTypeDefaults(&plan)
@@ -130,7 +143,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 					return repaired, nil
 				}
 			}
-			lastErr = err
+			lastErr = fmt.Errorf("%w; raw planner response: %s", err, plannerContentExcerpt(content))
 			continue
 		}
 		return plan, nil
