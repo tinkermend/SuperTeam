@@ -292,15 +292,29 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setDraftTouched(false);
   }
 
+  function resetDraftForTeam(teamId: string) {
+    setErrors({});
+    setStepIndex(0);
+    setDraftTouched(false);
+    setDraft({ ...emptyDraft, team_id: teamId });
+  }
+
   function requestTemplateChange() {
     if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
       return;
     }
-    setErrors({});
-    setStepIndex(0);
-    setDraftTouched(false);
-    setDraft((current) => ({ ...emptyDraft, team_id: current.team_id }));
+    resetDraftForTeam(draft.team_id);
     setWorkbenchMode("select");
+  }
+
+  function requestTeamChange(nextTeamId: string) {
+    if (nextTeamId === draft.team_id) {
+      return;
+    }
+    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+      return;
+    }
+    resetDraftForTeam(nextTeamId);
   }
 
   return (
@@ -442,7 +456,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     selectedType={selectedType}
                     teamOptions={teamOptions}
                     onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
-                    onSelectType={selectType}
+                    onSelectTeam={requestTeamChange}
                     onUpdate={updateDraft}
                   />
                 ) : null}
@@ -1049,7 +1063,7 @@ function IdentityStep({
   options,
   selectedType,
   teamOptions,
-  onSelectType,
+  onSelectTeam,
   onSelectAvatar,
   onUpdate,
 }: {
@@ -1059,7 +1073,7 @@ function IdentityStep({
   options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
   teamOptions: Array<{ id: string; name: string }>;
-  onSelectType: (value: string) => void;
+  onSelectTeam: (value: string) => void;
   onSelectAvatar: (value: string) => void;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
@@ -1075,15 +1089,7 @@ function IdentityStep({
             aria-invalid={Boolean(errors.team_id)}
             className={selectClassName}
             id="employee-team"
-            onChange={(event) =>
-              onUpdate({
-                employee_type: "",
-                provider_type: "",
-                runtime_binding: "",
-                runtime_node_id: "",
-                team_id: event.target.value,
-              })
-            }
+            onChange={(event) => onSelectTeam(event.target.value)}
             value={draft.team_id}
           >
             {teamOptions.map((team) => (
@@ -1099,7 +1105,6 @@ function IdentityStep({
             className={selectClassName}
             disabled
             id="employee-type"
-            onChange={(event) => onSelectType(event.target.value)}
             value={draft.employee_type}
           >
             {(options?.employee_types ?? []).map((item) => (

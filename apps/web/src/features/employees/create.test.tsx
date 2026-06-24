@@ -53,6 +53,13 @@ const team = {
   status: "active",
 };
 
+const secondTeam = {
+  id: "88888888-8888-4888-8888-888888888888",
+  name: "安全运营团队",
+  slug: "security-operations",
+  status: "active",
+};
+
 const avatarAsset = {
   id: "engineer-m-01",
   label: "工程师头像 M01",
@@ -215,6 +222,7 @@ function createWizardFetcher({
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
+  teams = [team],
 }: {
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
@@ -222,17 +230,18 @@ function createWizardFetcher({
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
+  teams?: Array<typeof team>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
 
     if (url.pathname === "/api/v1/teams" && method === "GET") {
-      return jsonResponse([team]);
+      return jsonResponse(teams);
     }
 
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
-      expect(url.searchParams.get("team_id")).toBe(team.id);
+      expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
       return jsonResponse(createOptionsFixture({ runtimeAvailability, runtimeCount, sameRuntimeNodeProviders }));
     }
 
@@ -431,6 +440,32 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "选择专业类型" })).toBeVisible();
 
     await enterConfiguration(screen);
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("");
+  });
+
+  it("keeps edited configuration when team-change confirmation is cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
+  });
+
+  it("resets the configuration draft when team-change confirmation is accepted", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
     await expect.element(screen.getByLabelText("名称")).toHaveValue("");
   });
 
