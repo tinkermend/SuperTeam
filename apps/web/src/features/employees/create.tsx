@@ -1097,6 +1097,7 @@ function IdentityStep({
           <select
             aria-invalid={Boolean(errors.employee_type)}
             className={selectClassName}
+            disabled
             id="employee-type"
             onChange={(event) => onSelectType(event.target.value)}
             value={draft.employee_type}
@@ -1107,6 +1108,7 @@ function IdentityStep({
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-muted-foreground">如需切换模板，请使用上方“更换模板”并重新生成配置草稿。</p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input

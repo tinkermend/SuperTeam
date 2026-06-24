@@ -397,6 +397,15 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("模板只提供默认值和推荐能力");
   });
 
+  it("locks direct employee type editing during configuration", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+
+    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
+    await expect.element(screen.getByLabelText("员工类型")).toBeDisabled();
+  });
+
   it("keeps edited configuration when change-template confirmation is cancelled", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const screen = await renderCreateEmployeeView();
