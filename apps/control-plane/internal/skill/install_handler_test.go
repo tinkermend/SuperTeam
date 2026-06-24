@@ -99,8 +99,9 @@ func TestInstallSkillHandlerMapsStructuredInstallErrorToConflict(t *testing.T) {
 				DigitalEmployeeID: employeeID,
 				EmployeeName:      "Review Agent",
 				ProviderType:      "codex",
+				NodeID:            "node-a",
 				ReasonCode:        "runtime_not_connected",
-				Message:           "Runtime is not connected",
+				Message:           "绑定的 Runtime 节点已失活，请先重新 provision 数字员工",
 			}},
 		},
 	}
@@ -126,6 +127,7 @@ func TestInstallSkillHandlerMapsStructuredInstallErrorToConflict(t *testing.T) {
 		Message        string `json:"message"`
 		BlockedTargets []struct {
 			DigitalEmployeeID string `json:"digital_employee_id"`
+			NodeID            string `json:"node_id"`
 			ReasonCode        string `json:"reason_code"`
 			Message           string `json:"message"`
 		} `json:"blocked_targets"`
@@ -138,6 +140,9 @@ func TestInstallSkillHandlerMapsStructuredInstallErrorToConflict(t *testing.T) {
 	}
 	if len(body.BlockedTargets) != 1 || body.BlockedTargets[0].DigitalEmployeeID != employeeID.String() || body.BlockedTargets[0].ReasonCode != "runtime_not_connected" {
 		t.Fatalf("unexpected blockers: %#v", body.BlockedTargets)
+	}
+	if body.BlockedTargets[0].NodeID != "node-a" || body.BlockedTargets[0].Message != "绑定的 Runtime 节点已失活，请先重新 provision 数字员工" {
+		t.Fatalf("unexpected blocker detail: %#v", body.BlockedTargets[0])
 	}
 }
 

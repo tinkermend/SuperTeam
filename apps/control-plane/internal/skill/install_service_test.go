@@ -118,6 +118,16 @@ func TestInstallSkillPreflightRejectsDisconnectedRuntimeBeforeDispatch(t *testin
 	if got := repo.failureLogs[0].ReasonCode; got != "runtime_not_connected" {
 		t.Fatalf("failure reason = %q, want runtime_not_connected", got)
 	}
+	var installErr *InstallSkillError
+	if !errors.As(err, &installErr) {
+		t.Fatalf("expected InstallSkillError, got %T: %v", err, err)
+	}
+	if len(installErr.BlockedTargets) != 1 {
+		t.Fatalf("expected one blocked target, got %#v", installErr.BlockedTargets)
+	}
+	if got := installErr.BlockedTargets[0].Message; got != "绑定的 Runtime 节点已失活，请先重新 provision 数字员工" {
+		t.Fatalf("blocked target message = %q", got)
+	}
 }
 
 func TestInstallSkillEmployeeSuccessDispatchesAndPersistsAfterRuntimeCompletion(t *testing.T) {

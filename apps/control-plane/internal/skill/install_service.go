@@ -355,7 +355,7 @@ func (s *InstallService) preflight(targetScope SkillInstallTargetScope, skill *S
 			continue
 		}
 		if !s.dispatcher.IsConnected(target.NodeID) {
-			blockers = append(blockers, blockedTarget(target, "runtime_not_connected", "Runtime is not connected"))
+			blockers = append(blockers, blockedTarget(target, "runtime_not_connected", "绑定的 Runtime 节点已失活，请先重新 provision 数字员工"))
 			continue
 		}
 	}

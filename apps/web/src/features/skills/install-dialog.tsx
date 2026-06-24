@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listDigitalEmployees } from "@/lib/api/employees";
+import { getDigitalEmployeeOverview, type DigitalEmployeeOverviewItem } from "@/lib/api/employees";
 import {
   InstallSkillError,
   installSkill,
@@ -81,8 +81,11 @@ export function SkillInstallDialog({
   });
   const employees = useQuery({
     enabled: open && targetScope === "employee",
-    queryKey: ["digital-employees"],
-    queryFn: () => listDigitalEmployees(apiOptions),
+    queryKey: ["digital-employees-overview", "skill-install-dialog"],
+    queryFn: async () => {
+      const overview = await getDigitalEmployeeOverview(apiOptions, { limit: 100 });
+      return overview.items;
+    },
   });
 
   useEffect(() => {
@@ -95,6 +98,10 @@ export function SkillInstallDialog({
   }, [open, skill?.id]);
 
   const selectedTargetId = targetScope === "team" ? selectedTeamId : selectedEmployeeId;
+  const selectedEmployee =
+    targetScope === "employee"
+      ? (employees.data ?? []).find((employee) => employee.identity_summary.id === selectedEmployeeId)
+      : undefined;
   const targetLoadError =
     targetScope === "team" && teams.error instanceof Error
       ? teams.error.message
@@ -237,8 +244,8 @@ export function SkillInstallDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(employees.data ?? []).map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name}
+                    <SelectItem key={employee.identity_summary.id} value={employee.identity_summary.id}>
+                      {employee.identity_summary.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -248,6 +255,8 @@ export function SkillInstallDialog({
               安装请求会等待运行节点确认，超时时间 15 秒。
             </p>
           </div>
+
+          {selectedEmployee ? <EmployeeRuntimeSummary item={selectedEmployee} /> : null}
 
           {targetLoadError ? (
             <div className="rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm font-semibold text-v3-danger">
@@ -329,4 +338,24 @@ function BlockedTargetList({ blockedTargets }: { blockedTargets: SkillInstallBlo
 function providerNodeLabel(target: SkillInstallBlockedTarget) {
   const parts = [target.provider_type, target.node_id ?? target.runtime_node_id].filter(Boolean);
   return parts.length ? parts.join(" · ") : undefined;
+}
+
+function EmployeeRuntimeSummary({ item }: { item: DigitalEmployeeOverviewItem }) {
+  const execution = item.execution_summary;
+  const runtimeLine = [execution.provider_type, execution.node_id].filter(Boolean).join(" · ");
+  const isInactive = execution.runtime_status !== "online";
+
+  return (
+    <div className="space-y-2 rounded-xl border border-v3-line bg-v3-card-soft px-3 py-3">
+      <div className="text-xs font-bold uppercase tracking-[0.12em] text-v3-ink-3">当前绑定 Runtime</div>
+      <div className="text-sm font-bold text-v3-ink">{execution.runtime_name || execution.node_id || "未命名节点"}</div>
+      {runtimeLine ? <div className="font-mono text-[11px] text-v3-ink-3">{runtimeLine}</div> : null}
+      <div className="text-xs leading-5 text-v3-ink-2">运行状态：{execution.runtime_status || "unknown"}</div>
+      {isInactive ? (
+        <div className="rounded-lg border border-v3-danger/25 bg-v3-danger-soft px-3 py-2 text-xs font-semibold text-v3-danger">
+          绑定节点已失活时，请先重新 provision 数字员工，再重试技能安装。
+        </div>
+      ) : null}
+    </div>
+  );
 }

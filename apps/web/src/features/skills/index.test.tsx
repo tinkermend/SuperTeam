@@ -216,6 +216,128 @@ const employeesFixture = [
   },
 ];
 
+const employeeOverviewFixture = {
+  summary: {
+    total_count: 2,
+    runnable_count: 2,
+    running_count: 0,
+    waiting_runtime_count: 0,
+    error_count: 0,
+    high_risk_count: 0,
+    ready_count: 2,
+    pending_runtime_binding_count: 0,
+    pending_config_approval_count: 0,
+    failed_recent_run_count: 0,
+    operational_status_counts: { idle: 2 },
+  },
+  queue_summary: {
+    pending_runtime_binding_count: 0,
+    stale_config_count: 0,
+    failed_recent_run_count: 0,
+  },
+  items: [
+    {
+      workbench_status: "ready",
+      operational_state: { status: "idle", reasons: [], can_dispatch: true },
+      recent_events: [],
+      identity_summary: {
+        id: "agent-1",
+        tenant_id: "tenant-1",
+        team_id: "team-2",
+        team_name: "安全治理",
+        owner_user_id: "user-1",
+        owner_display_name: "开发管理员",
+        employee_type: "analyst",
+        employee_type_label: "分析员",
+        name: "需求澄清 Agent",
+        role: "需求澄清",
+        status: "active",
+        risk_level: "low",
+      },
+      execution_summary: {
+        execution_instance_id: "instance-1",
+        status: "ready",
+        runtime_node_id: "runtime-1",
+        node_id: "node-a",
+        runtime_name: "历史 Smoke 节点",
+        runtime_status: "offline",
+        provider_type: "codex",
+        provider_status: "healthy",
+        health_status: "healthy",
+        agent_home_dir_available: true,
+      },
+      governance_summary: {
+        status: "approved",
+        skills_count: 0,
+        mcp_servers_count: 0,
+        constitution_ref: "",
+      },
+      budget_summary: {
+        run_count_30d: 0,
+        currency: "CNY",
+        source: "none",
+        usage_tokens_today: 0,
+        limit_exceeded: false,
+      },
+    },
+    {
+      workbench_status: "ready",
+      operational_state: { status: "idle", reasons: [], can_dispatch: true },
+      recent_events: [],
+      identity_summary: {
+        id: "agent-2",
+        tenant_id: "tenant-1",
+        team_id: "team-1",
+        team_name: "平台工程",
+        owner_user_id: "user-1",
+        owner_display_name: "开发管理员",
+        employee_type: "coordinator",
+        employee_type_label: "协调员",
+        name: "项目协调 Agent",
+        role: "项目协调",
+        status: "ready",
+        risk_level: "medium",
+      },
+      execution_summary: {
+        execution_instance_id: "instance-2",
+        status: "ready",
+        runtime_node_id: "runtime-2",
+        node_id: "node-b",
+        runtime_name: "本地联调节点",
+        runtime_status: "online",
+        provider_type: "codex",
+        provider_status: "healthy",
+        health_status: "healthy",
+        agent_home_dir_available: true,
+      },
+      governance_summary: {
+        status: "approved",
+        skills_count: 0,
+        mcp_servers_count: 0,
+        constitution_ref: "",
+      },
+      budget_summary: {
+        run_count_30d: 0,
+        currency: "CNY",
+        source: "none",
+        usage_tokens_today: 0,
+        limit_exceeded: false,
+      },
+    },
+  ],
+  filters: {
+    teams: [],
+    employee_types: [],
+    statuses: [],
+    providers: [],
+    runtime_nodes: [],
+    risk_levels: [],
+    execution_statuses: [],
+    run_statuses: [],
+  },
+  pagination: { limit: 50, offset: 0, total_count: 2 },
+};
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -242,6 +364,9 @@ function createSkillsFetcher() {
     }
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(employeesFixture);
+    }
+    if (url.pathname === "/api/v1/digital-employees/overview" && method === "GET") {
+      return jsonResponse(employeeOverviewFixture);
     }
     if (url.pathname === "/api/v1/skills/skill-api-doc/install" && method === "POST") {
       return jsonResponse({
@@ -327,6 +452,9 @@ function createInstallConflictFetcher() {
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(employeesFixture);
     }
+    if (url.pathname === "/api/v1/digital-employees/overview" && method === "GET") {
+      return jsonResponse(employeeOverviewFixture);
+    }
     if (url.pathname === "/api/v1/skills/skill-api-doc/install" && method === "POST") {
       return jsonResponse({
         error: "skill_install_failed",
@@ -339,8 +467,8 @@ function createInstallConflictFetcher() {
             provider_type: "codex",
             runtime_node_id: "runtime-1",
             node_id: "node-a",
-            reason_code: "runtime_disconnected",
-            message: "运行节点未连接",
+            reason_code: "runtime_not_connected",
+            message: "绑定的 Runtime 节点已失活，请先重新 provision 数字员工",
           },
         ],
       }, 409);
@@ -577,8 +705,21 @@ describe("SkillsView", () => {
     await expect.element(dialog.getByText("技能安装预检失败")).toBeVisible();
     const blockedTarget = screen.getByTestId("skill-install-blocked-target");
     await expect.element(blockedTarget.getByText("需求澄清 Agent")).toBeVisible();
-    await expect.element(blockedTarget.getByText("runtime_disconnected")).toBeVisible();
-    await expect.element(dialog.getByText("运行节点未连接")).toBeVisible();
+    await expect.element(blockedTarget.getByText("runtime_not_connected")).toBeVisible();
+    await expect.element(dialog.getByText("绑定的 Runtime 节点已失活，请先重新 provision 数字员工")).toBeVisible();
     await expect.element(dialog.getByText("codex · node-a")).toBeVisible();
+  });
+
+  it("shows the bound runtime node summary before submitting an employee install", async () => {
+    const screen = await renderSkillsView();
+
+    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
+
+    const dialog = screen.getByRole("dialog", { name: "安装技能" });
+    await expect.element(dialog.getByText("当前绑定 Runtime")).toBeVisible();
+    await expect.element(dialog.getByText("历史 Smoke 节点")).toBeVisible();
+    await expect.element(dialog.getByText("codex · node-a")).toBeVisible();
+    await expect.element(dialog.getByText("绑定节点已失活时，请先重新 provision 数字员工，再重试技能安装。")).toBeVisible();
   });
 });
