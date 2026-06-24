@@ -39,9 +39,9 @@ Shell 是所有页面的视觉基准。新增功能页不得单独发明另一�
 ## 顶部栏
 
 - 高度约 `64px`。
-- v3 使用 `--v3-card` 白色实底、`--v3-line` 底部分割线和 `--v3-shadow` 极淡弥散阴影；只允许轻微 `backdrop-filter` 作为吸顶手势，不作为内容地基。
+- v3 顶栏默认不铺整条实底，Header 容器保持透明并融入 Acrylic Shell 背景；只在吸顶滚动后按需出现轻量 `--v3-shell-glass` 兜底层，避免内容滑过时降低可读性。
 - 只承载全局动作：折叠菜单、面包屑、全局搜索、环境、团队、通知、帮助和账户。
-- 搜索框应是顶部视觉中心之一，并作为平台命令中心的入口。使用 `--v3-card` / `--v3-card-soft`、`--v3-line-strong` 和 `--v3-brand` focus ring。
+- 搜索框应是顶部视觉中心之一，并作为平台命令中心的入口。使用更强的 `--v3-shell-search`、`--v3-shell-search-border`、`--v3-shell-search-shadow` 和 `--v3-brand` focus ring，在透明 Header 上保持清晰层级。
 - 搜索框左侧图标表达“命令 / 搜索 / 发起任务”的统一入口；快捷键 keycap 尺寸固定，不挤压 placeholder。
 - 搜索聚焦态可以出现轻量品牌顶线、节点线或 ring，但不能改变控件尺寸。
 - 环境、团队、主题、通知和账户按钮使用 v3 白/灰实底按钮。

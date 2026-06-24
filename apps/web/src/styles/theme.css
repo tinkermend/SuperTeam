@@ -48,6 +48,9 @@
   --v3-shell-control-hover: rgba(255, 255, 255, 0.72);
   --v3-shell-control-active: rgba(233, 239, 255, 0.68);
   --v3-shell-control-border: rgba(255, 255, 255, 0.78);
+  --v3-shell-search: rgba(255, 255, 255, 0.82);
+  --v3-shell-search-border: rgba(47, 95, 255, 0.14);
+  --v3-shell-search-shadow: 0 14px 34px rgba(39, 54, 75, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.86);
   --v3-shell-glass-blur: 22px;
   --v3-shell-glass-saturate: 1.35;
   --v3-card: #ffffff;
@@ -128,6 +131,9 @@
   --v3-shell-control-hover: rgba(32, 38, 48, 0.72);
   --v3-shell-control-active: rgba(91, 139, 255, 0.18);
   --v3-shell-control-border: rgba(255, 255, 255, 0.10);
+  --v3-shell-search: rgba(23, 27, 34, 0.86);
+  --v3-shell-search-border: rgba(124, 150, 255, 0.18);
+  --v3-shell-search-shadow: 0 14px 34px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --v3-shell-glass-blur: 22px;
   --v3-shell-glass-saturate: 1.24;
   --v3-card: #171b22;

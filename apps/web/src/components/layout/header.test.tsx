@@ -63,14 +63,17 @@ describe("Header", () => {
 
     expect(header.dataset.slot).toBe("v3-shell-header");
     expect(header.dataset.variant).toBe("global");
-    expect(headerStyle.backgroundColor).toBe("rgba(255, 255, 255, 0.88)");
-    expect(headerStyle.backdropFilter).toContain("blur");
+    expect(headerStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(headerStyle.backdropFilter).toBe("none");
     expect(header.className).toContain("h-14");
     expect(trigger).toBeInstanceOf(HTMLElement);
     expect((trigger as HTMLElement).className).toContain("--v3-shell-control");
     expect((trigger as HTMLElement).className).toContain("text-v3-ink-2");
     expect(search.className).toContain("mx-auto");
     expect(search.className).toContain("rounded-full");
+    expect(search.className).toContain("--v3-shell-search");
+    expect(search.className).toContain("--v3-shell-search-border");
+    expect(search.className).toContain("[box-shadow:var(--v3-shell-search-shadow)]");
     expect(header.firstElementChild?.className).toContain(
       "grid-cols-[auto_minmax(0,1fr)_auto]",
     );

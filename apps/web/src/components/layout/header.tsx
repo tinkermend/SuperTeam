@@ -54,14 +54,14 @@ export function Header({ className, fixed, children: _children, ...props }: Head
           'relative grid h-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 sm:px-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(16rem,42rem)_minmax(14rem,1fr)]',
           offset > 10 &&
             fixed &&
-            'after:absolute after:inset-0 after:-z-10 after:bg-[var(--v3-shell-glass-strong)] after:backdrop-blur-md'
+            'after:absolute after:inset-0 after:-z-10 after:border-b after:border-[var(--v3-shell-glass-border)] after:bg-[var(--v3-shell-glass)] after:backdrop-blur-md'
         )}
       >
         <SidebarTrigger
           variant='ghost'
           className='justify-self-start rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep max-md:scale-125'
         />
-        <Search className='mx-auto h-10 w-full max-w-2xl rounded-full border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] px-4 shadow-none backdrop-blur-xl sm:w-full md:w-full lg:w-full xl:w-full' />
+        <Search className='mx-auto h-10 w-full max-w-2xl rounded-full border-[var(--v3-shell-search-border)] bg-[var(--v3-shell-search)] px-4 [box-shadow:var(--v3-shell-search-shadow)] backdrop-blur-xl sm:w-full md:w-full lg:w-full xl:w-full' />
         <div className='flex min-w-0 items-center justify-end gap-2'>
           <div className='inline-flex shrink-0'>
             <ThemeSwitch />

@@ -75,7 +75,7 @@ describe('authenticated v3 shell background styles', () => {
     expect(sidebarColor).toBe('rgb(246, 248, 251)')
   })
 
-  it('keeps the header as an acrylic surface over the shell', async () => {
+  it('lets the header blend into the shell while keeping search prominent', async () => {
     await render(
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
         <div className='peer' data-state='expanded' data-variant='inset' />
@@ -85,7 +85,7 @@ describe('authenticated v3 shell background styles', () => {
               type='button'
               data-slot='button'
               data-testid='search'
-              className='border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 backdrop-blur-md'
+              className='border border-[var(--v3-shell-search-border)] bg-[var(--v3-shell-search)] text-v3-ink-2 shadow-[var(--v3-shell-search-shadow)] backdrop-blur-md'
             >
               Search
             </button>
@@ -116,11 +116,13 @@ describe('authenticated v3 shell background styles', () => {
     expect(insetStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(insetStyle.boxShadow).toBe('none')
     expect(headerStyle.backgroundImage).toBe('none')
-    expect(headerStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.88)')
-    expect(headerStyle.borderBottomColor).toBe('rgba(255, 255, 255, 0.72)')
-    expect(headerStyle.backdropFilter).toContain('blur')
-    expect(headerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.04)')
-    expect(searchStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.52)')
+    expect(headerStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    expect(headerStyle.borderBottomWidth).toBe('0px')
+    expect(headerStyle.backdropFilter).toBe('none')
+    expect(headerStyle.boxShadow).toBe('none')
+    expect(searchStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.82)')
+    expect(searchStyle.borderColor).toBe('rgba(47, 95, 255, 0.14)')
+    expect(searchStyle.boxShadow).toContain('rgba(39, 54, 75, 0.1)')
     expect(searchStyle.backdropFilter).toContain('blur')
   })
 

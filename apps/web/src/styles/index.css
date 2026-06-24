@@ -81,10 +81,10 @@
   }
 
   [data-slot='v3-shell-header'] {
-    border-bottom: 1px solid var(--v3-shell-glass-border);
-    background: var(--v3-shell-glass-strong);
-    box-shadow: var(--v3-shadow);
-    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
+    border-bottom: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   [data-sidebar='header'] {
