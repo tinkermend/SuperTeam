@@ -67,7 +67,7 @@ type DependencyFilter = "all" | "none" | "required";
 type StatusFilter = "all" | SkillMarketStatus;
 type ViewMode = "list" | "grid";
 
-type SkillMarketStatus = "installed" | "available" | "approval" | "dependency";
+type SkillMarketStatus = "installed" | "available" | "approval";
 
 type MetricDefinition = {
   icon: LucideIcon;
@@ -473,7 +473,6 @@ function SkillMarketToolbar({
               { label: "已绑定", value: "installed" },
               { label: "可绑定", value: "available" },
               { label: "需审批", value: "approval" },
-              { label: "需补全依赖", value: "dependency" },
             ]}
             value={statusFilter}
           />
@@ -598,8 +597,7 @@ function SkillMarketTableRow({
 }) {
   const risk = riskDisplay(skill.risk_level);
   const status = statusDisplay(skill);
-  const rowTone =
-    status.value === "approval" ? "danger" : status.value === "dependency" ? "warn" : undefined;
+  const rowTone = status.value === "approval" ? "danger" : undefined;
 
   return (
     <V3Tr
@@ -914,9 +912,9 @@ function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
       value: skills.filter((skill) => statusDisplay(skill).value === "available").length,
     },
     {
-      icon: TriangleAlert,
-      label: "需补全依赖",
-      tone: "warn",
+      icon: ServerCog,
+      label: "有运行依赖",
+      tone: "info",
       value: dependencyCount,
       loud: dependencyCount > 0,
     },
@@ -961,7 +959,6 @@ function filterSkills(
 
 function statusDisplay(skill: Skill): StatusDisplay {
   if (needsApproval(skill)) return { label: "需审批", tone: "danger", value: "approval" };
-  if (runtimeDependencyCount(skill) > 0) return { label: "需补全依赖", tone: "warn", value: "dependency" };
   if (skill.team_bindings.length > 0 || skill.agent_bindings.length > 0) {
     return { label: "已绑定", tone: "ok", value: "installed" };
   }

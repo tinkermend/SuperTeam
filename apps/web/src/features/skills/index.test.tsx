@@ -148,7 +148,7 @@ const skillsFixture = [
     created_by_name: "开发管理员",
     team_bindings: [],
     agent_bindings: [],
-    runtime_dependencies: { tools: [], env: [] },
+    runtime_dependencies: { tools: ["gh"], env: ["OPENAI_API_KEY"] },
   },
   {
     id: "skill-incident-review",
@@ -372,6 +372,7 @@ describe("SkillsView", () => {
     await expect.element(screen.getByText("发现、查看并治理技能档案与绑定范围")).toBeVisible();
     const metrics = screen.getByRole("region", { name: "技能市场指标" });
     await expect.element(metrics.getByText("可绑定")).toBeVisible();
+    await expect.element(metrics.getByText("有运行依赖")).toBeVisible();
     await expect.element(metrics.getByText("需审批")).toBeVisible();
     await expect.element(metrics.getByText("团队绑定")).toBeVisible();
     await expect.element(metrics.getByText("数字员工绑定")).toBeVisible();
@@ -381,6 +382,16 @@ describe("SkillsView", () => {
     await expect.element(detailLink).toHaveAttribute("href", "/skills/skill-requirement");
     await expect.element(detailLink).toHaveAttribute("data-router-link", "true");
     await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
+  });
+
+  it("keeps unbound skills with declared runtime dependencies installable in the market list", async () => {
+    const screen = await renderSkillsView();
+
+    await expect.element(screen.getByText("接口文档生成")).toBeVisible();
+    const skillRow = document.body.querySelector('button[aria-label="选中 接口文档生成"]')?.closest("tr");
+    expect(skillRow).not.toBeNull();
+    expect(skillRow?.textContent).toContain("可绑定");
+    expect(document.body.textContent).not.toContain("需补全依赖");
   });
 
   it("uses shared v3 controls for the primary action and view switcher", async () => {
@@ -478,7 +489,10 @@ describe("SkillsView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "有依赖" }));
 
-    await expect.element(screen.getByText("暂无匹配技能，请调整搜索或筛选条件")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "接口文档生成 安装记录" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).not.toContain("需求澄清助手");
+    });
     await vi.waitFor(() => {
       expect(document.body.querySelector('[aria-label="需求澄清助手 安装记录"]')).toBeNull();
     });
