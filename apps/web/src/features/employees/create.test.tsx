@@ -62,64 +62,68 @@ const avatarAsset = {
   status: "active",
 };
 
+type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none";
+
 function createOptionsFixture({
+  runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
 }: {
+  runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
 } = {}) {
+  const firstRuntimeAvailable = runtimeAvailability === "all";
+  const secondRuntimeAvailable = runtimeAvailability !== "none";
+  const firstRuntimeOption = {
+    runtime_node_id: "33333333-3333-4333-8333-333333333333",
+    node_id: "runtime-a",
+    runtime_name: "客户侧执行机 A",
+    provider_type: "codex",
+    runtime_status: firstRuntimeAvailable ? "online" : "offline",
+    provider_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    health_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    current_load: 0,
+    max_slots: 2,
+    agent_home_dir: "/Users/wangpei/.codex",
+    agent_home_dir_available: firstRuntimeAvailable,
+    available: firstRuntimeAvailable,
+    disabled_reason: firstRuntimeAvailable ? undefined : "runtime_session_inactive",
+  };
+  const sameNodeProviderOption = {
+    runtime_node_id: "33333333-3333-4333-8333-333333333333",
+    node_id: "runtime-a",
+    runtime_name: "客户侧执行机 A",
+    provider_type: "claude_code",
+    runtime_status: firstRuntimeAvailable ? "online" : "offline",
+    provider_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    health_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    current_load: 0,
+    max_slots: 2,
+    agent_home_dir: "/Users/wangpei/.claude",
+    agent_home_dir_available: firstRuntimeAvailable,
+    available: firstRuntimeAvailable,
+    disabled_reason: firstRuntimeAvailable ? undefined : "runtime_session_inactive",
+  };
+  const secondRuntimeOption = {
+    runtime_node_id: "44444444-4444-4444-8444-444444444444",
+    node_id: "runtime-b",
+    runtime_name: "客户侧执行机 B",
+    provider_type: "codex",
+    runtime_status: secondRuntimeAvailable ? "online" : "offline",
+    provider_status: secondRuntimeAvailable ? "healthy" : "unhealthy",
+    health_status: secondRuntimeAvailable ? "healthy" : "unhealthy",
+    current_load: 1,
+    max_slots: 2,
+    agent_home_dir: "/Users/wangpei/.codex",
+    agent_home_dir_available: secondRuntimeAvailable,
+    available: secondRuntimeAvailable,
+    disabled_reason: secondRuntimeAvailable ? undefined : "runtime_session_inactive",
+  };
   const runtimeProviderOptions = [
-    {
-      runtime_node_id: "33333333-3333-4333-8333-333333333333",
-      node_id: "runtime-a",
-      runtime_name: "客户侧执行机 A",
-      provider_type: "codex",
-      runtime_status: "online",
-      provider_status: "healthy",
-      health_status: "healthy",
-      current_load: 0,
-      max_slots: 2,
-      agent_home_dir: "/Users/wangpei/.codex",
-      agent_home_dir_available: true,
-      available: true,
-    },
-    ...(sameRuntimeNodeProviders
-      ? [
-          {
-            runtime_node_id: "33333333-3333-4333-8333-333333333333",
-            node_id: "runtime-a",
-            runtime_name: "客户侧执行机 A",
-            provider_type: "claude_code",
-            runtime_status: "online",
-            provider_status: "healthy",
-            health_status: "healthy",
-            current_load: 0,
-            max_slots: 2,
-            agent_home_dir: "/Users/wangpei/.claude",
-            agent_home_dir_available: true,
-            available: true,
-          },
-        ]
-      : []),
-    ...(!sameRuntimeNodeProviders && runtimeCount === 2
-      ? [
-          {
-            runtime_node_id: "44444444-4444-4444-8444-444444444444",
-            node_id: "runtime-b",
-            runtime_name: "客户侧执行机 B",
-            provider_type: "codex",
-            runtime_status: "online",
-            provider_status: "healthy",
-            health_status: "healthy",
-            current_load: 1,
-            max_slots: 2,
-            agent_home_dir: "/Users/wangpei/.codex",
-            agent_home_dir_available: true,
-            available: true,
-          },
-        ]
-      : []),
+    firstRuntimeOption,
+    ...(sameRuntimeNodeProviders ? [sameNodeProviderOption] : []),
+    ...(!sameRuntimeNodeProviders && runtimeCount === 2 ? [secondRuntimeOption] : []),
   ];
 
   return {
@@ -183,8 +187,8 @@ function createOptionsFixture({
       {
         key: "runtime_provider",
         label: "Runtime 可用",
-        status: "passed",
-        message: "1 个可用运行绑定",
+        status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "blocked",
+        message: `${runtimeProviderOptions.filter((option) => option.available).length} 个可用运行绑定`,
       },
     ],
     policy_defaults: {
@@ -204,12 +208,14 @@ function createWizardFetcher({
   expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
+  runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
 }: {
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
   expectedRuntimeNodeId?: string;
+  runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
 } = {}) {
@@ -223,7 +229,7 @@ function createWizardFetcher({
 
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
       expect(url.searchParams.get("team_id")).toBe(team.id);
-      return jsonResponse(createOptionsFixture({ runtimeCount, sameRuntimeNodeProviders }));
+      return jsonResponse(createOptionsFixture({ runtimeAvailability, runtimeCount, sameRuntimeNodeProviders }));
     }
 
     if (url.pathname === "/api/v1/digital-employee-avatar-assets" && method === "GET") {
@@ -329,6 +335,74 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("团队治理版本")).toBeVisible();
     await expect.element(screen.getByText("Runtime 可用")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "即将创建" })).toBeVisible();
+  });
+
+  it("marks unavailable creation paths and blank custom entry points as disabled", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await expect.element(screen.getByRole("button", { name: /^从专业模板创建/ })).toBeEnabled();
+    await expect.element(screen.getByRole("button", { name: /^从团队角色复制/ })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: /^从历史员工克隆/ })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: /^空白自定义/ })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: /^选择空白自定义/ })).toBeDisabled();
+
+    await expect.element(screen.getByRole("heading", { name: "选择专业类型" })).toBeVisible();
+    expect(document.body.textContent).not.toContain("员工画像蓝图");
+  });
+
+  it("keeps template cards provider-neutral", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await expect.element(screen.getByRole("button", { name: /数据库管理员/ })).toBeVisible();
+    await expect.element(screen.getByText("技能")).toBeVisible();
+    await expect.element(screen.getByText("MCP")).toBeVisible();
+    await expect.element(screen.getByText(/^风险$/)).toBeVisible();
+    expect(document.body.textContent).not.toContain("Provider");
+    expect(document.body.textContent).not.toContain("推荐 Provider");
+  });
+
+  it("shows only the selected template summary after entering configuration", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+
+    await expect.element(screen.getByText("已选模板")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /更换模板/ })).toBeVisible();
+    expect(document.body.textContent).not.toContain("推荐起步画像");
+    expect(document.body.textContent).not.toContain("从空白开始自定义");
+    expect(document.body.textContent).not.toContain("模板只提供默认值和推荐能力");
+  });
+
+  it("keeps edited configuration when change-template confirmation is cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+
+    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
+
+    confirm.mockRestore();
+  });
+
+  it("resets the configuration draft when change-template confirmation is accepted", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+
+    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    await expect.element(screen.getByRole("heading", { name: "选择专业类型" })).toBeVisible();
+
+    await enterConfiguration(screen);
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("");
+
+    confirm.mockRestore();
   });
 
   it("creates a ready digital employee through the four-step wizard", async () => {
@@ -474,6 +548,47 @@ describe("CreateEmployeeView", () => {
 
     await userEvent.click(screen.getByLabelText("客户侧执行机 A / codex"));
     await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeEnabled();
+  });
+
+  it("selects available runtimes and surfaces unavailable ones with their reason", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        expectedRuntimeNodeId: "44444444-4444-4444-8444-444444444444",
+        runtimeAvailability: "first-unavailable",
+        runtimeCount: 2,
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    // Only the available runtime is a selectable radio and is auto-bound.
+    await expect.element(screen.getByRole("radio", { name: "客户侧执行机 B / codex" })).toBeChecked();
+    expect(document.body.querySelector('[role="radio"][aria-label="客户侧执行机 A / codex"]')).toBeNull();
+    // The unavailable runtime is still surfaced (with its reason) for diagnosability.
+    await expect.element(screen.getByText("暂不可绑定的 Runtime")).toBeVisible();
+    await expect.element(screen.getByText("runtime_session_inactive")).toBeVisible();
+  });
+
+  it("blocks creation when there are no bindable runtime provider options", async () => {
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeAvailability: "none" }));
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect
+      .element(screen.getByText("当前团队没有可绑定的 Runtime Provider，请检查 Runtime 在线状态、Provider 健康状态或团队运行策略。"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeDisabled();
+    // No selectable runtime radio exists, but the unavailable runtime is still listed with its reason.
+    expect(document.body.querySelector('[role="radio"][aria-label="客户侧执行机 A / codex"]')).toBeNull();
+    await expect.element(screen.getByText("暂不可绑定的 Runtime")).toBeVisible();
   });
 
   it("submits the selected provider when one runtime exposes multiple providers", async () => {
