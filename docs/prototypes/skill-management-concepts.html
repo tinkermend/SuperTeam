@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>技能管理方案原型 · SuperTeam</title>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --card-soft: #f7f8fa;
+      --card-inner: #fafbfc;
+      --ink: #0b0d12;
+      --ink-2: #697586;
+      --ink-3: #9aa4b2;
+      --line: #eef1f4;
+      --line-strong: #dfe4ea;
+      --brand: #2f5fff;
+      --brand-deep: #2348e0;
+      --brand-soft: #e9efff;
+      --info: #2563eb;
+      --info-soft: #e8effd;
+      --ok: #15a06b;
+      --ok-soft: #e4f6ee;
+      --warn: #cf7a14;
+      --warn-soft: #fdf0db;
+      --danger: #e5484d;
+      --danger-soft: #fde8e9;
+      --artifact: #7c5cff;
+      --artifact-soft: #efeaff;
+      --mute: #64748b;
+      --mute-soft: #eef1f4;
+      --r-card: 22px;
+      --r-inner: 14px;
+      --r-pill: 8px;
+      --r-btn: 12px;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 12px 30px rgba(16, 24, 40, .055);
+      --shadow-hover: 0 1px 2px rgba(16, 24, 40, .06), 0 18px 42px rgba(16, 24, 40, .09);
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(223, 228, 234, .42) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(223, 228, 234, .38) 1px, transparent 1px),
+        var(--bg);
+      background-size: 44px 44px;
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .mono,
+    .num {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mono {
+      font-family: var(--mono);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 22px 18px;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, .78);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 12px;
+      color: white;
+      background: var(--brand);
+      box-shadow: 0 8px 18px rgba(47, 95, 255, .22);
+    }
+
+    .nav-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .nav-item.active {
+      color: var(--brand-deep);
+      background: var(--brand-soft);
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+
+    .sidebar-note {
+      position: absolute;
+      right: 18px;
+      bottom: 22px;
+      left: 18px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-inner);
+      background: var(--card);
+      color: var(--ink-2);
+      font-size: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .main {
+      min-width: 0;
+      padding: 22px 30px 56px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .command {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: min(520px, 100%);
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-btn);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      color: var(--ink-3);
+    }
+
+    .command input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .keycap {
+      padding: 2px 6px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--card-soft);
+      color: var(--ink-3);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-left: auto;
+      padding: 5px 9px 5px 5px;
+      border-radius: 13px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .avatar {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 9px;
+      background: #0f172a;
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .identity strong {
+      display: block;
+      font-size: 12px;
+      line-height: 1.1;
+    }
+
+    .identity span {
+      display: block;
+      color: var(--ink-3);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--brand-deep);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(27px, 4vw, 38px);
+      font-weight: 850;
+      letter-spacing: 0;
+      line-height: 1.08;
+    }
+
+    .page-head p {
+      max-width: 780px;
+      margin: 10px 0 0;
+      color: var(--ink-2);
+      font-size: 14px;
+    }
+
+    .primary-btn,
+    .secondary-btn,
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      border: 0;
+      border-radius: var(--r-btn);
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .primary-btn {
+      padding: 0 16px;
+      color: white;
+      background: var(--brand);
+      box-shadow: 0 10px 22px rgba(47, 95, 255, .22);
+    }
+
+    .secondary-btn {
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: var(--card);
+    }
+
+    .icon-btn {
+      width: 38px;
+      border: 1px solid var(--line);
+      color: var(--ink-2);
+      background: var(--card);
+    }
+
+    .concept-switcher {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .concept-button {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 96px;
+      padding: 16px;
+      border: 1px solid transparent;
+      border-radius: var(--r-card);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      text-align: left;
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+    }
+
+    .concept-button:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .concept-button.active {
+      border-color: rgba(47, 95, 255, .24);
+      box-shadow: inset 0 3px 0 var(--brand), var(--shadow-hover);
+    }
+
+    .concept-button .badge {
+      flex: 0 0 auto;
+    }
+
+    .concept-button strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 14px;
+    }
+
+    .concept-button span:last-child {
+      display: block;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .prototype {
+      display: none;
+    }
+
+    .prototype.active {
+      display: block;
+    }
+
+    .surface {
+      overflow: hidden;
+      border-radius: var(--r-card);
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .surface-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .surface-head h2,
+    .panel h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 820;
+      letter-spacing: 0;
+    }
+
+    .surface-head p,
+    .panel p {
+      margin: 4px 0 0;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card-soft);
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .chip.active {
+      border-color: rgba(47, 95, 255, .22);
+      color: var(--brand-deep);
+      background: var(--brand-soft);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      padding: 18px;
+      border-radius: var(--r-card);
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .metric-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .metric small {
+      display: block;
+      margin-top: 8px;
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+
+    .badge,
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: var(--r-pill);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .badge {
+      padding: 5px 8px;
+    }
+
+    .status {
+      padding: 6px 9px;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .tone-brand {
+      color: var(--brand-deep);
+      background: var(--brand-soft);
+    }
+
+    .tone-info {
+      color: var(--info);
+      background: var(--info-soft);
+    }
+
+    .tone-ok {
+      color: var(--ok);
+      background: var(--ok-soft);
+    }
+
+    .tone-warn {
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .tone-danger {
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .tone-artifact {
+      color: var(--artifact);
+      background: var(--artifact-soft);
+    }
+
+    .tone-mute {
+      color: var(--mute);
+      background: var(--mute-soft);
+    }
+
+    .icon-tile {
+      display: grid;
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border-radius: 14px;
+    }
+
+    .split-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) 390px;
+      gap: 18px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--line-strong);
+      background: var(--card-soft);
+      color: var(--ink-3);
+      font-size: 11px;
+      font-weight: 850;
+      text-align: left;
+    }
+
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .skill-row {
+      cursor: pointer;
+    }
+
+    .skill-row:hover td {
+      background: var(--card-inner);
+    }
+
+    .skill-row.selected td {
+      background: var(--brand-soft);
+    }
+
+    .skill-row.risk td:first-child {
+      box-shadow: inset 3px 0 0 var(--warn);
+    }
+
+    .skill-title {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .skill-title strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .skill-title span {
+      display: block;
+      overflow: hidden;
+      color: var(--ink-3);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .target-list,
+    .audit-list,
+    .dependency-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .target-item,
+    .audit-item,
+    .dependency-item,
+    .matrix-cell,
+    .quiet-box {
+      border: 1px solid var(--line);
+      border-radius: var(--r-inner);
+      background: var(--card-inner);
+    }
+
+    .target-item,
+    .dependency-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 12px;
+    }
+
+    .target-item strong,
+    .dependency-item strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .target-item span,
+    .dependency-item span {
+      display: block;
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+
+    .detail-panel {
+      min-width: 0;
+    }
+
+    .detail-hero {
+      padding: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .detail-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+      margin-bottom: 16px;
+    }
+
+    .detail-title h2 {
+      margin: 0 0 5px;
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .detail-title p {
+      margin: 0;
+      color: var(--ink-2);
+      font-size: 13px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .detail-kv {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-inner);
+      background: var(--card-inner);
+    }
+
+    .detail-kv span {
+      display: block;
+      color: var(--ink-3);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .detail-kv strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 13px;
+    }
+
+    .detail-section {
+      padding: 18px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .detail-section:first-child {
+      border-top: 0;
+    }
+
+    .detail-section h3 {
+      margin: 0 0 12px;
+      font-size: 14px;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 18px;
+    }
+
+    .skill-card {
+      display: grid;
+      gap: 15px;
+      min-height: 246px;
+      padding: 18px;
+      border: 1px solid transparent;
+      border-radius: var(--r-card);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      text-align: left;
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+    }
+
+    .skill-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .skill-card.selected {
+      border-color: rgba(47, 95, 255, .25);
+      box-shadow: inset 0 3px 0 var(--brand), var(--shadow-hover);
+    }
+
+    .skill-card-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .skill-card h3 {
+      margin: 0 0 5px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .skill-card p {
+      margin: 0;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .card-meta {
+      display: grid;
+      gap: 9px;
+      margin-top: auto;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .meta-row strong {
+      color: var(--ink);
+      font-size: 12px;
+    }
+
+    .install-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 18px;
+    }
+
+    .install-panel {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+    }
+
+    .install-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 11px;
+      padding-bottom: 16px;
+    }
+
+    .install-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 28px;
+      bottom: 0;
+      left: 13px;
+      width: 2px;
+      background: var(--line-strong);
+    }
+
+    .step-node {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 9px;
+      color: var(--brand-deep);
+      background: var(--brand-soft);
+      font-size: 12px;
+      font-weight: 850;
+      z-index: 1;
+    }
+
+    .install-step strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .install-step span {
+      display: block;
+      margin-top: 2px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .matrix-layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .skill-rail {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    .rail-button {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-inner);
+      background: var(--card);
+      text-align: left;
+    }
+
+    .rail-button:hover {
+      background: var(--card-inner);
+    }
+
+    .rail-button.selected {
+      border-color: rgba(47, 95, 255, .25);
+      background: var(--brand-soft);
+    }
+
+    .rail-button strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .rail-button span {
+      display: block;
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+
+    .detail-page {
+      min-width: 0;
+    }
+
+    .detail-page-head {
+      padding: 22px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, rgba(47, 95, 255, .08) 0, transparent 42%),
+        var(--card);
+    }
+
+    .detail-page-title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .detail-page-title h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+      line-height: 1.15;
+    }
+
+    .detail-page-title p {
+      max-width: 760px;
+      margin: 0;
+      color: var(--ink-2);
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 18px 22px 22px;
+    }
+
+    .matrix-cell {
+      min-height: 118px;
+      padding: 14px;
+    }
+
+    .matrix-cell strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .matrix-cell span {
+      display: block;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .audit-list {
+      padding: 0 22px 22px;
+    }
+
+    .audit-item {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--card);
+    }
+
+    .audit-item time {
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+
+    .audit-item strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .audit-item span {
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .quiet-box {
+      padding: 13px 14px;
+    }
+
+    .quiet-box strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .quiet-box span {
+      display: block;
+      margin-top: 3px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1180px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        height: auto;
+        padding: 14px 18px;
+      }
+
+      .sidebar-note {
+        display: none;
+      }
+
+      .nav-group {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .split-layout,
+      .install-layout,
+      .matrix-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .install-panel {
+        position: static;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .main {
+        padding: 18px 16px 44px;
+      }
+
+      .topbar,
+      .page-head,
+      .surface-head,
+      .detail-page-title {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .identity {
+        display: none;
+      }
+
+      .concept-switcher,
+      .metrics,
+      .card-grid,
+      .matrix-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      .table {
+        min-width: 760px;
+      }
+
+      .audit-item {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"><i data-lucide="network"></i></span>
+        <span>SuperTeam</span>
+      </div>
+      <nav class="nav-group" aria-label="控制台导航">
+        <div class="nav-item"><i data-lucide="layout-dashboard"></i><span>协调台</span></div>
+        <div class="nav-item"><i data-lucide="folder-kanban"></i><span>项目</span></div>
+        <div class="nav-item"><i data-lucide="bot"></i><span>数字员工</span></div>
+        <div class="nav-item active"><i data-lucide="blocks"></i><span>技能市场</span></div>
+        <div class="nav-item"><i data-lucide="server-cog"></i><span>Runtime</span></div>
+        <div class="nav-item"><i data-lucide="shield-check"></i><span>审计</span></div>
+      </nav>
+      <div class="sidebar-note">
+        单一市场入口。详情页集中呈现技能身份、绑定范围、依赖、风险和审计证据。
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <label class="command">
+          <i data-lucide="search"></i>
+          <input value="搜索技能、依赖、绑定范围" aria-label="搜索技能" />
+          <span class="keycap">⌘K</span>
+        </label>
+        <button class="icon-btn" title="通知"><i data-lucide="bell"></i></button>
+        <button class="icon-btn" title="设置"><i data-lucide="settings-2"></i></button>
+        <div class="identity">
+          <span class="avatar">林</span>
+          <div><strong>林 Anna</strong><span>平台管理员</span></div>
+        </div>
+      </div>
+
+      <header class="page-head">
+        <div>
+          <div class="eyebrow"><i data-lucide="blocks"></i><span>技能管理原型</span></div>
+          <h1>三种技能详情页方案</h1>
+          <p>每个方案都围绕“点击某个技能后看详情”展开，重点比较详情页的信息架构、证据密度和治理表达。</p>
+        </div>
+        <div class="toolbar">
+          <button class="secondary-btn"><i data-lucide="arrow-left"></i>返回市场</button>
+          <button class="primary-btn"><i data-lucide="pencil"></i>编辑元数据</button>
+        </div>
+      </header>
+
+      <section class="concept-switcher" aria-label="方案切换">
+        <button class="concept-button active" data-concept-button="a">
+          <span class="badge tone-brand">方案 A</span>
+          <span><strong>目录侧栏型详情</strong><span>左侧扫技能，右侧即时查看详情，适合高频比较。</span></span>
+        </button>
+        <button class="concept-button" data-concept-button="b">
+          <span class="badge tone-artifact">方案 B</span>
+          <span><strong>总览仪表型详情</strong><span>先用卡片选技能，再在右侧展示完整详情摘要。</span></span>
+        </button>
+        <button class="concept-button" data-concept-button="c">
+          <span class="badge tone-info">方案 C</span>
+          <span><strong>治理审计型详情</strong><span>详情页以绑定、风险、依赖和审计证据为核心。</span></span>
+        </button>
+      </section>
+
+      <section class="metrics" aria-label="市场指标">
+        <div class="metric">
+          <div class="metric-top"><span>市场技能</span><span class="badge tone-info"><span class="dot"></span>目录</span></div>
+          <strong class="num">128</strong>
+          <small>42 个已绑定团队或数字员工</small>
+        </div>
+        <div class="metric">
+          <div class="metric-top"><span>待处理审批</span><span class="badge tone-warn"><span class="dot"></span>人工</span></div>
+          <strong class="num">9</strong>
+          <small>高风险技能需要负责人复核</small>
+        </div>
+        <div class="metric">
+          <div class="metric-top"><span>依赖缺口</span><span class="badge tone-danger"><span class="dot"></span>阻断</span></div>
+          <strong class="num">6</strong>
+          <small>工具或环境变量未在 Runtime 注册</small>
+        </div>
+        <div class="metric">
+          <div class="metric-top"><span>健康绑定</span><span class="badge tone-ok"><span class="dot"></span>在线</span></div>
+          <strong class="num">87%</strong>
+          <small>过去 7 天调用链无阻断</small>
+        </div>
+      </section>
+
+      <section class="prototype active" data-concept="a">
+        <div class="split-layout">
+          <div class="surface">
+            <div class="surface-head">
+              <div>
+                <h2>技能市场目录</h2>
+                <p>默认面向管理员的高密度列表，点击任意技能后右侧同步展示详情。</p>
+              </div>
+              <div class="toolbar">
+                <span class="chip active"><i data-lucide="list-filter"></i>全部</span>
+                <span class="chip"><i data-lucide="users"></i>已绑定</span>
+                <span class="chip"><i data-lucide="triangle-alert"></i>需处理</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 34%">技能</th>
+                    <th style="width: 16%">风险</th>
+                    <th style="width: 16%">依赖</th>
+                    <th style="width: 18%">绑定范围</th>
+                    <th style="width: 16%">最近更新</th>
+                  </tr>
+                </thead>
+                <tbody id="skill-table"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <aside class="surface detail-panel" aria-label="技能详情侧栏">
+            <div class="detail-hero">
+              <div class="detail-title">
+                <span class="icon-tile tone-artifact" data-detail-tone><i data-lucide="blocks"></i></span>
+                <div>
+                  <h2 data-detail-name></h2>
+                  <p data-detail-description></p>
+                </div>
+              </div>
+              <div class="detail-grid">
+                <div class="detail-kv"><span>版本</span><strong data-detail-version></strong></div>
+                <div class="detail-kv"><span>来源</span><strong data-detail-source></strong></div>
+                <div class="detail-kv"><span>风险等级</span><strong data-detail-risk></strong></div>
+                <div class="detail-kv"><span>最近调用</span><strong data-detail-usage></strong></div>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h3>绑定范围</h3>
+              <div class="target-list" data-detail-targets></div>
+            </div>
+            <div class="detail-section">
+              <h3>运行依赖</h3>
+              <div class="dependency-list" data-detail-dependencies></div>
+            </div>
+            <div class="detail-section">
+              <h3>标签</h3>
+              <div class="tag-list" data-detail-tags></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="prototype" data-concept="b">
+        <div class="install-layout">
+          <div class="surface">
+            <div class="surface-head">
+              <div>
+                <h2>详情总览</h2>
+                <p>卡片负责快速选择技能，右侧集中展示身份、用途、依赖、风险和绑定范围。</p>
+              </div>
+              <div class="toolbar">
+                <span class="chip active"><i data-lucide="sparkles"></i>核心信息</span>
+                <span class="chip"><i data-lucide="shield"></i>风险</span>
+                <span class="chip"><i data-lucide="wrench"></i>依赖</span>
+              </div>
+            </div>
+            <div class="card-grid" id="skill-cards"></div>
+          </div>
+
+          <aside class="surface install-panel">
+            <div class="detail-hero">
+              <div class="detail-title">
+                <span class="icon-tile tone-brand" data-workbench-tone><i data-lucide="mouse-pointer-click"></i></span>
+                <div>
+                  <h2 data-workbench-name></h2>
+                  <p data-workbench-description></p>
+                </div>
+              </div>
+              <button class="primary-btn" style="width: 100%"><i data-lucide="external-link"></i>进入完整详情</button>
+            </div>
+            <div class="detail-section">
+              <h3>详情结构</h3>
+              <div class="install-step">
+                <span class="step-node">1</span>
+                <div><strong>技能身份</strong><span data-workbench-step-skill></span></div>
+              </div>
+              <div class="install-step">
+                <span class="step-node">2</span>
+                <div><strong>能力说明</strong><span>展示适用场景、输入输出和推荐使用边界</span></div>
+              </div>
+              <div class="install-step">
+                <span class="step-node">3</span>
+                <div><strong>依赖与风险</strong><span data-workbench-dependency-summary></span></div>
+              </div>
+              <div class="install-step">
+                <span class="step-node">4</span>
+                <div><strong>治理规则</strong><span data-workbench-approval></span></div>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h3>关键字段</h3>
+              <div class="detail-grid">
+                <div class="detail-kv"><span>版本</span><strong data-workbench-version></strong></div>
+                <div class="detail-kv"><span>来源</span><strong data-workbench-source></strong></div>
+                <div class="detail-kv"><span>风险等级</span><strong data-workbench-risk></strong></div>
+                <div class="detail-kv"><span>最近调用</span><strong data-workbench-usage></strong></div>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h3>绑定范围</h3>
+              <div class="target-list" data-workbench-targets></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="prototype" data-concept="c">
+        <div class="matrix-layout">
+          <aside class="surface">
+            <div class="surface-head">
+              <div>
+                <h2>技能索引</h2>
+                <p>左侧只保留可扫描索引，点击后进入治理型详情页。</p>
+              </div>
+            </div>
+            <div class="skill-rail" id="skill-rail"></div>
+          </aside>
+
+          <article class="surface detail-page" aria-label="技能治理详情页">
+            <div class="detail-page-head">
+              <div class="detail-page-title">
+                <div>
+                  <div class="tag-list" style="margin-bottom: 12px">
+                    <span class="status tone-info"><span class="dot"></span>市场技能</span>
+                    <span class="status tone-warn" data-governance-risk-pill><span class="dot"></span></span>
+                  </div>
+                  <h2 data-governance-name></h2>
+                  <p data-governance-description></p>
+                </div>
+                <div class="toolbar">
+                  <button class="secondary-btn"><i data-lucide="history"></i>查看审计</button>
+                  <button class="primary-btn"><i data-lucide="target"></i>管理绑定范围</button>
+                </div>
+              </div>
+            </div>
+            <div class="matrix-grid">
+              <div class="matrix-cell">
+                <strong>团队绑定</strong>
+                <span data-governance-team-count></span>
+              </div>
+              <div class="matrix-cell">
+                <strong>数字员工绑定</strong>
+                <span data-governance-agent-count></span>
+              </div>
+              <div class="matrix-cell">
+                <strong>依赖状态</strong>
+                <span data-governance-dependency></span>
+              </div>
+              <div class="matrix-cell">
+                <strong>归档校验</strong>
+                <span data-governance-checksum></span>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h3>绑定矩阵</h3>
+              <div class="target-list" data-governance-targets></div>
+            </div>
+            <div class="detail-section">
+              <h3>审计流水</h3>
+            </div>
+            <div class="audit-list" data-governance-audit></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const skills = [
+      {
+        id: "requirement-brief",
+        name: "需求澄清 Brief",
+        description: "把项目需求、缺口、验收口径整理成可派发的结构化任务包。",
+        version: "v1.8.2",
+        source: "团队上传",
+        risk: "低风险",
+        riskTone: "tone-ok",
+        dependency: "无需外部依赖",
+        dependencyTone: "tone-ok",
+        bindings: "3 团队 · 8 员工",
+        updated: "今天 09:42",
+        usage: "1,284 次",
+        icon: "clipboard-list",
+        tone: "tone-info",
+        tags: ["需求分析", "项目启动", "验收口径"],
+        teams: ["增长交付组", "客户成功组", "平台治理组"],
+        agents: ["需求分析员", "项目协调员", "验收助理"],
+        dependencies: [
+          ["工具", "内置文档解析器已注册", "tone-ok"],
+          ["环境变量", "不需要额外密钥", "tone-ok"]
+        ],
+        approval: "低风险绑定变更可由团队负责人确认",
+        checksum: "sha256: 9f4a...21bd",
+        audit: [
+          ["09:42", "林 Anna 更新版本到 v1.8.2", "补充验收口径字段"],
+          ["昨天", "项目协调员绑定到增长交付组", "负责人已确认"],
+          ["06-20", "系统完成依赖巡检", "无缺口"]
+        ]
+      },
+      {
+        id: "runtime-diagnosis",
+        name: "Runtime 诊断包",
+        description: "汇总 Runtime 心跳、Provider 会话、工作目录和失败事件，生成排障证据。",
+        version: "v0.9.4",
+        source: "平台内置",
+        risk: "中风险",
+        riskTone: "tone-warn",
+        dependency: "需要 kubectl",
+        dependencyTone: "tone-warn",
+        bindings: "1 团队 · 4 员工",
+        updated: "昨天 18:10",
+        usage: "642 次",
+        icon: "server-cog",
+        tone: "tone-artifact",
+        tags: ["Runtime", "Provider", "排障"],
+        teams: ["平台治理组"],
+        agents: ["运行诊断员", "发布值守员"],
+        dependencies: [
+          ["工具", "kubectl 未覆盖全部 Runtime 节点", "tone-warn"],
+          ["环境变量", "RUNTIME_READ_TOKEN 已配置", "tone-ok"]
+        ],
+        approval: "绑定到生产 Runtime 相关员工时需要人工审批",
+        checksum: "sha256: 61a8...e41c",
+        audit: [
+          ["18:10", "系统标记依赖缺口", "2 个 Runtime 节点缺少 kubectl"],
+          ["06-21", "发布值守员绑定到平台治理组", "审批通过"],
+          ["06-18", "林 Anna 上传初始版本", "平台内置技能"]
+        ]
+      },
+      {
+        id: "approval-risk-review",
+        name: "审批风险复核",
+        description: "检查高风险动作、删除写入、权限扩张和上线发布前的人类确认要求。",
+        version: "v2.3.0",
+        source: "安全团队",
+        risk: "高风险",
+        riskTone: "tone-danger",
+        dependency: "需要审计 API",
+        dependencyTone: "tone-info",
+        bindings: "2 团队 · 6 员工",
+        updated: "06-22 16:36",
+        usage: "918 次",
+        icon: "shield-check",
+        tone: "tone-warn",
+        tags: ["审批", "权限", "审计"],
+        teams: ["平台治理组", "客户成功组"],
+        agents: ["审批助理", "上线守门员", "权限巡检员"],
+        dependencies: [
+          ["工具", "Control Plane 审计接口可用", "tone-ok"],
+          ["环境变量", "AUDIT_READER_TOKEN 待轮换", "tone-warn"]
+        ],
+        approval: "所有绑定变更都需要项目 human_owner 或平台管理员确认",
+        checksum: "sha256: c2e0...98af",
+        audit: [
+          ["06-22", "安全团队发布 v2.3.0", "新增权限扩张检测"],
+          ["06-21", "权限巡检员触发复核", "发现 1 条待确认动作"],
+          ["06-19", "平台管理员调整风险等级", "低风险改为高风险"]
+        ]
+      },
+      {
+        id: "artifact-packager",
+        name: "工件报告打包",
+        description: "把执行日志、证据、交付物和验收结论打包成可归档报告。",
+        version: "v1.4.7",
+        source: "团队上传",
+        risk: "低风险",
+        riskTone: "tone-ok",
+        dependency: "需要 PDF 渲染器",
+        dependencyTone: "tone-info",
+        bindings: "4 团队 · 11 员工",
+        updated: "06-22 11:20",
+        usage: "2,016 次",
+        icon: "file-box",
+        tone: "tone-ok",
+        tags: ["工件", "验收", "报告"],
+        teams: ["增长交付组", "客户成功组", "平台治理组", "实施交付组"],
+        agents: ["验收助理", "报告专员", "项目协调员"],
+        dependencies: [
+          ["工具", "PDF 渲染器已注册", "tone-ok"],
+          ["环境变量", "ARTIFACT_BUCKET 可用", "tone-ok"]
+        ],
+        approval: "低风险绑定变更可由团队负责人确认",
+        checksum: "sha256: 31dd...ab72",
+        audit: [
+          ["06-22", "报告专员绑定到实施交付组", "负责人已确认"],
+          ["06-20", "系统完成归档校验", "校验通过"],
+          ["06-16", "林 Anna 更新报告模板", "补充验收结论"]
+        ]
+      }
+    ];
+
+    let activeConcept = "a";
+    let selectedSkillId = skills[0].id;
+
+    const toneClass = (tone) => tone || "tone-mute";
+    const selectedSkill = () => skills.find((skill) => skill.id === selectedSkillId) || skills[0];
+
+    function setText(selector, value) {
+      document.querySelectorAll(selector).forEach((node) => {
+        node.textContent = value;
+      });
+    }
+
+    function setIconTile(selector, skill) {
+      document.querySelectorAll(selector).forEach((node) => {
+        node.className = `icon-tile ${toneClass(skill.tone)}`;
+        node.innerHTML = `<i data-lucide="${skill.icon}"></i>`;
+      });
+    }
+
+    function renderTable() {
+      const rows = skills.map((skill) => `
+        <tr class="skill-row ${skill.id === selectedSkillId ? "selected" : ""} ${skill.riskTone === "tone-warn" || skill.riskTone === "tone-danger" ? "risk" : ""}" data-skill-id="${skill.id}">
+          <td>
+            <div class="skill-title">
+              <span class="icon-tile ${toneClass(skill.tone)}"><i data-lucide="${skill.icon}"></i></span>
+              <span><strong>${skill.name}</strong><span>${skill.description}</span></span>
+            </div>
+          </td>
+          <td><span class="status ${toneClass(skill.riskTone)}"><span class="dot"></span>${skill.risk}</span></td>
+          <td><span class="status ${toneClass(skill.dependencyTone)}"><span class="dot"></span>${skill.dependency}</span></td>
+          <td class="num">${skill.bindings}</td>
+          <td>${skill.updated}</td>
+        </tr>
+      `).join("");
+      document.querySelector("#skill-table").innerHTML = rows;
+    }
+
+    function renderCards() {
+      const cards = skills.map((skill) => `
+        <button class="skill-card ${skill.id === selectedSkillId ? "selected" : ""}" data-skill-id="${skill.id}">
+          <span class="skill-card-head">
+            <span class="icon-tile ${toneClass(skill.tone)}"><i data-lucide="${skill.icon}"></i></span>
+            <span>
+              <h3>${skill.name}</h3>
+              <p>${skill.description}</p>
+            </span>
+          </span>
+          <span class="tag-list">
+            <span class="status ${toneClass(skill.riskTone)}"><span class="dot"></span>${skill.risk}</span>
+            <span class="status ${toneClass(skill.dependencyTone)}"><span class="dot"></span>${skill.dependency}</span>
+          </span>
+          <span class="card-meta">
+            <span class="meta-row"><span>绑定范围</span><strong>${skill.bindings}</strong></span>
+            <span class="meta-row"><span>最近调用</span><strong>${skill.usage}</strong></span>
+            <span class="meta-row"><span>版本</span><strong>${skill.version}</strong></span>
+          </span>
+        </button>
+      `).join("");
+      document.querySelector("#skill-cards").innerHTML = cards;
+    }
+
+    function renderRail() {
+      const rail = skills.map((skill) => `
+        <button class="rail-button ${skill.id === selectedSkillId ? "selected" : ""}" data-skill-id="${skill.id}">
+          <span class="icon-tile ${toneClass(skill.tone)}"><i data-lucide="${skill.icon}"></i></span>
+          <span><strong>${skill.name}</strong><span>${skill.risk} · ${skill.version}</span></span>
+        </button>
+      `).join("");
+      document.querySelector("#skill-rail").innerHTML = rail;
+    }
+
+    function renderTargetItems(selector, skill) {
+      const targets = [
+        ...skill.teams.map((name) => ["团队", name, "tone-info"]),
+        ...skill.agents.slice(0, 3).map((name) => ["数字员工", name, "tone-artifact"])
+      ].map(([kind, name, tone]) => `
+        <div class="target-item">
+          <span><strong>${name}</strong><span>${kind}绑定 · 可在对应详情页只读查看</span></span>
+          <span class="status ${tone}"><span class="dot"></span>可见</span>
+        </div>
+      `).join("");
+      document.querySelectorAll(selector).forEach((node) => {
+        node.innerHTML = targets;
+      });
+    }
+
+    function renderDependencies(selector, skill) {
+      const dependencies = skill.dependencies.map(([kind, value, tone]) => `
+        <div class="dependency-item">
+          <span><strong>${kind}</strong><span>${value}</span></span>
+          <span class="status ${tone}"><span class="dot"></span>${tone === "tone-ok" ? "通过" : tone === "tone-warn" ? "需处理" : "可用"}</span>
+        </div>
+      `).join("");
+      document.querySelectorAll(selector).forEach((node) => {
+        node.innerHTML = dependencies;
+      });
+    }
+
+    function renderTags(skill) {
+      const tags = skill.tags.map((tag) => `<span class="chip">${tag}</span>`).join("");
+      document.querySelectorAll("[data-detail-tags]").forEach((node) => {
+        node.innerHTML = tags;
+      });
+    }
+
+    function renderGovernance(skill) {
+      setText("[data-governance-name]", skill.name);
+      setText("[data-governance-description]", skill.description);
+      setText("[data-governance-team-count]", `${skill.teams.length} 个团队已绑定：${skill.teams.join("、")}`);
+      setText("[data-governance-agent-count]", `${skill.agents.length} 个数字员工可见，继承关系在员工页只读呈现`);
+      setText("[data-governance-dependency]", skill.dependencies.map((item) => item[1]).join("；"));
+      setText("[data-governance-checksum]", skill.checksum);
+      document.querySelector("[data-governance-risk-pill]").className = `status ${toneClass(skill.riskTone)}`;
+      document.querySelector("[data-governance-risk-pill]").innerHTML = `<span class="dot"></span>${skill.risk}`;
+      renderTargetItems("[data-governance-targets]", skill);
+      const audit = skill.audit.map(([time, title, detail]) => `
+        <div class="audit-item">
+          <time>${time}</time>
+          <span><strong>${title}</strong><span>${detail}</span></span>
+          <span class="status tone-mute"><span class="dot"></span>已记录</span>
+        </div>
+      `).join("");
+      document.querySelector("[data-governance-audit]").innerHTML = audit;
+    }
+
+    function renderDetails() {
+      const skill = selectedSkill();
+      setText("[data-detail-name]", skill.name);
+      setText("[data-detail-description]", skill.description);
+      setText("[data-detail-version]", skill.version);
+      setText("[data-detail-source]", skill.source);
+      setText("[data-detail-risk]", skill.risk);
+      setText("[data-detail-usage]", skill.usage);
+      setText("[data-workbench-name]", skill.name);
+      setText("[data-workbench-description]", skill.description);
+      setText("[data-workbench-step-skill]", `${skill.name} · ${skill.version}`);
+      setText("[data-workbench-dependency-summary]", skill.dependencies.map((item) => item[1]).join("；"));
+      setText("[data-workbench-approval]", skill.approval);
+      setText("[data-workbench-version]", skill.version);
+      setText("[data-workbench-source]", skill.source);
+      setText("[data-workbench-risk]", skill.risk);
+      setText("[data-workbench-usage]", skill.usage);
+      setIconTile("[data-detail-tone]", skill);
+      setIconTile("[data-workbench-tone]", skill);
+      renderTargetItems("[data-detail-targets]", skill);
+      renderTargetItems("[data-workbench-targets]", skill);
+      renderDependencies("[data-detail-dependencies]", skill);
+      renderTags(skill);
+      renderGovernance(skill);
+    }
+
+    function renderAll() {
+      renderTable();
+      renderCards();
+      renderRail();
+      renderDetails();
+      bindSkillClicks();
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    }
+
+    function bindSkillClicks() {
+      document.querySelectorAll("[data-skill-id]").forEach((node) => {
+        node.onclick = () => {
+          selectedSkillId = node.getAttribute("data-skill-id");
+          renderAll();
+        };
+      });
+    }
+
+    document.querySelectorAll("[data-concept-button]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeConcept = button.getAttribute("data-concept-button");
+        document.querySelectorAll("[data-concept-button]").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        document.querySelectorAll("[data-concept]").forEach((panel) => {
+          panel.classList.toggle("active", panel.getAttribute("data-concept") === activeConcept);
+        });
+      });
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>

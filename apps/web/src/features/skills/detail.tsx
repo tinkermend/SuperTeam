@@ -1,0 +1,479 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import {
+  ArrowLeft,
+  Blocks,
+  Bot,
+  CalendarClock,
+  FileArchive,
+  Fingerprint,
+  PackageCheck,
+  ServerCog,
+  ShieldCheck,
+  UserRound,
+  Users,
+  Wrench,
+} from "lucide-react";
+import {
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  V3MetricCard,
+  V3PageHeader,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
+import { Header } from "@/components/layout/header";
+import { Main } from "@/components/layout/main";
+import { Search } from "@/components/search";
+import { ThemeSwitch } from "@/components/theme-switch";
+import { getSkill, type Skill } from "@/lib/api/skills";
+
+type SkillDetailViewProps = {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
+  skillId: string;
+};
+
+const riskTone: Record<string, V3Tone> = {
+  critical: "danger",
+  high: "danger",
+  low: "ok",
+  medium: "warn",
+};
+
+const riskLabel: Record<string, string> = {
+  critical: "高风险",
+  high: "高风险",
+  low: "低风险",
+  medium: "中风险",
+};
+
+export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailViewProps) {
+  const skill = useQuery({
+    queryKey: ["skill", skillId],
+    queryFn: () => getSkill({ baseUrl: apiBaseUrl, fetcher }, skillId),
+  });
+  const errorMessage = skill.error instanceof Error ? skill.error.message : undefined;
+
+  return (
+    <>
+      <Header>
+        <Search />
+        <ThemeSwitch />
+      </Header>
+      <Main className="min-w-0 overflow-x-hidden">
+        {skill.isPending ? (
+          <WorkSurface>
+            <V3LoadingState label="加载技能档案…" />
+          </WorkSurface>
+        ) : skill.isError || !skill.data ? (
+          <WorkSurface className="p-4">
+            <V3ErrorState
+              title="技能档案加载失败"
+              description={errorMessage ?? "请检查技能详情接口和当前权限。"}
+            />
+          </WorkSurface>
+        ) : (
+          <SkillArchiveDetail skill={skill.data} />
+        )}
+      </Main>
+    </>
+  );
+}
+
+function SkillArchiveDetail({ skill }: { skill: Skill }) {
+  const risk = normalizeRisk(skill.risk_level);
+  const dependencyCount =
+    (skill.runtime_dependencies?.tools?.length ?? 0) + (skill.runtime_dependencies?.env?.length ?? 0);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-5">
+      <V3PageHeader
+        back={
+          <V3Button asChild size="icon" variant="outline">
+            <Link aria-label="返回技能市场" to="/skills">
+              <ArrowLeft />
+            </Link>
+          </V3Button>
+        }
+        title={skill.name}
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>技能档案</span>
+            <span className="text-v3-ink-3">/</span>
+            <span className="font-mono">{skill.slug}</span>
+          </span>
+        }
+        actions={
+          <>
+            <V3Button disabled className="h-10 px-4" type="button">
+              安装到...
+            </V3Button>
+            <StatusPill tone="mute">即将支持</StatusPill>
+            <V3Button asChild variant="outline">
+              <Link to="/skills">返回技能市场</Link>
+            </V3Button>
+          </>
+        }
+      />
+
+      <SoftCard className="p-5">
+        <div
+          className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.58fr)_minmax(320px,0.5fr)] xl:items-start"
+          data-testid="skill-detail-hero-layout"
+        >
+          <div className="flex min-w-0 items-start gap-4" data-testid="skill-detail-identity">
+            <IconTile tone={toneFromColor(skill.color_token)} size="lg">
+              <Blocks />
+            </IconTile>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xl font-extrabold text-v3-ink">{skill.name}</p>
+                <StatusPill tone={riskTone[risk]}>{riskLabel[risk]}</StatusPill>
+                <StatusPill tone={dependencyCount > 0 ? "warn" : "ok"}>
+                  {dependencyCount > 0 ? "有运行依赖" : "无运行依赖"}
+                </StatusPill>
+              </div>
+              <p className="mt-2 max-w-4xl text-[13px] leading-6 text-v3-ink-2">
+                {skill.description}
+              </p>
+              <SkillTagStrip tags={skill.tags} />
+            </div>
+          </div>
+          <div
+            className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner p-4"
+            data-testid="skill-detail-declaration"
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <ShieldCheck className="size-4 text-v3-warn" />
+              <span className="text-sm font-extrabold text-v3-ink">创建者声明</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone={riskTone[risk]}>{riskLabel[risk]}</StatusPill>
+              <StatusPill tone="mute">风险等级来自上传表单</StatusPill>
+            </div>
+            <div className="mt-4 rounded-[14px] bg-v3-card px-3 py-2.5">
+              <p className="text-xs font-bold text-v3-ink-3">风险说明</p>
+              <p className="mt-1 text-sm font-semibold text-v3-ink">未记录单独风险说明</p>
+            </div>
+          </div>
+          <div className="grid min-w-0 grid-cols-2 gap-2 text-[13px] sm:grid-cols-4 lg:grid-cols-2">
+            <MiniField label="版本" value={skill.version} />
+            <MiniField label="来源" value={sourceLabel(skill.source)} />
+            <MiniField label="创建人" value={skill.created_by_name || skill.created_by} />
+            <MiniField label="最近更新" value={formatDateTime(skill.updated_at)} />
+          </div>
+        </div>
+      </SoftCard>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="技能档案指标">
+        <V3MetricCard
+          icon={<PackageCheck />}
+          iconTone="brand"
+          label="安装目标"
+          meta="团队与数字员工绑定总数"
+          value={skill.team_bindings.length + skill.agent_bindings.length}
+        />
+        <V3MetricCard icon={<Users />} iconTone="info" label="团队安装" value={skill.team_bindings.length} />
+        <V3MetricCard icon={<Bot />} iconTone="artifact" label="数字员工安装" value={skill.agent_bindings.length} />
+        <V3MetricCard icon={<Wrench />} iconTone="warn" label="运行要求" value={dependencyCount} />
+      </section>
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <div className="flex min-w-0 flex-col gap-5">
+          <DetailSection
+            action={
+              <div className="flex items-center gap-2">
+                <V3Button disabled size="sm" type="button">
+                  安装到...
+                </V3Button>
+                <StatusPill tone="mute">即将支持</StatusPill>
+              </div>
+            }
+            icon={<Users />}
+            title="安装范围"
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              <BindingList
+                empty="暂无团队安装"
+                icon={<Users />}
+                items={skill.team_bindings.map((binding) => ({
+                  id: binding.team_id,
+                  meta: "团队安装",
+                  name: binding.team_name || binding.team_id,
+                  tone: "info",
+                }))}
+                title="团队安装"
+              />
+              <BindingList
+                empty="暂无数字员工安装"
+                icon={<Bot />}
+                items={skill.agent_bindings.map((binding) => ({
+                  id: binding.agent_id,
+                  meta: [binding.team_name || binding.team_id, binding.status].filter(Boolean).join(" / ") || binding.status,
+                  name: binding.agent_name || binding.agent_id,
+                  tone: "artifact",
+                }))}
+                title="数字员工安装"
+              />
+            </div>
+          </DetailSection>
+
+          <DetailSection icon={<ServerCog />} title="运行要求">
+            <div className="mb-4 rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-2">
+              当前仅展示创建者声明的运行要求，不做本地检测或依赖验证。
+            </div>
+            <DependencyGroup label="CLI 工具" items={skill.runtime_dependencies?.tools ?? []} />
+            <DependencyGroup label="环境变量" items={skill.runtime_dependencies?.env ?? []} />
+          </DetailSection>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          <DetailSection icon={<PackageCheck />} title="上传与存储信息">
+            <div
+              className="overflow-hidden rounded-v3-inner border border-v3-line bg-v3-card-inner"
+              data-testid="skill-upload-metadata"
+            >
+              <DataRow label="Slug" value={skill.slug} mono />
+              <DataRow label="归档包" value={skill.archive_filename} />
+              <DataRow label="对象引用" value={skill.archive_object_ref} mono />
+              <DataRow label="文件大小" value={formatBytes(skill.archive_size_bytes)} />
+              <DataRow label="文件数量" value={`${skill.archive_file_count} 个文件`} />
+              <DataRow label="SHA256" value={skill.archive_checksum_sha256} mono wrap />
+              <DataRow label="创建人" value={skill.created_by_name || skill.created_by} />
+              <DataRow label="创建时间" value={formatDateTime(skill.created_at)} />
+              <DataRow label="更新时间" value={formatDateTime(skill.updated_at)} />
+            </div>
+          </DetailSection>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillTagStrip({ tags }: { tags: string[] }) {
+  if (tags.length === 0) return null;
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2" data-testid="skill-detail-tags">
+      {tags.map((tag) => (
+        <span className="rounded-lg bg-v3-mute-soft px-2.5 py-1 text-xs font-semibold text-v3-ink-2" key={tag}>
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DetailSection({
+  action,
+  children,
+  icon,
+  title,
+}: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <WorkSurface>
+      <div className="flex flex-col gap-3 border-b border-v3-line p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <IconTile tone="brand" size="sm">
+            {icon}
+          </IconTile>
+          <h3 className="text-base font-extrabold text-v3-ink">{title}</h3>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </WorkSurface>
+  );
+}
+
+function BindingList({
+  empty,
+  icon,
+  items,
+  title,
+}: {
+  empty: string;
+  icon: React.ReactNode;
+  items: Array<{ id: string; meta: string; name: string; tone: V3Tone }>;
+  title: string;
+}) {
+  const countText = `${items.length} 个`;
+
+  if (items.length === 0) {
+    return (
+      <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner">
+        <BindingListHeader count={countText} icon={icon} title={title} />
+        <V3EmptyState className="py-10" title={empty} description="安装能力暂未开放，当前仅展示已有绑定数据。" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner">
+      <BindingListHeader count={countText} icon={icon} title={title} />
+      <div className="grid gap-3 p-3">
+        {items.map((item) => (
+          <div
+            className="flex min-w-0 items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card p-3"
+            key={item.id}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <IconTile tone={item.tone} size="sm">
+                {item.tone === "artifact" ? <Bot /> : <Users />}
+              </IconTile>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-v3-ink">{item.name}</p>
+                <p className="mt-0.5 text-xs text-v3-ink-3">{item.meta}</p>
+              </div>
+            </div>
+            <StatusPill tone={item.tone}>已安装</StatusPill>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BindingListHeader({
+  count,
+  icon,
+  title,
+}: {
+  count: string;
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-v3-line px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="text-v3-ink-3 [&_svg]:size-4">{icon}</span>
+        <p className="truncate text-sm font-extrabold text-v3-ink">{title}</p>
+      </div>
+      <span className="text-xs font-bold text-v3-ink-3">{count}</span>
+    </div>
+  );
+}
+
+function DependencyGroup({ items, label }: { items: string[]; label: string }) {
+  return (
+    <div className="not-last:mb-4">
+      <p className="mb-2 text-xs font-bold text-v3-ink-3">{label}</p>
+      {items.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <span
+              className="rounded-lg bg-v3-warn-soft px-2.5 py-1 font-mono text-xs font-semibold text-v3-warn"
+              key={item}
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <EmptyText>无声明</EmptyText>
+      )}
+    </div>
+  );
+}
+
+function DataRow({
+  label,
+  mono,
+  value,
+  wrap,
+}: {
+  label: string;
+  mono?: boolean;
+  value: string;
+  wrap?: boolean;
+}) {
+  return (
+    <div className="grid gap-1 border-b border-v3-line px-3 py-2.5 last:border-b-0 sm:grid-cols-[108px_minmax(0,1fr)] sm:items-center sm:gap-3">
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-bold text-v3-ink-3">
+        <DataIcon label={label} />
+        {label}
+      </span>
+      <span
+        className={[
+          "min-w-0 text-sm font-semibold text-v3-ink",
+          mono ? "font-mono text-xs" : "",
+          wrap ? "break-all" : "truncate",
+        ].join(" ")}
+      >
+        {value || "未记录"}
+      </span>
+    </div>
+  );
+}
+
+function DataIcon({ label }: { label: string }) {
+  if (label.includes("时间")) return <CalendarClock className="size-3.5" />;
+  if (label.includes("SHA")) return <Fingerprint className="size-3.5" />;
+  if (label.includes("创建人")) return <UserRound className="size-3.5" />;
+  if (label.includes("风险")) return <ShieldCheck className="size-3.5" />;
+  return <FileArchive className="size-3.5" />;
+}
+
+function MiniField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner px-3 py-2">
+      <span className="block text-[11px] font-bold text-v3-ink-3">{label}</span>
+      <span className="mt-1 block truncate text-[13px] font-bold text-v3-ink">{value || "未记录"}</span>
+    </div>
+  );
+}
+
+function EmptyText({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-3">{children}</p>;
+}
+
+function normalizeRisk(riskLevel: string) {
+  const normalized = riskLevel.toLowerCase();
+  if (normalized === "high" || normalized === "critical") return "high";
+  if (normalized === "medium") return "medium";
+  return "low";
+}
+
+function toneFromColor(colorToken: string): V3Tone {
+  if (colorToken === "violet") return "artifact";
+  if (colorToken === "emerald") return "ok";
+  if (colorToken === "cyan" || colorToken === "blue") return "info";
+  return "brand";
+}
+
+function sourceLabel(source: string) {
+  if (source === "upload") return "上传";
+  if (source === "system") return "系统内置";
+  return source || "未记录";
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}

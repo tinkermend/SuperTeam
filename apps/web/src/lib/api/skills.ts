@@ -180,6 +180,21 @@ export async function listSkills(
   return parseJson<Skill[]>(response, "skills");
 }
 
+export async function getSkill(
+  options: ApiClientOptions,
+  skillId: string,
+): Promise<Skill> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}`), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "GET",
+  });
+
+  return parseJson<Skill>(response, "skill detail");
+}
+
 export async function uploadSkill(
   options: ApiClientOptions,
   input: UploadSkillInput,

@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-style="command">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>顶部栏设计方向 · SuperTeam 技能管理</title>
+  <style>
+    :root {
+      --ink: #0b0d12;
+      --ink-2: #5f6b7a;
+      --ink-3: #8c98a8;
+      --brand: #2f5fff;
+      --brand-deep: #2348e0;
+      --brand-soft: rgba(47, 95, 255, .10);
+      --ok: #15a06b;
+      --ok-soft: rgba(21, 160, 107, .12);
+      --warn: #cf7a14;
+      --warn-soft: rgba(207, 122, 20, .14);
+      --danger: #e5484d;
+      --danger-soft: rgba(229, 72, 77, .13);
+      --artifact: #7c5cff;
+      --artifact-soft: rgba(124, 92, 255, .13);
+      --line: rgba(15, 23, 42, .08);
+      --line-strong: rgba(15, 23, 42, .14);
+      --card: rgba(255, 255, 255, .78);
+      --card-solid: #ffffff;
+      --card-soft: rgba(255, 255, 255, .52);
+      --work: rgba(255, 255, 255, .90);
+      --header: rgba(255, 255, 255, .72);
+      --sidebar: rgba(255, 255, 255, .60);
+      --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 22px 58px rgba(15, 23, 42, .09);
+      --shadow-soft: 0 1px 2px rgba(15, 23, 42, .04), 0 14px 34px rgba(15, 23, 42, .065);
+      --r-card: 22px;
+      --r-inner: 14px;
+      --r-pill: 9px;
+      --sans: "Avenir Next", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    html[data-style="command"] {
+      --scene:
+        radial-gradient(circle at 22% 12%, rgba(47, 95, 255, .15), transparent 30%),
+        radial-gradient(circle at 88% 12%, rgba(21, 160, 107, .10), transparent 29%),
+        linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
+      --header: rgba(255, 255, 255, .76);
+      --sidebar: rgba(255, 255, 255, .62);
+      --accent-line: rgba(47, 95, 255, .34);
+      --texture: rgba(47, 95, 255, .045);
+    }
+
+    html[data-style="signal"] {
+      --scene:
+        radial-gradient(circle at 36% 0%, rgba(47, 95, 255, .18), transparent 24%),
+        radial-gradient(circle at 94% 2%, rgba(124, 92, 255, .12), transparent 27%),
+        linear-gradient(180deg, #f5f8fc 0%, #edf2f7 46%, #f8fafc 100%);
+      --header: rgba(250, 252, 255, .82);
+      --sidebar: rgba(248, 251, 255, .68);
+      --accent-line: rgba(15, 23, 42, .20);
+      --texture: rgba(15, 23, 42, .052);
+    }
+
+    html[data-style="lens"] {
+      --scene:
+        radial-gradient(circle at 18% 10%, rgba(47, 95, 255, .12), transparent 28%),
+        radial-gradient(circle at 80% 18%, rgba(21, 160, 107, .09), transparent 28%),
+        linear-gradient(135deg, #fbfcff 0%, #edf2f8 58%, #f8fafc 100%);
+      --header: rgba(255, 255, 255, .42);
+      --sidebar: rgba(255, 255, 255, .48);
+      --accent-line: rgba(255, 255, 255, .76);
+      --texture: rgba(47, 95, 255, .035);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      min-width: 320px;
+      color: var(--ink);
+      background: var(--scene);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      content: "";
+      background:
+        linear-gradient(90deg, var(--texture) 1px, transparent 1px),
+        linear-gradient(180deg, var(--texture) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, .86), rgba(0, 0, 0, .40) 56%, transparent);
+      pointer-events: none;
+    }
+
+    body::after {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: .34;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.74' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.28'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .mono {
+      font-family: var(--mono);
+    }
+
+    .num {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 244px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px 14px 16px;
+      border-right: 1px solid rgba(255, 255, 255, .68);
+      background: var(--sidebar);
+      box-shadow: 16px 0 46px rgba(15, 23, 42, .045);
+      backdrop-filter: blur(24px) saturate(1.3);
+      -webkit-backdrop-filter: blur(24px) saturate(1.3);
+    }
+
+    html[data-style="signal"] .sidebar {
+      border-right-color: rgba(47, 95, 255, .12);
+      box-shadow: 12px 0 42px rgba(47, 95, 255, .055);
+    }
+
+    html[data-style="lens"] .sidebar {
+      border-right-color: rgba(255, 255, 255, .72);
+      box-shadow: 10px 0 34px rgba(15, 23, 42, .035);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 42px;
+      padding: 0 8px 18px;
+      border-bottom: 1px solid rgba(15, 23, 42, .07);
+      font-weight: 820;
+      letter-spacing: -.02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 13px;
+      color: white;
+      background: linear-gradient(135deg, #5b8bff, #2f5fff 62%, #2348e0);
+      box-shadow: 0 12px 24px rgba(47, 95, 255, .28);
+      font-size: 13px;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 1px;
+      color: var(--ink-3);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .nav-group {
+      margin-top: 18px;
+    }
+
+    .nav-title {
+      margin: 0 10px 8px;
+      color: var(--ink-3);
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .09em;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      width: 100%;
+      margin: 2px 0;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 12px;
+      color: var(--ink-2);
+      background: transparent;
+      text-align: left;
+      font-weight: 680;
+    }
+
+    .nav-item:hover {
+      color: var(--ink);
+      background: rgba(255, 255, 255, .46);
+    }
+
+    .nav-item.active {
+      position: relative;
+      color: var(--brand-deep);
+      background: rgba(233, 239, 255, .74);
+      box-shadow: inset 0 0 0 1px rgba(47, 95, 255, .10);
+    }
+
+    html[data-style="signal"] .nav-item.active {
+      color: #0f172a;
+      background: linear-gradient(90deg, rgba(233, 239, 255, .86), rgba(255, 255, 255, .50));
+    }
+
+    html[data-style="lens"] .nav-item.active {
+      background: rgba(255, 255, 255, .72);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, .06), inset 0 0 0 1px rgba(47, 95, 255, .11);
+    }
+
+    .nav-item.active::before {
+      width: 3px;
+      height: 18px;
+      border-radius: 99px;
+      background: var(--brand);
+      content: "";
+    }
+
+    .nav-code {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 9px;
+      color: inherit;
+      background: rgba(100, 116, 139, .10);
+      font-size: 12px;
+      font-weight: 820;
+    }
+
+    .sidebar-foot {
+      position: absolute;
+      right: 14px;
+      bottom: 16px;
+      left: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .node-card {
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, .70);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .48);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, .055);
+    }
+
+    .node-card strong {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .node-card p {
+      margin: 6px 0 0;
+      color: var(--ink-3);
+      font-size: 11.5px;
+    }
+
+    .main {
+      min-width: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      height: 58px;
+      border-bottom: 1px solid rgba(15, 23, 42, .075);
+      background: var(--header);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, .62) inset;
+      backdrop-filter: blur(22px) saturate(1.24);
+      -webkit-backdrop-filter: blur(22px) saturate(1.24);
+    }
+
+    .topbar::before {
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(23, 49, 79, .72), var(--brand), transparent 72%);
+      content: "";
+      opacity: .62;
+    }
+
+    html[data-style="signal"] .topbar::before {
+      opacity: .28;
+    }
+
+    html[data-style="lens"] .topbar {
+      border-bottom-color: rgba(255, 255, 255, .58);
+      box-shadow: none;
+    }
+
+    html[data-style="lens"] .topbar::before {
+      opacity: .22;
+    }
+
+    .bar {
+      display: none;
+      align-items: center;
+      min-width: 0;
+      height: 100%;
+      gap: 10px;
+      padding: 8px 22px;
+    }
+
+    html[data-style="command"] .bar-command,
+    html[data-style="signal"] .bar-signal,
+    html[data-style="lens"] .bar-lens {
+      display: flex;
+    }
+
+    .header-left,
+    .header-right,
+    .action-group,
+    .user-chip {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .header-left {
+      flex: 1;
+      gap: 12px;
+    }
+
+    .header-right {
+      flex: 0 0 auto;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .action-group {
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid rgba(15, 23, 42, .075);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, .50);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .035);
+      backdrop-filter: blur(14px) saturate(1.18);
+      -webkit-backdrop-filter: blur(14px) saturate(1.18);
+    }
+
+    .icon-button,
+    .pill-button,
+    .primary-button,
+    .split-button,
+    .workspace-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, .76);
+      color: var(--ink-2);
+      background: rgba(255, 255, 255, .52);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .035);
+      backdrop-filter: blur(14px) saturate(1.2);
+      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    }
+
+    .icon-button {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      font-weight: 820;
+    }
+
+    .pill-button,
+    .workspace-pill {
+      min-height: 36px;
+      gap: 8px;
+      padding: 0 12px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .primary-button,
+    .split-button {
+      min-height: 36px;
+      gap: 8px;
+      padding: 0 14px;
+      border-color: rgba(47, 95, 255, .20);
+      border-radius: 12px;
+      color: white;
+      background: linear-gradient(135deg, #5b8bff, #2f5fff 62%, #2348e0);
+      box-shadow: 0 10px 22px rgba(47, 95, 255, .18);
+      font-size: 13px;
+      font-weight: 790;
+      white-space: nowrap;
+    }
+
+    .split-button {
+      border-radius: 0;
+      box-shadow: none;
+    }
+
+    .split-button:first-child {
+      border-top-left-radius: 12px;
+      border-bottom-left-radius: 12px;
+    }
+
+    .split-button:last-child {
+      width: 38px;
+      padding: 0;
+      border-left-color: rgba(255, 255, 255, .36);
+      border-top-right-radius: 12px;
+      border-bottom-right-radius: 12px;
+    }
+
+    .group-icon {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-right: 1px solid rgba(15, 23, 42, .065);
+      color: var(--ink-2);
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+      font-weight: 820;
+    }
+
+    .group-icon:last-child {
+      border-right: 0;
+    }
+
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+      min-width: 260px;
+      height: 38px;
+      flex: 1;
+      padding: 0 10px 0 14px;
+      border: 1px solid rgba(15, 23, 42, .06);
+      border-radius: 14px;
+      color: var(--ink-2);
+      background: rgba(255, 255, 255, .58);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .70);
+    }
+
+    .search-box::before {
+      width: 15px;
+      height: 15px;
+      margin-right: 12px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      content: "";
+      opacity: .72;
+    }
+
+    .search-box::after {
+      width: 7px;
+      height: 2px;
+      margin-left: -15px;
+      margin-right: 13px;
+      border-radius: 99px;
+      background: currentColor;
+      content: "";
+      opacity: .72;
+      transform: rotate(45deg) translate(8px, 8px);
+    }
+
+    .search-placeholder {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      color: var(--ink-2);
+      font-size: 13.5px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .keycap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      height: 26px;
+      padding: 0 9px;
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 9px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, .78);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, .08), inset 0 1px 0 rgba(255, 255, 255, .88);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 820;
+    }
+
+    .notify-dot {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      width: 8px;
+      height: 8px;
+      border: 2px solid rgba(255, 255, 255, .84);
+      border-radius: 50%;
+      background: #d77cf2;
+      content: "";
+    }
+
+    .user-chip {
+      gap: 8px;
+      min-height: 38px;
+      padding: 4px 10px 4px 4px;
+      border: 1px solid rgba(255, 255, 255, .74);
+      border-radius: 999px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, .58);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+      font-size: 12.5px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .user-chip span {
+      color: var(--ink-3);
+      font-weight: 700;
+    }
+
+    html[data-style="command"] .search-box {
+      max-width: 620px;
+      border-color: rgba(15, 23, 42, .055);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .62);
+    }
+
+    html[data-style="signal"] .bar {
+      gap: 12px;
+    }
+
+    html[data-style="signal"] .search-box {
+      max-width: 560px;
+      border-color: rgba(47, 95, 255, .14);
+      background:
+        linear-gradient(90deg, rgba(47, 95, 255, .050) 1px, transparent 1px),
+        rgba(255, 255, 255, .66);
+      background-size: 22px 22px;
+    }
+
+    html[data-style="signal"] .workspace-pill {
+      color: var(--brand-deep);
+      border-color: rgba(47, 95, 255, .13);
+      background: rgba(233, 239, 255, .62);
+    }
+
+    html[data-style="lens"] .bar {
+      padding-inline: 18px 22px;
+    }
+
+    html[data-style="lens"] .search-box {
+      max-width: 640px;
+      height: 40px;
+      margin: 0 auto;
+      border-color: rgba(255, 255, 255, .78);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .50);
+      box-shadow: 0 14px 34px rgba(15, 23, 42, .07), inset 0 1px 0 rgba(255, 255, 255, .82);
+      backdrop-filter: blur(28px) saturate(1.36);
+      -webkit-backdrop-filter: blur(28px) saturate(1.36);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+    }
+
+    .thin-separator {
+      width: 1px;
+      height: 24px;
+      background: rgba(15, 23, 42, .08);
+    }
+
+    .page {
+      padding: 24px 28px 54px;
+    }
+
+    .prototype-note {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, .72);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .46);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(18px) saturate(1.2);
+      -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    }
+
+    .prototype-note strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 14px;
+      letter-spacing: -.01em;
+    }
+
+    .prototype-note span {
+      color: var(--ink-2);
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--brand-deep);
+      font-size: 12px;
+      font-weight: 820;
+      letter-spacing: .08em;
+    }
+
+    .page-head h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 38px);
+      line-height: 1.08;
+      letter-spacing: -.045em;
+    }
+
+    .page-head p {
+      max-width: 660px;
+      margin: 10px 0 0;
+      color: var(--ink-2);
+      font-size: 14.5px;
+      font-weight: 580;
+    }
+
+    .page-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1.15fr repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      border: 1px solid rgba(255, 255, 255, .72);
+      border-radius: var(--r-card);
+      background: var(--card);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(18px) saturate(1.22);
+      -webkit-backdrop-filter: blur(18px) saturate(1.22);
+    }
+
+    .health-card {
+      position: relative;
+      overflow: hidden;
+      min-height: 148px;
+      padding: 22px;
+    }
+
+    .health-card::after {
+      position: absolute;
+      right: -46px;
+      bottom: -70px;
+      width: 210px;
+      height: 210px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(47, 95, 255, .17), transparent 64%);
+      content: "";
+    }
+
+    .health-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .health-top strong,
+    .metric strong {
+      font-size: 14px;
+      letter-spacing: -.01em;
+    }
+
+    .health-score {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .health-score b {
+      font-size: 48px;
+      line-height: .9;
+      letter-spacing: -.045em;
+    }
+
+    .health-score span {
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .mini-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      margin-top: 18px;
+      max-width: 260px;
+      height: 26px;
+    }
+
+    .mini-bars i {
+      flex: 1;
+      border-radius: 4px 4px 2px 2px;
+      background: rgba(47, 95, 255, .16);
+    }
+
+    .mini-bars i:nth-child(3n) {
+      background: rgba(47, 95, 255, .46);
+    }
+
+    .metric {
+      min-height: 148px;
+      padding: 20px;
+    }
+
+    .metric b {
+      display: block;
+      margin-top: 20px;
+      font-size: 40px;
+      line-height: .96;
+      letter-spacing: -.04em;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 8px;
+      color: var(--ink-2);
+      font-size: 12.5px;
+      font-weight: 670;
+    }
+
+    .filters {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 22px 0 16px;
+    }
+
+    .tabs,
+    .filter-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      color: var(--ink-2);
+      background: transparent;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .tab.active {
+      color: var(--brand-deep);
+      border-color: rgba(47, 95, 255, .13);
+      background: rgba(233, 239, 255, .72);
+    }
+
+    .table-card {
+      overflow: hidden;
+    }
+
+    .table-head,
+    .skill-row {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.55fr) 132px 116px 128px 120px;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .table-head {
+      min-height: 48px;
+      padding: 0 18px;
+      color: var(--ink-3);
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .56);
+      font-size: 11px;
+      font-weight: 820;
+      letter-spacing: .08em;
+    }
+
+    .skill-row {
+      min-height: 82px;
+      padding: 0 18px;
+      border-bottom: 1px solid rgba(15, 23, 42, .055);
+      background: rgba(255, 255, 255, .38);
+    }
+
+    .skill-row:last-child {
+      border-bottom: 0;
+    }
+
+    .skill-main {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 12px;
+    }
+
+    .skill-icon {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 15px;
+      color: var(--brand-deep);
+      background: rgba(233, 239, 255, .74);
+      font-size: 13px;
+      font-weight: 860;
+    }
+
+    .skill-main strong {
+      display: block;
+      overflow: hidden;
+      font-size: 14.5px;
+      letter-spacing: -.01em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .skill-main span {
+      display: block;
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--ink-3);
+      font-size: 12px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: max-content;
+      min-height: 26px;
+      padding: 0 9px;
+      border-radius: 9px;
+      font-size: 11.5px;
+      font-weight: 790;
+      white-space: nowrap;
+    }
+
+    .badge.ok {
+      color: var(--ok);
+      background: var(--ok-soft);
+    }
+
+    .badge.warn {
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .badge.artifact {
+      color: var(--artifact);
+      background: var(--artifact-soft);
+    }
+
+    .badge.mute {
+      color: var(--ink-2);
+      background: rgba(100, 116, 139, .12);
+    }
+
+    .owner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink-2);
+      font-size: 12.5px;
+      font-weight: 720;
+    }
+
+    .avatar {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 10px;
+      color: white;
+      background: linear-gradient(135deg, #94a3b8, #475569);
+      font-size: 12px;
+      font-weight: 820;
+    }
+
+    .style-switcher {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 60;
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, .76);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .66);
+      box-shadow: 0 18px 44px rgba(15, 23, 42, .13);
+      backdrop-filter: blur(22px) saturate(1.28);
+      -webkit-backdrop-filter: blur(22px) saturate(1.28);
+    }
+
+    .style-switcher button {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      color: var(--ink-2);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 820;
+    }
+
+    .style-switcher button.active {
+      color: var(--brand-deep);
+      border-color: rgba(47, 95, 255, .16);
+      background: rgba(233, 239, 255, .82);
+    }
+
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: 76px minmax(0, 1fr);
+      }
+
+      .brand small,
+      .brand div:last-child,
+      .nav-title,
+      .nav-text,
+      .node-card {
+        display: none;
+      }
+
+      .brand {
+        justify-content: center;
+        padding-inline: 0;
+      }
+
+      .nav-item {
+        justify-content: center;
+      }
+
+      .nav-item.active::before {
+        display: none;
+      }
+
+      .search-box {
+        min-width: 220px;
+      }
+
+      .user-chip span:not(.avatar) {
+        display: none;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .health-card {
+        grid-column: 1 / -1;
+      }
+
+      .table-head,
+      .skill-row {
+        grid-template-columns: minmax(220px, 1fr) 116px 104px;
+      }
+
+      .table-head div:nth-child(4),
+      .table-head div:nth-child(5),
+      .skill-row > div:nth-child(4),
+      .skill-row > div:nth-child(5) {
+        display: none;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .topbar {
+        height: auto;
+        min-height: 58px;
+      }
+
+      .bar {
+        min-height: 58px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+      }
+
+      .header-left,
+      .header-right {
+        width: 100%;
+      }
+
+      .header-right {
+        justify-content: flex-start;
+      }
+
+      .search-box {
+        order: 6;
+        min-width: 100%;
+      }
+
+      .page {
+        padding: 18px 14px 92px;
+      }
+
+      .prototype-note,
+      .page-head,
+      .filters {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .table-card {
+        overflow-x: auto;
+      }
+
+      .table-head,
+      .skill-row {
+        min-width: 720px;
+      }
+
+      .style-switcher {
+        right: 12px;
+        bottom: 12px;
+        left: 12px;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">ST</div>
+        <div>
+          SuperTeam
+          <small>Control Plane</small>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-title">工作区</div>
+        <button class="nav-item"><span class="nav-code">台</span><span class="nav-text">工作台</span></button>
+        <button class="nav-item"><span class="nav-code">项</span><span class="nav-text">项目闭环</span></button>
+        <button class="nav-item"><span class="nav-code">人</span><span class="nav-text">数字员工</span></button>
+        <button class="nav-item active"><span class="nav-code">技</span><span class="nav-text">技能管理</span></button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-title">执行与治理</div>
+        <button class="nav-item"><span class="nav-code">流</span><span class="nav-text">流程编排</span></button>
+        <button class="nav-item"><span class="nav-code">审</span><span class="nav-text">审批收件箱</span></button>
+        <button class="nav-item"><span class="nav-code">R</span><span class="nav-text">Runtime 节点</span></button>
+        <button class="nav-item"><span class="nav-code">证</span><span class="nav-text">证据与审计</span></button>
+      </div>
+
+      <div class="sidebar-foot">
+        <div class="node-card">
+          <strong>节点健康 <span class="badge ok"><span class="dot"></span>4/4</span></strong>
+          <p>Control Plane、Runtime、Provider Adapter 均处于可调度状态。</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <section class="bar bar-command" aria-label="方案一：基础紧凑型">
+          <div class="header-left">
+            <button class="icon-button" aria-label="折叠菜单">☰</button>
+            <div class="thin-separator" aria-hidden="true"></div>
+            <div class="search-box">
+              <div class="search-placeholder">搜索或输入命令</div>
+              <span class="keycap">⌘ K</span>
+            </div>
+          </div>
+          <div class="header-right">
+            <div class="action-group" aria-label="新建">
+              <button class="split-button">＋ 新建</button>
+              <button class="split-button" aria-label="展开新建菜单">⌄</button>
+            </div>
+            <button class="icon-button" aria-label="切换主题">☼</button>
+            <button class="icon-button" aria-label="通知">⌁<span class="notify-dot"></span></button>
+            <button class="user-chip" aria-label="用户信息"><span class="avatar">林</span>林 Anna</button>
+          </div>
+        </section>
+
+        <section class="bar bar-signal" aria-label="方案二：分组工具型">
+          <div class="header-left">
+            <div class="action-group" aria-label="导航">
+              <button class="icon-button group-icon" aria-label="折叠菜单">☰</button>
+              <button class="icon-button group-icon" aria-label="返回">‹</button>
+            </div>
+            <div class="search-box">
+              <div class="search-placeholder">搜索任务、项目、成员或输入命令</div>
+              <span class="keycap">⌘ K</span>
+            </div>
+          </div>
+          <div class="header-right">
+            <button class="workspace-pill">默认工作区 ⌄</button>
+            <div class="action-group" aria-label="全局工具">
+              <button class="icon-button group-icon" aria-label="帮助">?</button>
+              <button class="icon-button group-icon" aria-label="切换主题">☼</button>
+              <button class="icon-button group-icon" aria-label="通知">⌁<span class="notify-dot"></span></button>
+            </div>
+            <button class="primary-button">＋ 新建</button>
+            <button class="user-chip" aria-label="用户信息"><span class="avatar">林</span><span>管理员</span></button>
+          </div>
+        </section>
+
+        <section class="bar bar-lens" aria-label="方案三：柔和融合型">
+          <div class="header-left">
+            <button class="icon-button" aria-label="折叠菜单">☰</button>
+            <div class="search-box">
+              <div class="search-placeholder">Search or type a command</div>
+              <span class="keycap">⌘ F</span>
+            </div>
+          </div>
+          <div class="header-right">
+            <div class="action-group" aria-label="新建">
+              <button class="split-button">＋ 新建</button>
+              <button class="split-button" aria-label="展开新建菜单">⌄</button>
+            </div>
+            <button class="icon-button" aria-label="切换主题">☼</button>
+            <button class="icon-button" aria-label="通知">⌁<span class="notify-dot"></span></button>
+            <button class="user-chip" aria-label="用户信息"><span class="avatar">林</span></button>
+          </div>
+        </section>
+      </header>
+
+      <section class="page">
+        <div class="prototype-note">
+          <div>
+            <strong id="style-name">方案一：基础紧凑型 Header</strong>
+            <span id="style-desc">最接近生产可落地版本：左侧折叠菜单 + 全局搜索，右侧新建、主题、通知、用户信息，完全不绑定当前页面功能。</span>
+          </div>
+          <span class="badge artifact">通用 Header · 高度 58px</span>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <div class="eyebrow"><span class="dot"></span>SKILL ORCHESTRATION</div>
+            <h1>技能管理</h1>
+            <p>管理数字员工可调用的技能、权限边界、版本状态和审计证据。顶部原型只改变 Shell 信息架构，主体内容保持一致，便于比较设计方向。</p>
+          </div>
+          <div class="page-actions">
+            <button class="pill-button">导入技能包</button>
+            <button class="primary-button">上架技能</button>
+          </div>
+        </div>
+
+        <section class="metric-grid">
+          <div class="card health-card">
+            <div class="health-top">
+              <strong>技能健康度</strong>
+              <span class="badge ok"><span class="dot"></span>可调度</span>
+            </div>
+            <div class="health-score"><b class="num">96</b><span>/ 100 综合评分</span></div>
+            <div class="mini-bars" aria-hidden="true">
+              <i style="height: 46%"></i><i style="height: 68%"></i><i style="height: 82%"></i><i style="height: 56%"></i><i style="height: 76%"></i><i style="height: 92%"></i><i style="height: 64%"></i><i style="height: 84%"></i><i style="height: 72%"></i><i style="height: 88%"></i>
+            </div>
+          </div>
+          <div class="card metric"><strong>已上架技能</strong><b class="num">212</b><span>较上周新增 18 个</span></div>
+          <div class="card metric"><strong>待审核版本</strong><b class="num">12</b><span>需要负责人确认</span></div>
+          <div class="card metric"><strong>近 24h 调用</strong><b class="num">8.4k</b><span>失败率 0.8%</span></div>
+        </section>
+
+        <div class="filters">
+          <div class="tabs">
+            <button class="tab active">全部技能 212</button>
+            <button class="tab">可调度 186</button>
+            <button class="tab">待审核 12</button>
+            <button class="tab">受限 14</button>
+          </div>
+          <div class="filter-actions">
+            <button class="pill-button">负责人</button>
+            <button class="pill-button">能力类型</button>
+            <button class="pill-button">最近更新</button>
+          </div>
+        </div>
+
+        <section class="card table-card">
+          <div class="table-head">
+            <div>技能</div>
+            <div>状态</div>
+            <div>调用量</div>
+            <div>负责人</div>
+            <div>版本</div>
+          </div>
+          <div class="skill-row">
+            <div class="skill-main">
+              <div class="skill-icon">检</div>
+              <div><strong>合同风险检查</strong><span>对合同条款进行结构化审查并输出证据包</span></div>
+            </div>
+            <div><span class="badge ok"><span class="dot"></span>可调度</span></div>
+            <div class="num">2,481</div>
+            <div class="owner"><span class="avatar">周</span>法务组</div>
+            <div class="mono">v2.8.1</div>
+          </div>
+          <div class="skill-row">
+            <div class="skill-main">
+              <div class="skill-icon">证</div>
+              <div><strong>证据包整理</strong><span>汇总 Runtime 日志、工件和人工审批结论</span></div>
+            </div>
+            <div><span class="badge artifact"><span class="dot"></span>灰度中</span></div>
+            <div class="num">1,904</div>
+            <div class="owner"><span class="avatar">林</span>平台组</div>
+            <div class="mono">v1.12.0</div>
+          </div>
+          <div class="skill-row">
+            <div class="skill-main">
+              <div class="skill-icon">流</div>
+              <div><strong>流程异常归因</strong><span>分析失败节点、审批阻塞和上下文缺口</span></div>
+            </div>
+            <div><span class="badge warn"><span class="dot"></span>待审核</span></div>
+            <div class="num">746</div>
+            <div class="owner"><span class="avatar">陈</span>流程组</div>
+            <div class="mono">v0.9.7</div>
+          </div>
+          <div class="skill-row">
+            <div class="skill-main">
+              <div class="skill-icon">审</div>
+              <div><strong>审计摘要生成</strong><span>按项目闭环输出可追踪的验收摘要</span></div>
+            </div>
+            <div><span class="badge ok"><span class="dot"></span>可调度</span></div>
+            <div class="num">3,265</div>
+            <div class="owner"><span class="avatar">王</span>治理组</div>
+            <div class="mono">v3.1.4</div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="style-switcher" aria-label="切换顶部栏方案">
+    <button type="button" class="active" data-style="command">1 基础紧凑</button>
+    <button type="button" data-style="signal">2 分组工具</button>
+    <button type="button" data-style="lens">3 柔和融合</button>
+  </div>
+
+  <script>
+    const copy = {
+      command: {
+        name: "方案一：基础紧凑型 Header",
+        desc: "最接近生产可落地版本：左侧折叠菜单 + 全局搜索，右侧新建、主题、通知、用户信息，完全不绑定当前页面功能。"
+      },
+      signal: {
+        name: "方案二：分组工具型 Header",
+        desc: "把导航、搜索、工作区、工具按钮分组，信息密度更高，但仍然只承载全局功能，不展示页面专属快捷方式。"
+      },
+      lens: {
+        name: "方案三：柔和融合型 Header",
+        desc: "更贴近你给的截图：搜索框更长、更轻，右侧动作独立成一组，整体高度收窄并与顶部背景自然融合。"
+      }
+    };
+
+    const buttons = document.querySelectorAll(".style-switcher button[data-style]");
+    const name = document.getElementById("style-name");
+    const desc = document.getElementById("style-desc");
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const style = button.dataset.style;
+        document.documentElement.dataset.style = style;
+        buttons.forEach((item) => item.classList.toggle("active", item === button));
+        name.textContent = copy[style].name;
+        desc.textContent = copy[style].desc;
+      });
+    });
+  </script>
+</body>
+</html>

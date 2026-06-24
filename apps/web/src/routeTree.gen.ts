@@ -40,6 +40,7 @@ import { Route as AuthenticatedTeamsNewRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams/$teamId'
 import { Route as AuthenticatedTaskLaunchesDemandIdRouteImport } from './routes/_authenticated/task-launches/$demandId'
 import { Route as AuthenticatedSkillsUploadRouteImport } from './routes/_authenticated/skills/upload'
+import { Route as AuthenticatedSkillsSkillIdRouteImport } from './routes/_authenticated/skills/$skillId'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects/$projectId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
@@ -217,6 +218,12 @@ const AuthenticatedSkillsUploadRoute =
     path: '/skills/upload',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedSkillsSkillIdRoute =
+  AuthenticatedSkillsSkillIdRouteImport.update({
+    id: '/skills/$skillId',
+    path: '/skills/$skillId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSettingsAccountRoute =
   AuthenticatedSettingsAccountRouteImport.update({
     id: '/settings/account',
@@ -274,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -313,6 +321,7 @@ export interface FileRoutesByTo {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -354,6 +363,7 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
+  '/_authenticated/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/_authenticated/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/_authenticated/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/projects/$projectId'
     | '/settings/account'
+    | '/skills/$skillId'
     | '/skills/upload'
     | '/task-launches/$demandId'
     | '/teams/$teamId'
@@ -434,6 +445,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/projects/$projectId'
     | '/settings/account'
+    | '/skills/$skillId'
     | '/skills/upload'
     | '/task-launches/$demandId'
     | '/teams/$teamId'
@@ -474,6 +486,7 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/settings/account'
+    | '/_authenticated/skills/$skillId'
     | '/_authenticated/skills/upload'
     | '/_authenticated/task-launches/$demandId'
     | '/_authenticated/teams/$teamId'
@@ -730,6 +743,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSkillsUploadRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/skills/$skillId': {
+      id: '/_authenticated/skills/$skillId'
+      path: '/skills/$skillId'
+      fullPath: '/skills/$skillId'
+      preLoaderRoute: typeof AuthenticatedSkillsSkillIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings/account': {
       id: '/_authenticated/settings/account'
       path: '/settings/account'
@@ -819,6 +839,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRouteWithChildren
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
+  AuthenticatedSkillsSkillIdRoute: typeof AuthenticatedSkillsSkillIdRoute
   AuthenticatedSkillsUploadRoute: typeof AuthenticatedSkillsUploadRoute
   AuthenticatedTaskLaunchesDemandIdRoute: typeof AuthenticatedTaskLaunchesDemandIdRoute
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
@@ -852,6 +873,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsProjectIdRoute:
     AuthenticatedProjectsProjectIdRouteWithChildren,
   AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
+  AuthenticatedSkillsSkillIdRoute: AuthenticatedSkillsSkillIdRoute,
   AuthenticatedSkillsUploadRoute: AuthenticatedSkillsUploadRoute,
   AuthenticatedTaskLaunchesDemandIdRoute:
     AuthenticatedTaskLaunchesDemandIdRoute,

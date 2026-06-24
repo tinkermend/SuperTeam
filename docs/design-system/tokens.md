@@ -34,6 +34,8 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 | 品牌主色 `--v3-brand` | `#2F5FFF` | `#E9EFFF` | 主按钮、导航激活、焦点、关键链接、signature 线条和局部 accent |
 | 品牌深色 `--v3-brand-deep` | `#2348E0` | — | 强调文字、按钮 hover、焦点边缘、小面积渐变终点 |
 | 中性底 `--v3-bg` | `#F8FAFC` | — | 页面底色（近白冷灰，不带色相） |
+| Shell 底 `--v3-shell-bg` / `--v3-shell-background` | `#F6F8FB` + 低对比渐变 | — | 登录页与控制台外壳背景，允许柔和 wash 与低对比网格，但不进入数据面 |
+| Shell 毛玻璃 `--v3-shell-glass*` | `rgba(255,255,255,.72-.88)` | — | 左侧导航、顶栏等壳层表面；内容卡片、表格和表单仍使用实底 token |
 | 卡片面 `--v3-card` | `#FFFFFF` | `--v3-card-soft #F7F8FA` | 柔和卡片、面板、表格容器外壳 |
 | 主文字 `--v3-ink` | `#0B0D12` | `--v3-ink-2 #697586` / `--v3-ink-3 #9AA4B2` | 黑色粗体大数字与标题、次级、三级文字 |
 | 边框 `--v3-line` | `#EEF1F4` | `--v3-line-strong #DFE4EA` | 卡片内分隔线、表格行线、表头底线 |
@@ -60,6 +62,14 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 
 - `--v3-brand`
 - `--v3-brand-deep`
+- `--v3-shell-bg`
+- `--v3-shell-background`
+- `--v3-shell-grid`
+- `--v3-shell-glass`
+- `--v3-shell-glass-strong`
+- `--v3-shell-glass-border`
+- `--v3-shell-glass-blur`
+- `--v3-shell-glass-saturate`
 - `--v3-bg`
 - `--v3-card`
 - `--v3-card-soft`

@@ -11,7 +11,6 @@ import {
   FileText,
   Grid2X2,
   List,
-  MoreHorizontal,
   ServerCog,
   ShieldCheck,
   Stethoscope,
@@ -155,7 +154,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             icon={<Blocks />}
             iconTone="artifact"
             title="技能市场"
-            subtitle="发现、校验并安装技能到团队或数字员工"
+            subtitle="发现、查看并治理技能档案与绑定范围"
             actions={
               <V3Button asChild className="h-11 self-start px-5">
               <Link to="/skills/upload">
@@ -471,8 +470,8 @@ function SkillMarketToolbar({
             onValueChange={(value) => onStatusFilterChange(value as StatusFilter)}
             options={[
               { label: "全部状态", value: "all" },
-              { label: "已安装", value: "installed" },
-              { label: "可安装", value: "available" },
+              { label: "已绑定", value: "installed" },
+              { label: "可绑定", value: "available" },
               { label: "需审批", value: "approval" },
               { label: "需补全依赖", value: "dependency" },
             ]}
@@ -610,6 +609,7 @@ function SkillMarketTableRow({
     >
       <V3Td className="whitespace-normal">
         <button
+          aria-label={`选中 ${skill.name}`}
           className="flex min-w-0 items-start gap-3 text-left"
           onClick={() => onSelectSkill(skill.id)}
           type="button"
@@ -640,12 +640,13 @@ function SkillMarketTableRow({
         <div className="flex justify-end gap-2">
           <V3Button
             aria-label={`查看详情 ${skill.name}`}
-            onClick={() => onSelectSkill(skill.id)}
+            asChild
             size="sm"
-            type="button"
             variant="outline"
           >
-            查看详情
+            <Link to="/skills/$skillId" params={{ skillId: skill.id }}>
+              查看详情
+            </Link>
           </V3Button>
           <V3Button
             aria-label={`安装 ${skill.name}`}
@@ -657,15 +658,6 @@ function SkillMarketTableRow({
             type="button"
           >
             安装
-          </V3Button>
-          <V3Button
-            aria-label={`更多操作 ${skill.name}`}
-            onClick={() => onSelectSkill(skill.id)}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <MoreHorizontal />
           </V3Button>
         </div>
       </V3Td>
@@ -737,15 +729,17 @@ function SkillMarketGrid({
             <div className="flex justify-end gap-2">
               <V3Button
                 aria-label={`查看详情 ${skill.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSelectSkill(skill.id);
-                }}
+                asChild
                 size="sm"
-                type="button"
                 variant="outline"
               >
-                查看详情
+                <Link
+                  onClick={(event) => event.stopPropagation()}
+                  params={{ skillId: skill.id }}
+                  to="/skills/$skillId"
+                >
+                  查看详情
+                </Link>
               </V3Button>
               <V3Button
                 aria-label={`安装 ${skill.name}`}
@@ -915,7 +909,7 @@ function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
     { icon: ClipboardList, label: "技能总数", tone: "brand", value: skills.length },
     {
       icon: CheckCircle2,
-      label: "可安装",
+      label: "可绑定",
       tone: "ok",
       value: skills.filter((skill) => statusDisplay(skill).value === "available").length,
     },
@@ -969,9 +963,9 @@ function statusDisplay(skill: Skill): StatusDisplay {
   if (needsApproval(skill)) return { label: "需审批", tone: "danger", value: "approval" };
   if (runtimeDependencyCount(skill) > 0) return { label: "需补全依赖", tone: "warn", value: "dependency" };
   if (skill.team_bindings.length > 0 || skill.agent_bindings.length > 0) {
-    return { label: "已安装", tone: "ok", value: "installed" };
+    return { label: "已绑定", tone: "ok", value: "installed" };
   }
-  return { label: "可安装", tone: "info", value: "available" };
+  return { label: "可绑定", tone: "info", value: "available" };
 }
 
 function riskDisplay(riskLevel: string): { label: string; tone: V3Tone } {

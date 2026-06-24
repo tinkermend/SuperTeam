@@ -1,14 +1,29 @@
-import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
-import { Separator } from '@/components/ui/separator'
+import { useContext, useEffect, useState } from 'react'
+import { Bell } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { cn, getDisplayNameInitials } from '@/lib/utils'
+import { AuthContext } from '@/features/auth/auth-context'
+import useDialogState from '@/hooks/use-dialog-state'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Search } from '@/components/search'
+import { SignOutDialog } from '@/components/sign-out-dialog'
+import { ThemeSwitch } from '@/components/theme-switch'
 
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
   fixed?: boolean
   ref?: React.Ref<HTMLElement>
 }
 
-export function Header({ className, fixed, children, ...props }: HeaderProps) {
+export function Header({ className, fixed, children: _children, ...props }: HeaderProps) {
   const [offset, setOffset] = useState(0)
 
   useEffect(() => {
@@ -26,32 +41,109 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
   return (
     <header
       data-slot='v3-shell-header'
+      data-variant='global'
       className={cn(
-        'z-50 h-16 border-b border-v3-line bg-v3-card text-v3-ink shadow-v3',
+        'z-50 h-14 text-v3-ink',
         fixed && 'header-fixed peer/header sticky top-0 w-[inherit]',
-        offset > 10 && fixed ? 'shadow-sm' : 'shadow-none',
         className
       )}
       {...props}
     >
       <div
         className={cn(
-          'relative flex h-full items-center gap-3 px-4 py-3 sm:gap-4',
+          'relative grid h-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 sm:px-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(16rem,42rem)_minmax(14rem,1fr)]',
           offset > 10 &&
             fixed &&
-            'after:absolute after:inset-0 after:-z-10 after:bg-v3-card/90 after:backdrop-blur-md'
+            'after:absolute after:inset-0 after:-z-10 after:bg-[var(--v3-shell-glass-strong)] after:backdrop-blur-md'
         )}
       >
         <SidebarTrigger
           variant='ghost'
-          className='rounded-xl border border-v3-line bg-v3-card-soft text-v3-ink-2 shadow-none hover:bg-v3-brand-soft hover:text-v3-brand-deep max-md:scale-125'
+          className='justify-self-start rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep max-md:scale-125'
         />
-        <Separator
-          orientation='vertical'
-          className='h-6 bg-v3-line-strong'
-        />
-        {children}
+        <Search className='mx-auto h-10 w-full max-w-2xl rounded-full border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] px-4 shadow-none backdrop-blur-xl sm:w-full md:w-full lg:w-full xl:w-full' />
+        <div className='flex min-w-0 items-center justify-end gap-2'>
+          <div className='inline-flex shrink-0'>
+            <ThemeSwitch />
+          </div>
+          <NotificationButton />
+          <HeaderUserMenu />
+        </div>
       </div>
     </header>
+  )
+}
+
+function NotificationButton() {
+  return (
+    <button
+      type='button'
+      aria-label='通知'
+      className='relative inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none'
+    >
+      <Bell className='size-[1.15rem]' aria-hidden='true' />
+      <span className='absolute top-1.5 right-1.5 size-2 rounded-full border border-white/80 bg-v3-artifact' />
+    </button>
+  )
+}
+
+function HeaderUserMenu() {
+  const auth = useContext(AuthContext)
+  const user = auth?.user
+  const [open, setOpen] = useDialogState()
+  const displayName = user?.display_name || user?.username || '未登录'
+  const displayEmail =
+    user?.email || user?.username || (user?.status === 'active' ? 'active' : 'disabled')
+  const fallback = getDisplayNameInitials(displayName)
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type='button'
+            aria-label={`用户信息：${displayName}`}
+            className='flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] py-1 pr-3 pl-1 text-v3-ink shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none max-md:pr-1'
+          >
+            <Avatar className='size-8 rounded-full'>
+              <AvatarFallback className='rounded-full bg-v3-brand text-xs font-semibold text-white'>
+                {fallback}
+              </AvatarFallback>
+            </Avatar>
+            <span className='min-w-0 max-w-28 truncate text-sm font-semibold max-md:hidden'>
+              {displayName}
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align='end'
+          className='min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop'
+        >
+          <DropdownMenuLabel className='p-0 font-normal'>
+            <div className='flex items-center gap-2 px-1 py-1.5 text-start text-sm'>
+              <Avatar className='size-8 rounded-lg'>
+                <AvatarFallback className='rounded-lg bg-v3-brand text-white'>
+                  {fallback}
+                </AvatarFallback>
+              </Avatar>
+              <div className='grid min-w-0 flex-1 text-start text-sm leading-tight'>
+                <span className='truncate font-semibold'>{displayName}</span>
+                <span className='truncate text-xs text-v3-ink-2'>{displayEmail}</span>
+              </div>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to='/settings/account'>账户</Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>
+            退出登录
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {auth ? <SignOutDialog open={!!open} onOpenChange={setOpen} /> : null}
+    </>
   )
 }

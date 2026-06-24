@@ -477,7 +477,7 @@ describe("TaskLaunchView", () => {
     await typeInLabeledField("需求描述", "审查这个开源项目的 PR，并按数量分配数字员工");
 
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
-    await clickButton("提交需求");
+    await clickButton("提交任务");
 
     expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toEqual({
       title: "审查这个开源项目的 PR，并按数量分配数字员工",
@@ -508,7 +508,7 @@ describe("TaskLaunchView", () => {
     await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
 
     await vi.waitFor(() => expect(getByText("赵审核 · reviewer")).toBeTruthy());
-    await clickButton("提交需求");
+    await clickButton("提交任务");
 
     expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
       content: "处理第二个项目的巡检问题",
@@ -534,7 +534,7 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await vi.waitFor(() => expect(getByText("李审核 · reviewer")).toBeTruthy());
     expect(textOrder("王审核 · reviewer")).toBeLessThan(textOrder("负责人 · owner"));
-    await clickButton("提交需求");
+    await clickButton("提交任务");
 
     await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
   });
@@ -545,26 +545,33 @@ describe("TaskLaunchView", () => {
       <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    await vi.waitFor(() => expect(getByText("提交后会发生什么")).toBeTruthy());
+    await vi.waitFor(() => expect(getByText("中枢指令区")).toBeTruthy());
 
     expect(getByText("中枢指令区")).toBeTruthy();
+    expect(getByText("命令中心")).toBeTruthy();
     expect(getByText("编排参数")).toBeTruthy();
-    expect(getByText("协同资料")).toBeTruthy();
-    expect(getByText("01")).toBeTruthy();
-    expect(getByText("写入项目需求")).toBeTruthy();
-    expect(getByText("02")).toBeTruthy();
-    expect(getByText("启动协调线程")).toBeTruthy();
-    expect(getByText("03")).toBeTruthy();
-    expect(getByText("生成编排决策")).toBeTruthy();
-    expect(getByText("04")).toBeTruthy();
-    expect(getByText("进入运行视图")).toBeTruthy();
-    expect(getByText("提交前确认")).toBeTruthy();
+    expect(getByText("项目路由")).toBeTruthy();
     expect(getByText("保存草稿")).toBeTruthy();
+    expect(getByLabelText("项目")).toBeTruthy();
+    expect(getByLabelText("审核人")).toBeTruthy();
+    expect(getByLabelText("优先级")).toBeTruthy();
+    expect(getByLabelText("风险级别")).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
     expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-icon-tile"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-button"]').length).toBeGreaterThan(0);
 
+    expect(queryByText("Command Center")).toBeNull();
+    expect(queryByText("Project routing")).toBeNull();
+    expect(queryByText("提交后会发生什么")).toBeNull();
+    expect(queryByText("写入项目需求")).toBeNull();
+    expect(queryByText("启动协调线程")).toBeNull();
+    expect(queryByText("生成编排决策")).toBeNull();
+    expect(queryByText("进入运行视图")).toBeNull();
+    expect(queryByText("提交前确认")).toBeNull();
+    expect(queryByText("协同资料")).toBeNull();
+    expect(queryByText("添加附件")).toBeNull();
+    expect(queryByText("关联链接")).toBeNull();
+    expect(queryByText("导入资料")).toBeNull();
     expect(queryByText("上下文边界")).toBeNull();
     expect(queryByText("备注")).toBeNull();
     expect(queryByText("待提交")).toBeNull();

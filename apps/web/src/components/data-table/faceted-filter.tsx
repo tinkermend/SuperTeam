@@ -59,7 +59,7 @@ export function DataTableFacetedFilter<TData, TValue>({
                     variant='secondary'
                     className='rounded-sm px-1 font-normal'
                   >
-                    {selectedValues.size} selected
+                  已选 {selectedValues.size} 项
                   </Badge>
                 ) : (
                   options
@@ -83,7 +83,7 @@ export function DataTableFacetedFilter<TData, TValue>({
         <Command>
           <CommandInput placeholder={title} />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>没有找到结果。</CommandEmpty>
             <CommandGroup>
               {options.map((option) => {
                 const isSelected = selectedValues.has(option.value)
@@ -133,7 +133,7 @@ export function DataTableFacetedFilter<TData, TValue>({
                     onSelect={() => column?.setFilterValue(undefined)}
                     className='justify-center text-center'
                   >
-                    Clear filters
+                    清除筛选
                   </CommandItem>
                 </CommandGroup>
               </>

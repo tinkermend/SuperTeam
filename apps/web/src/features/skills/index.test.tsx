@@ -82,9 +82,19 @@ vi.mock("@/components/ui/select", async () => {
 });
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
-    <a {...props} data-router-link="true" href={to}>{children}</a>
-  ),
+  Link: ({
+    children,
+    params,
+    to,
+    ...props
+  }: {
+    children: ReactNode;
+    params?: Record<string, string>;
+    to: string;
+  }) => {
+    const href = to === "/skills/$skillId" ? `/skills/${params?.skillId ?? "$skillId"}` : to;
+    return <a {...props} data-router-link="true" href={href}>{children}</a>;
+  },
 }));
 
 const skillsFixture = [
@@ -359,14 +369,17 @@ describe("SkillsView", () => {
     const screen = await renderSkillsView();
 
     await expect.element(screen.getByRole("heading", { name: "技能市场" })).toBeVisible();
-    await expect.element(screen.getByText("发现、校验并安装技能到团队或数字员工")).toBeVisible();
-    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("可安装")).toBeVisible();
-    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("需审批")).toBeVisible();
-    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("团队绑定")).toBeVisible();
-    await expect.element(screen.getByRole("region", { name: "技能市场指标" }).getByText("数字员工绑定")).toBeVisible();
+    await expect.element(screen.getByText("发现、查看并治理技能档案与绑定范围")).toBeVisible();
+    const metrics = screen.getByRole("region", { name: "技能市场指标" });
+    await expect.element(metrics.getByText("可绑定")).toBeVisible();
+    await expect.element(metrics.getByText("需审批")).toBeVisible();
+    await expect.element(metrics.getByText("团队绑定")).toBeVisible();
+    await expect.element(metrics.getByText("数字员工绑定")).toBeVisible();
     await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
     await expect.element(screen.getByRole("columnheader", { name: "风险" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
+    const detailLink = screen.getByRole("link", { name: "查看详情" }).first();
+    await expect.element(detailLink).toHaveAttribute("href", "/skills/skill-requirement");
+    await expect.element(detailLink).toHaveAttribute("data-router-link", "true");
     await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
   });
 
@@ -428,7 +441,7 @@ describe("SkillsView", () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "查看详情 需求澄清助手" }));
+    await userEvent.click(screen.getByRole("button", { name: "选中 需求澄清助手" }));
 
     const installationsRegion = screen.getByRole("region", { name: "需求澄清助手 安装记录" });
     await expect.element(installationsRegion).toBeVisible();
@@ -449,7 +462,7 @@ describe("SkillsView", () => {
   it("renders an empty installation state for a selected skill without physical records", async () => {
     const screen = await renderSkillsView();
 
-    await userEvent.click(screen.getByRole("button", { name: "查看详情 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "选中 接口文档生成" }));
 
     await expect.element(screen.getByRole("region", { name: "接口文档生成 安装记录" })).toBeVisible();
     await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
@@ -459,7 +472,7 @@ describe("SkillsView", () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "查看详情 需求澄清助手" }));
+    await userEvent.click(screen.getByRole("button", { name: "选中 需求澄清助手" }));
     await expect.element(screen.getByRole("region", { name: "需求澄清助手 安装记录" })).toBeVisible();
     expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
 
@@ -513,7 +526,7 @@ describe("SkillsView", () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "查看详情 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "选中 接口文档生成" }));
     await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
     expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(1);
 

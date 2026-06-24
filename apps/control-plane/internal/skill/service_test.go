@@ -93,6 +93,33 @@ func TestServiceUploadSkillParsesRootedZipAndKeepsUploadMetadata(t *testing.T) {
 	}
 }
 
+func TestServiceUploadSkillIgnoresArchiveMetadataWhenFindingRootedSkillMarkdown(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+
+	archive := buildSkillZip(t, map[string]string{
+		"__MACOSX/._diagnose":           "metadata",
+		"diagnose/.DS_Store":            "metadata",
+		"diagnose/SKILL.md":             "# Diagnose\n\n用于失败任务诊断。",
+		"diagnose/scripts/reproduce.sh": "#!/usr/bin/env bash\nset -euo pipefail\n",
+	})
+
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Archive:  archive,
+		Filename: "diagnose.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+	if repo.upsertReq.Name != "Diagnose" {
+		t.Fatalf("expected SKILL.md to be found under rooted archive, got %#v", repo.upsertReq)
+	}
+	if repo.upsertReq.ArchiveFileCount != 2 {
+		t.Fatalf("expected only package files to count, got %d", repo.upsertReq.ArchiveFileCount)
+	}
+}
+
 func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	repo := &serviceTestRepository{}
 	service := newTestService(repo)

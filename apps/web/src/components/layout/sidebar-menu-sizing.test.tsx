@@ -75,7 +75,7 @@ describe('sidebar menu sizing', () => {
     const iconStyle = getComputedStyle(icon as SVGElement)
     const beforeStyle = getComputedStyle(button as HTMLElement, '::before')
 
-    expect(buttonStyle.backgroundColor).toBe('rgb(233, 239, 255)')
+    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.68)')
     expect(buttonStyle.color).toBe('rgb(35, 72, 224)')
     expect(buttonStyle.boxShadow).toBe('none')
     expect(beforeStyle.content).not.toBe('none')

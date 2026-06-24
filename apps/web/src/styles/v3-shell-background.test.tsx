@@ -31,18 +31,33 @@ describe('authenticated v3 shell background styles', () => {
     }
   }
 
-  it('uses a neutral v3 shell background', async () => {
-    await render(
-      <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
-        shell
-      </div>
-    )
+  it('uses the acrylic v3 shell background', async () => {
+    const restoreMatchMedia = forceDesktopSidebar()
+
+    try {
+      await render(
+        <SidebarProvider
+          data-slot='v3-authenticated-shell'
+          data-testid='sidebar-wrapper'
+        >
+          <Sidebar collapsible='icon' variant='inset'>
+            Sidebar
+          </Sidebar>
+          <SidebarInset>Shell</SidebarInset>
+        </SidebarProvider>
+      )
+    } finally {
+      restoreMatchMedia()
+    }
 
     const sidebarWrapper = document.querySelector(
       '[data-testid="sidebar-wrapper"]'
     )
 
     expect(sidebarWrapper).toBeInstanceOf(HTMLElement)
+    expect((sidebarWrapper as HTMLElement).dataset.slot).toBe(
+      'v3-authenticated-shell'
+    )
 
     const bodyBackground = getComputedStyle(document.body).backgroundImage
     const bodyColor = getComputedStyle(document.body).backgroundColor
@@ -52,13 +67,15 @@ describe('authenticated v3 shell background styles', () => {
     const sidebarColor = getComputedStyle(sidebarWrapper as HTMLElement)
       .backgroundColor
 
-    expect(bodyBackground).toBe('none')
-    expect(bodyColor).toBe('rgb(248, 250, 252)')
-    expect(sidebarBackground).toBe('none')
-    expect(sidebarColor).toBe('rgb(248, 250, 252)')
+    expect(bodyBackground).toContain('radial-gradient')
+    expect(bodyBackground).toContain('linear-gradient')
+    expect(bodyColor).toBe('rgb(246, 248, 251)')
+    expect(sidebarBackground).toContain('radial-gradient')
+    expect(sidebarBackground).toContain('linear-gradient')
+    expect(sidebarColor).toBe('rgb(246, 248, 251)')
   })
 
-  it('keeps the header as a v3 white surface over the neutral shell', async () => {
+  it('keeps the header as an acrylic surface over the shell', async () => {
     await render(
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
         <div className='peer' data-state='expanded' data-variant='inset' />
@@ -68,7 +85,7 @@ describe('authenticated v3 shell background styles', () => {
               type='button'
               data-slot='button'
               data-testid='search'
-              className='bg-v3-card text-v3-ink-2'
+              className='border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 backdrop-blur-md'
             >
               Search
             </button>
@@ -99,10 +116,12 @@ describe('authenticated v3 shell background styles', () => {
     expect(insetStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(insetStyle.boxShadow).toBe('none')
     expect(headerStyle.backgroundImage).toBe('none')
-    expect(headerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
-    expect(headerStyle.borderBottomColor).toBe('rgb(238, 241, 244)')
+    expect(headerStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.88)')
+    expect(headerStyle.borderBottomColor).toBe('rgba(255, 255, 255, 0.72)')
+    expect(headerStyle.backdropFilter).toContain('blur')
     expect(headerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.04)')
-    expect(searchStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(searchStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.52)')
+    expect(searchStyle.backdropFilter).toContain('blur')
   })
 
   it('keeps inset sidebars flush instead of adding a floating inner layer', async () => {
@@ -114,6 +133,7 @@ describe('authenticated v3 shell background styles', () => {
           <Sidebar collapsible='icon' variant='inset'>
             Sidebar
           </Sidebar>
+          <SidebarInset>Shell</SidebarInset>
         </SidebarProvider>
       )
     } finally {
@@ -124,22 +144,31 @@ describe('authenticated v3 shell background styles', () => {
       '[data-slot="sidebar-container"]'
     )
     const sidebarGap = document.querySelector('[data-slot="sidebar-gap"]')
+    const sidebarInset = document.querySelector('[data-slot="sidebar-inset"]')
 
     expect(sidebarContainer).toBeInstanceOf(HTMLElement)
     expect(sidebarGap).toBeInstanceOf(HTMLElement)
+    expect(sidebarInset).toBeInstanceOf(HTMLElement)
 
     const containerStyle = getComputedStyle(sidebarContainer as HTMLElement)
+    const insetStyle = getComputedStyle(sidebarInset as HTMLElement)
 
     expect(containerStyle.paddingTop).toBe('0px')
     expect(containerStyle.paddingRight).toBe('0px')
     expect(containerStyle.paddingBottom).toBe('0px')
     expect(containerStyle.paddingLeft).toBe('0px')
+    expect(insetStyle.marginTop).toBe('0px')
+    expect(insetStyle.marginRight).toBe('0px')
+    expect(insetStyle.marginBottom).toBe('0px')
+    expect(insetStyle.marginLeft).toBe('0px')
+    expect(insetStyle.borderTopLeftRadius).toBe('0px')
+    expect(insetStyle.borderTopRightRadius).toBe('0px')
     expect((sidebarGap as HTMLElement).className).not.toContain(
       '--spacing(4)'
     )
   })
 
-  it('keeps the sidebar panel white with one soft v3 divider and no heavy shadow', async () => {
+  it('keeps the sidebar panel acrylic with one soft divider and no heavy shadow', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
         <div
@@ -165,11 +194,43 @@ describe('authenticated v3 shell background styles', () => {
     const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
 
     expect(containerStyle.borderInlineEndWidth).toBe('1px')
-    expect(containerStyle.borderInlineEndColor).toBe('rgb(223, 228, 234)')
+    expect(containerStyle.borderInlineEndColor).toBe('rgba(255, 255, 255, 0.72)')
     expect(containerStyle.boxShadow).toBe('none')
     expect(innerStyle.borderInlineEndWidth).toBe('0px')
     expect(innerStyle.boxShadow).toBe('none')
-    expect(innerStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(innerStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.72)')
     expect(innerStyle.backgroundImage).toBe('none')
+    expect(innerStyle.backdropFilter).toContain('blur')
+  })
+
+  it('keeps active sidebar items translucent over the acrylic panel', async () => {
+    await render(
+      <aside data-testid='sidebar-container' data-slot='sidebar-container'>
+        <div
+          className='flex h-full w-full flex-col'
+          data-sidebar='sidebar'
+          data-testid='sidebar-inner'
+          data-slot='sidebar-inner'
+        >
+          <a
+            data-active='true'
+            data-sidebar='menu-button'
+            data-slot='sidebar-menu-button'
+            href='/skills'
+          >
+            技能管理
+          </a>
+        </div>
+      </aside>
+    )
+
+    const menuButton = document.querySelector('[data-slot="sidebar-menu-button"]')
+
+    expect(menuButton).toBeInstanceOf(HTMLElement)
+
+    const buttonStyle = getComputedStyle(menuButton as HTMLElement)
+
+    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.68)')
+    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.2)')
   })
 })

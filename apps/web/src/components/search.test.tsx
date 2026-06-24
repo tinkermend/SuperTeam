@@ -12,7 +12,8 @@ describe('Search', () => {
 
     const searchButton = getByRole('button', { name: /搜索任务、数字员工、能力/ })
     await expect.element(searchButton).toBeInTheDocument()
-    await expect.element(searchButton).toHaveClass('bg-v3-card')
+    await expect.element(searchButton).toHaveClass('bg-[var(--v3-shell-control)]')
+    await expect.element(searchButton).toHaveClass('backdrop-blur-md')
     await expect.element(searchButton).toHaveClass('text-v3-ink-2')
   })
 })

@@ -35,6 +35,21 @@
 
   /* v3 Soft-Flat design tokens */
   --v3-bg: #f8fafc;
+  --v3-shell-bg: #f6f8fb;
+  --v3-shell-background:
+    radial-gradient(circle at 18% 14%, rgba(47, 95, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(21, 160, 107, 0.10), transparent 30%),
+    linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+  --v3-shell-grid: rgba(47, 95, 255, 0.045);
+  --v3-shell-glass: rgba(255, 255, 255, 0.72);
+  --v3-shell-glass-strong: rgba(255, 255, 255, 0.88);
+  --v3-shell-glass-border: rgba(255, 255, 255, 0.72);
+  --v3-shell-control: rgba(255, 255, 255, 0.52);
+  --v3-shell-control-hover: rgba(255, 255, 255, 0.72);
+  --v3-shell-control-active: rgba(233, 239, 255, 0.68);
+  --v3-shell-control-border: rgba(255, 255, 255, 0.78);
+  --v3-shell-glass-blur: 22px;
+  --v3-shell-glass-saturate: 1.35;
   --v3-card: #ffffff;
   --v3-card-soft: #f7f8fa;
   --v3-card-inner: #fafbfc;
@@ -100,6 +115,21 @@
 
   /* v3 Soft-Flat design tokens: dark */
   --v3-bg: #0d1014;
+  --v3-shell-bg: #0d1014;
+  --v3-shell-background:
+    radial-gradient(circle at 18% 14%, rgba(91, 139, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(52, 211, 153, 0.08), transparent 32%),
+    linear-gradient(180deg, #0d1014 0%, #111722 100%);
+  --v3-shell-grid: rgba(124, 150, 255, 0.055);
+  --v3-shell-glass: rgba(23, 27, 34, 0.74);
+  --v3-shell-glass-strong: rgba(23, 27, 34, 0.90);
+  --v3-shell-glass-border: rgba(255, 255, 255, 0.08);
+  --v3-shell-control: rgba(23, 27, 34, 0.52);
+  --v3-shell-control-hover: rgba(32, 38, 48, 0.72);
+  --v3-shell-control-active: rgba(91, 139, 255, 0.18);
+  --v3-shell-control-border: rgba(255, 255, 255, 0.10);
+  --v3-shell-glass-blur: 22px;
+  --v3-shell-glass-saturate: 1.24;
   --v3-card: #171b22;
   --v3-card-soft: #1c212a;
   --v3-card-inner: #1a1f27;

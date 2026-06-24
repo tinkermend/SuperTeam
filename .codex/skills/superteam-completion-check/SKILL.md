@@ -31,6 +31,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
    - Build/typecheck prove compilation only.
    - Real-chain verification means the current running Web talks to the current running Control Plane and the target database/runtime dependency responds as expected.
    - For any real-chain-required surface, write down the real path that must be exercised before running local-only gates.
+   - Low-risk local changes such as pure copy replacements, one-class visual alignment fixes, and design or constitution wording updates do not require service restarts, full test suites, browser verification, or real-chain smoke by default when they do not change interaction, data submission, routing, API contracts, state flow, authorization, persistence, or Runtime/Provider behavior.
 
 3. Verify current code is what is running:
    - Inspect `scripts/dev-services.sh status` or process commands when local services are involved.
@@ -39,6 +40,7 @@ Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, 
    - Do not kill unmanaged user processes without inspecting them first.
 
 4. Run the right gates:
+   - Low-risk local change: use the smallest proof that matches the edit, typically `rg` before/after checks, `git diff --check`, and only the affected targeted test when an existing assertion or selector depends on the changed text. Do not expand to full tests, service restart, or browser/real-chain verification unless the change crosses into behavior, layout risk, data flow, or a claim that the feature path is usable.
    - Web change: targeted Vitest/browser test, typecheck when risk justifies it, and real browser verification against the running Web and real Control Plane for visible UI or data behavior. For in-app navigation changes, click the actual entry in Chrome plug/browser automation and confirm the result is a TanStack Router transition, not a document-level reload.
    - Control Plane change: targeted `go test` for the affected package and curl/API smoke against the running Control Plane with real auth when route behavior matters.
    - Contract change: regenerate OpenAPI output and run `pnpm verify:contracts`.

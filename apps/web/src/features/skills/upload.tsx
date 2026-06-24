@@ -373,8 +373,9 @@ function PackageStatusBand({
       label: "完善资料",
     },
     {
-      description: dependencyCount ? "依赖声明已记录" : "可稍后声明",
-      done: true,
+      description: dependencyCount ? "依赖声明已记录" : "无依赖声明",
+      disabled: dependencyCount === 0,
+      done: dependencyCount > 0,
       label: "校验依赖",
     },
     {
@@ -442,28 +443,34 @@ function PackageStatusBand({
         <ol className="mt-4 grid gap-2 sm:grid-cols-5">
           {releaseSteps.map((step, index) => (
             <li
+              aria-disabled={step.disabled ? "true" : "false"}
               className={cn(
                 "min-w-0 rounded-xl border p-3",
-                step.done
+                step.disabled
+                  ? "border-v3-line bg-v3-card-soft text-v3-ink-2"
+                  : step.done
                   ? "border-[color:var(--v3-signature-border)] bg-v3-card text-v3-ink"
                   : "border-v3-line bg-v3-card-soft text-v3-ink-2",
               )}
+              data-release-step={step.label}
               key={step.label}
             >
               <div className="flex items-center gap-2">
                 <span
                   className={cn(
                     "grid size-6 shrink-0 place-items-center rounded-lg text-xs font-extrabold tabular-nums",
-                    step.done
+                    step.disabled
+                      ? "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong"
+                      : step.done
                       ? "bg-v3-brand text-white"
                       : "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong",
                   )}
                 >
                   {index + 1}
                 </span>
-                <span className="truncate text-sm font-bold">{step.label}</span>
+                <span className="truncate text-sm font-bold" data-release-step-title>{step.label}</span>
               </div>
-              <p className="mt-2 truncate text-xs text-v3-ink-2">{step.description}</p>
+              <p className="mt-2 truncate text-xs text-v3-ink-2" data-release-step-description>{step.description}</p>
             </li>
           ))}
         </ol>

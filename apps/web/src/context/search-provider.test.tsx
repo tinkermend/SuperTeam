@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SearchProvider } from '@/context/search-provider'
 
-const COMMAND_MENU_PLACEHOLDER = 'Type a command or search...'
+const COMMAND_MENU_PLACEHOLDER = '输入命令或搜索...'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true
@@ -224,10 +224,10 @@ describe('SearchProvider and CommandMenu', () => {
     await openCommandPalette()
 
     expect(queryByPlaceholder(COMMAND_MENU_PLACEHOLDER)).not.toBeNull()
-    expect(queryByText('Theme')).not.toBeNull()
-    expect(queryByText('Light')).not.toBeNull()
-    expect(queryByText('Dark')).not.toBeNull()
-    expect(queryByText('System')).not.toBeNull()
+    expect(queryByText('主题')).not.toBeNull()
+    expect(queryByText('浅色')).not.toBeNull()
+    expect(queryByText('深色')).not.toBeNull()
+    expect(queryByText('跟随系统')).not.toBeNull()
     expect(queryByText('工作台')).not.toBeNull()
   })
 
@@ -289,7 +289,7 @@ describe('SearchProvider and CommandMenu', () => {
     await openCommandPalette()
 
     await act(async () => {
-      getByText('Dark').click()
+      getByText('深色').click()
     })
 
     expect(mocks.setTheme).toHaveBeenCalledWith('dark')
@@ -312,7 +312,7 @@ describe('SearchProvider and CommandMenu', () => {
     })
 
     await vi.waitFor(() => {
-      expect(queryByText('No results found.')).not.toBeNull()
+      expect(queryByText('没有找到结果。')).not.toBeNull()
       expect(queryByText('任务发起')).toBeNull()
     })
   })

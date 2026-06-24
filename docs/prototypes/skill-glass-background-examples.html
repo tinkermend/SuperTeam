@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-style="acrylic">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>技能市场毛玻璃背景示例 · SuperTeam</title>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --ink: #0b0d12;
+      --ink-2: #5f6b7a;
+      --ink-3: #8c98a8;
+      --brand: #2f5fff;
+      --brand-deep: #2348e0;
+      --brand-soft: rgba(47, 95, 255, .10);
+      --ok: #15a06b;
+      --ok-soft: rgba(21, 160, 107, .12);
+      --warn: #cf7a14;
+      --warn-soft: rgba(207, 122, 20, .14);
+      --danger: #e5484d;
+      --danger-soft: rgba(229, 72, 77, .13);
+      --artifact: #7c5cff;
+      --artifact-soft: rgba(124, 92, 255, .13);
+      --line: rgba(15, 23, 42, .08);
+      --line-strong: rgba(15, 23, 42, .14);
+      --card: rgba(255, 255, 255, .72);
+      --card-solid: #ffffff;
+      --card-soft: rgba(255, 255, 255, .52);
+      --work: rgba(255, 255, 255, .90);
+      --glass-blur: 24px;
+      --glass-saturate: 1.35;
+      --glass-border: rgba(255, 255, 255, .70);
+      --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 24px 70px rgba(15, 23, 42, .10);
+      --shadow-soft: 0 1px 2px rgba(15, 23, 42, .045), 0 16px 42px rgba(15, 23, 42, .08);
+      --radius-card: 22px;
+      --radius-inner: 14px;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    html[data-style="acrylic"] {
+      --scene:
+        linear-gradient(135deg, rgba(255, 255, 255, .86) 0%, rgba(239, 244, 250, .48) 48%, rgba(247, 250, 255, .88) 100%),
+        radial-gradient(circle at 18% 18%, rgba(47, 95, 255, .16), transparent 28%),
+        radial-gradient(circle at 88% 14%, rgba(21, 160, 107, .12), transparent 30%),
+        linear-gradient(180deg, #f6f8fb 0%, #eef3f8 100%);
+      --texture: rgba(47, 95, 255, .055);
+      --card: rgba(255, 255, 255, .64);
+      --work: rgba(255, 255, 255, .88);
+      --glass-blur: 26px;
+      --glass-saturate: 1.42;
+    }
+
+    html[data-style="daisy"] {
+      --scene:
+        linear-gradient(120deg, rgba(255, 255, 255, .90), rgba(229, 236, 246, .64)),
+        radial-gradient(circle at 22% 12%, rgba(47, 95, 255, .18), transparent 26%),
+        linear-gradient(180deg, #f9fbff 0%, #edf2f8 100%);
+      --texture: rgba(15, 23, 42, .050);
+      --card: rgba(255, 255, 255, .56);
+      --card-soft: rgba(255, 255, 255, .40);
+      --work: rgba(255, 255, 255, .84);
+      --glass-blur: 18px;
+      --glass-saturate: 1.65;
+      --glass-border: rgba(255, 255, 255, .58);
+    }
+
+    html[data-style="magic-grid"] {
+      --scene:
+        radial-gradient(circle at 50% 8%, rgba(47, 95, 255, .16), transparent 25%),
+        linear-gradient(180deg, #f7faff 0%, #eef3fb 44%, #f9fbfd 100%);
+      --texture: rgba(47, 95, 255, .085);
+      --card: rgba(255, 255, 255, .66);
+      --work: rgba(255, 255, 255, .90);
+      --glass-blur: 22px;
+      --glass-saturate: 1.25;
+      --glass-border: rgba(255, 255, 255, .78);
+    }
+
+    html[data-style="aurora"] {
+      --scene:
+        linear-gradient(125deg, rgba(255, 255, 255, .78), rgba(248, 250, 255, .62)),
+        radial-gradient(ellipse at 12% 10%, rgba(47, 95, 255, .22), transparent 32%),
+        radial-gradient(ellipse at 76% 4%, rgba(124, 92, 255, .18), transparent 34%),
+        radial-gradient(ellipse at 88% 78%, rgba(21, 160, 107, .14), transparent 28%),
+        #f6f8fc;
+      --texture: rgba(124, 92, 255, .055);
+      --card: rgba(255, 255, 255, .58);
+      --work: rgba(255, 255, 255, .86);
+      --glass-blur: 30px;
+      --glass-saturate: 1.55;
+      --glass-border: rgba(255, 255, 255, .66);
+      --shadow: 0 1px 2px rgba(30, 41, 59, .04), 0 26px 78px rgba(47, 95, 255, .12);
+    }
+
+    html[data-style="command-mesh"] {
+      --scene:
+        linear-gradient(180deg, rgba(248, 250, 252, .96), rgba(232, 238, 247, .82)),
+        radial-gradient(circle at 32% 10%, rgba(47, 95, 255, .14), transparent 24%),
+        #f4f7fb;
+      --texture: rgba(15, 23, 42, .07);
+      --card: rgba(255, 255, 255, .62);
+      --work: rgba(255, 255, 255, .92);
+      --glass-blur: 20px;
+      --glass-saturate: 1.30;
+      --glass-border: rgba(255, 255, 255, .72);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100%;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      min-height: 100vh;
+      overflow-x: hidden;
+      background: var(--scene);
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -3;
+      content: "";
+      background:
+        linear-gradient(90deg, var(--texture) 1px, transparent 1px),
+        linear-gradient(180deg, var(--texture) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, .92), rgba(0, 0, 0, .46) 58%, transparent);
+      pointer-events: none;
+    }
+
+    body::after {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      content: "";
+      opacity: .36;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .mono {
+      font-family: var(--mono);
+    }
+
+    .num {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .glass {
+      border: 1px solid var(--glass-border);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+
+    .mesh {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .mesh i {
+      position: absolute;
+      display: block;
+      width: 140px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(47, 95, 255, .28), transparent);
+    }
+
+    .mesh i::after {
+      position: absolute;
+      top: -3px;
+      right: 18px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgba(47, 95, 255, .38);
+      content: "";
+    }
+
+    .mesh i:nth-child(1) { top: 130px; left: 320px; transform: rotate(-8deg); }
+    .mesh i:nth-child(2) { top: 260px; right: 180px; transform: rotate(16deg); }
+    .mesh i:nth-child(3) { right: 420px; bottom: 150px; transform: rotate(-18deg); }
+    .mesh i:nth-child(4) { left: 78px; bottom: 230px; transform: rotate(11deg); }
+
+    .app {
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px 16px;
+      border-right: 1px solid rgba(255, 255, 255, .58);
+      background: rgba(255, 255, 255, .38);
+      backdrop-filter: blur(24px) saturate(1.4);
+      -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+      font-weight: 820;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 12px;
+      color: white;
+      background: var(--brand);
+      box-shadow: 0 10px 24px rgba(47, 95, 255, .28);
+    }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 9px 11px;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--ink-2);
+      font-weight: 680;
+      text-align: left;
+    }
+
+    .nav button.active {
+      color: var(--brand-deep);
+      background: rgba(255, 255, 255, .68);
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+
+    .sidebar-card {
+      position: absolute;
+      right: 16px;
+      bottom: 18px;
+      left: 16px;
+      padding: 14px;
+      border-radius: 16px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .sidebar-card strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 20px 28px 52px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .command {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: min(560px, 100%);
+      height: 44px;
+      padding: 0 13px;
+      border-radius: 14px;
+      color: var(--ink-3);
+    }
+
+    .command input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .keycap {
+      padding: 2px 7px;
+      border: 1px solid rgba(15, 23, 42, .10);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, .62);
+      color: var(--ink-3);
+      font-size: 11px;
+    }
+
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-left: auto;
+      padding: 6px 10px 6px 6px;
+      border-radius: 15px;
+    }
+
+    .avatar {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 10px;
+      background: #0f172a;
+      color: white;
+      font-size: 12px;
+      font-weight: 820;
+    }
+
+    .identity strong,
+    .identity span {
+      display: block;
+      line-height: 1.15;
+    }
+
+    .identity strong {
+      font-size: 12px;
+    }
+
+    .identity span {
+      margin-top: 2px;
+      color: var(--ink-3);
+      font-size: 11px;
+    }
+
+    .style-tabs {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 8px;
+      border-radius: 22px;
+    }
+
+    .style-tab {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: 15px;
+      background: transparent;
+      color: var(--ink-2);
+      text-align: left;
+    }
+
+    .style-tab[aria-pressed="true"] {
+      border-color: rgba(255, 255, 255, .82);
+      background: rgba(255, 255, 255, .70);
+      color: var(--ink);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .swatch {
+      width: 30px;
+      height: 30px;
+      border: 1px solid rgba(15, 23, 42, .10);
+      border-radius: 11px;
+    }
+
+    .swatch.acrylic { background: linear-gradient(135deg, #fff, #dbe8ff 55%, #dff4eb); }
+    .swatch.daisy { background: linear-gradient(135deg, rgba(255,255,255,.9), rgba(211,221,236,.62)); }
+    .swatch.magic-grid { background: linear-gradient(90deg, #e8f0ff 1px, transparent 1px), linear-gradient(#e8f0ff 1px, #fff 1px); background-size: 9px 9px; }
+    .swatch.aurora { background: linear-gradient(135deg, #dce7ff, #efe7ff 48%, #dff6ec); }
+    .swatch.command-mesh { background: linear-gradient(135deg, #f8fafc, #dfe7f3); }
+
+    .style-tab strong,
+    .style-tab span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .style-tab strong {
+      font-size: 13px;
+      line-height: 1.15;
+    }
+
+    .style-tab span {
+      margin-top: 3px;
+      color: var(--ink-3);
+      font-size: 11px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 16px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-width: 0;
+    }
+
+    .title-icon {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      border-radius: 17px;
+      color: var(--artifact);
+      background: var(--artifact-soft);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 840;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      margin: 4px 0 0;
+      color: var(--ink-2);
+    }
+
+    .primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 13px;
+      background: var(--brand);
+      color: white;
+      font-weight: 740;
+      box-shadow: 0 14px 26px rgba(47, 95, 255, .26);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 13px;
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 16px;
+      border-radius: var(--radius-card);
+    }
+
+    .metric-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .metric-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 26px;
+      font-weight: 840;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .surface {
+      min-width: 0;
+      overflow: hidden;
+      border-radius: var(--radius-card);
+      background: var(--work);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(calc(var(--glass-blur) * .72)) saturate(1.18);
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur) * .72)) saturate(1.18);
+      border: 1px solid rgba(255, 255, 255, .78);
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(112px, auto)) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      height: 38px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .54);
+      color: var(--ink-3);
+    }
+
+    .search input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+    }
+
+    .select,
+    .seg {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .66);
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .select {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 11px;
+      white-space: nowrap;
+    }
+
+    .seg {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      padding: 4px;
+    }
+
+    .seg button {
+      display: grid;
+      width: 30px;
+      height: 28px;
+      place-items: center;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--ink-3);
+    }
+
+    .seg button.active {
+      background: var(--brand-soft);
+      color: var(--brand-deep);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(230px, 1.4fr) minmax(110px, .62fr) minmax(120px, .66fr) minmax(120px, .68fr) minmax(94px, auto);
+      gap: 16px;
+      align-items: center;
+      min-width: 760px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row.header {
+      min-height: 42px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+      background: rgba(255, 255, 255, .42);
+      color: var(--ink-3);
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .skill-main {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .skill-icon {
+      display: grid;
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 13px;
+      color: var(--artifact);
+      background: var(--artifact-soft);
+    }
+
+    .skill-main strong,
+    .skill-main span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .skill-main strong {
+      font-size: 13px;
+    }
+
+    .skill-main span {
+      margin-top: 2px;
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      width: fit-content;
+      padding: 4px 9px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 780;
+      white-space: nowrap;
+    }
+
+    .pill::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .pill.ok { color: var(--ok); background: var(--ok-soft); }
+    .pill.warn { color: var(--warn); background: var(--warn-soft); }
+    .pill.danger { color: var(--danger); background: var(--danger-soft); }
+    .pill.info { color: var(--brand); background: var(--brand-soft); }
+
+    .action {
+      height: 32px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 10px;
+      background: #111827;
+      color: white;
+      font-size: 12px;
+      font-weight: 740;
+      white-space: nowrap;
+    }
+
+    .side-panel {
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .panel-head p {
+      margin: 4px 0 0;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .install {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .install:last-child {
+      border-bottom: 0;
+    }
+
+    .install strong,
+    .install span {
+      display: block;
+    }
+
+    .install strong {
+      font-size: 13px;
+    }
+
+    .install span {
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--ink-3);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .recipe {
+      padding: 16px;
+      border-radius: var(--radius-card);
+    }
+
+    .recipe h2 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+
+    .recipe p {
+      margin: 0 0 12px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 14px;
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 14px;
+      background: rgba(15, 23, 42, .88);
+      color: #e5e7eb;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: 84px minmax(0, 1fr);
+      }
+
+      .brand span,
+      .nav span,
+      .sidebar-card {
+        display: none;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar {
+        position: relative;
+        display: flex;
+        height: auto;
+        gap: 14px;
+        align-items: center;
+        overflow-x: auto;
+        padding: 14px;
+      }
+
+      .brand {
+        margin: 0;
+      }
+
+      .nav {
+        display: flex;
+      }
+
+      .main {
+        padding: 18px 16px 44px;
+      }
+
+      .topbar,
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+      }
+
+      .identity {
+        margin-left: 0;
+      }
+
+      .style-tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="mesh" aria-hidden="true">
+    <i></i><i></i><i></i><i></i>
+  </div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><i data-lucide="blocks"></i></div>
+        <span>SuperTeam</span>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button type="button"><i data-lucide="layout-dashboard"></i><span>协调台</span></button>
+        <button type="button"><i data-lucide="folder-kanban"></i><span>项目</span></button>
+        <button type="button"><i data-lucide="bot"></i><span>数字员工</span></button>
+        <button class="active" type="button"><i data-lucide="blocks"></i><span>技能市场</span></button>
+        <button type="button"><i data-lucide="server-cog"></i><span>Runtime</span></button>
+        <button type="button"><i data-lucide="shield-check"></i><span>审计</span></button>
+      </nav>
+      <div class="sidebar-card glass">
+        <strong>毛玻璃实验</strong>
+        <span>同一份技能市场内容，切换 5 套背景与半透明面板配置。</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <label class="command glass">
+          <i data-lucide="search"></i>
+          <input value="查找技能、依赖或绑定目标" aria-label="命令中心" />
+          <span class="keycap">⌘K</span>
+        </label>
+        <div class="identity glass">
+          <div class="avatar">林</div>
+          <div>
+            <strong>林 Anna</strong>
+            <span>平台管理员</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="style-tabs glass" aria-label="样式风格切换">
+        <button class="style-tab" type="button" data-style-option="acrylic" aria-pressed="true">
+          <span class="swatch acrylic"></span>
+          <span><strong>Acrylic Shell</strong><span>Tailwind 毛玻璃</span></span>
+        </button>
+        <button class="style-tab" type="button" data-style-option="daisy" aria-pressed="false">
+          <span class="swatch daisy"></span>
+          <span><strong>daisyUI Glass</strong><span>高透明磨砂</span></span>
+        </button>
+        <button class="style-tab" type="button" data-style-option="magic-grid" aria-pressed="false">
+          <span class="swatch magic-grid"></span>
+          <span><strong>Magic Grid</strong><span>低对比网格</span></span>
+        </button>
+        <button class="style-tab" type="button" data-style-option="aurora" aria-pressed="false">
+          <span class="swatch aurora"></span>
+          <span><strong>Aurora Glass</strong><span>强一点的氛围</span></span>
+        </button>
+        <button class="style-tab" type="button" data-style-option="command-mesh" aria-pressed="false">
+          <span class="swatch command-mesh"></span>
+          <span><strong>Command Mesh</strong><span>节点中枢感</span></span>
+        </button>
+      </section>
+
+      <section class="hero">
+        <div class="title-row">
+          <div class="title-icon glass"><i data-lucide="blocks"></i></div>
+          <div>
+            <h1>技能市场</h1>
+            <p>发现、查看并治理技能档案、运行依赖与绑定范围。</p>
+          </div>
+        </div>
+        <button class="primary" type="button"><i data-lucide="upload-cloud"></i>上传技能</button>
+      </section>
+
+      <section class="metrics" aria-label="技能市场指标">
+        <article class="metric glass"><div class="metric-top"><span>总技能</span><span class="metric-icon"><i data-lucide="boxes"></i></span></div><strong class="num">96</strong></article>
+        <article class="metric glass"><div class="metric-top"><span>已绑定</span><span class="metric-icon"><i data-lucide="check-circle-2"></i></span></div><strong class="num">61</strong></article>
+        <article class="metric glass"><div class="metric-top"><span>可绑定</span><span class="metric-icon"><i data-lucide="plug-zap"></i></span></div><strong class="num">28</strong></article>
+        <article class="metric glass"><div class="metric-top"><span>需审批</span><span class="metric-icon"><i data-lucide="clipboard-list"></i></span></div><strong class="num">5</strong></article>
+        <article class="metric glass"><div class="metric-top"><span>依赖缺失</span><span class="metric-icon"><i data-lucide="triangle-alert"></i></span></div><strong class="num">2</strong></article>
+        <article class="metric glass"><div class="metric-top"><span>本月调用</span><span class="metric-icon"><i data-lucide="activity"></i></span></div><strong class="num">38.4k</strong></article>
+      </section>
+
+      <section class="content">
+        <div class="surface">
+          <div class="toolbar">
+            <label class="search">
+              <i data-lucide="search"></i>
+              <input value="搜索技能、标签、运行依赖" aria-label="搜索技能" />
+            </label>
+            <button class="select" type="button">全部风险<i data-lucide="chevron-down"></i></button>
+            <button class="select" type="button">全部范围<i data-lucide="chevron-down"></i></button>
+            <button class="select" type="button">全部依赖<i data-lucide="chevron-down"></i></button>
+            <button class="select" type="button">全部状态<i data-lucide="chevron-down"></i></button>
+            <div class="seg" aria-label="视图切换">
+              <button class="active" type="button" aria-label="列表视图"><i data-lucide="list"></i></button>
+              <button type="button" aria-label="网格视图"><i data-lucide="grid-2x2"></i></button>
+            </div>
+          </div>
+          <div class="row header">
+            <span>技能</span><span>风险</span><span>绑定范围</span><span>状态</span><span>操作</span>
+          </div>
+          <div class="row">
+            <div class="skill-main"><div class="skill-icon"><i data-lucide="file-code-2"></i></div><div><strong>需求澄清助手</strong><span>v1.8.2 · 表单、上下文、审批</span></div></div>
+            <span class="pill ok">低风险</span><span>团队绑定</span><span class="pill info">已绑定</span><button class="action" type="button">查看</button>
+          </div>
+          <div class="row">
+            <div class="skill-main"><div class="skill-icon"><i data-lucide="shield-check"></i></div><div><strong>安全审计检查</strong><span>v2.1.0 · 证据、策略、报告</span></div></div>
+            <span class="pill warn">中风险</span><span>员工绑定</span><span class="pill warn">需审批</span><button class="action" type="button">处理</button>
+          </div>
+          <div class="row">
+            <div class="skill-main"><div class="skill-icon"><i data-lucide="server-cog"></i></div><div><strong>Runtime 日志归档</strong><span>v0.9.4 · 节点、日志、工件</span></div></div>
+            <span class="pill ok">低风险</span><span>未绑定</span><span class="pill info">可绑定</span><button class="action" type="button">绑定</button>
+          </div>
+          <div class="row">
+            <div class="skill-main"><div class="skill-icon"><i data-lucide="database-zap"></i></div><div><strong>数据迁移校验</strong><span>v1.3.7 · schema、sqlc、OpenAPI</span></div></div>
+            <span class="pill danger">高风险</span><span>团队绑定</span><span class="pill danger">需补依赖</span><button class="action" type="button">修复</button>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="surface">
+            <div class="panel-head">
+              <div>
+                <h2>安装记录</h2>
+                <p>需求澄清助手 · v1.8.2</p>
+              </div>
+              <span class="pill ok">3 个目标</span>
+            </div>
+            <div class="install"><div><strong>产品团队</strong><span class="mono">runtime-node/macbook-pro-a17</span></div><span class="pill ok">codex</span></div>
+            <div class="install"><div><strong>项目协调员</strong><span class="mono">/skills/demand-clarifier@1.8.2</span></div><span class="pill info">opencode</span></div>
+            <div class="install"><div><strong>验收负责人</strong><span class="mono">sha256: 8f1b...c92e</span></div><span class="pill ok">claude</span></div>
+          </div>
+
+          <section class="recipe glass" aria-label="当前 CSS 配置">
+            <h2 id="recipe-title">Acrylic Shell</h2>
+            <p id="recipe-desc">原生 Tailwind 思路：半透明白面板 + backdrop blur + saturation，适合做默认方向。</p>
+            <pre id="recipe-code"></pre>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const recipes = {
+      acrylic: {
+        title: "Acrylic Shell",
+        desc: "原生 Tailwind 思路：半透明白面板 + backdrop blur + saturation，适合做默认方向。",
+        code: `.shell {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(47,95,255,.16), transparent 28%),
+    linear-gradient(180deg, #f6f8fb 0%, #eef3f8 100%);
+}
+.glass {
+  background: rgba(255,255,255,.64);
+  border: 1px solid rgba(255,255,255,.70);
+  backdrop-filter: blur(26px) saturate(1.42);
+  box-shadow: 0 24px 70px rgba(15,23,42,.10);
+}`
+      },
+      daisy: {
+        title: "daisyUI Glass",
+        desc: "参考 daisyUI glass 变量，把透明度、模糊和边框抽成可调参数。",
+        code: `:root {
+  --glass-opacity: .56;
+  --glass-blur: 18px;
+  --glass-border-opacity: .58;
+}
+.glass {
+  background: rgba(255,255,255,var(--glass-opacity));
+  border-color: rgba(255,255,255,var(--glass-border-opacity));
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.65);
+}`
+      },
+      "magic-grid": {
+        title: "Magic Grid",
+        desc: "参考 Magic UI 的背景组件：低对比网格作为平台识别，内容面保持实底。",
+        code: `.background-grid {
+  background-image:
+    linear-gradient(rgba(47,95,255,.085) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47,95,255,.085) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(180deg, #000, transparent 70%);
+}
+.work-surface { background: rgba(255,255,255,.90); }`
+      },
+      aurora: {
+        title: "Aurora Glass",
+        desc: "参考 Aceternity 的 Aurora 方向，但降低饱和度，只保留一层氛围。",
+        code: `.aurora-bg {
+  background:
+    radial-gradient(ellipse at 12% 10%, rgba(47,95,255,.22), transparent 32%),
+    radial-gradient(ellipse at 76% 4%, rgba(124,92,255,.18), transparent 34%),
+    radial-gradient(ellipse at 88% 78%, rgba(21,160,107,.14), transparent 28%),
+    #f6f8fc;
+}
+.glass { backdrop-filter: blur(30px) saturate(1.55); }`
+      },
+      "command-mesh": {
+        title: "Command Mesh",
+        desc: "更贴 SuperTeam 的中枢感：细网格、短路线、节点，而不是大面积渐变。",
+        code: `.command-mesh {
+  background:
+    linear-gradient(90deg, rgba(15,23,42,.07) 1px, transparent 1px),
+    linear-gradient(rgba(15,23,42,.07) 1px, transparent 1px),
+    #f4f7fb;
+  background-size: 34px 34px;
+}
+.route-line { background: linear-gradient(90deg, transparent, rgba(47,95,255,.28), transparent); }`
+      }
+    };
+
+    const root = document.documentElement;
+    const tabs = Array.from(document.querySelectorAll("[data-style-option]"));
+    const title = document.getElementById("recipe-title");
+    const desc = document.getElementById("recipe-desc");
+    const code = document.getElementById("recipe-code");
+
+    function setStyle(value) {
+      root.dataset.style = value;
+      tabs.forEach((tab) => tab.setAttribute("aria-pressed", String(tab.dataset.styleOption === value)));
+      title.textContent = recipes[value].title;
+      desc.textContent = recipes[value].desc;
+      code.textContent = recipes[value].code;
+    }
+
+    tabs.forEach((tab) => tab.addEventListener("click", () => setStyle(tab.dataset.styleOption)));
+    setStyle("acrylic");
+
+    if (window.lucide) {
+      window.lucide.createIcons({ attrs: { "stroke-width": 2, width: 18, height: 18 } });
+    }
+  </script>
+</body>
+</html>

@@ -81,6 +81,18 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, status });
 }
 
+function stepTitleColor(label: string): string {
+  const step = document.querySelector(`[data-release-step="${label}"]`);
+  const title = step?.querySelector<HTMLElement>("[data-release-step-title]");
+  return title ? getComputedStyle(title).color : "";
+}
+
+function stepDescriptionColor(label: string): string {
+  const step = document.querySelector(`[data-release-step="${label}"]`);
+  const description = step?.querySelector<HTMLElement>("[data-release-step-description]");
+  return description ? getComputedStyle(description).color : "";
+}
+
 describe("SkillUploadView", () => {
   it("renders a single page upload workspace without wizard, permission, or env checks", async () => {
     const screen = await renderUploadView();
@@ -145,6 +157,26 @@ describe("SkillUploadView", () => {
     await expect.element(screen.getByText("元数据与依赖声明已就绪")).toBeVisible();
     await expect.element(screen.getByText("skill-api-doc.zip（3 B）")).toBeVisible();
     await expect.element(screen.getByText("4 项")).toBeVisible();
+  });
+
+  it("keeps dependency validation greyed out until dependencies are declared", async () => {
+    const screen = await renderUploadView();
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill-api-doc.zip", { type: "application/zip" }));
+    await userEvent.fill(screen.getByLabelText("技能中文名称"), "接口文档生成");
+
+    const dependencyStep = document.querySelector('[data-release-step="校验依赖"]');
+    const publishStep = document.querySelector('[data-release-step="发布确认"]');
+
+    expect(dependencyStep).toHaveAttribute("aria-disabled", "true");
+    expect(dependencyStep?.className).not.toContain("opacity-75");
+    expect(stepTitleColor("校验依赖")).toBe(stepTitleColor("发布确认"));
+    expect(stepDescriptionColor("校验依赖")).toBe(stepDescriptionColor("发布确认"));
+    expect(publishStep).toHaveAttribute("aria-disabled", "false");
+
+    await userEvent.fill(screen.getByLabelText("CLI 依赖"), "gh");
+
+    expect(document.querySelector('[data-release-step="校验依赖"]')).toHaveAttribute("aria-disabled", "false");
   });
 
   it("submits the Chinese name and declaration-only dependencies without environment value checks", async () => {

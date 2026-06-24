@@ -3,6 +3,7 @@ import {
   bindEmployeeSkill,
   bindTeamSkill,
   deleteSkill,
+  getSkill,
   installSkill,
   InstallSkillError,
   listEmployeeSkills,
@@ -42,6 +43,22 @@ function makeSkill(overrides: Partial<Skill> = {}): Skill {
 }
 
 describe("skills API", () => {
+  it("gets a single skill detail by id with encoded path segment", async () => {
+    const skill = makeSkill({ id: "skill 1/ops" });
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(skill), { headers: { "content-type": "application/json" } }));
+
+    await expect(getSkill({ baseUrl: "http://control-plane.local", fetcher }, "skill 1/ops")).resolves.toEqual(skill);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill%201%2Fops",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
   it("lists skills with archive metadata and agent bindings", async () => {
     const skills = [
       {

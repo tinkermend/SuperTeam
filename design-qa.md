@@ -1,61 +1,33 @@
-# Design QA
-
-## 上传技能页面设计 QA
-
-### Scope
-- Source reference: `/var/folders/_s/2zwng6xn03g1rj6v60h9r75h0000gn/T/codex-clipboard-4cbc700e-26db-4642-9c08-f5807858de40.png`
-- Desktop implementation screenshot: `/Users/tinker/src/singe/SuperTeam/.scratch/skill-upload-ui/upload-page-desktop.png`
-- Desktop full-page screenshot: `/Users/tinker/src/singe/SuperTeam/.scratch/skill-upload-ui/upload-page-full.png`
-- Mobile smoke screenshot: `/Users/tinker/src/singe/SuperTeam/.scratch/skill-upload-ui/upload-page-mobile.png`
-
-### Checks
-- Page structure matches the reference direction: title area, compact zip/package status band, main skill information panel, and right-side publish summary.
-- Removed non-goals from the upload page: no wizard stepper, no parse result table, no required-permission checklist, no environment-value missing warning.
-- Runtime dependencies are declaration-only: CLI tools and environment variable names render as editable chips and publish summary counts them.
-- Desktop smoke at 1512x1032: no horizontal overflow; publish button enabled after selecting zip and filling skill Chinese name.
-- Mobile smoke at 390px width: single-column flow, no horizontal overflow, core upload and publish summary content remains reachable.
-
-### Notes
-- The live app shell uses the current SuperTeam/Jushu sidebar and header rather than the generated mock's older shell styling; the page content follows the reference layout inside the existing application frame.
-- Development-only TanStack Router badge appears in screenshots and is not part of the upload page implementation.
-
-### Result
-- Final result: passed.
-
-## 技能市场首页设计 QA
-
-### Source Visual Truth
-- Path: `/var/folders/_s/2zwng6xn03g1rj6v60h9r75h0000gn/T/codex-clipboard-3bd5f367-ff3b-47d8-9f23-c8ef56d6822e.png`
-
-### Implementation Evidence
-- Populated implementation screenshot: `/Users/tinker/.codex/worktrees/4c69/SuperTeam/tmp/skills-market-qa/tmp-skills-market-populated.png`
-- Real-chain implementation screenshot: `/Users/tinker/.codex/worktrees/4c69/SuperTeam/tmp/skills-market-qa/tmp-skills-market-real.png`
-- Full-view comparison: `/Users/tinker/.codex/worktrees/4c69/SuperTeam/tmp/skills-market-qa/tmp-skills-market-populated-comparison.png`
-- Viewport: 1512 x 1075
-- State: desktop skill market home, list view, populated skill rows for visual comparison; real backend smoke uses the current two live skills.
-
-### Findings
+**Findings**
 - No actionable P0/P1/P2 findings.
 
-### Required Fidelity Surfaces
-- Fonts and typography: Passed. The implementation uses the existing SuperTeam console typography scale with compact page title, small helper text, dense table labels, and stable numeric metrics. Letter spacing remains normal.
-- Spacing and layout rhythm: Passed. The page keeps the reference structure: title/action row, six-card metric strip, one toolbar, dense table, and pagination footer. Metric wrapping was corrected to one desktop row.
-- Colors and visual tokens: Passed. The implementation follows project tokens for near-white glass surfaces, blue-green primary action, semantic green/warning/danger/info states, and pale selected row treatment.
-- Image quality and asset fidelity: Passed. The referenced design uses UI icons rather than raster content in the main screen; implementation uses the existing accepted lucide/SemanticIconTile system. No placeholder image assets are used.
-- Copy and content: Passed for the requested surface. The title, helper copy, metric names, filters, table columns, and action labels match the skill-market home model. Exact metric values depend on live API data and are not hard-coded.
+**Open Questions**
+- None.
 
-### Patches Made Since Previous QA Pass
-- Changed the metric grid from a two-row desktop layout to six compact cards in one row at the target viewport.
-- Kept install/detail as visible placeholder buttons only, without adding downstream pages or backend behavior.
+**Implementation Checklist**
+- Source visual truth path: `/var/folders/_s/2zwng6xn03g1rj6v60h9r75h0000gn/T/codex-clipboard-be1302c8-ed87-4de7-943d-7a2d17882768.png`
+- Implementation screenshot path: `/Users/tinker/src/singe/SuperTeam/.scratch/design-qa/task-launches/task-launches-desktop.png`
+- Mobile screenshot path: `/Users/tinker/src/singe/SuperTeam/.scratch/design-qa/task-launches/task-launches-mobile-390.png`
+- Full-view comparison evidence: `/Users/tinker/src/singe/SuperTeam/.scratch/design-qa/task-launches/task-launches-comparison.png`
+- Viewport: desktop 1280px wide, plus mobile 390x844.
+- State: `/task-launches`, authenticated local dev session, real Web connected to running Control Plane.
+- Focused region comparison evidence: the full-view comparison is readable enough for the relevant form region; focused check covered the command textarea, four parameter controls, bottom action bar, and removed attachment/link/import actions.
 
-### Focused Region Comparison Evidence
-- Focused regions checked in the full-view comparison: metric strip, toolbar/filter row, table header, selected row, risk/status badges, action buttons, and pagination.
-- Additional separate focus crops were not needed because the target regions are readable at the comparison scale.
+**Required Fidelity Surfaces**
+- Fonts and typography: implementation uses the existing SuperTeam v3 typography scale and weights. The form title, labels, textarea text, helper copy, and button labels match the intended hierarchy while respecting the current product shell rather than the screenshot's older shell.
+- Spacing and layout rhythm: implementation keeps a single soft card, command textarea, compact parameter grid, and separated bottom action bar. The card is wider in the current v3 shell, which is acceptable because the request required matching the user's UI design style.
+- Colors and visual tokens: implementation uses `--v3-*` tokens, brand blue focus/accent, neutral card surfaces, and v3 borders/shadows. No one-off palette was introduced.
+- Image quality and asset fidelity: no image assets were required for this screen. Icons use the existing product icon library and no placeholder image/CSS art was introduced.
+- Copy and content: retained task-launch copy and field semantics; removed `添加附件`, `关联链接`, `导入资料`, and the `协同资料` section as requested.
 
-### Follow-up Polish
-- P3: The live app shell branding/sidebar differs from the provided mock because the current product shell is the repo source of truth.
-- P3: Row icon tile shape follows the existing `SemanticIconTile` system rather than the exact square icon blocks in the mock.
-- P3: Buttons follow the project rounded-pill action style rather than the mock's slightly squarer buttons.
+**Patches Made Since Previous QA Pass**
+- Rebuilt `TaskLaunchForm` into a single v3 Soft-Flat command panel.
+- Moved `保存草稿` and `提交需求` into the bottom action bar.
+- Removed the bottom attachment/link/import tools and right-side guidance panel.
+- Added regression assertions for the removed resource actions.
+- Added a changelog entry.
 
-### Result
-- Final result: passed.
+**Follow-up Polish**
+- P3: If desired later, the command panel can be vertically tightened on 1280px desktop so the bottom action bar sits higher in the first viewport.
+
+final result: passed

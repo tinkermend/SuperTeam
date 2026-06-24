@@ -14,8 +14,9 @@
     @apply overflow-x-hidden;
   }
   body {
-    @apply min-h-svh w-full bg-v3-bg text-v3-ink has-[div[data-variant='inset']]:bg-v3-bg;
-    background: var(--v3-bg);
+    @apply min-h-svh w-full text-v3-ink;
+    background-color: var(--v3-shell-bg);
+    background-image: var(--v3-shell-background);
   }
 
   /* Override Radix scroll locking for sticky headers */
@@ -40,34 +41,50 @@
 }
 
 @layer components {
-  [data-slot='sidebar-wrapper'] {
+  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) {
+    position: relative;
+    isolation: isolate;
     color: var(--v3-ink);
-    background: var(--v3-bg);
+    background-color: var(--v3-shell-bg);
+    background-image: var(--v3-shell-background);
   }
 
-  [data-slot='sidebar-wrapper'] > [data-slot='sidebar-inset'] {
+  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell'])::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background-image:
+      linear-gradient(to right, var(--v3-shell-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--v3-shell-grid) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.42) 58%, transparent 100%);
+    pointer-events: none;
+  }
+
+  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) > [data-slot='sidebar-inset'] {
     background: transparent;
     box-shadow: none;
   }
 
   [data-slot='sidebar-container'] {
-    border-inline-end: 1px solid var(--v3-line-strong);
+    border-inline-end: 1px solid var(--v3-shell-glass-border);
     box-shadow: none;
   }
 
   [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background: var(--v3-card);
-    background-color: var(--v3-card);
-    backdrop-filter: none;
+    background: var(--v3-shell-glass);
+    background-color: var(--v3-shell-glass);
+    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
     box-shadow: none;
   }
 
   [data-slot='v3-shell-header'] {
-    border-bottom: 1px solid var(--v3-line);
-    background: var(--v3-card);
+    border-bottom: 1px solid var(--v3-shell-glass-border);
+    background: var(--v3-shell-glass-strong);
     box-shadow: var(--v3-shadow);
-    backdrop-filter: blur(14px);
+    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
   }
 
   [data-sidebar='header'] {
@@ -160,8 +177,8 @@
   }
 
   [data-slot='sidebar-menu-button']:hover {
-    border-color: transparent;
-    background: #f5f8ff;
+    border-color: var(--v3-shell-control-border);
+    background: var(--v3-shell-control-hover);
     color: var(--v3-brand-deep);
     box-shadow: none;
   }
@@ -171,8 +188,8 @@
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] {
-    border-color: transparent;
-    background: var(--v3-brand-soft);
+    border-color: rgba(47, 95, 255, 0.20);
+    background: var(--v3-shell-control-active);
     color: var(--v3-brand-deep);
     font-weight: 600;
     box-shadow: none !important;
@@ -228,27 +245,29 @@
   }
 
   .dark body {
-    background: var(--v3-bg);
+    background-color: var(--v3-shell-bg);
+    background-image: var(--v3-shell-background);
   }
 
-  .dark [data-slot='sidebar-wrapper'] {
-    background: var(--v3-bg);
+  .dark :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) {
+    background-color: var(--v3-shell-bg);
+    background-image: var(--v3-shell-background);
   }
 
-  .dark [data-slot='sidebar-wrapper'] > [data-slot='sidebar-inset'] {
+  .dark :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) > [data-slot='sidebar-inset'] {
     background: transparent;
     box-shadow: none;
   }
 
   .dark [data-slot='sidebar-container'] {
-    border-inline-end: 1px solid var(--v3-line-strong);
+    border-inline-end: 1px solid var(--v3-shell-glass-border);
     box-shadow: none;
   }
 
   .dark [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background: var(--v3-card);
-    background-color: var(--v3-card);
+    background: var(--v3-shell-glass);
+    background-color: var(--v3-shell-glass);
     box-shadow: none;
   }
 

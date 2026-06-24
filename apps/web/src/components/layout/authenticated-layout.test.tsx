@@ -121,8 +121,8 @@ describe('AuthenticatedLayout', () => {
     expect(mocks.sidebarProviderProps[0]).toMatchObject({
       dataSlot: 'v3-authenticated-shell',
     })
-    expect(mocks.sidebarProviderProps[0]?.className).toContain('bg-v3-bg')
     expect(mocks.sidebarProviderProps[0]?.className).toContain('text-v3-ink')
-    expect(mocks.sidebarInsetProps[0]?.className).toContain('bg-v3-bg')
+    expect(mocks.sidebarProviderProps[0]?.className).not.toContain('bg-v3-bg')
+    expect(mocks.sidebarInsetProps[0]?.className).toContain('bg-transparent')
   })
 })

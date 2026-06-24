@@ -366,11 +366,12 @@ func extractSkillMarkdown(reader *zip.Reader, rootPrefix string) (string, int, e
 	var skillMarkdownContent string
 	fileCount := 0
 	for _, file := range reader.File {
-		if file.FileInfo().IsDir() {
+		rawPath := strings.TrimPrefix(file.Name, rootPrefix)
+		if file.FileInfo().IsDir() || isIgnoredArchiveEntry(rawPath) {
 			continue
 		}
 		fileCount++
-		normalizedPath := normalizeFilePath(strings.TrimPrefix(file.Name, rootPrefix))
+		normalizedPath := normalizeFilePath(rawPath)
 		if normalizedPath == "SKILL.md" {
 			rc, err := file.Open()
 			if err != nil {
@@ -391,7 +392,7 @@ func extractSkillMarkdown(reader *zip.Reader, rootPrefix string) (string, int, e
 func commonRootPrefix(files []*zip.File) string {
 	root := ""
 	for _, file := range files {
-		if file.FileInfo().IsDir() {
+		if file.FileInfo().IsDir() || isIgnoredArchiveEntry(file.Name) {
 			continue
 		}
 		parts := strings.Split(strings.Trim(file.Name, "/"), "/")
@@ -410,6 +411,20 @@ func commonRootPrefix(files []*zip.File) string {
 		return ""
 	}
 	return root + "/"
+}
+
+func isIgnoredArchiveEntry(value string) bool {
+	normalized := normalizeFilePath(value)
+	if normalized == "" {
+		return true
+	}
+	parts := strings.Split(normalized, "/")
+	for _, part := range parts {
+		if part == "__MACOSX" || part == ".DS_Store" || strings.HasPrefix(part, "._") {
+			return true
+		}
+	}
+	return false
 }
 
 func skillNameFromMarkdown(content string) string {

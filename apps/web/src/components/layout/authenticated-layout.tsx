@@ -41,7 +41,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         <SidebarProvider
           data-slot='v3-authenticated-shell'
           defaultOpen={defaultOpen}
-          className='bg-v3-bg text-v3-ink'
+          className='text-v3-ink'
         >
           <SkipToMain />
           <AppSidebar />
@@ -49,15 +49,15 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
             className={cn(
               // Set content container, so we can use container queries
               '@container/content',
-              'min-w-0 overflow-x-hidden bg-v3-bg text-v3-ink',
+              'min-w-0 overflow-x-hidden bg-transparent text-v3-ink',
 
               // If layout is fixed, set the height
               // to 100svh to prevent overflow
               'has-data-[layout=fixed]:h-svh',
 
               // If layout is fixed and sidebar is inset,
-              // set the height to 100svh - spacing (total margins) to prevent overflow
-              'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
+              // keep the height flush because the acrylic shell has no outer inset gap.
+              'peer-data-[variant=inset]:has-data-[layout=fixed]:h-svh'
             )}
           >
             {children ?? <Outlet />}

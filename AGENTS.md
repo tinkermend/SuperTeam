@@ -58,6 +58,7 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
 - Web 测试必须通过 `corepack pnpm --filter ./apps/web run test` 运行，禁止使用 `npx playwright install` 或 `npx vitest run`。
 - Web 内部页面跳转必须使用 TanStack Router 的 `Link` 或 `navigate`；只有外链、下载链接、同页锚点或明确需要整页刷新的场景才允许原生 `<a href>`、`window.location.href`、`location.assign` 或 `location.replace`。
+- 纯文案替换、单个低风险样式对齐、设计规范/宪法规则补充等不改变交互、数据提交、路由、接口、状态流、权限、持久化或运行链路的局部变更，默认使用轻量验证：`rg` 定位/回查、`git diff --check`，必要时只跑受影响的定向测试；不默认重启服务、跑全量测试或做真实浏览器/端到端验证。
 - 每次功能、修复、合并或跨层联调任务收尾前，必须使用项目内 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）做完成前检查；不得把 mock、组件测试、单元测试或构建通过表述为真实链路已验证。
 - 分支任务收尾默认流程：合并到 `main` 后，必须基于 `main` 当前代码通过 Chrome plug 或真实接口完成端到端真实仿真验证；验证通过后再删除对应分支和 worktree。若验证阻塞，不得删除分支或声明完成。
 - 真实端到端验证是功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更以及任何声称“功能可用”任务的默认完成条件。验证必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 或对应真实服务路径运行；不能只停留在 mock、单元测试、组件测试、构建或代码审查。
