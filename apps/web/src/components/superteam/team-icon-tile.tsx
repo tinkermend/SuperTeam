@@ -1,6 +1,9 @@
 import type { ComponentType, SVGProps } from "react";
 import { Code2, FlaskConical, ServerCog, Shield, UsersRound } from "lucide-react";
+import { DynamicIcon, iconNames } from "lucide-react/dynamic";
 import { cn } from "@/lib/utils";
+
+const lucideIconNameSet = new Set<string>(iconNames as readonly string[]);
 
 const iconLabels = {
   default: "默认团队图标",
@@ -39,13 +42,39 @@ export type TeamDisplayMetadata = {
 export function getTeamDisplayConfig(metadata: TeamDisplayMetadata) {
   const iconKey = metadata.display?.icon_key;
   const tone = metadata.display?.color_tone;
-  const resolvedIconKey = iconKey && iconKey in iconLabels ? (iconKey as TeamIconKey) : "default";
   const resolvedTone = tone && tone in toneClasses ? (tone as TeamTone) : "neutral";
 
+  // 旧版固定键：保持静态组件与既有行为。
+  if (iconKey && iconKey in iconLabels) {
+    const legacyKey = iconKey as TeamIconKey;
+    return {
+      Icon: iconComponents[legacyKey],
+      dynamicName: undefined as string | undefined,
+      iconKey: legacyKey,
+      label: iconLabels[legacyKey],
+      tone: resolvedTone,
+      toneClassName: toneClasses[resolvedTone],
+    };
+  }
+
+  // 任意有效的 lucide 图标名（kebab-case）：动态渲染。
+  if (iconKey && lucideIconNameSet.has(iconKey)) {
+    return {
+      Icon: iconComponents.default,
+      dynamicName: iconKey,
+      iconKey,
+      label: iconKey,
+      tone: resolvedTone,
+      toneClassName: toneClasses[resolvedTone],
+    };
+  }
+
+  // 未知值：回退默认图标。
   return {
-    Icon: iconComponents[resolvedIconKey],
-    iconKey: resolvedIconKey,
-    label: iconLabels[resolvedIconKey],
+    Icon: iconComponents.default,
+    dynamicName: undefined as string | undefined,
+    iconKey: "default" as const,
+    label: iconLabels.default,
     tone: resolvedTone,
     toneClassName: toneClasses[resolvedTone],
   };
@@ -70,7 +99,14 @@ export function TeamIconTile({ className, metadata }: TeamIconTileProps) {
       )}
       role="img"
     >
-      <Icon aria-hidden="true" />
+      {config.dynamicName ? (
+        <DynamicIcon
+          aria-hidden="true"
+          name={config.dynamicName as (typeof iconNames)[number]}
+        />
+      ) : (
+        <Icon aria-hidden="true" />
+      )}
     </div>
   );
 }

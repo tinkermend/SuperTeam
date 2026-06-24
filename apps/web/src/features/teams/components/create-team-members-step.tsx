@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { X } from "lucide-react";
 import { directTeamRoles, type DirectTeamRole } from "@/components/superteam/team-role";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listUsers, type UserSummary } from "@/lib/api/auth";
 import type { InitialTeamMemberInput } from "@/lib/api/teams";
 import type { CreateTeamDraft } from "./create-team-draft";
@@ -27,16 +25,12 @@ type CreateTeamMembersStepProps = {
   onChange: (draft: CreateTeamDraft) => void;
 };
 
-type MemberRoleFilter = "all" | "member" | "viewer";
-
 export function CreateTeamMembersStep({
   apiBaseUrl,
   draft,
   fetcher,
   onChange,
 }: CreateTeamMembersStepProps) {
-  const [candidateRoles, setCandidateRoles] = useState<Record<string, DirectTeamRole>>({});
-  const [roleFilter, setRoleFilter] = useState<MemberRoleFilter>("all");
   const [query, setQuery] = useState("");
   const users = useQuery({
     queryKey: ["team-member-candidates", query],
@@ -50,33 +44,21 @@ export function CreateTeamMembersStep({
         status: "active",
       }),
   });
-  const selectedByUserId = useMemo(
-    () => new Map(draft.initial_members.map((member) => [member.user_id, member])),
+
+  const selectedIds = useMemo(
+    () => new Set(draft.initial_members.map((member) => member.user_id)),
     [draft.initial_members],
   );
-  function candidateRoleFor(userId: string) {
-    return selectedByUserId.get(userId)?.role ?? candidateRoles[userId] ?? "member";
-  }
 
-  const userItems = (users.data?.items ?? [])
-    .filter((user) => user.id !== draft.owner?.id)
-    .filter((user) => {
-      if (roleFilter === "all") return true;
+  const candidates = (users.data?.items ?? []).filter(
+    (user) => user.id !== draft.owner?.id && !selectedIds.has(user.id),
+  );
 
-      return candidateRoleFor(user.id) === roleFilter;
-    });
-
-  function upsertMember(user: UserSummary, role: DirectTeamRole = "member") {
-    if (user.id === draft.owner?.id) return;
-    const exists = selectedByUserId.has(user.id);
-    const initial_members = exists
-      ? draft.initial_members.map((member) =>
-          member.user_id === user.id ? { ...member, role } : member,
-        )
-      : [...draft.initial_members, { role, user_id: user.id }];
+  function addMember(user: UserSummary, role: DirectTeamRole = "member") {
+    if (user.id === draft.owner?.id || selectedIds.has(user.id)) return;
     onChange({
       ...draft,
-      initial_members,
+      initial_members: [...draft.initial_members, { role, user_id: user.id }],
       memberUsers: { ...draft.memberUsers, [user.id]: user },
     });
   }
@@ -86,13 +68,14 @@ export function CreateTeamMembersStep({
     delete nextMemberUsers[userId];
     onChange({
       ...draft,
-      initial_members: draft.initial_members.filter((member) => member.user_id !== userId),
+      initial_members: draft.initial_members.filter(
+        (member) => member.user_id !== userId,
+      ),
       memberUsers: nextMemberUsers,
     });
   }
 
-  function updateSelectedRole(userId: string, role: DirectTeamRole) {
-    setCandidateRoles((current) => ({ ...current, [userId]: role }));
+  function updateRole(userId: string, role: DirectTeamRole) {
     onChange({
       ...draft,
       initial_members: draft.initial_members.map((member) =>
@@ -101,165 +84,85 @@ export function CreateTeamMembersStep({
     });
   }
 
-  function changeCandidateRole(user: UserSummary, role: DirectTeamRole) {
-    if (selectedByUserId.has(user.id)) {
-      updateSelectedRole(user.id, role);
-      return;
-    }
-
-    setCandidateRoles((current) => ({ ...current, [user.id]: role }));
-  }
-
   return (
-    <div className="flex flex-col gap-5">
-      <section className="rounded-md border p-4">
-        <h3 className="text-sm font-medium">基础信息</h3>
-        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-muted-foreground">团队名称</dt>
-            <dd className="mt-1 font-medium">{draft.name || "-"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">slug</dt>
-            <dd className="mt-1 font-medium">{draft.slug || "-"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">负责人</dt>
-            <dd className="mt-1 font-medium">{draft.owner?.username ?? "-"}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
-        负责人、管理员、审批人需创建后发起特权角色申请。
+    <div className="flex flex-col gap-4">
+      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+        创建时仅可加入「普通成员」与「只读观察者」；负责人、管理员、审批人需创建后发起特权角色申请。
       </div>
 
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="grid flex-1 gap-2">
-            <Label htmlFor="team-member-search">候选成员</Label>
-            <Input
-              aria-label="搜索候选成员"
-              id="team-member-search"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索用户名"
-              type="search"
-              value={query}
-            />
-          </div>
-          <Select onValueChange={(value) => setRoleFilter(value as MemberRoleFilter)} value={roleFilter}>
-            <SelectTrigger aria-label="角色筛选" className="w-full sm:w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">全部</SelectItem>
-                <SelectItem value="member">普通成员</SelectItem>
-                <SelectItem value="viewer">只读观察者</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+      <div className="grid gap-2">
+        <Label htmlFor="team-member-search">搜索用户</Label>
+        <Input
+          aria-label="搜索候选成员"
+          id="team-member-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="按用户名搜索后点击添加"
+          type="search"
+          value={query}
+        />
+        <div className="flex min-w-0 flex-col gap-1">
+          {users.isLoading ? (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              加载候选用户中
+            </p>
+          ) : users.isError ? (
+            <p className="px-2 py-1.5 text-sm text-destructive">
+              候选用户加载失败
+            </p>
+          ) : candidates.length === 0 ? (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              暂无可添加的候选用户
+            </p>
+          ) : (
+            candidates.map((user) => (
+              <div
+                className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                key={user.id}
+              >
+                <UserIdentity className="min-w-0" showSecondary size="sm" user={user} />
+                <Button
+                  aria-label={`添加 ${user.username}`}
+                  className="ml-auto"
+                  onClick={() => addMember(user)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  添加
+                </Button>
+              </div>
+            ))
+          )}
         </div>
+      </div>
 
-        {users.isLoading ? (
-          <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
-            加载候选用户中
-          </div>
-        ) : null}
-        {users.isError ? (
-          <div className="rounded-md border px-3 py-2 text-sm text-destructive">
-            候选用户加载失败
-          </div>
-        ) : null}
-        {!users.isLoading && !users.isError && userItems.length === 0 ? (
-          <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
-            暂无可添加的候选用户
-          </div>
-        ) : null}
-        {userItems.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">选择</TableHead>
-                <TableHead>用户</TableHead>
-                <TableHead>初始角色</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {userItems.map((user) => {
-                const selected = selectedByUserId.get(user.id);
-                const role = candidateRoleFor(user.id);
-
-                return (
-                  <TableRow data-state={selected ? "selected" : undefined} key={user.id}>
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`选择 ${user.username} 为初始成员`}
-                        checked={Boolean(selected)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            upsertMember(user, candidateRoleFor(user.id));
-                          } else {
-                            removeMember(user.id);
-                          }
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <UserIdentity showSecondary size="sm" user={user} />
-                    </TableCell>
-                    <TableCell>
-                      <TeamRoleSelect
-                        ariaLabel={`${user.username} 初始角色`}
-                        mode="direct"
-                        onChange={(nextRole) => changeCandidateRole(user, nextRole)}
-                        value={role}
-                      />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        ) : null}
-      </section>
-
-      <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">
           已选择的初始成员（{draft.initial_members.length}）
         </h3>
         {draft.initial_members.length === 0 ? (
-          <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
+          <p className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
             暂未选择初始成员。
-          </div>
+          </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>成员</TableHead>
-                <TableHead>角色</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {draft.initial_members.map((member) => (
-                <SelectedMemberRow
-                  key={member.user_id}
-                  member={member}
-                  onRemove={() => removeMember(member.user_id)}
-                  onRoleChange={(role) => updateSelectedRole(member.user_id, role)}
-                  user={draft.memberUsers[member.user_id]}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <ul className="flex flex-col gap-2">
+            {draft.initial_members.map((member) => (
+              <SelectedMemberChip
+                key={member.user_id}
+                member={member}
+                onRemove={() => removeMember(member.user_id)}
+                onRoleChange={(role) => updateRole(member.user_id, role)}
+                user={draft.memberUsers[member.user_id]}
+              />
+            ))}
+          </ul>
         )}
-      </section>
+      </div>
     </div>
   );
 }
 
-function SelectedMemberRow({
+function SelectedMemberChip({
   member,
   onRemove,
   onRoleChange,
@@ -271,11 +174,7 @@ function SelectedMemberRow({
   user?: UserSummary;
 }) {
   const fallbackUser: UserSummary = {
-    avatar: {
-      provider: "dicebear",
-      seed: member.user_id,
-      style: "adventurer",
-    },
+    avatar: { provider: "dicebear", seed: member.user_id, style: "adventurer" },
     id: member.user_id,
     status: "active",
     username: member.user_id,
@@ -283,51 +182,40 @@ function SelectedMemberRow({
   const visibleUser = user ?? fallbackUser;
 
   return (
-    <TableRow>
-      <TableCell>
-        <UserIdentity showSecondary size="sm" user={visibleUser} />
-      </TableCell>
-      <TableCell>
-        <TeamRoleSelect
-          ariaLabel={`${visibleUser.username} 已选角色`}
-          mode="direct"
-          onChange={onRoleChange}
+    <li className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+      <UserIdentity className="min-w-0" showSecondary size="sm" user={visibleUser} />
+      <div className="ml-auto flex items-center gap-2">
+        <Select
+          onValueChange={(role) => onRoleChange(role as DirectTeamRole)}
           value={member.role}
-        />
-      </TableCell>
-      <TableCell className="text-right">
-        <Button aria-label={`移除 ${visibleUser.username}`} onClick={onRemove} size="icon" type="button" variant="ghost">
-          <Trash2 className="size-4" />
+        >
+          <SelectTrigger
+            aria-label={`${visibleUser.username} 角色`}
+            className="w-32"
+            size="sm"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {directTeamRoles.map((role) => (
+                <SelectItem key={role.value} value={role.value}>
+                  {role.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button
+          aria-label={`移除 ${visibleUser.username}`}
+          onClick={onRemove}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <X className="size-4" />
         </Button>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-function TeamRoleSelect({
-  ariaLabel,
-  onChange,
-  value,
-}: {
-  ariaLabel: string;
-  mode: "direct";
-  onChange: (role: DirectTeamRole) => void;
-  value: DirectTeamRole;
-}) {
-  return (
-    <Select onValueChange={(role) => onChange(role as DirectTeamRole)} value={value}>
-      <SelectTrigger aria-label={ariaLabel} className="w-40" size="sm">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {directTeamRoles.map((role) => (
-            <SelectItem key={role.value} value={role.value}>
-              {role.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+      </div>
+    </li>
   );
 }

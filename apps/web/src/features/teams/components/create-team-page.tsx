@@ -5,12 +5,14 @@ import {
   BadgeCheck,
   Boxes,
   Plug,
+  Plus,
   ScrollText,
   Share2,
   ShieldCheck,
   UserCog,
   UsersRound,
 } from "lucide-react";
+import { TeamIconPicker } from "@/components/superteam/team-icon-picker";
 import { TeamIconTile } from "@/components/superteam/team-icon-tile";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
@@ -24,10 +26,9 @@ import { cn } from "@/lib/utils";
 import { CreateTeamMembersStep } from "./create-team-members-step";
 import {
   type CreateTeamDraft,
-  type TeamDisplayDraft,
   emptyCreateTeamDraft,
   inferTeamDisplay,
-  teamIconOptions,
+  slugify,
   toCreateTeamInput,
 } from "./create-team-draft";
 
@@ -53,6 +54,8 @@ export function CreateTeamView({
   const [draft, setDraft] = useState<CreateTeamDraft>(emptyCreateTeamDraft);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [goToGovernance, setGoToGovernance] = useState(false);
+  const [editingOwner, setEditingOwner] = useState(false);
+  const [addingMembers, setAddingMembers] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -70,6 +73,7 @@ export function CreateTeamView({
         ? current.display
         : inferTeamDisplay(`${name} ${current.slug}`),
       name,
+      slug: current.slugTouched ? current.slug : slugify(name),
     }));
   }
 
@@ -80,11 +84,16 @@ export function CreateTeamView({
         ? current.display
         : inferTeamDisplay(`${current.name} ${slug}`),
       slug,
+      slugTouched: true,
     }));
   }
 
-  function updateDisplay(display: TeamDisplayDraft) {
-    setDraft((current) => ({ ...current, display, displayTouched: true }));
+  function updateIcon(iconKey: string) {
+    setDraft((current) => ({
+      ...current,
+      display: { ...current.display, icon_key: iconKey },
+      displayTouched: true,
+    }));
   }
 
   function updateOwner(owner: CreateTeamDraft["owner"]) {
@@ -153,74 +162,60 @@ export function CreateTeamView({
               </div>
             </header>
             <div className="flex flex-col gap-5 p-5">
-              <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
-                <div className="grid gap-2">
-                  <Label htmlFor="team-name">团队名称</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="team-name">团队名称</Label>
+                <Input
+                  id="team-name"
+                  onChange={(event) => updateName(event.target.value)}
+                  value={draft.name}
+                />
+                {errors.name ? (
+                  <span className="text-sm text-destructive">{errors.name}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    用于全站展示，可随时修改。
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label
+                  className="text-xs font-medium text-muted-foreground"
+                  htmlFor="team-slug"
+                >
+                  团队标识 slug
+                </Label>
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-1">
+                  <span className="select-none font-mono text-xs text-muted-foreground">
+                    /teams/
+                  </span>
                   <Input
-                    id="team-name"
-                    onChange={(event) => updateName(event.target.value)}
-                    value={draft.name}
-                  />
-                  {errors.name ? (
-                    <span className="text-sm text-destructive">{errors.name}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      用于全站展示，可随时修改。
-                    </span>
-                  )}
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="team-slug">团队标识 slug</Label>
-                  <Input
+                    className="h-8 border-0 bg-transparent px-0 font-mono text-sm shadow-none focus-visible:ring-0"
                     id="team-slug"
                     onChange={(event) => updateSlug(event.target.value)}
+                    placeholder="team-slug"
                     value={draft.slug}
                   />
-                  {errors.slug ? (
-                    <span className="text-sm text-destructive">{errors.slug}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      URL 与 API 标识，由名称自动生成。
-                    </span>
-                  )}
                 </div>
+                {errors.slug ? (
+                  <span className="text-sm text-destructive">{errors.slug}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    用于网址与接口标识，默认按名称生成，可手动修改。
+                  </span>
+                )}
               </div>
 
               <div className="grid gap-2">
-                <Label>配色与图标</Label>
-                <div className="grid grid-cols-5 gap-2">
-                  {teamIconOptions.map((option) => {
-                    const selected = option.icon_key === draft.display.icon_key;
-                    return (
-                      <Button
-                        aria-label={option.label}
-                        aria-pressed={selected}
-                        className={cn(
-                          "h-12 justify-center",
-                          selected ? "border-primary ring-2 ring-ring/30" : "",
-                        )}
-                        key={option.icon_key}
-                        onClick={() =>
-                          updateDisplay({
-                            color_tone: option.color_tone,
-                            icon_key: option.icon_key,
-                          })
-                        }
-                        type="button"
-                        variant="outline"
-                      >
-                        <TeamIconTile
-                          metadata={{
-                            display: {
-                              color_tone: option.color_tone,
-                              icon_key: option.icon_key,
-                            },
-                          }}
-                        />
-                      </Button>
-                    );
-                  })}
-                </div>
+                <Label>团队图标</Label>
+                <TeamIconPicker
+                  colorTone={draft.display.color_tone}
+                  onSelect={updateIcon}
+                  value={draft.display.icon_key}
+                />
+                <span className="text-xs text-muted-foreground">
+                  点击展开图标库，可搜索全部 lucide 图标。
+                </span>
               </div>
             </div>
           </section>
@@ -239,25 +234,39 @@ export function CreateTeamView({
               </div>
             </header>
             <div className="flex flex-col gap-2 p-5">
-              <Label>负责人</Label>
-              <UserSearchSelect
-                apiBaseUrl={apiBaseUrl}
-                fetcher={fetcher}
-                onSelect={updateOwner}
-                placeholder="负责人"
-                value={draft.owner}
-              />
-              {errors.owner ? (
-                <span className="text-sm text-destructive">{errors.owner}</span>
-              ) : null}
-              {draft.owner ? (
-                <div className="mt-1 flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+              {draft.owner && !editingOwner ? (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
                   <UserIdentity showSecondary size="sm" user={draft.owner} />
                   <span className="ml-auto rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
                     人类 · 团队管理者
                   </span>
+                  <Button
+                    onClick={() => setEditingOwner(true)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    更换
+                  </Button>
                 </div>
-              ) : null}
+              ) : (
+                <>
+                  <Label>负责人</Label>
+                  <UserSearchSelect
+                    apiBaseUrl={apiBaseUrl}
+                    excludedUserIds={draft.owner ? [draft.owner.id] : []}
+                    fetcher={fetcher}
+                    onSelect={(user) => {
+                      updateOwner(user);
+                      setEditingOwner(false);
+                    }}
+                    placeholder="负责人"
+                  />
+                  {errors.owner ? (
+                    <span className="text-sm text-destructive">{errors.owner}</span>
+                  ) : null}
+                </>
+              )}
             </div>
           </section>
 
@@ -280,12 +289,24 @@ export function CreateTeamView({
               </div>
             </header>
             <div className="p-5">
-              <CreateTeamMembersStep
-                apiBaseUrl={apiBaseUrl}
-                draft={draft}
-                fetcher={fetcher}
-                onChange={setDraft}
-              />
+              {addingMembers || draft.initial_members.length > 0 ? (
+                <CreateTeamMembersStep
+                  apiBaseUrl={apiBaseUrl}
+                  draft={draft}
+                  fetcher={fetcher}
+                  onChange={setDraft}
+                />
+              ) : (
+                <Button
+                  className="gap-2"
+                  onClick={() => setAddingMembers(true)}
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus data-icon="inline-start" />
+                  添加初始成员
+                </Button>
+              )}
             </div>
           </section>
 
@@ -301,9 +322,10 @@ export function CreateTeamView({
               实时预览
             </p>
             <div className="mt-3 flex items-center gap-3">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-white/20 text-lg font-bold">
-                {previewName.slice(0, 1)}
-              </span>
+              <TeamIconTile
+                className="size-12 rounded-xl border-white/40 bg-white/80 [&_svg]:size-5"
+                metadata={{ display: draft.display }}
+              />
               <div className="min-w-0">
                 <div className="truncate text-base font-bold">{previewName}</div>
                 <div className="truncate font-mono text-xs opacity-90">
@@ -319,24 +341,24 @@ export function CreateTeamView({
           </div>
 
           <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <h3 className="text-sm font-semibold">创建后的生命周期</h3>
+            <h3 className="text-sm font-semibold">创建后解锁</h3>
             <p className="mb-3 mt-1 text-xs text-muted-foreground">
-              创建只是第一步，以下能力将在团队创建后开放配置：
+              下列能力在团队创建后开放，可按需逐步配置：
             </p>
             <ul className="flex flex-col">
               <LifecycleRow
                 desc="章程 · 能力策略 · 审批策略 · 工件契约"
                 icon={<ShieldCheck className="size-4" />}
-                state="待配置"
-                stateTone="warning"
+                state="创建后配置"
+                stateTone="neutral"
                 title="治理策略"
                 tone="text-emerald-600 bg-emerald-500/10"
               />
               <LifecycleRow
                 desc="本团队员工可被哪些项目调用 · 预算 / 能力上限 · 超纲走团队负责人审批"
                 icon={<Share2 className="size-4" />}
-                state="待设置"
-                stateTone="warning"
+                state="创建后配置"
+                stateTone="neutral"
                 title="对外借调策略"
                 tone="text-blue-600 bg-blue-500/10"
               />

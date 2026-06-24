@@ -3,7 +3,8 @@ import type { InitialTeamMemberInput } from "@/lib/api/teams";
 
 export type TeamDisplayDraft = {
   color_tone: "blue" | "cyan" | "neutral" | "teal" | "violet";
-  icon_key: "default" | "dev" | "ops" | "qa" | "security";
+  // 旧版固定 5 键（default/dev/ops/qa/security）或任意 lucide 图标名（kebab-case）。
+  icon_key: string;
 };
 
 export type CreateTeamDraft = {
@@ -14,24 +15,27 @@ export type CreateTeamDraft = {
   name: string;
   owner?: UserSummary;
   slug: string;
+  slugTouched: boolean;
 };
 
 export const emptyCreateTeamDraft: CreateTeamDraft = {
-  display: { color_tone: "neutral", icon_key: "default" },
+  display: { color_tone: "blue", icon_key: "default" },
   displayTouched: false,
   initial_members: [],
   memberUsers: {},
   name: "",
   slug: "",
+  slugTouched: false,
 };
 
-export const teamIconOptions = [
-  { color_tone: "cyan", icon_key: "ops", label: "选择运维团队图标" },
-  { color_tone: "blue", icon_key: "dev", label: "选择研发团队图标" },
-  { color_tone: "violet", icon_key: "qa", label: "选择测试团队图标" },
-  { color_tone: "teal", icon_key: "security", label: "选择安全团队图标" },
-  { color_tone: "neutral", icon_key: "default", label: "选择默认团队图标" },
-] as const;
+/** 把团队名称规整为 URL/接口安全的 slug；非 ASCII 字符会被去除。 */
+export function slugify(value: string): string {
+  return value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 export function inferTeamDisplay(value: string): TeamDisplayDraft {
   const normalized = value.toLowerCase();
@@ -43,7 +47,7 @@ export function inferTeamDisplay(value: string): TeamDisplayDraft {
     return { color_tone: "violet", icon_key: "qa" };
   if (normalized.includes("security") || normalized.includes("安全"))
     return { color_tone: "teal", icon_key: "security" };
-  return { color_tone: "neutral", icon_key: "default" };
+  return { color_tone: "blue", icon_key: "default" };
 }
 
 /**

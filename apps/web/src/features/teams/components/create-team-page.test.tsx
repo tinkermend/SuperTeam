@@ -138,13 +138,11 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "选择安全团队图标" }),
-    );
     await selectOwner(screen);
 
-    await userEvent.click(screen.getByLabelText("选择 member 为初始成员"));
-    await userEvent.click(screen.getByLabelText("选择 viewer 为初始成员"));
+    await userEvent.click(screen.getByRole("button", { name: "添加初始成员" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加 member" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加 viewer" }));
     await userEvent.click(screen.getByRole("button", { name: "移除 viewer" }));
     await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
 
@@ -167,38 +165,37 @@ describe("CreateTeamView", () => {
     expect(onCreated.mock.calls[0][1]).toEqual({ goToGovernance: false });
   });
 
-  it("keeps inferred display until the icon is manually selected", async () => {
+  it("keeps the inferred icon until one is manually selected", async () => {
     const fetcher = createFetcher();
     const screen = await renderView(
       <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
+    const iconTrigger = screen.getByRole("button", { name: "选择团队图标" });
+
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
       "安全团队",
     );
-    await expect
-      .element(screen.getByRole("button", { name: "选择安全团队图标" }))
-      .toHaveAttribute("aria-pressed", "true");
+    await expect.element(iconTrigger).toHaveTextContent("security");
 
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "ops",
     );
-    await expect
-      .element(screen.getByRole("button", { name: "选择运维团队图标" }))
-      .toHaveAttribute("aria-pressed", "true");
+    await expect.element(iconTrigger).toHaveTextContent("ops");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "选择安全团队图标" }),
-    );
+    // 手动从图标库选择后，后续名称/标识变化不再覆盖。
+    await userEvent.click(iconTrigger);
+    await userEvent.fill(screen.getByRole("searchbox", { name: "搜索图标" }), "rocket");
+    await userEvent.click(screen.getByRole("button", { name: "选择图标 rocket" }));
+    await expect.element(iconTrigger).toHaveTextContent("rocket");
+
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "dev",
     );
-    await expect
-      .element(screen.getByRole("button", { name: "选择安全团队图标" }))
-      .toHaveAttribute("aria-pressed", "true");
+    await expect.element(iconTrigger).toHaveTextContent("rocket");
   });
 
   it("surfaces a create error returned by the API", async () => {
@@ -237,7 +234,8 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-    await userEvent.click(screen.getByLabelText("选择 member 为初始成员"));
+    await userEvent.click(screen.getByRole("button", { name: "添加初始成员" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加 member" }));
     await userEvent.type(
       screen.getByRole("searchbox", { name: "负责人" }),
       "member",

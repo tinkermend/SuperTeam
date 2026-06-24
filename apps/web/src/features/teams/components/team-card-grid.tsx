@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Bot, Building2, ChevronRight, Users } from "lucide-react";
+import { DynamicIcon, iconNames } from "lucide-react/dynamic";
 import {
   getTeamDisplayConfig,
   type TeamDisplayMetadata,
@@ -358,7 +359,14 @@ function TeamCard({
       <div className="flex items-start justify-between gap-3 px-5 pt-5">
         <div className="flex items-center gap-3">
           <IconTile aria-label={displayConfig.label} role="img" tone={teamDisplayTone(displayConfig.tone)}>
-            <TeamIcon aria-hidden="true" />
+            {displayConfig.dynamicName ? (
+              <DynamicIcon
+                aria-hidden="true"
+                name={displayConfig.dynamicName as (typeof iconNames)[number]}
+              />
+            ) : (
+              <TeamIcon aria-hidden="true" />
+            )}
           </IconTile>
           <div className="min-w-0">
             <h3 className="truncate text-base font-bold leading-tight text-v3-ink">
