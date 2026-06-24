@@ -123,6 +123,7 @@ export function CreateEmployeePage() {
 export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewProps) {
   const navigate = useNavigate();
   const [workbenchMode, setWorkbenchMode] = useState<"select" | "configure">("select");
+  const [draftTouched, setDraftTouched] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -241,10 +242,16 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
 
   function updateDraft(patch: Partial<WizardDraft>) {
+    if (workbenchMode === "configure") {
+      setDraftTouched(true);
+    }
     setDraft((current) => ({ ...current, ...patch }));
   }
 
   function selectType(typeValue: string) {
+    if (workbenchMode === "configure") {
+      setDraftTouched(true);
+    }
     const nextType = createOptions.data?.employee_types.find((item) => item.type === typeValue);
     if (!nextType) {
       updateDraft({ employee_type: typeValue });
@@ -282,6 +289,18 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   function enterConfiguration() {
     setWorkbenchMode("configure");
     setStepIndex(0);
+    setDraftTouched(false);
+  }
+
+  function requestTemplateChange() {
+    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+      return;
+    }
+    setErrors({});
+    setStepIndex(0);
+    setDraftTouched(false);
+    setDraft((current) => ({ ...emptyDraft, team_id: current.team_id }));
+    setWorkbenchMode("select");
   }
 
   return (
@@ -307,7 +326,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           </div>
           <div className="flex flex-wrap gap-2">
             {workbenchMode === "configure" ? (
-              <Button onClick={() => setWorkbenchMode("select")} type="button" variant="outline">
+              <Button onClick={requestTemplateChange} type="button" variant="outline">
                 <ArrowLeft data-icon="inline-start" />
                 返回
               </Button>
@@ -386,14 +405,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <CreationFactsBand />
           </>
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_340px]">
-            <BlueprintSidebar
-              draft={draft}
-              options={createOptions.data}
-              selectedType={selectedType}
-              onSelectType={selectType}
-            />
-
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
             <div className="border-b p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -408,11 +420,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             </div>
 
             <div className="grid gap-4 p-4">
-              <TemplateOverview
+              <SelectedTemplateSummary
                 draft={draft}
-                options={createOptions.data}
                 selectedType={selectedType}
-                onSelectType={selectType}
+                onChangeTemplate={requestTemplateChange}
               />
 
               <div className="min-h-[420px] rounded-md border bg-background p-4">
@@ -879,51 +890,6 @@ function CreationFactsBand() {
   );
 }
 
-function BlueprintSidebar({
-  draft,
-  options,
-  selectedType,
-  onSelectType,
-}: {
-  draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
-  selectedType?: DigitalEmployeeTypeOption;
-  onSelectType: (value: string) => void;
-}) {
-  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
-
-  return (
-    <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
-      <h2 className="px-1 text-base font-semibold">推荐起步画像</h2>
-      <p className="mt-1 px-1 text-xs text-muted-foreground">切换画像会同步默认角色与能力建议。</p>
-      <div className="mt-3 grid gap-2">
-        {employeeTypes.map((typeOption) => (
-          <button
-            aria-pressed={typeOption.type === draft.employee_type}
-            className={cn(
-              "rounded-md border p-3 text-left transition",
-              typeOption.type === draft.employee_type ? "border-primary/60 bg-primary/10" : "bg-background hover:border-primary/40",
-            )}
-            key={typeOption.type}
-            onClick={() => onSelectType(typeOption.type)}
-            type="button"
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span className="font-medium">{typeOption.label}</span>
-              {typeOption.type === selectedType?.type ? <Check className="size-4 text-primary" /> : null}
-            </span>
-            <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{typeOption.description}</span>
-          </button>
-        ))}
-        <button className="rounded-md border border-dashed bg-background p-3 text-sm text-muted-foreground" type="button">
-          <Plus className="mr-2 inline size-4" />
-          从空白开始自定义
-        </button>
-      </div>
-    </aside>
-  );
-}
-
 function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = steps.indexOf(currentStep);
 
@@ -959,67 +925,34 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
   );
 }
 
-function TemplateOverview({
+function SelectedTemplateSummary({
   draft,
-  options,
   selectedType,
-  onSelectType,
+  onChangeTemplate,
 }: {
   draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
-  onSelectType: (value: string) => void;
+  onChangeTemplate: () => void;
 }) {
-  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
-  if (employeeTypes.length === 0) {
-    return (
-      <section className="rounded-md border bg-muted/30 p-4">
-        <h2 className="text-base font-semibold">专业模板</h2>
-        <p className="mt-1 text-sm text-muted-foreground">当前团队治理配置未返回可用专业模板。</p>
-      </section>
-    );
-  }
-
   return (
     <section className="rounded-md border bg-background p-4">
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold">专业模板</h2>
-          <p className="text-sm text-muted-foreground">模板只提供默认值和推荐能力，最终提交仍由控制平面校验。</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">已选模板</p>
+          <h2 className="mt-1 text-lg font-semibold">{selectedType?.label ?? (draft.employee_type || "未选择模板")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {selectedType?.description ?? "模板只作为初始草稿来源，运行绑定在最后一步选择。"}
+          </p>
         </div>
-        <Badge variant="secondary">{(selectedType?.label ?? draft.employee_type) || "未选择"}</Badge>
+        <Button onClick={onChangeTemplate} type="button" variant="outline">
+          <ArrowLeft data-icon="inline-start" />
+          更换模板
+        </Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {employeeTypes.map((typeOption) => {
-          const selected = typeOption.type === draft.employee_type;
-          return (
-            <button
-              aria-pressed={selected}
-              className={cn(
-                "rounded-md border p-3 text-left transition",
-                selected ? "border-primary/50 bg-primary/10 shadow-xs" : "bg-card hover:border-primary/40",
-              )}
-              key={typeOption.type}
-              onClick={() => onSelectType(typeOption.type)}
-              type="button"
-            >
-              <span className="flex items-start justify-between gap-3">
-                <span>
-                  <span className="block text-sm font-semibold">{typeOption.label}</span>
-                  <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
-                    {typeOption.description}
-                  </span>
-                </span>
-                {selected ? <Check className="size-4 shrink-0 text-primary" /> : null}
-              </span>
-              <span className="mt-3 flex flex-wrap gap-1.5">
-                <Badge variant="secondary">技能 {typeOption.recommended_skills?.length ?? 0}</Badge>
-                <Badge variant="secondary">MCP {typeOption.recommended_mcp_servers?.length ?? 0}</Badge>
-                <Badge variant="secondary">Provider {(typeOption.recommended_provider_types ?? []).join(", ") || "按团队"}</Badge>
-              </span>
-            </button>
-          );
-        })}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Badge variant="secondary">默认角色 {selectedType?.default_role || draft.role || "未生成"}</Badge>
+        <Badge variant="secondary">技能 {selectedType?.recommended_skills?.length ?? 0}</Badge>
+        <Badge variant="secondary">MCP {selectedType?.recommended_mcp_servers?.length ?? 0}</Badge>
       </div>
     </section>
   );
