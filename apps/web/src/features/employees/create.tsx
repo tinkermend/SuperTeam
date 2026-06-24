@@ -1366,6 +1366,8 @@ function RuntimeStep({
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const runtimeOptions = options?.runtime_provider_options ?? [];
+  const availableRuntimeOptions = runtimeOptions.filter((option) => option.available);
+  const unavailableRuntimeOptions = runtimeOptions.filter((option) => !option.available);
   const updateEnvironmentRow = (rowId: string, patch: Partial<EnvironmentVariableDraftRow>) => {
     onUpdate({
       environment_variables: draft.environment_variables.map((row) =>
@@ -1385,7 +1387,7 @@ function RuntimeStep({
       </div>
       <RadioGroup onValueChange={onSelectRuntime} value={draft.runtime_binding}>
         <div className="grid gap-3">
-          {runtimeOptions.map((option) => (
+          {availableRuntimeOptions.map((option) => (
             <RuntimeOption
               key={runtimeBinding(option)}
               onSelectRuntime={onSelectRuntime}
@@ -1394,7 +1396,12 @@ function RuntimeStep({
           ))}
         </div>
       </RadioGroup>
-      {runtimeOptions.length === 0 ? <p className="text-sm text-muted-foreground">暂无可用 Runtime Provider。</p> : null}
+      {availableRuntimeOptions.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+          当前团队没有可绑定的 Runtime Provider，请检查 Runtime 在线状态、Provider 健康状态或团队运行策略。
+        </p>
+      ) : null}
+      <UnavailableRuntimeList options={unavailableRuntimeOptions} />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <section className="rounded-md border bg-card/80 p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1477,26 +1484,44 @@ function RuntimeOption({
 
   return (
     <label
-      className={cn(
-        "flex items-start gap-3 rounded-md border p-3 text-sm",
-        option.available ? "cursor-pointer" : "cursor-not-allowed opacity-60",
-      )}
+      className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm"
       onClick={(event) => {
         event.preventDefault();
-        if (option.available) onSelectRuntime(binding);
+        onSelectRuntime(binding);
       }}
     >
-      <RadioGroupItem disabled={!option.available} value={binding} />
+      <RadioGroupItem value={binding} />
       <span className="min-w-0 flex-1">
         <span className="block font-medium">{label}</span>
         <span className="mt-1 block text-muted-foreground">
           {option.node_id} · {option.runtime_status} · {option.provider_status} · {option.current_load}/{option.max_slots}
         </span>
-        {!option.available && option.disabled_reason ? (
-          <span className="mt-1 block text-destructive">{option.disabled_reason}</span>
-        ) : null}
       </span>
     </label>
+  );
+}
+
+function UnavailableRuntimeList({ options }: { options: DigitalEmployeeRuntimeProviderOption[] }) {
+  if (options.length === 0) return null;
+
+  return (
+    <section className="rounded-md border border-dashed bg-muted/20 p-3">
+      <h3 className="text-sm font-medium">暂不可绑定的 Runtime</h3>
+      <div className="mt-3 grid gap-2">
+        {options.map((option) => (
+          <div className="rounded-md border bg-background/80 p-3 text-sm" key={runtimeBinding(option)}>
+            <div className="font-medium">
+              {option.runtime_name} / {option.provider_type}
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              {option.node_id} · Runtime: {option.runtime_status} · Node: {option.health_status} · Provider:{" "}
+              {option.provider_status}
+            </div>
+            {option.disabled_reason ? <div className="mt-1 text-destructive">{option.disabled_reason}</div> : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1612,7 +1637,9 @@ function budgetPolicyFromDraft(draft: WizardDraft) {
 }
 
 function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeBindingValue: string) {
-  return options?.runtime_provider_options.find((option) => runtimeBinding(option) === runtimeBindingValue);
+  return options?.runtime_provider_options.find(
+    (option) => option.available && runtimeBinding(option) === runtimeBindingValue,
+  );
 }
 
 function runtimeBinding(option: DigitalEmployeeRuntimeProviderOption) {
