@@ -568,27 +568,31 @@ function CreationPathPanel() {
       icon: Sparkles,
       active: true,
       badge: "推荐",
+      disabled: false,
     },
     {
       title: "从团队角色复制",
       description: "复用团队内已验证的角色画像和能力边界。",
       icon: ClipboardCheck,
       active: false,
-      badge: "可用",
+      badge: "暂未开放",
+      disabled: true,
     },
     {
       title: "从历史员工克隆",
       description: "基于已有员工配置生成新草稿，保留审计来源。",
       icon: GitBranch,
       active: false,
-      badge: "可用",
+      badge: "暂未开放",
+      disabled: true,
     },
     {
       title: "空白自定义",
       description: "从空白身份开始逐项配置职责、能力和运行绑定。",
       icon: FileText,
       active: false,
-      badge: "高级",
+      badge: "暂未开放",
+      disabled: true,
     },
   ];
 
@@ -613,8 +617,10 @@ function CreationPathPanel() {
                 "rounded-md border p-3 text-left transition",
                 path.active
                   ? "border-primary/40 bg-primary/10 text-foreground shadow-xs"
-                  : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:bg-primary/5",
+                  : "border-border/70 bg-background/80 text-muted-foreground",
+                path.disabled ? "cursor-not-allowed opacity-65" : "hover:border-primary/30 hover:bg-primary/5",
               )}
+              disabled={path.disabled}
               key={path.title}
               type="button"
             >
@@ -686,8 +692,8 @@ function TemplateSelectionPanel({
       )}
       <div className="mt-3 text-sm text-muted-foreground">
         没有合适的模板？
-        <button className="ml-2 font-medium text-primary hover:underline" type="button">
-          选择空白自定义
+        <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
+          选择空白自定义（暂未开放）
         </button>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
@@ -705,7 +711,6 @@ function TemplateCard({
   onSelect: () => void;
 }) {
   const risk = String(typeOption.default_approval_policy?.min_risk_for_human ?? "medium");
-  const providerLabel = typeOption.recommended_provider_types?.join(" / ") || "按团队策略";
 
   return (
     <button
@@ -741,7 +746,7 @@ function TemplateCard({
         <MetricPill label="技能" value={String(typeOption.recommended_skills?.length ?? 0)} />
         <MetricPill label="MCP" value={String(typeOption.recommended_mcp_servers?.length ?? 0)} />
         <MetricPill label="风险" value={risk} tone={risk === "high" || risk === "critical" ? "warning" : "success"} />
-        <MetricPill label="Provider" value={providerLabel} />
+        <MetricPill label="默认角色" value={typeOption.default_role || typeOption.type} />
       </span>
     </button>
   );
@@ -788,7 +793,6 @@ function CreationReadinessPanel({
           <InlineSummary label="Owner" value="当前用户" />
           <InlineSummary label="专业类型" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
           <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
-          <InlineSummary label="推荐 Provider" value={selectedType?.recommended_provider_types?.join(" / ") || "按团队策略"} />
           <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
         </div>
         <Button className="mt-4 w-full" disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
