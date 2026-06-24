@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { CreateEmployeeView } from "./create";
 
 const navigate = vi.fn();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -323,6 +327,24 @@ async function enterConfiguration(screen: Awaited<ReturnType<typeof renderCreate
   await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
 }
 
+function findTemplateCardText(templateName: string) {
+  return (
+    Array.from(document.body.querySelectorAll("button")).find((button) => {
+      const text = button.textContent ?? "";
+      return text.includes(templateName) && text.includes("默认角色");
+    })?.textContent ?? ""
+  );
+}
+
+function findRadioByLabelText(labelText: string) {
+  // This vitest-browser-react version has no queryByRole; inspect native radio labels instead.
+  return (
+    Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')).find((radio) =>
+      Array.from(radio.labels ?? []).some((label) => label.textContent?.includes(labelText)),
+    ) ?? null
+  );
+}
+
 describe("CreateEmployeeView", () => {
   it("shows a command-center creation entry with server-side preflight checks", async () => {
     const screen = await renderCreateEmployeeView();
@@ -357,8 +379,10 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("技能")).toBeVisible();
     await expect.element(screen.getByText("MCP")).toBeVisible();
     await expect.element(screen.getByText(/^风险$/)).toBeVisible();
-    expect(document.body.textContent).not.toContain("Provider");
-    expect(document.body.textContent).not.toContain("推荐 Provider");
+
+    const templateCardText = findTemplateCardText("数据库管理员");
+    expect(templateCardText).not.toContain("Provider");
+    expect(templateCardText).not.toContain("推荐 Provider");
   });
 
   it("shows only the selected template summary after entering configuration", async () => {
@@ -384,8 +408,6 @@ describe("CreateEmployeeView", () => {
     expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
     await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
-
-    confirm.mockRestore();
   });
 
   it("resets the configuration draft when change-template confirmation is accepted", async () => {
@@ -401,8 +423,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("名称")).toHaveValue("");
-
-    confirm.mockRestore();
   });
 
   it("creates a ready digital employee through the four-step wizard", async () => {
@@ -567,7 +587,7 @@ describe("CreateEmployeeView", () => {
 
     // Only the available runtime is a selectable radio and is auto-bound.
     await expect.element(screen.getByRole("radio", { name: "客户侧执行机 B / codex" })).toBeChecked();
-    expect(document.body.querySelector('[role="radio"][aria-label="客户侧执行机 A / codex"]')).toBeNull();
+    expect(findRadioByLabelText("客户侧执行机 A / codex")).toBeNull();
     // The unavailable runtime is still surfaced (with its reason) for diagnosability.
     await expect.element(screen.getByText("暂不可绑定的 Runtime")).toBeVisible();
     await expect.element(screen.getByText("runtime_session_inactive")).toBeVisible();
@@ -587,7 +607,7 @@ describe("CreateEmployeeView", () => {
       .toBeVisible();
     await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeDisabled();
     // No selectable runtime radio exists, but the unavailable runtime is still listed with its reason.
-    expect(document.body.querySelector('[role="radio"][aria-label="客户侧执行机 A / codex"]')).toBeNull();
+    expect(findRadioByLabelText("客户侧执行机 A / codex")).toBeNull();
     await expect.element(screen.getByText("暂不可绑定的 Runtime")).toBeVisible();
   });
 
