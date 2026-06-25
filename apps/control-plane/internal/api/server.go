@@ -94,6 +94,9 @@ func NewServerWithAuthz(
 	if authorizer != nil && runtimeHandler != nil {
 		runtimeHandler.SetAuthorizer(authorizer)
 	}
+	if authorizer != nil && taskHandler != nil {
+		taskHandler.SetAuthorizer(authorizer)
+	}
 	server.registerRoutes()
 	return server
 }
@@ -131,11 +134,17 @@ func (s *Server) SetInboxHandler(inboxHandler *inbox.HTTPHandler) {
 
 func (s *Server) SetAuditHandler(auditHandler *audit.HTTPHandler) {
 	s.auditHandler = auditHandler
+	if auditHandler != nil {
+		auditHandler.SetAuthorizer(s.authorizer)
+	}
 	s.registerRoutes()
 }
 
 func (s *Server) SetProjectHandler(projectHandler *project.HTTPHandler) {
 	s.projectHandler = projectHandler
+	if projectHandler != nil {
+		projectHandler.SetAuthorizer(s.authorizer)
+	}
 	s.registerRoutes()
 }
 
@@ -194,6 +203,9 @@ func (s *Server) registerRoutes() {
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Route("/tasks", func(r chi.Router) {
+			if s.authService != nil {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+			}
 			r.Post("/", s.taskHandler.CreateTask)
 			r.Get("/", s.taskHandler.ListTasks)
 			r.Get("/{id}", s.taskHandler.GetTask)

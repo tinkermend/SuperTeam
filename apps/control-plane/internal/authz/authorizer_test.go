@@ -12,6 +12,7 @@ type memoryRepository struct {
 	tenantRoles    map[string]string
 	teamRoles      map[string]string
 	employeeScopes map[uuid.UUID]DigitalEmployeeAuthzScope
+	projectFacts   map[uuid.UUID]ProjectAuthzFacts
 	runtimeOK      bool
 	taskID         uuid.UUID
 	err            error
@@ -56,6 +57,17 @@ func (r *memoryRepository) RuntimeNodeCoversTaskScope(ctx context.Context, param
 	}
 	r.taskID = params.TaskID
 	return r.runtimeOK, nil
+}
+
+func (r *memoryRepository) GetProjectAuthzFacts(ctx context.Context, params ProjectAuthzParams) (ProjectAuthzFacts, error) {
+	if r.err != nil {
+		return ProjectAuthzFacts{}, r.err
+	}
+	facts, ok := r.projectFacts[params.ProjectID]
+	if !ok {
+		return ProjectAuthzFacts{}, ErrNoMembership
+	}
+	return facts, nil
 }
 
 type memoryRecorder struct {

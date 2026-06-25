@@ -189,6 +189,18 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		decision, err = a.checkTeamManagementAction(ctx, req)
 	default:
+		if isProjectAction(req.Action) {
+			decision, err = a.checkProjectAccess(ctx, req)
+			break
+		}
+		if isAuditAction(req.Action) {
+			decision, err = a.checkAuditAccess(ctx, req)
+			break
+		}
+		if isTaskAction(req.Action) {
+			decision, err = a.checkTaskAccess(ctx, req)
+			break
+		}
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
 	}
 	if err != nil {
@@ -411,6 +423,148 @@ func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckReque
 			"action": req.Action,
 		},
 	}, nil
+}
+
+func isProjectAction(action string) bool {
+	switch action {
+	case ActionProjectCreate, ActionProjectRead, ActionProjectUpdate, ActionProjectArchive,
+		ActionProjectMemberRead, ActionProjectMemberManage,
+		ActionProjectDemandRead, ActionProjectDemandSubmit,
+		ActionProjectTaskRead, ActionProjectEventRead,
+		ActionProjectDecisionRead, ActionProjectDecisionResolve,
+		ActionProjectEvidenceRead, ActionProjectEvidenceCreate, ActionProjectEvidenceUpdate,
+		ActionProjectArtifactRead, ActionProjectReportRead,
+		ActionProjectBudgetRead, ActionProjectAcceptanceCreate, ActionProjectAcceptanceRead,
+		ActionProjectConfigRead, ActionProjectConfigEdit:
+		return true
+	default:
+		return false
+	}
+}
+
+func isAuditAction(action string) bool {
+	return action == ActionAuditRead
+}
+
+func isTaskAction(action string) bool {
+	switch action {
+	case ActionTaskRead, ActionTaskCreate, ActionTaskUpdate, ActionTaskCancel:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *DBAuthorizer) checkProjectAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	if req.Resource.Type != ResourceProject || req.Resource.ID == "" {
+		return deny(ReasonInvalidResource), nil
+	}
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	tenantDecision, err := a.checkTenantAdminAccess(ctx, req)
+	if err == nil && tenantDecision.Allowed {
+		return tenantDecision, nil
+	}
+	if err != nil && !errors.Is(err, ErrNoMembership) {
+		return Decision{}, err
+	}
+	projectID, err := uuid.Parse(req.Resource.ID)
+	if err != nil {
+		return deny(ReasonInvalidResource), nil
+	}
+	facts, err := a.repository.GetProjectAuthzFacts(ctx, ProjectAuthzParams{
+		TenantID:  req.TenantID,
+		ProjectID: projectID,
+		UserID:    principalID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if facts.HumanOwnerUserID == principalID {
+		return allow("project.owner", RoleOwner), nil
+	}
+	if facts.IsMember && projectActionAllowedForMember(req.Action) {
+		return allow("project.member", RoleMember), nil
+	}
+	return deny(ReasonNoMembership), nil
+}
+
+func projectActionAllowedForMember(action string) bool {
+	switch action {
+	case ActionProjectRead, ActionProjectMemberRead,
+		ActionProjectDemandRead, ActionProjectDemandSubmit,
+		ActionProjectTaskRead, ActionProjectEventRead,
+		ActionProjectDecisionRead, ActionProjectDecisionResolve,
+		ActionProjectEvidenceRead, ActionProjectEvidenceCreate,
+		ActionProjectArtifactRead, ActionProjectReportRead,
+		ActionProjectBudgetRead, ActionProjectAcceptanceRead,
+		ActionProjectConfigRead:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *DBAuthorizer) checkAuditAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	tenantDecision, err := a.checkTenantAdminAccess(ctx, req)
+	if err == nil && tenantDecision.Allowed {
+		return tenantDecision, nil
+	}
+	if err != nil && !errors.Is(err, ErrNoMembership) {
+		return Decision{}, err
+	}
+	if req.Resource.Type == ResourceProject && req.Resource.ID != "" {
+		projectID, err := uuid.Parse(req.Resource.ID)
+		if err != nil {
+			return deny(ReasonInvalidResource), nil
+		}
+		facts, err := a.repository.GetProjectAuthzFacts(ctx, ProjectAuthzParams{
+			TenantID:  req.TenantID,
+			ProjectID: projectID,
+			UserID:    principalID,
+		})
+		if err != nil {
+			if errors.Is(err, ErrNoMembership) {
+				return deny(ReasonNoMembership), nil
+			}
+			return Decision{}, err
+		}
+		if facts.HumanOwnerUserID == principalID || facts.IsMember {
+			return allow("audit.project_member", RoleMember), nil
+		}
+	}
+	return deny(ReasonNoMembership), nil
+}
+
+func (a *DBAuthorizer) checkTaskAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	membership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
+		TenantID:      req.TenantID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if roleAllowsTenantAccess(membership.Role) {
+		return allow("tenant."+membership.Role, membership.Role), nil
+	}
+	return deny(ReasonNoMembership), nil
 }
 
 func parseUUIDActor(actor ActorRef, expectedType string) (uuid.UUID, bool) {

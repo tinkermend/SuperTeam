@@ -1924,6 +1924,44 @@ type SkillAgentBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 技能物理安装记录，只保存已成功写入数字员工 workspace 的安装事实
+type SkillInstallation struct {
+	// 技能物理安装记录 ID
+	ID uuid.UUID `json:"id"`
+	// 安装记录所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 被安装的技能包 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 安装请求目标范围，team 表示团队批量安装，employee 表示单个数字员工安装
+	TargetScope string `json:"target_scope"`
+	// 团队批量安装来源团队 ID，单员工安装时可为空
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 实际写入技能目录的数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 执行本次物理安装的 Runtime 节点 ID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Provider 类型，由服务端注册表和安装前置校验控制
+	ProviderType string `json:"provider_type"`
+	// Runtime Agent 实际写入的 provider 官方技能目录
+	InstalledPath string `json:"installed_path"`
+	// 安装时使用的技能 zip 包 SHA256 校验值
+	ArchiveChecksumSha256 string `json:"archive_checksum_sha256"`
+	// 安装事实状态；此表只保存 installed 成功记录
+	Status string `json:"status"`
+	// 触发安装的人类用户 ID 或系统操作者 ID
+	InstalledBy uuid.NullUUID `json:"installed_by"`
+	// Runtime 确认物理安装成功的时间
+	InstalledAt pgtype.Timestamptz `json:"installed_at"`
+	// 安装命令、Runtime 回执和排障扩展信息
+	Metadata []byte `json:"metadata"`
+	// 安装记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 安装记录最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 安装记录软删除时间；为空表示当前有效
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // 技能与团队归属绑定表
 type SkillTeamBinding struct {
 	// 技能团队绑定主键 UUID
