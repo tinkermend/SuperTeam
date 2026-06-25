@@ -43,9 +43,9 @@ function SoftCard({
     <div
       data-slot="v3-soft-card"
       className={cn(
-        "rounded-v3-card bg-v3-card text-v3-ink shadow-v3",
+        "rounded-v3-card bg-v3-card text-v3-ink shadow-sm border border-v3-line",
         interactive &&
-          "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-v3-pop active:scale-[0.99]",
+          "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-v3-line-strong active:scale-[0.99]",
         className,
       )}
       {...props}
@@ -146,7 +146,7 @@ function V3MetricCard({
       <p className="text-[13px] text-v3-ink-2">{label}</p>
       <p
         className={cn(
-          "mt-1 text-[2.5rem] leading-none font-extrabold tracking-tight tabular-nums",
+          "mt-1 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums",
           loud && "text-v3-warn",
         )}
       >

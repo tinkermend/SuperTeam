@@ -360,32 +360,32 @@ function SelectedSkillInstallations({
 
 function SkillInstallationRow({ installation }: { installation: SkillInstallation }) {
   return (
-    <div className="grid min-w-0 gap-3 px-4 py-3 text-[13px] md:grid-cols-[minmax(160px,1.1fr)_minmax(150px,0.9fr)_minmax(220px,1.4fr)] md:items-center">
+    <div className="grid min-w-0 gap-3 px-4 py-3 text-[13px] md:grid-cols-[minmax(160px,1.1fr)_minmax(150px,0.9fr)_minmax(220px,1.4fr)] md:items-start">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-bold text-v3-ink">{installationTargetLabel(installation)}</span>
+          <span className="truncate font-bold text-v3-ink" title={installationTargetLabel(installation)}>{installationTargetLabel(installation)}</span>
           <StatusPill tone={providerTone(installation.provider_type)}>{installation.provider_type}</StatusPill>
         </div>
         {installation.digital_employee_id && installation.employee_name ? (
-          <div className="mt-1 truncate font-mono text-[11px] text-v3-ink-3">
+          <div className="mt-1 break-all font-mono text-[11px] leading-relaxed text-v3-ink-3">
             {installation.digital_employee_id}
           </div>
         ) : null}
       </div>
 
       <div className="min-w-0 space-y-1">
-        <div className="truncate font-mono text-xs text-v3-ink-2">{runtimeNodeLabel(installation)}</div>
+        <div className="break-all font-mono text-xs leading-relaxed text-v3-ink-2">{runtimeNodeLabel(installation)}</div>
         {installation.installed_at ? (
           <div className="truncate font-mono text-[11px] text-v3-ink-3">{installation.installed_at}</div>
         ) : null}
       </div>
 
       <div className="min-w-0 space-y-1">
-        <div className="truncate rounded-lg bg-v3-mute-soft px-2 py-1 font-mono text-xs text-v3-ink">
+        <div className="break-all font-mono text-xs leading-relaxed text-v3-ink-2">
           {installation.installed_path}
         </div>
         {installation.archive_checksum_sha256 ? (
-          <div className="truncate font-mono text-[11px] text-v3-ink-3">
+          <div className="break-all font-mono text-[11px] leading-relaxed text-v3-ink-3">
             {installation.archive_checksum_sha256}
           </div>
         ) : null}
@@ -522,7 +522,7 @@ function FilterSelect({
     <Select onValueChange={onValueChange} value={value}>
       <SelectTrigger
         aria-label={label}
-        className="w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft lg:w-[124px]"
+        className="w-full min-w-0 rounded-[10px] border-transparent bg-v3-card-soft text-v3-ink shadow-none hover:bg-v3-mute-soft lg:w-[124px]"
       >
         <SelectValue />
       </SelectTrigger>
@@ -844,14 +844,14 @@ function SkillTagStack({ tags }: { tags: string[] }) {
     <div className="flex max-w-[180px] flex-wrap gap-1.5">
       {visibleTags.map((tag) => (
         <span
-          className="rounded-lg bg-v3-mute-soft px-2 py-0.5 text-xs font-medium text-v3-ink-2"
+          className="rounded-[6px] border border-v3-line-strong bg-v3-mute-soft/60 px-2 py-[1px] text-xs font-medium text-v3-ink-2"
           key={tag}
         >
           {tag}
         </span>
       ))}
       {extraCount > 0 ? (
-        <span className="rounded-lg bg-v3-mute-soft px-2 py-0.5 text-xs font-medium text-v3-ink-2">
+        <span className="rounded-[6px] border border-v3-line-strong bg-v3-mute-soft/60 px-2 py-[1px] text-xs font-medium text-v3-ink-2">
           +{extraCount}
         </span>
       ) : null}
@@ -861,16 +861,16 @@ function SkillTagStack({ tags }: { tags: string[] }) {
 
 function BindingSummary({ skill }: { skill: Skill }) {
   return (
-    <div className="space-y-1 text-[13px] leading-5 text-v3-ink-2">
-      <div className="flex items-center gap-2">
-        <Users className="size-4 text-v3-ink-3" />
-        <span>团队</span>
+    <div className="flex flex-col gap-1 text-[13px] leading-5 text-v3-ink-2 lg:flex-row lg:items-center lg:gap-3">
+      <div className="flex items-center gap-1.5">
+        <Users className="size-3.5 text-v3-ink-3" />
         <span className="font-bold tabular-nums text-v3-ink">{skill.team_bindings.length}</span>
+        <span>团队</span>
       </div>
-      <div className="flex items-center gap-2">
-        <Bot className="size-4 text-v3-ink-3" />
-        <span>数字员工</span>
+      <div className="flex items-center gap-1.5">
+        <Bot className="size-3.5 text-v3-ink-3" />
         <span className="font-bold tabular-nums text-v3-ink">{skill.agent_bindings.length}</span>
+        <span>员工</span>
       </div>
     </div>
   );
@@ -897,6 +897,11 @@ function providerTone(providerType: SkillInstallation["provider_type"]): V3Tone 
   if (providerType === "codex") return "brand";
   if (providerType === "claude-code") return "artifact";
   return "info";
+}
+
+function truncateMiddle(str: string, head: number, tail: number) {
+  if (!str || str.length <= head + tail + 3) return str;
+  return `${str.slice(0, head)}…${str.slice(-tail)}`;
 }
 
 function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
