@@ -123,6 +123,7 @@ export function CreateEmployeePage() {
 export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewProps) {
   const navigate = useNavigate();
   const [workbenchMode, setWorkbenchMode] = useState<"select" | "configure">("select");
+  const [draftTouched, setDraftTouched] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -241,10 +242,16 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
 
   function updateDraft(patch: Partial<WizardDraft>) {
+    if (workbenchMode === "configure") {
+      setDraftTouched(true);
+    }
     setDraft((current) => ({ ...current, ...patch }));
   }
 
   function selectType(typeValue: string) {
+    if (workbenchMode === "configure") {
+      setDraftTouched(true);
+    }
     const nextType = createOptions.data?.employee_types.find((item) => item.type === typeValue);
     if (!nextType) {
       updateDraft({ employee_type: typeValue });
@@ -282,6 +289,32 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   function enterConfiguration() {
     setWorkbenchMode("configure");
     setStepIndex(0);
+    setDraftTouched(false);
+  }
+
+  function resetDraftForTeam(teamId: string) {
+    setErrors({});
+    setStepIndex(0);
+    setDraftTouched(false);
+    setDraft({ ...emptyDraft, team_id: teamId });
+  }
+
+  function requestTemplateChange() {
+    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+      return;
+    }
+    resetDraftForTeam(draft.team_id);
+    setWorkbenchMode("select");
+  }
+
+  function requestTeamChange(nextTeamId: string) {
+    if (nextTeamId === draft.team_id) {
+      return;
+    }
+    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+      return;
+    }
+    resetDraftForTeam(nextTeamId);
   }
 
   return (
@@ -307,7 +340,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           </div>
           <div className="flex flex-wrap gap-2">
             {workbenchMode === "configure" ? (
-              <Button onClick={() => setWorkbenchMode("select")} type="button" variant="outline">
+              <Button onClick={requestTemplateChange} type="button" variant="outline">
                 <ArrowLeft data-icon="inline-start" />
                 返回
               </Button>
@@ -386,14 +419,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <CreationFactsBand />
           </>
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_340px]">
-            <BlueprintSidebar
-              draft={draft}
-              options={createOptions.data}
-              selectedType={selectedType}
-              onSelectType={selectType}
-            />
-
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
             <div className="border-b p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -408,11 +434,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             </div>
 
             <div className="grid gap-4 p-4">
-              <TemplateOverview
+              <SelectedTemplateSummary
                 draft={draft}
-                options={createOptions.data}
                 selectedType={selectedType}
-                onSelectType={selectType}
+                onChangeTemplate={requestTemplateChange}
               />
 
               <div className="min-h-[420px] rounded-md border bg-background p-4">
@@ -431,7 +456,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     selectedType={selectedType}
                     teamOptions={teamOptions}
                     onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
-                    onSelectType={selectType}
+                    onSelectTeam={requestTeamChange}
                     onUpdate={updateDraft}
                   />
                 ) : null}
@@ -568,27 +593,31 @@ function CreationPathPanel() {
       icon: Sparkles,
       active: true,
       badge: "推荐",
+      disabled: false,
     },
     {
       title: "从团队角色复制",
       description: "复用团队内已验证的角色画像和能力边界。",
       icon: ClipboardCheck,
       active: false,
-      badge: "可用",
+      badge: "暂未开放",
+      disabled: true,
     },
     {
       title: "从历史员工克隆",
       description: "基于已有员工配置生成新草稿，保留审计来源。",
       icon: GitBranch,
       active: false,
-      badge: "可用",
+      badge: "暂未开放",
+      disabled: true,
     },
     {
       title: "空白自定义",
       description: "从空白身份开始逐项配置职责、能力和运行绑定。",
       icon: FileText,
       active: false,
-      badge: "高级",
+      badge: "暂未开放",
+      disabled: true,
     },
   ];
 
@@ -613,8 +642,10 @@ function CreationPathPanel() {
                 "rounded-md border p-3 text-left transition",
                 path.active
                   ? "border-primary/40 bg-primary/10 text-foreground shadow-xs"
-                  : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:bg-primary/5",
+                  : "border-border/70 bg-background/80 text-muted-foreground",
+                path.disabled ? "cursor-not-allowed opacity-65" : "hover:border-primary/30 hover:bg-primary/5",
               )}
+              disabled={path.disabled}
               key={path.title}
               type="button"
             >
@@ -686,8 +717,8 @@ function TemplateSelectionPanel({
       )}
       <div className="mt-3 text-sm text-muted-foreground">
         没有合适的模板？
-        <button className="ml-2 font-medium text-primary hover:underline" type="button">
-          选择空白自定义
+        <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
+          选择空白自定义（暂未开放）
         </button>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
@@ -705,7 +736,6 @@ function TemplateCard({
   onSelect: () => void;
 }) {
   const risk = String(typeOption.default_approval_policy?.min_risk_for_human ?? "medium");
-  const providerLabel = typeOption.recommended_provider_types?.join(" / ") || "按团队策略";
 
   return (
     <button
@@ -741,7 +771,7 @@ function TemplateCard({
         <MetricPill label="技能" value={String(typeOption.recommended_skills?.length ?? 0)} />
         <MetricPill label="MCP" value={String(typeOption.recommended_mcp_servers?.length ?? 0)} />
         <MetricPill label="风险" value={risk} tone={risk === "high" || risk === "critical" ? "warning" : "success"} />
-        <MetricPill label="Provider" value={providerLabel} />
+        <MetricPill label="默认角色" value={typeOption.default_role || typeOption.type} />
       </span>
     </button>
   );
@@ -788,7 +818,6 @@ function CreationReadinessPanel({
           <InlineSummary label="Owner" value="当前用户" />
           <InlineSummary label="专业类型" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
           <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
-          <InlineSummary label="推荐 Provider" value={selectedType?.recommended_provider_types?.join(" / ") || "按团队策略"} />
           <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
         </div>
         <Button className="mt-4 w-full" disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
@@ -875,51 +904,6 @@ function CreationFactsBand() {
   );
 }
 
-function BlueprintSidebar({
-  draft,
-  options,
-  selectedType,
-  onSelectType,
-}: {
-  draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
-  selectedType?: DigitalEmployeeTypeOption;
-  onSelectType: (value: string) => void;
-}) {
-  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
-
-  return (
-    <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
-      <h2 className="px-1 text-base font-semibold">推荐起步画像</h2>
-      <p className="mt-1 px-1 text-xs text-muted-foreground">切换画像会同步默认角色与能力建议。</p>
-      <div className="mt-3 grid gap-2">
-        {employeeTypes.map((typeOption) => (
-          <button
-            aria-pressed={typeOption.type === draft.employee_type}
-            className={cn(
-              "rounded-md border p-3 text-left transition",
-              typeOption.type === draft.employee_type ? "border-primary/60 bg-primary/10" : "bg-background hover:border-primary/40",
-            )}
-            key={typeOption.type}
-            onClick={() => onSelectType(typeOption.type)}
-            type="button"
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span className="font-medium">{typeOption.label}</span>
-              {typeOption.type === selectedType?.type ? <Check className="size-4 text-primary" /> : null}
-            </span>
-            <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{typeOption.description}</span>
-          </button>
-        ))}
-        <button className="rounded-md border border-dashed bg-background p-3 text-sm text-muted-foreground" type="button">
-          <Plus className="mr-2 inline size-4" />
-          从空白开始自定义
-        </button>
-      </div>
-    </aside>
-  );
-}
-
 function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = steps.indexOf(currentStep);
 
@@ -955,67 +939,34 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
   );
 }
 
-function TemplateOverview({
+function SelectedTemplateSummary({
   draft,
-  options,
   selectedType,
-  onSelectType,
+  onChangeTemplate,
 }: {
   draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
-  onSelectType: (value: string) => void;
+  onChangeTemplate: () => void;
 }) {
-  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
-  if (employeeTypes.length === 0) {
-    return (
-      <section className="rounded-md border bg-muted/30 p-4">
-        <h2 className="text-base font-semibold">专业模板</h2>
-        <p className="mt-1 text-sm text-muted-foreground">当前团队治理配置未返回可用专业模板。</p>
-      </section>
-    );
-  }
-
   return (
     <section className="rounded-md border bg-background p-4">
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold">专业模板</h2>
-          <p className="text-sm text-muted-foreground">模板只提供默认值和推荐能力，最终提交仍由控制平面校验。</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">已选模板</p>
+          <h2 className="mt-1 text-lg font-semibold">{selectedType?.label ?? (draft.employee_type || "未选择模板")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {selectedType?.description ?? "模板只作为初始草稿来源，运行绑定在最后一步选择。"}
+          </p>
         </div>
-        <Badge variant="secondary">{(selectedType?.label ?? draft.employee_type) || "未选择"}</Badge>
+        <Button onClick={onChangeTemplate} type="button" variant="outline">
+          <ArrowLeft data-icon="inline-start" />
+          更换模板
+        </Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {employeeTypes.map((typeOption) => {
-          const selected = typeOption.type === draft.employee_type;
-          return (
-            <button
-              aria-pressed={selected}
-              className={cn(
-                "rounded-md border p-3 text-left transition",
-                selected ? "border-primary/50 bg-primary/10 shadow-xs" : "bg-card hover:border-primary/40",
-              )}
-              key={typeOption.type}
-              onClick={() => onSelectType(typeOption.type)}
-              type="button"
-            >
-              <span className="flex items-start justify-between gap-3">
-                <span>
-                  <span className="block text-sm font-semibold">{typeOption.label}</span>
-                  <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
-                    {typeOption.description}
-                  </span>
-                </span>
-                {selected ? <Check className="size-4 shrink-0 text-primary" /> : null}
-              </span>
-              <span className="mt-3 flex flex-wrap gap-1.5">
-                <Badge variant="secondary">技能 {typeOption.recommended_skills?.length ?? 0}</Badge>
-                <Badge variant="secondary">MCP {typeOption.recommended_mcp_servers?.length ?? 0}</Badge>
-                <Badge variant="secondary">Provider {(typeOption.recommended_provider_types ?? []).join(", ") || "按团队"}</Badge>
-              </span>
-            </button>
-          );
-        })}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Badge variant="secondary">默认角色 {selectedType?.default_role || draft.role || "未生成"}</Badge>
+        <Badge variant="secondary">技能 {selectedType?.recommended_skills?.length ?? 0}</Badge>
+        <Badge variant="secondary">MCP {selectedType?.recommended_mcp_servers?.length ?? 0}</Badge>
       </div>
     </section>
   );
@@ -1112,7 +1063,7 @@ function IdentityStep({
   options,
   selectedType,
   teamOptions,
-  onSelectType,
+  onSelectTeam,
   onSelectAvatar,
   onUpdate,
 }: {
@@ -1122,7 +1073,7 @@ function IdentityStep({
   options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
   teamOptions: Array<{ id: string; name: string }>;
-  onSelectType: (value: string) => void;
+  onSelectTeam: (value: string) => void;
   onSelectAvatar: (value: string) => void;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
@@ -1138,15 +1089,7 @@ function IdentityStep({
             aria-invalid={Boolean(errors.team_id)}
             className={selectClassName}
             id="employee-team"
-            onChange={(event) =>
-              onUpdate({
-                employee_type: "",
-                provider_type: "",
-                runtime_binding: "",
-                runtime_node_id: "",
-                team_id: event.target.value,
-              })
-            }
+            onChange={(event) => onSelectTeam(event.target.value)}
             value={draft.team_id}
           >
             {teamOptions.map((team) => (
@@ -1160,8 +1103,8 @@ function IdentityStep({
           <select
             aria-invalid={Boolean(errors.employee_type)}
             className={selectClassName}
+            disabled
             id="employee-type"
-            onChange={(event) => onSelectType(event.target.value)}
             value={draft.employee_type}
           >
             {(options?.employee_types ?? []).map((item) => (
@@ -1170,6 +1113,7 @@ function IdentityStep({
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-muted-foreground">如需切换模板，请使用上方“更换模板”并重新生成配置草稿。</p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input
@@ -1422,6 +1366,8 @@ function RuntimeStep({
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const runtimeOptions = options?.runtime_provider_options ?? [];
+  const availableRuntimeOptions = runtimeOptions.filter((option) => option.available);
+  const unavailableRuntimeOptions = runtimeOptions.filter((option) => !option.available);
   const updateEnvironmentRow = (rowId: string, patch: Partial<EnvironmentVariableDraftRow>) => {
     onUpdate({
       environment_variables: draft.environment_variables.map((row) =>
@@ -1441,7 +1387,7 @@ function RuntimeStep({
       </div>
       <RadioGroup onValueChange={onSelectRuntime} value={draft.runtime_binding}>
         <div className="grid gap-3">
-          {runtimeOptions.map((option) => (
+          {availableRuntimeOptions.map((option) => (
             <RuntimeOption
               key={runtimeBinding(option)}
               onSelectRuntime={onSelectRuntime}
@@ -1450,7 +1396,12 @@ function RuntimeStep({
           ))}
         </div>
       </RadioGroup>
-      {runtimeOptions.length === 0 ? <p className="text-sm text-muted-foreground">暂无可用 Runtime Provider。</p> : null}
+      {availableRuntimeOptions.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+          当前团队没有可绑定的 Runtime Provider，请检查 Runtime 在线状态、Provider 健康状态或团队运行策略。
+        </p>
+      ) : null}
+      <UnavailableRuntimeList options={unavailableRuntimeOptions} />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <section className="rounded-md border bg-card/80 p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1533,26 +1484,44 @@ function RuntimeOption({
 
   return (
     <label
-      className={cn(
-        "flex items-start gap-3 rounded-md border p-3 text-sm",
-        option.available ? "cursor-pointer" : "cursor-not-allowed opacity-60",
-      )}
+      className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm"
       onClick={(event) => {
         event.preventDefault();
-        if (option.available) onSelectRuntime(binding);
+        onSelectRuntime(binding);
       }}
     >
-      <RadioGroupItem disabled={!option.available} value={binding} />
+      <RadioGroupItem value={binding} />
       <span className="min-w-0 flex-1">
         <span className="block font-medium">{label}</span>
         <span className="mt-1 block text-muted-foreground">
           {option.node_id} · {option.runtime_status} · {option.provider_status} · {option.current_load}/{option.max_slots}
         </span>
-        {!option.available && option.disabled_reason ? (
-          <span className="mt-1 block text-destructive">{option.disabled_reason}</span>
-        ) : null}
       </span>
     </label>
+  );
+}
+
+function UnavailableRuntimeList({ options }: { options: DigitalEmployeeRuntimeProviderOption[] }) {
+  if (options.length === 0) return null;
+
+  return (
+    <section className="rounded-md border border-dashed bg-muted/20 p-3">
+      <h3 className="text-sm font-medium">暂不可绑定的 Runtime</h3>
+      <div className="mt-3 grid gap-2">
+        {options.map((option) => (
+          <div className="rounded-md border bg-background/80 p-3 text-sm" key={runtimeBinding(option)}>
+            <div className="font-medium">
+              {option.runtime_name} / {option.provider_type}
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              {option.node_id} · Runtime: {option.runtime_status} · Node: {option.health_status} · Provider:{" "}
+              {option.provider_status}
+            </div>
+            {option.disabled_reason ? <div className="mt-1 text-destructive">{option.disabled_reason}</div> : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1668,7 +1637,9 @@ function budgetPolicyFromDraft(draft: WizardDraft) {
 }
 
 function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeBindingValue: string) {
-  return options?.runtime_provider_options.find((option) => runtimeBinding(option) === runtimeBindingValue);
+  return options?.runtime_provider_options.find(
+    (option) => option.available && runtimeBinding(option) === runtimeBindingValue,
+  );
 }
 
 function runtimeBinding(option: DigitalEmployeeRuntimeProviderOption) {
