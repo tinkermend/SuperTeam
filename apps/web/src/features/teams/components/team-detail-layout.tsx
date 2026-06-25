@@ -1,5 +1,16 @@
-import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
+import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UserPlus, UsersRound } from "lucide-react";
 import { IconTile, StatusPill, V3Button, V3Tabs } from "@/components/superteam";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
@@ -32,6 +43,7 @@ type TeamDetailLayoutProps = {
   apiOptions: ApiClientOptions;
   currentRevision?: TeamOverview["current_revision"];
   onArchiveTeam?: () => void;
+  onDeleteTeam?: () => void;
   onDisableTeam?: () => void;
   onRestoreTeam?: () => void;
   overview: TeamOverview;
@@ -41,6 +53,7 @@ export function TeamDetailLayout({
   apiOptions,
   currentRevision,
   onArchiveTeam,
+  onDeleteTeam,
   onDisableTeam,
   onRestoreTeam,
   overview,
@@ -55,6 +68,7 @@ export function TeamDetailLayout({
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
+  const canDelete = overview.allowed_actions.includes("team.delete");
 
   return (
     <div className="flex flex-col gap-5">
@@ -105,6 +119,30 @@ export function TeamDetailLayout({
               <RotateCcw data-icon="inline-start" />
               恢复团队
             </V3Button>
+          ) : null}
+          {canDelete ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <V3Button size="sm" variant="danger">
+                  <Trash2 data-icon="inline-start" />
+                  删除团队
+                </V3Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认删除团队</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    删除后，所有绑定的数字员工将失去团队归属，操作不可逆。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={onDeleteTeam}>
+                    确认删除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           ) : null}
         </div>
       </div>

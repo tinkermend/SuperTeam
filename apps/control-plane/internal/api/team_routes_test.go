@@ -1261,6 +1261,10 @@ func (s *routeTeamService) ChangeTeamStatus(ctx context.Context, req tenant.Chan
 	}, nil
 }
 
+func (s *routeTeamService) DeleteTeam(_ context.Context, _ tenant.DeleteTeamRequest) error {
+	return nil
+}
+
 func (s *routeTeamService) CreateConfigRevision(ctx context.Context, req tenant.CreateTeamConfigRevisionRequest) (*tenant.TeamConfigRevision, error) {
 	s.createRevisionCalled = true
 	s.createRevisionReq = req

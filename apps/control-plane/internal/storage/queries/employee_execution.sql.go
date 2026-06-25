@@ -2300,16 +2300,18 @@ WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR team_id = $2::uuid)
   AND ($3::varchar IS NULL OR status = $3::varchar)
+  AND ($4::varchar IS NULL OR ($4::varchar = 'unassigned' AND team_id IS NULL))
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListDigitalEmployeesParams struct {
-	TenantID uuid.UUID     `json:"tenant_id"`
-	TeamID   uuid.NullUUID `json:"team_id"`
-	Status   pgtype.Text   `json:"status"`
-	Offset   int32         `json:"offset"`
-	Limit    int32         `json:"limit"`
+	TenantID   uuid.UUID     `json:"tenant_id"`
+	TeamID     uuid.NullUUID `json:"team_id"`
+	Status     pgtype.Text   `json:"status"`
+	Assignment pgtype.Text   `json:"assignment"`
+	Offset     int32         `json:"offset"`
+	Limit      int32         `json:"limit"`
 }
 
 func (q *Queries) ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error) {
@@ -2317,6 +2319,7 @@ func (q *Queries) ListDigitalEmployees(ctx context.Context, arg ListDigitalEmplo
 		arg.TenantID,
 		arg.TeamID,
 		arg.Status,
+		arg.Assignment,
 		arg.Offset,
 		arg.Limit,
 	)

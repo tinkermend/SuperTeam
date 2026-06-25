@@ -14,7 +14,6 @@ import {
   ServerCog,
   ShieldCheck,
   Stethoscope,
-  TriangleAlert,
   UploadCloud,
   UserRoundCheck,
   Users,

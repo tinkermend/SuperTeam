@@ -1861,6 +1861,18 @@ paths:
                 $ref: "#/components/schemas/Team"
         "404":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team and release its digital employees
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "204":
+          description: Team deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/skills:
     get:
       operationId: listTeamSkills
@@ -2492,6 +2504,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/DigitalEmployeeStatus"
+        - name: assignment
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - unassigned
       responses:
         "200":
           description: Digital employee list
@@ -7044,6 +7063,7 @@ components:
         - team.disable
         - team.archive
         - team.restore
+        - team.delete
         - team.member.add
         - team.member.request_privileged_role
         - team.governance.edit
@@ -7444,6 +7464,9 @@ components:
       properties:
         slug:
           type: string
+          pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+          minLength: 3
+          maxLength: 64
         name:
           type: string
         status:
@@ -7469,6 +7492,11 @@ components:
                 enum:
                   - member
                   - viewer
+        initial_digital_employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         metadata:
           type: object
           additionalProperties: true
@@ -7480,6 +7508,9 @@ components:
       properties:
         slug:
           type: string
+          pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+          minLength: 3
+          maxLength: 64
         name:
           type: string
         human_owner_user_ids:

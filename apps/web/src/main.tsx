@@ -15,6 +15,9 @@ import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
 // Generated Routes
 import { routeTree } from './routeTree.gen'
+// Fonts
+import '@fontsource-variable/inter'
+import '@fontsource-variable/manrope'
 // Styles
 import './styles/index.css'
 

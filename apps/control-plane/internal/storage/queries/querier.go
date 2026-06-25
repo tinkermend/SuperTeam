@@ -27,6 +27,7 @@ type Querier interface {
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
 	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)
+	BindDigitalEmployeeToTeam(ctx context.Context, arg BindDigitalEmployeeToTeamParams) (uuid.UUID, error)
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
@@ -353,6 +354,7 @@ type Querier interface {
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
+	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
@@ -360,6 +362,7 @@ type Querier interface {
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the
 	// caller can treat it as an idempotent no-op via ErrNoRows.
 	TransitionProjectStatus(ctx context.Context, arg TransitionProjectStatusParams) (Project, error)
+	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)

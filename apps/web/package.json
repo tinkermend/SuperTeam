@@ -15,6 +15,8 @@
   "dependencies": {
     "@dicebear/adventurer": "9.4.2",
     "@dicebear/core": "9.4.2",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/manrope": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",

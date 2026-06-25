@@ -24,6 +24,7 @@ export type AllowedTeamAction =
   | "team.disable"
   | "team.archive"
   | "team.restore"
+  | "team.delete"
   | "team.member.add"
   | "team.member.request_privileged_role"
   | "team.governance.edit"
@@ -158,6 +159,7 @@ export type CreateTeamInput = {
   name: string;
   human_owner_user_ids: string[];
   initial_members?: InitialTeamMemberInput[];
+  initial_digital_employee_ids?: string[];
   status?: TeamStatus;
   metadata?: Record<string, unknown>;
 };
@@ -438,6 +440,13 @@ export function restoreTeam(
     {},
     "restore team",
   );
+}
+
+export function deleteTeam(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<void> {
+  return deleteResource(options, teamPath(teamId), "delete team");
 }
 
 export function createTeamConfigRevision(

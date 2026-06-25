@@ -43,6 +43,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL
   AND (sqlc.narg('team_id')::uuid IS NULL OR team_id = sqlc.narg('team_id')::uuid)
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+  AND (sqlc.narg('assignment')::varchar IS NULL OR (sqlc.narg('assignment')::varchar = 'unassigned' AND team_id IS NULL))
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 

@@ -1354,11 +1354,12 @@ func (s *Service) ListDigitalEmployees(ctx context.Context, req ListDigitalEmplo
 		req.Limit = 100
 	}
 	records, err := s.repository.ListDigitalEmployees(ctx, ListDigitalEmployeesParams{
-		TenantID: req.TenantID,
-		TeamID:   validUUIDPtr(req.TeamID),
-		Status:   req.Status,
-		Offset:   req.Offset,
-		Limit:    req.Limit,
+		TenantID:   req.TenantID,
+		TeamID:     validUUIDPtr(req.TeamID),
+		Status:     req.Status,
+		Assignment: req.Assignment,
+		Offset:     req.Offset,
+		Limit:      req.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list digital employees: %w", err)

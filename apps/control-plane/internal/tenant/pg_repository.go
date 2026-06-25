@@ -127,6 +127,19 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 			return TeamRecord{}, err
 		}
 	}
+	for _, employeeID := range params.InitialDigitalEmployeeIDs {
+		_, err := qtx.BindDigitalEmployeeToTeam(ctx, queries.BindDigitalEmployeeToTeamParams{
+			TeamID:     team.ID,
+			EmployeeID: employeeID,
+			TenantID:   params.TenantID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return TeamRecord{}, fmt.Errorf("digital employee %s not found or already assigned: %w", employeeID, ErrInvalidInput)
+			}
+			return TeamRecord{}, err
+		}
+	}
 	record, err := teamRecordFromQuery(team)
 	if err != nil {
 		return TeamRecord{}, err
@@ -283,6 +296,20 @@ func (r *PgRepository) SetTeamStatus(ctx context.Context, params SetTeamStatusPa
 		return TeamRecord{}, mapNoRows(err)
 	}
 	return teamRecordFromQuery(team)
+}
+
+func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error {
+	if err := r.q.UnbindTeamDigitalEmployees(ctx, queries.UnbindTeamDigitalEmployeesParams{
+		TeamID:   teamID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("unbind team employees: %w", err)
+	}
+	_, err := r.q.SoftDeleteTeam(ctx, queries.SoftDeleteTeamParams{
+		TeamID:   teamID,
+		TenantID: tenantID,
+	})
+	return mapNoRows(err)
 }
 
 func (r *PgRepository) CreateTeamConfigRevision(ctx context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {

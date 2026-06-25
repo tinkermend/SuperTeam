@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,8 +47,12 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 		return nil, fmt.Errorf("%w: actor_user_id is required", ErrInvalidInput)
 	}
 	slug := strings.TrimSpace(req.Slug)
-	if slug == "" {
-		return nil, fmt.Errorf("%w: slug is required", ErrInvalidInput)
+	if len(slug) < 3 || len(slug) > 64 {
+		return nil, fmt.Errorf("%w: slug must be between 3 and 64 characters", ErrInvalidInput)
+	}
+	matched, _ := regexp.MatchString(`^[a-z][a-z0-9-]*[a-z0-9]$`, slug)
+	if !matched {
+		return nil, fmt.Errorf("%w: invalid slug format", ErrInvalidInput)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -78,14 +83,15 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	}
 
 	team, err := s.repository.CreateTeamWithInitialMembers(ctx, CreateTeamWithInitialMembersParams{
-		TenantID:       req.TenantID,
-		ActorUserID:    req.ActorUserID,
-		Slug:           slug,
-		Name:           name,
-		Status:         status,
-		OwnerUserIDs:   req.HumanOwnerUserIDs,
-		InitialMembers: initialMembers,
-		Metadata:       metadata,
+		TenantID:                  req.TenantID,
+		ActorUserID:               req.ActorUserID,
+		Slug:                      slug,
+		Name:                      name,
+		Status:                    status,
+		OwnerUserIDs:              req.HumanOwnerUserIDs,
+		InitialMembers:            initialMembers,
+		InitialDigitalEmployeeIDs: req.InitialDigitalEmployeeIDs,
+		Metadata:                  metadata,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create team with initial members: %w", err)
@@ -244,6 +250,24 @@ func (s *Service) ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequ
 		return nil, fmt.Errorf("set team status: %w", err)
 	}
 	return teamFromRecord(record), nil
+}
+
+type DeleteTeamRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+}
+
+func (s *Service) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if err := s.repository.DeleteTeam(ctx, req.TenantID, req.TeamID); err != nil {
+		return fmt.Errorf("delete team: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error) {

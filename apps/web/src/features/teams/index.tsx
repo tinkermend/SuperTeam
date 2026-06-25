@@ -14,6 +14,7 @@ import {
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
   archiveTeam,
+  deleteTeam,
   disableTeam,
   getCurrentTeamGovernance,
   getTeamOverview,
@@ -145,6 +146,7 @@ export function TeamDetailView({
   fetcher,
   teamId,
 }: TeamDetailViewProps) {
+  const navigate = useNavigate();
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const overview = useQuery({
     queryKey: ["team-overview", teamId],
@@ -175,6 +177,12 @@ export function TeamDetailView({
       void currentGovernance.refetch();
     },
   });
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTeam(apiOptions, teamId),
+    onSuccess: () => {
+      void navigate({ to: "/teams" });
+    },
+  });
 
   return (
     <>
@@ -196,6 +204,7 @@ export function TeamDetailView({
               currentGovernance.data ?? overview.data.current_revision
             }
             onArchiveTeam={() => archiveMutation.mutate()}
+            onDeleteTeam={() => deleteMutation.mutate()}
             onDisableTeam={() => disableMutation.mutate()}
             onRestoreTeam={() => restoreMutation.mutate()}
             overview={overview.data}

@@ -98,11 +98,12 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 
 func (r *PgRepository) ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error) {
 	employees, err := r.q.ListDigitalEmployees(ctx, queries.ListDigitalEmployeesParams{
-		TenantID: params.TenantID,
-		TeamID:   nullUUIDFromPtr(params.TeamID),
-		Status:   textFromStatus(params.Status),
-		Offset:   params.Offset,
-		Limit:    params.Limit,
+		TenantID:   params.TenantID,
+		TeamID:     nullUUIDFromPtr(params.TeamID),
+		Status:     textFromStatus(params.Status),
+		Assignment: textFromOptionalString(params.Assignment),
+		Offset:     params.Offset,
+		Limit:      params.Limit,
 	})
 	if err != nil {
 		return nil, err

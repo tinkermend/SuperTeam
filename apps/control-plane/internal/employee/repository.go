@@ -61,11 +61,12 @@ type CreateDigitalEmployeeParams struct {
 }
 
 type ListDigitalEmployeesParams struct {
-	TenantID uuid.UUID
-	TeamID   *uuid.UUID
-	Status   DigitalEmployeeStatus
-	Offset   int32
-	Limit    int32
+	TenantID   uuid.UUID
+	TeamID     *uuid.UUID
+	Status     DigitalEmployeeStatus
+	Assignment string
+	Offset     int32
+	Limit      int32
 }
 
 type UpsertExecutionInstanceParams struct {

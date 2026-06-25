@@ -1181,6 +1181,14 @@ func (r *memoryRepository) SetTeamStatus(_ context.Context, params SetTeamStatus
 	return record, nil
 }
 
+func (r *memoryRepository) DeleteTeam(_ context.Context, tenantID, teamID uuid.UUID) error {
+	if _, ok := r.teams[teamID]; !ok {
+		return ErrNotFound
+	}
+	delete(r.teams, teamID)
+	return nil
+}
+
 func (r *memoryRepository) CreateTeamConfigRevision(_ context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
 	r.createRevisionCalls++
 	r.createdRevision = params

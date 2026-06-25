@@ -218,8 +218,9 @@ type CreateTeamRequest struct {
 	Name             string
 	Status           TeamStatus
 	HumanOwnerUserIDs []uuid.UUID
-	InitialMembers   []InitialTeamMemberInput
-	Metadata         map[string]any
+	InitialMembers            []InitialTeamMemberInput
+	InitialDigitalEmployeeIDs []uuid.UUID
+	Metadata                  map[string]any
 }
 
 type InitialTeamMemberInput struct {

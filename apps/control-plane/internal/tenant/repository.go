@@ -16,6 +16,7 @@ type Repository interface {
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error)
 	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
 	SetTeamStatus(ctx context.Context, params SetTeamStatusParams) (TeamRecord, error)
+	DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error
 	CreateTeamConfigRevision(ctx context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error)
 	GetTeamConfigRevision(ctx context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error)
@@ -51,9 +52,10 @@ type CreateTeamWithInitialMembersParams struct {
 	Slug           string
 	Name           string
 	Status         TeamStatus
-	OwnerUserIDs   []uuid.UUID
-	InitialMembers []InitialTeamMemberInput
-	Metadata       map[string]any
+	OwnerUserIDs              []uuid.UUID
+	InitialMembers            []InitialTeamMemberInput
+	InitialDigitalEmployeeIDs []uuid.UUID
+	Metadata                  map[string]any
 }
 
 type ListTeamsParams struct {

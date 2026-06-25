@@ -453,6 +453,7 @@ function assertReadyCreateInput(
 
 export type ListDigitalEmployeesFilters = {
   team_id?: string;
+  assignment?: string;
 };
 
 export type DigitalEmployeeOverviewFilters = {
@@ -650,6 +651,9 @@ export async function listDigitalEmployees(
   const searchParams = new URLSearchParams();
   if (filters.team_id) {
     searchParams.set("team_id", filters.team_id);
+  }
+  if (filters.assignment) {
+    searchParams.set("assignment", filters.assignment);
   }
   const query = searchParams.toString();
   const path = `/api/v1/digital-employees${query ? `?${query}` : ""}`;

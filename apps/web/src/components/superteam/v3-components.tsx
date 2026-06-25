@@ -45,7 +45,7 @@ function SoftCard({
       className={cn(
         "rounded-v3-card bg-v3-card text-v3-ink shadow-v3",
         interactive &&
-          "cursor-pointer transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-v3-pop",
+          "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-v3-pop active:scale-[0.99]",
         className,
       )}
       {...props}
@@ -70,7 +70,7 @@ function IconTile({
     <span
       data-slot="v3-icon-tile"
       className={cn(
-        "inline-grid shrink-0 place-items-center",
+        "inline-grid shrink-0 place-items-center border border-black/5 dark:border-white/5 shadow-sm shadow-black/5 dark:shadow-black/10",
         sizeClass,
         toneText[tone],
         toneSoftBg[tone],
@@ -128,6 +128,7 @@ function V3MetricCard({
 }) {
   return (
     <SoftCard
+      interactive
       className={cn(
         "p-5",
         loud && "bg-gradient-to-b from-v3-warn-soft to-v3-card",
@@ -233,7 +234,7 @@ function WorkSurface({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="v3-work-surface"
-      className={cn("overflow-hidden rounded-v3-card bg-v3-card shadow-v3", className)}
+      className={cn("overflow-hidden rounded-v3-card bg-v3-card border border-v3-line shadow-v3", className)}
       {...props}
     />
   );
@@ -283,7 +284,7 @@ function V3Tr({
     <tr
       data-tone={tone}
       className={cn(
-        "transition-colors [&:hover>td]:bg-v3-card-inner [&:last-child>td]:border-b-0",
+        "transition-colors duration-200 [&:hover>td]:bg-v3-card-inner [&:last-child>td]:border-b-0",
         tone === "danger" &&
           "[&>td]:bg-v3-danger-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]",
         tone === "warn" &&
@@ -300,7 +301,7 @@ export type V3ButtonSize = "default" | "sm" | "icon";
 export type V3Density = "comfortable" | "compact";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-v3-bg";
+  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-v3-bg";
 
 const buttonVariant: Record<V3ButtonVariant, string> = {
   primary: "bg-v3-brand text-white shadow-v3 hover:bg-v3-brand-deep",
@@ -344,7 +345,7 @@ function V3IconButton({ className, ...props }: ComponentProps<"button">) {
     <button
       data-slot="v3-icon-button"
       className={cn(
-        "inline-grid size-9 place-items-center rounded-xl bg-v3-card-soft text-v3-ink-2 shadow-v3 transition-colors hover:text-v3-ink",
+        "inline-grid size-9 place-items-center rounded-xl bg-v3-card-soft text-v3-ink-2 shadow-v3 transition-all duration-200 ease-out hover:text-v3-ink hover:-translate-y-0.5 hover:shadow-v3-pop active:scale-[0.95]",
         className,
       )}
       {...props}
@@ -364,10 +365,10 @@ function V3Chip({
       data-slot="v3-chip"
       data-active={active || undefined}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-colors",
+        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all duration-200 ease-out active:scale-[0.97]",
         active
           ? "bg-v3-brand-soft text-v3-brand-deep"
-          : "bg-v3-card text-v3-ink-2 shadow-v3 hover:text-v3-ink",
+          : "bg-v3-card text-v3-ink-2 border border-v3-line shadow-sm hover:text-v3-ink hover:-translate-y-0.5 hover:shadow-md",
         className,
       )}
       {...props}

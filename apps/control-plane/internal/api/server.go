@@ -296,6 +296,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/teams/{teamId}/audit", s.tenantHandler.ListTeamAudit)
 				r.Patch("/teams/{teamId}", s.tenantHandler.UpdateTeam)
 				r.Get("/teams/{teamId}", s.tenantHandler.GetTeam)
+				r.Delete("/teams/{teamId}", s.tenantHandler.DeleteTeam)
 				r.Post("/teams/{teamId}/disable", s.tenantHandler.DisableTeam)
 				r.Post("/teams/{teamId}/archive", s.tenantHandler.ArchiveTeam)
 				r.Post("/teams/{teamId}/restore", s.tenantHandler.RestoreTeam)

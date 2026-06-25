@@ -62,6 +62,7 @@ const (
 	ActionTeamDisable                     = "team.disable"
 	ActionTeamArchive                     = "team.archive"
 	ActionTeamRestore                     = "team.restore"
+	ActionTeamDelete                      = "team.delete"
 	ActionTeamMemberAdd                   = "team.member.add"
 	ActionTeamMemberRemove                = "team.member.remove"
 	ActionTeamMemberChangeRole            = "team.member.change_role"

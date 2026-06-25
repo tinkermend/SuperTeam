@@ -39,6 +39,7 @@ const (
 	TeamAuditRead                   AllowedTeamAction = "team.audit.read"
 	TeamCapabilityBind              AllowedTeamAction = "team.capability.bind"
 	TeamCapabilityUnbind            AllowedTeamAction = "team.capability.unbind"
+	TeamDelete                      AllowedTeamAction = "team.delete"
 	TeamDisable                     AllowedTeamAction = "team.disable"
 	TeamGovernanceApprove           AllowedTeamAction = "team.governance.approve"
 	TeamGovernanceEdit              AllowedTeamAction = "team.governance.edit"
@@ -58,6 +59,8 @@ func (e AllowedTeamAction) Valid() bool {
 	case TeamCapabilityBind:
 		return true
 	case TeamCapabilityUnbind:
+		return true
+	case TeamDelete:
 		return true
 	case TeamDisable:
 		return true
@@ -1608,6 +1611,21 @@ func (e ListAuditEventsParamsResourceType) Valid() bool {
 	}
 }
 
+// Defines values for ListDigitalEmployeesParamsAssignment.
+const (
+	Unassigned ListDigitalEmployeesParamsAssignment = "unassigned"
+)
+
+// Valid indicates whether the value is a known member of the ListDigitalEmployeesParamsAssignment enum.
+func (e ListDigitalEmployeesParamsAssignment) Valid() bool {
+	switch e {
+	case Unassigned:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListInboxItemsParamsView.
 const (
 	ListInboxItemsParamsViewMine ListInboxItemsParamsView = "mine"
@@ -1961,8 +1979,9 @@ type CreateTeamMemberRoleRequestRequestedRole string
 
 // CreateTeamRequest defines model for CreateTeamRequest.
 type CreateTeamRequest struct {
-	HumanOwnerUserIds []openapi_types.UUID `json:"human_owner_user_ids"`
-	InitialMembers    *[]struct {
+	HumanOwnerUserIds         []openapi_types.UUID  `json:"human_owner_user_ids"`
+	InitialDigitalEmployeeIds *[]openapi_types.UUID `json:"initial_digital_employee_ids,omitempty"`
+	InitialMembers            *[]struct {
 		Role   CreateTeamRequestInitialMembersRole `json:"role"`
 		UserId openapi_types.UUID                  `json:"user_id"`
 	} `json:"initial_members,omitempty"`
@@ -4416,10 +4435,14 @@ type ListAuditEventsParamsResourceType string
 
 // ListDigitalEmployeesParams defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParams struct {
-	Limit  *Limit                 `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset                `form:"offset,omitempty" json:"offset,omitempty"`
-	Status *DigitalEmployeeStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit      *Limit                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *Offset                               `form:"offset,omitempty" json:"offset,omitempty"`
+	Status     *DigitalEmployeeStatus                `form:"status,omitempty" json:"status,omitempty"`
+	Assignment *ListDigitalEmployeesParamsAssignment `form:"assignment,omitempty" json:"assignment,omitempty"`
 }
+
+// ListDigitalEmployeesParamsAssignment defines parameters for ListDigitalEmployees.
+type ListDigitalEmployeesParamsAssignment string
 
 // GetDigitalEmployeeCreateOptionsParams defines parameters for GetDigitalEmployeeCreateOptions.
 type GetDigitalEmployeeCreateOptionsParams struct {
@@ -5805,6 +5828,9 @@ type ServerInterface interface {
 	// Create a tenant team
 	// (POST /api/v1/teams)
 	CreateTeam(w http.ResponseWriter, r *http.Request)
+	// Delete a team and release its digital employees
+	// (DELETE /api/v1/teams/{teamId})
+	DeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Get a tenant team
 	// (GET /api/v1/teams/{teamId})
 	GetTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -6678,6 +6704,12 @@ func (_ Unimplemented) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Delete a team and release its digital employees
+// (DELETE /api/v1/teams/{teamId})
+func (_ Unimplemented) DeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get a tenant team
 // (GET /api/v1/teams/{teamId})
 func (_ Unimplemented) GetTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
@@ -7051,6 +7083,19 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployees(w http.ResponseWriter, r
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "assignment" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "assignment", r.URL.Query(), &params.Assignment, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "assignment"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "assignment", Err: err})
 		}
 		return
 	}
@@ -11858,6 +11903,32 @@ func (siw *ServerInterfaceWrapper) CreateTeam(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteTeam operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTeam(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTeam operation middleware
 func (siw *ServerInterfaceWrapper) GetTeam(w http.ResponseWriter, r *http.Request) {
 
@@ -13680,6 +13751,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams", wrapper.CreateTeam)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}", wrapper.DeleteTeam)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}", wrapper.GetTeam)

@@ -1,6 +1,5 @@
 import type { UserSummary } from "@/lib/api/auth";
-import type { InitialTeamMemberInput } from "@/lib/api/teams";
-
+import type { DigitalEmployee } from "@/lib/api/employees";
 export type TeamDisplayDraft = {
   color_tone: "blue" | "cyan" | "neutral" | "teal" | "violet";
   // 旧版固定 5 键（default/dev/ops/qa/security）或任意 lucide 图标名（kebab-case）。
@@ -10,10 +9,9 @@ export type TeamDisplayDraft = {
 export type CreateTeamDraft = {
   display: TeamDisplayDraft;
   displayTouched: boolean;
-  initial_members: InitialTeamMemberInput[];
-  memberUsers: Record<string, UserSummary>;
+  initial_digital_employees: DigitalEmployee[];
   name: string;
-  owner?: UserSummary;
+  owners: UserSummary[];
   slug: string;
   slugTouched: boolean;
 };
@@ -21,9 +19,9 @@ export type CreateTeamDraft = {
 export const emptyCreateTeamDraft: CreateTeamDraft = {
   display: { color_tone: "blue", icon_key: "default" },
   displayTouched: false,
-  initial_members: [],
-  memberUsers: {},
+  initial_digital_employees: [],
   name: "",
+  owners: [],
   slug: "",
   slugTouched: false,
 };
@@ -58,8 +56,8 @@ export function toCreateTeamInput(draft: CreateTeamDraft) {
   return {
     name: draft.name.trim(),
     slug: draft.slug.trim(),
-    human_owner_user_ids: draft.owner?.id ? [draft.owner.id] : [],
-    initial_members: draft.initial_members,
+    human_owner_user_ids: draft.owners.map((o) => o.id),
+    initial_digital_employee_ids: draft.initial_digital_employees.map((e) => e.id),
     metadata: {
       display: {
         color_tone: draft.display.color_tone,

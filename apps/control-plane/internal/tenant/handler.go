@@ -23,6 +23,7 @@ type HandlerService interface {
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
 	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
+	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
 	CreateConfigRevision(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
 	GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamConfigRevision, error)
 	ListGovernanceDrafts(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamConfigRevision, error)
@@ -103,9 +104,10 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		Slug             string                   `json:"slug"`
 		Name             string                   `json:"name"`
 		Status           TeamStatus               `json:"status"`
-		HumanOwnerUserIDs []uuid.UUID `json:"human_owner_user_ids,omitempty"`
-		InitialMembers   []InitialTeamMemberInput `json:"initial_members"`
-		Metadata         map[string]any           `json:"metadata"`
+		HumanOwnerUserIDs         []uuid.UUID              `json:"human_owner_user_ids,omitempty"`
+		InitialMembers            []InitialTeamMemberInput `json:"initial_members"`
+		InitialDigitalEmployeeIDs []uuid.UUID              `json:"initial_digital_employee_ids"`
+		Metadata                  map[string]any           `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -116,10 +118,11 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:      middleware.GetUserID(r.Context()),
 		Slug:             req.Slug,
 		Name:             req.Name,
-		Status:           req.Status,
-		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
-		InitialMembers:   req.InitialMembers,
-		Metadata:         req.Metadata,
+		Status:                    req.Status,
+		HumanOwnerUserIDs:         req.HumanOwnerUserIDs,
+		InitialMembers:            req.InitialMembers,
+		InitialDigitalEmployeeIDs: req.InitialDigitalEmployeeIDs,
+		Metadata:                  req.Metadata,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -220,6 +223,26 @@ func (h *HTTPHandler) ArchiveTeam(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) RestoreTeam(w http.ResponseWriter, r *http.Request) {
 	h.changeTeamStatus(w, r, TeamStatusActive, authz.ActionTeamRestore, "team restore")
+}
+
+func (h *HTTPHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamDelete, "team delete")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteTeam(r.Context(), DeleteTeamRequest{TenantID: tenantID, TeamID: teamID}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
@@ -652,6 +675,7 @@ var overviewActions = []string{
 	authz.ActionTeamDisable,
 	authz.ActionTeamArchive,
 	authz.ActionTeamRestore,
+	authz.ActionTeamDelete,
 	authz.ActionTeamMemberAdd,
 	authz.ActionTeamMemberRequestPrivilegedRole,
 	authz.ActionTeamGovernanceEdit,

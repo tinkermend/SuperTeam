@@ -68,6 +68,7 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	status := DigitalEmployeeStatus(r.URL.Query().Get("status"))
+	assignment := r.URL.Query().Get("assignment")
 	var teamID *uuid.UUID
 	if rawTeamID := r.URL.Query().Get("team_id"); rawTeamID != "" {
 		parsedTeamID, err := uuid.Parse(rawTeamID)
@@ -78,12 +79,18 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 		teamID = &parsedTeamID
 	}
 
+	if assignment == "unassigned" && teamID != nil {
+		http.Error(w, "cannot specify both team_id and assignment=unassigned", http.StatusBadRequest)
+		return
+	}
+
 	employees, err := service.ListDigitalEmployees(r.Context(), ListDigitalEmployeesRequest{
-		TenantID: tenantID,
-		TeamID:   teamID,
-		Status:   status,
-		Offset:   int32(offset),
-		Limit:    int32(limit),
+		TenantID:   tenantID,
+		TeamID:     teamID,
+		Status:     status,
+		Assignment: assignment,
+		Offset:     int32(offset),
+		Limit:      int32(limit),
 	})
 	if err != nil {
 		writeHandlerError(w, err)
