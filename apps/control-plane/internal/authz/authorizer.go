@@ -518,6 +518,11 @@ func isTaskAction(action string) bool {
 }
 
 func (a *DBAuthorizer) checkProjectAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	// Tenant-scoped project actions (e.g. list/create projects) pass ResourceTenant;
+	// any active tenant member is allowed.
+	if req.Resource.Type == ResourceTenant {
+		return a.checkTenantAccess(ctx, req)
+	}
 	if req.Resource.Type != ResourceProject || req.Resource.ID == "" {
 		return deny(ReasonInvalidResource), nil
 	}
