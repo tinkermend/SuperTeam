@@ -2543,10 +2543,11 @@ paths:
       parameters:
         - name: team_id
           in: query
-          required: true
+          required: false
           schema:
             type: string
             format: uuid
+          description: Team ID; omit for team-less (tenant-level) digital employees.
       responses:
         "200":
           description: Digital employee create options
@@ -8711,7 +8712,6 @@ components:
     CreateDigitalEmployeeRequest:
       type: object
       required:
-        - team_id
         - employee_type
         - name
         - avatar_asset_id
@@ -8721,6 +8721,8 @@ components:
         team_id:
           type: string
           format: uuid
+          nullable: true
+          description: Team ID; omit or null for team-less (tenant-level) digital employees.
         employee_type:
           type: string
         name:
@@ -8890,7 +8892,6 @@ components:
       required:
         - id
         - tenant_id
-        - team_id
         - revision_number
         - status
         - allowed_employee_types
@@ -8904,6 +8905,8 @@ components:
         team_id:
           type: string
           format: uuid
+          nullable: true
+          description: Team ID; null for team-less (tenant-level) default governance.
         revision_number:
           type: integer
           format: int32

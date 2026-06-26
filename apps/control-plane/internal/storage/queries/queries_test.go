@@ -1100,7 +1100,7 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	effective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
 		TenantID:                   tenantID,
 		DigitalEmployeeID:          employee.ID,
-		TenantTeamConfigRevisionID: teamConfig.ID,
+		TenantTeamConfigRevisionID: uuid.NullUUID{UUID: teamConfig.ID, Valid: true},
 		EmployeeConfigRevisionID:   employeeConfig.ID,
 		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":1}}`),
 		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":[]}`),
@@ -1114,7 +1114,7 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	pendingEffective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
 		TenantID:                   tenantID,
 		DigitalEmployeeID:          employee.ID,
-		TenantTeamConfigRevisionID: teamConfig.ID,
+		TenantTeamConfigRevisionID: uuid.NullUUID{UUID: teamConfig.ID, Valid: true},
 		EmployeeConfigRevisionID:   draftEmployeeConfig.ID,
 		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":2}}`),
 		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":["等待审批"]}`),
@@ -4732,7 +4732,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 
 	createdRun, err := testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
 		TenantID:            tenantID,
-		TeamID:              teamID,
+		TeamID:              uuid.NullUUID{UUID: teamID, Valid: true},
 		Title:               "执行结账诊断",
 		Description:         pgtype.Text{String: "复现并诊断结账失败", Valid: true},
 		Priority:            5,
@@ -4763,7 +4763,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 
 	retriedRun, err := testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
 		TenantID:            tenantID,
-		TeamID:              teamID,
+		TeamID:              uuid.NullUUID{UUID: teamID, Valid: true},
 		Title:               "重复执行结账诊断",
 		Description:         pgtype.Text{String: "同一幂等键重试不应新建任务", Valid: true},
 		Priority:            1,
@@ -4795,7 +4795,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 
 	_, err = testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
 		TenantID:            tenantID,
-		TeamID:              teamID,
+		TeamID:              uuid.NullUUID{UUID: teamID, Valid: true},
 		Title:               "幂等冲突执行结账诊断",
 		Description:         pgtype.Text{String: "同一幂等键不同指纹应返回冲突信号", Valid: true},
 		Priority:            1,

@@ -1,136 +1,133 @@
 package tenant
 
 import (
+	"context"
+	"errors"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
-func TestTeamSummaryAvatarFallsBackToUsernameWhenSeedMissing(t *testing.T) {
-	row := tenantTeamSummaryRowWithLegacyOwnerAvatar("owner")
+func TestPgRepositoryDeleteTeamRollsBackWhenSoftDeleteFails(t *testing.T) {
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	unbindCalled := false
+	commitCalled := false
+	rollbackCalled := false
+	deleteErr := errors.New("delete failed")
 
-	listRecord, err := teamListItemRecordFromQuery(row)
-	if err != nil {
-		t.Fatalf("list team item record: %v", err)
-	}
-	if listRecord.HumanOwners == nil || listRecord.HumanOwners[0].Avatar == nil || listRecord.HumanOwners[0].Avatar.Seed != "user:owner" {
-		t.Fatalf("expected list owner avatar seed fallback, got %#v", listRecord.HumanOwners)
+	tx := &stubTx{
+		execFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if sql == queries.UnbindTeamDigitalEmployees {
+				unbindCalled = true
+				if len(args) != 2 || args[0] != teamID || args[1] != tenantID {
+					t.Fatalf("unexpected unbind args: %#v", args)
+				}
+				return pgconn.NewCommandTag("UPDATE 2"), nil
+			}
+			t.Fatalf("unexpected exec SQL: %s", sql)
+			return pgconn.CommandTag{}, nil
+		},
+		queryRowFn: func(_ context.Context, sql string, args ...any) pgx.Row {
+			if sql == queries.SoftDeleteTeam {
+				if len(args) != 2 || args[0] != teamID || args[1] != tenantID {
+					t.Fatalf("unexpected soft delete args: %#v", args)
+				}
+				return stubRow{err: deleteErr}
+			}
+			t.Fatalf("unexpected query row SQL: %s", sql)
+			return stubRow{err: errors.New("unexpected query")}
+		},
+		commitFn: func(context.Context) error {
+			commitCalled = true
+			return nil
+		},
+		rollbackFn: func(context.Context) error {
+			rollbackCalled = true
+			return nil
+		},
 	}
 
-	getRow := getTenantTeamSummaryRowFromListRow(row)
-	getRecord, err := teamListItemRecordFromGetSummaryQuery(getRow)
-	if err != nil {
-		t.Fatalf("get team item record: %v", err)
+	repo := &PgRepository{
+		q:  queries.New(nil),
+		db: stubBeginner{tx: tx},
 	}
-	if getRecord.HumanOwners == nil || getRecord.HumanOwners[0].Avatar == nil || getRecord.HumanOwners[0].Avatar.Seed != "user:owner" {
-		t.Fatalf("expected get owner avatar seed fallback, got %#v", getRecord.HumanOwners)
+
+	err := repo.DeleteTeam(context.Background(), tenantID, teamID)
+	if !errors.Is(err, deleteErr) {
+		t.Fatalf("expected delete error to surface, got %v", err)
+	}
+	if !unbindCalled {
+		t.Fatal("expected unbind query to execute before soft delete")
+	}
+	if commitCalled {
+		t.Fatal("expected transaction not to commit on soft delete failure")
+	}
+	if !rollbackCalled {
+		t.Fatal("expected transaction rollback on soft delete failure")
 	}
 }
 
-func TestTeamMemberAvatarFallsBackToUsernameWhenSeedMissing(t *testing.T) {
-	row := listTeamMembersRowWithLegacyAvatar("member")
-
-	listRecord, err := teamMemberRecordFromListRow(row)
-	if err != nil {
-		t.Fatalf("list team member record: %v", err)
-	}
-	if listRecord.Avatar == nil || listRecord.Avatar.Seed != "user:member" {
-		t.Fatalf("expected list member avatar seed fallback, got %#v", listRecord.Avatar)
-	}
-
-	getRow := getTeamMemberRowFromListRow(row)
-	getRecord, err := teamMemberRecordFromGetRow(getRow)
-	if err != nil {
-		t.Fatalf("get team member record: %v", err)
-	}
-	if getRecord.Avatar == nil || getRecord.Avatar.Seed != "user:member" {
-		t.Fatalf("expected get member avatar seed fallback, got %#v", getRecord.Avatar)
-	}
+type stubBeginner struct {
+	tx pgx.Tx
 }
 
-func tenantTeamSummaryRowWithLegacyOwnerAvatar(username string) queries.ListTenantTeamSummariesRow {
-	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-	return queries.ListTenantTeamSummariesRow{
-		ID:                  uuid.New(),
-		TenantID:            uuid.New(),
-		Slug:                "ops",
-		Name:                "Ops",
-		Status:              string(TeamStatusActive),
-		Metadata:            []byte(`{}`),
-		CreatedAt:           now,
-		UpdatedAt:           now,
-		HumanOwners: []byte(`[{"id": "00000000-0000-0000-0000-000000000000", "username": "owner", "status": "active", "avatar_provider": "dicebear", "avatar_style": "adventurer"}]`),
-																GovernanceStatus:    string(GovernanceSummaryActive),
-	}
+func (s stubBeginner) Begin(context.Context) (pgx.Tx, error) {
+	return s.tx, nil
 }
 
-func getTenantTeamSummaryRowFromListRow(row queries.ListTenantTeamSummariesRow) queries.GetTenantTeamSummaryRow {
-	return queries.GetTenantTeamSummaryRow{
-		ID:                   row.ID,
-		TenantID:             row.TenantID,
-		Slug:                 row.Slug,
-		Name:                 row.Name,
-		Status:               row.Status,
-		HumanOwnerUserIds:     row.HumanOwnerUserIds,
-		Metadata:             row.Metadata,
-		ArchivedAt:           row.ArchivedAt,
-		DisabledAt:           row.DisabledAt,
-		DeletedAt:            row.DeletedAt,
-		CreatedAt:            row.CreatedAt,
-		UpdatedAt:            row.UpdatedAt,
-		HumanOwners:          row.HumanOwners,
-																		MemberCount:          row.MemberCount,
-		DigitalEmployeeCount: row.DigitalEmployeeCount,
-		CapabilityCount:      row.CapabilityCount,
-		CurrentRevision:      row.CurrentRevision,
-		PendingDraftCount:    row.PendingDraftCount,
-		GovernanceStatus:     row.GovernanceStatus,
-		RiskSummary:          row.RiskSummary,
-	}
+type stubTx struct {
+	execFn     func(context.Context, string, ...any) (pgconn.CommandTag, error)
+	queryRowFn func(context.Context, string, ...any) pgx.Row
+	commitFn   func(context.Context) error
+	rollbackFn func(context.Context) error
 }
 
-func listTeamMembersRowWithLegacyAvatar(username string) queries.ListTeamMembersRow {
-	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-	return queries.ListTeamMembersRow{
-		MembershipID:     uuid.New(),
-		TenantID:         uuid.New(),
-		TeamID:           uuid.NullUUID{UUID: uuid.New(), Valid: true},
-		UserID:           uuid.New(),
-		Username:         username,
-		DisplayName:      pgtype.Text{String: "Member", Valid: true},
-		Email:            pgtype.Text{String: "member@example.com", Valid: true},
-		AccountStatus:    "active",
-		AvatarProvider:   "dicebear",
-		AvatarStyle:      "adventurer",
-		AvatarOptions:    []byte(`{"backgroundColor":["e6fbf5"]}`),
-		Role:             TeamRoleMember,
-		MembershipStatus: "active",
-		CreatedAt:        now,
-		UpdatedAt:        now,
+func (s *stubTx) Begin(context.Context) (pgx.Tx, error) { return nil, errors.New("unsupported") }
+func (s *stubTx) Commit(ctx context.Context) error {
+	if s.commitFn != nil {
+		return s.commitFn(ctx)
 	}
+	return nil
+}
+func (s *stubTx) Rollback(ctx context.Context) error {
+	if s.rollbackFn != nil {
+		return s.rollbackFn(ctx)
+	}
+	return nil
+}
+func (s *stubTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, errors.New("unsupported")
+}
+func (s *stubTx) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults { return nil }
+func (s *stubTx) LargeObjects() pgx.LargeObjects                         { return pgx.LargeObjects{} }
+func (s *stubTx) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
+	return nil, errors.New("unsupported")
+}
+func (s *stubTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if s.execFn == nil {
+		return pgconn.CommandTag{}, errors.New("unsupported")
+	}
+	return s.execFn(ctx, sql, args...)
+}
+func (s *stubTx) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("unsupported")
+}
+func (s *stubTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	if s.queryRowFn == nil {
+		return stubRow{err: errors.New("unsupported")}
+	}
+	return s.queryRowFn(ctx, sql, args...)
+}
+func (s *stubTx) Conn() *pgx.Conn { return nil }
+
+type stubRow struct {
+	err error
 }
 
-func getTeamMemberRowFromListRow(row queries.ListTeamMembersRow) queries.GetTeamMemberRow {
-	return queries.GetTeamMemberRow{
-		MembershipID:     row.MembershipID,
-		TenantID:         row.TenantID,
-		TeamID:           row.TeamID,
-		UserID:           row.UserID,
-		Username:         row.Username,
-		DisplayName:      row.DisplayName,
-		Email:            row.Email,
-		AccountStatus:    row.AccountStatus,
-		AvatarProvider:   row.AvatarProvider,
-		AvatarStyle:      row.AvatarStyle,
-		AvatarSeed:       row.AvatarSeed,
-		AvatarOptions:    row.AvatarOptions,
-		Role:             row.Role,
-		MembershipStatus: row.MembershipStatus,
-		DisabledAt:       row.DisabledAt,
-		CreatedAt:        row.CreatedAt,
-		UpdatedAt:        row.UpdatedAt,
-	}
+func (r stubRow) Scan(...any) error {
+	return r.err
 }

@@ -7,8 +7,16 @@ import (
 	"github.com/google/uuid"
 )
 
+type BulkTeamActionsRequest struct {
+	Actor    ActorRef
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Actions  []string
+}
+
 type Authorizer interface {
 	Check(ctx context.Context, req CheckRequest) (Decision, error)
+	CheckBulkTeamActions(ctx context.Context, req BulkTeamActionsRequest) ([]string, error)
 }
 
 type DBAuthorizer struct {
@@ -167,6 +175,7 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		ActionTeamDisable,
 		ActionTeamArchive,
 		ActionTeamRestore,
+		ActionTeamDelete,
 		ActionTeamMemberAdd,
 		ActionTeamMemberRemove,
 		ActionTeamMemberChangeRole,
@@ -349,6 +358,59 @@ func (a *DBAuthorizer) checkCredentialSelfOrTenantAdmin(ctx context.Context, req
 		return allow("credential.self", "self"), nil
 	}
 	return a.checkTenantAdminAccess(ctx, req)
+}
+
+// CheckBulkTeamActions resolves all team action permissions with a single pair of DB queries
+// instead of one query per action. It fetches membership once and derives each permission
+// from the resolved role in memory.
+//
+// ActionTeamDelete is intentionally absent from roleAllowsTeamAction — only tenant admins
+// can delete teams. This function preserves that invariant.
+func (a *DBAuthorizer) CheckBulkTeamActions(ctx context.Context, req BulkTeamActionsRequest) ([]string, error) {
+	if a == nil || a.repository == nil {
+		return nil, nil
+	}
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok || req.TenantID == uuid.Nil || req.TeamID == uuid.Nil {
+		return nil, nil
+	}
+
+	isTenantAdmin := false
+	tenantMembership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
+		TenantID:      req.TenantID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err != nil && !errors.Is(err, ErrNoMembership) {
+		return nil, err
+	}
+	if err == nil && roleAllowsTenantAdminAccess(tenantMembership.Role) {
+		isTenantAdmin = true
+	}
+
+	teamRole := ""
+	if !isTenantAdmin {
+		teamMembership, teamErr := a.repository.GetActiveTeamMembership(ctx, TeamMembershipParams{
+			TenantID:      req.TenantID,
+			TeamID:        req.TeamID,
+			PrincipalType: ActorUser,
+			PrincipalID:   principalID,
+		})
+		if teamErr != nil && !errors.Is(teamErr, ErrNoMembership) {
+			return nil, teamErr
+		}
+		if teamErr == nil {
+			teamRole = teamMembership.Role
+		}
+	}
+
+	allowed := make([]string, 0, len(req.Actions))
+	for _, action := range req.Actions {
+		if isTenantAdmin || roleAllowsTeamAction(action, teamRole) {
+			allowed = append(allowed, action)
+		}
+	}
+	return allowed, nil
 }
 
 func (a *DBAuthorizer) checkTeamManagementAction(ctx context.Context, req CheckRequest) (Decision, error) {

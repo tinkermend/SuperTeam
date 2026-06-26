@@ -138,10 +138,14 @@ func (h *HTTPHandler) GetCreateOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rawTeamID := r.URL.Query().Get("team_id")
-	teamID, err := uuid.Parse(rawTeamID)
-	if err != nil || teamID == uuid.Nil {
-		http.Error(w, "invalid team_id", http.StatusBadRequest)
-		return
+	var teamID *uuid.UUID
+	if rawTeamID != "" {
+		parsedTeamID, err := uuid.Parse(rawTeamID)
+		if err != nil || parsedTeamID == uuid.Nil {
+			http.Error(w, "invalid team_id", http.StatusBadRequest)
+			return
+		}
+		teamID = &parsedTeamID
 	}
 	options, err := service.GetCreateOptions(r.Context(), CreateOptionsRequest{
 		TenantID: tenantID,
@@ -929,7 +933,7 @@ type overviewPaginationResponse struct {
 
 type workspaceFileResponse struct {
 	ID                string  `json:"id"`
-	TeamID            string  `json:"team_id"`
+	TeamID            *string `json:"team_id,omitempty"`
 	Path              string  `json:"path"`
 	FileRole          string  `json:"file_role"`
 	MimeType          string  `json:"mime_type"`
@@ -1182,7 +1186,7 @@ func workspaceFileResponses(files []WorkspaceFile) []workspaceFileResponse {
 func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
 	return workspaceFileResponse{
 		ID:                file.ID.String(),
-		TeamID:            file.TeamID.String(),
+		TeamID:            uuidStringPtr(file.TeamID),
 		Path:              file.Path,
 		FileRole:          file.FileRole,
 		MimeType:          file.MimeType,
@@ -1213,7 +1217,7 @@ func environmentVariableSummaryResponseFromDomain(item EnvironmentVariableSummar
 	return environmentVariableSummaryResponse{
 		ID:                optionalUUIDString(item.ID),
 		TenantID:          optionalUUIDString(item.TenantID),
-		TeamID:            optionalUUIDString(item.TeamID),
+		TeamID:            optionalUUIDStringPtr(item.TeamID),
 		DigitalEmployeeID: optionalUUIDString(item.DigitalEmployeeID),
 		Name:              item.Name,
 		Configured:        item.Configured,
@@ -1604,6 +1608,13 @@ func uuidStringPtr(value *uuid.UUID) *string {
 
 func optionalUUIDString(value uuid.UUID) string {
 	if value == uuid.Nil {
+		return ""
+	}
+	return value.String()
+}
+
+func optionalUUIDStringPtr(value *uuid.UUID) string {
+	if value == nil || *value == uuid.Nil {
 		return ""
 	}
 	return value.String()

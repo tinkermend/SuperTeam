@@ -112,7 +112,7 @@ type DigitalEmployee struct {
 type WorkspaceFile struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Path              string
 	FileRole          string
@@ -142,7 +142,7 @@ const (
 type EnvironmentVariableSummary struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Name              string
 	Configured        bool
@@ -155,7 +155,7 @@ type EnvironmentVariableSummary struct {
 type EnvironmentVariableRecord struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Name              string
 	EncryptedValue    string
@@ -377,7 +377,7 @@ type DigitalEmployeeEffectiveConfig struct {
 	ID                       uuid.UUID
 	TenantID                 uuid.UUID
 	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     uuid.UUID
+	TeamConfigRevisionID     *uuid.UUID
 	EmployeeConfigRevisionID uuid.UUID
 	EffectiveConfig          map[string]any
 	ValidationResult         map[string]any
@@ -429,7 +429,7 @@ type RuntimeProvisioningPreflight struct {
 
 type CreateOptionsRequest struct {
 	TenantID uuid.UUID
-	TeamID   uuid.UUID
+	TeamID   *uuid.UUID
 }
 
 type CreateOptions struct {

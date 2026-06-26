@@ -165,7 +165,8 @@ pub enum RuntimeCommandType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnsureInstanceCommand {
-    pub team_id: String,
+    #[serde(default)]
+    pub team_id: Option<String>,
     pub digital_employee_id: String,
 }
 

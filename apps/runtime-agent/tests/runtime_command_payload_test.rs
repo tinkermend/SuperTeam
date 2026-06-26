@@ -266,10 +266,52 @@ fn parses_valid_provision_payload_with_workspace_file() {
     };
 
     let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command).unwrap();
-    assert_eq!(parsed.team_id, "11111111-1111-4111-8111-111111111111");
+    assert_eq!(
+        parsed.team_id.as_deref(),
+        Some("11111111-1111-4111-8111-111111111111")
+    );
     assert_eq!(parsed.workspace_files[0].path, "AGENTS.md");
     assert!(parsed.skills.is_empty());
     assert!(parsed.mcp_servers.is_empty());
+}
+
+#[test]
+fn parses_team_less_provision_payload() {
+    let mut payload = valid_provision_payload("cmd-team-less");
+    payload["team_id"] = json!("");
+    payload["agent_home_dir"] =
+        json!("/tmp/workspaces/employees/22222222-2222-4222-8222-222222222222");
+    let command = RuntimeCommand {
+        id: "cmd-team-less".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload,
+    };
+
+    let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect("team-less provision payload should parse");
+
+    assert_eq!(parsed.team_id.as_deref(), Some(""));
+    assert!(parsed.agent_home_dir.contains("/employees/"));
+}
+
+#[test]
+fn rejects_blank_team_id_in_provision_payload() {
+    let mut payload = valid_provision_payload("cmd-blank-team");
+    payload["team_id"] = json!(" ");
+    let command = RuntimeCommand {
+        id: "cmd-blank-team".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload,
+    };
+
+    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect_err("blank team_id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("team_id must be a UUID-like string")
+    );
 }
 
 #[test]

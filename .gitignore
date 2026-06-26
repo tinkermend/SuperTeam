@@ -105,6 +105,7 @@ src-tauri/tauri.conf.json.bak
 *.key
 tmp/
 temp/
+.tmp/
 .agents/
 .claude/
 .codex/*

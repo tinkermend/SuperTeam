@@ -344,7 +344,7 @@ created_task AS (
             ELSE gen_random_uuid()
         END,
         sqlc.arg('tenant_id')::uuid,
-        sqlc.arg('team_id')::uuid,
+        sqlc.narg('team_id')::uuid,
         sqlc.arg('title')::varchar,
         sqlc.narg('description')::text,
         'pending',

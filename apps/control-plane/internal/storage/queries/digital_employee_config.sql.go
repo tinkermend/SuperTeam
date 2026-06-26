@@ -146,7 +146,7 @@ RETURNING id, tenant_id, digital_employee_id, tenant_team_config_revision_id, em
 type CreateDigitalEmployeeEffectiveConfigParams struct {
 	TenantID                   uuid.UUID          `json:"tenant_id"`
 	DigitalEmployeeID          uuid.UUID          `json:"digital_employee_id"`
-	TenantTeamConfigRevisionID uuid.UUID          `json:"tenant_team_config_revision_id"`
+	TenantTeamConfigRevisionID uuid.NullUUID      `json:"tenant_team_config_revision_id"`
 	EmployeeConfigRevisionID   uuid.UUID          `json:"employee_config_revision_id"`
 	EffectiveConfigSnapshot    []byte             `json:"effective_config_snapshot"`
 	ValidationResult           []byte             `json:"validation_result"`

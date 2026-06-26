@@ -19,7 +19,9 @@ type Repository interface {
 	EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error
 	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error)
 	ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error)
+	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderOption, error)
 	GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
+	GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
@@ -103,7 +105,7 @@ type CreateConfigRevisionParams struct {
 type CreateEffectiveConfigParams struct {
 	TenantID                 uuid.UUID
 	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     uuid.UUID
+	TeamConfigRevisionID     *uuid.UUID
 	EmployeeConfigRevisionID uuid.UUID
 	EffectiveConfig          map[string]any
 	ValidationResult         map[string]any
@@ -114,7 +116,7 @@ type CreateEffectiveConfigParams struct {
 
 type CreateWorkspaceFileParams struct {
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Path              string
 	FileRole          string
@@ -222,7 +224,7 @@ type DigitalEmployeeEffectiveConfigRecord struct {
 	ID                       uuid.UUID
 	TenantID                 uuid.UUID
 	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     uuid.UUID
+	TeamConfigRevisionID     *uuid.UUID
 	EmployeeConfigRevisionID uuid.UUID
 	EffectiveConfig          map[string]any
 	ValidationResult         map[string]any
@@ -237,7 +239,7 @@ type DigitalEmployeeEffectiveConfigRecord struct {
 type WorkspaceFileRecord struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Path              string
 	FileRole          string
@@ -272,7 +274,7 @@ type WorkspaceFileRevisionRecord struct {
 type WorkspaceFileForSyncRecord struct {
 	FileID            uuid.UUID
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Path              string
 	FileRole          string

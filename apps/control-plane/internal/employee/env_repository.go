@@ -15,7 +15,7 @@ type EnvironmentVariableRepository interface {
 
 type UpsertEnvironmentVariableStoreRequest struct {
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Name              string
 	EncryptedValue    string

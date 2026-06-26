@@ -1095,6 +1095,136 @@ func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRu
 	return i, err
 }
 
+const GetRuntimeProvisioningPreflightTeamLess = `-- name: GetRuntimeProvisioningPreflightTeamLess :one
+WITH provider_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $2::uuid
+      AND runtime_node_id = $1::uuid
+      AND capability_type = 'provider'
+      AND provider_type = $3::varchar
+      AND available = true
+      AND status = 'healthy'
+      AND health_status = 'healthy'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+),
+workspace_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $2::uuid
+      AND runtime_node_id = $1::uuid
+      AND capability_type = 'workspace'
+      AND capability_key = 'base-dir'
+      AND available = true
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+)
+SELECT
+    rn.tenant_id,
+    NULL::uuid AS team_id,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    '{}'::jsonb AS governance_snapshot,
+    false::boolean AS has_active_team_config,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+    )::boolean AS runtime_online,
+    EXISTS (
+        SELECT 1
+        FROM runtime_enrollments re
+        WHERE re.tenant_id = rn.tenant_id
+          AND re.runtime_node_id = rn.id
+          AND re.status = 'approved'
+          AND re.rejected_at IS NULL
+          AND re.revoked_at IS NULL
+    )::boolean AS enrollment_approved,
+    EXISTS (
+        SELECT 1
+        FROM runtime_sessions rs
+        JOIN runtime_enrollments re
+          ON re.id = rs.enrollment_id
+         AND re.tenant_id = rs.tenant_id
+         AND re.runtime_node_id = rs.runtime_node_id
+         AND re.status = 'approved'
+         AND re.rejected_at IS NULL
+         AND re.revoked_at IS NULL
+        WHERE rs.tenant_id = rn.tenant_id
+          AND rs.runtime_node_id = rn.id
+          AND rs.expires_at > NOW()
+          AND rs.revoked_at IS NULL
+    )::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+    true::boolean AS provider_policy_allowed,
+    true::boolean AS runtime_policy_allowed
+FROM runtime_nodes rn
+LEFT JOIN provider_capability ON TRUE
+LEFT JOIN workspace_capability ON TRUE
+WHERE rn.id = $1::uuid
+  AND rn.tenant_id = $2::uuid
+  AND rn.archived_at IS NULL
+`
+
+type GetRuntimeProvisioningPreflightTeamLessParams struct {
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProviderType  string    `json:"provider_type"`
+}
+
+type GetRuntimeProvisioningPreflightTeamLessRow struct {
+	TenantID              uuid.UUID     `json:"tenant_id"`
+	TeamID                uuid.NullUUID `json:"team_id"`
+	RuntimeNodeID         uuid.UUID     `json:"runtime_node_id"`
+	NodeID                string        `json:"node_id"`
+	AgentHomeDir          string        `json:"agent_home_dir"`
+	GovernanceSnapshot    []byte        `json:"governance_snapshot"`
+	HasActiveTeamConfig   bool          `json:"has_active_team_config"`
+	RuntimeOnline         bool          `json:"runtime_online"`
+	EnrollmentApproved    bool          `json:"enrollment_approved"`
+	RuntimeSessionActive  bool          `json:"runtime_session_active"`
+	ProviderAvailable     bool          `json:"provider_available"`
+	ProviderPolicyAllowed bool          `json:"provider_policy_allowed"`
+	RuntimePolicyAllowed  bool          `json:"runtime_policy_allowed"`
+}
+
+// Team-less variant: no team governance, provider/runtime policy always allowed.
+func (q *Queries) GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, arg GetRuntimeProvisioningPreflightTeamLessParams) (GetRuntimeProvisioningPreflightTeamLessRow, error) {
+	row := q.db.QueryRow(ctx, GetRuntimeProvisioningPreflightTeamLess, arg.RuntimeNodeID, arg.TenantID, arg.ProviderType)
+	var i GetRuntimeProvisioningPreflightTeamLessRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.TeamID,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.AgentHomeDir,
+		&i.GovernanceSnapshot,
+		&i.HasActiveTeamConfig,
+		&i.RuntimeOnline,
+		&i.EnrollmentApproved,
+		&i.RuntimeSessionActive,
+		&i.ProviderAvailable,
+		&i.ProviderPolicyAllowed,
+		&i.RuntimePolicyAllowed,
+	)
+	return i, err
+}
+
 const ListDigitalEmployeeExecutionInstances = `-- name: ListDigitalEmployeeExecutionInstances :many
 SELECT id, tenant_id, digital_employee_id, runtime_node_id, provider_type, agent_home_dir, workspace_policy, session_policy, runtime_selector, capacity_requirements, fallback_policy, status, ready_at, disabled_at, error_at, error_message, deleted_at, metadata, created_at, updated_at
 FROM digital_employee_execution_instances
@@ -2521,6 +2651,123 @@ func (q *Queries) ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx context
 	items := []ListRuntimeProviderOptionsForDigitalEmployeeCreateRow{}
 	for rows.Next() {
 		var i ListRuntimeProviderOptionsForDigitalEmployeeCreateRow
+		if err := rows.Scan(
+			&i.RuntimeNodeID,
+			&i.NodeID,
+			&i.RuntimeName,
+			&i.ProviderType,
+			&i.RuntimeStatus,
+			&i.ProviderStatus,
+			&i.HealthStatus,
+			&i.CurrentLoad,
+			&i.MaxSlots,
+			&i.AgentHomeDir,
+			&i.Available,
+			&i.DisabledReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRuntimeProviderOptionsForTeamLessCreate = `-- name: ListRuntimeProviderOptionsForTeamLessCreate :many
+WITH runtime_sessions_active AS (
+    SELECT DISTINCT re.runtime_node_id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = $1::uuid
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
+        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $1::uuid
+      AND capability_type = 'provider'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
+)
+SELECT
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    rn.name AS runtime_name,
+    pc.provider_type,
+    rn.status AS runtime_status,
+    pc.status AS provider_status,
+    pc.health_status,
+    rn.current_load,
+    rn.max_slots,
+    COALESCE(
+        pc.details ->> 'agent_home_dir',
+        pc.metadata ->> 'agent_home_dir',
+        pc.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+        AND pc.available = true
+        AND pc.status = 'healthy'
+        AND pc.health_status = 'healthy'
+        AND runtime_sessions_active.runtime_node_id IS NOT NULL
+    )::boolean AS available,
+    CASE
+        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
+        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
+        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
+        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
+        ELSE ''
+    END::varchar AS disabled_reason
+FROM runtime_nodes rn
+LEFT JOIN provider_capabilities pc
+  ON pc.runtime_node_id = rn.id
+ AND pc.tenant_id = rn.tenant_id
+LEFT JOIN runtime_sessions_active ON runtime_sessions_active.runtime_node_id = rn.id
+WHERE rn.tenant_id = $1::uuid
+  AND pc.provider_type IS NOT NULL
+ORDER BY available DESC, rn.name ASC, pc.provider_type ASC
+`
+
+type ListRuntimeProviderOptionsForTeamLessCreateRow struct {
+	RuntimeNodeID  uuid.UUID   `json:"runtime_node_id"`
+	NodeID         string      `json:"node_id"`
+	RuntimeName    string      `json:"runtime_name"`
+	ProviderType   pgtype.Text `json:"provider_type"`
+	RuntimeStatus  string      `json:"runtime_status"`
+	ProviderStatus pgtype.Text `json:"provider_status"`
+	HealthStatus   pgtype.Text `json:"health_status"`
+	CurrentLoad    int32       `json:"current_load"`
+	MaxSlots       int32       `json:"max_slots"`
+	AgentHomeDir   string      `json:"agent_home_dir"`
+	Available      bool        `json:"available"`
+	DisabledReason string      `json:"disabled_reason"`
+}
+
+// Team-less variant: no team governance, all providers/runtime nodes allowed.
+func (q *Queries) ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeProviderOptionsForTeamLessCreate, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRuntimeProviderOptionsForTeamLessCreateRow{}
+	for rows.Next() {
+		var i ListRuntimeProviderOptionsForTeamLessCreateRow
 		if err := rows.Scan(
 			&i.RuntimeNodeID,
 			&i.NodeID,

@@ -289,8 +289,8 @@ type DigitalEmployeeEffectiveConfig struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 	// 数字员工ID
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 参与合成的团队配置版本ID
-	TenantTeamConfigRevisionID uuid.UUID `json:"tenant_team_config_revision_id"`
+	// 参与合成的团队配置版本ID；无团队数字员工为空表示使用租户级默认治理
+	TenantTeamConfigRevisionID uuid.NullUUID `json:"tenant_team_config_revision_id"`
 	// 参与合成的个人配置版本ID
 	EmployeeConfigRevisionID uuid.UUID `json:"employee_config_revision_id"`
 	// 团队配置与个人配置合成后的生效治理配置快照
@@ -312,9 +312,10 @@ type DigitalEmployeeEffectiveConfig struct {
 }
 
 type DigitalEmployeeEnvironmentVariable struct {
-	ID                uuid.UUID          `json:"id"`
-	TenantID          uuid.UUID          `json:"tenant_id"`
-	TeamID            uuid.UUID          `json:"team_id"`
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 环境变量所属数字员工团队 ID；无团队数字员工为空
+	TeamID            uuid.NullUUID      `json:"team_id"`
 	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
 	Name              string             `json:"name"`
 	EncryptedValue    string             `json:"encrypted_value"`
@@ -417,8 +418,8 @@ type DigitalEmployeeWorkspaceFile struct {
 	ID uuid.UUID `json:"id"`
 	// 文件所属租户 ID
 	TenantID uuid.UUID `json:"tenant_id"`
-	// 文件所属数字员工团队 ID，目录按团队归属组织
-	TeamID uuid.UUID `json:"team_id"`
+	// 文件所属数字员工团队 ID；无团队数字员工为空
+	TeamID uuid.NullUUID `json:"team_id"`
 	// 文件所属数字员工 ID
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 	// 数字员工根目录下的安全相对路径

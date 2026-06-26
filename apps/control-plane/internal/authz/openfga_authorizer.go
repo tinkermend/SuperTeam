@@ -27,6 +27,26 @@ func (a *OpenFGAAuthorizer) AuthzEngineStatus() EngineStatus {
 	}
 }
 
+func (a *OpenFGAAuthorizer) CheckBulkTeamActions(ctx context.Context, req BulkTeamActionsRequest) ([]string, error) {
+	allowed := make([]string, 0, len(req.Actions))
+	for _, action := range req.Actions {
+		decision, err := a.Check(ctx, CheckRequest{
+			Actor:    req.Actor,
+			Action:   action,
+			Resource: ResourceRef{Type: ResourceTeam, ID: req.TeamID.String()},
+			TenantID: req.TenantID,
+			TeamID:   &req.TeamID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if decision.Allowed {
+			allowed = append(allowed, action)
+		}
+	}
+	return allowed, nil
+}
+
 func (a *OpenFGAAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, error) {
 	if a == nil {
 		return Decision{Allowed: false, Reason: "authorizer is not configured", RequiresAudit: true}, nil

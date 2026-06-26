@@ -127,6 +127,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  const [teamAutoSelected, setTeamAutoSelected] = useState(false);
 
   const teams = useQuery({
     queryKey: ["teams"],
@@ -134,16 +135,18 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   });
 
   useEffect(() => {
+    if (teamAutoSelected) return;
     const firstTeamId = teams.data?.find((team) => team.status === "active")?.id;
-    if (!draft.team_id && firstTeamId) {
-      setDraft((current) => ({ ...current, team_id: firstTeamId }));
+    if (firstTeamId) {
+      setTeamAutoSelected(true);
+      setDraft((current) => (current.team_id ? current : { ...current, team_id: firstTeamId }));
     }
-  }, [draft.team_id, teams.data]);
+  }, [teamAutoSelected, teams.data]);
 
   const createOptions = useQuery({
-    enabled: Boolean(draft.team_id),
-    queryKey: ["digital-employee-create-options", draft.team_id],
-    queryFn: () => getDigitalEmployeeCreateOptions({ baseUrl: apiBaseUrl, fetcher }, draft.team_id),
+    enabled: !teams.isLoading,
+    queryKey: ["digital-employee-create-options", draft.team_id || "team-less"],
+    queryFn: () => getDigitalEmployeeCreateOptions({ baseUrl: apiBaseUrl, fetcher }, draft.team_id || undefined),
   });
 
   const avatarAssets = useQuery({
@@ -202,7 +205,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       return createDigitalEmployee(
         { baseUrl: apiBaseUrl, fetcher },
         {
-          team_id: draft.team_id,
+          team_id: draft.team_id || undefined,
           employee_type: draft.employee_type,
           name: draft.name.trim(),
           avatar_asset_id: draft.avatar_asset_id,
@@ -355,7 +358,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <Button
               disabled={
                 workbenchMode === "configure" ||
-                teamOptions.length === 0 ||
                 createOptions.isLoading ||
                 createOptions.isError ||
                 !draft.employee_type
@@ -378,7 +380,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         {!teams.isLoading && !teams.isError && teamOptions.length === 0 ? (
           <Alert className="mb-4">
             <AlertTitle>暂无可用团队</AlertTitle>
-            <AlertDescription>需先创建团队并完成治理配置后再创建数字员工。</AlertDescription>
+            <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工；治理按内置默认（全部允许）。</AlertDescription>
           </Alert>
         ) : null}
         {createOptions.isError ? (
@@ -441,7 +443,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               />
 
               <div className="min-h-[420px] rounded-md border bg-background p-4">
-                {teams.isLoading || avatarAssets.isLoading || (draft.team_id && createOptions.isLoading) ? (
+                {teams.isLoading || avatarAssets.isLoading || createOptions.isLoading ? (
                   <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" />
                     加载创建选项
@@ -500,7 +502,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               {stepIndex < steps.length - 1 ? (
                 <Button
                   disabled={
-                    teamOptions.length === 0 ||
                     createOptions.isLoading ||
                     createOptions.isError ||
                     avatarAssets.isLoading ||
@@ -516,7 +517,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 <Button
                   disabled={
                     createEmployee.isPending ||
-                    teamOptions.length === 0 ||
                     createOptions.isLoading ||
                     createOptions.isError ||
                     avatarAssets.isLoading ||
@@ -814,7 +814,7 @@ function CreationReadinessPanel({
         <h2 className="text-base font-semibold">即将创建</h2>
         <p className="mt-1 text-xs text-muted-foreground">确认以下信息后进入详细配置。</p>
         <div className="mt-4 grid gap-2 text-sm">
-          <InlineSummary label="归属团队" value={selectedTeamName || "未选择"} />
+          <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
           <InlineSummary label="Owner" value="当前用户" />
           <InlineSummary label="专业类型" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
           <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
@@ -1092,12 +1092,14 @@ function IdentityStep({
             onChange={(event) => onSelectTeam(event.target.value)}
             value={draft.team_id}
           >
+            <option value="">无（暂不归属团队）</option>
             {teamOptions.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>
             ))}
           </select>
+          <p className="text-xs text-muted-foreground">选择“无”将创建租户级独立数字员工，治理按内置默认（全部允许）。</p>
         </Field>
         <Field label="员工类型" error={errors.employee_type}>
           <select
@@ -1607,7 +1609,6 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
   if (step === "身份") {
     const errors: ValidationErrors = {};
-    if (!draft.team_id.trim()) errors.team_id = "团队不能为空";
     if (!draft.avatar_asset_id.trim()) errors.avatar_asset_id = "头像不能为空";
     if (!draft.employee_type.trim()) errors.employee_type = "员工类型不能为空";
     if (!draft.name.trim()) errors.name = "名称不能为空";

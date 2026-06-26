@@ -34,6 +34,13 @@ func (a *ShadowAuthorizer) AuthzEngineStatus() EngineStatus {
 	}
 }
 
+func (a *ShadowAuthorizer) CheckBulkTeamActions(ctx context.Context, req BulkTeamActionsRequest) ([]string, error) {
+	if a == nil || a.primary == nil {
+		return nil, nil
+	}
+	return a.primary.CheckBulkTeamActions(ctx, req)
+}
+
 func (a *ShadowAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, error) {
 	if a == nil || a.primary == nil {
 		return Decision{Allowed: false, Reason: "authorizer is not configured", RequiresAudit: true}, nil

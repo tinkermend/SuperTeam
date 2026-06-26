@@ -54,6 +54,7 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 ## 开发规则
 
 - 不要盲目猜测；如果存在无法从本地上下文确认且会影响架构或业务判断的不确定点，先与人类沟通。
+- 代码发现优先使用 codebase-memory-mcp 图谱工具：`search_graph` 查函数/类/路由/变量，`trace_path` 追调用关系，`get_code_snippet` 读具体实现，复杂模式再用 `query_graph` / `get_architecture`；只有工具不可用、结果不足或搜索字符串/配置/非代码文件时，才回退到 `rg`/文件读取。
 - 如果需要web仿真测试请使用 codex chrome plugs 调用进行测试
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
 - Web 测试必须通过 `corepack pnpm --filter ./apps/web run test` 运行，禁止使用 `npx playwright install` 或 `npx vitest run`。

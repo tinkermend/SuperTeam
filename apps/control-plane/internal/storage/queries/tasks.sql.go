@@ -248,7 +248,7 @@ type CreateDigitalEmployeeTaskRunParams struct {
 	IdempotencyFingerprint pgtype.Text   `json:"idempotency_fingerprint"`
 	TenantID               uuid.UUID     `json:"tenant_id"`
 	DigitalEmployeeID      uuid.UUID     `json:"digital_employee_id"`
-	TeamID                 uuid.UUID     `json:"team_id"`
+	TeamID                 uuid.NullUUID `json:"team_id"`
 	Title                  string        `json:"title"`
 	Description            pgtype.Text   `json:"description"`
 	Priority               int32         `json:"priority"`

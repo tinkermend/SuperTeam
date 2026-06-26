@@ -219,6 +219,7 @@ function createWizardFetcher({
   expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
+  expectedTeamId = team.id,
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
@@ -227,6 +228,7 @@ function createWizardFetcher({
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
   expectedRuntimeNodeId?: string;
+  expectedTeamId?: string | undefined;
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
@@ -241,7 +243,9 @@ function createWizardFetcher({
     }
 
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
-      expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
+      if (url.searchParams.has("team_id")) {
+        expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
+      }
       return jsonResponse(createOptionsFixture({ runtimeAvailability, runtimeCount, sameRuntimeNodeProviders }));
     }
 
@@ -253,7 +257,7 @@ function createWizardFetcher({
       const body = JSON.parse(String(init?.body));
       const { budget_policy: _budgetPolicy, ...bodyWithoutBudgetPolicy } = body;
       expect(bodyWithoutBudgetPolicy).toEqual({
-        team_id: team.id,
+        ...(expectedTeamId ? { team_id: expectedTeamId } : {}),
         employee_type: "database_admin",
         name: "数据库管理员工",
         role: "database_admin",
@@ -284,7 +288,7 @@ function createWizardFetcher({
         {
           id: "11111111-1111-4111-8111-111111111111",
           tenant_id: "22222222-2222-4222-8222-222222222222",
-          team_id: team.id,
+          ...(expectedTeamId ? { team_id: expectedTeamId } : {}),
           owner_user_id: "66666666-6666-4666-8666-666666666666",
           employee_type: "database_admin",
           name: "数据库管理员工",
@@ -494,6 +498,36 @@ describe("CreateEmployeeView", () => {
       params: { employeeId: "11111111-1111-4111-8111-111111111111" },
       to: "/employees/$employeeId",
     });
+  });
+
+  it("supports creating a team-less digital employee when the user selects no team", async () => {
+    const fetcher = createWizardFetcher({
+      expectedTeamId: undefined,
+      teams: [team, secondTeam],
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), "");
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
+
+    const createOptionsCalls = (fetcher as unknown as { mock: { calls: FetchMockCall[] } }).mock.calls.filter(
+      ([input, init]) =>
+        String(input).includes("/api/v1/digital-employees/create-options") && (init?.method ?? "GET") === "GET",
+    );
+    expect(createOptionsCalls.some(([input]) => !new URL(String(input)).searchParams.has("team_id"))).toBe(true);
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.team_id).toBeUndefined();
   });
 
   it("submits an optional daily token budget when creating a digital employee", async () => {

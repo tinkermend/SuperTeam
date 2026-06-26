@@ -203,6 +203,8 @@ type Querier interface {
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeNodeByID(ctx context.Context, id uuid.UUID) (RuntimeNode, error)
 	GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error)
+	// Team-less variant: no team governance, provider/runtime policy always allowed.
+	GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, arg GetRuntimeProvisioningPreflightTeamLessParams) (GetRuntimeProvisioningPreflightTeamLessRow, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
@@ -300,6 +302,8 @@ type Querier interface {
 	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error)
 	ListRuntimeProviderCapabilitiesForTenant(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderCapabilitiesForTenantRow, error)
 	ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx context.Context, arg ListRuntimeProviderOptionsForDigitalEmployeeCreateParams) ([]ListRuntimeProviderOptionsForDigitalEmployeeCreateRow, error)
+	// Team-less variant: no team governance, all providers/runtime nodes allowed.
+	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)

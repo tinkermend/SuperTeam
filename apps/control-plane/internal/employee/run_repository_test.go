@@ -110,7 +110,7 @@ func TestRuntimeCommandEventFromTaskEventMapsPersistedEventFields(t *testing.T) 
 	require.Equal(t, "codex", mapped.Metadata["provider"])
 }
 
-func TestRunPreflightFromQueryRejectsMissingTeam(t *testing.T) {
+func TestRunPreflightFromQueryAllowsMissingTeam(t *testing.T) {
 	_, err := runPreflightFromQuery(queries.GetDigitalEmployeeRunPreflightRow{
 		TenantID:              uuid.New(),
 		TeamID:                uuid.NullUUID{},
@@ -127,7 +127,7 @@ func TestRunPreflightFromQueryRejectsMissingTeam(t *testing.T) {
 		WorkspacePolicy:       []byte(`{}`),
 	})
 
-	require.ErrorIs(t, err, ErrInvalidInput)
+	require.NoError(t, err)
 }
 
 func TestRunPreflightDailyTokenUsageDefaultsEmptySumToZero(t *testing.T) {
@@ -151,12 +151,16 @@ func TestMapCreateRunErrorMapsIdempotencyFingerprintMismatch(t *testing.T) {
 	require.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
-func TestPgRunRepositoryCreateRunRejectsMissingTeam(t *testing.T) {
-	repo := NewPgRunRepository(nil)
+func TestPgRunRepositoryCreateRunAllowsMissingTeam(t *testing.T) {
+	idempotencyKey := "idem-team-less"
+	repo := NewPgRunRepository(queries.New(fakeRunRepositoryDBTX{rowErr: pgx.ErrNoRows}))
+	req := validCreateRunRecordRequest(idempotencyKey)
+	req.TeamID = uuid.Nil
 
-	_, err := repo.CreateRun(context.Background(), CreateRunRecordRequest{})
+	_, err := repo.CreateRun(context.Background(), req)
 
-	require.ErrorIs(t, err, ErrInvalidInput)
+	require.ErrorIs(t, err, ErrConflict)
+	require.Contains(t, err.Error(), "idempotency fingerprint mismatch")
 }
 
 func TestPgRunRepositoryCreateRunMapsIdempotencyFingerprintMismatch(t *testing.T) {

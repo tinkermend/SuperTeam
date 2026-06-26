@@ -285,6 +285,160 @@ WHERE rn.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pc.provider_type IS NOT NULL
 ORDER BY available DESC, rn.name ASC, pc.provider_type ASC;
 
+-- name: ListRuntimeProviderOptionsForTeamLessCreate :many
+-- Team-less variant: no team governance, all providers/runtime nodes allowed.
+WITH runtime_sessions_active AS (
+    SELECT DISTINCT re.runtime_node_id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
+        *
+    FROM runtime_capabilities
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND capability_type = 'provider'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
+)
+SELECT
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    rn.name AS runtime_name,
+    pc.provider_type,
+    rn.status AS runtime_status,
+    pc.status AS provider_status,
+    pc.health_status,
+    rn.current_load,
+    rn.max_slots,
+    COALESCE(
+        pc.details ->> 'agent_home_dir',
+        pc.metadata ->> 'agent_home_dir',
+        pc.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+        AND pc.available = true
+        AND pc.status = 'healthy'
+        AND pc.health_status = 'healthy'
+        AND runtime_sessions_active.runtime_node_id IS NOT NULL
+    )::boolean AS available,
+    CASE
+        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
+        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
+        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
+        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
+        ELSE ''
+    END::varchar AS disabled_reason
+FROM runtime_nodes rn
+LEFT JOIN provider_capabilities pc
+  ON pc.runtime_node_id = rn.id
+ AND pc.tenant_id = rn.tenant_id
+LEFT JOIN runtime_sessions_active ON runtime_sessions_active.runtime_node_id = rn.id
+WHERE rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pc.provider_type IS NOT NULL
+ORDER BY available DESC, rn.name ASC, pc.provider_type ASC;
+
+-- name: GetRuntimeProvisioningPreflightTeamLess :one
+-- Team-less variant: no team governance, provider/runtime policy always allowed.
+WITH provider_capability AS (
+    SELECT *
+    FROM runtime_capabilities
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
+      AND capability_type = 'provider'
+      AND provider_type = sqlc.arg('provider_type')::varchar
+      AND available = true
+      AND status = 'healthy'
+      AND health_status = 'healthy'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+),
+workspace_capability AS (
+    SELECT *
+    FROM runtime_capabilities
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
+      AND capability_type = 'workspace'
+      AND capability_key = 'base-dir'
+      AND available = true
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+)
+SELECT
+    rn.tenant_id,
+    NULL::uuid AS team_id,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    '{}'::jsonb AS governance_snapshot,
+    false::boolean AS has_active_team_config,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+    )::boolean AS runtime_online,
+    EXISTS (
+        SELECT 1
+        FROM runtime_enrollments re
+        WHERE re.tenant_id = rn.tenant_id
+          AND re.runtime_node_id = rn.id
+          AND re.status = 'approved'
+          AND re.rejected_at IS NULL
+          AND re.revoked_at IS NULL
+    )::boolean AS enrollment_approved,
+    EXISTS (
+        SELECT 1
+        FROM runtime_sessions rs
+        JOIN runtime_enrollments re
+          ON re.id = rs.enrollment_id
+         AND re.tenant_id = rs.tenant_id
+         AND re.runtime_node_id = rs.runtime_node_id
+         AND re.status = 'approved'
+         AND re.rejected_at IS NULL
+         AND re.revoked_at IS NULL
+        WHERE rs.tenant_id = rn.tenant_id
+          AND rs.runtime_node_id = rn.id
+          AND rs.expires_at > NOW()
+          AND rs.revoked_at IS NULL
+    )::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+    true::boolean AS provider_policy_allowed,
+    true::boolean AS runtime_policy_allowed
+FROM runtime_nodes rn
+LEFT JOIN provider_capability ON TRUE
+LEFT JOIN workspace_capability ON TRUE
+WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
+  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rn.archived_at IS NULL;
+
 -- name: GetRuntimeProvisioningPreflight :one
 WITH active_team_config AS (
     SELECT *

@@ -87,7 +87,7 @@ INSERT INTO digital_employee_workspace_files (
 
 type CreateDigitalEmployeeWorkspaceFileParams struct {
 	TenantID          uuid.UUID     `json:"tenant_id"`
-	TeamID            uuid.UUID     `json:"team_id"`
+	TeamID            uuid.NullUUID `json:"team_id"`
 	DigitalEmployeeID uuid.UUID     `json:"digital_employee_id"`
 	Path              string        `json:"path"`
 	FileRole          string        `json:"file_role"`
@@ -312,7 +312,7 @@ type ListCurrentDigitalEmployeeWorkspaceFilesParams struct {
 type ListCurrentDigitalEmployeeWorkspaceFilesRow struct {
 	FileID            uuid.UUID          `json:"file_id"`
 	TenantID          uuid.UUID          `json:"tenant_id"`
-	TeamID            uuid.UUID          `json:"team_id"`
+	TeamID            uuid.NullUUID      `json:"team_id"`
 	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
 	Path              string             `json:"path"`
 	FileRole          string             `json:"file_role"`
@@ -420,24 +420,24 @@ type ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams struct {
 }
 
 type ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow struct {
-	FileID            uuid.UUID   `json:"file_id"`
-	TenantID          uuid.UUID   `json:"tenant_id"`
-	TeamID            uuid.UUID   `json:"team_id"`
-	DigitalEmployeeID uuid.UUID   `json:"digital_employee_id"`
-	Path              string      `json:"path"`
-	FileRole          string      `json:"file_role"`
-	MimeType          string      `json:"mime_type"`
-	SyncPolicy        string      `json:"sync_policy"`
-	Status            string      `json:"status"`
-	FileMetadata      []byte      `json:"file_metadata"`
-	RevisionID        uuid.UUID   `json:"revision_id"`
-	RevisionNumber    int32       `json:"revision_number"`
-	ContentText       pgtype.Text `json:"content_text"`
-	ContentHash       string      `json:"content_hash"`
-	SizeBytes         int32       `json:"size_bytes"`
-	StorageBackend    string      `json:"storage_backend"`
-	ObjectKey         pgtype.Text `json:"object_key"`
-	RevisionMetadata  []byte      `json:"revision_metadata"`
+	FileID            uuid.UUID     `json:"file_id"`
+	TenantID          uuid.UUID     `json:"tenant_id"`
+	TeamID            uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID uuid.UUID     `json:"digital_employee_id"`
+	Path              string        `json:"path"`
+	FileRole          string        `json:"file_role"`
+	MimeType          string        `json:"mime_type"`
+	SyncPolicy        string        `json:"sync_policy"`
+	Status            string        `json:"status"`
+	FileMetadata      []byte        `json:"file_metadata"`
+	RevisionID        uuid.UUID     `json:"revision_id"`
+	RevisionNumber    int32         `json:"revision_number"`
+	ContentText       pgtype.Text   `json:"content_text"`
+	ContentHash       string        `json:"content_hash"`
+	SizeBytes         int32         `json:"size_bytes"`
+	StorageBackend    string        `json:"storage_backend"`
+	ObjectKey         pgtype.Text   `json:"object_key"`
+	RevisionMetadata  []byte        `json:"revision_metadata"`
 }
 
 func (q *Queries) ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error) {

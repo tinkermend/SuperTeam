@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct EnsureInstanceRequest {
     pub base_dir: PathBuf,
-    pub team_id: String,
+    pub team_id: Option<String>,
     pub digital_employee_id: String,
 }
 
@@ -13,15 +13,17 @@ pub struct EnsureInstanceResult {
 }
 
 pub fn ensure_instance(request: EnsureInstanceRequest) -> anyhow::Result<EnsureInstanceResult> {
-    let agent_home_dir = request
-        .base_dir
-        .join("teams")
-        .join(sanitize_segment("team_id", &request.team_id)?)
-        .join("employees")
-        .join(sanitize_segment(
-            "digital_employee_id",
-            &request.digital_employee_id,
-        )?);
+    let digital_employee_id =
+        sanitize_segment("digital_employee_id", &request.digital_employee_id)?;
+    let agent_home_dir = match request.team_id.as_deref().filter(|value| !value.is_empty()) {
+        Some(team_id) => request
+            .base_dir
+            .join("teams")
+            .join(sanitize_segment("team_id", team_id)?)
+            .join("employees")
+            .join(digital_employee_id),
+        None => request.base_dir.join("employees").join(digital_employee_id),
+    };
     std::fs::create_dir_all(&agent_home_dir)?;
     Ok(EnsureInstanceResult { agent_home_dir })
 }

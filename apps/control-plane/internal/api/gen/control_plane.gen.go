@@ -1840,8 +1840,10 @@ type CreateDigitalEmployeeRequest struct {
 	RoleProfile            *map[string]interface{} `json:"role_profile,omitempty"`
 	RuntimeNodeId          openapi_types.UUID      `json:"runtime_node_id"`
 	SessionPolicy          *map[string]interface{} `json:"session_policy,omitempty"`
-	TeamId                 openapi_types.UUID      `json:"team_id"`
-	WorkspacePolicy        *map[string]interface{} `json:"workspace_policy,omitempty"`
+
+	// TeamId Team ID; omit or null for team-less (tenant-level) digital employees.
+	TeamId          *openapi_types.UUID     `json:"team_id,omitempty"`
+	WorkspacePolicy *map[string]interface{} `json:"workspace_policy,omitempty"`
 }
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
@@ -2136,8 +2138,10 @@ type DigitalEmployeeCreateTeamConfig struct {
 	RevisionNumber              int32                   `json:"revision_number"`
 	RuntimeScopePolicy          *map[string]interface{} `json:"runtime_scope_policy,omitempty"`
 	Status                      string                  `json:"status"`
-	TeamId                      openapi_types.UUID      `json:"team_id"`
-	TenantId                    openapi_types.UUID      `json:"tenant_id"`
+
+	// TeamId Team ID; null for team-less (tenant-level) default governance.
+	TeamId   *openapi_types.UUID `json:"team_id,omitempty"`
+	TenantId openapi_types.UUID  `json:"tenant_id"`
 }
 
 // DigitalEmployeeEffectiveConfig defines model for DigitalEmployeeEffectiveConfig.
@@ -4446,7 +4450,8 @@ type ListDigitalEmployeesParamsAssignment string
 
 // GetDigitalEmployeeCreateOptionsParams defines parameters for GetDigitalEmployeeCreateOptions.
 type GetDigitalEmployeeCreateOptionsParams struct {
-	TeamId openapi_types.UUID `form:"team_id" json:"team_id"`
+	// TeamId Team ID; omit for team-less (tenant-level) digital employees.
+	TeamId *openapi_types.UUID `form:"team_id,omitempty" json:"team_id,omitempty"`
 }
 
 // GetDigitalEmployeeOverviewParams defines parameters for GetDigitalEmployeeOverview.
@@ -7134,9 +7139,9 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeCreateOptions(w http.Respon
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetDigitalEmployeeCreateOptionsParams
 
-	// ------------- Required query parameter "team_id" -------------
+	// ------------- Optional query parameter "team_id" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "team_id", r.URL.Query(), &params.TeamId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "team_id", r.URL.Query(), &params.TeamId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {

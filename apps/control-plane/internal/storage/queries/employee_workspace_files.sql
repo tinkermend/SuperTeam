@@ -12,7 +12,7 @@ INSERT INTO digital_employee_workspace_files (
     created_by
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('team_id')::uuid,
+    sqlc.narg('team_id')::uuid,
     sqlc.arg('digital_employee_id')::uuid,
     sqlc.arg('path')::text,
     sqlc.arg('file_role')::varchar,

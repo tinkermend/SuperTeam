@@ -211,6 +211,62 @@ func (r *PgRepository) GetRuntimeProvisioningPreflight(ctx context.Context, tena
 	}, nil
 }
 
+func (r *PgRepository) ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderOption, error) {
+	rows, err := r.q.ListRuntimeProviderOptionsForTeamLessCreate(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	options := make([]RuntimeProviderOption, 0, len(rows))
+	for _, row := range rows {
+		options = append(options, RuntimeProviderOption{
+			RuntimeNodeID:         row.RuntimeNodeID,
+			NodeID:                row.NodeID,
+			RuntimeName:           row.RuntimeName,
+			ProviderType:          stringFromText(row.ProviderType),
+			RuntimeStatus:         row.RuntimeStatus,
+			ProviderStatus:        stringFromText(row.ProviderStatus),
+			HealthStatus:          stringFromText(row.HealthStatus),
+			CurrentLoad:           row.CurrentLoad,
+			MaxSlots:              row.MaxSlots,
+			AgentHomeDir:          row.AgentHomeDir,
+			AgentHomeDirAvailable: strings.TrimSpace(row.AgentHomeDir) != "",
+			Available:             row.Available,
+			DisabledReason:        row.DisabledReason,
+		})
+	}
+	return options, nil
+}
+
+func (r *PgRepository) GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
+	preflight, err := r.q.GetRuntimeProvisioningPreflightTeamLess(ctx, queries.GetRuntimeProvisioningPreflightTeamLessParams{
+		RuntimeNodeID: runtimeNodeID,
+		TenantID:      tenantID,
+		ProviderType:  providerType,
+	})
+	if err != nil {
+		return RuntimeProvisioningPreflight{}, mapNoRows(err)
+	}
+	governanceSnapshot, err := mapFromJSONValue(preflight.GovernanceSnapshot, "governance_snapshot")
+	if err != nil {
+		return RuntimeProvisioningPreflight{}, err
+	}
+	return RuntimeProvisioningPreflight{
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID.UUID,
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		AgentHomeDir:          preflight.AgentHomeDir,
+		GovernanceSnapshot:    governanceSnapshot,
+		HasActiveTeamConfig:   preflight.HasActiveTeamConfig,
+		RuntimeOnline:         preflight.RuntimeOnline,
+		EnrollmentApproved:    preflight.EnrollmentApproved,
+		RuntimeSessionActive:  preflight.RuntimeSessionActive,
+		ProviderAvailable:     preflight.ProviderAvailable,
+		ProviderPolicyAllowed: preflight.ProviderPolicyAllowed,
+		RuntimePolicyAllowed:  preflight.RuntimePolicyAllowed,
+	}, nil
+}
+
 func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	employee, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
 		Status:   string(status),
@@ -343,7 +399,7 @@ func (r *PgRepository) CreateWorkspaceFile(ctx context.Context, params CreateWor
 	}
 	row, err := r.q.CreateDigitalEmployeeWorkspaceFile(ctx, queries.CreateDigitalEmployeeWorkspaceFileParams{
 		TenantID:          params.TenantID,
-		TeamID:            params.TeamID,
+		TeamID:            nullUUIDFromPtr(params.TeamID),
 		DigitalEmployeeID: params.DigitalEmployeeID,
 		Path:              params.Path,
 		FileRole:          params.FileRole,
@@ -508,7 +564,7 @@ DO UPDATE SET
 RETURNING id, tenant_id, team_id, digital_employee_id, name, encrypted_value,
           encryption_key_id, value_fingerprint, sensitive, status,
           created_by, updated_by, created_at, updated_at
-`, req.TenantID, req.TeamID, req.DigitalEmployeeID, req.Name, req.EncryptedValue, req.EncryptionKeyID, req.ValueFingerprint, req.Sensitive, nullUUIDFromPtr(req.UpdatedBy))
+`, req.TenantID, nullUUIDFromPtr(req.TeamID), req.DigitalEmployeeID, req.Name, req.EncryptedValue, req.EncryptionKeyID, req.ValueFingerprint, req.Sensitive, nullUUIDFromPtr(req.UpdatedBy))
 	record, err := scanEnvironmentVariableRecord(row)
 	if err != nil {
 		return EnvironmentVariableRecord{}, err
@@ -707,7 +763,7 @@ func (r *PgRepository) CreateDigitalEmployeeEffectiveConfig(ctx context.Context,
 	effectiveConfig, err := r.q.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
 		TenantID:                   params.TenantID,
 		DigitalEmployeeID:          params.DigitalEmployeeID,
-		TenantTeamConfigRevisionID: params.TeamConfigRevisionID,
+		TenantTeamConfigRevisionID: nullUUIDFromPtr(params.TeamConfigRevisionID),
 		EmployeeConfigRevisionID:   params.EmployeeConfigRevisionID,
 		EffectiveConfigSnapshot:    effectiveConfigSnapshot,
 		ValidationResult:           validationResult,
@@ -1425,7 +1481,7 @@ func workspaceFileRecordFromQuery(row queries.DigitalEmployeeWorkspaceFile) (Wor
 	return WorkspaceFileRecord{
 		ID:                row.ID,
 		TenantID:          row.TenantID,
-		TeamID:            row.TeamID,
+		TeamID:            uuidPtrFromNullUUID(row.TeamID),
 		DigitalEmployeeID: row.DigitalEmployeeID,
 		Path:              row.Path,
 		FileRole:          row.FileRole,
@@ -1476,7 +1532,7 @@ func workspaceFileForSyncRecordFromQuery(row queries.ListCurrentDigitalEmployeeW
 	return WorkspaceFileForSyncRecord{
 		FileID:            row.FileID,
 		TenantID:          row.TenantID,
-		TeamID:            row.TeamID,
+		TeamID:            uuidPtrFromNullUUID(row.TeamID),
 		DigitalEmployeeID: row.DigitalEmployeeID,
 		Path:              row.Path,
 		FileRole:          row.FileRole,
@@ -1504,7 +1560,7 @@ func workspaceFileFromCurrentRow(row queries.ListCurrentDigitalEmployeeWorkspace
 	return WorkspaceFile{
 		ID:                row.FileID,
 		TenantID:          row.TenantID,
-		TeamID:            row.TeamID,
+		TeamID:            uuidPtrFromNullUUID(row.TeamID),
 		DigitalEmployeeID: row.DigitalEmployeeID,
 		Path:              row.Path,
 		FileRole:          row.FileRole,
@@ -1534,10 +1590,11 @@ func scanEnvironmentVariableRecord(scanner environmentVariableScanner) (Environm
 	var status string
 	var createdBy uuid.NullUUID
 	var updatedBy uuid.NullUUID
+	var teamID uuid.NullUUID
 	if err := scanner.Scan(
 		&record.ID,
 		&record.TenantID,
-		&record.TeamID,
+		&teamID,
 		&record.DigitalEmployeeID,
 		&record.Name,
 		&record.EncryptedValue,
@@ -1553,6 +1610,7 @@ func scanEnvironmentVariableRecord(scanner environmentVariableScanner) (Environm
 		return EnvironmentVariableRecord{}, mapNoRows(err)
 	}
 	record.Status = EnvironmentVariableStatus(status)
+	record.TeamID = uuidPtrFromNullUUID(teamID)
 	record.CreatedBy = uuidPtrFromNull(createdBy)
 	record.UpdatedBy = uuidPtrFromNull(updatedBy)
 	return record, nil
@@ -1726,7 +1784,7 @@ func effectiveConfigRecordFromQuery(effectiveConfig queries.DigitalEmployeeEffec
 		ID:                       effectiveConfig.ID,
 		TenantID:                 effectiveConfig.TenantID,
 		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID,
-		TeamConfigRevisionID:     effectiveConfig.TenantTeamConfigRevisionID,
+		TeamConfigRevisionID:     uuidPtrFromNullUUID(effectiveConfig.TenantTeamConfigRevisionID),
 		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID,
 		EffectiveConfig:          effectiveConfigSnapshot,
 		ValidationResult:         validationResult,
@@ -1800,6 +1858,13 @@ func nullUUIDFromPtr(value *uuid.UUID) uuid.NullUUID {
 		return uuid.NullUUID{}
 	}
 	return uuid.NullUUID{UUID: *value, Valid: true}
+}
+
+func nullUUIDFromUUID(value uuid.UUID) uuid.NullUUID {
+	if value == uuid.Nil {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: value, Valid: true}
 }
 
 func uuidPtrFromNull(value uuid.NullUUID) *uuid.UUID {

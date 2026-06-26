@@ -225,7 +225,10 @@ fn install_skills_prepare_paths_creates_missing_agent_home() {
         .expect("missing agent home should be created for skill installation");
 
     assert!(agent_home.is_dir(), "agent home should be created");
-    assert_eq!(paths.canonical_agent_home, agent_home.canonicalize().unwrap());
+    assert_eq!(
+        paths.canonical_agent_home,
+        agent_home.canonicalize().unwrap()
+    );
     assert_eq!(
         paths.target_dir,
         paths

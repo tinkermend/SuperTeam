@@ -699,9 +699,6 @@ func validateRunPreflight(preflight RunPreflight) error {
 	if preflight.TenantID == uuid.Nil {
 		return fmt.Errorf("%w: preflight tenant_id is required", ErrInvalidInput)
 	}
-	if preflight.TeamID == uuid.Nil {
-		return fmt.Errorf("%w: preflight team_id is required", ErrInvalidInput)
-	}
 	if preflight.DigitalEmployeeID == uuid.Nil {
 		return fmt.Errorf("%w: preflight digital_employee_id is required", ErrInvalidInput)
 	}

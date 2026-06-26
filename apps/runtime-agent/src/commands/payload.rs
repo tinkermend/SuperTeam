@@ -83,7 +83,8 @@ pub struct RuntimeEnvironmentVariablePayload {
 pub struct RuntimeProvisionInstanceCommandPayload {
     pub command_id: String,
     pub tenant_id: String,
-    pub team_id: String,
+    #[serde(default)]
+    pub team_id: Option<String>,
     pub digital_employee_id: String,
     pub execution_instance_id: String,
     pub runtime_node_id: String,
@@ -125,7 +126,7 @@ impl RuntimeProvisionInstanceCommandPayload {
         }
 
         require_uuid_like("tenant_id", &self.tenant_id)?;
-        require_uuid_like("team_id", &self.team_id)?;
+        require_optional_uuid_like_or_empty("team_id", &self.team_id)?;
         require_uuid_like("digital_employee_id", &self.digital_employee_id)?;
         require_uuid_like("execution_instance_id", &self.execution_instance_id)?;
         require_uuid_like("runtime_node_id", &self.runtime_node_id)?;
@@ -383,6 +384,13 @@ fn require_optional_uuid_like(field: &str, value: &Option<String>) -> Result<()>
     }
 }
 
+fn require_optional_uuid_like_or_empty(field: &str, value: &Option<String>) -> Result<()> {
+    match value.as_deref() {
+        Some("") | None => Ok(()),
+        Some(value) => require_uuid_like(field, value),
+    }
+}
+
 fn is_uuid_like(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 36 {
@@ -432,5 +440,13 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
         let result = serde_json::from_value::<RuntimeSessionCommandPayload>(v);
         assert!(result.is_ok(), "expected ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_team_less_provision_payload_deserialize() {
+        let raw = r#"{"command_id":"cmd-test","tenant_id":"00000000-0000-4000-8000-000000000001","team_id":"","digital_employee_id":"35a3799b-7665-4913-9097-35ee53d30e74","execution_instance_id":"8e64dd8c-d70d-417d-b8bf-fe57a61f4205","runtime_node_id":"44444444-4444-4444-8444-444444444444","provider_type":"codex","agent_home_dir":"/tmp/workspaces/employees/35a3799b-7665-4913-9097-35ee53d30e74","workspace_files":[],"skills":[],"mcp_servers":[]}"#;
+        let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let payload = serde_json::from_value::<RuntimeProvisionInstanceCommandPayload>(v).unwrap();
+        assert_eq!(payload.team_id, Some(String::new()));
     }
 }

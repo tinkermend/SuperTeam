@@ -51,12 +51,9 @@ func (s *Service) UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvir
 	if err != nil {
 		return EnvironmentVariableSummary{}, fmt.Errorf("get digital employee: %w", err)
 	}
-	if employee.TeamID == nil || *employee.TeamID == uuid.Nil {
-		return EnvironmentVariableSummary{}, fmt.Errorf("%w: employee team_id is required for environment variables", ErrInvalidInput)
-	}
 	record, err := s.upsertEncryptedEnvironmentVariable(ctx, s.repository, UpsertEnvironmentVariableStoreInput{
 		TenantID:          req.TenantID,
-		TeamID:            *employee.TeamID,
+		TeamID:            employee.TeamID,
 		DigitalEmployeeID: req.DigitalEmployeeID,
 		Name:              name,
 		Value:             req.Value,
@@ -125,7 +122,7 @@ func (s *Service) ListRuntimeEnvironmentVariablesForRuntime(ctx context.Context,
 
 type UpsertEnvironmentVariableStoreInput struct {
 	TenantID          uuid.UUID
-	TeamID            uuid.UUID
+	TeamID            *uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Name              string
 	Value             string

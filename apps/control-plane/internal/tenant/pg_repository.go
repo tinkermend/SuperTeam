@@ -38,9 +38,9 @@ func (r *PgRepository) CreateTeam(ctx context.Context, params CreateTeamParams) 
 		return TeamRecord{}, err
 	}
 	team, err := r.q.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         params.TenantID,
-		Slug:             params.Slug,
-		Name:             params.Name,
+		TenantID:          params.TenantID,
+		Slug:              params.Slug,
+		Name:              params.Name,
 		Status:            string(params.Status),
 		HumanOwnerUserIds: params.HumanOwnerUserIDs,
 		Metadata:          metadata,
@@ -87,9 +87,9 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 		}
 	}
 	team, err := qtx.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         params.TenantID,
-		Slug:             params.Slug,
-		Name:             params.Name,
+		TenantID:          params.TenantID,
+		Slug:              params.Slug,
+		Name:              params.Name,
 		Status:            string(params.Status),
 		HumanOwnerUserIds: params.OwnerUserIDs,
 		Metadata:          metadata,
@@ -273,9 +273,9 @@ func (r *PgRepository) UpdateTeam(ctx context.Context, params UpdateTeamParams) 
 		return TeamRecord{}, err
 	}
 	team, err := r.q.UpdateTenantTeam(ctx, queries.UpdateTenantTeamParams{
-		ID:               params.TeamID,
-		TenantID:         params.TenantID,
-		Slug:             params.Slug,
+		ID:                params.TeamID,
+		TenantID:          params.TenantID,
+		Slug:              params.Slug,
 		Name:              params.Name,
 		HumanOwnerUserIds: params.HumanOwnerUserIDs,
 		Metadata:          metadata,
@@ -299,17 +299,37 @@ func (r *PgRepository) SetTeamStatus(ctx context.Context, params SetTeamStatusPa
 }
 
 func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error {
-	if err := r.q.UnbindTeamDigitalEmployees(ctx, queries.UnbindTeamDigitalEmployeesParams{
+	if r.db == nil {
+		return fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+	if err := qtx.UnbindTeamDigitalEmployees(ctx, queries.UnbindTeamDigitalEmployeesParams{
 		TeamID:   teamID,
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("unbind team employees: %w", err)
 	}
-	_, err := r.q.SoftDeleteTeam(ctx, queries.SoftDeleteTeamParams{
+	if _, err := qtx.SoftDeleteTeam(ctx, queries.SoftDeleteTeamParams{
 		TeamID:   teamID,
 		TenantID: tenantID,
-	})
-	return mapNoRows(err)
+	}); err != nil {
+		return mapNoRows(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (r *PgRepository) CreateTeamConfigRevision(ctx context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
@@ -706,33 +726,33 @@ func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 		return TeamRecord{}, err
 	}
 	return TeamRecord{
-		ID:               team.ID,
-		TenantID:         team.TenantID,
-		Slug:             team.Slug,
-		Name:             team.Name,
+		ID:                team.ID,
+		TenantID:          team.TenantID,
+		Slug:              team.Slug,
+		Name:              team.Name,
 		Status:            TeamStatus(team.Status),
 		HumanOwnerUserIDs: team.HumanOwnerUserIds,
 		Metadata:          metadata,
-		CreatedAt:        timeFromTimestamptz(team.CreatedAt),
-		UpdatedAt:        timeFromTimestamptz(team.UpdatedAt),
+		CreatedAt:         timeFromTimestamptz(team.CreatedAt),
+		UpdatedAt:         timeFromTimestamptz(team.UpdatedAt),
 	}, nil
 }
 
 func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamListItemRecord, error) {
 	return teamListItemRecordFromSummaryParts(
 		queries.TenantTeam{
-			ID:               row.ID,
-			TenantID:         row.TenantID,
-			Slug:             row.Slug,
-			Name:             row.Name,
+			ID:                row.ID,
+			TenantID:          row.TenantID,
+			Slug:              row.Slug,
+			Name:              row.Name,
 			Status:            row.Status,
 			HumanOwnerUserIds: row.HumanOwnerUserIds,
 			Metadata:          row.Metadata,
-			ArchivedAt:       row.ArchivedAt,
-			DisabledAt:       row.DisabledAt,
-			DeletedAt:        row.DeletedAt,
-			CreatedAt:        row.CreatedAt,
-			UpdatedAt:        row.UpdatedAt,
+			ArchivedAt:        row.ArchivedAt,
+			DisabledAt:        row.DisabledAt,
+			DeletedAt:         row.DeletedAt,
+			CreatedAt:         row.CreatedAt,
+			UpdatedAt:         row.UpdatedAt,
 		},
 		row.MemberCount,
 		row.DigitalEmployeeCount,
@@ -748,18 +768,18 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) (TeamListItemRecord, error) {
 	return teamListItemRecordFromSummaryParts(
 		queries.TenantTeam{
-			ID:               row.ID,
-			TenantID:         row.TenantID,
-			Slug:             row.Slug,
-			Name:             row.Name,
-			Status:           row.Status,
+			ID:                row.ID,
+			TenantID:          row.TenantID,
+			Slug:              row.Slug,
+			Name:              row.Name,
+			Status:            row.Status,
 			HumanOwnerUserIds: row.HumanOwnerUserIds,
-			Metadata:         row.Metadata,
-			ArchivedAt:       row.ArchivedAt,
-			DisabledAt:       row.DisabledAt,
-			DeletedAt:        row.DeletedAt,
-			CreatedAt:        row.CreatedAt,
-			UpdatedAt:        row.UpdatedAt,
+			Metadata:          row.Metadata,
+			ArchivedAt:        row.ArchivedAt,
+			DisabledAt:        row.DisabledAt,
+			DeletedAt:         row.DeletedAt,
+			CreatedAt:         row.CreatedAt,
+			UpdatedAt:         row.UpdatedAt,
 		},
 		row.MemberCount,
 		row.DigitalEmployeeCount,

@@ -142,7 +142,7 @@ INSERT INTO digital_employee_effective_configs (
 VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('digital_employee_id')::uuid,
-    sqlc.arg('tenant_team_config_revision_id')::uuid,
+    sqlc.narg('tenant_team_config_revision_id')::uuid,
     sqlc.arg('employee_config_revision_id')::uuid,
     COALESCE(sqlc.arg('effective_config_snapshot')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('validation_result')::jsonb, '{}'::jsonb),

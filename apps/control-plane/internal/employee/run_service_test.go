@@ -407,7 +407,7 @@ func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFi
 	repo.workspaceFilesForSync = []WorkspaceFileForSyncRecord{{
 		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
 		TenantID:          runServiceTenantID,
-		TeamID:            repo.preflight.TeamID,
+		TeamID:            &repo.preflight.TeamID,
 		DigitalEmployeeID: runServiceEmployeeID,
 		Path:              "AGENTS.md",
 		FileRole:          "entrypoint",

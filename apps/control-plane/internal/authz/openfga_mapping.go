@@ -81,7 +81,7 @@ func openFGARelationForAction(action string) (string, bool) {
 	case ActionConsoleAccess, ActionTenantAccess, ActionTeamAccess, ActionTeamRead, ActionTeamGovernanceRead, ActionTeamLendingPolicyRead, ActionTeamLendingRequestRead:
 		return OpenFGARelationViewer, true
 	case ActionRuntimeScopeManage, ActionAuthzCenterRead, ActionUserProjectTeamScopeRead, ActionUserProjectTeamScopeManage, ActionEmployeeCreate, ActionTeamCreate,
-		ActionTeamUpdate, ActionTeamDisable, ActionTeamArchive, ActionTeamRestore, ActionTeamMemberAdd, ActionTeamMemberRemove, ActionTeamMemberChangeRole,
+		ActionTeamUpdate, ActionTeamDisable, ActionTeamArchive, ActionTeamRestore, ActionTeamDelete, ActionTeamMemberAdd, ActionTeamMemberRemove, ActionTeamMemberChangeRole,
 		ActionTeamMemberRequestPrivilegedRole, ActionTeamCapabilityBind, ActionTeamCapabilityUnbind, ActionTeamCapabilityManage, ActionTeamAuditRead,
 		ActionTeamLendingPolicyEdit, ActionTeamLendingRequestDecide, ActionSkillInstall:
 		return OpenFGARelationAdmin, true

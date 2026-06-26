@@ -18,6 +18,17 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 )
 
+func derefTeamID(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
+}
+
+func uuidPtrFromNilable(value uuid.UUID) *uuid.UUID {
+	return &value
+}
+
 func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -49,7 +60,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected create options to succeed, got %d: %s", optionsResp.Code, optionsResp.Body.String())
 	}
 	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
-	if service.createOptionsReq.TenantID != expectedTenantID || service.createOptionsReq.TeamID != teamID {
+	if service.createOptionsReq.TenantID != expectedTenantID || service.createOptionsReq.TeamID == nil || *service.createOptionsReq.TeamID != teamID {
 		t.Fatalf("expected create options tenant/team %s/%s, got %#v", expectedTenantID, teamID, service.createOptionsReq)
 	}
 	var optionsBody struct {
@@ -624,6 +635,7 @@ func TestEmployeeRoutesWorkspaceFilesUseConsoleTenantAndActions(t *testing.T) {
 	}
 	var listed []struct {
 		ID                string `json:"id"`
+		TeamID            string `json:"team_id"`
 		Path              string `json:"path"`
 		FileRole          string `json:"file_role"`
 		Content           string `json:"content"`
@@ -638,6 +650,9 @@ func TestEmployeeRoutesWorkspaceFilesUseConsoleTenantAndActions(t *testing.T) {
 	}
 	if len(listed) != 1 || listed[0].Path != "AGENTS.md" || listed[0].FileRole != "entrypoint" || listed[0].Content != "# 工作原则" || listed[0].SizeBytes == 0 || listed[0].ContentHash == "" || listed[0].CurrentRevisionID == "" || listed[0].RevisionNumber != 1 || listed[0].UpdatedAt == "" {
 		t.Fatalf("unexpected list workspace files response: %#v", listed)
+	}
+	if listed[0].TeamID != "" || strings.Contains(listResp.Body.String(), `"team_id"`) {
+		t.Fatalf("team-less workspace files must omit team_id, got %s", listResp.Body.String())
 	}
 
 	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/workspace-files", strings.NewReader(`{"path":"AGENTS.md","content":"# 新规则","change_note":"update rules"}`))
@@ -1452,7 +1467,7 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 		TeamConfig: employee.TeamConfigCreateOption{
 			ID:                   uuid.New(),
 			TenantID:             req.TenantID,
-			TeamID:               req.TeamID,
+			TeamID:               derefTeamID(req.TeamID),
 			RevisionNumber:       2,
 			Status:               employee.TeamConfigRevisionStatusActive,
 			AllowedEmployeeTypes: []string{"database_admin"},
@@ -1591,7 +1606,6 @@ func (s *routeEmployeeService) ListWorkspaceFiles(ctx context.Context, req emplo
 	return []employee.WorkspaceFile{{
 		ID:                uuid.New(),
 		TenantID:          req.TenantID,
-		TeamID:            uuid.New(),
 		DigitalEmployeeID: req.DigitalEmployeeID,
 		Path:              "AGENTS.md",
 		FileRole:          "entrypoint",
@@ -1616,7 +1630,7 @@ func (s *routeEmployeeService) UpsertWorkspaceFile(ctx context.Context, req empl
 	return employee.WorkspaceFile{
 		ID:                uuid.New(),
 		TenantID:          req.TenantID,
-		TeamID:            uuid.New(),
+		TeamID:            uuidPtrFromNilable(uuid.New()),
 		DigitalEmployeeID: req.DigitalEmployeeID,
 		Path:              "AGENTS.md",
 		FileRole:          "entrypoint",
@@ -1770,7 +1784,7 @@ func (s *routeEmployeeService) ApproveEffectiveConfig(ctx context.Context, req e
 		ID:                       uuid.New(),
 		TenantID:                 req.TenantID,
 		DigitalEmployeeID:        req.DigitalEmployeeID,
-		TeamConfigRevisionID:     req.TeamConfigRevisionID,
+		TeamConfigRevisionID:     &req.TeamConfigRevisionID,
 		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
 		EffectiveConfig:          map[string]any{"approved": true},
 		ValidationResult:         map[string]any{"blocking_errors": []any{}},

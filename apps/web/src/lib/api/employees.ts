@@ -24,7 +24,7 @@ export type DigitalEmployeeAvatarAsset = {
 export type DigitalEmployee = {
   id: string;
   tenant_id: string;
-  team_id: string;
+  team_id?: string;
   owner_user_id: string;
   employee_type: string;
   name: string;
@@ -111,7 +111,7 @@ export type DigitalEmployeeCreateOptions = {
   team_config: {
     id: string;
     tenant_id: string;
-    team_id: string;
+    team_id?: string;
     revision_number: number;
     status: string;
     allowed_employee_types: string[];
@@ -385,7 +385,7 @@ export type StopDigitalEmployeeRunInput = {
 };
 
 export type CreateDigitalEmployeeInput = {
-  team_id: string;
+  team_id?: string;
   employee_type: string;
   name: string;
   avatar_asset_id: string;
@@ -686,14 +686,16 @@ export async function getDigitalEmployeeOverview(
 
 export function getDigitalEmployeeCreateOptions(
   options: ApiClientOptions,
-  teamId: string,
+  teamId?: string,
 ): Promise<DigitalEmployeeCreateOptions> {
   const searchParams = new URLSearchParams();
-  searchParams.set("team_id", teamId);
+  if (teamId) {
+    searchParams.set("team_id", teamId);
+  }
 
   return getJson<DigitalEmployeeCreateOptions>(
     options,
-    `/api/v1/digital-employees/create-options?${searchParams.toString()}`,
+    `/api/v1/digital-employees/create-options${searchParams.toString() ? `?${searchParams.toString()}` : ""}`,
     "digital employee create options",
   );
 }

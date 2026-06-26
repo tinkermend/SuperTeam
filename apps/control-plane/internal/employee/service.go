@@ -132,9 +132,6 @@ func (s *Service) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFi
 	if err != nil {
 		return WorkspaceFile{}, fmt.Errorf("get digital employee: %w", err)
 	}
-	if employee.TeamID == nil || *employee.TeamID == uuid.Nil {
-		return WorkspaceFile{}, fmt.Errorf("%w: employee team_id is required for workspace files", ErrInvalidInput)
-	}
 	contentBytes := []byte(req.Content)
 	if len(contentBytes) > maxWorkspaceFileInlineBytes {
 		return WorkspaceFile{}, fmt.Errorf("%w: workspace file content is too large", ErrInvalidInput)
@@ -149,7 +146,7 @@ func (s *Service) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFi
 			}
 			fileRecord, err = repository.CreateWorkspaceFile(ctx, CreateWorkspaceFileParams{
 				TenantID:          req.TenantID,
-				TeamID:            *employee.TeamID,
+				TeamID:            employee.TeamID,
 				DigitalEmployeeID: req.DigitalEmployeeID,
 				Path:              normalizedPath,
 				FileRole:          fileRole,
@@ -202,18 +199,22 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
-	if req.TeamID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
-	}
-	if err := s.repository.EnsureTeamExists(ctx, req.TenantID, req.TeamID); err != nil {
-		return nil, fmt.Errorf("get team: %w", err)
-	}
-	teamConfig, err := s.repository.GetCurrentTeamConfigRevision(ctx, req.TenantID, req.TeamID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+	teamLess := req.TeamID == nil || *req.TeamID == uuid.Nil
+	var teamConfig TeamConfigInput
+	if teamLess {
+		teamConfig = defaultTeamLessConfigInput(req.TenantID)
+	} else {
+		if err := s.repository.EnsureTeamExists(ctx, req.TenantID, *req.TeamID); err != nil {
+			return nil, fmt.Errorf("get team: %w", err)
 		}
-		return nil, fmt.Errorf("get current team config revision: %w", err)
+		loaded, err := s.repository.GetCurrentTeamConfigRevision(ctx, req.TenantID, *req.TeamID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+			}
+			return nil, fmt.Errorf("get current team config revision: %w", err)
+		}
+		teamConfig = loaded
 	}
 	teamConfigOption, err := teamConfigCreateOption(teamConfig)
 	if err != nil {
@@ -223,7 +224,12 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, err
 	}
-	runtimeOptions, err := s.repository.ListRuntimeProviderOptionsForCreate(ctx, req.TenantID, req.TeamID)
+	var runtimeOptions []RuntimeProviderOption
+	if teamLess {
+		runtimeOptions, err = s.repository.ListRuntimeProviderOptionsForTeamLessCreate(ctx, req.TenantID)
+	} else {
+		runtimeOptions, err = s.repository.ListRuntimeProviderOptionsForCreate(ctx, req.TenantID, *req.TeamID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
@@ -242,6 +248,22 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 		),
 		PolicyDefaults: emptyPolicyDefaults(),
 	}, nil
+}
+
+func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
+	return TeamConfigInput{
+		ID:                          uuid.Nil,
+		TenantID:                    tenantID,
+		TeamID:                      uuid.Nil,
+		RevisionNumber:              0,
+		Status:                      TeamConfigRevisionStatusActive,
+		CapabilityPolicy:            map[string]any{},
+		ContextPolicy:               map[string]any{},
+		ApprovalPolicy:              map[string]any{},
+		ArtifactContract:            map[string]any{},
+		InternalCollaborationPolicy: map[string]any{},
+		RuntimeScopePolicy:          map[string]any{},
+	}
 }
 
 func createOptionChecks(
@@ -445,16 +467,23 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 	if err != nil {
 		return nil, err
 	}
-	teamID := *normalized.TeamID
-	if err := s.repository.EnsureTeamExists(ctx, normalized.TenantID, teamID); err != nil {
-		return nil, fmt.Errorf("get team: %w", err)
-	}
-	teamConfig, err := s.repository.GetCurrentTeamConfigRevision(ctx, normalized.TenantID, teamID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+	teamLess := normalized.TeamID == nil
+	var teamConfig TeamConfigInput
+	if teamLess {
+		teamConfig = defaultTeamLessConfigInput(normalized.TenantID)
+	} else {
+		teamID := *normalized.TeamID
+		if err := s.repository.EnsureTeamExists(ctx, normalized.TenantID, teamID); err != nil {
+			return nil, fmt.Errorf("get team: %w", err)
 		}
-		return nil, fmt.Errorf("get current team config revision: %w", err)
+		loaded, err := s.repository.GetCurrentTeamConfigRevision(ctx, normalized.TenantID, teamID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+			}
+			return nil, fmt.Errorf("get current team config revision: %w", err)
+		}
+		teamConfig = loaded
 	}
 	if err := validateEmployeeTypeAllowedByTeamConfig(normalized.EmployeeType, teamConfig); err != nil {
 		return nil, err
@@ -463,7 +492,12 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		return nil, err
 	}
 
-	preflight, err := s.repository.GetRuntimeProvisioningPreflight(ctx, normalized.TenantID, teamID, normalized.RuntimeNodeID, normalized.ProviderType)
+	var preflight RuntimeProvisioningPreflight
+	if teamLess {
+		preflight, err = s.repository.GetRuntimeProvisioningPreflightTeamLess(ctx, normalized.TenantID, normalized.RuntimeNodeID, normalized.ProviderType)
+	} else {
+		preflight, err = s.repository.GetRuntimeProvisioningPreflight(ctx, normalized.TenantID, *normalized.TeamID, normalized.RuntimeNodeID, normalized.ProviderType)
+	}
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, fmt.Errorf("%w: runtime provisioning preflight unavailable", ErrRuntimeUnavailable)
@@ -532,8 +566,8 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if req.TenantID == uuid.Nil {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
-	if req.TeamID == nil || *req.TeamID == uuid.Nil {
-		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	if req.TeamID != nil && *req.TeamID == uuid.Nil {
+		req.TeamID = nil
 	}
 	if req.OwnerUserID == uuid.Nil {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: owner_user_id is required", ErrInvalidInput)
@@ -656,7 +690,7 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if len(preview.Validation.BlockingErrors) > 0 {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
 	}
-	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfig.ID, configRevision.ID, preview, req.OwnerUserID); err != nil {
+	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfigRevisionIDPtr(teamConfig), configRevision.ID, preview, req.OwnerUserID); err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
 	instance, commandID, payload, err := createProvisioningInstanceAndReceipt(ctx, repository, s.skillLister, record, req, preflight, configInput, preview)
@@ -670,9 +704,6 @@ func (s *Service) createInitialEnvironmentVariables(ctx context.Context, reposit
 	if len(req.EnvironmentVariables) == 0 {
 		return nil
 	}
-	if req.TeamID == nil || *req.TeamID == uuid.Nil {
-		return fmt.Errorf("%w: team_id is required for environment variables", ErrInvalidInput)
-	}
 	for _, item := range req.EnvironmentVariables {
 		name, err := normalizeEnvName(item.Name)
 		if err != nil {
@@ -680,7 +711,7 @@ func (s *Service) createInitialEnvironmentVariables(ctx context.Context, reposit
 		}
 		if _, err := s.upsertEncryptedEnvironmentVariable(ctx, repository, UpsertEnvironmentVariableStoreInput{
 			TenantID:          req.TenantID,
-			TeamID:            *req.TeamID,
+			TeamID:            req.TeamID,
 			DigitalEmployeeID: record.ID,
 			Name:              name,
 			Value:             item.Value,
@@ -763,7 +794,7 @@ func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition Emp
 	}
 }
 
-func createApprovedEffectiveConfig(ctx context.Context, repository Repository, record DigitalEmployeeRecord, teamConfigRevisionID, employeeConfigRevisionID uuid.UUID, preview *EffectiveConfigPreview, approvedBy uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
+func createApprovedEffectiveConfig(ctx context.Context, repository Repository, record DigitalEmployeeRecord, teamConfigRevisionID *uuid.UUID, employeeConfigRevisionID uuid.UUID, preview *EffectiveConfigPreview, approvedBy uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
 	now := time.Now().UTC()
 	params := CreateEffectiveConfigParams{
 		TenantID:                 record.TenantID,
@@ -806,7 +837,7 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee execution instance: %w", err)
 	}
 
-	workspaceFiles, err := createDefaultAgentsWorkspaceFile(ctx, repository, record, preflight.TeamID, configInput, preview)
+	workspaceFiles, err := createDefaultAgentsWorkspaceFile(ctx, repository, record, teamIDPtr(preflight.TeamID), configInput, preview)
 	if err != nil {
 		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
@@ -837,7 +868,7 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 	return instance, commandID, payload, nil
 }
 
-func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository, employee DigitalEmployeeRecord, teamID uuid.UUID, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) ([]WorkspaceFileForSyncRecord, error) {
+func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository, employee DigitalEmployeeRecord, teamID *uuid.UUID, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) ([]WorkspaceFileForSyncRecord, error) {
 	agentsPath, err := normalizeWorkspaceFilePath("AGENTS.md")
 	if err != nil {
 		return nil, err
@@ -975,13 +1006,10 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	if preflight.TenantID == uuid.Nil {
 		return fmt.Errorf("%w: provisioning tenant_id is required", ErrRuntimeUnavailable)
 	}
-	if preflight.TeamID == uuid.Nil {
-		return fmt.Errorf("%w: provisioning team_id is required", ErrRuntimeUnavailable)
-	}
 	if preflight.RuntimeNodeID == uuid.Nil || strings.TrimSpace(preflight.NodeID) == "" {
 		return fmt.Errorf("%w: runtime node is unavailable", ErrRuntimeUnavailable)
 	}
-	if !preflight.HasActiveTeamConfig {
+	if preflight.TeamID != uuid.Nil && !preflight.HasActiveTeamConfig {
 		return fmt.Errorf("%w: active team governance config is required before provisioning", ErrEffectiveConfigRequired)
 	}
 	if !preflight.RuntimeOnline {
@@ -996,10 +1024,10 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	if !preflight.ProviderAvailable {
 		return fmt.Errorf("%w: provider capability is unavailable", ErrProviderUnavailable)
 	}
-	if !preflight.ProviderPolicyAllowed {
+	if preflight.TeamID != uuid.Nil && !preflight.ProviderPolicyAllowed {
 		return fmt.Errorf("%w: provider type is outside team capability policy", ErrProviderUnavailable)
 	}
-	if !preflight.RuntimePolicyAllowed {
+	if preflight.TeamID != uuid.Nil && !preflight.RuntimePolicyAllowed {
 		return fmt.Errorf("%w: runtime node is outside team runtime policy", ErrRuntimeUnavailable)
 	}
 	if strings.TrimSpace(preflight.AgentHomeDir) == "" {
@@ -1014,7 +1042,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"digital_employee_id":         employee.ID.String(),
 		"execution_instance_id":       instance.ID.String(),
 		"tenant_id":                   employee.TenantID.String(),
-		"team_id":                     preflight.TeamID.String(),
+		"team_id":                     nullUUIDString(preflight.TeamID),
 		"owner_user_id":               employee.OwnerUserID.String(),
 		"employee_type":               employee.EmployeeType,
 		"role":                        employee.Role,
@@ -1024,7 +1052,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"provider_type":               providerType,
 		"provider_run_protocol":       providerRunProtocol,
 		"agent_home_dir":              instance.AgentHomeDir,
-		"team_config_revision_id":     preview.TeamConfigRevisionID.String(),
+		"team_config_revision_id":     nullUUIDString(preview.TeamConfigRevisionID),
 		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
 		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
 		"session_policy":              cloneMap(req.SessionPolicy),
@@ -1048,6 +1076,9 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 
 func canonicalEmployeeHome(workspaceBaseDir string, teamID, digitalEmployeeID uuid.UUID) string {
 	base := strings.TrimRight(strings.TrimSpace(workspaceBaseDir), "/")
+	if teamID == uuid.Nil {
+		return base + "/employees/" + digitalEmployeeID.String()
+	}
 	return base + "/teams/" + teamID.String() + "/employees/" + digitalEmployeeID.String()
 }
 
@@ -1546,18 +1577,16 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.DigitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	if req.TeamConfig.ID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_config_revision_id is required", ErrInvalidInput)
-	}
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
-	if req.TeamConfig.Status != "" && req.TeamConfig.Status != TeamConfigRevisionStatusActive {
+	if req.TeamConfig.ID != uuid.Nil && req.TeamConfig.Status != "" && req.TeamConfig.Status != TeamConfigRevisionStatusActive {
 		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
 	}
+	teamLess := req.TeamConfig.ID == uuid.Nil
 
 	effectiveConfig := map[string]any{
-		"team_config_revision_id":     req.TeamConfig.ID.String(),
+		"team_config_revision_id":     nullUUIDString(req.TeamConfig.ID),
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
 		"constitution": map[string]any{
 			"team":     cloneMap(req.TeamConfig.Constitution),
@@ -1579,9 +1608,11 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 		BlockingErrors: []ValidationIssue{},
 		Warnings:       []ValidationIssue{},
 	}
-	validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySubset(req.TeamConfig.CapabilityPolicy, req.EmployeeConfig.CapabilitySelection)...)
-	validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
-	validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
+	if !teamLess {
+		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySubset(req.TeamConfig.CapabilityPolicy, req.EmployeeConfig.CapabilitySelection)...)
+		validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
+		validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
+	}
 
 	return &EffectiveConfigPreview{
 		TeamConfigRevisionID:     req.TeamConfig.ID,
@@ -1666,7 +1697,7 @@ func (s *Service) ApproveEffectiveConfig(ctx context.Context, req ApproveEffecti
 	record, err := s.repository.CreateDigitalEmployeeEffectiveConfig(ctx, CreateEffectiveConfigParams{
 		TenantID:                 req.TenantID,
 		DigitalEmployeeID:        req.DigitalEmployeeID,
-		TeamConfigRevisionID:     req.TeamConfigRevisionID,
+		TeamConfigRevisionID:     &req.TeamConfigRevisionID,
 		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
 		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
 		ValidationResult:         validationResultMap(preview.Validation),
@@ -2038,6 +2069,29 @@ func validUUIDPtr(value *uuid.UUID) *uuid.UUID {
 		return nil
 	}
 	copied := *value
+	return &copied
+}
+
+func teamConfigRevisionIDPtr(teamConfig TeamConfigInput) *uuid.UUID {
+	if teamConfig.ID == uuid.Nil {
+		return nil
+	}
+	id := teamConfig.ID
+	return &id
+}
+
+func nullUUIDString(value uuid.UUID) string {
+	if value == uuid.Nil {
+		return ""
+	}
+	return value.String()
+}
+
+func teamIDPtr(value uuid.UUID) *uuid.UUID {
+	if value == uuid.Nil {
+		return nil
+	}
+	copied := value
 	return &copied
 }
 

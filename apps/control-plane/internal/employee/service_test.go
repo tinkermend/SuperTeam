@@ -113,7 +113,7 @@ func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
-		TeamID:   teamID,
+		TeamID:   &teamID,
 	})
 	if err != nil {
 		t.Fatalf("get create options: %v", err)
@@ -149,11 +149,53 @@ func TestGetCreateOptionsRejectsEmptyAllowedEmployeeTypes(t *testing.T) {
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
-		TeamID:   teamID,
+		TeamID:   &teamID,
 	})
 
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected invalid input for empty allowed_employee_types, got options=%#v err=%v", options, err)
+	}
+}
+
+func TestGetCreateOptionsSupportsTeamLessWithBuiltInDefaults(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.runtimeProviderOptions = []RuntimeProviderOption{{
+		RuntimeNodeID:         runtimeNodeID,
+		NodeID:                "node-team-less",
+		RuntimeName:           "独立节点",
+		ProviderType:          "codex",
+		RuntimeStatus:         "online",
+		ProviderStatus:        "healthy",
+		HealthStatus:          "healthy",
+		CurrentLoad:           0,
+		MaxSlots:              2,
+		AgentHomeDir:          "/srv/superteam/agents",
+		AgentHomeDirAvailable: true,
+		Available:             true,
+		DisabledReason:        "",
+	}}
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   nil,
+	})
+	if err != nil {
+		t.Fatalf("get team-less create options: %v", err)
+	}
+	if options.TeamConfig.ID != uuid.Nil {
+		t.Fatalf("expected nil team config id for team-less mode, got %s", options.TeamConfig.ID)
+	}
+	if len(options.EmployeeTypes) == 0 {
+		t.Fatalf("expected built-in default employee types to be available in team-less mode, got %#v", options.EmployeeTypes)
+	}
+	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
+		t.Fatalf("expected team-less runtime provider option, got %#v", options.RuntimeProviderOptions)
 	}
 }
 
@@ -164,7 +206,7 @@ func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
-		TeamID:   teamID,
+		TeamID:   &teamID,
 	})
 
 	if !errors.Is(err, ErrInvalidInput) {
@@ -267,7 +309,7 @@ func TestServiceUpsertsWorkspaceFileWithRoleAndCurrentRevision(t *testing.T) {
 	if file.Path != "AGENTS.md" {
 		t.Fatalf("expected AGENTS.md path, got %q", file.Path)
 	}
-	if file.TeamID != teamID || file.FileRole != "entrypoint" || file.MimeType != "text/markdown" || file.SyncPolicy != "auto" {
+	if file.TeamID == nil || *file.TeamID != teamID || file.FileRole != "entrypoint" || file.MimeType != "text/markdown" || file.SyncPolicy != "auto" {
 		t.Fatalf("unexpected workspace file identity: %#v", file)
 	}
 	if file.RevisionNumber != 1 || file.CurrentRevisionID == uuid.Nil || file.SizeBytes == 0 || file.ContentHash == "" {
@@ -275,6 +317,38 @@ func TestServiceUpsertsWorkspaceFileWithRoleAndCurrentRevision(t *testing.T) {
 	}
 	if len(repo.workspaceFiles) != 1 || len(repo.workspaceFileRevisions) != 1 {
 		t.Fatalf("expected one file and one revision, got files=%d revisions=%d", len(repo.workspaceFiles), len(repo.workspaceFileRevisions))
+	}
+}
+
+func TestServiceUpsertsWorkspaceFileForTeamLessEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "devops_engineer",
+		Name:         "Ops",
+		Role:         "devops_engineer",
+		Status:       DigitalEmployeeStatusReady,
+	}
+
+	file, err := service.UpsertWorkspaceFile(context.Background(), UpsertWorkspaceFileRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Path:              "notes/setup.md",
+		Content:           "team-less workspace file",
+	})
+	if err != nil {
+		t.Fatalf("upsert workspace file for team-less employee: %v", err)
+	}
+	if file.TeamID != nil {
+		t.Fatalf("expected workspace file team_id to stay nil, got %#v", file.TeamID)
 	}
 }
 
@@ -404,7 +478,7 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	if repo.createdEffectiveConfig.ApprovedBy == nil || *repo.createdEffectiveConfig.ApprovedBy != req.OwnerUserID || repo.createdEffectiveConfig.ApprovedAt == nil {
 		t.Fatalf("expected effective config approved by owner, got approved_by=%#v approved_at=%#v", repo.createdEffectiveConfig.ApprovedBy, repo.createdEffectiveConfig.ApprovedAt)
 	}
-	if repo.createdEffectiveConfig.TeamConfigRevisionID == uuid.Nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
+	if repo.createdEffectiveConfig.TeamConfigRevisionID == nil || *repo.createdEffectiveConfig.TeamConfigRevisionID == uuid.Nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
 		t.Fatalf("expected effective config revision ids to be set, got %#v", repo.createdEffectiveConfig)
 	}
 	if len(repo.effectiveConfigs) != 1 {
@@ -455,6 +529,46 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	}
 }
 
+func TestCreateDigitalEmployeeSupportsTeamLessProvisioning(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.TeamID = nil
+	repo.preflight = validRuntimeProvisioningPreflight(req.TenantID, uuid.Nil, req.RuntimeNodeID)
+	repo.preflight.GovernanceSnapshot = map[string]any{}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create team-less digital employee: %v", err)
+	}
+
+	if created.TeamID != nil {
+		t.Fatalf("expected created employee team_id nil, got %#v", created.TeamID)
+	}
+	if repo.createdEffectiveConfig.TeamConfigRevisionID != nil {
+		t.Fatalf("expected no team config revision id for team-less employee, got %#v", repo.createdEffectiveConfig.TeamConfigRevisionID)
+	}
+	if len(repo.workspaceFiles) != 1 {
+		t.Fatalf("expected one default workspace file, got %d", len(repo.workspaceFiles))
+	}
+	if repo.workspaceFiles[0].TeamID != nil {
+		t.Fatalf("expected default workspace file team_id nil, got %#v", repo.workspaceFiles[0].TeamID)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one runtime command, got %d", len(dispatcher.commands))
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(dispatcher.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode runtime command payload: %v", err)
+	}
+	if payload["team_id"] != "" {
+		t.Fatalf("expected team-less payload to emit empty team_id, got %#v", payload["team_id"])
+	}
+	expectedHome := "/runtime/reported/agent-home/employees/" + created.ID.String()
+	if payload["agent_home_dir"] != expectedHome {
+		t.Fatalf("expected team-less agent_home_dir %q, got %#v", expectedHome, payload["agent_home_dir"])
+	}
+}
+
 func TestCreateDigitalEmployeePersistsInitialEnvironmentVariablesInTransaction(t *testing.T) {
 	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
 	svc.SetEnvironmentCodec(testCreateFlowEnvironmentCodec(t))
@@ -476,7 +590,7 @@ func TestCreateDigitalEmployeePersistsInitialEnvironmentVariablesInTransaction(t
 		t.Fatalf("expected one env var, got %#v", repo.envVars)
 	}
 	record := repo.envVars["GH_TOKEN"]
-	if record.TenantID != req.TenantID || record.TeamID != *req.TeamID || record.DigitalEmployeeID != created.ID || record.Name != "GH_TOKEN" {
+	if record.TenantID != req.TenantID || record.TeamID == nil || *record.TeamID != *req.TeamID || record.DigitalEmployeeID != created.ID || record.Name != "GH_TOKEN" {
 		t.Fatalf("unexpected env var scope: %#v", record)
 	}
 	if record.EncryptedValue == "" || strings.Contains(record.EncryptedValue, "ghp_secret_value") {
@@ -525,7 +639,7 @@ func TestCreateDigitalEmployeeCreatesDefaultAgentsWorkspaceFile(t *testing.T) {
 		t.Fatalf("expected one workspace file, got %d", len(repo.workspaceFiles))
 	}
 	file := repo.workspaceFiles[0]
-	if file.DigitalEmployeeID != created.ID || file.TeamID != *req.TeamID {
+	if file.DigitalEmployeeID != created.ID || file.TeamID == nil || *file.TeamID != *req.TeamID {
 		t.Fatalf("workspace file owner mismatch: %#v", file)
 	}
 	if file.Path != "AGENTS.md" || file.FileRole != "entrypoint" || file.SyncPolicy != "auto" {
@@ -646,7 +760,7 @@ func TestRuntimeWorkspaceFilesPayloadOmitsInlineContentForObjectStore(t *testing
 	payloads := runtimeWorkspaceFilesPayload([]WorkspaceFileForSyncRecord{{
 		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
 		TenantID:          uuid.MustParse("11111111-1111-4111-8111-111111111111"),
-		TeamID:            uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		TeamID:            ptrUUID(uuid.MustParse("22222222-2222-4222-8222-222222222222")),
 		DigitalEmployeeID: uuid.MustParse("33333333-3333-4333-8333-333333333333"),
 		Path:              "AGENTS.md",
 		FileRole:          "entrypoint",
@@ -936,15 +1050,6 @@ func TestServiceValidation(t *testing.T) {
 			run: func() error {
 				req := validCreateReq()
 				req.TenantID = uuid.Nil
-				_, err := svc.CreateDigitalEmployee(context.Background(), req)
-				return err
-			},
-		},
-		{
-			name: "create requires team",
-			run: func() error {
-				req := validCreateReq()
-				req.TeamID = nil
 				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},
@@ -1629,7 +1734,7 @@ func TestApproveEffectiveConfigRejectsDuplicateApprovedConfig(t *testing.T) {
 		ID:                       existingID,
 		TenantID:                 tenantID,
 		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
+		TeamConfigRevisionID:     &teamConfigRevisionID,
 		EmployeeConfigRevisionID: employeeConfigRevisionID,
 		Status:                   EffectiveConfigStatusApproved,
 	}
@@ -1939,6 +2044,10 @@ func seedConfigRevisionEmployee(repo *memoryRepository, tenantID, employeeID uui
 		Role:     "analyst",
 		Status:   DigitalEmployeeStatusDraft,
 	}
+}
+
+func ptrUUID(value uuid.UUID) *uuid.UUID {
+	return &value
 }
 
 func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePolicy map[string]any) (*Service, *memoryRepository, uuid.UUID, uuid.UUID) {
@@ -2311,6 +2420,10 @@ func (r *memoryRepository) ListRuntimeProviderOptionsForCreate(_ context.Context
 	return append([]RuntimeProviderOption(nil), r.runtimeProviderOptions...), nil
 }
 
+func (r *memoryRepository) ListRuntimeProviderOptionsForTeamLessCreate(_ context.Context, _ uuid.UUID) ([]RuntimeProviderOption, error) {
+	return append([]RuntimeProviderOption(nil), r.runtimeProviderOptions...), nil
+}
+
 func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	record, ok := r.employees[employeeID]
 	if !ok || record.TenantID != tenantID {
@@ -2633,6 +2746,16 @@ func (r *memoryRepository) GetRuntimeProvisioningPreflight(_ context.Context, te
 		return RuntimeProvisioningPreflight{}, r.preflightErr
 	}
 	if r.preflight.TenantID != tenantID || r.preflight.TeamID != teamID || r.preflight.RuntimeNodeID != runtimeNodeID || providerType == "" {
+		return RuntimeProvisioningPreflight{}, ErrNotFound
+	}
+	return r.preflight, nil
+}
+
+func (r *memoryRepository) GetRuntimeProvisioningPreflightTeamLess(_ context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
+	if r.preflightErr != nil {
+		return RuntimeProvisioningPreflight{}, r.preflightErr
+	}
+	if r.preflight.TenantID != tenantID || r.preflight.RuntimeNodeID != runtimeNodeID || providerType == "" {
 		return RuntimeProvisioningPreflight{}, ErrNotFound
 	}
 	return r.preflight, nil

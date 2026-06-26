@@ -62,10 +62,6 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 }
 
 func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
-	if !preflight.TeamID.Valid {
-		return RunPreflight{}, fmt.Errorf("%w: digital employee team_id is required for run preflight", ErrInvalidInput)
-	}
-
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
 		return RunPreflight{}, err
@@ -203,10 +199,6 @@ func (r *PgRunRepository) UpsertWorkspaceFileSync(ctx context.Context, params Up
 }
 
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
-	if req.TeamID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_id is required for digital employee run", ErrInvalidInput)
-	}
-
 	params, err := jsonBytesFromMap(req.Params, "params")
 	if err != nil {
 		return nil, err
@@ -217,7 +209,7 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		IdempotencyFingerprint: textFromPtr(req.IdempotencyFingerprint),
 		TenantID:               req.TenantID,
 		DigitalEmployeeID:      req.DigitalEmployeeID,
-		TeamID:                 req.TeamID,
+		TeamID:                 nullUUIDFromUUID(req.TeamID),
 		Title:                  req.Title,
 		Description:            textFromPtr(req.Description),
 		Priority:               req.Priority,
