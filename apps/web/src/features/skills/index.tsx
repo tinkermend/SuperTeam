@@ -899,11 +899,6 @@ function providerTone(providerType: SkillInstallation["provider_type"]): V3Tone 
   return "info";
 }
 
-function truncateMiddle(str: string, head: number, tail: number) {
-  if (!str || str.length <= head + tail + 3) return str;
-  return `${str.slice(0, head)}…${str.slice(-tail)}`;
-}
-
 function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
   const dependencyCount = skills.filter((skill) => runtimeDependencyCount(skill) > 0).length;
   const approvalCount = skills.filter(needsApproval).length;
