@@ -13,11 +13,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
+
+type allowAllAuthorizer struct{}
+
+func (a *allowAllAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
+	return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed}, nil
+}
+
+func newTestHandler(service HandlerService) *HTTPHandler {
+	handler := &HTTPHandler{service: service}
+	handler.SetAuthorizer(&allowAllAuthorizer{})
+	return handler
+}
 
 func TestProjectHandlerRejectsBadProjectID(t *testing.T) {
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/not-a-uuid", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
@@ -35,7 +48,7 @@ func TestProjectHandlerRejectsBadProjectID(t *testing.T) {
 
 func TestProjectHandlerRejectsInvalidJSON(t *testing.T) {
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":`))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
@@ -50,7 +63,7 @@ func TestProjectHandlerRejectsInvalidJSON(t *testing.T) {
 
 func TestProjectHandlerMapsUnauthorizedTeamScope(t *testing.T) {
 	service := &handlerTestService{createErr: ErrUnauthorizedProjectTeamScope}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{
 		"name":"未授权团队项目",
 		"goal":"验证团队授权边界",
@@ -74,7 +87,7 @@ func TestProjectHandlerMapsUnauthorizedTeamScope(t *testing.T) {
 func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{submitDemandErr: ErrProjectArchived}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{"title":"需求"}`))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
@@ -96,7 +109,7 @@ func TestProjectHandlerSubmitsDemandReviewerPreference(t *testing.T) {
 	projectID := uuid.New()
 	reviewerID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"审查 PR",
 		"content":"统计并审查 PR",
@@ -151,7 +164,7 @@ func TestProjectHandlerListsPlanRevisions(t *testing.T) {
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}}}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/plan-revisions?demand_id="+demandID.String()+"&limit=5", nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -198,7 +211,7 @@ func TestProjectHandlerGetsPlanRevision(t *testing.T) {
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}}}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/plan-revisions/"+revisionID.String(), nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "planRevisionId": revisionID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -248,7 +261,7 @@ func TestHandlerListProjectTaskDispatchGates(t *testing.T) {
 			},
 		},
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/dispatch-gates", nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "taskId": taskID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -298,7 +311,7 @@ func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T
 	actorID := uuid.New()
 	projectID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{"title":"补充验收证据"}`))
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -362,7 +375,7 @@ func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
 			},
 		}},
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflow-instances?status=running&limit=10&q=支付", nil)
 	req = withConsoleContext(req, tenantID, actorID)
 	resp := httptest.NewRecorder()
@@ -409,7 +422,7 @@ func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
 func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/config", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
@@ -451,7 +464,7 @@ func TestProjectHandlerCreatesEvidenceFromConsoleContext(t *testing.T) {
 	spoofedSubmitterID := uuid.New()
 	taskID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/evidence", strings.NewReader(`{
 		"tenant_id":"`+spoofedTenantID.String()+`",
 		"project_id":"`+spoofedProjectID.String()+`",
@@ -509,7 +522,7 @@ func TestProjectHandlerMapsGovernanceNotFound(t *testing.T) {
 		getAcceptanceErr:     ErrProjectNotFound,
 		getConfigRevisionErr: ErrProjectNotFound,
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 
 	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/"+projectID.String()+"/evidence/"+uuid.New().String(), strings.NewReader(`{"verification_status":"verified"}`))
 	patchReq = withProjectRouteParams(patchReq, map[string]string{"projectId": projectID.String(), "evidenceId": uuid.New().String()})
@@ -546,7 +559,7 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/route-decisions?limit=10&offset=2", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, actorID))
@@ -673,7 +686,7 @@ func TestProjectHandlerListsExecutionTrace(t *testing.T) {
 			}},
 		},
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/execution-trace?project_task_id="+taskID.String()+"&attempt_id="+attemptID.String()+"&event_type=%20attempt.completed%20&error_family=%20provider%20&limit=7&offset=3", nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -761,7 +774,7 @@ func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	projectID := uuid.New()
 	demandID := uuid.New()
 	service := &handlerTestService{launchDetailProjectID: projectID}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
 	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -904,7 +917,7 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 			}},
 		},
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?coordination_job_id="+jobID.String(), nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -959,7 +972,7 @@ func TestGetProjectTaskGraphRejectsMissingFilter(t *testing.T) {
 	actorID := uuid.New()
 	projectID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph", nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -991,7 +1004,7 @@ func TestGetProjectTaskLivenessReturnsNextAction(t *testing.T) {
 			NextAction:       "human response",
 		}},
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/liveness", nil)
 	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "taskId": taskID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
@@ -1030,7 +1043,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	ownerID := uuid.New()
@@ -1216,7 +1229,7 @@ func TestStartProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	taskID := uuid.New()
 	nodeID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"` + taskID.String() + `",
 		"runtime_node_id":"` + nodeID.String() + `",
@@ -1252,7 +1265,7 @@ func TestRenewProjectTaskAttemptLeaseHandlerBuildsServiceRequest(t *testing.T) {
 	nodeID := uuid.New()
 	leaseExpiresAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Second)
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"` + taskID.String() + `",
 		"runtime_node_id":"` + nodeID.String() + `",
@@ -1284,7 +1297,7 @@ func TestCompleteProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	taskID := uuid.New()
 	nodeID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"` + taskID.String() + `",
 		"runtime_node_id":"` + nodeID.String() + `",
@@ -1323,7 +1336,7 @@ func TestCompleteProjectTaskAttemptResultRouteParsesTaskResultContract(t *testin
 	taskID := uuid.MustParse("00000000-0000-0000-0000-000000000442")
 	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000443")
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"00000000-0000-0000-0000-000000000442",
 		"runtime_node_id":"00000000-0000-0000-0000-000000000443",
@@ -1371,7 +1384,7 @@ func TestFailProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	nodeID := uuid.New()
 	retryable := true
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"` + taskID.String() + `",
 		"runtime_node_id":"` + nodeID.String() + `",
@@ -1409,7 +1422,7 @@ func TestWaitHumanProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	nodeID := uuid.New()
 	employeeID := uuid.New()
 	service := &handlerTestService{}
-	handler := NewHandler(service)
+	handler := newTestHandler(service)
 	body := strings.NewReader(`{
 		"project_task_id":"` + taskID.String() + `",
 		"runtime_node_id":"` + nodeID.String() + `",

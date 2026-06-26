@@ -81,3 +81,17 @@ SELECT EXISTS (
       )
     )
 );
+
+-- name: GetProjectAuthzFacts :one
+SELECT
+  p.human_owner_user_id,
+  EXISTS(
+    SELECT 1 FROM project_members pm
+    WHERE pm.project_id = p.id AND pm.principal_id = sqlc.arg('user_id')::uuid
+      AND pm.principal_type = sqlc.arg('principal_type')::varchar
+      AND pm.status = 'active'
+  ) AS is_member,
+  p.team_id
+FROM projects p
+WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND p.id = sqlc.arg('project_id')::uuid;

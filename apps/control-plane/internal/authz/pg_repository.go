@@ -17,6 +17,7 @@ type QueryStore interface {
 	GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error)
 	GetActiveTeamMembership(ctx context.Context, params queries.GetActiveTeamMembershipParams) (queries.TenantMember, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, params queries.GetDigitalEmployeeAuthzScopeParams) (queries.GetDigitalEmployeeAuthzScopeRow, error)
+	GetProjectAuthzFacts(ctx context.Context, params queries.GetProjectAuthzFactsParams) (queries.GetProjectAuthzFactsRow, error)
 	ListOpenFGAMembers(ctx context.Context) ([]queries.ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]queries.ListOpenFGAProjectTeamScopesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error)
@@ -72,6 +73,27 @@ func (r *PgRepository) GetDigitalEmployeeAuthzScope(ctx context.Context, params 
 		EmployeeID:  scope.EmployeeID,
 		OwnerUserID: scope.OwnerUserID,
 		TeamID:      teamID,
+	}, nil
+}
+
+func (r *PgRepository) GetProjectAuthzFacts(ctx context.Context, params ProjectAuthzParams) (ProjectAuthzFacts, error) {
+	row, err := r.q.GetProjectAuthzFacts(ctx, queries.GetProjectAuthzFactsParams{
+		TenantID:      params.TenantID,
+		ProjectID:     params.ProjectID,
+		UserID:        params.UserID,
+		PrincipalType: ActorUser,
+	})
+	if err != nil {
+		return ProjectAuthzFacts{}, mapMembershipError(err)
+	}
+	var teamID *uuid.UUID
+	if row.TeamID.Valid {
+		teamID = &row.TeamID.UUID
+	}
+	return ProjectAuthzFacts{
+		HumanOwnerUserID: row.HumanOwnerUserID,
+		IsMember:         row.IsMember,
+		TeamID:           teamID,
 	}, nil
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 const defaultAuditEventLimit = 50
@@ -19,11 +20,16 @@ type HandlerService interface {
 }
 
 type HTTPHandler struct {
-	service HandlerService
+	service    HandlerService
+	authorizer authz.Authorizer
 }
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
+}
+
+func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
 }
 
 func (h *HTTPHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +52,28 @@ func (h *HTTPHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := projectIDFromQuery(w, r)
 	if !ok {
 		return
+	}
+	if h.authorizer != nil {
+		decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+			Actor: authz.ActorRef{
+				Type: authz.ActorUser,
+				ID:   userID.String(),
+			},
+			Action: authz.ActionAuditRead,
+			Resource: authz.ResourceRef{
+				Type: authz.ResourceProject,
+				ID:   projectID.String(),
+			},
+			TenantID: tenantID,
+		})
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !decision.Allowed {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 	limit, ok := nonNegativeIntQueryParam(w, r, "limit", defaultAuditEventLimit)
 	if !ok {

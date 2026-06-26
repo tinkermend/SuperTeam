@@ -144,6 +144,46 @@ func (q *Queries) GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigit
 	return i, err
 }
 
+const GetProjectAuthzFacts = `-- name: GetProjectAuthzFacts :one
+SELECT
+  p.human_owner_user_id,
+  EXISTS(
+    SELECT 1 FROM project_members pm
+    WHERE pm.project_id = p.id AND pm.principal_id = $1::uuid
+      AND pm.principal_type = $2::varchar
+      AND pm.status = 'active'
+  ) AS is_member,
+  p.team_id
+FROM projects p
+WHERE p.tenant_id = $3::uuid
+  AND p.id = $4::uuid
+`
+
+type GetProjectAuthzFactsParams struct {
+	UserID        uuid.UUID `json:"user_id"`
+	PrincipalType string    `json:"principal_type"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+}
+
+type GetProjectAuthzFactsRow struct {
+	HumanOwnerUserID uuid.UUID     `json:"human_owner_user_id"`
+	IsMember         bool          `json:"is_member"`
+	TeamID           uuid.NullUUID `json:"team_id"`
+}
+
+func (q *Queries) GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error) {
+	row := q.db.QueryRow(ctx, GetProjectAuthzFacts,
+		arg.UserID,
+		arg.PrincipalType,
+		arg.TenantID,
+		arg.ProjectID,
+	)
+	var i GetProjectAuthzFactsRow
+	err := row.Scan(&i.HumanOwnerUserID, &i.IsMember, &i.TeamID)
+	return i, err
+}
+
 const RuntimeNodeCoversTaskScope = `-- name: RuntimeNodeCoversTaskScope :one
 SELECT EXISTS (
   SELECT 1

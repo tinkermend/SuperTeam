@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 type HandlerService interface {
@@ -68,19 +69,101 @@ type projectTaskAttemptResultSubmitter interface {
 }
 
 type HTTPHandler struct {
-	service HandlerService
+	service    HandlerService
+	authorizer authz.Authorizer
 }
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
+func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
+}
+
+func (h *HTTPHandler) authorizeProjectAction(w http.ResponseWriter, r *http.Request, action string) (uuid.UUID, uuid.UUID, bool) {
+	if h.authorizer == nil {
+		http.Error(w, "project authorization is not configured", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		http.Error(w, "console identity not found in context", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   userID.String(),
+		},
+		Action:   action,
+		Resource: authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	return tenantID, userID, true
+}
+
+func (h *HTTPHandler) authorizeProjectScopedAction(w http.ResponseWriter, r *http.Request, action string) (uuid.UUID, uuid.UUID, uuid.UUID, bool) {
+	if h.authorizer == nil {
+		http.Error(w, "project authorization is not configured", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		http.Error(w, "console identity not found in context", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	projectID, ok := projectIDFromRequest(w, r)
+	if !ok {
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   userID.String(),
+		},
+		Action:   action,
+		Resource: authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	return tenantID, userID, projectID, true
+}
+
+func (h *HTTPHandler) projectRouteContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, uuid.UUID, HandlerService, bool) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectRead)
+	if !ok {
+		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
+	}
+	return tenantID, actorID, projectID, service, true
+}
+
 func (h *HTTPHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, ok := consoleIdentity(w, r)
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectRead)
 	if !ok {
 		return
 	}
-	_ = actorID
 	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
@@ -109,7 +192,7 @@ func (h *HTTPHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, ok := consoleIdentity(w, r)
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectRead)
 	if !ok {
 		return
 	}
@@ -149,7 +232,7 @@ func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, ok := consoleIdentity(w, r)
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectCreate)
 	if !ok {
 		return
 	}
@@ -184,11 +267,7 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) GetProject(w http.ResponseWriter, r *http.Request) {
-	tenantID, _, ok := consoleIdentity(w, r)
-	if !ok {
-		return
-	}
-	projectID, ok := projectIDFromRequest(w, r)
+	tenantID, _, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectRead)
 	if !ok {
 		return
 	}
@@ -446,7 +525,7 @@ func (h *HTTPHandler) ListProjectDemands(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) GetDemandLaunchDetail(w http.ResponseWriter, r *http.Request) {
-	tenantID, _, ok := consoleIdentity(w, r)
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDemandRead)
 	if !ok {
 		return
 	}
@@ -1168,22 +1247,6 @@ func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, projectResponseFromDomain(*updated))
 }
 
-func (h *HTTPHandler) projectRouteContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, uuid.UUID, HandlerService, bool) {
-	tenantID, actorID, ok := consoleIdentity(w, r)
-	if !ok {
-		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
-	}
-	projectID, ok := projectIDFromRequest(w, r)
-	if !ok {
-		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
-	}
-	return tenantID, actorID, projectID, service, true
-}
-
 func (h *HTTPHandler) runtimeProjectTaskAttemptContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, uuid.UUID, HandlerService, bool) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == uuid.Nil {
@@ -1232,16 +1295,6 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 		return nil, false
 	}
 	return h.service, true
-}
-
-func consoleIdentity(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
-		http.Error(w, "console identity not found in context", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tenantID, userID, true
 }
 
 func projectIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {

@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/task"
 )
 
@@ -22,13 +24,51 @@ type TaskService interface {
 
 type TaskHandler struct {
 	taskService TaskService
+	authorizer  authz.Authorizer
 }
 
 func NewTaskHandler(taskService TaskService) *TaskHandler {
 	return &TaskHandler{taskService: taskService}
 }
 
+func (h *TaskHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
+}
+
+func (h *TaskHandler) authorizeTaskAction(w http.ResponseWriter, r *http.Request, action string) bool {
+	if h.authorizer == nil {
+		return true
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		http.Error(w, "console identity not found in context", http.StatusForbidden)
+		return false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   userID.String(),
+		},
+		Action:   action,
+		Resource: authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeTaskAction(w, r, authz.ActionTaskCreate) {
+		return
+	}
 	var req struct {
 		Title         string                 `json:"title"`
 		Description   string                 `json:"description"`
@@ -73,6 +113,9 @@ func optionalString(value string) *string {
 }
 
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeTaskAction(w, r, authz.ActionTaskRead) {
+		return
+	}
 	id, ok := taskIDFromRequest(w, r)
 	if !ok {
 		return
@@ -89,6 +132,9 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeTaskAction(w, r, authz.ActionTaskRead) {
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
@@ -106,6 +152,9 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeTaskAction(w, r, authz.ActionTaskUpdate) {
+		return
+	}
 	id, ok := taskIDFromRequest(w, r)
 	if !ok {
 		return
@@ -134,6 +183,9 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeTaskAction(w, r, authz.ActionTaskCancel) {
+		return
+	}
 	id, ok := taskIDFromRequest(w, r)
 	if !ok {
 		return

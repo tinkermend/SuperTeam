@@ -11,6 +11,7 @@ type Repository interface {
 	GetActiveTeamMembership(ctx context.Context, params TeamMembershipParams) (Membership, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, params DigitalEmployeeAuthzScopeParams) (DigitalEmployeeAuthzScope, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error)
+	GetProjectAuthzFacts(ctx context.Context, params ProjectAuthzParams) (ProjectAuthzFacts, error)
 }
 
 type TenantMembershipParams struct {
@@ -43,4 +44,16 @@ type DigitalEmployeeAuthzScope struct {
 	EmployeeID  uuid.UUID
 	OwnerUserID uuid.UUID
 	TeamID      *uuid.UUID
+}
+
+type ProjectAuthzParams struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+}
+
+type ProjectAuthzFacts struct {
+	HumanOwnerUserID uuid.UUID
+	IsMember         bool
+	TeamID           *uuid.UUID
 }

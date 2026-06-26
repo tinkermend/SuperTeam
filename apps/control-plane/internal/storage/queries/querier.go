@@ -174,6 +174,7 @@ type Querier interface {
 	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
 	GetNextTenantTeamConfigRevisionNumber(ctx context.Context, arg GetNextTenantTeamConfigRevisionNumberParams) (int32, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
+	GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error)
 	GetProjectBudgetSummary(ctx context.Context, arg GetProjectBudgetSummaryParams) (GetProjectBudgetSummaryRow, error)
 	GetProjectConfigRevision(ctx context.Context, arg GetProjectConfigRevisionParams) (ProjectConfigRevision, error)
 	GetProjectCoordinationJobByTrigger(ctx context.Context, arg GetProjectCoordinationJobByTriggerParams) (ProjectCoordinationJob, error)

@@ -31,6 +31,8 @@ type fakeAuthzQueryStore struct {
 	openFGAMembersErr   error
 	openFGAScopes       []queries.ListOpenFGAProjectTeamScopesRow
 	openFGAScopesErr    error
+	projectAuthzFacts    queries.GetProjectAuthzFactsRow
+	projectAuthzFactsErr error
 }
 
 func (s *fakeAuthzQueryStore) GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error) {
@@ -59,6 +61,10 @@ func (s *fakeAuthzQueryStore) ListOpenFGAMembers(ctx context.Context) ([]queries
 
 func (s *fakeAuthzQueryStore) ListOpenFGAProjectTeamScopes(ctx context.Context) ([]queries.ListOpenFGAProjectTeamScopesRow, error) {
 	return s.openFGAScopes, s.openFGAScopesErr
+}
+
+func (s *fakeAuthzQueryStore) GetProjectAuthzFacts(ctx context.Context, params queries.GetProjectAuthzFactsParams) (queries.GetProjectAuthzFactsRow, error) {
+	return s.projectAuthzFacts, s.projectAuthzFactsErr
 }
 
 func TestPgRepositoryMapsTenantMembership(t *testing.T) {
