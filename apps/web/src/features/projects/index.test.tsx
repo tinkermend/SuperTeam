@@ -966,7 +966,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("证据充分")).toBeInTheDocument();
     await expect.element(screen.getByText("高级项目事实")).toBeInTheDocument();
 
-    expect(pageText()).not.toContain("Pre-dispatch gate");
+    expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("路由决策");
     expect(pageText()).not.toContain("协调任务");
     expect(pageText()).not.toContain("人类角色");
@@ -979,7 +979,9 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("协调任务")).toBeInTheDocument();
     // Execution trace panel keeps its existing title `执行证据链`; this plan does
     // not rename it.
-    await expect.element(screen.getByText("执行证据链")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "执行证据链" }))
+      .toBeInTheDocument();
     expect(pageText()).toContain("runtime.node_offline");
     expect(pageText()).toContain("runtime.inspect、codebase.analysis");
 
@@ -1066,7 +1068,7 @@ describe("ProjectsView", () => {
 
     await expect.element(screen.getByText("当前阻塞")).toBeInTheDocument();
     await expect.element(screen.getByText("运行节点暂不可用，系统会稍后重试")).toBeInTheDocument();
-    expect(pageText()).not.toContain("Pre-dispatch gate");
+    expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("runtime.node_offline");
 
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
@@ -1487,7 +1489,8 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "归档" }));
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
+    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
 
     await vi.waitFor(() => {
       const archiveCall = fetchCalls(fetcher).find(([url, init]) => {
@@ -1572,7 +1575,8 @@ describe("ProjectsView", () => {
       releaseProject2Overview();
     }
 
-    await userEvent.click(screen.getByRole("button", { name: "归档" }));
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
+    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
 
     await vi.waitFor(() => {
       expect(
