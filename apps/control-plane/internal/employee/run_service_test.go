@@ -1070,6 +1070,43 @@ func validCreateRunServiceRequest() CreateDigitalEmployeeRunRequest {
 	}
 }
 
+func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
+	run := &DigitalEmployeeRun{ID: uuid.New(), TaskID: uuid.New(), CommandID: uuid.NewString(), DigitalEmployeeID: uuid.New()}
+	payload := buildStartSessionPayload(
+		CreateDigitalEmployeeRunRequest{TenantID: uuid.New(), DigitalEmployeeID: run.DigitalEmployeeID},
+		"Inspect repo",
+		"Inspect repo",
+		RunPreflight{ProviderType: "codex"},
+		run,
+		nil,
+		nil,
+		nil,
+		[]RuntimeMCPServerPayload{{
+			ServerID:         "mcp-1",
+			ServerKey:        "github",
+			Name:             "GitHub MCP",
+			Transport:        "streamable_http",
+			URL:              "https://api.githubcopilot.com/mcp/",
+			AuthStrategy:     "bearer_env",
+			CredentialEnvVar: "GITHUB_TOKEN",
+			RequiredEnvVars:  []string{"GITHUB_TOKEN"},
+			SourceScope:      "employee",
+		}},
+	)
+
+	servers, ok := payload["mcp_servers"].([]map[string]any)
+	if !ok || len(servers) != 1 {
+		t.Fatalf("expected one mcp server payload, got %#v", payload["mcp_servers"])
+	}
+	if servers[0]["server_key"] != "github" || servers[0]["credential_env_var"] != "GITHUB_TOKEN" {
+		t.Fatalf("unexpected mcp payload: %#v", servers[0])
+	}
+	required, ok := servers[0]["required_env_vars"].([]string)
+	if !ok || len(required) != 1 || required[0] != "GITHUB_TOKEN" {
+		t.Fatalf("expected required_env_vars [GITHUB_TOKEN], got %#v", servers[0]["required_env_vars"])
+	}
+}
+
 func validRunServicePreflight() RunPreflight {
 	return RunPreflight{
 		TenantID:                   runServiceTenantID,

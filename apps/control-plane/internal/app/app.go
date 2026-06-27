@@ -85,6 +85,44 @@ type runtimeEventRecorderAdapter struct {
 	runtimeService *runtimepkg.Service
 }
 
+// runtimeMCPListerAdapter bridges the capability service's effective-MCP resolution to the
+// run service's RuntimeMCPLister. It excludes bindings blocked by missing env vars so only
+// env-satisfied MCP servers are projected into the runtime start-session payload.
+type runtimeMCPListerAdapter struct {
+	capability *capability.Service
+}
+
+func (a runtimeMCPListerAdapter) ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]employee.RuntimeMCPServerPayload, error) {
+	if a.capability == nil {
+		return nil, nil
+	}
+	effective, err := a.capability.ListEffectiveMCPConfigForRuntime(ctx, tenantID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]employee.RuntimeMCPServerPayload, 0, len(effective))
+	for _, server := range effective {
+		if len(server.MissingEnvVars) > 0 {
+			continue // blocked: required env vars not configured on this employee
+		}
+		out = append(out, employee.RuntimeMCPServerPayload{
+			ServerID:         server.ServerID.String(),
+			ServerKey:        server.ServerKey,
+			Name:             server.Name,
+			Transport:        string(server.Transport),
+			URL:              server.URL,
+			AuthStrategy:     string(server.AuthStrategy),
+			CredentialEnvVar: server.CredentialEnvVar,
+			RequiredEnvVars:  server.RequiredEnvVars,
+			SourceScope:      server.SourceScope,
+			PermissionScope: map[string]any{
+				"tool_allowlist": server.ToolAllowlist,
+			},
+		})
+	}
+	return out, nil
+}
+
 func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req employee.RuntimeEventRecordRequest) error {
 	if a.runtimeService == nil {
 		return nil
@@ -468,6 +506,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
+	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
 	if err != nil {

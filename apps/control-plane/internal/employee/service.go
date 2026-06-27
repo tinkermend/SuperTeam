@@ -1360,10 +1360,6 @@ func emptyRuntimeSkillsPayload() []map[string]any {
 	return []map[string]any{}
 }
 
-func emptyRuntimeMCPServersPayload() []map[string]any {
-	return []map[string]any{}
-}
-
 func provisioningErrorWithAbort(cause error, abortErr error) error {
 	if abortErr != nil {
 		return fmt.Errorf("%w; abort provisioning: %v", cause, abortErr)

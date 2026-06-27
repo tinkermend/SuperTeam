@@ -418,6 +418,25 @@ func (s *Service) ListEffectiveMCPConfig(ctx context.Context, req EmployeeScoped
 	return s.repository.ListEffectiveMCPBindingsV2(ctx, req)
 }
 
+// ListEffectiveMCPConfigForRuntime resolves effective MCP servers for an employee in a system
+// (runtime) context where there is no console user. It performs the same resolution as
+// ListEffectiveMCPConfig but skips the user-scoped validation.
+func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]EffectiveMCPServer, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if digitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListEffectiveMCPBindingsV2(ctx, EmployeeScopedRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+}
+
 func (s *Service) requireActiveMCPDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {
 	definition, err := s.repository.GetMCPServerDefinition(ctx, tenantID, serverID)
 	if err != nil {

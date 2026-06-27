@@ -207,6 +207,23 @@ type RuntimeEnvironmentVariablePayload struct {
 	Sensitive bool
 }
 
+// RuntimeMCPServerPayload is one effective MCP server projected to the Runtime Agent. It
+// carries env-var names (not values); the Runtime materializes provider config that
+// references these names. Only env-satisfied bindings are projected.
+type RuntimeMCPServerPayload struct {
+	ServerID         string
+	ServerKey        string
+	Name             string
+	Transport        string
+	URL              string
+	AuthStrategy     string
+	CredentialEnvVar string
+	RequiredEnvVars  []string
+	HeadersEnv       map[string]string
+	SourceScope      string
+	PermissionScope  map[string]any
+}
+
 type ListWorkspaceFilesRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID

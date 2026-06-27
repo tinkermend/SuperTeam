@@ -52,6 +52,12 @@ type RuntimeEnvironmentLister interface {
 	ListRuntimeEnvironmentVariablesForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error)
 }
 
+// RuntimeMCPLister resolves the effective MCP servers for an employee, already filtered to
+// env-satisfied bindings, ready to project into the runtime start-session payload.
+type RuntimeMCPLister interface {
+	ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeMCPServerPayload, error)
+}
+
 type DigitalEmployeeRunService struct {
 	repository       DigitalEmployeeRunRepository
 	dispatcher       RuntimeCommandDispatcher
@@ -59,6 +65,7 @@ type DigitalEmployeeRunService struct {
 	skillLister      RuntimeSkillLister
 	capabilityLister RuntimeCapabilityLister
 	envLister        RuntimeEnvironmentLister
+	mcpLister        RuntimeMCPLister
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -85,6 +92,10 @@ func (s *DigitalEmployeeRunService) SetRuntimeCapabilityLister(l RuntimeCapabili
 
 func (s *DigitalEmployeeRunService) SetEnvironmentLister(l RuntimeEnvironmentLister) {
 	s.envLister = l
+}
+
+func (s *DigitalEmployeeRunService) SetMCPLister(l RuntimeMCPLister) {
+	s.mcpLister = l
 }
 
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
@@ -196,6 +207,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 type startSessionDependencies struct {
 	runtimeSkills []skill.SkillRuntimeRecord
 	runtimeEnv    []RuntimeEnvironmentVariablePayload
+	runtimeMCP    []RuntimeMCPServerPayload
 }
 
 func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, deps startSessionDependencies) (*DigitalEmployeeRun, error) {
@@ -207,7 +219,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 	if err != nil {
 		return nil, fmt.Errorf("list workspace files for start session: %w", err)
 	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles, deps.runtimeSkills, deps.runtimeEnv)
+	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -314,6 +326,15 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 			return deps, fmt.Errorf("list runtime environment variables: %w", err)
 		}
 		deps.runtimeEnv = runtimeEnv
+	}
+	if s.mcpLister != nil {
+		// Loaded after env vars: the lister excludes bindings whose required env vars the
+		// employee has not configured, so only env-satisfied MCP servers are projected.
+		runtimeMCP, err := s.mcpLister.ListRuntimeMCPServersForRuntime(ctx, tenantID, digitalEmployeeID)
+		if err != nil {
+			return deps, fmt.Errorf("list runtime mcp servers: %w", err)
+		}
+		deps.runtimeMCP = runtimeMCP
 	}
 
 	availableTools := map[string]struct{}{}
@@ -811,7 +832,7 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
@@ -850,9 +871,50 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
 		"skills":                runtimeSkillsPayload(runtimeSkills),
 		"environment":           runtimeEnvironmentPayload(runtimeEnv),
-		"mcp_servers":           emptyRuntimeMCPServersPayload(),
+		"mcp_servers":           startSessionMCPServersPayload(runtimeMCPServers),
 		"metadata":              metadata,
 	}
+}
+
+func startSessionMCPServersPayload(servers []RuntimeMCPServerPayload) []map[string]any {
+	payload := make([]map[string]any, 0, len(servers))
+	for _, server := range servers {
+		payload = append(payload, map[string]any{
+			"server_id":          server.ServerID,
+			"server_key":         server.ServerKey,
+			"name":               server.Name,
+			"transport":          server.Transport,
+			"url":                server.URL,
+			"auth_strategy":      server.AuthStrategy,
+			"credential_env_var": server.CredentialEnvVar,
+			"required_env_vars":  stringSliceForRuntime(server.RequiredEnvVars),
+			"headers_env":        stringMapForRuntime(server.HeadersEnv),
+			"source_scope":       server.SourceScope,
+			"permission_scope":   mapForRuntime(server.PermissionScope),
+		})
+	}
+	return payload
+}
+
+func stringSliceForRuntime(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+func stringMapForRuntime(values map[string]string) map[string]string {
+	if values == nil {
+		return map[string]string{}
+	}
+	return values
+}
+
+func mapForRuntime(values map[string]any) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+	return values
 }
 
 func runtimeEnvironmentPayload(env []RuntimeEnvironmentVariablePayload) []map[string]any {
