@@ -2202,6 +2202,23 @@ func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (au
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
 }
 
+func (a *routeAuthorizer) CheckBulkTeamActions(_ context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if !a.allowed {
+		return nil, nil
+	}
+	allowed := make([]string, 0, len(req.Actions))
+	for _, action := range req.Actions {
+		if a.denyActions[action] {
+			continue
+		}
+		allowed = append(allowed, action)
+	}
+	return allowed, nil
+}
+
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {

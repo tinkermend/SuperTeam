@@ -234,8 +234,11 @@ func TestHandlerMapsCapabilityErrors(t *testing.T) {
 type handlerService struct {
 	err error
 
-	credential Credential
-	mcpServer  MCPServer
+	credential       Credential
+	mcpServer        MCPServer
+	mcpDefinition    MCPDefinition
+	mcpBinding       MCPBinding
+	effectiveServers []EffectiveMCPServer
 
 	createCredentialReq CreateCredentialRequest
 	listCredentialsReq  ListCredentialsRequest
@@ -246,6 +249,13 @@ type handlerService struct {
 	listEmployeeReq     EmployeeScopedRequest
 	deleteEmployeeReq   DeleteEmployeeMCPBindingRequest
 	effectiveReq        EmployeeScopedRequest
+
+	createDefinitionReq        CreateMCPServerDefinitionRequest
+	listDefinitionsReq         ListMCPServerDefinitionsRequest
+	deleteDefinitionReq        DeleteMCPServerDefinitionRequest
+	createTeamBindingReq       CreateTeamMCPBindingRequest
+	createEmployeeBindingV2Req CreateEmployeeMCPBindingV2Request
+	effectiveConfigReq         EmployeeScopedRequest
 }
 
 func (s *handlerService) CreateCredential(_ context.Context, req CreateCredentialRequest) (Credential, error) {
@@ -293,6 +303,36 @@ func (s *handlerService) ListEffectiveMCPServers(_ context.Context, req Employee
 	return []MCPServer{s.mcpServer}, s.err
 }
 
+func (s *handlerService) CreateMCPServerDefinition(_ context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error) {
+	s.createDefinitionReq = req
+	return s.mcpDefinition, s.err
+}
+
+func (s *handlerService) ListMCPServerDefinitions(_ context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error) {
+	s.listDefinitionsReq = req
+	return []MCPDefinition{s.mcpDefinition}, s.err
+}
+
+func (s *handlerService) DeleteMCPServerDefinition(_ context.Context, req DeleteMCPServerDefinitionRequest) error {
+	s.deleteDefinitionReq = req
+	return s.err
+}
+
+func (s *handlerService) CreateTeamMCPBinding(_ context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error) {
+	s.createTeamBindingReq = req
+	return s.mcpBinding, s.err
+}
+
+func (s *handlerService) CreateEmployeeMCPBindingV2(_ context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {
+	s.createEmployeeBindingV2Req = req
+	return s.mcpBinding, s.err
+}
+
+func (s *handlerService) ListEffectiveMCPConfig(_ context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
+	s.effectiveConfigReq = req
+	return s.effectiveServers, s.err
+}
+
 type handlerAuthorizer struct {
 	allowed bool
 	checks  []authz.CheckRequest
@@ -304,6 +344,10 @@ func (a *handlerAuthorizer) Check(_ context.Context, req authz.CheckRequest) (au
 		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed}, nil
 	}
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership}, nil
+}
+
+func (a *handlerAuthorizer) CheckBulkTeamActions(_ context.Context, _ authz.BulkTeamActionsRequest) ([]string, error) {
+	return nil, nil
 }
 
 func requestWithConsoleIdentity(req *http.Request, tenantID, userID uuid.UUID) *http.Request {

@@ -4,10 +4,17 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
 )
+
+// envNamePattern matches a POSIX-style environment variable name.
+var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// serverKeyPattern matches the stable MCP key rendered into provider config (e.g. "github").
+var serverKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 type Repository interface {
 	CreateCredential(ctx context.Context, req CreateCredentialStoreRequest) (Credential, error)
@@ -20,6 +27,20 @@ type Repository interface {
 	ListEmployeeMCPBindings(ctx context.Context, req EmployeeScopedRequest) ([]MCPServer, error)
 	DeleteEmployeeMCPBinding(ctx context.Context, req DeleteEmployeeMCPBindingRequest) error
 	ListEffectiveMCPServers(ctx context.Context, req EmployeeScopedRequest) ([]MCPServer, error)
+
+	// MCP HTTP capability registry (migration 037).
+	CreateMCPServerDefinition(ctx context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error)
+	ListMCPServerDefinitions(ctx context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error)
+	GetMCPServerDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error)
+	DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error
+	CreateTeamMCPBinding(ctx context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error)
+	ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error)
+	DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBindingRequest) error
+	CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error)
+	ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error)
+	DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error
+	ListEffectiveMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
+	ListConfiguredEmployeeEnvVarNames(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]string, error)
 }
 
 type Service struct {
@@ -207,6 +228,302 @@ func (s *Service) ListEffectiveMCPServers(ctx context.Context, req EmployeeScope
 		return nil, err
 	}
 	return s.repository.ListEffectiveMCPServers(ctx, req)
+}
+
+// CreateMCPServerDefinition registers a tenant-level MCP HTTP definition after enforcing
+// HTTP-only transport and valid env-var names.
+func (s *Service) CreateMCPServerDefinition(ctx context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error) {
+	if err := s.requireRepository(); err != nil {
+		return MCPDefinition{}, err
+	}
+	if req.AuthStrategy == "" {
+		req.AuthStrategy = MCPAuthStrategyNone
+	}
+	if strings.TrimSpace(req.RiskLevel) == "" {
+		req.RiskLevel = "medium"
+	}
+	if err := validateMCPDefinitionInput(req); err != nil {
+		return MCPDefinition{}, err
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.ServerKey = strings.TrimSpace(req.ServerKey)
+	req.Description = strings.TrimSpace(req.Description)
+	req.URL = strings.TrimSpace(req.URL)
+	req.RequiredEnvVars = trimEnvNames(req.RequiredEnvVars)
+	req.OptionalEnvVars = trimEnvNames(req.OptionalEnvVars)
+	return s.repository.CreateMCPServerDefinition(ctx, req)
+}
+
+func (s *Service) ListMCPServerDefinitions(ctx context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListMCPServerDefinitions(ctx, req)
+}
+
+func (s *Service) DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error {
+	if err := s.requireRepository(); err != nil {
+		return err
+	}
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ServerID == uuid.Nil {
+		return fmt.Errorf("%w: server_id is required", ErrInvalidInput)
+	}
+	return s.repository.DeleteMCPServerDefinition(ctx, req)
+}
+
+// CreateTeamMCPBinding binds a registered MCP to a team. The MCP must exist and be active.
+// Team-level env-var preflight is advisory because each employee carries its own env values.
+func (s *Service) CreateTeamMCPBinding(ctx context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return MCPBinding{}, err
+	}
+	if req.TenantID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.MCPServerID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: mcp_server_id is required", ErrInvalidInput)
+	}
+	if err := validateCredentialEnvVar(req.CredentialEnvVar); err != nil {
+		return MCPBinding{}, err
+	}
+	if _, err := s.requireActiveMCPDefinition(ctx, req.TenantID, req.MCPServerID); err != nil {
+		return MCPBinding{}, err
+	}
+	req.CredentialEnvVar = strings.TrimSpace(req.CredentialEnvVar)
+	return s.repository.CreateTeamMCPBinding(ctx, req)
+}
+
+func (s *Service) ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if err := validateTeamScopedRequest(req); err != nil {
+		return nil, err
+	}
+	return s.repository.ListTeamMCPBindings(ctx, req)
+}
+
+func (s *Service) DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBindingRequest) error {
+	if err := s.requireRepository(); err != nil {
+		return err
+	}
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.BindingID == uuid.Nil {
+		return fmt.Errorf("%w: binding_id is required", ErrInvalidInput)
+	}
+	return s.repository.DeleteTeamMCPBinding(ctx, req)
+}
+
+// CreateEmployeeMCPBindingV2 binds a registered MCP to a digital employee. The MCP must exist
+// and be active; the returned binding carries a preflight (MissingEnvVars / blocked_missing_env)
+// computed against the employee's configured env vars.
+func (s *Service) CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return MCPBinding{}, err
+	}
+	if req.TenantID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.MCPServerID == uuid.Nil {
+		return MCPBinding{}, fmt.Errorf("%w: mcp_server_id is required", ErrInvalidInput)
+	}
+	if err := validateCredentialEnvVar(req.CredentialEnvVar); err != nil {
+		return MCPBinding{}, err
+	}
+	definition, err := s.requireActiveMCPDefinition(ctx, req.TenantID, req.MCPServerID)
+	if err != nil {
+		return MCPBinding{}, err
+	}
+	req.CredentialEnvVar = strings.TrimSpace(req.CredentialEnvVar)
+	binding, err := s.repository.CreateEmployeeMCPBindingV2(ctx, req)
+	if err != nil {
+		return MCPBinding{}, err
+	}
+	missing, err := s.missingEnvVarsForEmployee(ctx, req.TenantID, req.DigitalEmployeeID, definition.RequiredEnvVars)
+	if err != nil {
+		return MCPBinding{}, err
+	}
+	binding.MissingEnvVars = missing
+	return binding, nil
+}
+
+func (s *Service) ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if err := validateEmployeeScopedRequest(req); err != nil {
+		return nil, err
+	}
+	bindings, err := s.repository.ListEmployeeMCPBindingsV2(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	configured, err := s.repository.ListConfiguredEmployeeEnvVarNames(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	configuredSet := stringSet(configured)
+	for i := range bindings {
+		bindings[i].MissingEnvVars = missingFromSet(bindings[i].RequiredEnvVars, configuredSet)
+	}
+	return bindings, nil
+}
+
+func (s *Service) DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error {
+	if err := s.requireRepository(); err != nil {
+		return err
+	}
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.BindingID == uuid.Nil {
+		return fmt.Errorf("%w: binding_id is required", ErrInvalidInput)
+	}
+	return s.repository.DeleteEmployeeMCPBindingV2(ctx, req)
+}
+
+// ListEffectiveMCPConfig resolves the effective MCP servers for an employee (team-inherited
+// plus personal), each annotated with MissingEnvVars. Callers that build the Runtime payload
+// must exclude entries whose BindingStatus is blocked_missing_env.
+func (s *Service) ListEffectiveMCPConfig(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if err := validateEmployeeScopedRequest(req); err != nil {
+		return nil, err
+	}
+	return s.repository.ListEffectiveMCPBindingsV2(ctx, req)
+}
+
+func (s *Service) requireActiveMCPDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {
+	definition, err := s.repository.GetMCPServerDefinition(ctx, tenantID, serverID)
+	if err != nil {
+		return MCPDefinition{}, err
+	}
+	if definition.Status != "active" {
+		return MCPDefinition{}, fmt.Errorf("%w: mcp server is not active", ErrInvalidInput)
+	}
+	return definition, nil
+}
+
+func (s *Service) missingEnvVarsForEmployee(ctx context.Context, tenantID, employeeID uuid.UUID, required []string) ([]string, error) {
+	if len(required) == 0 {
+		return nil, nil
+	}
+	configured, err := s.repository.ListConfiguredEmployeeEnvVarNames(ctx, tenantID, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	return missingFromSet(required, stringSet(configured)), nil
+}
+
+func validateMCPDefinitionInput(req CreateMCPServerDefinitionRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return fmt.Errorf("%w: mcp name is required", ErrInvalidInput)
+	}
+	key := strings.TrimSpace(req.ServerKey)
+	if key == "" {
+		return fmt.Errorf("%w: server_key is required", ErrInvalidInput)
+	}
+	if !serverKeyPattern.MatchString(key) {
+		return fmt.Errorf("%w: server_key must match [A-Za-z0-9_-]+", ErrInvalidInput)
+	}
+	if req.Transport != MCPTransportHTTP && req.Transport != MCPTransportStreamableHTTP {
+		return fmt.Errorf("%w: transport must be http or streamable_http", ErrInvalidInput)
+	}
+	parsed, err := url.Parse(strings.TrimSpace(req.URL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%w: mcp url must be an absolute http url", ErrInvalidInput)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%w: mcp url must use http or https", ErrInvalidInput)
+	}
+	switch req.AuthStrategy {
+	case MCPAuthStrategyNone, MCPAuthStrategyBearerEnv, MCPAuthStrategyHeadersEnv:
+	default:
+		return fmt.Errorf("%w: invalid auth_strategy %q", ErrInvalidInput, req.AuthStrategy)
+	}
+	for _, name := range append(append([]string{}, req.RequiredEnvVars...), req.OptionalEnvVars...) {
+		if !envNamePattern.MatchString(strings.TrimSpace(name)) {
+			return fmt.Errorf("%w: invalid environment variable name %q", ErrInvalidInput, name)
+		}
+	}
+	return nil
+}
+
+func validateCredentialEnvVar(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil
+	}
+	if !envNamePattern.MatchString(trimmed) {
+		return fmt.Errorf("%w: invalid credential env var name %q", ErrInvalidInput, name)
+	}
+	return nil
+}
+
+func trimEnvNames(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func missingFromSet(required []string, configured map[string]struct{}) []string {
+	missing := make([]string, 0)
+	for _, name := range required {
+		if _, ok := configured[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return missing
 }
 
 func (s *Service) requireRepository() error {

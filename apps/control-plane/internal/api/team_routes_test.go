@@ -374,8 +374,11 @@ func TestTeamMCPRoutesUseConsoleAuthAndCapabilityManage(t *testing.T) {
 }
 
 type routeCapabilityService struct {
-	credential capability.Credential
-	mcpServer  capability.MCPServer
+	credential       capability.Credential
+	mcpServer        capability.MCPServer
+	mcpDefinition    capability.MCPDefinition
+	mcpBinding       capability.MCPBinding
+	effectiveServers []capability.EffectiveMCPServer
 
 	createCredentialReq capability.CreateCredentialRequest
 	listCredentialsReq  capability.ListCredentialsRequest
@@ -386,6 +389,13 @@ type routeCapabilityService struct {
 	listEmployeeReq     capability.EmployeeScopedRequest
 	deleteEmployeeReq   capability.DeleteEmployeeMCPBindingRequest
 	effectiveReq        capability.EmployeeScopedRequest
+
+	createDefinitionReq        capability.CreateMCPServerDefinitionRequest
+	listDefinitionsReq         capability.ListMCPServerDefinitionsRequest
+	deleteDefinitionReq        capability.DeleteMCPServerDefinitionRequest
+	createTeamBindingReq       capability.CreateTeamMCPBindingRequest
+	createEmployeeBindingV2Req capability.CreateEmployeeMCPBindingV2Request
+	effectiveConfigReq         capability.EmployeeScopedRequest
 }
 
 func (s *routeCapabilityService) CreateCredential(ctx context.Context, req capability.CreateCredentialRequest) (capability.Credential, error) {
@@ -431,6 +441,36 @@ func (s *routeCapabilityService) DeleteEmployeeMCPBinding(ctx context.Context, r
 func (s *routeCapabilityService) ListEffectiveMCPServers(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
 	s.effectiveReq = req
 	return []capability.MCPServer{s.mcpServer}, nil
+}
+
+func (s *routeCapabilityService) CreateMCPServerDefinition(ctx context.Context, req capability.CreateMCPServerDefinitionRequest) (capability.MCPDefinition, error) {
+	s.createDefinitionReq = req
+	return s.mcpDefinition, nil
+}
+
+func (s *routeCapabilityService) ListMCPServerDefinitions(ctx context.Context, req capability.ListMCPServerDefinitionsRequest) ([]capability.MCPDefinition, error) {
+	s.listDefinitionsReq = req
+	return []capability.MCPDefinition{s.mcpDefinition}, nil
+}
+
+func (s *routeCapabilityService) DeleteMCPServerDefinition(ctx context.Context, req capability.DeleteMCPServerDefinitionRequest) error {
+	s.deleteDefinitionReq = req
+	return nil
+}
+
+func (s *routeCapabilityService) CreateTeamMCPBinding(ctx context.Context, req capability.CreateTeamMCPBindingRequest) (capability.MCPBinding, error) {
+	s.createTeamBindingReq = req
+	return s.mcpBinding, nil
+}
+
+func (s *routeCapabilityService) CreateEmployeeMCPBindingV2(ctx context.Context, req capability.CreateEmployeeMCPBindingV2Request) (capability.MCPBinding, error) {
+	s.createEmployeeBindingV2Req = req
+	return s.mcpBinding, nil
+}
+
+func (s *routeCapabilityService) ListEffectiveMCPConfig(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.EffectiveMCPServer, error) {
+	s.effectiveConfigReq = req
+	return s.effectiveServers, nil
 }
 
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {

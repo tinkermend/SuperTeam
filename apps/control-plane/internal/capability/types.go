@@ -126,3 +126,169 @@ type DeleteEmployeeMCPBindingRequest struct {
 	DigitalEmployeeID uuid.UUID
 	BindingID         uuid.UUID
 }
+
+// ----------------------------------------------------------------------------
+// MCP HTTP capability registry (migration 037)
+// ----------------------------------------------------------------------------
+
+type MCPTransport string
+
+const (
+	MCPTransportStreamableHTTP MCPTransport = "streamable_http"
+	MCPTransportHTTP           MCPTransport = "http"
+)
+
+type MCPAuthStrategy string
+
+const (
+	MCPAuthStrategyNone       MCPAuthStrategy = "none"
+	MCPAuthStrategyBearerEnv  MCPAuthStrategy = "bearer_env"
+	MCPAuthStrategyHeadersEnv MCPAuthStrategy = "headers_env"
+)
+
+// MCPBindingStatusBlockedMissingEnv is a derived (not stored) preflight status that marks a
+// binding whose MCP requires env vars the target employee has not configured. The DB status
+// stays "active"; Runtime projection excludes blocked bindings.
+const (
+	MCPBindingStatusActive            = "active"
+	MCPBindingStatusBlockedMissingEnv = "blocked_missing_env"
+)
+
+// MCPDefinition is a tenant-level MCP HTTP capability definition.
+type MCPDefinition struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	Name               string
+	ServerKey          string
+	Description        string
+	Transport          MCPTransport
+	URL                string
+	AuthStrategy       MCPAuthStrategy
+	RequiredEnvVars    []string
+	OptionalEnvVars    []string
+	ProviderVisibility map[string]bool
+	ToolAllowlist      []string
+	RiskLevel          string
+	Status             string
+	CreatedBy          *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+// MCPBinding represents a team or employee binding to a registered MCP definition, enriched
+// with the definition's projection fields and a preflight (MissingEnvVars) computed against
+// the target employee's configured env vars where applicable.
+type MCPBinding struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            *uuid.UUID
+	DigitalEmployeeID *uuid.UUID
+	MCPServerID       uuid.UUID
+	CredentialEnvVar  string
+	Status            string
+	ServerName        string
+	ServerKey         string
+	URL               string
+	Transport         MCPTransport
+	AuthStrategy      MCPAuthStrategy
+	RequiredEnvVars   []string
+	RiskLevel         string
+	SourceScope       string
+	MissingEnvVars    []string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// PreflightStatus returns the derived binding status accounting for missing env vars.
+func (b MCPBinding) PreflightStatus() string {
+	if len(b.MissingEnvVars) > 0 {
+		return MCPBindingStatusBlockedMissingEnv
+	}
+	if b.Status == "" {
+		return MCPBindingStatusActive
+	}
+	return b.Status
+}
+
+// EffectiveMCPServer is one resolved effective MCP server for an employee, ready for runtime
+// projection. Blocked (missing-env) entries are surfaced to Console but excluded from the
+// Runtime payload by the caller.
+type EffectiveMCPServer struct {
+	ServerID         uuid.UUID
+	ServerKey        string
+	Name             string
+	Transport        MCPTransport
+	URL              string
+	AuthStrategy     MCPAuthStrategy
+	CredentialEnvVar string
+	RequiredEnvVars  []string
+	ToolAllowlist    []string
+	RiskLevel        string
+	SourceScope      string
+	MissingEnvVars   []string
+}
+
+// BindingStatus reports active or blocked_missing_env for the effective server.
+func (s EffectiveMCPServer) BindingStatus() string {
+	if len(s.MissingEnvVars) > 0 {
+		return MCPBindingStatusBlockedMissingEnv
+	}
+	return MCPBindingStatusActive
+}
+
+type CreateMCPServerDefinitionRequest struct {
+	TenantID           uuid.UUID
+	UserID             uuid.UUID
+	Name               string
+	ServerKey          string
+	Description        string
+	Transport          MCPTransport
+	URL                string
+	AuthStrategy       MCPAuthStrategy
+	RequiredEnvVars    []string
+	OptionalEnvVars    []string
+	ProviderVisibility map[string]bool
+	ToolAllowlist      []string
+	RiskLevel          string
+}
+
+type ListMCPServerDefinitionsRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+}
+
+type DeleteMCPServerDefinitionRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	ServerID uuid.UUID
+}
+
+type CreateTeamMCPBindingRequest struct {
+	TenantID         uuid.UUID
+	TeamID           uuid.UUID
+	UserID           uuid.UUID
+	MCPServerID      uuid.UUID
+	CredentialEnvVar string
+}
+
+type DeleteTeamMCPBindingRequest struct {
+	TenantID  uuid.UUID
+	TeamID    uuid.UUID
+	UserID    uuid.UUID
+	BindingID uuid.UUID
+}
+
+type CreateEmployeeMCPBindingV2Request struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	UserID            uuid.UUID
+	MCPServerID       uuid.UUID
+	CredentialEnvVar  string
+}
+
+type DeleteEmployeeMCPBindingV2Request struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	UserID            uuid.UUID
+	BindingID         uuid.UUID
+}

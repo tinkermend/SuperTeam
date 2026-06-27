@@ -23,6 +23,13 @@ type HandlerService interface {
 	ListEmployeeMCPBindings(ctx context.Context, req EmployeeScopedRequest) ([]MCPServer, error)
 	DeleteEmployeeMCPBinding(ctx context.Context, req DeleteEmployeeMCPBindingRequest) error
 	ListEffectiveMCPServers(ctx context.Context, req EmployeeScopedRequest) ([]MCPServer, error)
+
+	CreateMCPServerDefinition(ctx context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error)
+	ListMCPServerDefinitions(ctx context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error)
+	DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error
+	CreateTeamMCPBinding(ctx context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error)
+	CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error)
+	ListEffectiveMCPConfig(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
 }
 
 type HTTPHandler struct {
@@ -280,6 +287,175 @@ func (h *HTTPHandler) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, mcpServerResponses(servers))
 }
 
+// ----------------------------------------------------------------------------
+// MCP HTTP capability registry (migration 037)
+// ----------------------------------------------------------------------------
+
+func (h *HTTPHandler) ListMCPServerDefinitions(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionMCPRegistryRead, authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()}, "mcp registry read", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	definitions, err := service.ListMCPServerDefinitions(r.Context(), ListMCPServerDefinitionsRequest{TenantID: tenantID, UserID: userID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mcpDefinitionResponses(definitions))
+}
+
+func (h *HTTPHandler) CreateMCPServerDefinition(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionMCPRegistryManage, authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()}, "mcp registry create", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body mcpDefinitionRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	definition, err := service.CreateMCPServerDefinition(r.Context(), CreateMCPServerDefinitionRequest{
+		TenantID:           tenantID,
+		UserID:             userID,
+		Name:               body.Name,
+		ServerKey:          body.ServerKey,
+		Description:        body.Description,
+		Transport:          MCPTransport(body.Transport),
+		URL:                body.URL,
+		AuthStrategy:       MCPAuthStrategy(body.AuthStrategy),
+		RequiredEnvVars:    body.RequiredEnvVars,
+		OptionalEnvVars:    body.OptionalEnvVars,
+		ProviderVisibility: body.ProviderVisibility,
+		ToolAllowlist:      body.ToolAllowlist,
+		RiskLevel:          body.RiskLevel,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, mcpDefinitionResponseFromDomain(definition))
+}
+
+func (h *HTTPHandler) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request) {
+	serverID, ok := uuidParam(w, r, "serverId", "invalid mcp server id")
+	if !ok {
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	tenantID, _, ok = h.authorize(w, r, authz.ActionMCPRegistryManage, authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()}, "mcp registry delete", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteMCPServerDefinition(r.Context(), DeleteMCPServerDefinitionRequest{TenantID: tenantID, ServerID: serverID}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) CreateTeamMCPBinding(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := uuidParam(w, r, "teamId", "invalid team id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp binding create", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body mcpBindingRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	binding, err := service.CreateTeamMCPBinding(r.Context(), CreateTeamMCPBindingRequest{
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		UserID:           userID,
+		MCPServerID:      body.MCPServerID,
+		CredentialEnvVar: body.CredentialEnvVar,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, mcpBindingResponseFromDomain(binding))
+}
+
+func (h *HTTPHandler) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := uuidParam(w, r, "employeeId", "invalid employee id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionEmployeeCapabilityEdit, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee mcp binding create", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body mcpBindingRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	binding, err := service.CreateEmployeeMCPBindingV2(r.Context(), CreateEmployeeMCPBindingV2Request{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		UserID:            userID,
+		MCPServerID:       body.MCPServerID,
+		CredentialEnvVar:  body.CredentialEnvVar,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, mcpBindingResponseFromDomain(binding))
+}
+
+func (h *HTTPHandler) ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := uuidParam(w, r, "employeeId", "invalid employee id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionEmployeeRead, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "effective employee mcp config read", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	servers, err := service.ListEffectiveMCPConfig(r.Context(), EmployeeScopedRequest{
+		TenantID:          tenantID,
+		UserID:            userID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, effectiveMCPServerResponses(servers))
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "capability service is not configured", http.StatusServiceUnavailable)
@@ -322,6 +498,167 @@ type mcpServerRequest struct {
 	Name         string     `json:"name"`
 	URL          string     `json:"url"`
 	CredentialID *uuid.UUID `json:"credential_id"`
+}
+
+type mcpDefinitionRequest struct {
+	Name               string          `json:"name"`
+	ServerKey          string          `json:"server_key"`
+	Description        string          `json:"description"`
+	Transport          string          `json:"transport"`
+	URL                string          `json:"url"`
+	AuthStrategy       string          `json:"auth_strategy"`
+	RequiredEnvVars    []string        `json:"required_env_vars"`
+	OptionalEnvVars    []string        `json:"optional_env_vars"`
+	ProviderVisibility map[string]bool `json:"provider_visibility"`
+	ToolAllowlist      []string        `json:"tool_allowlist"`
+	RiskLevel          string          `json:"risk_level"`
+}
+
+type mcpBindingRequest struct {
+	MCPServerID      uuid.UUID `json:"mcp_server_id"`
+	CredentialEnvVar string    `json:"credential_env_var"`
+}
+
+type mcpDefinitionResponse struct {
+	ID                 string          `json:"id"`
+	TenantID           string          `json:"tenant_id"`
+	Name               string          `json:"name"`
+	ServerKey          string          `json:"server_key"`
+	Description        string          `json:"description"`
+	Transport          string          `json:"transport"`
+	URL                string          `json:"url"`
+	AuthStrategy       string          `json:"auth_strategy"`
+	RequiredEnvVars    []string        `json:"required_env_vars"`
+	OptionalEnvVars    []string        `json:"optional_env_vars"`
+	ProviderVisibility map[string]bool `json:"provider_visibility,omitempty"`
+	ToolAllowlist      []string        `json:"tool_allowlist"`
+	RiskLevel          string          `json:"risk_level"`
+	Status             string          `json:"status"`
+	CreatedAt          string          `json:"created_at,omitempty"`
+	UpdatedAt          string          `json:"updated_at,omitempty"`
+}
+
+type mcpBindingResponse struct {
+	ID                string   `json:"id"`
+	TenantID          string   `json:"tenant_id"`
+	TeamID            string   `json:"team_id,omitempty"`
+	DigitalEmployeeID string   `json:"digital_employee_id,omitempty"`
+	MCPServerID       string   `json:"mcp_server_id"`
+	ServerKey         string   `json:"server_key,omitempty"`
+	ServerName        string   `json:"server_name,omitempty"`
+	URL               string   `json:"url,omitempty"`
+	Transport         string   `json:"transport,omitempty"`
+	AuthStrategy      string   `json:"auth_strategy,omitempty"`
+	CredentialEnvVar  string   `json:"credential_env_var,omitempty"`
+	RequiredEnvVars   []string `json:"required_env_vars,omitempty"`
+	MissingEnvVars    []string `json:"missing_env_vars,omitempty"`
+	SourceScope       string   `json:"source_scope,omitempty"`
+	Status            string   `json:"status"`
+	RiskLevel         string   `json:"risk_level,omitempty"`
+	CreatedAt         string   `json:"created_at,omitempty"`
+	UpdatedAt         string   `json:"updated_at,omitempty"`
+}
+
+type effectiveMCPServerResponse struct {
+	ServerID         string   `json:"server_id"`
+	ServerKey        string   `json:"server_key"`
+	Name             string   `json:"name"`
+	Transport        string   `json:"transport"`
+	URL              string   `json:"url"`
+	AuthStrategy     string   `json:"auth_strategy"`
+	CredentialEnvVar string   `json:"credential_env_var,omitempty"`
+	RequiredEnvVars  []string `json:"required_env_vars,omitempty"`
+	MissingEnvVars   []string `json:"missing_env_vars,omitempty"`
+	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
+	RiskLevel        string   `json:"risk_level,omitempty"`
+	SourceScope      string   `json:"source_scope"`
+	Status           string   `json:"status"`
+}
+
+func mcpDefinitionResponses(definitions []MCPDefinition) []mcpDefinitionResponse {
+	responses := make([]mcpDefinitionResponse, 0, len(definitions))
+	for _, item := range definitions {
+		responses = append(responses, mcpDefinitionResponseFromDomain(item))
+	}
+	return responses
+}
+
+func mcpDefinitionResponseFromDomain(item MCPDefinition) mcpDefinitionResponse {
+	return mcpDefinitionResponse{
+		ID:                 item.ID.String(),
+		TenantID:           item.TenantID.String(),
+		Name:               item.Name,
+		ServerKey:          item.ServerKey,
+		Description:        item.Description,
+		Transport:          string(item.Transport),
+		URL:                item.URL,
+		AuthStrategy:       string(item.AuthStrategy),
+		RequiredEnvVars:    nonNilStrings(item.RequiredEnvVars),
+		OptionalEnvVars:    nonNilStrings(item.OptionalEnvVars),
+		ProviderVisibility: item.ProviderVisibility,
+		ToolAllowlist:      nonNilStrings(item.ToolAllowlist),
+		RiskLevel:          item.RiskLevel,
+		Status:             item.Status,
+		CreatedAt:          formatTime(item.CreatedAt),
+		UpdatedAt:          formatTime(item.UpdatedAt),
+	}
+}
+
+func mcpBindingResponseFromDomain(item MCPBinding) mcpBindingResponse {
+	response := mcpBindingResponse{
+		ID:               item.ID.String(),
+		TenantID:         item.TenantID.String(),
+		MCPServerID:      item.MCPServerID.String(),
+		ServerKey:        item.ServerKey,
+		ServerName:       item.ServerName,
+		URL:              item.URL,
+		Transport:        string(item.Transport),
+		AuthStrategy:     string(item.AuthStrategy),
+		CredentialEnvVar: item.CredentialEnvVar,
+		RequiredEnvVars:  item.RequiredEnvVars,
+		MissingEnvVars:   item.MissingEnvVars,
+		SourceScope:      item.SourceScope,
+		Status:           item.PreflightStatus(),
+		RiskLevel:        item.RiskLevel,
+		CreatedAt:        formatTime(item.CreatedAt),
+		UpdatedAt:        formatTime(item.UpdatedAt),
+	}
+	if item.TeamID != nil {
+		response.TeamID = item.TeamID.String()
+	}
+	if item.DigitalEmployeeID != nil {
+		response.DigitalEmployeeID = item.DigitalEmployeeID.String()
+	}
+	return response
+}
+
+func effectiveMCPServerResponses(servers []EffectiveMCPServer) []effectiveMCPServerResponse {
+	responses := make([]effectiveMCPServerResponse, 0, len(servers))
+	for _, item := range servers {
+		responses = append(responses, effectiveMCPServerResponse{
+			ServerID:         item.ServerID.String(),
+			ServerKey:        item.ServerKey,
+			Name:             item.Name,
+			Transport:        string(item.Transport),
+			URL:              item.URL,
+			AuthStrategy:     string(item.AuthStrategy),
+			CredentialEnvVar: item.CredentialEnvVar,
+			RequiredEnvVars:  item.RequiredEnvVars,
+			MissingEnvVars:   item.MissingEnvVars,
+			ToolAllowlist:    item.ToolAllowlist,
+			RiskLevel:        item.RiskLevel,
+			SourceScope:      item.SourceScope,
+			Status:           item.BindingStatus(),
+		})
+	}
+	return responses
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 type credentialResponse struct {

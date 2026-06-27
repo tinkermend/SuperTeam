@@ -1985,6 +1985,117 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/mcp-servers:
+    get:
+      operationId: listMCPServerDefinitions
+      summary: List tenant MCP HTTP capability definitions
+      responses:
+        "200":
+          description: MCP server definition list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServerDefinition"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createMCPServerDefinition
+      summary: Register a tenant MCP HTTP capability definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMCPServerDefinitionRequest"
+      responses:
+        "201":
+          description: MCP server definition created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServerDefinition"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/mcp-servers/{serverId}:
+    delete:
+      operationId: deleteMCPServerDefinition
+      summary: Delete a tenant MCP HTTP capability definition
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "204":
+          description: MCP server definition deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/mcp-bindings:
+    post:
+      operationId: createTeamMCPBinding
+      summary: Bind a registered MCP server to a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMCPBindingRequest"
+      responses:
+        "201":
+          description: Team MCP binding created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPBinding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/mcp-bindings-v2:
+    post:
+      operationId: createEmployeeMCPBindingV2
+      summary: Bind a registered MCP server to a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMCPBindingRequest"
+      responses:
+        "201":
+          description: Employee MCP binding created with env-var preflight
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPBinding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/effective-mcp-config:
+    get:
+      operationId: listEffectiveMCPConfig
+      summary: List the effective MCP servers projected for a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Effective MCP server list with missing-env preflight
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EffectiveMCPConfigServer"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/overview:
     get:
       operationId: getTeamOverview
@@ -8056,6 +8167,227 @@ components:
         credential_id:
           type: string
           format: uuid
+    MCPTransport:
+      type: string
+      enum:
+        - streamable_http
+        - http
+    MCPAuthStrategy:
+      type: string
+      enum:
+        - none
+        - bearer_env
+        - headers_env
+    MCPServerDefinition:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - name
+        - server_key
+        - transport
+        - url
+        - auth_strategy
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        server_key:
+          type: string
+        description:
+          type: string
+        transport:
+          $ref: "#/components/schemas/MCPTransport"
+        url:
+          type: string
+          format: uri
+        auth_strategy:
+          $ref: "#/components/schemas/MCPAuthStrategy"
+        required_env_vars:
+          type: array
+          items:
+            type: string
+        optional_env_vars:
+          type: array
+          items:
+            type: string
+        provider_visibility:
+          type: object
+          additionalProperties:
+            type: boolean
+        tool_allowlist:
+          type: array
+          items:
+            type: string
+        risk_level:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateMCPServerDefinitionRequest:
+      type: object
+      required:
+        - name
+        - server_key
+        - transport
+        - url
+      properties:
+        name:
+          type: string
+          minLength: 1
+        server_key:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        transport:
+          $ref: "#/components/schemas/MCPTransport"
+        url:
+          type: string
+          format: uri
+        auth_strategy:
+          $ref: "#/components/schemas/MCPAuthStrategy"
+        required_env_vars:
+          type: array
+          items:
+            type: string
+        optional_env_vars:
+          type: array
+          items:
+            type: string
+        provider_visibility:
+          type: object
+          additionalProperties:
+            type: boolean
+        tool_allowlist:
+          type: array
+          items:
+            type: string
+        risk_level:
+          type: string
+    CreateMCPBindingRequest:
+      type: object
+      required:
+        - mcp_server_id
+      properties:
+        mcp_server_id:
+          type: string
+          format: uuid
+        credential_env_var:
+          type: string
+    MCPBinding:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - mcp_server_id
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        mcp_server_id:
+          type: string
+          format: uuid
+        server_key:
+          type: string
+        server_name:
+          type: string
+        url:
+          type: string
+          format: uri
+        transport:
+          $ref: "#/components/schemas/MCPTransport"
+        auth_strategy:
+          $ref: "#/components/schemas/MCPAuthStrategy"
+        credential_env_var:
+          type: string
+        required_env_vars:
+          type: array
+          items:
+            type: string
+        missing_env_vars:
+          type: array
+          items:
+            type: string
+        source_scope:
+          type: string
+        status:
+          type: string
+        risk_level:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    EffectiveMCPConfigServer:
+      type: object
+      required:
+        - server_id
+        - server_key
+        - name
+        - transport
+        - url
+        - auth_strategy
+        - source_scope
+        - status
+      properties:
+        server_id:
+          type: string
+          format: uuid
+        server_key:
+          type: string
+        name:
+          type: string
+        transport:
+          $ref: "#/components/schemas/MCPTransport"
+        url:
+          type: string
+          format: uri
+        auth_strategy:
+          $ref: "#/components/schemas/MCPAuthStrategy"
+        credential_env_var:
+          type: string
+        required_env_vars:
+          type: array
+          items:
+            type: string
+        missing_env_vars:
+          type: array
+          items:
+            type: string
+        tool_allowlist:
+          type: array
+          items:
+            type: string
+        risk_level:
+          type: string
+        source_scope:
+          type: string
+        status:
+          type: string
     WorkspaceFile:
       type: object
       required:

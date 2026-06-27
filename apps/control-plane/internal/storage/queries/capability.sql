@@ -381,21 +381,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 
 -- name: ListEffectiveMCPBindingsV2ForEmployee :many
 -- Effective MCP bindings for an employee: team-inherited plus personal, joined to the
--- registry definition and to the employee's configured env-var names so the caller can
--- compute missing required env vars. credential values are never returned here.
+-- registry definition. The caller computes missing required env vars by intersecting
+-- required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
+-- returned here.
 WITH target_employee AS (
     SELECT tenant_id, id AS digital_employee_id, team_id
     FROM digital_employees
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid
       AND id = sqlc.arg('digital_employee_id')::uuid
-      AND deleted_at IS NULL
-),
-configured_env AS (
-    SELECT array_agg(name) AS names
-    FROM digital_employee_environment_variables
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-      AND status = 'active'
       AND deleted_at IS NULL
 )
 SELECT
@@ -412,10 +405,8 @@ SELECT
     m.risk_level,
     tb.credential_env_var,
     'team'::text AS source_scope,
-    tb.status AS binding_status,
-    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+    tb.status AS binding_status
 FROM target_employee
-CROSS JOIN configured_env
 JOIN team_mcp_bindings tb ON tb.tenant_id = target_employee.tenant_id
     AND tb.team_id = target_employee.team_id
     AND tb.deleted_at IS NULL
@@ -439,10 +430,8 @@ SELECT
     m.risk_level,
     eb.credential_env_var,
     'employee'::text AS source_scope,
-    eb.status AS binding_status,
-    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+    eb.status AS binding_status
 FROM target_employee
-CROSS JOIN configured_env
 JOIN digital_employee_mcp_bindings_v2 eb ON eb.tenant_id = target_employee.tenant_id
     AND eb.digital_employee_id = target_employee.digital_employee_id
     AND eb.deleted_at IS NULL

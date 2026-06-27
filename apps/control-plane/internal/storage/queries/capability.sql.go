@@ -712,14 +712,6 @@ WITH target_employee AS (
     WHERE tenant_id = $1::uuid
       AND id = $2::uuid
       AND deleted_at IS NULL
-),
-configured_env AS (
-    SELECT array_agg(name) AS names
-    FROM digital_employee_environment_variables
-    WHERE tenant_id = $1::uuid
-      AND digital_employee_id = $2::uuid
-      AND status = 'active'
-      AND deleted_at IS NULL
 )
 SELECT
     m.id AS server_id,
@@ -735,10 +727,8 @@ SELECT
     m.risk_level,
     tb.credential_env_var,
     'team'::text AS source_scope,
-    tb.status AS binding_status,
-    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+    tb.status AS binding_status
 FROM target_employee
-CROSS JOIN configured_env
 JOIN team_mcp_bindings tb ON tb.tenant_id = target_employee.tenant_id
     AND tb.team_id = target_employee.team_id
     AND tb.deleted_at IS NULL
@@ -762,10 +752,8 @@ SELECT
     m.risk_level,
     eb.credential_env_var,
     'employee'::text AS source_scope,
-    eb.status AS binding_status,
-    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+    eb.status AS binding_status
 FROM target_employee
-CROSS JOIN configured_env
 JOIN digital_employee_mcp_bindings_v2 eb ON eb.tenant_id = target_employee.tenant_id
     AND eb.digital_employee_id = target_employee.digital_employee_id
     AND eb.deleted_at IS NULL
@@ -792,26 +780,26 @@ type ListEffectiveMCPBindingsV2ForEmployeeParams struct {
 }
 
 type ListEffectiveMCPBindingsV2ForEmployeeRow struct {
-	ServerID              uuid.UUID   `json:"server_id"`
-	TenantID              uuid.UUID   `json:"tenant_id"`
-	DigitalEmployeeID     uuid.UUID   `json:"digital_employee_id"`
-	Name                  string      `json:"name"`
-	ServerKey             string      `json:"server_key"`
-	Transport             string      `json:"transport"`
-	Url                   string      `json:"url"`
-	AuthStrategy          string      `json:"auth_strategy"`
-	RequiredEnvVars       []string    `json:"required_env_vars"`
-	ToolAllowlist         []string    `json:"tool_allowlist"`
-	RiskLevel             string      `json:"risk_level"`
-	CredentialEnvVar      pgtype.Text `json:"credential_env_var"`
-	SourceScope           string      `json:"source_scope"`
-	BindingStatus         string      `json:"binding_status"`
-	ConfiguredEnvVarNames interface{} `json:"configured_env_var_names"`
+	ServerID          uuid.UUID   `json:"server_id"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID   `json:"digital_employee_id"`
+	Name              string      `json:"name"`
+	ServerKey         string      `json:"server_key"`
+	Transport         string      `json:"transport"`
+	Url               string      `json:"url"`
+	AuthStrategy      string      `json:"auth_strategy"`
+	RequiredEnvVars   []string    `json:"required_env_vars"`
+	ToolAllowlist     []string    `json:"tool_allowlist"`
+	RiskLevel         string      `json:"risk_level"`
+	CredentialEnvVar  pgtype.Text `json:"credential_env_var"`
+	SourceScope       string      `json:"source_scope"`
+	BindingStatus     string      `json:"binding_status"`
 }
 
 // Effective MCP bindings for an employee: team-inherited plus personal, joined to the
-// registry definition and to the employee's configured env-var names so the caller can
-// compute missing required env vars. credential values are never returned here.
+// registry definition. The caller computes missing required env vars by intersecting
+// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
+// returned here.
 func (q *Queries) ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error) {
 	rows, err := q.db.Query(ctx, ListEffectiveMCPBindingsV2ForEmployee, arg.TenantID, arg.DigitalEmployeeID)
 	if err != nil {
@@ -836,7 +824,6 @@ func (q *Queries) ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg
 			&i.CredentialEnvVar,
 			&i.SourceScope,
 			&i.BindingStatus,
-			&i.ConfiguredEnvVarNames,
 		); err != nil {
 			return nil, err
 		}

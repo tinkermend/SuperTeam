@@ -384,6 +384,14 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/mcp-bindings", s.capabilityHandler.CreateEmployeeMCPBinding)
 				r.Delete("/digital-employees/{employeeId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBinding)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-servers", s.capabilityHandler.ListEffectiveMCPServers)
+
+				// MCP HTTP capability registry (migration 037).
+				r.Get("/mcp-servers", s.capabilityHandler.ListMCPServerDefinitions)
+				r.Post("/mcp-servers", s.capabilityHandler.CreateMCPServerDefinition)
+				r.Delete("/mcp-servers/{serverId}", s.capabilityHandler.DeleteMCPServerDefinition)
+				r.Post("/teams/{teamId}/mcp-bindings", s.capabilityHandler.CreateTeamMCPBinding)
+				r.Post("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.CreateEmployeeMCPBindingV2)
+				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
 			})
 		}
 

@@ -334,6 +334,12 @@ type serviceRepo struct {
 	getCredentialRequests     []ResolveCredentialRequest
 	createdTeamMCPServer      bool
 	createdEmployeeMCPBinding bool
+
+	mcpDefinition       MCPDefinition
+	createdDefinition   CreateMCPServerDefinitionRequest
+	configuredEnvVars   []string
+	createdV2Binding    CreateEmployeeMCPBindingV2Request
+	createdV2BindingHit bool
 }
 
 func (r *serviceRepo) CreateCredential(_ context.Context, req CreateCredentialStoreRequest) (Credential, error) {
@@ -387,4 +393,151 @@ func (r *serviceRepo) DeleteEmployeeMCPBinding(context.Context, DeleteEmployeeMC
 
 func (r *serviceRepo) ListEffectiveMCPServers(context.Context, EmployeeScopedRequest) ([]MCPServer, error) {
 	return nil, nil
+}
+
+func (r *serviceRepo) CreateMCPServerDefinition(_ context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error) {
+	r.createdDefinition = req
+	return MCPDefinition{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		Name:            req.Name,
+		ServerKey:       req.ServerKey,
+		Transport:       req.Transport,
+		URL:             req.URL,
+		AuthStrategy:    req.AuthStrategy,
+		RequiredEnvVars: req.RequiredEnvVars,
+		Status:          "active",
+	}, nil
+}
+
+func (r *serviceRepo) ListMCPServerDefinitions(context.Context, ListMCPServerDefinitionsRequest) ([]MCPDefinition, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) GetMCPServerDefinition(context.Context, uuid.UUID, uuid.UUID) (MCPDefinition, error) {
+	return r.mcpDefinition, nil
+}
+
+func (r *serviceRepo) DeleteMCPServerDefinition(context.Context, DeleteMCPServerDefinitionRequest) error {
+	return nil
+}
+
+func (r *serviceRepo) CreateTeamMCPBinding(_ context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error) {
+	teamID := req.TeamID
+	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, TeamID: &teamID, MCPServerID: req.MCPServerID, Status: "active", SourceScope: "team"}, nil
+}
+
+func (r *serviceRepo) ListTeamMCPBindings(context.Context, TeamScopedRequest) ([]MCPBinding, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) DeleteTeamMCPBinding(context.Context, DeleteTeamMCPBindingRequest) error {
+	return nil
+}
+
+func (r *serviceRepo) CreateEmployeeMCPBindingV2(_ context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {
+	r.createdV2Binding = req
+	r.createdV2BindingHit = true
+	employeeID := req.DigitalEmployeeID
+	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, DigitalEmployeeID: &employeeID, MCPServerID: req.MCPServerID, Status: "active", SourceScope: "employee"}, nil
+}
+
+func (r *serviceRepo) ListEmployeeMCPBindingsV2(context.Context, EmployeeScopedRequest) ([]MCPBinding, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) DeleteEmployeeMCPBindingV2(context.Context, DeleteEmployeeMCPBindingV2Request) error {
+	return nil
+}
+
+func (r *serviceRepo) ListEffectiveMCPBindingsV2(context.Context, EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UUID, uuid.UUID) ([]string, error) {
+	return r.configuredEnvVars, nil
+}
+
+func TestServiceCreateMCPServerDefinitionValidatesHTTPOnlyAndEnvVars(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	svc := NewService(&serviceRepo{}, nil)
+
+	_, err := svc.CreateMCPServerDefinition(context.Background(), CreateMCPServerDefinitionRequest{
+		TenantID:        tenantID,
+		UserID:          userID,
+		Name:            "Local Stdio MCP",
+		ServerKey:       "local-stdio",
+		Transport:       "stdio",
+		URL:             "file:///tmp/mcp",
+		AuthStrategy:    MCPAuthStrategyNone,
+		RequiredEnvVars: []string{"BAD-NAME"},
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "transport must be http") {
+		t.Fatalf("expected http-only validation error, got %v", err)
+	}
+}
+
+func TestServiceCreateEmployeeMCPBindingV2ComputesMissingEnvPreflight(t *testing.T) {
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	serverID := uuid.New()
+	repo := &serviceRepo{
+		mcpDefinition: MCPDefinition{
+			ID:              serverID,
+			TenantID:        tenantID,
+			Name:            "GitHub MCP",
+			ServerKey:       "github",
+			Transport:       MCPTransportStreamableHTTP,
+			URL:             "https://api.githubcopilot.com/mcp/",
+			AuthStrategy:    MCPAuthStrategyBearerEnv,
+			RequiredEnvVars: []string{"GITHUB_TOKEN"},
+			Status:          "active",
+		},
+		configuredEnvVars: nil, // employee has not configured GITHUB_TOKEN
+	}
+	svc := NewService(repo, nil)
+
+	binding, err := svc.CreateEmployeeMCPBindingV2(context.Background(), CreateEmployeeMCPBindingV2Request{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		UserID:            uuid.New(),
+		MCPServerID:       serverID,
+		CredentialEnvVar:  "GITHUB_TOKEN",
+	})
+	if err != nil {
+		t.Fatalf("create v2 binding: %v", err)
+	}
+	if !repo.createdV2BindingHit {
+		t.Fatalf("expected binding to be persisted")
+	}
+	if len(binding.MissingEnvVars) != 1 || binding.MissingEnvVars[0] != "GITHUB_TOKEN" {
+		t.Fatalf("expected missing GITHUB_TOKEN, got %#v", binding.MissingEnvVars)
+	}
+	if binding.PreflightStatus() != MCPBindingStatusBlockedMissingEnv {
+		t.Fatalf("expected blocked_missing_env, got %q", binding.PreflightStatus())
+	}
+}
+
+func TestServiceCreateEmployeeMCPBindingV2RejectsDisabledMCP(t *testing.T) {
+	tenantID := uuid.New()
+	serverID := uuid.New()
+	repo := &serviceRepo{
+		mcpDefinition: MCPDefinition{ID: serverID, TenantID: tenantID, Status: "disabled"},
+	}
+	svc := NewService(repo, nil)
+
+	_, err := svc.CreateEmployeeMCPBindingV2(context.Background(), CreateEmployeeMCPBindingV2Request{
+		TenantID:          tenantID,
+		DigitalEmployeeID: uuid.New(),
+		UserID:            uuid.New(),
+		MCPServerID:       serverID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not active") {
+		t.Fatalf("expected not-active error, got %v", err)
+	}
+	if repo.createdV2BindingHit {
+		t.Fatalf("disabled mcp must not create a binding")
+	}
 }

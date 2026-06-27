@@ -52,6 +52,9 @@ const (
 	ActionCredentialCreate = "credential.create"
 	ActionCredentialDelete = "credential.delete"
 
+	ActionMCPRegistryRead   = "mcp_registry.read"
+	ActionMCPRegistryManage = "mcp_registry.manage"
+
 	ActionSkillRead    = "skill.read"
 	ActionSkillUpload  = "skill.upload"
 	ActionSkillDelete  = "skill.delete"
