@@ -285,6 +285,26 @@ func TestDigitalEmployeeEnvironmentVariablesMigration(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPCapabilityRegistryMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/037_mcp_http_capability_registry.sql")
+	if err != nil {
+		t.Fatalf("read migration 037: %v", err)
+	}
+	sql := string(body)
+
+	assertMigrationContains(t, sql, "CREATE TABLE IF NOT EXISTS mcp_servers")
+	assertMigrationContains(t, sql, "CREATE TABLE IF NOT EXISTS team_mcp_bindings")
+	assertMigrationContains(t, sql, "CREATE TABLE IF NOT EXISTS digital_employee_mcp_bindings_v2")
+	assertMigrationContains(t, sql, "CHECK (transport IN ('streamable_http', 'http'))")
+	assertMigrationContains(t, sql, "required_env_vars TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]")
+	assertMigrationContains(t, sql, "CHECK (auth_strategy IN ('none', 'bearer_env', 'headers_env'))")
+	assertMigrationContains(t, sql, "COMMENT ON TABLE mcp_servers IS")
+
+	// Backfill must carry legacy team rows into the registry.
+	assertMigrationContains(t, sql, "INSERT INTO mcp_servers")
+	assertMigrationContains(t, sql, "team_mcp_servers")
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {

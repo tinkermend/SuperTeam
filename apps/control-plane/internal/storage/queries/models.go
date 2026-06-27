@@ -405,6 +405,34 @@ type DigitalEmployeeMcpBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工对注册表 MCP 的个人绑定
+type DigitalEmployeeMcpBindingsV2 struct {
+	// 员工 MCP 绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 引用的注册表 MCP 定义 ID
+	McpServerID uuid.UUID `json:"mcp_server_id"`
+	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
+	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
+	// 绑定状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// 绑定扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 绑定禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 绑定软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建绑定的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 绑定更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 数字员工 runtime 就绪读视图,is_runtime_ready 与 overview runnable 判定一致,供协调器执行人选择过滤
 type DigitalEmployeeRuntimeReadiness struct {
 	TenantID          uuid.UUID `json:"tenant_id"`
@@ -615,6 +643,50 @@ type InboxItem struct {
 	// 事项创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 事项更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 租户级 MCP HTTP 能力注册表，定义一次、被团队与数字员工绑定复用
+type McpServer struct {
+	// MCP 定义主键 UUID
+	ID uuid.UUID `json:"id"`
+	// MCP 定义所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// MCP 显示名称
+	Name string `json:"name"`
+	// MCP 稳定标识，渲染到 provider 配置的 server 键，租户内未删除时唯一
+	ServerKey string `json:"server_key"`
+	// MCP 描述
+	Description string `json:"description"`
+	// MCP 传输方式，仅支持 streamable_http 或 http
+	Transport string `json:"transport"`
+	// MCP 远程 HTTP 地址
+	Url string `json:"url"`
+	// MCP 鉴权方式：none、bearer_env 或 headers_env
+	AuthStrategy string `json:"auth_strategy"`
+	// MCP 必需环境变量名列表，数字员工缺失则绑定被阻断
+	RequiredEnvVars []string `json:"required_env_vars"`
+	// MCP 可选环境变量名列表
+	OptionalEnvVars []string `json:"optional_env_vars"`
+	// 各 provider 是否投射此 MCP 的可见性开关 JSON
+	ProviderVisibility []byte `json:"provider_visibility"`
+	// MCP 工具白名单
+	ToolAllowlist []string `json:"tool_allowlist"`
+	// MCP 风险等级
+	RiskLevel string `json:"risk_level"`
+	// MCP 状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// MCP 扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// MCP 禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// MCP 软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建 MCP 定义的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// MCP 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// MCP 更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -2232,6 +2304,34 @@ type TeamLendingRequest struct {
 	// 创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 团队对注册表 MCP 的绑定，团队下数字员工继承
+type TeamMcpBinding struct {
+	// 团队 MCP 绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定所属团队 ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 引用的注册表 MCP 定义 ID
+	McpServerID uuid.UUID `json:"mcp_server_id"`
+	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
+	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
+	// 绑定状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// 绑定扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 绑定禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 绑定软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建绑定的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 绑定更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

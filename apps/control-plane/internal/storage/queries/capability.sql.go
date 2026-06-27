@@ -73,6 +73,218 @@ func (q *Queries) CreateDigitalEmployeeMCPBinding(ctx context.Context, arg Creat
 	return i, err
 }
 
+const CreateEmployeeMCPBindingV2 = `-- name: CreateEmployeeMCPBindingV2 :one
+INSERT INTO digital_employee_mcp_bindings_v2 (
+    tenant_id,
+    digital_employee_id,
+    mcp_server_id,
+    credential_env_var,
+    metadata,
+    created_by
+)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::text,
+    COALESCE($5::jsonb, '{}'::jsonb),
+    $6::uuid
+)
+RETURNING id, tenant_id, digital_employee_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+`
+
+type CreateEmployeeMCPBindingV2Params struct {
+	TenantID          uuid.UUID     `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID     `json:"digital_employee_id"`
+	McpServerID       uuid.UUID     `json:"mcp_server_id"`
+	CredentialEnvVar  pgtype.Text   `json:"credential_env_var"`
+	Metadata          []byte        `json:"metadata"`
+	CreatedBy         uuid.NullUUID `json:"created_by"`
+}
+
+func (q *Queries) CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmployeeMCPBindingV2Params) (DigitalEmployeeMcpBindingsV2, error) {
+	row := q.db.QueryRow(ctx, CreateEmployeeMCPBindingV2,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.McpServerID,
+		arg.CredentialEnvVar,
+		arg.Metadata,
+		arg.CreatedBy,
+	)
+	var i DigitalEmployeeMcpBindingsV2
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DigitalEmployeeID,
+		&i.McpServerID,
+		&i.CredentialEnvVar,
+		&i.Status,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateMCPServerDefinition = `-- name: CreateMCPServerDefinition :one
+
+INSERT INTO mcp_servers (
+    tenant_id,
+    name,
+    server_key,
+    description,
+    transport,
+    url,
+    auth_strategy,
+    required_env_vars,
+    optional_env_vars,
+    provider_visibility,
+    tool_allowlist,
+    risk_level,
+    metadata,
+    created_by
+)
+VALUES (
+    $1::uuid,
+    $2::text,
+    $3::text,
+    COALESCE($4::text, ''),
+    $5::varchar,
+    $6::text,
+    $7::varchar,
+    COALESCE($8::text[], ARRAY[]::TEXT[]),
+    COALESCE($9::text[], ARRAY[]::TEXT[]),
+    COALESCE($10::jsonb, '{"codex":true,"claude-code":true,"opencode":true}'::jsonb),
+    COALESCE($11::text[], ARRAY[]::TEXT[]),
+    COALESCE($12::varchar, 'medium'),
+    COALESCE($13::jsonb, '{}'::jsonb),
+    $14::uuid
+)
+RETURNING id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+`
+
+type CreateMCPServerDefinitionParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	Name               string        `json:"name"`
+	ServerKey          string        `json:"server_key"`
+	Description        string        `json:"description"`
+	Transport          string        `json:"transport"`
+	Url                string        `json:"url"`
+	AuthStrategy       string        `json:"auth_strategy"`
+	RequiredEnvVars    []string      `json:"required_env_vars"`
+	OptionalEnvVars    []string      `json:"optional_env_vars"`
+	ProviderVisibility []byte        `json:"provider_visibility"`
+	ToolAllowlist      []string      `json:"tool_allowlist"`
+	RiskLevel          string        `json:"risk_level"`
+	Metadata           []byte        `json:"metadata"`
+	CreatedBy          uuid.NullUUID `json:"created_by"`
+}
+
+// ============================================================================
+// MCP HTTP capability registry (migration 037)
+// ============================================================================
+func (q *Queries) CreateMCPServerDefinition(ctx context.Context, arg CreateMCPServerDefinitionParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, CreateMCPServerDefinition,
+		arg.TenantID,
+		arg.Name,
+		arg.ServerKey,
+		arg.Description,
+		arg.Transport,
+		arg.Url,
+		arg.AuthStrategy,
+		arg.RequiredEnvVars,
+		arg.OptionalEnvVars,
+		arg.ProviderVisibility,
+		arg.ToolAllowlist,
+		arg.RiskLevel,
+		arg.Metadata,
+		arg.CreatedBy,
+	)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.ServerKey,
+		&i.Description,
+		&i.Transport,
+		&i.Url,
+		&i.AuthStrategy,
+		&i.RequiredEnvVars,
+		&i.OptionalEnvVars,
+		&i.ProviderVisibility,
+		&i.ToolAllowlist,
+		&i.RiskLevel,
+		&i.Status,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateTeamMCPBinding = `-- name: CreateTeamMCPBinding :one
+INSERT INTO team_mcp_bindings (
+    tenant_id,
+    team_id,
+    mcp_server_id,
+    credential_env_var,
+    metadata,
+    created_by
+)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::text,
+    COALESCE($5::jsonb, '{}'::jsonb),
+    $6::uuid
+)
+RETURNING id, tenant_id, team_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+`
+
+type CreateTeamMCPBindingParams struct {
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	TeamID           uuid.UUID     `json:"team_id"`
+	McpServerID      uuid.UUID     `json:"mcp_server_id"`
+	CredentialEnvVar pgtype.Text   `json:"credential_env_var"`
+	Metadata         []byte        `json:"metadata"`
+	CreatedBy        uuid.NullUUID `json:"created_by"`
+}
+
+func (q *Queries) CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBindingParams) (TeamMcpBinding, error) {
+	row := q.db.QueryRow(ctx, CreateTeamMCPBinding,
+		arg.TenantID,
+		arg.TeamID,
+		arg.McpServerID,
+		arg.CredentialEnvVar,
+		arg.Metadata,
+		arg.CreatedBy,
+	)
+	var i TeamMcpBinding
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.McpServerID,
+		&i.CredentialEnvVar,
+		&i.Status,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateTeamMCPServer = `-- name: CreateTeamMCPServer :one
 INSERT INTO team_mcp_servers (
     tenant_id,
@@ -215,6 +427,64 @@ func (q *Queries) DeleteDigitalEmployeeMCPBinding(ctx context.Context, arg Delet
 	return err
 }
 
+const DeleteEmployeeMCPBindingV2 = `-- name: DeleteEmployeeMCPBindingV2 :exec
+UPDATE digital_employee_mcp_bindings_v2
+SET deleted_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND id = $3::uuid
+  AND deleted_at IS NULL
+`
+
+type DeleteEmployeeMCPBindingV2Params struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ID                uuid.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error {
+	_, err := q.db.Exec(ctx, DeleteEmployeeMCPBindingV2, arg.TenantID, arg.DigitalEmployeeID, arg.ID)
+	return err
+}
+
+const DeleteMCPServerDefinition = `-- name: DeleteMCPServerDefinition :exec
+UPDATE mcp_servers
+SET deleted_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND deleted_at IS NULL
+`
+
+type DeleteMCPServerDefinitionParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error {
+	_, err := q.db.Exec(ctx, DeleteMCPServerDefinition, arg.TenantID, arg.ID)
+	return err
+}
+
+const DeleteTeamMCPBinding = `-- name: DeleteTeamMCPBinding :exec
+UPDATE team_mcp_bindings
+SET deleted_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+  AND id = $3::uuid
+  AND deleted_at IS NULL
+`
+
+type DeleteTeamMCPBindingParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error {
+	_, err := q.db.Exec(ctx, DeleteTeamMCPBinding, arg.TenantID, arg.TeamID, arg.ID)
+	return err
+}
+
 const DeleteTeamMCPServer = `-- name: DeleteTeamMCPServer :exec
 UPDATE team_mcp_servers
 SET deleted_at = NOW()
@@ -233,6 +503,47 @@ type DeleteTeamMCPServerParams struct {
 func (q *Queries) DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error {
 	_, err := q.db.Exec(ctx, DeleteTeamMCPServer, arg.TenantID, arg.TeamID, arg.ID)
 	return err
+}
+
+const GetMCPServerDefinition = `-- name: GetMCPServerDefinition :one
+SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+FROM mcp_servers
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND deleted_at IS NULL
+`
+
+type GetMCPServerDefinitionParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, GetMCPServerDefinition, arg.TenantID, arg.ID)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.ServerKey,
+		&i.Description,
+		&i.Transport,
+		&i.Url,
+		&i.AuthStrategy,
+		&i.RequiredEnvVars,
+		&i.OptionalEnvVars,
+		&i.ProviderVisibility,
+		&i.ToolAllowlist,
+		&i.RiskLevel,
+		&i.Status,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const GetUserCredential = `-- name: GetUserCredential :one
@@ -269,6 +580,40 @@ func (q *Queries) GetUserCredential(ctx context.Context, arg GetUserCredentialPa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const ListConfiguredEmployeeEnvVarNames = `-- name: ListConfiguredEmployeeEnvVarNames :many
+SELECT name
+FROM digital_employee_environment_variables
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND status = 'active'
+  AND deleted_at IS NULL
+`
+
+type ListConfiguredEmployeeEnvVarNamesParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+func (q *Queries) ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, ListConfiguredEmployeeEnvVarNames, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListDigitalEmployeeMCPBindings = `-- name: ListDigitalEmployeeMCPBindings :many
@@ -349,6 +694,149 @@ func (q *Queries) ListDigitalEmployeeMCPBindings(ctx context.Context, arg ListDi
 			&i.CredentialName,
 			&i.CredentialType,
 			&i.CredentialLastFour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListEffectiveMCPBindingsV2ForEmployee = `-- name: ListEffectiveMCPBindingsV2ForEmployee :many
+WITH target_employee AS (
+    SELECT tenant_id, id AS digital_employee_id, team_id
+    FROM digital_employees
+    WHERE tenant_id = $1::uuid
+      AND id = $2::uuid
+      AND deleted_at IS NULL
+),
+configured_env AS (
+    SELECT array_agg(name) AS names
+    FROM digital_employee_environment_variables
+    WHERE tenant_id = $1::uuid
+      AND digital_employee_id = $2::uuid
+      AND status = 'active'
+      AND deleted_at IS NULL
+)
+SELECT
+    m.id AS server_id,
+    m.tenant_id,
+    target_employee.digital_employee_id,
+    m.name,
+    m.server_key,
+    m.transport,
+    m.url,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.tool_allowlist,
+    m.risk_level,
+    tb.credential_env_var,
+    'team'::text AS source_scope,
+    tb.status AS binding_status,
+    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+FROM target_employee
+CROSS JOIN configured_env
+JOIN team_mcp_bindings tb ON tb.tenant_id = target_employee.tenant_id
+    AND tb.team_id = target_employee.team_id
+    AND tb.deleted_at IS NULL
+    AND tb.status = 'active'
+JOIN mcp_servers m ON m.id = tb.mcp_server_id
+    AND m.tenant_id = tb.tenant_id
+    AND m.deleted_at IS NULL
+    AND m.status = 'active'
+UNION ALL
+SELECT
+    m.id AS server_id,
+    m.tenant_id,
+    target_employee.digital_employee_id,
+    m.name,
+    m.server_key,
+    m.transport,
+    m.url,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.tool_allowlist,
+    m.risk_level,
+    eb.credential_env_var,
+    'employee'::text AS source_scope,
+    eb.status AS binding_status,
+    COALESCE(configured_env.names, ARRAY[]::TEXT[]) AS configured_env_var_names
+FROM target_employee
+CROSS JOIN configured_env
+JOIN digital_employee_mcp_bindings_v2 eb ON eb.tenant_id = target_employee.tenant_id
+    AND eb.digital_employee_id = target_employee.digital_employee_id
+    AND eb.deleted_at IS NULL
+    AND eb.status = 'active'
+JOIN mcp_servers m ON m.id = eb.mcp_server_id
+    AND m.tenant_id = eb.tenant_id
+    AND m.deleted_at IS NULL
+    AND m.status = 'active'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM team_mcp_bindings team_duplicate
+    WHERE team_duplicate.tenant_id = target_employee.tenant_id
+      AND team_duplicate.team_id = target_employee.team_id
+      AND team_duplicate.mcp_server_id = eb.mcp_server_id
+      AND team_duplicate.deleted_at IS NULL
+      AND team_duplicate.status = 'active'
+)
+ORDER BY source_scope ASC, name ASC
+`
+
+type ListEffectiveMCPBindingsV2ForEmployeeParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListEffectiveMCPBindingsV2ForEmployeeRow struct {
+	ServerID              uuid.UUID   `json:"server_id"`
+	TenantID              uuid.UUID   `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID   `json:"digital_employee_id"`
+	Name                  string      `json:"name"`
+	ServerKey             string      `json:"server_key"`
+	Transport             string      `json:"transport"`
+	Url                   string      `json:"url"`
+	AuthStrategy          string      `json:"auth_strategy"`
+	RequiredEnvVars       []string    `json:"required_env_vars"`
+	ToolAllowlist         []string    `json:"tool_allowlist"`
+	RiskLevel             string      `json:"risk_level"`
+	CredentialEnvVar      pgtype.Text `json:"credential_env_var"`
+	SourceScope           string      `json:"source_scope"`
+	BindingStatus         string      `json:"binding_status"`
+	ConfiguredEnvVarNames interface{} `json:"configured_env_var_names"`
+}
+
+// Effective MCP bindings for an employee: team-inherited plus personal, joined to the
+// registry definition and to the employee's configured env-var names so the caller can
+// compute missing required env vars. credential values are never returned here.
+func (q *Queries) ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error) {
+	rows, err := q.db.Query(ctx, ListEffectiveMCPBindingsV2ForEmployee, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEffectiveMCPBindingsV2ForEmployeeRow{}
+	for rows.Next() {
+		var i ListEffectiveMCPBindingsV2ForEmployeeRow
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.TenantID,
+			&i.DigitalEmployeeID,
+			&i.Name,
+			&i.ServerKey,
+			&i.Transport,
+			&i.Url,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.ToolAllowlist,
+			&i.RiskLevel,
+			&i.CredentialEnvVar,
+			&i.SourceScope,
+			&i.BindingStatus,
+			&i.ConfiguredEnvVarNames,
 		); err != nil {
 			return nil, err
 		}
@@ -475,6 +963,235 @@ func (q *Queries) ListEffectiveMCPServersForEmployee(ctx context.Context, arg Li
 			&i.CredentialLastFour,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListEmployeeMCPBindingsV2 = `-- name: ListEmployeeMCPBindingsV2 :many
+SELECT
+    eb.id, eb.tenant_id, eb.digital_employee_id, eb.mcp_server_id, eb.credential_env_var, eb.status, eb.metadata, eb.disabled_at, eb.deleted_at, eb.created_by, eb.created_at, eb.updated_at,
+    m.name AS server_name,
+    m.server_key,
+    m.url,
+    m.transport,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.risk_level,
+    m.status AS server_status
+FROM digital_employee_mcp_bindings_v2 eb
+JOIN mcp_servers m ON m.id = eb.mcp_server_id
+    AND m.tenant_id = eb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE eb.tenant_id = $1::uuid
+  AND eb.digital_employee_id = $2::uuid
+  AND eb.deleted_at IS NULL
+ORDER BY eb.created_at DESC
+`
+
+type ListEmployeeMCPBindingsV2Params struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListEmployeeMCPBindingsV2Row struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	McpServerID       uuid.UUID          `json:"mcp_server_id"`
+	CredentialEnvVar  pgtype.Text        `json:"credential_env_var"`
+	Status            string             `json:"status"`
+	Metadata          []byte             `json:"metadata"`
+	DisabledAt        pgtype.Timestamptz `json:"disabled_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedBy         uuid.NullUUID      `json:"created_by"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ServerName        string             `json:"server_name"`
+	ServerKey         string             `json:"server_key"`
+	Url               string             `json:"url"`
+	Transport         string             `json:"transport"`
+	AuthStrategy      string             `json:"auth_strategy"`
+	RequiredEnvVars   []string           `json:"required_env_vars"`
+	RiskLevel         string             `json:"risk_level"`
+	ServerStatus      string             `json:"server_status"`
+}
+
+func (q *Queries) ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error) {
+	rows, err := q.db.Query(ctx, ListEmployeeMCPBindingsV2, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEmployeeMCPBindingsV2Row{}
+	for rows.Next() {
+		var i ListEmployeeMCPBindingsV2Row
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.DigitalEmployeeID,
+			&i.McpServerID,
+			&i.CredentialEnvVar,
+			&i.Status,
+			&i.Metadata,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ServerName,
+			&i.ServerKey,
+			&i.Url,
+			&i.Transport,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.RiskLevel,
+			&i.ServerStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListMCPServerDefinitions = `-- name: ListMCPServerDefinitions :many
+SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+FROM mcp_servers
+WHERE tenant_id = $1::uuid
+  AND deleted_at IS NULL
+ORDER BY created_at DESC, name ASC
+`
+
+func (q *Queries) ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error) {
+	rows, err := q.db.Query(ctx, ListMCPServerDefinitions, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []McpServer{}
+	for rows.Next() {
+		var i McpServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.ServerKey,
+			&i.Description,
+			&i.Transport,
+			&i.Url,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.OptionalEnvVars,
+			&i.ProviderVisibility,
+			&i.ToolAllowlist,
+			&i.RiskLevel,
+			&i.Status,
+			&i.Metadata,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTeamMCPBindings = `-- name: ListTeamMCPBindings :many
+SELECT
+    tb.id, tb.tenant_id, tb.team_id, tb.mcp_server_id, tb.credential_env_var, tb.status, tb.metadata, tb.disabled_at, tb.deleted_at, tb.created_by, tb.created_at, tb.updated_at,
+    m.name AS server_name,
+    m.server_key,
+    m.url,
+    m.transport,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.risk_level,
+    m.status AS server_status
+FROM team_mcp_bindings tb
+JOIN mcp_servers m ON m.id = tb.mcp_server_id
+    AND m.tenant_id = tb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE tb.tenant_id = $1::uuid
+  AND tb.team_id = $2::uuid
+  AND tb.deleted_at IS NULL
+ORDER BY tb.created_at DESC
+`
+
+type ListTeamMCPBindingsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+type ListTeamMCPBindingsRow struct {
+	ID               uuid.UUID          `json:"id"`
+	TenantID         uuid.UUID          `json:"tenant_id"`
+	TeamID           uuid.UUID          `json:"team_id"`
+	McpServerID      uuid.UUID          `json:"mcp_server_id"`
+	CredentialEnvVar pgtype.Text        `json:"credential_env_var"`
+	Status           string             `json:"status"`
+	Metadata         []byte             `json:"metadata"`
+	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CreatedBy        uuid.NullUUID      `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ServerName       string             `json:"server_name"`
+	ServerKey        string             `json:"server_key"`
+	Url              string             `json:"url"`
+	Transport        string             `json:"transport"`
+	AuthStrategy     string             `json:"auth_strategy"`
+	RequiredEnvVars  []string           `json:"required_env_vars"`
+	RiskLevel        string             `json:"risk_level"`
+	ServerStatus     string             `json:"server_status"`
+}
+
+func (q *Queries) ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error) {
+	rows, err := q.db.Query(ctx, ListTeamMCPBindings, arg.TenantID, arg.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTeamMCPBindingsRow{}
+	for rows.Next() {
+		var i ListTeamMCPBindingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.McpServerID,
+			&i.CredentialEnvVar,
+			&i.Status,
+			&i.Metadata,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ServerName,
+			&i.ServerKey,
+			&i.Url,
+			&i.Transport,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.RiskLevel,
+			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}

@@ -65,7 +65,12 @@ type Querier interface {
 	CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error)
 	CreateDigitalEmployeeWorkspaceFile(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileParams) (DigitalEmployeeWorkspaceFile, error)
 	CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFileRevision, error)
+	CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmployeeMCPBindingV2Params) (DigitalEmployeeMcpBindingsV2, error)
 	CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error)
+	// ============================================================================
+	// MCP HTTP capability registry (migration 037)
+	// ============================================================================
+	CreateMCPServerDefinition(ctx context.Context, arg CreateMCPServerDefinitionParams) (McpServer, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateProjectAcceptanceRecord(ctx context.Context, arg CreateProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)
 	CreateProjectArchiveSnapshot(ctx context.Context, arg CreateProjectArchiveSnapshotParams) (ProjectArchiveSnapshot, error)
@@ -111,6 +116,7 @@ type Querier interface {
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
 	CreateTeamLendingRequest(ctx context.Context, arg CreateTeamLendingRequestParams) (TeamLendingRequest, error)
+	CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBindingParams) (TeamMcpBinding, error)
 	CreateTeamMCPServer(ctx context.Context, arg CreateTeamMCPServerParams) (TeamMcpServer, error)
 	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
@@ -123,13 +129,16 @@ type Querier interface {
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteDigitalEmployeeMCPBinding(ctx context.Context, arg DeleteDigitalEmployeeMCPBindingParams) error
+	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
+	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
@@ -170,6 +179,7 @@ type Querier interface {
 	GetLatestProviderSessionEventSequence(ctx context.Context, arg GetLatestProviderSessionEventSequenceParams) (int32, error)
 	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
+	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
 	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
 	GetNextTenantTeamConfigRevisionNumber(ctx context.Context, arg GetNextTenantTeamConfigRevisionNumberParams) (int32, error)
@@ -237,6 +247,7 @@ type Querier interface {
 	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
+	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error)
 	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
@@ -254,8 +265,14 @@ type Querier interface {
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
 	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
 	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)
+	// Effective MCP bindings for an employee: team-inherited plus personal, joined to the
+	// registry definition and to the employee's configured env-var names so the caller can
+	// compute missing required env vars. credential values are never returned here.
+	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
 	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
+	ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
+	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
@@ -315,6 +332,7 @@ type Querier interface {
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
 	ListTeamLendingRequestsByProject(ctx context.Context, arg ListTeamLendingRequestsByProjectParams) ([]TeamLendingRequest, error)
 	ListTeamLendingRequestsByTeam(ctx context.Context, arg ListTeamLendingRequestsByTeamParams) ([]TeamLendingRequest, error)
+	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
 	ListTeamMCPServers(ctx context.Context, arg ListTeamMCPServersParams) ([]ListTeamMCPServersRow, error)
 	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
