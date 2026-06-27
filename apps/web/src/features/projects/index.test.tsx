@@ -1136,15 +1136,19 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("links the selected project to audit and cost center views", async () => {
+  it("does not surface audit and cost links in the default project hero", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    const auditLink = screen.getByRole("link", { name: "审计" });
-    const costLink = screen.getByRole("link", { name: "成本" });
+    await expect
+      .element(screen.getByRole("link", { name: "配置项目" }))
+      .toHaveAttribute("href", "/projects/project-1/config");
 
-    await expect.element(auditLink).toHaveAttribute("href", "/audit?project_id=project-1");
-    await expect.element(costLink).toHaveAttribute("href", "/costs?project_id=project-1");
+    const visibleLinkLabels = Array.from(screen.container.querySelectorAll("a")).map((link) =>
+      link.textContent?.trim(),
+    );
+    expect(visibleLinkLabels).not.toContain("审计");
+    expect(visibleLinkLabels).not.toContain("成本");
   });
 
   it("creates and verifies project evidence from the governance tab", async () => {

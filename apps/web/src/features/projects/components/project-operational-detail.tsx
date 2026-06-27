@@ -2,11 +2,10 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
-  Archive,
   Bot,
+  CircleDot,
   ClipboardList,
   FileCheck2,
-  FileArchive,
   ExternalLink,
   FileText,
   GitBranch,
@@ -117,7 +116,6 @@ export function ProjectOperationalDetail({
   executionTraceIsLoading,
   executionSummaries,
   isArchived,
-  onArchiveProject,
   onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -144,11 +142,19 @@ export function ProjectOperationalDetail({
 
   const humanRoles = overview?.human_roles ?? [];
   const digitalPool = overview?.digital_employee_pool ?? [];
+  const servicePool = digitalPool;
+  const latestDemand = demands[0];
+  const latestResult = executionSummaries[0];
+  const pendingOwnerDecisions = decisionRequests.filter(
+    (decision) => decision.status_snapshot === "pending",
+  );
+  const pendingOwnerActionItems = pendingOwnerDecisions.filter(
+    (decision) => decision.decision_type !== "plan_review",
+  );
+  const businessBlocker = projectBusinessBlocker(dispatchGates ?? []);
   const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
-  const taskSummary = overview?.task_summary;
   const currentPhase = overview?.status_summary.current_phase || project.status;
-  const evidencePolicyConfigured = Object.keys(project.evidence_policy ?? {}).length > 0;
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
@@ -196,29 +202,8 @@ export function ProjectOperationalDetail({
                 to="/projects/$projectId/config"
               >
                 <Settings2 data-icon="inline-start" />
-                配置
+                配置项目
               </Link>
-            </V3Button>
-            <V3Button asChild variant="outline">
-              <Link search={{ project_id: project.id }} to="/audit">
-                <History data-icon="inline-start" />
-                审计
-              </Link>
-            </V3Button>
-            <V3Button asChild variant="outline">
-              <Link search={{ project_id: project.id }} to="/costs">
-                <FileCheck2 data-icon="inline-start" />
-                成本
-              </Link>
-            </V3Button>
-            <V3Button
-              disabled={isArchived}
-              type="button"
-              variant="outline"
-              onClick={onArchiveProject}
-            >
-              <Archive data-icon="inline-start" />
-              归档
             </V3Button>
           </div>
         </div>
@@ -227,22 +212,22 @@ export function ProjectOperationalDetail({
           <FactTile
             icon={<GitBranch />}
             label="当前阶段"
-            value={currentPhase}
+            value={projectPhaseLabel(currentPhase)}
           />
           <FactTile
             icon={<UserRound />}
-            label="待人工处理"
-            value={`${taskSummary?.pending_human_tasks ?? 0} 项`}
+            label="待负责人处理"
+            value={`${pendingOwnerDecisions.length} 项`}
           />
           <FactTile
-            icon={<FileArchive />}
-            label="证据策略"
-            value={evidencePolicyConfigured ? "已配置" : "未配置"}
+            icon={<FileText />}
+            label="当前需求"
+            value={latestDemand?.title ?? "暂无需求"}
           />
           <FactTile
             icon={<ClipboardList />}
-            label="活跃任务"
-            value={`${activeTasks.length} 个`}
+            label="当前执行"
+            value={`${activeTasks.length} 个任务`}
           />
         </div>
       </SoftCard>
@@ -251,8 +236,26 @@ export function ProjectOperationalDetail({
         <section className="grid min-w-0 gap-4">
           <SoftCard className="overflow-hidden">
             <PanelHeader
+              icon={<FileText />}
+              title="当前需求"
+              meta={latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"}
+            />
+            {latestDemand ? (
+              <div className="grid gap-2 p-4">
+                <p className="text-sm font-semibold text-v3-ink">{latestDemand.title}</p>
+                <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
+                  {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
+                </p>
+              </div>
+            ) : (
+              <EmptyLine label="暂无提交到项目的需求" />
+            )}
+          </SoftCard>
+
+          <SoftCard className="overflow-hidden">
+            <PanelHeader
               icon={<GitBranch />}
-              title="计划版本"
+              title="计划确认"
               meta={
                 latestPlanRevision
                   ? `v${latestPlanRevision.revision_number}`
@@ -366,7 +369,7 @@ export function ProjectOperationalDetail({
                 </div>
               </div>
             ) : (
-              <EmptyLine label="暂无计划版本" />
+              <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
             )}
           </SoftCard>
 
@@ -374,7 +377,7 @@ export function ProjectOperationalDetail({
             <div className="grid gap-2">
               <div className="flex items-center gap-2 px-1">
                 <ClipboardList className="size-4 text-v3-ink-2" />
-                <h3 className="text-sm font-semibold tracking-normal">任务计划</h3>
+                <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
                 <StatusPill tone="mute">{`${taskGraph.nodes.length} 项`}</StatusPill>
               </div>
               <PlanTaskGraph
@@ -388,12 +391,12 @@ export function ProjectOperationalDetail({
             <SoftCard className="overflow-hidden">
               <PanelHeader
                 icon={<ClipboardList />}
-                title="任务计划"
+                title="当前执行"
                 meta={`${activeTasks.length} 项`}
               />
               <div className="divide-y divide-v3-line">
                 {activeTasks.length === 0 ? (
-                  <EmptyLine label="当前项目暂无活跃任务" />
+                  <EmptyLine label="当前没有正在执行的数字员工任务" />
                 ) : (
                   activeTasks.slice(0, 6).map((task) => (
                     <div className="grid gap-1 p-4" key={task.id}>
@@ -404,7 +407,7 @@ export function ProjectOperationalDetail({
                         <StatusPill tone="info">{task.status}</StatusPill>
                       </div>
                       <p className="line-clamp-2 text-xs text-v3-ink-2">
-                        {task.summary || "等待项目协调线程分派执行对象"}
+                        {task.summary || "等待系统分派数字员工执行。"}
                       </p>
                     </div>
                   ))
@@ -413,22 +416,40 @@ export function ProjectOperationalDetail({
             </SoftCard>
           )}
 
-          <DispatchGateSummary
-            gates={dispatchGates ?? []}
-            taskTitle={dispatchGateTaskTitle}
-          />
+          <SoftCard className="overflow-hidden">
+            <PanelHeader
+              icon={<FileCheck2 />}
+              title="最新结果"
+              meta={latestResult ? "已回写" : "暂无结果"}
+            />
+            {latestResult ? (
+              <div className="grid gap-2 p-4">
+                <p className="line-clamp-3 text-sm font-medium text-v3-ink">
+                  {latestResult.conclusion}
+                </p>
+                {latestResult.recommended_next_action ? (
+                  <p className="line-clamp-2 text-xs text-v3-ink-2">
+                    {latestResult.recommended_next_action}
+                  </p>
+                ) : null}
+                <RuntimeMeta label="执行员工" value={latestResult.digital_employee_id} />
+              </div>
+            ) : (
+              <EmptyLine label="数字员工完成任务后会在这里回写结果" />
+            )}
+          </SoftCard>
 
           <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<UserRound />}
-              title="人类决策队列"
-              meta={`${decisionRequests.length} 项`}
+              title="待负责人处理"
+              meta={`${pendingOwnerActionItems.length} 项`}
             />
             <div className="divide-y divide-v3-line">
-              {decisionRequests.length === 0 ? (
-                <EmptyLine label="当前没有待处理的人类决策" />
+              {pendingOwnerActionItems.length === 0 ? (
+                <EmptyLine label="当前没有需要项目负责人处理的事项" />
               ) : (
-                decisionRequests.slice(0, 5).map((decision) => (
+                pendingOwnerActionItems.slice(0, 5).map((decision) => (
                   <div className="grid gap-3 p-4" key={decision.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -446,34 +467,30 @@ export function ProjectOperationalDetail({
                         {decision.status_snapshot}
                       </StatusPill>
                     </div>
-                    {decision.status_snapshot === "pending" ? (
-                      <div className="flex flex-wrap gap-2">
-                        <V3Button
-                          aria-label={`批准：${decision.title_snapshot}`}
-                          size="sm"
-                          type="button"
-                          onClick={() => onResolveDecision(decision.id, "approved")}
-                        >
-                          批准
-                        </V3Button>
-                        <V3Button
-                          aria-label={`要求补证：${decision.title_snapshot}`}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            onResolveDecision(decision.id, "needs_more_evidence")
-                          }
-                        >
-                          要求补证
-                        </V3Button>
-                      </div>
-                    ) : null}
+                    <DecisionRequestActions
+                      decision={decision}
+                      onResolveDecision={onResolveDecision}
+                    />
                   </div>
                 ))
               )}
             </div>
           </SoftCard>
+
+          {businessBlocker ? (
+            <SoftCard className="overflow-hidden">
+              <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={businessBlocker.status} />
+              <div className="grid gap-2 p-4">
+                <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
+                <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
+              </div>
+            </SoftCard>
+          ) : null}
+
+          <DispatchGateSummary
+            gates={dispatchGates ?? []}
+            taskTitle={dispatchGateTaskTitle}
+          />
 
           <SoftCard className="overflow-hidden">
             <PanelHeader
@@ -682,7 +699,7 @@ export function ProjectOperationalDetail({
           />
           <MemberPanel
             icon={<Bot />}
-            members={digitalPool}
+            members={servicePool}
             title="数字员工池"
           />
           <SoftCard className="overflow-hidden">
@@ -886,6 +903,44 @@ function RuntimeMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DecisionRequestActions({
+  decision,
+  onResolveDecision,
+}: {
+  decision: ProjectDecisionRequest;
+  onResolveDecision: (decisionId: string, decision: string) => void;
+}) {
+  if (decision.status_snapshot !== "pending") {
+    return null;
+  }
+
+  const actions = [
+    { ariaLabel: `批准：${decision.title_snapshot}`, label: "批准", value: "approved" },
+    {
+      ariaLabel: `要求补证：${decision.title_snapshot}`,
+      label: "要求补证",
+      value: "needs_more_evidence",
+    },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {actions.map((action) => (
+        <V3Button
+          aria-label={action.ariaLabel}
+          key={action.value}
+          size="sm"
+          type="button"
+          variant={action.value === "approved" ? "primary" : "outline"}
+          onClick={() => onResolveDecision(decision.id, action.value)}
+        >
+          {action.label}
+        </V3Button>
+      ))}
+    </div>
+  );
+}
+
 function formatIdList(ids: string[]) {
   return ids.length > 0 ? ids.join("、") : "未指定";
 }
@@ -898,6 +953,32 @@ function projectStatusLabel(status: ProjectStatus | string) {
     draft: "草稿",
     paused: "已暂停",
     running: "运行中",
+  };
+  return labels[status] ?? status;
+}
+
+function projectPhaseLabel(phase: string) {
+  const labels: Record<string, string> = {
+    acceptance: "待确认结果",
+    archived: "已关闭",
+    configuring: "配置中",
+    draft: "待配置",
+    paused: "已暂停",
+    running: "执行中",
+  };
+  return labels[phase] ?? phase;
+}
+
+function demandStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    completed: "已完成",
+    executing: "执行中",
+    failed: "失败",
+    planned: "已计划",
+    planning_pending: "待计划",
+    recorded: "已记录",
+    submitted: "待计划",
   };
   return labels[status] ?? status;
 }
@@ -1072,6 +1153,40 @@ function dispatchGateTone(status: DispatchGateStatus): V3Tone {
     return "danger";
   }
   return "mute";
+}
+
+function projectBusinessBlocker(gates: DispatchGateResult[]) {
+  const latest = gates[0];
+  if (!latest || latest.status === "passed") {
+    return undefined;
+  }
+  const blockerKeys = latest.blockers.map((blocker) => blocker.key);
+  if (blockerKeys.some((key) => key.includes("runtime"))) {
+    return {
+      description: "目标运行资源暂不可用。项目负责人无需处理，系统会等待平台资源恢复或稍后重试。",
+      status: "等待平台处理",
+      title: "运行节点暂不可用，系统会稍后重试",
+    };
+  }
+  if (latest.status === "waiting_human") {
+    return {
+      description: "当前任务需要负责人确认后才能继续推进。",
+      status: "待负责人处理",
+      title: "需要负责人确认",
+    };
+  }
+  if (latest.status === "replan_required") {
+    return {
+      description: "当前计划不再满足执行条件，需要重新编排后继续。",
+      status: "需重新计划",
+      title: "计划需要调整",
+    };
+  }
+  return {
+    description: "当前执行条件尚未满足，系统已保留阻塞原因。",
+    status: "待处理",
+    title: "执行条件未满足",
+  };
 }
 
 function formatDateTime(value?: string | null) {
