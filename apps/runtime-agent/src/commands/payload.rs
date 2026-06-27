@@ -64,7 +64,21 @@ pub struct RuntimeSkillPayload {
 pub struct RuntimeMCPServerPayload {
     pub server_id: String,
     pub server_key: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub transport: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub auth_strategy: Option<String>,
+    #[serde(default)]
+    pub credential_env_var: Option<String>,
+    #[serde(default)]
+    pub required_env_vars: Vec<String>,
+    #[serde(default)]
+    pub headers_env: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub source_scope: Option<String>,
     #[serde(default)]
     pub config_ref: Option<String>,
     #[serde(default = "default_metadata")]

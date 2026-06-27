@@ -155,7 +155,9 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+/// atomic_write writes bytes to a temp file in the same directory and renames it into place,
+/// so readers never observe a partially written file. Exposed for provider config materializers.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("workspace file path has no parent: {}", path.display()))?;

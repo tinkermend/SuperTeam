@@ -7,6 +7,7 @@ pub mod events;
 pub mod executor;
 pub mod health;
 pub mod instances;
+pub mod mcp_config;
 pub mod providers;
 pub mod runs;
 pub mod server;

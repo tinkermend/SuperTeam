@@ -549,6 +549,20 @@ impl RuntimeCommandExecutor {
             }
         }
 
+        if !payload.mcp_servers.is_empty() {
+            if let Err(error) = crate::mcp_config::materialize_mcp_config(
+                &PathBuf::from(&payload.agent_home_dir),
+                &payload.provider_type,
+                &payload.mcp_servers,
+            ) {
+                let error = self.recorded_error(&command.id, error);
+                let message = error.to_string();
+                self.write_provisioning_failure(&command.id, message)
+                    .await?;
+                return Err(error);
+            }
+        }
+
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .complete_runtime_command(
