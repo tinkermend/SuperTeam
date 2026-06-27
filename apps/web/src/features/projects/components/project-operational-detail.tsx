@@ -509,28 +509,30 @@ export function ProjectOperationalDetail({
               {recentEvents.length === 0 ? (
                 <EmptyLine label="暂无项目事件" />
               ) : (
-                recentEvents.slice(0, 8).map((event) => (
-                  <div className="flex gap-3 p-4" key={event.id}>
-                    <span className="mt-1 size-2 rounded-full bg-v3-brand" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{event.event_type}</p>
-                        <span className="text-xs text-v3-ink-2">
-                          #{event.sequence_number}
-                        </span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                        {event.summary || "项目事件已记录"}
-                      </p>
-                      {event.resource_type || event.resource_id ? (
-                        <p className="mt-1 text-xs text-v3-ink-2">
-                          {event.resource_type ?? "resource"} ·{" "}
-                          {event.resource_id ?? "-"}
+                recentEvents.slice(0, 8).map((event) => {
+                  const eventDisplay = projectEventDisplay(event);
+                  return (
+                    <div className="flex gap-3 p-4" key={event.id}>
+                      <span className="mt-1 size-2 rounded-full bg-v3-brand" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{eventDisplay.title}</p>
+                          <span className="text-xs text-v3-ink-2">
+                            #{event.sequence_number}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
+                          {eventDisplay.summary}
                         </p>
-                      ) : null}
+                        {eventDisplay.resource ? (
+                          <p className="mt-1 text-xs text-v3-ink-2">
+                            {eventDisplay.resource}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </SoftCard>
@@ -1068,6 +1070,132 @@ function projectMemberBusinessLabel(member: ProjectMember) {
     return "项目负责人";
   }
   return "项目参与人";
+}
+
+function projectEventDisplay(event: ProjectEvent) {
+  const labels: Record<string, { summary: string; title: string }> = {
+    "coordination_job.created": {
+      summary: "系统已开始推进下一步项目工作。",
+      title: "项目推进已启动",
+    },
+    "decision.requested": {
+      summary: "有事项需要项目负责人处理。",
+      title: "等待负责人处理",
+    },
+    "decision.submitted": {
+      summary: "负责人处理结果已记录。",
+      title: "负责人已处理",
+    },
+    "demand.submitted": {
+      summary: "新的项目需求已进入处理队列。",
+      title: "需求已提交",
+    },
+    "project.acceptance.submitted": {
+      summary: "项目验收结论已提交。",
+      title: "验收结论已提交",
+    },
+    "project.archive.retention_pending": {
+      summary: "项目归档前仍有保留事项待处理。",
+      title: "归档保留事项待处理",
+    },
+    "project.archive_snapshot.created": {
+      summary: "项目归档快照已生成。",
+      title: "归档快照已生成",
+    },
+    "project.archived": {
+      summary: "项目已归档关闭。",
+      title: "项目已归档",
+    },
+    "project.artifact.linked": {
+      summary: "新的项目工件已关联。",
+      title: "工件已关联",
+    },
+    "project.budget.recorded": {
+      summary: "项目预算记录已更新。",
+      title: "预算记录已更新",
+    },
+    "project.config.changed": {
+      summary: "项目配置已更新。",
+      title: "配置已更新",
+    },
+    "project.created": {
+      summary: "项目已创建。",
+      title: "项目已创建",
+    },
+    "project.evidence.linked": {
+      summary: "新的项目证据已关联。",
+      title: "证据已关联",
+    },
+    "project.evidence.verified": {
+      summary: "项目证据已完成核验。",
+      title: "证据已核验",
+    },
+    "project.report.linked": {
+      summary: "项目报告已关联。",
+      title: "报告已关联",
+    },
+    "project_task.completed": {
+      summary: "数字员工任务已完成并回写结果。",
+      title: "执行任务已完成",
+    },
+    "project_task.created": {
+      summary: "新的执行任务已进入项目推进队列。",
+      title: "执行任务已创建",
+    },
+    "project_task.dispatched": {
+      summary: "系统已安排数字员工执行任务。",
+      title: "执行任务已分派",
+    },
+    "project_task.dispatch_gate.blocked": {
+      summary: "当前执行条件未满足，系统已记录阻塞原因。",
+      title: "执行条件未满足",
+    },
+    "project_task.dispatch_gate.checked": {
+      summary: "系统已检查任务执行条件。",
+      title: "执行条件已检查",
+    },
+    "project_task.dispatch_gate.replan_required": {
+      summary: "当前计划需要调整后继续推进。",
+      title: "计划需要调整",
+    },
+    "project_task.dispatch_gate.retry_later": {
+      summary: "运行条件暂不可用，系统会稍后重试。",
+      title: "稍后重试执行",
+    },
+    "project_task.dispatch_gate.waiting_human": {
+      summary: "当前执行需要负责人确认。",
+      title: "等待负责人确认",
+    },
+    "project_task.failed": {
+      summary: "数字员工任务执行失败，系统已记录原因。",
+      title: "执行任务失败",
+    },
+    "route_decision.created": {
+      summary: "系统已生成任务分派方案。",
+      title: "任务分派方案已生成",
+    },
+    "transfer.requested": {
+      summary: "项目执行需要调整服务员工。",
+      title: "服务员工调整待处理",
+    },
+    "workflow.signaled": {
+      summary: "项目推进状态已更新。",
+      title: "项目推进已更新",
+    },
+  };
+  const label = labels[event.event_type] ?? {
+    summary: "项目状态已有新记录。",
+    title: "项目动态已更新",
+  };
+  return {
+    resource: event.resource_id ? `项目对象 · ${shortIdentifier(event.resource_id)}` : undefined,
+    summary: label.summary,
+    title: label.title,
+  };
+}
+
+function shortIdentifier(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
 }
 
 function stringFromUnknown(value: unknown) {
