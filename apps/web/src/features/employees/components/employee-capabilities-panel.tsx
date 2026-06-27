@@ -30,8 +30,10 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createEmployeeMcpBinding,
   deleteEmployeeMcpBinding,
+  listEffectiveMcpConfig,
   listEffectiveMcpServers,
   listUserCredentials,
+  type EffectiveMcpServer,
   type McpServer,
   type UserCredential,
 } from "@/lib/api/capabilities";
@@ -82,6 +84,13 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   const effectiveMcp = useQuery({
     queryKey: ["effective-mcp-servers", employeeId],
     queryFn: () => listEffectiveMcpServers(apiOptions, employeeId),
+    placeholderData: keepPreviousData,
+  });
+  // Registry-resolved effective MCP config (migration 037): shows inherited vs personal
+  // source and surfaces blocked_missing_env so the operator knows which env vars to set.
+  const effectiveMcpConfig = useQuery({
+    queryKey: ["effective-mcp-config", employeeId],
+    queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
   const envVars = useQuery({
@@ -356,6 +365,13 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
               />
             ))}
           </div>
+
+          <EffectiveMcpRegistrySection
+            config={effectiveMcpConfig.data ?? []}
+            isError={effectiveMcpConfig.isError}
+            isFetching={effectiveMcpConfig.isFetching}
+            isLoading={effectiveMcpConfig.isLoading}
+          />
         </CardContent>
       </SoftCard>
     </div>
@@ -562,6 +578,87 @@ function SkillInstallRow({
         <Plus data-icon="inline-start" />
         {`安装 ${skill.name}`}
       </Button>
+    </div>
+  );
+}
+
+// EffectiveMcpRegistrySection renders the registry-resolved effective MCP config for an
+// employee (team-inherited plus personal), highlighting bindings blocked by missing env
+// vars so the operator can set the exact variable names.
+function EffectiveMcpRegistrySection({
+  config,
+  isError,
+  isFetching,
+  isLoading,
+}: {
+  config: EffectiveMcpServer[];
+  isError: boolean;
+  isFetching: boolean;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 border-t pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">生效 MCP 配置（注册表）</h3>
+        {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
+      </div>
+      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isError ? <p className="text-sm text-destructive">MCP 配置加载失败</p> : null}
+      {!isLoading && !isError && config.length === 0 ? (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          暂无注册表 MCP 绑定
+        </p>
+      ) : null}
+      {config.map((server) => {
+        const blocked = server.missing_env_vars && server.missing_env_vars.length > 0;
+        const tone = blocked ? "warn" : "ok";
+        return (
+          <div key={server.server_id} className="flex flex-col gap-1 rounded-md border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-medium">{server.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">{server.server_key}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusPill tone="mute">
+                  {server.source_scope === "team" ? "团队继承" : "个人"}
+                </StatusPill>
+                <StatusPill tone={tone as Extract<V3Tone, "ok" | "warn">}>
+                  {blocked ? "缺少环境变量" : server.status}
+                </StatusPill>
+              </div>
+            </div>
+            <p className="truncate font-mono text-xs text-muted-foreground" title={server.url}>
+              {server.url}
+            </p>
+            {server.required_env_vars && server.required_env_vars.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="text-xs text-muted-foreground">必需环境变量：</span>
+                {server.required_env_vars.map((name) => {
+                  const missing = server.missing_env_vars?.includes(name);
+                  return (
+                    <span
+                      key={name}
+                      className={
+                        missing
+                          ? "rounded border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 font-mono text-[11px] text-destructive"
+                          : "rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+                      }
+                    >
+                      {name}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+            {blocked ? (
+              <p className="text-xs text-destructive">
+                缺少环境变量 {server.missing_env_vars?.join(", ")}，请在下方环境变量区域配置后再启动。
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { McpManagementPage } from "@/features/mcp";
 import {
   createMcpServerDefinition,
   listMcpServerDefinitions,
+  type McpServerDefinition,
 } from "@/lib/api/capabilities";
 
 vi.mock("@/components/layout/header", () => ({
@@ -49,7 +50,7 @@ const githubDefinition = {
   tool_allowlist: [],
   risk_level: "medium",
   status: "active",
-};
+} satisfies McpServerDefinition;
 
 async function withClient(ui: ReactNode) {
   const client = new QueryClient({
@@ -79,7 +80,7 @@ describe("MCP management page", () => {
     vi.mocked(createMcpServerDefinition).mockResolvedValue({
       ...githubDefinition,
       id: "mcp-new",
-    });
+    } satisfies McpServerDefinition);
 
     const user = userEvent.setup();
     const screen = await withClient(<McpManagementPage />);
