@@ -143,6 +143,7 @@ export function ProjectOperationalDetail({
   const humanRoles = overview?.human_roles ?? [];
   const digitalPool = overview?.digital_employee_pool ?? [];
   const servicePool = digitalPool;
+  const projectOwners = ownerMembers(humanRoles, project.human_owner_user_id);
   const latestDemand = demands[0];
   const latestResult = executionSummaries[0];
   const pendingOwnerDecisions = decisionRequests.filter(
@@ -693,14 +694,16 @@ export function ProjectOperationalDetail({
           </SoftCard>
 
           <MemberPanel
+            emptyLabel="当前项目尚未设置项目负责人"
             icon={<UserRound />}
-            members={humanRoles}
-            title="人类角色"
+            members={projectOwners}
+            title="项目负责人组"
           />
           <MemberPanel
+            emptyLabel="当前项目服务池为空"
             icon={<Bot />}
             members={servicePool}
-            title="数字员工池"
+            title="项目服务池"
           />
           <SoftCard className="overflow-hidden">
             <PanelHeader
@@ -852,10 +855,12 @@ function PanelHeader({
 }
 
 function MemberPanel({
+  emptyLabel,
   icon,
   members,
   title,
 }: {
+  emptyLabel: string;
   icon: ReactNode;
   members: ProjectMember[];
   title: string;
@@ -865,7 +870,7 @@ function MemberPanel({
       <PanelHeader icon={icon} title={title} meta={`${members.length} 个`} />
       <div className="divide-y divide-v3-line">
         {members.length === 0 ? (
-          <EmptyLine label={`${title}为空`} />
+          <EmptyLine label={emptyLabel} />
         ) : (
           members.slice(0, 6).map((member) => (
             <div className="flex items-center justify-between gap-3 p-4" key={member.id}>
@@ -874,7 +879,7 @@ function MemberPanel({
                   {member.display_name_snapshot || member.principal_id}
                 </p>
                 <p className="truncate text-xs text-v3-ink-2">
-                  {member.project_role} · {member.principal_type}
+                  {projectMemberBusinessLabel(member)}
                 </p>
               </div>
               <ExternalLink className="size-3.5 text-v3-ink-2" />
@@ -943,6 +948,48 @@ function DecisionRequestActions({
 
 function formatIdList(ids: string[]) {
   return ids.length > 0 ? ids.join("、") : "未指定";
+}
+
+function projectMemberBusinessLabel(member: ProjectMember) {
+  if (member.principal_type === "digital_employee") {
+    const sourceTeam = stringFromUnknown(member.settings?.source_team_name);
+    return sourceTeam ? `数字员工 · ${sourceTeam}` : "数字员工";
+  }
+  if (member.project_role === "owner") {
+    return "项目负责人";
+  }
+  return "项目参与人";
+}
+
+function stringFromUnknown(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "";
+}
+
+function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
+  const owners = members.filter(
+    (member) =>
+      member.principal_type === "human_user" &&
+      member.status === "active" &&
+      (member.project_role === "owner" || member.principal_id === fallbackOwnerID),
+  );
+  if (owners.length > 0) {
+    return owners;
+  }
+  if (!fallbackOwnerID) {
+    return [];
+  }
+  return [
+    {
+      id: `owner-${fallbackOwnerID}`,
+      principal_id: fallbackOwnerID,
+      principal_type: "human_user" as const,
+      project_id: "",
+      project_role: "owner" as const,
+      settings: {},
+      status: "active",
+      tenant_id: "",
+    },
+  ];
 }
 
 function projectStatusLabel(status: ProjectStatus | string) {
