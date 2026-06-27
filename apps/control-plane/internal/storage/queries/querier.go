@@ -266,8 +266,9 @@ type Querier interface {
 	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
 	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)
 	// Effective MCP bindings for an employee: team-inherited plus personal, joined to the
-	// registry definition and to the employee's configured env-var names so the caller can
-	// compute missing required env vars. credential values are never returned here.
+	// registry definition. The caller computes missing required env vars by intersecting
+	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
+	// returned here.
 	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
 	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
 	ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error)
