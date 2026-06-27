@@ -27,6 +27,7 @@ import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
+import { Route as AuthenticatedMcpIndexRouteImport } from './routes/_authenticated/mcp/index'
 import { Route as AuthenticatedInboxIndexRouteImport } from './routes/_authenticated/inbox/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedCostsIndexRouteImport } from './routes/_authenticated/costs/index'
@@ -144,6 +145,11 @@ const AuthenticatedPermissionsIndexRoute =
     path: '/permissions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMcpIndexRoute = AuthenticatedMcpIndexRouteImport.update({
+  id: '/mcp/',
+  path: '/mcp/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedInboxIndexRoute = AuthenticatedInboxIndexRouteImport.update({
   id: '/inbox/',
   path: '/inbox/',
@@ -295,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/costs/': typeof AuthenticatedCostsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/inbox/': typeof AuthenticatedInboxIndexRoute
+  '/mcp/': typeof AuthenticatedMcpIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
@@ -335,6 +342,7 @@ export interface FileRoutesByTo {
   '/costs': typeof AuthenticatedCostsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/inbox': typeof AuthenticatedInboxIndexRoute
+  '/mcp': typeof AuthenticatedMcpIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
@@ -377,6 +385,7 @@ export interface FileRoutesById {
   '/_authenticated/costs/': typeof AuthenticatedCostsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/inbox/': typeof AuthenticatedInboxIndexRoute
+  '/_authenticated/mcp/': typeof AuthenticatedMcpIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
@@ -419,6 +428,7 @@ export interface FileRouteTypes {
     | '/costs/'
     | '/employees/'
     | '/inbox/'
+    | '/mcp/'
     | '/permissions/'
     | '/projects/'
     | '/runtime/'
@@ -459,6 +469,7 @@ export interface FileRouteTypes {
     | '/costs'
     | '/employees'
     | '/inbox'
+    | '/mcp'
     | '/permissions'
     | '/projects'
     | '/runtime'
@@ -500,6 +511,7 @@ export interface FileRouteTypes {
     | '/_authenticated/costs/'
     | '/_authenticated/employees/'
     | '/_authenticated/inbox/'
+    | '/_authenticated/mcp/'
     | '/_authenticated/permissions/'
     | '/_authenticated/projects/'
     | '/_authenticated/runtime/'
@@ -650,6 +662,13 @@ declare module '@tanstack/react-router' {
       path: '/permissions'
       fullPath: '/permissions/'
       preLoaderRoute: typeof AuthenticatedPermissionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mcp/': {
+      id: '/_authenticated/mcp/'
+      path: '/mcp'
+      fullPath: '/mcp/'
+      preLoaderRoute: typeof AuthenticatedMcpIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/inbox/': {
@@ -853,6 +872,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCostsIndexRoute: typeof AuthenticatedCostsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedInboxIndexRoute: typeof AuthenticatedInboxIndexRoute
+  AuthenticatedMcpIndexRoute: typeof AuthenticatedMcpIndexRoute
   AuthenticatedPermissionsIndexRoute: typeof AuthenticatedPermissionsIndexRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
@@ -888,6 +908,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCostsIndexRoute: AuthenticatedCostsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedInboxIndexRoute: AuthenticatedInboxIndexRoute,
+  AuthenticatedMcpIndexRoute: AuthenticatedMcpIndexRoute,
   AuthenticatedPermissionsIndexRoute: AuthenticatedPermissionsIndexRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,

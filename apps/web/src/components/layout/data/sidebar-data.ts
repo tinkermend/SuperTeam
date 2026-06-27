@@ -10,6 +10,7 @@ import {
   KeyRound,
   LayoutDashboard,
   MessagesSquare,
+  Network,
   Puzzle,
   SendHorizontal,
   Server,
@@ -95,6 +96,12 @@ export function buildSidebarData({
             title: "外部能力",
             url: "/capabilities",
             icon: Puzzle,
+            iconTone: "neutral",
+          },
+          {
+            title: "MCP 管理",
+            url: "/mcp",
+            icon: Network,
             iconTone: "neutral",
           },
           {
