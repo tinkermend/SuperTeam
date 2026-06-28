@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use reqwest::StatusCode;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::watch;
 
 pub const DEFAULT_AUTH_REFRESH_MARGIN: Duration = Duration::from_secs(30 * 60);
 pub const DEFAULT_AUTH_SAFETY_WINDOW: Duration = Duration::from_secs(2 * 60);
@@ -46,8 +46,7 @@ pub struct RuntimeAuthState {
 
 struct RuntimeAuthInner {
     node_id: String,
-    state: RwLock<RuntimeAuthSnapshot>,
-    changed: Notify,
+    state: watch::Sender<RuntimeAuthSnapshot>,
     safety_window: Duration,
     refresh_margin: Duration,
 }
@@ -87,18 +86,18 @@ impl RuntimeAuthState {
         safety_window: Duration,
     ) -> Self {
         let node_id = node_id.into();
+        let (state, _) = watch::channel(RuntimeAuthSnapshot {
+            node_id: node_id.clone(),
+            session_id: None,
+            token: None,
+            expires_at: None,
+            generation: 0,
+            status: RuntimeAuthStatus::Empty,
+        });
         Self {
             inner: Arc::new(RuntimeAuthInner {
-                state: RwLock::new(RuntimeAuthSnapshot {
-                    node_id: node_id.clone(),
-                    session_id: None,
-                    token: None,
-                    expires_at: None,
-                    generation: 0,
-                    status: RuntimeAuthStatus::Empty,
-                }),
+                state,
                 node_id,
-                changed: Notify::new(),
                 safety_window,
                 refresh_margin,
             }),
@@ -106,7 +105,7 @@ impl RuntimeAuthState {
     }
 
     pub async fn snapshot(&self) -> RuntimeAuthSnapshot {
-        self.inner.state.read().await.clone()
+        self.inner.state.borrow().clone()
     }
 
     pub async fn set_session(
@@ -117,37 +116,41 @@ impl RuntimeAuthState {
     ) -> Result<RuntimeCredentials> {
         let expires_at = OffsetDateTime::parse(expires_at.as_ref(), &Rfc3339)
             .context("runtime session expires_at is not RFC3339")?;
-        let mut state = self.inner.state.write().await;
-        state.session_id = Some(session_id.into());
-        state.token = Some(token.into());
-        state.expires_at = Some(expires_at);
-        state.generation += 1;
-        state.status = RuntimeAuthStatus::Connected;
-        let credentials = credentials_from_snapshot(&state)?;
-        drop(state);
-        self.inner.changed.notify_waiters();
-        Ok(credentials)
+        let session_id = session_id.into();
+        let token = token.into();
+        let mut credentials = None;
+        self.inner.state.send_modify(|state| {
+            state.session_id = Some(session_id);
+            state.token = Some(token);
+            state.expires_at = Some(expires_at);
+            state.generation += 1;
+            state.status = RuntimeAuthStatus::Connected;
+            credentials = Some(
+                credentials_from_snapshot(state)
+                    .expect("runtime credentials are complete after set_session"),
+            );
+        });
+        Ok(credentials.expect("set_session send_modify should always assign credentials"))
     }
 
     pub async fn mark_status(&self, status: RuntimeAuthStatus) {
-        let mut state = self.inner.state.write().await;
-        state.status = status;
-        drop(state);
-        self.inner.changed.notify_waiters();
+        self.inner.state.send_modify(|state| {
+            state.status = status;
+        });
     }
 
     pub async fn report_auth_failure(&self, generation: Option<u64>) {
-        let mut state = self.inner.state.write().await;
-        if generation.is_none() || generation == Some(state.generation) {
-            state.status = RuntimeAuthStatus::Reauthenticating;
-        }
-        drop(state);
-        self.inner.changed.notify_waiters();
+        self.inner.state.send_modify(|state| {
+            if generation.is_none() || generation == Some(state.generation) {
+                state.status = RuntimeAuthStatus::Reauthenticating;
+            }
+        });
     }
 
     pub async fn wait_for_business_credentials(&self) -> Result<RuntimeCredentials> {
+        let mut state = self.inner.state.subscribe();
         loop {
-            let snapshot = self.snapshot().await;
+            let snapshot = state.borrow_and_update().clone();
             if matches!(
                 snapshot.status,
                 RuntimeAuthStatus::Connected | RuntimeAuthStatus::Refreshing
@@ -160,7 +163,10 @@ impl RuntimeAuthState {
             if snapshot.status == RuntimeAuthStatus::Shutdown {
                 anyhow::bail!("runtime auth is shut down");
             }
-            self.inner.changed.notified().await;
+            state
+                .changed()
+                .await
+                .context("runtime auth state sender closed")?;
         }
     }
 
@@ -169,11 +175,14 @@ impl RuntimeAuthState {
     }
 
     pub async fn wait_until_reauthenticating(&self) {
+        let mut state = self.inner.state.subscribe();
         loop {
-            if self.snapshot().await.status == RuntimeAuthStatus::Reauthenticating {
+            if state.borrow_and_update().status == RuntimeAuthStatus::Reauthenticating {
                 return;
             }
-            self.inner.changed.notified().await;
+            if state.changed().await.is_err() {
+                return;
+            }
         }
     }
 

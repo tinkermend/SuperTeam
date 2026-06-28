@@ -384,6 +384,38 @@ async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
 }
 
 #[tokio::test]
+async fn controlplane_client_classifies_runtime_auth_unauthorized() {
+    use superteam_runtime_agent::runtime_auth::{RuntimeAuthState, is_runtime_auth_expired};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let _request = read_http_request(&mut socket).await;
+        socket
+            .write_all(
+                b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 30\r\n\r\ninvalid runtime authentication",
+            )
+            .await
+            .unwrap();
+    });
+
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("session-1", "expired-token", "2999-06-02T00:00:00Z")
+        .await
+        .expect("session");
+    let client = ControlPlaneClient::with_runtime_auth(format!("http://{}", addr), auth.clone());
+
+    let error = client.claim_task(1).await.expect_err("claim should fail");
+    assert!(is_runtime_auth_expired(error.as_ref()));
+    assert_eq!(
+        auth.snapshot().await.status,
+        superteam_runtime_agent::runtime_auth::RuntimeAuthStatus::Reauthenticating
+    );
+}
+
+#[tokio::test]
 async fn controlplane_client_upsert_capabilities_sends_openapi_wrapper_body() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
