@@ -421,6 +421,11 @@ async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
             }),
         )
         .await;
+
+        let (mut capabilities_socket, _) = listener.accept().await.unwrap();
+        let capabilities_request = read_http_request(&mut capabilities_socket).await;
+        request_tx.send(capabilities_request).await.unwrap();
+        write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
     });
 
     let mut config = RuntimeConfig::new("node-1").expect("config");
@@ -437,6 +442,7 @@ async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
 
     let renew_request = request_rx.recv().await.expect("renew request");
     let hello_request = request_rx.recv().await.expect("hello request");
+    let capabilities_request = request_rx.recv().await.expect("capabilities request");
     assert_eq!(
         renew_request.lines().next().unwrap(),
         "POST /api/v1/runtime/sessions/old-session/renew HTTP/1.1"
@@ -446,6 +452,11 @@ async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
         hello_request.lines().next().unwrap(),
         "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
     );
+    assert_eq!(
+        capabilities_request.lines().next().unwrap(),
+        "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1"
+    );
+    assert!(capabilities_request.contains("authorization: Bearer fresh-session-token"));
 
     let snapshot = auth.snapshot().await;
     assert_eq!(
@@ -453,6 +464,141 @@ async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
         Some("66666666-6666-4666-8666-666666666666")
     );
     assert_eq!(snapshot.token.as_deref(), Some("fresh-session-token"));
+}
+
+#[tokio::test]
+async fn session_supervisor_returns_error_when_reenrollment_is_pending() {
+    use superteam_runtime_agent::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let (mut renew_socket, _) = listener.accept().await.unwrap();
+        let _renew_request = read_http_request(&mut renew_socket).await;
+        write_status_response(
+            &mut renew_socket,
+            "401 Unauthorized",
+            serde_json::json!("invalid runtime session"),
+        )
+        .await;
+
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let _hello_request = read_http_request(&mut hello_socket).await;
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "pending",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                }
+            }),
+        )
+        .await;
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("old-session", "old-token", "1970-01-01T00:00:00Z")
+        .await
+        .expect("old session");
+
+    let result =
+        superteam_runtime_agent::daemon::renew_or_reenroll_once(&config, auth.clone(), vec![])
+            .await;
+
+    assert!(result.is_err(), "pending re-enrollment must fail");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("runtime enrollment is not approved")
+    );
+    let snapshot = auth.snapshot().await;
+    assert_eq!(snapshot.status, RuntimeAuthStatus::PendingApproval);
+}
+
+#[tokio::test]
+async fn runtime_auth_renewal_loop_updates_shared_auth_state() {
+    use superteam_runtime_agent::runtime_auth::RuntimeAuthState;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut renew_socket, _) = listener.accept().await.unwrap();
+        let renew_request = read_http_request(&mut renew_socket).await;
+        let _ = request_tx.send(renew_request);
+        write_json_response(
+            &mut renew_socket,
+            serde_json::json!({
+                "id": "old-session",
+                "tenant_id": "22222222-2222-4222-8222-222222222222",
+                "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                "node_id": "node-1",
+                "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                "expires_at": "2999-06-03T00:00:00Z",
+                "last_seen_at": "2026-06-02T00:00:00Z",
+                "created_at": "2026-06-02T00:00:00Z",
+                "updated_at": "2026-06-02T00:00:00Z"
+            }),
+        )
+        .await;
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("old-session", "old-token", "1970-01-01T00:00:00Z")
+        .await
+        .expect("old session");
+    let handle = superteam_runtime_agent::daemon::spawn_runtime_auth_renewal_loop(
+        config,
+        auth.clone(),
+        vec![],
+    );
+
+    let renew_request = tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+        .await
+        .expect("renew request should be attempted")
+        .expect("renew request should be captured");
+    assert_eq!(
+        renew_request.lines().next().unwrap(),
+        "POST /api/v1/runtime/sessions/old-session/renew HTTP/1.1"
+    );
+    assert!(renew_request.contains("authorization: Bearer old-token"));
+    let snapshot = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let snapshot = auth.snapshot().await;
+            if snapshot
+                .expires_at
+                .is_some_and(|value| value.unix_timestamp() == 32485363200)
+            {
+                return snapshot;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("shared auth expiry should be renewed");
+    handle.abort();
+    assert_eq!(snapshot.session_id.as_deref(), Some("old-session"));
+    assert_eq!(snapshot.token.as_deref(), Some("old-token"));
+    assert_eq!(
+        snapshot.expires_at.map(|value| value.unix_timestamp()),
+        Some(32485363200)
+    );
 }
 
 #[tokio::test]
