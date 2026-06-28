@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-06-29 00:23: 项目管理新建项目改为分屏配置台，支持授权团队、人类角色、数字员工池、策略预设和创建前审阅。
+
 - 2026-06-28 23:14 完成了「任务编排模板库」的全栈开发，包括 OpenAPI 契约、后台 SQLC 和服务、控制平面 API 路由、前端模板选择器组件和插入表单的对接集成。
 
 ### Changed
