@@ -3,11 +3,15 @@ import { buildApiUrl, parseJson } from "./client";
 
 export type PromptTemplateScope = "GLOBAL" | "TENANT" | "TEAM" | "PERSONAL";
 
-export type PromptTemplateVariable = {
+export interface PromptTemplateVariable {
   name: string;
+  label?: string;
   description?: string;
+  type: "string" | "text" | "select";
   required: boolean;
-};
+  default?: string;
+  options?: string[];
+}
 
 export type PromptTemplate = {
   id: string;

@@ -239,7 +239,7 @@ export function TaskLaunchForm({
               value={content}
             />
             <div className="mt-3 flex items-center justify-between border-t border-v3-line pt-3">
-              <Button
+              <V3Button
                 variant="ghost"
                 size="sm"
                 className="h-8 gap-1 text-xs text-v3-brand hover:text-v3-brand-deep"
@@ -248,7 +248,7 @@ export function TaskLaunchForm({
               >
                 <Sparkles className="size-3.5" />
                 浏览模板库
-              </Button>
+              </V3Button>
               <span className="text-xs tabular-nums text-v3-ink-3">
                 {content.length} / 5000
               </span>

@@ -11,9 +11,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { applyPromptTemplate, listPromptTemplates, type PromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { SoftCard } from "@/components/superteam";
+import { SoftCard, V3Button } from "@/components/superteam";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 
 type PromptTemplateDialogProps = {
@@ -75,7 +83,7 @@ export function PromptTemplateDialog({
     if (selectedTemplate.variables) {
       for (const v of selectedTemplate.variables) {
         const val = variableValues[v.name] || "";
-        result = result.replace(new RegExp(`\\{\\{${v.name}\\}\\}`, "g"), val);
+        result = result.replaceAll(`{{${v.name}}}`, val);
       }
     }
     
@@ -148,16 +156,51 @@ export function PromptTemplateDialog({
                           {v.description && (
                             <p className="text-xs text-v3-ink-2">{v.description}</p>
                           )}
-                          <Input
-                            value={variableValues[v.name] || ""}
-                            onChange={(e) =>
-                              setVariableValues((prev) => ({
-                                ...prev,
-                                [v.name]: e.target.value,
-                              }))
-                            }
-                            placeholder={`输入 ${v.name}...`}
-                          />
+                          {v.type === "text" ? (
+                            <Textarea
+                              value={variableValues[v.name] || ""}
+                              onChange={(e) =>
+                                setVariableValues((prev) => ({
+                                  ...prev,
+                                  [v.name]: e.target.value,
+                                }))
+                              }
+                              placeholder={`输入 ${v.name}...`}
+                              className="min-h-[100px]"
+                            />
+                          ) : v.type === "select" ? (
+                            <Select
+                              value={variableValues[v.name] || ""}
+                              onValueChange={(val) =>
+                                setVariableValues((prev) => ({
+                                  ...prev,
+                                  [v.name]: val,
+                                }))
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={`选择 ${v.name}...`} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {v.options?.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              value={variableValues[v.name] || ""}
+                              onChange={(e) =>
+                                setVariableValues((prev) => ({
+                                  ...prev,
+                                  [v.name]: e.target.value,
+                                }))
+                              }
+                              placeholder={`输入 ${v.name}...`}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -175,12 +218,12 @@ export function PromptTemplateDialog({
                 </div>
               </ScrollArea>
               <div className="mt-6 flex justify-end gap-3 pt-4">
-                <Button variant="outline" onClick={() => setSelectedTemplate(null)}>
+                <V3Button variant="outline" onClick={() => setSelectedTemplate(null)}>
                   返回列表
-                </Button>
-                <Button disabled={!isFormValid} onClick={handleConfirm}>
+                </V3Button>
+                <V3Button disabled={!isFormValid} onClick={handleConfirm}>
                   插入模板
-                </Button>
+                </V3Button>
               </div>
             </div>
           ) : (
