@@ -116,7 +116,7 @@ export function CreateProjectShell({
       role="dialog"
     >
       <div className="flex h-full flex-col">
-        <header className="border-b border-v3-line bg-v3-card/90 px-8 py-5 backdrop-blur">
+        <header className="border-b border-v3-line bg-v3-card/90 px-4 py-5 backdrop-blur lg:px-8">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-v3-brand">项目管理 / 新建项目</p>
@@ -158,7 +158,7 @@ export function CreateProjectShell({
           </nav>
         </header>
 
-        <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px] gap-6 overflow-y-auto px-8 py-6">
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8 lg:py-6">
           <section className="min-w-0 rounded-v3-card border border-v3-line bg-v3-card p-8 shadow-v3">
             {authorizationError ? (
               <div className="mb-5 rounded-xl border border-v3-danger/20 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
@@ -205,7 +205,7 @@ export function CreateProjectShell({
           <ProjectReviewPanel currentUser={currentUser} draft={draft} selectableTeams={selectableTeams} />
         </main>
 
-        <footer className="flex items-center justify-between border-t border-v3-line bg-v3-card px-8 py-4">
+        <footer className="flex flex-col gap-3 border-t border-v3-line bg-v3-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-8">
           <Button onClick={onCancel} type="button" variant="ghost">
             返回项目列表
           </Button>
