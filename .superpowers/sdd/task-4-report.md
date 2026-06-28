@@ -56,28 +56,3 @@ PASS
 ok  	github.com/superteam/control-plane/internal/prompttemplate	0.574s
 ```
 - Commits created: 1 commit.
-
-### Review Fix Report
-- Removed manual auth cookie extraction; used `middleware.GetTenantID(r.Context())` and `middleware.GetUserID(r.Context())` instead.
-- Replaced `http.Error` with standard JSON `writeError` responding with `{"error": ...}`.
-- Updated `ApplyTemplate` in `service.go` to return the underlying error instead of swallowing it, allowing `writeHandlerError` to map domain errors to `404 NotFound` or `403 Forbidden`.
-- Renamed the test "missing fields/invalid json" to "invalid json", and added a new "missing fields" subtest.
-- Tests Output:
-```text
-ok  	github.com/superteam/control-plane/internal/prompttemplate	0.579s
-```
-- Commits created: `e1f44add` fix(control-plane): fix prompttemplate handler auth context and error mapping
-
-### Review Fixes
-
-- **Full authorization context**: The `GetCurrentUserContext` is now used to properly parse session tokens into full `auth.CurrentUserContext` in the HTTP handler. Tests were updated to inject a session cookie.
-- **IsAdmin Check**: The handler uses `authz.Authorizer` with `authz.ActionManageSystemTemplates` (which was added) to check if the user is a tenant admin and sets `IsAdmin`.
-- **Error Sentinels**: Defined `ErrUnauthorized`, `ErrForbidden`, `ErrBadRequest`, and `ErrNotFound` domain errors in `service.go` and refactored the HTTP handler to use `errors.Is(err, ...)` for robust error mapping.
-
-#### Test Results
-```
-ok  	github.com/superteam/control-plane/internal/prompttemplate	0.552s
-```
-
-#### Commits
-- b73071ba fix: address prompt template review issues
