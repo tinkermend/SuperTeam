@@ -3,15 +3,15 @@ package prompttemplate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/superteam/control-plane/internal/api/gen"
-	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 type HandlerService interface {
@@ -27,22 +27,27 @@ type AuthService interface {
 type HTTPHandler struct {
 	service     HandlerService
 	authService AuthService
+	authorizer  authz.Authorizer
 }
 
-func NewHandler(service HandlerService, authService AuthService) *HTTPHandler {
-	return &HTTPHandler{service: service, authService: authService}
+func NewHandler(service HandlerService, authService AuthService, authorizer ...authz.Authorizer) *HTTPHandler {
+	h := &HTTPHandler{service: service, authService: authService}
+	if len(authorizer) > 0 {
+		h.authorizer = authorizer[0]
+	}
+	return h
 }
 
 func (h *HTTPHandler) ListPromptTemplates(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
+	cookie, err := r.Cookie(auth.SessionCookieName)
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx := &auth.CurrentUserContext{
-		TenantID: tenantID,
-		User:     &auth.User{ID: userID},
+	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
+	if err != nil || authCtx == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
 	}
 	templates, err := h.service.ListTemplates(r.Context(), authCtx)
 	if err != nil {
@@ -54,15 +59,15 @@ func (h *HTTPHandler) ListPromptTemplates(w http.ResponseWriter, r *http.Request
 }
 
 func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
+	cookie, err := r.Cookie(auth.SessionCookieName)
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx := &auth.CurrentUserContext{
-		TenantID: tenantID,
-		User:     &auth.User{ID: userID},
+	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
+	if err != nil || authCtx == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
 	}
 	var req gen.CreatePromptTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -88,10 +93,23 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	isAdmin := false
+	if h.authorizer != nil {
+		decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+			Actor:    authz.ActorRef{Type: authz.ActorUser, ID: authCtx.User.ID.String()},
+			Action:   authz.ActionManageSystemTemplates,
+			Resource: authz.ResourceRef{Type: authz.ResourceTenant, ID: authCtx.TenantID.String()},
+			TenantID: authCtx.TenantID,
+		})
+		if err == nil && decision.Allowed {
+			isAdmin = true
+		}
+	}
+
 	template, err := h.service.CreateTemplate(r.Context(), CreateTemplateInput{
 		TenantID:     authCtx.TenantID,
 		CreatorID:    authCtx.User.ID,
-		IsAdmin:      false,
+		IsAdmin:      isAdmin,
 		Title:        req.Title,
 		Content:      req.Content,
 		CategoryCode: req.CategoryCode,
@@ -108,15 +126,15 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) ApplyPromptTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
+	cookie, err := r.Cookie(auth.SessionCookieName)
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx := &auth.CurrentUserContext{
-		TenantID: tenantID,
-		User:     &auth.User{ID: userID},
+	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
+	if err != nil || authCtx == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
 	}
 	
 	idStr := chi.URLParam(r, "id")
@@ -157,17 +175,20 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
-	msg := err.Error()
-	if msg == "unauthorized" || strings.Contains(msg, "does not belong to this team") {
-		writeError(w, http.StatusForbidden, msg)
+	if errors.Is(err, ErrUnauthorized) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	if strings.Contains(msg, "no rows in result set") || msg == "not found" {
+	if errors.Is(err, ErrForbidden) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if strings.Contains(msg, "team_id is required") || strings.Contains(msg, "not defined in variables") || strings.Contains(msg, "defined but not used") {
-		writeError(w, http.StatusBadRequest, msg)
+	if errors.Is(err, ErrBadRequest) {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal server error")

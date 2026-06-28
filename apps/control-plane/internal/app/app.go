@@ -571,7 +571,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	capabilityHandler := capability.NewHandler(capabilityService)
 	promptTemplateRepository := prompttemplate.NewPgRepository(q)
 	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
-	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService)
+	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
 	tenantHandler := tenant.NewHandler(tenantService)
 	teamLendingHandler := teamlending.NewHandler(teamLendingService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)

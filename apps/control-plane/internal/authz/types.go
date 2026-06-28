@@ -60,6 +60,8 @@ const (
 	ActionSkillDelete  = "skill.delete"
 	ActionSkillInstall = "skill.install"
 
+	ActionManageSystemTemplates = "system.templates.manage"
+
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"
 	ActionTeamUpdate                      = "team.update"

@@ -5,10 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/superteam/control-plane/internal/auth"
+)
+
+var (
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrForbidden    = errors.New("forbidden")
+	ErrBadRequest   = errors.New("bad request")
+	ErrNotFound     = errors.New("not found")
 )
 
 type TeamMembershipResolver interface {
@@ -31,7 +39,7 @@ func NewService(repo Repository, resolver TeamMembershipResolver, logger *slog.L
 
 func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserContext) ([]PromptTemplate, error) {
 	if authCtx == nil || authCtx.User == nil {
-		return nil, errors.New("unauthorized")
+		return nil, ErrUnauthorized
 	}
 
 	scopes, err := s.resolver.ListUserProjectTeamScopes(ctx, authCtx.TenantID, authCtx.User.ID)
@@ -50,7 +58,7 @@ func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserCo
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
 	if input.Scope == "TEAM" {
 		if input.TeamID == nil || *input.TeamID == uuid.Nil {
-			return PromptTemplate{}, errors.New("team_id is required for TEAM scope")
+			return PromptTemplate{}, fmt.Errorf("%w: team_id is required for TEAM scope", ErrBadRequest)
 		}
 
 		if !input.IsAdmin {
@@ -67,7 +75,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 				}
 			}
 			if !found {
-				return PromptTemplate{}, errors.New("unauthorized team_id: user does not belong to this team")
+				return PromptTemplate{}, fmt.Errorf("%w: user does not belong to this team", ErrForbidden)
 			}
 		}
 	} else {
@@ -87,13 +95,13 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 	for _, v := range input.Variables {
 		varsDefined[v.Name] = true
 		if !tokensInContent[v.Name] {
-			return PromptTemplate{}, fmt.Errorf("variable %q is defined but not used in the template content", v.Name)
+			return PromptTemplate{}, fmt.Errorf("%w: variable %q is defined but not used in the template content", ErrBadRequest, v.Name)
 		}
 	}
 
 	for token := range tokensInContent {
 		if !varsDefined[token] {
-			return PromptTemplate{}, fmt.Errorf("token %q is used in the template content but not defined in variables", token)
+			return PromptTemplate{}, fmt.Errorf("%w: token %q is used in the template content but not defined in variables", ErrBadRequest, token)
 		}
 	}
 
@@ -102,12 +110,15 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 
 func (s *Service) ApplyTemplate(ctx context.Context, id uuid.UUID, authCtx *auth.CurrentUserContext) error {
 	if authCtx == nil {
-		return errors.New("unauthorized")
+		return ErrUnauthorized
 	}
 	err := s.repo.IncrementUseCount(ctx, id, authCtx.TenantID)
 	if err != nil {
 		if s.logger != nil {
 			s.logger.ErrorContext(ctx, "failed to increment template use count", "template_id", id, "error", err)
+		}
+		if strings.Contains(err.Error(), "no rows in result set") || err.Error() == "not found" {
+			return ErrNotFound
 		}
 		return err
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/superteam/control-plane/internal/api/gen"
-	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/auth"
 )
 
@@ -49,6 +48,7 @@ func (m *mockHandlerService) ApplyTemplate(ctx context.Context, id uuid.UUID, au
 func TestHandler_AuthFailure(t *testing.T) {
 	h := NewHandler(&mockHandlerService{}, &mockAuthService{err: errors.New("unauthorized")})
 	req := httptest.NewRequest(http.MethodGet, "/templates", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "bad-session"})
 	w := httptest.NewRecorder()
 	h.ListPromptTemplates(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -76,9 +76,7 @@ func TestHandler_ListSuccess(t *testing.T) {
 	h := NewHandler(service, authSvc)
 
 	req := httptest.NewRequest(http.MethodGet, "/templates", nil)
-	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
-	ctx = context.WithValue(ctx, middleware.UserIDKey, uuid.New())
-	req = req.WithContext(ctx)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 	w := httptest.NewRecorder()
 
 	h.ListPromptTemplates(w, req)
@@ -99,15 +97,10 @@ func TestHandler_CreateTemplate(t *testing.T) {
 	authCtx := &auth.CurrentUserContext{TenantID: uuid.New(), User: &auth.User{ID: uuid.New()}}
 	authSvc := &mockAuthService{ctx: authCtx}
 
-	tenantID := uuid.New()
-	userID := uuid.New()
-
 	t.Run("invalid json", func(t *testing.T) {
 		h := NewHandler(&mockHandlerService{}, authSvc)
 		req := httptest.NewRequest(http.MethodPost, "/templates", bytes.NewBufferString("{bad json"))
-		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
-		ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
-		req = req.WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 		w := httptest.NewRecorder()
 		h.CreatePromptTemplate(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -116,17 +109,15 @@ func TestHandler_CreateTemplate(t *testing.T) {
 	})
 
 	t.Run("missing fields", func(t *testing.T) {
-		h := NewHandler(&mockHandlerService{createErr: errors.New("team_id is required")}, authSvc)
+		h := NewHandler(&mockHandlerService{createErr: ErrBadRequest}, authSvc)
 		body := gen.CreatePromptTemplateRequest{
-			Title: "New Temp",
+			Title:   "New Temp",
 			Content: "content",
-			Scope: gen.TEAM,
+			Scope:   gen.TEAM,
 		}
 		b, _ := json.Marshal(body)
 		req := httptest.NewRequest(http.MethodPost, "/templates", bytes.NewBuffer(b))
-		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
-		ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
-		req = req.WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 		w := httptest.NewRecorder()
 		h.CreatePromptTemplate(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -159,9 +150,7 @@ func TestHandler_CreateTemplate(t *testing.T) {
 		}
 		h := NewHandler(service, authSvc)
 		req := httptest.NewRequest(http.MethodPost, "/templates", bytes.NewBuffer(b))
-		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
-		ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
-		req = req.WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 		w := httptest.NewRecorder()
 
 		h.CreatePromptTemplate(w, req)
@@ -190,9 +179,8 @@ func TestHandler_ApplyTemplate(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", "invalid")
 		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-		ctx = context.WithValue(ctx, middleware.TenantIDKey, uuid.New())
-		ctx = context.WithValue(ctx, middleware.UserIDKey, uuid.New())
 		req = req.WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 		w := httptest.NewRecorder()
 		
 		h.ApplyPromptTemplate(w, req)
@@ -208,9 +196,8 @@ func TestHandler_ApplyTemplate(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", uuid.New().String())
 		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-		ctx = context.WithValue(ctx, middleware.TenantIDKey, uuid.New())
-		ctx = context.WithValue(ctx, middleware.UserIDKey, uuid.New())
 		req = req.WithContext(ctx)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "test-session"})
 		w := httptest.NewRecorder()
 		
 		h.ApplyPromptTemplate(w, req)

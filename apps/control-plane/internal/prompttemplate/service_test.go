@@ -159,7 +159,7 @@ func TestService_CreateTemplate(t *testing.T) {
 		}
 
 		_, err := svc.CreateTemplate(ctx, input)
-		if err == nil || err.Error() != "unauthorized team_id: user does not belong to this team" {
+		if err == nil || err.Error() != "forbidden: user does not belong to this team" {
 			t.Fatalf("expected unauthorized team_id error, got %v", err)
 		}
 	})
@@ -178,7 +178,7 @@ func TestService_CreateTemplate(t *testing.T) {
 		}
 
 		_, err := svc.CreateTemplate(ctx, input)
-		if err == nil || err.Error() != "token \"age\" is used in the template content but not defined in variables" {
+		if err == nil || err.Error() != "bad request: token \"age\" is used in the template content but not defined in variables" {
 			t.Fatalf("expected missing variable error, got %v", err)
 		}
 	})
@@ -197,7 +197,7 @@ func TestService_CreateTemplate(t *testing.T) {
 		}
 
 		_, err := svc.CreateTemplate(ctx, input)
-		if err == nil || err.Error() != "variable \"age\" is defined but not used in the template content" {
+		if err == nil || err.Error() != "bad request: variable \"age\" is defined but not used in the template content" {
 			t.Fatalf("expected unused variable error, got %v", err)
 		}
 	})
@@ -213,7 +213,7 @@ func TestService_CreateTemplate(t *testing.T) {
 		}
 
 		_, err := svc.CreateTemplate(ctx, input)
-		if err == nil || err.Error() != "team_id is required for TEAM scope" {
+		if err == nil || err.Error() != "bad request: team_id is required for TEAM scope" {
 			t.Fatalf("expected missing team_id error, got %v", err)
 		}
 	})
