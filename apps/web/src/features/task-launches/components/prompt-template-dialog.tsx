@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { applyPromptTemplate, listPromptTemplates, type PromptTemplate } from "@/lib/api/prompt-templates";
+import { listPromptTemplates, type PromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { SoftCard, V3Button } from "@/components/superteam";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
@@ -27,7 +27,7 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 type PromptTemplateDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onInsert: (text: string) => void;
+  onInsert: (text: string, templateId: string) => void;
 };
 
 export function PromptTemplateDialog({
@@ -48,10 +48,6 @@ export function PromptTemplateDialog({
     queryKey: ["prompt-templates"],
     queryFn: () => listPromptTemplates(apiOptions),
     enabled: open,
-  });
-
-  const { mutate: applyTemplate } = useMutation({
-    mutationFn: (id: string) => applyPromptTemplate(apiOptions, id),
   });
 
   const categories = useMemo(() => {
@@ -87,8 +83,7 @@ export function PromptTemplateDialog({
       }
     }
     
-    applyTemplate(selectedTemplate.id);
-    onInsert(result);
+    onInsert(result, selectedTemplate.id);
     onOpenChange(false);
     
     // Reset state after a delay

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   CircleAlert,
   FolderOpen,
@@ -26,6 +27,8 @@ import type {
 } from "@/lib/api/projects";
 import { Button } from "@/components/ui/button";
 import { PromptTemplateDialog } from "./prompt-template-dialog";
+import { applyPromptTemplate } from "@/lib/api/prompt-templates";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export type ReviewerDefaultResolution = {
   member?: ProjectMember;
@@ -120,6 +123,11 @@ export function TaskLaunchForm({
   const [reviewerId, setReviewerId] = useState("");
   const [error, setError] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+
+  const apiOptions = useMemo(() => ({ baseUrl: resolveControlPlaneUrl() }), []);
+  const { mutate: applyTemplate } = useMutation({
+    mutationFn: (id: string) => applyPromptTemplate(apiOptions, id),
+  });
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
   const project = activeProjects.find((item) => item.id === projectId);
   const currentProjectMembers = useMemo(
@@ -188,15 +196,18 @@ export function TaskLaunchForm({
     });
   }
 
-  function handleInsertTemplate(text: string) {
+  function handleInsertTemplate(text: string, templateId: string) {
     if (content.trim()) {
-      if (window.confirm("当前内容已存在。\n点击「确定」将覆盖当前内容，\n点击「取消」将追加到末尾。")) {
+      if (window.confirm("当前内容已存在。\n点击「确定」将覆盖当前内容？\n点击「取消」将继续。")) {
         setContent(text);
-      } else {
+        applyTemplate(templateId);
+      } else if (window.confirm("是否追加到末尾？\n点击「取消」放弃插入模板。")) {
         setContent(content + "\n\n" + text);
+        applyTemplate(templateId);
       }
     } else {
       setContent(text);
+      applyTemplate(templateId);
     }
   }
 
