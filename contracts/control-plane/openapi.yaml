@@ -3487,6 +3487,57 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/templates:
+    get:
+      operationId: listPromptTemplates
+      summary: List prompt templates available to the current user
+      responses:
+        "200":
+          description: Prompt templates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PromptTemplate"
+    post:
+      operationId: createPromptTemplate
+      summary: Create a prompt template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePromptTemplateRequest"
+      responses:
+        "201":
+          description: Prompt template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/templates/{id}/apply:
+    post:
+      operationId: applyPromptTemplate
+      summary: Apply a prompt template (increment use count)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Prompt template applied
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     Limit:
@@ -3672,6 +3723,94 @@ components:
           schema:
             type: string
   schemas:
+    PromptTemplateVariable:
+      type: object
+      required:
+        - name
+        - description
+        - required
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+    CreatePromptTemplateRequest:
+      type: object
+      required:
+        - title
+        - content
+        - category_code
+        - scope
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        category_code:
+          type: string
+        scope:
+          type: string
+          enum:
+            - GLOBAL
+            - TENANT
+            - TEAM
+            - PERSONAL
+        team_id:
+          type: string
+          format: uuid
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptTemplateVariable"
+    PromptTemplate:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - title
+        - content
+        - category_code
+        - scope
+        - creator_id
+        - use_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        category_code:
+          type: string
+        scope:
+          type: string
+        team_id:
+          type: string
+          format: uuid
+        creator_id:
+          type: string
+          format: uuid
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptTemplateVariable"
+        use_count:
+          type: integer
+          format: int32
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     HealthResponse:
       type: object
       required:

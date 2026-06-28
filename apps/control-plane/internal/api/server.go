@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
+	"github.com/superteam/control-plane/internal/prompttemplate"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
@@ -36,6 +37,7 @@ type Server struct {
 	employeeHandler                *employee.HTTPHandler
 	inboxHandler                   *inbox.HTTPHandler
 	projectHandler                 *project.HTTPHandler
+	promptTemplateHandler          *prompttemplate.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 	teamLendingHandler             *teamlending.HTTPHandler
@@ -177,6 +179,11 @@ func (s *Server) SetCapabilityHandler(capabilityHandler *capability.HTTPHandler)
 	if capabilityHandler != nil {
 		capabilityHandler.SetAuthorizer(s.authorizer)
 	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetPromptTemplateHandler(promptTemplateHandler *prompttemplate.HTTPHandler) {
+	s.promptTemplateHandler = promptTemplateHandler
 	s.registerRoutes()
 }
 
@@ -396,6 +403,15 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)
 				r.Delete("/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
+			})
+		}
+
+		if s.promptTemplateHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/templates", s.promptTemplateHandler.ListPromptTemplates)
+				r.Post("/templates", s.promptTemplateHandler.CreatePromptTemplate)
+				r.Post("/templates/{id}/apply", s.promptTemplateHandler.ApplyPromptTemplate)
 			})
 		}
 

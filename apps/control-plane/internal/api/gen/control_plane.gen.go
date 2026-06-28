@@ -120,6 +120,30 @@ func (e CreateProjectAcceptanceRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreatePromptTemplateRequestScope.
+const (
+	GLOBAL   CreatePromptTemplateRequestScope = "GLOBAL"
+	PERSONAL CreatePromptTemplateRequestScope = "PERSONAL"
+	TEAM     CreatePromptTemplateRequestScope = "TEAM"
+	TENANT   CreatePromptTemplateRequestScope = "TENANT"
+)
+
+// Valid indicates whether the value is a known member of the CreatePromptTemplateRequestScope enum.
+func (e CreatePromptTemplateRequestScope) Valid() bool {
+	switch e {
+	case GLOBAL:
+		return true
+	case PERSONAL:
+		return true
+	case TEAM:
+		return true
+	case TENANT:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateTeamConfigRevisionRequestStatus.
 const (
 	CreateTeamConfigRevisionRequestStatusActive CreateTeamConfigRevisionRequestStatus = "active"
@@ -708,6 +732,27 @@ func (e InstallSkillResponseTargetScope) Valid() bool {
 	}
 }
 
+// Defines values for MCPAuthStrategy.
+const (
+	BearerEnv  MCPAuthStrategy = "bearer_env"
+	HeadersEnv MCPAuthStrategy = "headers_env"
+	None       MCPAuthStrategy = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPAuthStrategy enum.
+func (e MCPAuthStrategy) Valid() bool {
+	switch e {
+	case BearerEnv:
+		return true
+	case HeadersEnv:
+		return true
+	case None:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MCPServerSourceScope.
 const (
 	MCPServerSourceScopeEmployee MCPServerSourceScope = "employee"
@@ -720,6 +765,24 @@ func (e MCPServerSourceScope) Valid() bool {
 	case MCPServerSourceScopeEmployee:
 		return true
 	case MCPServerSourceScopeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPTransport.
+const (
+	Http           MCPTransport = "http"
+	StreamableHttp MCPTransport = "streamable_http"
+)
+
+// Valid indicates whether the value is a known member of the MCPTransport enum.
+func (e MCPTransport) Valid() bool {
+	switch e {
+	case Http:
+		return true
+	case StreamableHttp:
 		return true
 	default:
 		return false
@@ -1862,6 +1925,27 @@ type CreateDigitalEmployeeRunRequest struct {
 	TimeoutSec       *int32                    `json:"timeout_sec,omitempty"`
 }
 
+// CreateMCPBindingRequest defines model for CreateMCPBindingRequest.
+type CreateMCPBindingRequest struct {
+	CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
+	McpServerId      openapi_types.UUID `json:"mcp_server_id"`
+}
+
+// CreateMCPServerDefinitionRequest defines model for CreateMCPServerDefinitionRequest.
+type CreateMCPServerDefinitionRequest struct {
+	AuthStrategy       *MCPAuthStrategy `json:"auth_strategy,omitempty"`
+	Description        *string          `json:"description,omitempty"`
+	Name               string           `json:"name"`
+	OptionalEnvVars    *[]string        `json:"optional_env_vars,omitempty"`
+	ProviderVisibility *map[string]bool `json:"provider_visibility,omitempty"`
+	RequiredEnvVars    *[]string        `json:"required_env_vars,omitempty"`
+	RiskLevel          *string          `json:"risk_level,omitempty"`
+	ServerKey          string           `json:"server_key"`
+	ToolAllowlist      *[]string        `json:"tool_allowlist,omitempty"`
+	Transport          MCPTransport     `json:"transport"`
+	Url                string           `json:"url"`
+}
+
 // CreateMCPServerRequest defines model for CreateMCPServerRequest.
 type CreateMCPServerRequest struct {
 	CredentialId *openapi_types.UUID `json:"credential_id,omitempty"`
@@ -1931,6 +2015,19 @@ type CreateProjectResponse struct {
 	Members []ProjectMember `json:"members"`
 	Project Project         `json:"project"`
 }
+
+// CreatePromptTemplateRequest defines model for CreatePromptTemplateRequest.
+type CreatePromptTemplateRequest struct {
+	CategoryCode string                           `json:"category_code"`
+	Content      string                           `json:"content"`
+	Scope        CreatePromptTemplateRequestScope `json:"scope"`
+	TeamId       *openapi_types.UUID              `json:"team_id,omitempty"`
+	Title        string                           `json:"title"`
+	Variables    *[]PromptTemplateVariable        `json:"variables,omitempty"`
+}
+
+// CreatePromptTemplateRequestScope defines model for CreatePromptTemplateRequest.Scope.
+type CreatePromptTemplateRequestScope string
 
 // CreateProviderSessionRequest defines model for CreateProviderSessionRequest.
 type CreateProviderSessionRequest struct {
@@ -2526,6 +2623,23 @@ type EffectiveEmployeeSkill struct {
 // EffectiveEmployeeSkillSourceScope defines model for EffectiveEmployeeSkill.SourceScope.
 type EffectiveEmployeeSkillSourceScope string
 
+// EffectiveMCPConfigServer defines model for EffectiveMCPConfigServer.
+type EffectiveMCPConfigServer struct {
+	AuthStrategy     MCPAuthStrategy    `json:"auth_strategy"`
+	CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
+	MissingEnvVars   *[]string          `json:"missing_env_vars,omitempty"`
+	Name             string             `json:"name"`
+	RequiredEnvVars  *[]string          `json:"required_env_vars,omitempty"`
+	RiskLevel        *string            `json:"risk_level,omitempty"`
+	ServerId         openapi_types.UUID `json:"server_id"`
+	ServerKey        string             `json:"server_key"`
+	SourceScope      string             `json:"source_scope"`
+	Status           string             `json:"status"`
+	ToolAllowlist    *[]string          `json:"tool_allowlist,omitempty"`
+	Transport        MCPTransport       `json:"transport"`
+	Url              string             `json:"url"`
+}
+
 // ExecuteInboxActionRequest defines model for ExecuteInboxActionRequest.
 type ExecuteInboxActionRequest struct {
 	Action  string                  `json:"action"`
@@ -2747,6 +2861,31 @@ type InstallSkillResponse struct {
 // InstallSkillResponseTargetScope defines model for InstallSkillResponse.TargetScope.
 type InstallSkillResponseTargetScope string
 
+// MCPAuthStrategy defines model for MCPAuthStrategy.
+type MCPAuthStrategy string
+
+// MCPBinding defines model for MCPBinding.
+type MCPBinding struct {
+	AuthStrategy      *MCPAuthStrategy    `json:"auth_strategy,omitempty"`
+	CreatedAt         *time.Time          `json:"created_at,omitempty"`
+	CredentialEnvVar  *string             `json:"credential_env_var,omitempty"`
+	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
+	Id                openapi_types.UUID  `json:"id"`
+	McpServerId       openapi_types.UUID  `json:"mcp_server_id"`
+	MissingEnvVars    *[]string           `json:"missing_env_vars,omitempty"`
+	RequiredEnvVars   *[]string           `json:"required_env_vars,omitempty"`
+	RiskLevel         *string             `json:"risk_level,omitempty"`
+	ServerKey         *string             `json:"server_key,omitempty"`
+	ServerName        *string             `json:"server_name,omitempty"`
+	SourceScope       *string             `json:"source_scope,omitempty"`
+	Status            string              `json:"status"`
+	TeamId            *openapi_types.UUID `json:"team_id,omitempty"`
+	TenantId          openapi_types.UUID  `json:"tenant_id"`
+	Transport         *MCPTransport       `json:"transport,omitempty"`
+	UpdatedAt         *time.Time          `json:"updated_at,omitempty"`
+	Url               *string             `json:"url,omitempty"`
+}
+
 // MCPServer defines model for MCPServer.
 type MCPServer struct {
 	CreatedAt          *time.Time           `json:"created_at,omitempty"`
@@ -2770,6 +2909,29 @@ type MCPServer struct {
 
 // MCPServerSourceScope defines model for MCPServer.SourceScope.
 type MCPServerSourceScope string
+
+// MCPServerDefinition defines model for MCPServerDefinition.
+type MCPServerDefinition struct {
+	AuthStrategy       MCPAuthStrategy    `json:"auth_strategy"`
+	CreatedAt          *time.Time         `json:"created_at,omitempty"`
+	Description        *string            `json:"description,omitempty"`
+	Id                 openapi_types.UUID `json:"id"`
+	Name               string             `json:"name"`
+	OptionalEnvVars    *[]string          `json:"optional_env_vars,omitempty"`
+	ProviderVisibility *map[string]bool   `json:"provider_visibility,omitempty"`
+	RequiredEnvVars    *[]string          `json:"required_env_vars,omitempty"`
+	RiskLevel          *string            `json:"risk_level,omitempty"`
+	ServerKey          string             `json:"server_key"`
+	Status             string             `json:"status"`
+	TenantId           openapi_types.UUID `json:"tenant_id"`
+	ToolAllowlist      *[]string          `json:"tool_allowlist,omitempty"`
+	Transport          MCPTransport       `json:"transport"`
+	UpdatedAt          *time.Time         `json:"updated_at,omitempty"`
+	Url                string             `json:"url"`
+}
+
+// MCPTransport defines model for MCPTransport.
+type MCPTransport string
 
 // OverviewFilterOption defines model for OverviewFilterOption.
 type OverviewFilterOption struct {
@@ -3394,6 +3556,29 @@ type ProjectTransferRequest struct {
 	SuggestedEmployeeType        *string              `json:"suggested_employee_type,omitempty"`
 	TenantId                     openapi_types.UUID   `json:"tenant_id"`
 	UpdatedAt                    *time.Time           `json:"updated_at,omitempty"`
+}
+
+// PromptTemplate defines model for PromptTemplate.
+type PromptTemplate struct {
+	CategoryCode string                    `json:"category_code"`
+	Content      string                    `json:"content"`
+	CreatedAt    time.Time                 `json:"created_at"`
+	CreatorId    openapi_types.UUID        `json:"creator_id"`
+	Id           openapi_types.UUID        `json:"id"`
+	Scope        string                    `json:"scope"`
+	TeamId       *openapi_types.UUID       `json:"team_id,omitempty"`
+	TenantId     openapi_types.UUID        `json:"tenant_id"`
+	Title        string                    `json:"title"`
+	UpdatedAt    time.Time                 `json:"updated_at"`
+	UseCount     int32                     `json:"use_count"`
+	Variables    *[]PromptTemplateVariable `json:"variables,omitempty"`
+}
+
+// PromptTemplateVariable defines model for PromptTemplateVariable.
+type PromptTemplateVariable struct {
+	Description string `json:"description"`
+	Name        string `json:"name"`
+	Required    bool   `json:"required"`
 }
 
 // ProviderSession defines model for ProviderSession.
@@ -4826,6 +5011,9 @@ type UpsertDigitalEmployeeExecutionInstanceJSONRequestBody = UpsertDigitalEmploy
 // CreateEmployeeMCPBindingJSONRequestBody defines body for CreateEmployeeMCPBinding for application/json ContentType.
 type CreateEmployeeMCPBindingJSONRequestBody = CreateMCPServerRequest
 
+// CreateEmployeeMCPBindingV2JSONRequestBody defines body for CreateEmployeeMCPBindingV2 for application/json ContentType.
+type CreateEmployeeMCPBindingV2JSONRequestBody = CreateMCPBindingRequest
+
 // CreateProviderSessionForDigitalEmployeeJSONRequestBody defines body for CreateProviderSessionForDigitalEmployee for application/json ContentType.
 type CreateProviderSessionForDigitalEmployeeJSONRequestBody = CreateProviderSessionRequest
 
@@ -4846,6 +5034,9 @@ type UpsertEmployeeWorkspaceFileJSONRequestBody = UpsertWorkspaceFileRequest
 
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
+
+// CreateMCPServerDefinitionJSONRequestBody defines body for CreateMCPServerDefinition for application/json ContentType.
+type CreateMCPServerDefinitionJSONRequestBody = CreateMCPServerDefinitionRequest
 
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
@@ -4985,6 +5176,9 @@ type RejectTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
 // RevokeTeamLendingRequestJSONRequestBody defines body for RevokeTeamLendingRequest for application/json ContentType.
 type RevokeTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
 
+// CreateTeamMCPBindingJSONRequestBody defines body for CreateTeamMCPBinding for application/json ContentType.
+type CreateTeamMCPBindingJSONRequestBody = CreateMCPBindingRequest
+
 // CreateTeamMCPServerJSONRequestBody defines body for CreateTeamMCPServer for application/json ContentType.
 type CreateTeamMCPServerJSONRequestBody = CreateMCPServerRequest
 
@@ -5002,6 +5196,9 @@ type AddTeamMemberJSONRequestBody = AddTeamMemberRequest
 
 // BindTeamSkillJSONRequestBody defines body for BindTeamSkill for application/json ContentType.
 type BindTeamSkillJSONRequestBody BindTeamSkillJSONBody
+
+// CreatePromptTemplateJSONRequestBody defines body for CreatePromptTemplate for application/json ContentType.
+type CreatePromptTemplateJSONRequestBody = CreatePromptTemplateRequest
 
 // CreateUserCredentialJSONRequestBody defines body for CreateUserCredential for application/json ContentType.
 type CreateUserCredentialJSONRequestBody = CreateUserCredentialRequest
@@ -5488,6 +5685,9 @@ type ServerInterface interface {
 	// Preview a digital employee effective config
 	// (POST /api/v1/digital-employees/{employeeId}/effective-configs/preview)
 	PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List the effective MCP servers projected for a digital employee
+	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-config)
+	ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List merged team and personal MCP servers
 	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
 	ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -5512,6 +5712,15 @@ type ServerInterface interface {
 	// Create a personal employee MCP binding
 	// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
 	CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List a digital employee's personal MCP bindings with env-var preflight
+	// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
+	ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Bind a registered MCP server to a digital employee
+	// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
+	CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Delete a digital employee personal MCP binding
+	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
+	DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID)
 	// Delete a personal employee MCP binding
 	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId})
 	DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId BindingId)
@@ -5563,6 +5772,15 @@ type ServerInterface interface {
 	// Execute an inbox item action
 	// (POST /api/v1/inbox/items/{itemId}/actions)
 	ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID)
+	// List tenant MCP HTTP capability definitions
+	// (GET /api/v1/mcp-servers)
+	ListMCPServerDefinitions(w http.ResponseWriter, r *http.Request)
+	// Register a tenant MCP HTTP capability definition
+	// (POST /api/v1/mcp-servers)
+	CreateMCPServerDefinition(w http.ResponseWriter, r *http.Request)
+	// Delete a tenant MCP HTTP capability definition
+	// (DELETE /api/v1/mcp-servers/{serverId})
+	DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// Get project demand launch detail
 	// (GET /api/v1/project-demands/{demandId}/launch-detail)
 	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -5896,6 +6114,15 @@ type ServerInterface interface {
 	// Revoke an approved or auto-approved lending request
 	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke)
 	RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
+	// List team MCP bindings to registered MCP servers
+	// (GET /api/v1/teams/{teamId}/mcp-bindings)
+	ListTeamMCPBindings(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Bind a registered MCP server to a team
+	// (POST /api/v1/teams/{teamId}/mcp-bindings)
+	CreateTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Delete a team MCP binding
+	// (DELETE /api/v1/teams/{teamId}/mcp-bindings/{bindingId})
+	DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId, bindingId openapi_types.UUID)
 	// List team MCP servers
 	// (GET /api/v1/teams/{teamId}/mcp-servers)
 	ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -5941,6 +6168,15 @@ type ServerInterface interface {
 	// Remove a team skill binding
 	// (DELETE /api/v1/teams/{teamId}/skills/{skillId})
 	UnbindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId, skillId SkillId)
+	// List prompt templates available to the current user
+	// (GET /api/v1/templates)
+	ListPromptTemplates(w http.ResponseWriter, r *http.Request)
+	// Create a prompt template
+	// (POST /api/v1/templates)
+	CreatePromptTemplate(w http.ResponseWriter, r *http.Request)
+	// Apply a prompt template (increment use count)
+	// (POST /api/v1/templates/{id}/apply)
+	ApplyPromptTemplate(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// List current user credentials
 	// (GET /api/v1/user-credentials)
 	ListUserCredentials(w http.ResponseWriter, r *http.Request, params ListUserCredentialsParams)
@@ -6019,6 +6255,12 @@ func (_ Unimplemented) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWrit
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List the effective MCP servers projected for a digital employee
+// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-config)
+func (_ Unimplemented) ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List merged team and personal MCP servers
 // (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
 func (_ Unimplemented) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
@@ -6064,6 +6306,24 @@ func (_ Unimplemented) ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Re
 // Create a personal employee MCP binding
 // (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
 func (_ Unimplemented) CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List a digital employee's personal MCP bindings with env-var preflight
+// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
+func (_ Unimplemented) ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind a registered MCP server to a digital employee
+// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
+func (_ Unimplemented) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a digital employee personal MCP binding
+// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
+func (_ Unimplemented) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6166,6 +6426,24 @@ func (_ Unimplemented) ListInboxItems(w http.ResponseWriter, r *http.Request, pa
 // Execute an inbox item action
 // (POST /api/v1/inbox/items/{itemId}/actions)
 func (_ Unimplemented) ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List tenant MCP HTTP capability definitions
+// (GET /api/v1/mcp-servers)
+func (_ Unimplemented) ListMCPServerDefinitions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Register a tenant MCP HTTP capability definition
+// (POST /api/v1/mcp-servers)
+func (_ Unimplemented) CreateMCPServerDefinition(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a tenant MCP HTTP capability definition
+// (DELETE /api/v1/mcp-servers/{serverId})
+func (_ Unimplemented) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request, serverId ServerId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6835,6 +7113,24 @@ func (_ Unimplemented) RevokeTeamLendingRequest(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List team MCP bindings to registered MCP servers
+// (GET /api/v1/teams/{teamId}/mcp-bindings)
+func (_ Unimplemented) ListTeamMCPBindings(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind a registered MCP server to a team
+// (POST /api/v1/teams/{teamId}/mcp-bindings)
+func (_ Unimplemented) CreateTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a team MCP binding
+// (DELETE /api/v1/teams/{teamId}/mcp-bindings/{bindingId})
+func (_ Unimplemented) DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId, bindingId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List team MCP servers
 // (GET /api/v1/teams/{teamId}/mcp-servers)
 func (_ Unimplemented) ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId) {
@@ -6922,6 +7218,24 @@ func (_ Unimplemented) BindTeamSkill(w http.ResponseWriter, r *http.Request, tea
 // Remove a team skill binding
 // (DELETE /api/v1/teams/{teamId}/skills/{skillId})
 func (_ Unimplemented) UnbindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List prompt templates available to the current user
+// (GET /api/v1/templates)
+func (_ Unimplemented) ListPromptTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a prompt template
+// (POST /api/v1/templates)
+func (_ Unimplemented) CreatePromptTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Apply a prompt template (increment use count)
+// (POST /api/v1/templates/{id}/apply)
+func (_ Unimplemented) ApplyPromptTemplate(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7430,6 +7744,32 @@ func (siw *ServerInterfaceWrapper) PreviewDigitalEmployeeEffectiveConfig(w http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListEffectiveMCPConfig operation middleware
+func (siw *ServerInterfaceWrapper) ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEffectiveMCPConfig(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListEffectiveMCPServers operation middleware
 func (siw *ServerInterfaceWrapper) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request) {
 
@@ -7647,6 +7987,93 @@ func (siw *ServerInterfaceWrapper) CreateEmployeeMCPBinding(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateEmployeeMCPBinding(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmployeeMCPBindingsV2 operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeMCPBindingsV2(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateEmployeeMCPBindingV2 operation middleware
+func (siw *ServerInterfaceWrapper) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateEmployeeMCPBindingV2(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteEmployeeMCPBindingV2 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", chi.URLParam(r, "bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bindingId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteEmployeeMCPBindingV2(w, r, employeeId, bindingId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8307,6 +8734,60 @@ func (siw *ServerInterfaceWrapper) ExecuteInboxAction(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ExecuteInboxAction(w, r, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMCPServerDefinitions operation middleware
+func (siw *ServerInterfaceWrapper) ListMCPServerDefinitions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMCPServerDefinitions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMCPServerDefinition operation middleware
+func (siw *ServerInterfaceWrapper) CreateMCPServerDefinition(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMCPServerDefinition(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMCPServerDefinition operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", chi.URLParam(r, "serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMCPServerDefinition(w, r, serverId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12617,6 +13098,93 @@ func (siw *ServerInterfaceWrapper) RevokeTeamLendingRequest(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListTeamMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListTeamMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTeamMCPBindings(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTeamMCPBinding operation middleware
+func (siw *ServerInterfaceWrapper) CreateTeamMCPBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTeamMCPBinding(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTeamMCPBinding operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", chi.URLParam(r, "bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bindingId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTeamMCPBinding(w, r, teamId, bindingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTeamMCPServers operation middleware
 func (siw *ServerInterfaceWrapper) ListTeamMCPServers(w http.ResponseWriter, r *http.Request) {
 
@@ -13123,6 +13691,60 @@ func (siw *ServerInterfaceWrapper) UnbindTeamSkill(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListPromptTemplates operation middleware
+func (siw *ServerInterfaceWrapper) ListPromptTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPromptTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePromptTemplate operation middleware
+func (siw *ServerInterfaceWrapper) CreatePromptTemplate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePromptTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyPromptTemplate operation middleware
+func (siw *ServerInterfaceWrapper) ApplyPromptTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyPromptTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUserCredentials operation middleware
 func (siw *ServerInterfaceWrapper) ListUserCredentials(w http.ResponseWriter, r *http.Request) {
 
@@ -13413,6 +14035,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-configs/preview", wrapper.PreviewDigitalEmployeeEffectiveConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-config", wrapper.ListEffectiveMCPConfig)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-servers", wrapper.ListEffectiveMCPServers)
 	})
 	r.Group(func(r chi.Router) {
@@ -13435,6 +14060,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings", wrapper.CreateEmployeeMCPBinding)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2", wrapper.ListEmployeeMCPBindingsV2)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2", wrapper.CreateEmployeeMCPBindingV2)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", wrapper.DeleteEmployeeMCPBindingV2)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId}", wrapper.DeleteEmployeeMCPBinding)
@@ -13486,6 +14120,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/inbox/items/{itemId}/actions", wrapper.ExecuteInboxAction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/mcp-servers", wrapper.ListMCPServerDefinitions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/mcp-servers", wrapper.CreateMCPServerDefinition)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/mcp-servers/{serverId}", wrapper.DeleteMCPServerDefinition)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)
@@ -13821,6 +14464,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/revoke", wrapper.RevokeTeamLendingRequest)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings", wrapper.ListTeamMCPBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings", wrapper.CreateTeamMCPBinding)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings/{bindingId}", wrapper.DeleteTeamMCPBinding)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.ListTeamMCPServers)
 	})
 	r.Group(func(r chi.Router) {
@@ -13864,6 +14516,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/skills/{skillId}", wrapper.UnbindTeamSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/templates", wrapper.ListPromptTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/templates", wrapper.CreatePromptTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/templates/{id}/apply", wrapper.ApplyPromptTemplate)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/user-credentials", wrapper.ListUserCredentials)
