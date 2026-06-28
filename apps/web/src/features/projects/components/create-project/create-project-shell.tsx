@@ -14,7 +14,9 @@ import {
   type ProjectCreateStep,
 } from "./create-project-draft";
 import { ProjectBasicsStep } from "./project-basics-step";
+import { ProjectDigitalEmployeesStep } from "./project-digital-employees-step";
 import { ProjectHumanRolesStep } from "./project-human-roles-step";
+import { ProjectPolicyStep } from "./project-policy-step";
 import { ProjectReviewPanel } from "./project-review-panel";
 
 type CreateProjectShellProps = {
@@ -179,6 +181,20 @@ export function CreateProjectShell({
                 fetcher={fetcher}
                 onChange={setDraft}
               />
+            ) : activeStep === "digitalEmployees" ? (
+              <ProjectDigitalEmployeesStep
+                apiBaseUrl={apiBaseUrl}
+                draft={draft}
+                fetcher={fetcher}
+                onChange={setDraft}
+              />
+            ) : activeStep === "policies" ? (
+              <ProjectPolicyStep draft={draft} onChange={setDraft} />
+            ) : activeStep === "review" ? (
+              <div className="grid gap-4">
+                <h3 className="text-xl font-semibold text-v3-ink">确认创建</h3>
+                <p className="text-sm text-v3-ink-2">请在右侧审阅项目事实、人类责任、数字员工池和策略配置。确认后只创建项目容器，不发起任务。</p>
+              </div>
             ) : (
               <div className="rounded-xl border border-dashed border-v3-line-strong bg-v3-card-soft p-8 text-sm text-v3-ink-2">
                 {projectCreateSteps.find((step) => step.id === activeStep)?.label} 步骤将在后续任务中接入。
