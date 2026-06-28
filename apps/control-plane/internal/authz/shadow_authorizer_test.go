@@ -18,6 +18,10 @@ func (a staticAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision
 	return a.decision, a.err
 }
 
+func (a staticAuthorizer) CheckBulkTeamActions(ctx context.Context, req BulkTeamActionsRequest) ([]string, error) {
+	return nil, a.err
+}
+
 type staticOpenFGAChecker struct {
 	allowed bool
 	err     error

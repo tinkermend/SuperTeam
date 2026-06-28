@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
@@ -47,9 +47,23 @@ import {
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
+import {
+  findTemplateByType,
+  firstPreferredEmployeeType,
+  orderedEmployeeTypes,
+  riskSortValue,
+  stringList,
+  stringValue,
+  templateCapabilityPreview,
+  templateCapabilitySummary,
+  templateDefaultInjectionLine,
+  templateRisk,
+  templateSearchText,
+} from "./template-utils";
 
-const steps = ["身份", "能力", "治理", "运行"] as const;
-type StepName = (typeof steps)[number];
+const configSteps = ["身份", "能力", "治理", "运行"] as const;
+type StepName = (typeof configSteps)[number];
+type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
 
 type WizardDraft = {
   capability_selection: {
@@ -122,12 +136,16 @@ export function CreateEmployeePage() {
 
 export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewProps) {
   const navigate = useNavigate();
-  const [workbenchMode, setWorkbenchMode] = useState<"select" | "configure">("select");
+  const search = useSearch({ strict: false });
+  const requestedTemplate =
+    typeof search === "object" && search && "template" in search ? stringValue(search.template) : "";
+  const [flowStep, setFlowStep] = useState<CreateFlowStep>("template");
   const [draftTouched, setDraftTouched] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [teamAutoSelected, setTeamAutoSelected] = useState(false);
+  const [templateQueryHandled, setTemplateQueryHandled] = useState("");
 
   const teams = useQuery({
     queryKey: ["teams"],
@@ -168,6 +186,15 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       setDraft((current) => applyTypeDefaults(current, firstType));
     }
   }, [createOptions.data, draft.employee_type]);
+
+  useEffect(() => {
+    const optionsData = createOptions.data;
+    if (!requestedTemplate || !optionsData || templateQueryHandled === requestedTemplate) return;
+    const requestedType = findTemplateByType(optionsData, requestedTemplate);
+    setTemplateQueryHandled(requestedTemplate);
+    if (!requestedType) return;
+    setDraft((current) => applyTypeDefaults(current, requestedType));
+  }, [createOptions.data, requestedTemplate, templateQueryHandled]);
 
   useEffect(() => {
     const firstAvatar = avatarAssets.data?.find((asset) => asset.status === "active");
@@ -240,19 +267,19 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     },
   });
 
-  const currentStep = steps[stepIndex];
+  const currentStep = configSteps[stepIndex];
   const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
   const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
 
   function updateDraft(patch: Partial<WizardDraft>) {
-    if (workbenchMode === "configure") {
+    if (flowStep === "configure") {
       setDraftTouched(true);
     }
     setDraft((current) => ({ ...current, ...patch }));
   }
 
   function selectType(typeValue: string) {
-    if (workbenchMode === "configure") {
+    if (flowStep === "configure") {
       setDraftTouched(true);
     }
     const nextType = createOptions.data?.employee_types.find((item) => item.type === typeValue);
@@ -277,22 +304,45 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     const nextErrors = validateStep(currentStep, draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
-      setStepIndex((current) => Math.min(current + 1, steps.length - 1));
+      setStepIndex((current) => Math.min(current + 1, configSteps.length - 1));
     }
   }
 
   function submit() {
-    const nextErrors = validateStep("运行", draft);
+    const nextErrors = validateDraftForCreate(draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
       createEmployee.mutate();
+      return;
+    }
+
+    setFlowStep("configure");
+    if (nextErrors.avatar_asset_id || nextErrors.employee_type || nextErrors.name || nextErrors.role) {
+      setStepIndex(0);
+    } else if (nextErrors.daily_token_limit) {
+      setStepIndex(2);
+    } else if (nextErrors.runtime) {
+      setStepIndex(3);
     }
   }
 
+  function enterPreflight() {
+    setErrors({});
+    setFlowStep("preflight");
+  }
+
   function enterConfiguration() {
-    setWorkbenchMode("configure");
+    setFlowStep("configure");
     setStepIndex(0);
     setDraftTouched(false);
+  }
+
+  function enterConfirmCreation() {
+    const nextErrors = validateStep("运行", draft);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length === 0) {
+      setFlowStep("confirm");
+    }
   }
 
   function resetDraftForTeam(teamId: string) {
@@ -307,7 +357,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       return;
     }
     resetDraftForTeam(draft.team_id);
-    setWorkbenchMode("select");
+    setFlowStep("template");
   }
 
   function requestTeamChange(nextTeamId: string) {
@@ -335,37 +385,37 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <div>
               <h1 className="text-2xl font-bold tracking-tight">创建数字员工</h1>
               <p className="text-sm text-muted-foreground">
-                {workbenchMode === "select"
-                  ? "选择创建路径，确认职责边界、治理策略和运行绑定后再进入配置。"
-                  : "先定义职责画像、能力边界与运行约束，再生成 ready 员工。"}
+                {flowStep === "template"
+                  ? "先选择模板，再分步完成预检、配置和确认。"
+                  : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {workbenchMode === "configure" ? (
-              <Button onClick={requestTemplateChange} type="button" variant="outline">
-                <ArrowLeft data-icon="inline-start" />
-                返回
-              </Button>
-            ) : (
+            {flowStep === "template" ? (
               <Button asChild type="button" variant="outline">
                 <Link to="/employees">
                   <ArrowLeft data-icon="inline-start" />
                   返回数字员工
                 </Link>
               </Button>
+            ) : (
+              <Button onClick={requestTemplateChange} type="button" variant="outline">
+                <ArrowLeft data-icon="inline-start" />
+                返回
+              </Button>
             )}
             <Button
               disabled={
-                workbenchMode === "configure" ||
+                flowStep !== "template" ||
                 createOptions.isLoading ||
                 createOptions.isError ||
                 !draft.employee_type
               }
-              onClick={enterConfiguration}
+              onClick={enterPreflight}
               type="button"
             >
-              进入配置
+              进入预检
               <ChevronRight data-icon="inline-end" />
             </Button>
           </div>
@@ -396,11 +446,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           </Alert>
         ) : null}
 
-        <CreationStageProgress mode={workbenchMode} currentStep={currentStep} />
+        <CreationStageProgress flowStep={flowStep} />
 
-        {workbenchMode === "select" ? (
+        {flowStep === "template" ? (
           <>
-            <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_340px] min-[1760px]:grid-cols-[260px_minmax(0,1fr)_320px]">
+            <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
               <CreationPathPanel />
 
               <TemplateSelectionPanel
@@ -409,18 +459,28 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 selectedType={selectedType}
                 onSelectType={selectType}
               />
-
-              <CreationReadinessPanel
-                draft={draft}
-                options={createOptions.data}
-                selectedTeamName={selectedTeam?.name}
-                selectedType={selectedType}
-                onEnterConfiguration={enterConfiguration}
-              />
             </div>
-            <CreationFactsBand />
+            <TemplateStepSummary
+              draft={draft}
+              selectedTeamName={selectedTeam?.name}
+              selectedType={selectedType}
+              onEnterPreflight={enterPreflight}
+            />
           </>
-        ) : (
+        ) : null}
+
+        {flowStep === "preflight" ? (
+          <PreflightStep
+            draft={draft}
+            options={createOptions.data}
+            selectedTeamName={selectedTeam?.name}
+            selectedType={selectedType}
+            onBack={() => setFlowStep("template")}
+            onContinue={enterConfiguration}
+          />
+        ) : null}
+
+        {flowStep === "configure" ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
             <div className="border-b p-4">
@@ -490,7 +550,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
             ) : null}
             <div className="flex justify-between gap-3 border-t p-4">
-              <Button
+            <Button
                 disabled={stepIndex === 0 || createEmployee.isPending}
                 onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
                 type="button"
@@ -499,7 +559,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 <ChevronLeft data-icon="inline-start" />
                 上一步
               </Button>
-              {stepIndex < steps.length - 1 ? (
+              {stepIndex < configSteps.length - 1 ? (
                 <Button
                   disabled={
                     createOptions.isLoading ||
@@ -524,11 +584,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     !draft.avatar_asset_id ||
                     !draft.runtime_binding
                   }
-                  onClick={submit}
+                  onClick={enterConfirmCreation}
                   type="button"
                 >
-                  {createEmployee.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-                  创建数字员工
+                  进入确认创建
+                  <ChevronRight data-icon="inline-end" />
                 </Button>
               )}
             </div>
@@ -540,26 +600,41 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             selectedType={selectedType}
           />
           </div>
-        )}
+        ) : null}
+
+        {flowStep === "confirm" ? (
+          <ConfirmCreationStep
+            createError={createEmployee.error}
+            creating={createEmployee.isPending}
+            draft={draft}
+            options={createOptions.data}
+            selectedTeamName={selectedTeam?.name}
+            selectedType={selectedType}
+            onBack={() => setFlowStep("configure")}
+            onSubmit={submit}
+          />
+        ) : null}
       </Main>
     </>
   );
 }
 
-function CreationStageProgress({ currentStep, mode }: { currentStep: StepName; mode: "select" | "configure" }) {
-  const activeIndex = mode === "select" ? 0 : currentStep === "运行" ? 2 : 1;
+function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
-    { title: "选择路径", description: "选择创建方式和专业模板" },
-    { title: "预检治理", description: "检查治理策略和运行条件" },
-    { title: "完成配置", description: "进入详细配置向导" },
+    { key: "template", title: "选择模板", description: "选择创建方式和专业模板" },
+    { key: "preflight", title: "配置预检", description: "检查治理策略和运行条件" },
+    { key: "configure", title: "完成配置", description: "进入详细配置向导" },
+    { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
+  const activeIndex = stages.findIndex((stage) => stage.key === flowStep);
+  const normalizedActiveIndex = activeIndex === -1 ? 2 : activeIndex;
 
   return (
     <section className="mb-4 rounded-md border bg-card/95 px-4 py-3 shadow-xs">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         {stages.map((stage, index) => {
-          const active = index === activeIndex;
-          const done = index < activeIndex;
+          const active = index === normalizedActiveIndex;
+          const done = index < normalizedActiveIndex;
 
           return (
             <div className="flex items-center gap-3" key={stage.title}>
@@ -677,6 +752,41 @@ function CreationPathPanel() {
   );
 }
 
+function TemplateStepSummary({
+  draft,
+  selectedTeamName,
+  selectedType,
+  onEnterPreflight,
+}: {
+  draft: WizardDraft;
+  selectedTeamName?: string;
+  selectedType?: DigitalEmployeeTypeOption;
+  onEnterPreflight: () => void;
+}) {
+  return (
+    <section className="mt-4 rounded-md border bg-card/95 p-4 shadow-xs">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div>
+          <h2 className="text-base font-semibold">已选模板摘要</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            模板只生成配置草稿；运行绑定和最终创建会在后续步骤确认。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
+            <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
+            <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
+            <Badge variant="secondary">风险 {draft.risk_level || "medium"}</Badge>
+          </div>
+        </div>
+        <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
+          进入配置预检
+          <ChevronRight data-icon="inline-end" />
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function TemplateSelectionPanel({
   draft,
   options,
@@ -688,34 +798,100 @@ function TemplateSelectionPanel({
   selectedType?: DigitalEmployeeTypeOption;
   onSelectType: (value: string) => void;
 }) {
-  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
+  const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
+  const [templateQuery, setTemplateQuery] = useState("");
+  const [riskFilter, setRiskFilter] = useState("all");
+  const riskOptions = useMemo(() => {
+    const risks = new Set(employeeTypes.map((typeOption) => templateRisk(typeOption)));
+    return ["all", ...Array.from(risks).sort((left, right) => riskSortValue(left) - riskSortValue(right))];
+  }, [employeeTypes]);
+  const filteredEmployeeTypes = useMemo(() => {
+    const normalizedQuery = templateQuery.trim().toLowerCase();
+    return employeeTypes.filter((typeOption) => {
+      const matchesRisk = riskFilter === "all" || templateRisk(typeOption) === riskFilter;
+      if (!matchesRisk) return false;
+      if (!normalizedQuery) return true;
+      return templateSearchText(typeOption).includes(normalizedQuery);
+    });
+  }, [employeeTypes, riskFilter, templateQuery]);
 
   return (
-    <section className="@container/template min-w-0 rounded-md border bg-card/95 p-4 shadow-xs">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold">选择专业类型</h2>
-          <p className="mt-1 text-sm text-muted-foreground">选择最贴合业务场景的专业类型，系统将提供推荐配置。</p>
+    <section className="@container/template min-w-0 rounded-md border bg-card/95 shadow-xs">
+      <div className="border-b p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">选择内置模板</h2>
+            <p className="mt-1 text-sm text-muted-foreground">模板只负责带出默认角色、模板能力和治理默认值。</p>
+          </div>
+          <Badge variant="secondary">
+            {employeeTypes.length} 个模板 · 已筛选 {filteredEmployeeTypes.length}
+          </Badge>
         </div>
-        <Badge variant="secondary">全部模板 ({employeeTypes.length})</Badge>
+        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px]">
+          <Input
+            aria-label="搜索专业模板"
+            onChange={(event) => setTemplateQuery(event.target.value)}
+            placeholder="搜索模板、角色、技能或 MCP"
+            value={templateQuery}
+          />
+          <select
+            aria-label="按风险等级筛选模板"
+            className={selectClassName}
+            onChange={(event) => setRiskFilter(event.target.value)}
+            value={riskFilter}
+          >
+            {riskOptions.map((risk) => (
+              <option key={risk} value={risk}>
+                {risk === "all" ? "全部风险" : risk}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {employeeTypes.length === 0 ? (
-        <div className="flex min-h-[420px] items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+        <div className="m-4 flex min-h-[420px] items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
           当前团队治理配置未返回可用专业模板。
         </div>
       ) : (
-        <div className="grid gap-3 @[640px]/template:grid-cols-2 @[980px]/template:grid-cols-3">
-          {employeeTypes.map((typeOption) => (
-            <TemplateCard
-              key={typeOption.type}
-              selected={typeOption.type === draft.employee_type}
-              typeOption={typeOption}
-              onSelect={() => onSelectType(typeOption.type)}
-            />
-          ))}
+        <div className="p-4">
+          <div
+            className="overflow-hidden rounded-md border bg-background"
+            data-testid="template-selection-table"
+            data-slot="template-selection-table"
+          >
+            <div className="max-h-[min(680px,calc(100vh-360px))] overflow-auto">
+              <table className="w-full min-w-[860px] border-collapse text-sm">
+                <thead className="sticky top-0 z-10 border-b bg-muted text-xs font-medium text-muted-foreground">
+                  <tr>
+                    <th className="w-[34%] px-3 py-2 text-left">模板</th>
+                    <th className="w-[18%] px-3 py-2 text-left">默认角色</th>
+                    <th className="w-[18%] px-3 py-2 text-left">模板能力</th>
+                    <th className="w-[12%] px-3 py-2 text-left">风险等级</th>
+                    <th className="w-[12%] px-3 py-2 text-left">默认注入</th>
+                    <th className="w-[6%] px-3 py-2 text-right">选择</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEmployeeTypes.map((typeOption) => (
+                    <TemplateTableRow
+                      key={typeOption.type}
+                      selected={typeOption.type === draft.employee_type}
+                      typeOption={typeOption}
+                      onSelect={() => onSelectType(typeOption.type)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              {filteredEmployeeTypes.length === 0 ? (
+                <div className="flex min-h-[220px] items-center justify-center border-t bg-muted/20 p-6 text-sm text-muted-foreground">
+                  没有匹配当前筛选条件的专业模板。
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       )}
-      <div className="mt-3 text-sm text-muted-foreground">
+      <div className="border-t px-4 py-3 text-sm text-muted-foreground">
         没有合适的模板？
         <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
           选择空白自定义（暂未开放）
@@ -726,7 +902,7 @@ function TemplateSelectionPanel({
   );
 }
 
-function TemplateCard({
+function TemplateTableRow({
   selected,
   typeOption,
   onSelect,
@@ -735,97 +911,85 @@ function TemplateCard({
   typeOption: DigitalEmployeeTypeOption;
   onSelect: () => void;
 }) {
-  const risk = String(typeOption.default_approval_policy?.min_risk_for_human ?? "medium");
+  const risk = templateRisk(typeOption);
+  const capability = templateCapabilitySummary(typeOption);
 
   return (
-    <button
-      aria-pressed={selected}
+    <tr
       className={cn(
-        "flex h-full min-h-[214px] flex-col rounded-md border p-3 text-left transition sm:p-4",
-        selected ? "border-primary/70 bg-primary/5 shadow-xs ring-1 ring-primary/20" : "bg-background hover:border-primary/40",
+        "border-b transition last:border-b-0 hover:bg-muted/30",
+        selected ? "bg-primary/5 [box-shadow:inset_3px_0_0_var(--v3-brand)]" : "",
       )}
-      onClick={onSelect}
-      type="button"
     >
-      <span className="flex items-start justify-between gap-3">
-        <span className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <Code2 className="size-5" />
+      <td className="px-3 py-3 align-top">
+        <div className="flex min-w-0 gap-3">
+          <span
+            className={cn(
+              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border",
+              selected ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+            )}
+          >
+            <Code2 className="size-4" />
           </span>
-          <span className="min-w-0">
-            <span className="block text-base font-semibold">{typeOption.label}</span>
-            <span className="mt-1 line-clamp-2 block text-sm leading-6 text-muted-foreground">{typeOption.description}</span>
-          </span>
-        </span>
-        {selected ? (
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check className="size-3.5" />
-          </span>
-        ) : null}
-      </span>
-      <span className="mt-4 flex min-w-0 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
-        <span className="text-muted-foreground">默认角色</span>
-        <span className="truncate font-medium text-foreground">{typeOption.default_role || typeOption.type}</span>
-      </span>
-      <span className="mt-auto grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-xs @[640px]/template:grid-cols-4 @[980px]/template:grid-cols-2">
-        <MetricPill label="技能" value={String(typeOption.recommended_skills?.length ?? 0)} />
-        <MetricPill label="MCP" value={String(typeOption.recommended_mcp_servers?.length ?? 0)} />
-        <MetricPill label="风险" value={risk} tone={risk === "high" || risk === "critical" ? "warning" : "success"} />
-        <MetricPill label="默认角色" value={typeOption.default_role || typeOption.type} />
-      </span>
-    </button>
-  );
-}
-
-function MetricPill({ label, tone, value }: { label: string; tone?: "success" | "warning"; value: string }) {
-  return (
-    <span className="min-w-0">
-      <span className="block text-muted-foreground">{label}</span>
-      <span
-        className={cn(
-          "mt-1 block truncate font-semibold text-foreground",
-          tone === "success" ? "text-emerald-700 dark:text-emerald-300" : "",
-          tone === "warning" ? "text-amber-700 dark:text-amber-300" : "",
-        )}
-      >
-        {value}
-      </span>
-    </span>
-  );
-}
-
-function CreationReadinessPanel({
-  draft,
-  options,
-  selectedTeamName,
-  selectedType,
-  onEnterConfiguration,
-}: {
-  draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
-  selectedTeamName?: string;
-  selectedType?: DigitalEmployeeTypeOption;
-  onEnterConfiguration: () => void;
-}) {
-  return (
-    <aside className="grid content-start gap-4">
-      <CheckListPanel options={options} />
-      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
-        <h2 className="text-base font-semibold">即将创建</h2>
-        <p className="mt-1 text-xs text-muted-foreground">确认以下信息后进入详细配置。</p>
-        <div className="mt-4 grid gap-2 text-sm">
-          <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-          <InlineSummary label="Owner" value="当前用户" />
-          <InlineSummary label="专业类型" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
-          <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
-          <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+          <div className="min-w-0">
+            <div className="font-semibold">{typeOption.label}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{typeOption.description}</div>
+          </div>
         </div>
-        <Button className="mt-4 w-full" disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
-          确认并进入配置
-          <ChevronRight data-icon="inline-end" />
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+          {typeOption.default_role || typeOption.type}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="grid gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            <Badge className="gap-1" variant="secondary">
+              {`技能 ${capability.skills.length}`}
+            </Badge>
+            <Badge className="gap-1" variant="secondary">
+              {`MCP ${capability.mcpServers.length}`}
+            </Badge>
+            <Badge className="gap-1" variant="secondary">
+              {`Provider ${capability.providerTypes.length}`}
+            </Badge>
+          </div>
+          <div className="truncate text-xs text-muted-foreground">{templateCapabilityPreview(typeOption)}</div>
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">风险</span>
+          <Badge
+            className={cn(
+              "font-mono",
+              risk === "high" || risk === "critical" ? "bg-amber-100 text-amber-800" : "",
+              risk === "low" || risk === "medium" ? "bg-emerald-100 text-emerald-800" : "",
+            )}
+            variant="secondary"
+          >
+            {risk}
+          </Badge>
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top text-xs leading-5 text-muted-foreground">
+        {templateDefaultInjectionLine(typeOption)}
+      </td>
+      <td className="px-3 py-3 text-right align-top">
+        <Button
+          aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}模板`}
+          aria-pressed={selected}
+          onClick={onSelect}
+          size="sm"
+          type="button"
+          variant={selected ? "default" : "outline"}
+        >
+          {selected ? <Check data-icon="inline-start" /> : null}
+          {selected ? "已选" : "选择"}
         </Button>
-      </section>
-    </aside>
+      </td>
+    </tr>
   );
 }
 
@@ -834,7 +998,7 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
 
   return (
     <section className="rounded-md border bg-card/95 p-4 shadow-xs">
-      <h2 className="text-base font-semibold">创建预检</h2>
+      <h2 className="text-base font-semibold">预检项目</h2>
       <p className="mt-1 text-xs text-muted-foreground">检查治理策略与运行条件。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
@@ -856,6 +1020,81 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
   );
 }
 
+function PreflightStep({
+  draft,
+  options,
+  selectedTeamName,
+  selectedType,
+  onBack,
+  onContinue,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedTeamName?: string;
+  selectedType?: DigitalEmployeeTypeOption;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  const blockedChecks = (options?.creation_checks ?? []).filter((check) => check.status === "blocked");
+  const hasBlockedChecks = blockedChecks.length > 0;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
+        <div className="border-b p-4">
+          <h2 className="text-lg font-semibold">配置预检</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            先确认后端创建候选返回的治理策略、模板和运行条件，再进入详细配置。
+          </p>
+        </div>
+        <div className="grid gap-4 p-4">
+          <CheckListPanel options={options} />
+          {hasBlockedChecks ? (
+            <Alert variant="destructive">
+              <AlertTitle>当前配置暂不能继续</AlertTitle>
+              <AlertDescription>
+                {blockedChecks.map((check) => `${check.label}: ${check.message}`).join("；")}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert>
+              <AlertTitle>预检通过</AlertTitle>
+              <AlertDescription>可以继续补充员工身份、能力、治理和运行绑定。</AlertDescription>
+            </Alert>
+          )}
+        </div>
+        <div className="flex justify-between gap-3 border-t p-4">
+          <Button onClick={onBack} type="button" variant="outline">
+            <ChevronLeft data-icon="inline-start" />
+            返回选择模板
+          </Button>
+          <Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
+            预检通过，继续配置
+            <ChevronRight data-icon="inline-end" />
+          </Button>
+        </div>
+      </section>
+
+      <aside className="grid content-start gap-4">
+        <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+          <h2 className="text-base font-semibold">本次草稿</h2>
+          <p className="mt-1 text-xs text-muted-foreground">模板默认值将在配置页继续编辑。</p>
+          <div className="mt-4 grid gap-2 text-sm">
+            <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
+            <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
+            <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+            <InlineSummary
+              label="默认注入"
+              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
+            />
+          </div>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
 function InlineSummary({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
@@ -865,51 +1104,12 @@ function InlineSummary({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CreationFactsBand() {
-  const facts = [
-    {
-      title: "创建后进入 ready，不会自动执行任务",
-      description: "可被任务、项目或流程调度调用",
-      icon: Check,
-    },
-    {
-      title: "后续由任务或项目调度",
-      description: "支持手动发起或规则自动驱动执行",
-      icon: ClipboardCheck,
-    },
-    {
-      title: "所有选择写入审计",
-      description: "便于追溯开启角色审查",
-      icon: ShieldCheck,
-    },
-  ];
-
-  return (
-    <section className="mt-4 grid gap-3 rounded-md border bg-primary/5 p-4 md:grid-cols-3">
-      {facts.map((fact) => {
-        const Icon = fact.icon;
-        return (
-          <div className="flex items-center gap-3" key={fact.title}>
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-background text-primary">
-              <Icon className="size-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold">{fact.title}</span>
-              <span className="mt-1 block text-xs text-muted-foreground">{fact.description}</span>
-            </span>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
 function StepTabs({ currentStep }: { currentStep: StepName }) {
-  const currentIndex = steps.indexOf(currentStep);
+  const currentIndex = configSteps.indexOf(currentStep);
 
   return (
     <div className="flex flex-wrap gap-2 rounded-md border bg-muted/30 p-1">
-        {steps.map((step, index) => {
+        {configSteps.map((step, index) => {
           const active = step === currentStep;
           const done = index < currentIndex;
 
@@ -993,7 +1193,7 @@ function CreationPreflightPanel({
             <ShieldCheck />
           </IconTile>
           <div>
-            <h2 className="text-base font-semibold">创建预检</h2>
+            <h2 className="text-base font-semibold">预检项目</h2>
             <p className="text-xs text-muted-foreground">来自 Control Plane 创建候选接口。</p>
           </div>
         </div>
@@ -1053,6 +1253,84 @@ function CreationPreflightPanel({
         </div>
       </section>
     </aside>
+  );
+}
+
+function ConfirmCreationStep({
+  createError,
+  creating,
+  draft,
+  options,
+  selectedTeamName,
+  selectedType,
+  onBack,
+  onSubmit,
+}: {
+  createError: unknown;
+  creating: boolean;
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedTeamName?: string;
+  selectedType?: DigitalEmployeeTypeOption;
+  onBack: () => void;
+  onSubmit: () => void;
+}) {
+  const runtimeOption = findRuntimeOption(options, draft.runtime_binding);
+  const runtimeLabel = runtimeOption
+    ? `${runtimeOption.runtime_name} / ${runtimeOption.provider_type}`
+    : draft.runtime_binding || "未选择";
+  const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
+
+  return (
+    <section className="rounded-md border bg-card/95 shadow-xs">
+      <div className="border-b p-4">
+        <h2 className="text-lg font-semibold">确认创建</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          核对本次将提交给 Control Plane 的员工配置；确认后创建 ready 状态数字员工。
+        </p>
+      </div>
+      <div className="grid gap-4 p-4 lg:grid-cols-2">
+        <section className="rounded-md border bg-background p-4">
+          <h3 className="text-sm font-semibold">身份与模板</h3>
+          <div className="mt-3 grid gap-2 text-sm">
+            <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
+            <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
+            <InlineSummary label="角色" value={draft.role || "未填写"} />
+            <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+          </div>
+        </section>
+
+        <section className="rounded-md border bg-background p-4">
+          <h3 className="text-sm font-semibold">能力与运行</h3>
+          <div className="mt-3 grid gap-2 text-sm">
+            <InlineSummary
+              label="能力选择"
+              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
+            />
+            <InlineSummary label="Runtime" value={runtimeLabel} />
+            <InlineSummary
+              label="每日预算"
+              value={draft.daily_token_limit.trim() ? `${draft.daily_token_limit.trim()} Token` : "无预算上限"}
+            />
+            <InlineSummary label="环境变量" value={`${environmentVariableCount} 个`} />
+          </div>
+        </section>
+      </div>
+      {createError ? (
+        <p className="px-4 pb-2 text-sm text-destructive">{getErrorMessage(createError)}</p>
+      ) : null}
+      <div className="flex justify-between gap-3 border-t p-4">
+        <Button disabled={creating} onClick={onBack} type="button" variant="outline">
+          <ChevronLeft data-icon="inline-start" />
+          返回配置
+        </Button>
+        <Button disabled={creating} onClick={onSubmit} type="button">
+          {creating ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
+          确认创建
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -1312,7 +1590,7 @@ function GovernanceStep({
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <SummaryItem label="团队治理版本" value={teamConfig ? `#${teamConfig.revision_number} · ${teamConfig.status}` : "未加载"} />
-        <SummaryItem label="风险触发" value={draft.risk_level} />
+        <SummaryItem label="风险等级" value={draft.risk_level} />
         <SummaryItem label="允许员工类型" value={`${teamConfig?.allowed_employee_types.length ?? 0} 项`} />
         <SummaryItem label="允许 Provider" value={(teamConfig?.allowed_provider_types ?? []).join(", ") || "暂无"} />
         <SummaryItem label="上下文策略" value={`覆盖项 ${Object.keys(draft.context_policy_override).length} 个`} />
@@ -1560,34 +1838,6 @@ const labelId: Record<string, string> = {
 const selectClassName =
   "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
-const preferredEmployeeTypeOrder = [
-  "frontend_engineer",
-  "backend_engineer",
-  "database_admin",
-  "devops_engineer",
-  "fullstack_engineer",
-  "implementation_engineer",
-  "general_engineer",
-];
-
-function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOption[]) {
-  return orderedEmployeeTypes(employeeTypes)[0];
-}
-
-function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
-  return [...employeeTypes].sort((left, right) => {
-    const leftIndex = preferredEmployeeTypeOrder.indexOf(left.type);
-    const rightIndex = preferredEmployeeTypeOrder.indexOf(right.type);
-    const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-    const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
-
-    if (normalizedLeft !== normalizedRight) {
-      return normalizedLeft - normalizedRight;
-    }
-    return employeeTypes.indexOf(left) - employeeTypes.indexOf(right);
-  });
-}
-
 function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
   const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
 
@@ -1631,6 +1881,14 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
   return {};
 }
 
+function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
+  return {
+    ...validateStep("身份", draft),
+    ...validateStep("治理", draft),
+    ...validateStep("运行", draft),
+  };
+}
+
 function budgetPolicyFromDraft(draft: WizardDraft) {
   const trimmed = draft.daily_token_limit.trim();
   if (!trimmed) return {};
@@ -1654,14 +1912,6 @@ function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {
     value: "",
     sensitive: true,
   };
-}
-
-function stringList(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" ? value : "";
 }
 
 function checkDotClassName(status: string) {

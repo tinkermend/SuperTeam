@@ -47,7 +47,9 @@ import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_au
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
 import { Route as AuthenticatedEmployeesEmployeeIdRouteImport } from './routes/_authenticated/employees/$employeeId'
+import { Route as AuthenticatedEmployeesTemplatesIndexRouteImport } from './routes/_authenticated/employees/templates/index'
 import { Route as AuthenticatedProjectsProjectIdConfigRouteImport } from './routes/_authenticated/projects/$projectId/config'
+import { Route as AuthenticatedEmployeesTemplatesTemplateTypeRouteImport } from './routes/_authenticated/employees/templates/$templateType'
 import { Route as AuthenticatedEmployeesEmployeeIdConfigRouteImport } from './routes/_authenticated/employees/$employeeId/config'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -260,11 +262,23 @@ const AuthenticatedEmployeesEmployeeIdRoute =
     path: '/employees/$employeeId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedEmployeesTemplatesIndexRoute =
+  AuthenticatedEmployeesTemplatesIndexRouteImport.update({
+    id: '/employees/templates/',
+    path: '/employees/templates/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdConfigRoute =
   AuthenticatedProjectsProjectIdConfigRouteImport.update({
     id: '/config',
     path: '/config',
     getParentRoute: () => AuthenticatedProjectsProjectIdRoute,
+  } as any)
+const AuthenticatedEmployeesTemplatesTemplateTypeRoute =
+  AuthenticatedEmployeesTemplatesTemplateTypeRouteImport.update({
+    id: '/employees/templates/$templateType',
+    path: '/employees/templates/$templateType',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedEmployeesEmployeeIdConfigRoute =
   AuthenticatedEmployeesEmployeeIdConfigRouteImport.update({
@@ -312,7 +326,9 @@ export interface FileRoutesByFullPath {
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
+  '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
@@ -353,7 +369,9 @@ export interface FileRoutesByTo {
   '/users': typeof AuthenticatedUsersIndexRoute
   '/workflows': typeof AuthenticatedWorkflowsIndexRoute
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
+  '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/employees/templates': typeof AuthenticatedEmployeesTemplatesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -396,7 +414,9 @@ export interface FileRoutesById {
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/_authenticated/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
+  '/_authenticated/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/_authenticated/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/_authenticated/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -439,7 +459,9 @@ export interface FileRouteTypes {
     | '/users/'
     | '/workflows/'
     | '/employees/$employeeId/config'
+    | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/employees/templates/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -480,7 +502,9 @@ export interface FileRouteTypes {
     | '/users'
     | '/workflows'
     | '/employees/$employeeId/config'
+    | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/employees/templates'
   id:
     | '__root__'
     | '/_authenticated'
@@ -522,7 +546,9 @@ export interface FileRouteTypes {
     | '/_authenticated/users/'
     | '/_authenticated/workflows/'
     | '/_authenticated/employees/$employeeId/config'
+    | '/_authenticated/employees/templates/$templateType'
     | '/_authenticated/projects/$projectId/config'
+    | '/_authenticated/employees/templates/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -804,12 +830,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesEmployeeIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/employees/templates/': {
+      id: '/_authenticated/employees/templates/'
+      path: '/employees/templates'
+      fullPath: '/employees/templates/'
+      preLoaderRoute: typeof AuthenticatedEmployeesTemplatesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/$projectId/config': {
       id: '/_authenticated/projects/$projectId/config'
       path: '/config'
       fullPath: '/projects/$projectId/config'
       preLoaderRoute: typeof AuthenticatedProjectsProjectIdConfigRouteImport
       parentRoute: typeof AuthenticatedProjectsProjectIdRoute
+    }
+    '/_authenticated/employees/templates/$templateType': {
+      id: '/_authenticated/employees/templates/$templateType'
+      path: '/employees/templates/$templateType'
+      fullPath: '/employees/templates/$templateType'
+      preLoaderRoute: typeof AuthenticatedEmployeesTemplatesTemplateTypeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/employees/$employeeId/config': {
       id: '/_authenticated/employees/$employeeId/config'
@@ -882,6 +922,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedTeamsIndexRoute: typeof AuthenticatedTeamsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
+  AuthenticatedEmployeesTemplatesTemplateTypeRoute: typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
+  AuthenticatedEmployeesTemplatesIndexRoute: typeof AuthenticatedEmployeesTemplatesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -918,6 +960,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTeamsIndexRoute: AuthenticatedTeamsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWorkflowsIndexRoute: AuthenticatedWorkflowsIndexRoute,
+  AuthenticatedEmployeesTemplatesTemplateTypeRoute:
+    AuthenticatedEmployeesTemplatesTemplateTypeRoute,
+  AuthenticatedEmployeesTemplatesIndexRoute:
+    AuthenticatedEmployeesTemplatesIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

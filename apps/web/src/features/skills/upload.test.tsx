@@ -147,7 +147,10 @@ describe("SkillUploadView", () => {
     await expect.element(screen.getByText("ZIP 已选择")).toBeVisible();
     await expect.element(screen.getByText("包含 SKILL.md")).toBeVisible();
     await expect.element(screen.getByText("服务端发布校验")).toBeVisible();
-    await expect.element(screen.getByText("发布链路")).toBeVisible();
+    expect(document.body.textContent).not.toContain("发布链路");
+    expect(document.body.textContent).not.toContain("上传、解析、资料补全、依赖检查与最终动作收束到同一条链路。");
+    expect(document.body.textContent).not.toContain("Ready");
+    expect(document.body.textContent).not.toContain("Preparing");
     await expect.element(screen.getByText("上传文件")).toBeVisible();
     await expect.element(screen.getByText("解析信息")).toBeVisible();
     await expect.element(screen.getByText("完善资料")).toBeVisible();
@@ -157,6 +160,26 @@ describe("SkillUploadView", () => {
     await expect.element(screen.getByText("元数据与依赖声明已就绪")).toBeVisible();
     await expect.element(screen.getByText("skill-api-doc.zip（3 B）")).toBeVisible();
     await expect.element(screen.getByText("4 项")).toBeVisible();
+  });
+
+  it("uses semantic status pills for every risk level in the publish summary", async () => {
+    const screen = await renderUploadView();
+
+    let riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    expect(riskSummary).toHaveTextContent("中风险");
+    expect(riskSummary).toHaveAttribute("data-tone", "warn");
+
+    await userEvent.click(screen.getByRole("button", { name: "低" }));
+
+    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    expect(riskSummary).toHaveTextContent("低风险");
+    expect(riskSummary).toHaveAttribute("data-tone", "ok");
+
+    await userEvent.click(screen.getByRole("button", { name: "高" }));
+
+    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    expect(riskSummary).toHaveTextContent("高风险");
+    expect(riskSummary).toHaveAttribute("data-tone", "danger");
   });
 
   it("keeps dependency validation greyed out until dependencies are declared", async () => {

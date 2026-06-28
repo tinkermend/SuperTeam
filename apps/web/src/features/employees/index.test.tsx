@@ -336,6 +336,14 @@ describe("EmployeesView", () => {
       .toHaveAttribute("href", "/employees/new");
   });
 
+  it("links the secondary template management action to the template catalog", async () => {
+    const screen = await renderEmployeesView();
+
+    await expect
+      .element(screen.getByRole("link", { name: "模板管理" }))
+      .toHaveAttribute("href", "/employees/templates");
+  });
+
   it("renders unbound employees as waiting for runtime binding", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
     const unboundArticle = employeeArticle(screen, "待绑定员工");

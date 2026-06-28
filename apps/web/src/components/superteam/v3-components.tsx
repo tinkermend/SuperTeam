@@ -92,6 +92,7 @@ function StatusPill({
   return (
     <span
       data-slot="v3-status-pill"
+      data-tone={tone}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold whitespace-nowrap",
         toneText[tone],

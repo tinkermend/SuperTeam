@@ -300,7 +300,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <SummaryRow icon={<FileArchive />} label="归档包" value={file ? `${file.name}（${formatBytes(file.size)}）` : "未选择"} />
                     <SummaryRow icon={<PackageCheck />} label="技能包描述名称" value={packageDisplayName || "待生成"} />
                     <SummaryRow icon={<BadgeCheck />} label="技能中文名称" value={name.trim() || "待填写"} />
-                    <SummaryRow icon={<ShieldCheck />} label="风险等级" value={riskLabel(riskLevel)} valueTone={riskLevel === "medium" ? "warn" : undefined} />
+                    <SummaryRow icon={<ShieldCheck />} label="风险等级" value={riskLabel(riskLevel)} valueTone={riskTone(riskLevel)} />
                     <SummaryRow icon={<Tag />} label="标签" value={tagItems.length ? tagItems.join(", ") : "未设置"} />
                     <SummaryRow icon={<Terminal />} label="依赖声明" value={`${dependencyCount} 项`} valueTone="info" />
                     <SummarySubRow label="CLI 依赖" value={runtimeToolItems.length ? runtimeToolItems.join(", ") : "未声明"} />
@@ -429,18 +429,7 @@ function PackageStatusBand({
         </div>
       </div>
       <div className="mt-6 border-t border-[color:var(--v3-signature-border)] pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h2 className="text-sm font-extrabold tracking-normal text-v3-ink">发布链路</h2>
-            <p className="mt-0.5 text-xs text-v3-ink-2">
-              上传、解析、资料补全、依赖检查与最终动作收束到同一条链路。
-            </p>
-          </div>
-          <span className="rounded-lg bg-v3-brand-soft px-2.5 py-1 text-xs font-bold text-v3-brand-deep">
-            {canPublish ? "Ready" : "Preparing"}
-          </span>
-        </div>
-        <ol className="mt-4 grid gap-2 sm:grid-cols-5">
+        <ol className="grid gap-2 sm:grid-cols-5">
           {releaseSteps.map((step, index) => (
             <li
               aria-disabled={step.disabled ? "true" : "false"}
@@ -684,7 +673,7 @@ function SummaryRow({
   valueTone?: V3Tone;
 }) {
   return (
-    <div className="grid grid-cols-[18px_minmax(110px,1fr)_minmax(0,1.35fr)] items-center gap-3">
+    <div className="grid grid-cols-[18px_minmax(110px,1fr)_minmax(0,1.35fr)] items-center gap-3" data-summary-row={label}>
       <span className="text-muted-foreground [&_svg]:size-4">{icon}</span>
       <span className="text-foreground">{label}</span>
       {valueTone ? (
@@ -763,5 +752,16 @@ function riskLabel(value: string) {
       return "高风险";
     default:
       return "中风险";
+  }
+}
+
+function riskTone(value: string): V3Tone {
+  switch (value) {
+    case "low":
+      return "ok";
+    case "high":
+      return "danger";
+    default:
+      return "warn";
   }
 }

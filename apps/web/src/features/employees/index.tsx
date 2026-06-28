@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  LayoutTemplate,
   Link as LinkIcon,
   Plus,
   Search as SearchIcon,
@@ -192,12 +193,20 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                 <p className="text-sm text-muted-foreground">业务身份、执行实例和运行状态</p>
               </div>
             </div>
-            <Button asChild>
-              <Link to="/employees/new">
-                <Plus data-icon="inline-start" />
-                创建数字员工
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/employees/templates">
+                  <LayoutTemplate data-icon="inline-start" />
+                  模板管理
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link to="/employees/new">
+                  <Plus data-icon="inline-start" />
+                  创建数字员工
+                </Link>
+              </Button>
+            </div>
           </div>
 
           {overview.data ? <WorkbenchMetrics overview={overview.data} /> : null}

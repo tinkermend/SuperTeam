@@ -15,22 +15,22 @@ import (
 )
 
 type fakeAuthzQueryStore struct {
-	tenantParams        queries.GetActiveTenantMembershipParams
-	tenantMember        queries.TenantMember
-	tenantErr           error
-	teamParams          queries.GetActiveTeamMembershipParams
-	teamMember          queries.TenantMember
-	teamErr             error
-	employeeScopeParams queries.GetDigitalEmployeeAuthzScopeParams
-	employeeScope       queries.GetDigitalEmployeeAuthzScopeRow
-	employeeScopeErr    error
-	runtimeParams       queries.RuntimeNodeCoversTaskScopeParams
-	runtimeOK           bool
-	runtimeErr          error
-	openFGAMembers      []queries.ListOpenFGAMembersRow
-	openFGAMembersErr   error
-	openFGAScopes       []queries.ListOpenFGAProjectTeamScopesRow
-	openFGAScopesErr    error
+	tenantParams         queries.GetActiveTenantMembershipParams
+	tenantMember         queries.TenantMember
+	tenantErr            error
+	teamParams           queries.GetActiveTeamMembershipParams
+	teamMember           queries.TenantMember
+	teamErr              error
+	employeeScopeParams  queries.GetDigitalEmployeeAuthzScopeParams
+	employeeScope        queries.GetDigitalEmployeeAuthzScopeRow
+	employeeScopeErr     error
+	runtimeParams        queries.RuntimeNodeCoversTaskScopeParams
+	runtimeOK            bool
+	runtimeErr           error
+	openFGAMembers       []queries.ListOpenFGAMembersRow
+	openFGAMembersErr    error
+	openFGAScopes        []queries.ListOpenFGAProjectTeamScopesRow
+	openFGAScopesErr     error
 	projectAuthzFacts    queries.GetProjectAuthzFactsRow
 	projectAuthzFactsErr error
 }

@@ -159,11 +159,14 @@ const screen = await renderProjects(fetcher);
 await expect
   .element(screen.getByRole("heading", { name: "客户接入验收" }))
   .toBeInTheDocument();
-await expect.element(screen.getByText("当前需求")).toBeInTheDocument();
-await expect.element(screen.getByText("补充上线验收说明")).toBeInTheDocument();
-await expect.element(screen.getByText("当前执行")).toBeInTheDocument();
+// `当前需求`/`当前执行`/`待负责人处理` each render in both a metric tile and
+// a panel header, so these locators resolve to multiple elements; use
+// `.first()` to avoid strict-locator multi-match failures.
+await expect.element(screen.getByText("当前需求").first()).toBeInTheDocument();
+await expect.element(screen.getByText("补充上线验收说明").first()).toBeInTheDocument();
+await expect.element(screen.getByText("当前执行").first()).toBeInTheDocument();
 await expect.element(screen.getByText("整理接入证据").first()).toBeInTheDocument();
-await expect.element(screen.getByText("待负责人处理")).toBeInTheDocument();
+await expect.element(screen.getByText("待负责人处理").first()).toBeInTheDocument();
 await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
 await expect.element(screen.getByText("项目负责人组")).toBeInTheDocument();
 await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
@@ -185,7 +188,9 @@ await userEvent.click(screen.getByRole("button", { name: "展开高级项目事�
 
 await expect.element(screen.getByText("路由决策")).toBeInTheDocument();
 await expect.element(screen.getByText("协调任务")).toBeInTheDocument();
-await expect.element(screen.getByText("执行记录")).toBeInTheDocument();
+// Execution trace panel keeps its existing title `执行证据链`; this plan does
+// not rename it.
+await expect.element(screen.getByText("执行证据链")).toBeInTheDocument();
 expect(pageText()).toContain("runtime.node_offline");
 expect(pageText()).toContain("runtime.inspect、codebase.analysis");
 
@@ -437,6 +442,14 @@ function projectPhaseLabel(phase: string) {
 }
 ```
 
+Removing the `证据策略` and `待人工处理` tiles leaves three now-unused symbols that will fail the
+`noUnusedLocals` / unused-import typecheck. Delete all three:
+
+- The `taskSummary` derived const (`const taskSummary = overview?.task_summary;`).
+- The `evidencePolicyConfigured` derived const
+  (`const evidencePolicyConfigured = Object.keys(project.evidence_policy ?? {}).length > 0;`).
+- The `FileArchive` entry in the `lucide-react` import list (it was only used by the `证据策略` tile).
+
 - [ ] **Step 6: Add default current-demand panel**
 
 Immediately before the plan-version card, add:
@@ -539,6 +552,8 @@ Change its empty line from `当前没有待处理的人类决策` to:
 ```
 
 - [ ] **Step 11: Add default business blocker panel**
+
+Add `CircleDot` to the `lucide-react` import list in `project-operational-detail.tsx`; it is used by the panel below and is not currently imported.
 
 Immediately after the owner decisions panel, add:
 
@@ -774,7 +789,7 @@ git commit -m "feat(web): rename project owners and service pool"
 - Modify: `apps/web/src/features/projects/components/project-operational-detail.tsx`
 - Test: `apps/web/src/features/projects/index.test.tsx`
 
-- [ ] **Step 1: Import collapsible primitives and chevron icon**
+- [ ] **Step 1: Import collapsible primitives, the `cn` helper, and required icons**
 
 Add imports:
 
@@ -784,9 +799,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 ```
 
-Add `ChevronDown` to the `lucide-react` import list.
+`cn` is used by the advanced-section trigger chevron and is not currently imported in this file, so it must be added or typecheck fails.
+
+Add `ChevronDown` to the `lucide-react` import list (used by the advanced-section trigger; not currently imported). `CircleDot` is also required but is imported earlier, in Task 2 Step 11, because the default `当前阻塞` panel uses it before this task runs.
 
 - [ ] **Step 2: Add local advanced-open state**
 
@@ -1142,3 +1160,8 @@ Do not claim the feature is complete from tests alone if the browser smoke could
   - `ProjectOperationalDetail` already receives all advanced data through existing props.
   - New helpers use existing imported `ProjectMember`, `ProjectStatus`, `DispatchGateResult`, `ProjectRouteDecision`, and component-local data.
   - No new API type is introduced.
+  - New imports required and accounted for: `cn` (`@/lib/utils`), `Collapsible*` (`@/components/ui/collapsible`), and lucide icons `ChevronDown` (Task 4) and `CircleDot` (Task 2 Step 11).
+  - `noUnusedLocals` compliance: Task 2 Step 5 deletes the now-unused `taskSummary`, `evidencePolicyConfigured`, and the `FileArchive` import after removing the `证据策略`/`待人工处理` tiles.
+- Test-locator consistency:
+  - `当前需求`, `当前执行`, `待负责人处理`, and the demand title render in both a metric tile and a panel, so Task 1 Step 3 uses `.first()` on those locators to avoid strict multi-match failures.
+  - The execution trace panel keeps its existing `执行证据链` title; tests assert that label, not a renamed one.
