@@ -60,34 +60,35 @@ export function selectedTeam(scopes: UserProjectTeamScope[] | undefined, teamId:
   return activeSelectableTeams(scopes).find((scope) => scope.team_id === teamId);
 }
 
+const POLICY_PRESETS: Record<ProjectPolicyPreset, ProjectCreateDraft["policyToggles"]> = {
+  standard: {
+    auditLogEnabled: true,
+    budgetOverrunNeedsOwnerApproval: false,
+    highRiskActionNeedsConfirmation: true,
+    newDemandNeedsHumanConfirmation: true,
+    requireEvidenceBeforeAcceptance: true,
+  },
+  lightweight: {
+    auditLogEnabled: true,
+    budgetOverrunNeedsOwnerApproval: false,
+    highRiskActionNeedsConfirmation: true,
+    newDemandNeedsHumanConfirmation: false,
+    requireEvidenceBeforeAcceptance: false,
+  },
+  highRisk: {
+    auditLogEnabled: true,
+    budgetOverrunNeedsOwnerApproval: true,
+    highRiskActionNeedsConfirmation: true,
+    newDemandNeedsHumanConfirmation: true,
+    requireEvidenceBeforeAcceptance: true,
+  },
+};
+
 export function applyPolicyPreset(
   draft: ProjectCreateDraft,
   preset: ProjectPolicyPreset,
 ): ProjectCreateDraft {
-  const policyToggles =
-    preset === "lightweight"
-      ? {
-          auditLogEnabled: true,
-          budgetOverrunNeedsOwnerApproval: false,
-          highRiskActionNeedsConfirmation: true,
-          newDemandNeedsHumanConfirmation: false,
-          requireEvidenceBeforeAcceptance: false,
-        }
-      : preset === "highRisk"
-        ? {
-            auditLogEnabled: true,
-            budgetOverrunNeedsOwnerApproval: true,
-            highRiskActionNeedsConfirmation: true,
-            newDemandNeedsHumanConfirmation: true,
-            requireEvidenceBeforeAcceptance: true,
-          }
-        : {
-            auditLogEnabled: true,
-            budgetOverrunNeedsOwnerApproval: false,
-            highRiskActionNeedsConfirmation: true,
-            newDemandNeedsHumanConfirmation: true,
-            requireEvidenceBeforeAcceptance: true,
-          };
+  const policyToggles = POLICY_PRESETS[preset];
 
   return { ...draft, policyPreset: preset, policyToggles };
 }
@@ -97,11 +98,11 @@ export function projectCreateValidation(
   currentUserId: string | undefined,
   selectableTeams: UserProjectTeamScope[],
 ) {
-  const authorizedTeamIds = new Set(selectableTeams.map((scope) => scope.team_id));
+  const authorizedTeamIds = new Set(activeSelectableTeams(selectableTeams).map((scope) => scope.team_id));
   return {
     basics: Boolean(draft.name.trim()) && Boolean(draft.goal.trim()) && Boolean(draft.teamId),
     currentUser: Boolean(currentUserId),
-    digitalEmployees: draft.selectedDigitalEmployees.length > 0,
+    digitalEmployees: true, // global constraint: optional
     policies: draft.policyToggles.auditLogEnabled,
     teamAuthorized: Boolean(draft.teamId) && authorizedTeamIds.has(draft.teamId),
   };
