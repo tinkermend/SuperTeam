@@ -278,6 +278,8 @@ describe("TemplateDetailView", () => {
     await expect.element(screen.getByText("默认注入")).toBeVisible();
     await expect.element(screen.getByText("Provider 1")).toBeVisible();
     await expect.element(screen.getByText("治理影响")).toBeVisible();
+    expect(document.body.textContent).toContain("模板已定义的技能、MCP 与 Provider 能力");
+    expect(document.body.textContent).not.toContain("模板推荐能力");
     await expect.element(screen.getByText("技能受限 database-troubleshooting")).toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "用此模板创建数字员工" }))

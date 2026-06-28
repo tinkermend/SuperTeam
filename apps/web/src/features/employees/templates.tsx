@@ -345,7 +345,9 @@ function TemplateDetailContent({
         <WorkSurface>
           <div className="border-b border-v3-line px-5 py-4">
             <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
-            <p className="mt-1 text-[13px] text-v3-ink-2">模板推荐能力，不代表默认全部启用。</p>
+            <p className="mt-1 text-[13px] text-v3-ink-2">
+              模板已定义的技能、MCP 与 Provider 能力，不代表默认全部启用。
+            </p>
           </div>
           <div className="grid gap-4 p-5 md:grid-cols-3">
             <CapabilityBlock title="技能" values={capability.skills} />
