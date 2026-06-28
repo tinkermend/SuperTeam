@@ -70,7 +70,7 @@ export function PromptTemplateDialog({
     const initialValues: Record<string, string> = {};
     if (template.variables) {
       for (const v of template.variables) {
-        initialValues[v.name] = "";
+        initialValues[v.name] = v.default || "";
       }
     }
     setVariableValues(initialValues);
