@@ -19,13 +19,24 @@ CREATE TABLE IF NOT EXISTS task_prompt_templates (
     CONSTRAINT ck_task_prompt_templates_title_not_blank   CHECK (btrim(title)   <> ''),
     CONSTRAINT ck_task_prompt_templates_content_not_blank CHECK (btrim(content) <> ''),
     CONSTRAINT ck_task_prompt_templates_scope             CHECK (scope IN ('SYSTEM', 'TEAM', 'PERSONAL')),
-    CONSTRAINT ck_task_prompt_templates_team_scope        CHECK ((scope <> 'TEAM') OR (team_id IS NOT NULL))
+    CONSTRAINT ck_task_prompt_templates_team_scope        CHECK (
+        (scope = 'TEAM' AND team_id IS NOT NULL) OR
+        (scope IN ('SYSTEM', 'PERSONAL') AND team_id IS NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_prompt_templates_tenant_active
-    ON task_prompt_templates(tenant_id, created_at DESC)
+    ON task_prompt_templates(tenant_id, use_count DESC, created_at DESC)
     WHERE deleted_at IS NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_task_prompt_templates_tenant_scope_title_active
-    ON task_prompt_templates(tenant_id, scope, title)
-    WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_prompt_templates_tenant_system_title_active
+    ON task_prompt_templates(tenant_id, title)
+    WHERE scope = 'SYSTEM' AND deleted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_prompt_templates_tenant_team_title_active
+    ON task_prompt_templates(tenant_id, team_id, title)
+    WHERE scope = 'TEAM' AND deleted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_prompt_templates_tenant_personal_title_active
+    ON task_prompt_templates(tenant_id, creator_id, title)
+    WHERE scope = 'PERSONAL' AND deleted_at IS NULL;
