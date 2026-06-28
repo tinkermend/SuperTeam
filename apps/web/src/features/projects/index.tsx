@@ -819,9 +819,11 @@ export function ProjectsView({
           )}
       {createOpen ? (
         <CreateProjectShell
+          apiBaseUrl={apiBaseUrl}
           availableTeams={availableProjectTeamScopes}
           currentUser={currentUser}
           currentUserError={currentUserQuery.error?.message}
+          fetcher={fetcher}
           isCurrentUserLoading={currentUserQuery.isFetching}
           isSubmitting={createMutation.isPending}
           isTeamsLoading={projectTeamScopesQuery.isFetching}

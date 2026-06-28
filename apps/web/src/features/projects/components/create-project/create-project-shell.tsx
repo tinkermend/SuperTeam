@@ -14,12 +14,15 @@ import {
   type ProjectCreateStep,
 } from "./create-project-draft";
 import { ProjectBasicsStep } from "./project-basics-step";
+import { ProjectHumanRolesStep } from "./project-human-roles-step";
 import { ProjectReviewPanel } from "./project-review-panel";
 
 type CreateProjectShellProps = {
+  apiBaseUrl: string;
   availableTeams?: UserProjectTeamScope[];
   currentUser?: UserSummary;
   currentUserError?: string;
+  fetcher?: typeof fetch;
   isCurrentUserLoading?: boolean;
   isSubmitting?: boolean;
   isTeamsLoading?: boolean;
@@ -30,9 +33,11 @@ type CreateProjectShellProps = {
 };
 
 export function CreateProjectShell({
+  apiBaseUrl,
   availableTeams,
   currentUser,
   currentUserError,
+  fetcher,
   isCurrentUserLoading,
   isSubmitting,
   isTeamsLoading,
@@ -165,6 +170,14 @@ export function CreateProjectShell({
                 isAuthorizationLoading={isAuthorizationLoading}
                 onChange={setDraft}
                 selectableTeams={selectableTeams}
+              />
+            ) : activeStep === "roles" ? (
+              <ProjectHumanRolesStep
+                apiBaseUrl={apiBaseUrl}
+                currentUser={currentUser}
+                draft={draft}
+                fetcher={fetcher}
+                onChange={setDraft}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-v3-line-strong bg-v3-card-soft p-8 text-sm text-v3-ink-2">
