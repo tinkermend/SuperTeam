@@ -360,6 +360,34 @@ export function bindTeamMcpServer(
   );
 }
 
+export function listTeamMcpBindings(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<McpBinding[]> {
+  const encodedTeamId = encodePathSegment(teamId);
+
+  return getJson<McpBinding[]>(
+    options,
+    `/api/v1/teams/${encodedTeamId}/mcp-bindings`,
+    "team mcp bindings",
+  );
+}
+
+export function deleteTeamMcpBinding(
+  options: ApiClientOptions,
+  teamId: string,
+  bindingId: string,
+): Promise<void> {
+  const encodedTeamId = encodePathSegment(teamId);
+  const encodedBindingId = encodePathSegment(bindingId);
+
+  return deleteJson(
+    options,
+    `/api/v1/teams/${encodedTeamId}/mcp-bindings/${encodedBindingId}`,
+    "delete team mcp binding",
+  );
+}
+
 export function bindEmployeeMcpServer(
   options: ApiClientOptions,
   employeeId: string,
@@ -372,6 +400,34 @@ export function bindEmployeeMcpServer(
     `/api/v1/digital-employees/${encodedEmployeeId}/mcp-bindings-v2`,
     input,
     "bind employee mcp server",
+  );
+}
+
+export function listEmployeeMcpBindingsV2(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<McpBinding[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<McpBinding[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/mcp-bindings-v2`,
+    "employee mcp bindings",
+  );
+}
+
+export function deleteEmployeeMcpBindingV2(
+  options: ApiClientOptions,
+  employeeId: string,
+  bindingId: string,
+): Promise<void> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedBindingId = encodePathSegment(bindingId);
+
+  return deleteJson(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/mcp-bindings-v2/${encodedBindingId}`,
+    "delete employee mcp binding",
   );
 }
 

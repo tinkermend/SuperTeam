@@ -463,9 +463,25 @@ func (s *routeCapabilityService) CreateTeamMCPBinding(ctx context.Context, req c
 	return s.mcpBinding, nil
 }
 
+func (s *routeCapabilityService) ListTeamMCPBindings(context.Context, capability.TeamScopedRequest) ([]capability.MCPBinding, error) {
+	return []capability.MCPBinding{s.mcpBinding}, nil
+}
+
+func (s *routeCapabilityService) DeleteTeamMCPBinding(context.Context, capability.DeleteTeamMCPBindingRequest) error {
+	return nil
+}
+
 func (s *routeCapabilityService) CreateEmployeeMCPBindingV2(ctx context.Context, req capability.CreateEmployeeMCPBindingV2Request) (capability.MCPBinding, error) {
 	s.createEmployeeBindingV2Req = req
 	return s.mcpBinding, nil
+}
+
+func (s *routeCapabilityService) ListEmployeeMCPBindingsV2(context.Context, capability.EmployeeScopedRequest) ([]capability.MCPBinding, error) {
+	return []capability.MCPBinding{s.mcpBinding}, nil
+}
+
+func (s *routeCapabilityService) DeleteEmployeeMCPBindingV2(context.Context, capability.DeleteEmployeeMCPBindingV2Request) error {
+	return nil
 }
 
 func (s *routeCapabilityService) ListEffectiveMCPConfig(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.EffectiveMCPServer, error) {

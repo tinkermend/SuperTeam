@@ -390,7 +390,11 @@ func (s *Server) registerRoutes() {
 				r.Post("/mcp-servers", s.capabilityHandler.CreateMCPServerDefinition)
 				r.Delete("/mcp-servers/{serverId}", s.capabilityHandler.DeleteMCPServerDefinition)
 				r.Post("/teams/{teamId}/mcp-bindings", s.capabilityHandler.CreateTeamMCPBinding)
+				r.Get("/teams/{teamId}/mcp-bindings", s.capabilityHandler.ListTeamMCPBindings)
+				r.Delete("/teams/{teamId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteTeamMCPBinding)
 				r.Post("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.CreateEmployeeMCPBindingV2)
+				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)
+				r.Delete("/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
 			})
 		}

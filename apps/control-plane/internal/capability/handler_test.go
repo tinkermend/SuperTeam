@@ -323,9 +323,25 @@ func (s *handlerService) CreateTeamMCPBinding(_ context.Context, req CreateTeamM
 	return s.mcpBinding, s.err
 }
 
+func (s *handlerService) ListTeamMCPBindings(_ context.Context, _ TeamScopedRequest) ([]MCPBinding, error) {
+	return []MCPBinding{s.mcpBinding}, s.err
+}
+
+func (s *handlerService) DeleteTeamMCPBinding(_ context.Context, _ DeleteTeamMCPBindingRequest) error {
+	return s.err
+}
+
 func (s *handlerService) CreateEmployeeMCPBindingV2(_ context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {
 	s.createEmployeeBindingV2Req = req
 	return s.mcpBinding, s.err
+}
+
+func (s *handlerService) ListEmployeeMCPBindingsV2(_ context.Context, _ EmployeeScopedRequest) ([]MCPBinding, error) {
+	return []MCPBinding{s.mcpBinding}, s.err
+}
+
+func (s *handlerService) DeleteEmployeeMCPBindingV2(_ context.Context, _ DeleteEmployeeMCPBindingV2Request) error {
+	return s.err
 }
 
 func (s *handlerService) ListEffectiveMCPConfig(_ context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {

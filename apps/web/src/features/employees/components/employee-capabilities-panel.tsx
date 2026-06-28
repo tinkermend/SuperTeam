@@ -28,14 +28,14 @@ import {
 } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
-  createEmployeeMcpBinding,
-  deleteEmployeeMcpBinding,
+  bindEmployeeMcpServer,
+  deleteEmployeeMcpBindingV2,
   listEffectiveMcpConfig,
-  listEffectiveMcpServers,
-  listUserCredentials,
+  listEmployeeMcpBindingsV2,
+  listMcpServerDefinitions,
   type EffectiveMcpServer,
-  type McpServer,
-  type UserCredential,
+  type McpBinding,
+  type McpServerDefinition,
 } from "@/lib/api/capabilities";
 import {
   bindEmployeeSkill,
@@ -57,13 +57,10 @@ type EmployeeCapabilitiesPanelProps = {
   employeeId: string;
 };
 
-const noCredentialValue = "none";
-
 export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCapabilitiesPanelProps) {
   const queryClient = useQueryClient();
-  const [mcpName, setMcpName] = useState("");
-  const [mcpUrl, setMcpUrl] = useState("");
-  const [credentialId, setCredentialId] = useState(noCredentialValue);
+  const [selectedServerId, setSelectedServerId] = useState("");
+  const [credentialEnvVar, setCredentialEnvVar] = useState("");
   const [replacementValues, setReplacementValues] = useState<Record<string, string>>({});
 
   const marketplace = useQuery({
@@ -76,14 +73,14 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
     queryFn: () => listEmployeeSkills(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
-  const credentials = useQuery({
-    queryKey: ["user-credentials", "mcp_token"],
-    queryFn: () => listUserCredentials(apiOptions, "mcp_token"),
+  const mcpDefinitions = useQuery({
+    queryKey: ["mcp-server-definitions"],
+    queryFn: () => listMcpServerDefinitions(apiOptions),
     placeholderData: keepPreviousData,
   });
-  const effectiveMcp = useQuery({
-    queryKey: ["effective-mcp-servers", employeeId],
-    queryFn: () => listEffectiveMcpServers(apiOptions, employeeId),
+  const employeeMcpBindings = useQuery({
+    queryKey: ["employee-mcp-bindings-v2", employeeId],
+    queryFn: () => listEmployeeMcpBindingsV2(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
   // Registry-resolved effective MCP config (migration 037): shows inherited vs personal
@@ -145,25 +142,26 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   });
 
   const createMcpMutation = useMutation({
-    mutationFn: (input: { name: string; url: string; credential_id?: string }) =>
-      createEmployeeMcpBinding(apiOptions, employeeId, input),
+    mutationFn: (input: { mcp_server_id: string; credential_env_var?: string }) =>
+      bindEmployeeMcpServer(apiOptions, employeeId, input),
     onSuccess: async () => {
-      setMcpName("");
-      setMcpUrl("");
-      setCredentialId(noCredentialValue);
+      setSelectedServerId("");
+      setCredentialEnvVar("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-servers", employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
       ]);
     },
   });
 
   const deleteMcpMutation = useMutation({
-    mutationFn: (serverId: string) => deleteEmployeeMcpBinding(apiOptions, employeeId, serverId),
+    mutationFn: (serverId: string) => deleteEmployeeMcpBindingV2(apiOptions, employeeId, serverId),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-servers", employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
       ]);
     },
   });
@@ -192,16 +190,30 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
     },
   });
 
+  const selectedDefinition = useMemo(
+    () => (mcpDefinitions.data ?? []).find((definition) => definition.id === selectedServerId),
+    [mcpDefinitions.data, selectedServerId],
+  );
+  const configuredEnvNames = useMemo(
+    () => new Set((envVars.data ?? []).map((envVar) => envVar.name)),
+    [envVars.data],
+  );
+  // Preflight: an employee binding is blocked until every required env var is configured.
+  const missingEnvVars = useMemo(() => {
+    if (!selectedDefinition) return [];
+    return selectedDefinition.required_env_vars.filter((name) => !configuredEnvNames.has(name));
+  }, [selectedDefinition, configuredEnvNames]);
+
   const canCreateMcp =
-    mcpName.trim().length > 0 && mcpUrl.trim().length > 0 && !createMcpMutation.isPending;
+    selectedServerId.length > 0 && missingEnvVars.length === 0 && !createMcpMutation.isPending;
 
   const handleCreateMcp = () => {
-    const input = {
-      name: mcpName.trim(),
-      url: mcpUrl.trim(),
-      ...(credentialId !== noCredentialValue ? { credential_id: credentialId } : {}),
-    };
-    createMcpMutation.mutate(input);
+    createMcpMutation.mutate({
+      mcp_server_id: selectedServerId,
+      ...(credentialEnvVar.trim().length > 0
+        ? { credential_env_var: credentialEnvVar.trim() }
+        : {}),
+    });
   };
 
   return (
@@ -288,7 +300,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         <CardHeader className="gap-3 pb-3">
           <PanelTitle
             icon={<Network />}
-            meta={`${effectiveMcp.data?.length ?? 0} 个生效`}
+            meta={`${employeeMcpBindings.data?.length ?? 0} 个绑定`}
             title="个人 MCP"
             tone="info"
           />
@@ -296,75 +308,79 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="min-w-0 space-y-2">
-              <Label htmlFor="employee-mcp-name">个人 MCP 名称</Label>
-              <Input
-                disabled={createMcpMutation.isPending}
-                id="employee-mcp-name"
-                onChange={(event) => setMcpName(event.target.value)}
-                value={mcpName}
-              />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <Label htmlFor="employee-mcp-url">个人 MCP URL</Label>
-              <Input
-                disabled={createMcpMutation.isPending}
-                id="employee-mcp-url"
-                onChange={(event) => setMcpUrl(event.target.value)}
-                value={mcpUrl}
-              />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <Label htmlFor="employee-mcp-credential">个人 MCP 凭据</Label>
+              <Label htmlFor="employee-mcp-server">注册表 MCP</Label>
               <Select
                 disabled={createMcpMutation.isPending}
-                onValueChange={setCredentialId}
-                value={credentialId}
+                onValueChange={setSelectedServerId}
+                value={selectedServerId}
               >
-                <SelectTrigger aria-label="个人 MCP 凭据" className="w-full" id="employee-mcp-credential">
-                  <SelectValue />
+                <SelectTrigger aria-label="注册表 MCP" className="w-full" id="employee-mcp-server">
+                  <SelectValue placeholder="选择已注册的 MCP" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value={noCredentialValue}>不使用凭据</SelectItem>
-                    {(credentials.data ?? []).map((credential) => (
-                      <SelectItem key={credential.id} value={credential.id}>
-                        {credentialLabel(credential)}
+                    {(mcpDefinitions.data ?? []).map((definition: McpServerDefinition) => (
+                      <SelectItem key={definition.id} value={definition.id}>
+                        {definition.name}（{definition.server_key}）
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="employee-mcp-credential-env">凭据环境变量（可选）</Label>
+              <Input
+                disabled={createMcpMutation.isPending}
+                id="employee-mcp-credential-env"
+                onChange={(event) => setCredentialEnvVar(event.target.value)}
+                placeholder="例如 GITHUB_TOKEN"
+                value={credentialEnvVar}
+              />
+            </div>
             <div className="flex min-w-0 items-end">
               <Button className="w-full" disabled={!canCreateMcp} onClick={handleCreateMcp} type="button">
                 <Plus data-icon="inline-start" />
-                添加个人 MCP
+                绑定个人 MCP
               </Button>
             </div>
           </div>
-          {credentials.isError ? <p className="text-sm text-destructive">凭据加载失败</p> : null}
-          {createMcpMutation.isError ? <p className="text-sm text-destructive">个人 MCP 添加失败</p> : null}
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">已生效 MCP</h3>
-              {effectiveMcp.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
+          {selectedDefinition && selectedDefinition.required_env_vars.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1 text-xs">
+              <span className="text-muted-foreground">必需环境变量：</span>
+              {selectedDefinition.required_env_vars.map((name) => {
+                const missing = missingEnvVars.includes(name);
+                return (
+                  <span
+                    key={name}
+                    className={
+                      missing
+                        ? "rounded border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 font-mono text-[11px] text-destructive"
+                        : "rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+                    }
+                  >
+                    {name}
+                  </span>
+                );
+              })}
             </div>
-            {effectiveMcp.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-            {effectiveMcp.isError ? <p className="text-sm text-destructive">MCP 加载失败</p> : null}
-            {deleteMcpMutation.isError ? <p className="text-sm text-destructive">个人 MCP 移除失败</p> : null}
-            {!effectiveMcp.isLoading && !effectiveMcp.isError && (effectiveMcp.data?.length ?? 0) === 0 ? (
-              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无生效 MCP</p>
-            ) : null}
-            {(effectiveMcp.data ?? []).map((server) => (
-              <McpRow
-                key={server.id}
-                onRemove={() => deleteMcpMutation.mutate(server.id)}
-                pending={deleteMcpMutation.isPending}
-                server={server}
-              />
-            ))}
-          </div>
+          ) : null}
+          {missingEnvVars.length > 0 ? (
+            <p className="text-xs text-destructive">
+              缺少环境变量 {missingEnvVars.join("、")}，请先在下方环境变量区域配置后再绑定。
+            </p>
+          ) : null}
+          {createMcpMutation.isError ? <p className="text-sm text-destructive">个人 MCP 绑定失败</p> : null}
+
+          <EmployeeMcpBindingsSection
+            bindings={employeeMcpBindings.data ?? []}
+            isError={employeeMcpBindings.isError}
+            isFetching={employeeMcpBindings.isFetching}
+            isLoading={employeeMcpBindings.isLoading}
+            onRemove={(bindingId) => deleteMcpMutation.mutate(bindingId)}
+            removing={deleteMcpMutation.isPending}
+            removeError={deleteMcpMutation.isError}
+          />
 
           <EffectiveMcpRegistrySection
             config={effectiveMcpConfig.data ?? []}
@@ -663,55 +679,80 @@ function EffectiveMcpRegistrySection({
   );
 }
 
-function McpRow({
+// EmployeeMcpBindingsSection lists the employee's personal MCP bindings (registry v2) with
+// their preflight status and a remove action. Team-inherited bindings are not shown here —
+// they surface in EffectiveMcpRegistrySection.
+function EmployeeMcpBindingsSection({
+  bindings,
+  isError,
+  isFetching,
+  isLoading,
   onRemove,
-  pending,
-  server,
+  removing,
+  removeError,
 }: {
-  onRemove: () => void;
-  pending: boolean;
-  server: McpServer;
+  bindings: McpBinding[];
+  isError: boolean;
+  isFetching: boolean;
+  isLoading: boolean;
+  onRemove: (bindingId: string) => void;
+  removing: boolean;
+  removeError: boolean;
 }) {
-  const isReadOnly = server.inherited || server.source_scope !== "employee";
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <IconTile tone={server.inherited ? "mute" : "info"} size="sm">
-          <Network />
-        </IconTile>
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{server.name}</p>
-            {server.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
-            <StatusPill tone={server.status === "active" ? "ok" : "mute"}>
-              {serverStatusLabel(server.status)}
-            </StatusPill>
-          </div>
-          <p className="truncate text-xs text-muted-foreground">{server.url}</p>
-          {server.credential_name ? (
-            <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-              <KeyRound className="size-3 shrink-0" />
-              <span className="truncate">{server.credential_name} ****{server.credential_last_four}</span>
-            </p>
-          ) : null}
-        </div>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">个人 MCP 绑定</h3>
+        {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
       </div>
-      <Button
-        aria-label={`移除 MCP ${server.name}`}
-        disabled={isReadOnly || pending}
-        onClick={isReadOnly ? undefined : onRemove}
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <Trash2 />
-      </Button>
+      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isError ? <p className="text-sm text-destructive">MCP 绑定加载失败</p> : null}
+      {removeError ? <p className="text-sm text-destructive">个人 MCP 移除失败</p> : null}
+      {!isLoading && !isError && bindings.length === 0 ? (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无个人 MCP 绑定</p>
+      ) : null}
+      {bindings.map((binding) => {
+        const blocked = (binding.missing_env_vars ?? []).length > 0;
+        return (
+          <div key={binding.id} className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div className="flex min-w-0 items-start gap-3">
+              <IconTile tone="info" size="sm">
+                <Network />
+              </IconTile>
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <p className="truncate text-sm font-medium">{binding.server_name ?? binding.server_key}</p>
+                  <StatusPill tone={blocked ? "warn" : "ok"}>{binding.status}</StatusPill>
+                </div>
+                <p className="truncate font-mono text-xs text-muted-foreground">{binding.url ?? binding.server_key}</p>
+                {binding.credential_env_var ? (
+                  <p className="mt-1 flex min-w-0 items-center gap-1 font-mono text-xs text-muted-foreground">
+                    <KeyRound className="size-3 shrink-0" />
+                    <span className="truncate">{binding.credential_env_var}</span>
+                  </p>
+                ) : null}
+                {blocked ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    缺少环境变量 {(binding.missing_env_vars ?? []).join("、")}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <Button
+              aria-label={`移除 MCP ${binding.server_name ?? binding.server_key}`}
+              disabled={removing}
+              onClick={() => onRemove(binding.id)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
-}
-
-function credentialLabel(credential: UserCredential) {
-  return `${credential.name} ****${credential.last_four}`;
 }
 
 function skillRiskTone(riskLevel: string) {
@@ -757,13 +798,4 @@ function formatDateTime(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-CN", { hour12: false });
-}
-
-function serverStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    active: "启用",
-    disabled: "停用",
-  };
-
-  return labels[status] ?? status;
 }

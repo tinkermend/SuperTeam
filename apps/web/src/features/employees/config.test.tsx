@@ -4,7 +4,6 @@ import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { EmployeeConfigView } from "./config";
-import type { McpServer, UserCredential } from "@/lib/api/capabilities";
 import type { WorkspaceFile } from "@/lib/api/employees";
 import type { EffectiveEmployeeSkill, Skill } from "@/lib/api/skills";
 
@@ -115,16 +114,6 @@ function createEmployeeConfigFetcher({ extraRoutes = {} }: { extraRoutes?: Extra
 
 function requestBody(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, path: string, method: string) {
   const call = fetcher.mock.calls.find(([input, init]) => {
-    const url = new URL(requestUrl(input));
-    return url.pathname === path && requestMethod(input, init) === method;
-  });
-  expect(call).toBeTruthy();
-
-  return JSON.parse(String(call?.[1]?.body));
-}
-
-function latestRequestBody(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, path: string, method: string) {
-  const call = [...fetcher.mock.calls].reverse().find(([input, init]) => {
     const url = new URL(requestUrl(input));
     return url.pathname === path && requestMethod(input, init) === method;
   });
@@ -364,29 +353,6 @@ describe("EmployeeConfigView", () => {
       { skill: diagnose, read_only: true, inherited: true, source_scope: "team" },
       { skill: personal, read_only: false, inherited: false, source_scope: "employee" },
     ] satisfies EffectiveEmployeeSkill[];
-    const credentials = [
-      {
-        id: "credential-1",
-        tenant_id: "tenant-1",
-        user_id: "user-1",
-        name: "ops-token",
-        credential_type: "mcp_token",
-        last_four: "7890",
-        status: "active",
-      },
-    ] satisfies UserCredential[];
-    const inheritedMcp = [
-      {
-        id: "mcp-team",
-        tenant_id: "tenant-1",
-        team_id: employee.team_id,
-        name: "team-observe",
-        url: "https://team.example.com/mcp",
-        status: "active",
-        source_scope: "team",
-        inherited: true,
-      },
-    ] satisfies McpServer[];
     const fetcher = createEmployeeConfigFetcher({
       extraRoutes: {
         [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: [workspaceFile],
@@ -399,24 +365,65 @@ describe("EmployeeConfigView", () => {
         },
         [`GET /api/v1/digital-employees/${employee.id}/skills`]: effectiveSkills,
         "GET /api/v1/skills": [sqlReview],
-        "GET /api/v1/user-credentials?credential_type=mcp_token": credentials,
-        [`GET /api/v1/digital-employees/${employee.id}/mcp-bindings`]: [],
-        [`GET /api/v1/digital-employees/${employee.id}/effective-mcp-servers`]: inheritedMcp,
+        "GET /api/v1/mcp-servers": [
+          {
+            id: "mcp-github",
+            tenant_id: "tenant-1",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
+            status: "active",
+          },
+        ],
+        [`GET /api/v1/digital-employees/${employee.id}/environment-variables`]: [
+          {
+            id: "env-github",
+            tenant_id: "tenant-1",
+            team_id: employee.team_id,
+            digital_employee_id: employee.id,
+            name: "GITHUB_TOKEN",
+            value: "ghp_secret",
+            sensitive: true,
+            status: "active",
+          },
+        ],
+        [`GET /api/v1/digital-employees/${employee.id}/mcp-bindings-v2`]: [],
+        [`GET /api/v1/digital-employees/${employee.id}/effective-mcp-config`]: [
+          {
+            server_id: "mcp-github",
+            server_key: "github",
+            name: "GitHub MCP",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            credential_env_var: "GITHUB_TOKEN",
+            required_env_vars: ["GITHUB_TOKEN"],
+            missing_env_vars: [],
+            source_scope: "team",
+            status: "active",
+          },
+        ],
         [`POST /api/v1/digital-employees/${employee.id}/skills`]: sqlReview,
-        [`POST /api/v1/digital-employees/${employee.id}/mcp-bindings`]: {
-          id: "mcp-personal",
+        [`POST /api/v1/digital-employees/${employee.id}/mcp-bindings-v2`]: {
+          id: "binding-personal",
           tenant_id: "tenant-1",
           digital_employee_id: employee.id,
-          name: "个人检索 MCP",
-          url: "https://personal.example.com/mcp",
-          credential_id: "credential-1",
-          credential_name: "ops-token",
-          credential_type: "mcp_token",
-          credential_last_four: "7890",
-          status: "active",
+          mcp_server_id: "mcp-github",
+          server_key: "github",
+          server_name: "GitHub MCP",
+          credential_env_var: "GITHUB_TOKEN",
+          required_env_vars: ["GITHUB_TOKEN"],
+          missing_env_vars: [],
           source_scope: "employee",
-          inherited: false,
-        } satisfies McpServer,
+          status: "active",
+        },
       },
     });
 
@@ -448,33 +455,20 @@ describe("EmployeeConfigView", () => {
       .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/skills`, "POST"))
       .toEqual({ skill_id: "skill-extra" });
 
-    await userEvent.fill(screen.getByRole("textbox", { name: "个人 MCP 名称" }), " 个人检索 MCP ");
+    // Bind a registered MCP by mcp_server_id + credential_env_var; preflight passes because
+    // the employee has GITHUB_TOKEN configured.
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
     await userEvent.fill(
-      screen.getByRole("textbox", { name: "个人 MCP URL" }),
-      " https://personal.example.com/mcp ",
+      screen.getByRole("textbox", { name: "凭据环境变量（可选）" }),
+      "GITHUB_TOKEN",
     );
-    await userEvent.click(screen.getByRole("combobox", { name: "个人 MCP 凭据" }));
-    await userEvent.click(screen.getByRole("option", { name: "ops-token ****7890" }));
-    await userEvent.click(screen.getByRole("button", { name: "添加个人 MCP" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定个人 MCP" }));
     await expect
-      .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/mcp-bindings`, "POST"))
+      .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/mcp-bindings-v2`, "POST"))
       .toEqual({
-        name: "个人检索 MCP",
-        url: "https://personal.example.com/mcp",
-        credential_id: "credential-1",
-      });
-
-    await userEvent.fill(screen.getByRole("textbox", { name: "个人 MCP 名称" }), "无凭据 MCP");
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "个人 MCP URL" }),
-      "https://public.example.com/mcp",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "添加个人 MCP" }));
-    await expect
-      .poll(() => latestRequestBody(fetcher, `/api/v1/digital-employees/${employee.id}/mcp-bindings`, "POST"))
-      .toEqual({
-        name: "无凭据 MCP",
-        url: "https://public.example.com/mcp",
+        mcp_server_id: "mcp-github",
+        credential_env_var: "GITHUB_TOKEN",
       });
   });
 

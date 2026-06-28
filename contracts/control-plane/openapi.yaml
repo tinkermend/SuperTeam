@@ -2034,6 +2034,22 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/mcp-bindings:
+    get:
+      operationId: listTeamMCPBindings
+      summary: List team MCP bindings to registered MCP servers
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team MCP binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "403":
+          $ref: "#/components/responses/Error"
     post:
       operationId: createTeamMCPBinding
       summary: Bind a registered MCP server to a team
@@ -2056,7 +2072,42 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/mcp-bindings/{bindingId}:
+    delete:
+      operationId: deleteTeamMCPBinding
+      summary: Delete a team MCP binding
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Team MCP binding deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/mcp-bindings-v2:
+    get:
+      operationId: listEmployeeMCPBindingsV2
+      summary: List a digital employee's personal MCP bindings with env-var preflight
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Employee MCP binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "403":
+          $ref: "#/components/responses/Error"
     post:
       operationId: createEmployeeMCPBindingV2
       summary: Bind a registered MCP server to a digital employee
@@ -2078,6 +2129,25 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}:
+    delete:
+      operationId: deleteEmployeeMCPBindingV2
+      summary: Delete a digital employee personal MCP binding
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Employee MCP binding deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/effective-mcp-config:
     get:

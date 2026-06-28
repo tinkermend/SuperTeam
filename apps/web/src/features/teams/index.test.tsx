@@ -1030,53 +1030,58 @@ describe("TeamDetailView", () => {
       extraRoutes: {
         "GET /api/v1/skills": [installedSkill, installableSkill],
         "GET /api/v1/teams/team-1/skills": [installedSkill],
-        "GET /api/v1/user-credentials?credential_type=mcp_token": [
+        "GET /api/v1/mcp-servers": [
           {
-            id: "credential-ops",
+            id: "mcp-github",
             tenant_id: "tenant-1",
-            user_id: "owner-user",
-            name: "ops-token",
-            credential_type: "mcp_token",
-            last_four: "7890",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
             status: "active",
           },
         ],
-        "GET /api/v1/teams/team-1/mcp-servers": [
+        "GET /api/v1/teams/team-1/mcp-bindings": [
           {
-            id: "mcp-existing",
+            id: "binding-existing",
             tenant_id: "tenant-1",
             team_id: "team-1",
-            name: "ops-mcp",
-            url: "https://mcp.example.com",
-            credential_id: "credential-ops",
-            credential_name: "ops-token",
-            credential_type: "mcp_token",
-            credential_last_four: "7890",
-            status: "active",
+            mcp_server_id: "mcp-github",
+            server_key: "github",
+            server_name: "GitHub MCP",
+            url: "https://api.githubcopilot.com/mcp/",
+            transport: "streamable_http",
+            auth_strategy: "bearer_env",
+            credential_env_var: "GITHUB_TOKEN",
+            required_env_vars: ["GITHUB_TOKEN"],
             source_scope: "team",
-            inherited: false,
+            status: "active",
           },
         ],
         "POST /api/v1/teams/team-1/skills": {
           ...installableSkill,
           team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
         },
-        "POST /api/v1/teams/team-1/mcp-servers": {
-          id: "mcp-created",
+        "POST /api/v1/teams/team-1/mcp-bindings": {
+          id: "binding-created",
           tenant_id: "tenant-1",
           team_id: "team-1",
-          name: "诊断 MCP",
-          url: "https://diagnose.example.com/mcp",
-          credential_id: "credential-ops",
-          credential_name: "ops-token",
-          credential_type: "mcp_token",
-          credential_last_four: "7890",
-          status: "active",
+          mcp_server_id: "mcp-github",
+          server_key: "github",
+          server_name: "GitHub MCP",
+          credential_env_var: "GITHUB_TOKEN",
+          required_env_vars: ["GITHUB_TOKEN"],
           source_scope: "team",
-          inherited: false,
+          status: "active",
         },
         "DELETE /api/v1/teams/team-1/skills/skill-observe": {},
-        "DELETE /api/v1/teams/team-1/mcp-servers/mcp-existing": {},
+        "DELETE /api/v1/teams/team-1/mcp-bindings/binding-existing": {},
       },
     });
     const screen = await renderWithQueryClient(
@@ -1112,67 +1117,29 @@ describe("TeamDetailView", () => {
       )
       .toBe(true);
 
+    // Bind a registered MCP server by mcp_server_id + credential_env_var.
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
     await userEvent.fill(
-      screen.getByRole("textbox", { name: "MCP 名称" }),
-      " 诊断 MCP ",
+      screen.getByRole("textbox", { name: "凭据环境变量（可选）" }),
+      "GITHUB_TOKEN",
     );
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "MCP URL" }),
-      " https://diagnose.example.com/mcp ",
-    );
-    await userEvent.click(screen.getByRole("combobox", { name: "凭据" }));
-    await userEvent.click(screen.getByRole("option", { name: "ops-token ****7890" }));
-    await userEvent.click(screen.getByRole("button", { name: "添加公共 MCP" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定公共 MCP" }));
 
     await expect
       .poll(() =>
-        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-servers", "POST"),
+        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-bindings", "POST"),
       )
       .toBe(true);
-    expect(requestBody(fetcher, "/api/v1/teams/team-1/mcp-servers", "POST")).toEqual({
-      credential_id: "credential-ops",
-      name: "诊断 MCP",
-      url: "https://diagnose.example.com/mcp",
+    expect(requestBody(fetcher, "/api/v1/teams/team-1/mcp-bindings", "POST")).toEqual({
+      mcp_server_id: "mcp-github",
+      credential_env_var: "GITHUB_TOKEN",
     });
-    await expect
-      .element(screen.getByRole("textbox", { name: "MCP 名称" }))
-      .toHaveValue("");
 
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "MCP 名称" }),
-      "无需凭据 MCP",
-    );
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "MCP URL" }),
-      "https://public.example.com/mcp",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "添加公共 MCP" }));
+    await userEvent.click(screen.getByRole("button", { name: "移除 MCP GitHub MCP" }));
     await expect
       .poll(() =>
-        fetchCalls(fetcher).filter(([url, init]) => {
-          const requestUrl = new URL(String(url));
-
-          return requestUrl.pathname === "/api/v1/teams/team-1/mcp-servers" && init?.method === "POST";
-        }).length,
-      )
-      .toBe(2);
-    const mcpPostBodies = fetchCalls(fetcher)
-      .filter(([url, init]) => {
-        const requestUrl = new URL(String(url));
-
-        return requestUrl.pathname === "/api/v1/teams/team-1/mcp-servers" && init?.method === "POST";
-      })
-      .map(([, init]) => JSON.parse(String(init?.body)));
-    expect(mcpPostBodies[1]).toEqual({
-      name: "无需凭据 MCP",
-      url: "https://public.example.com/mcp",
-    });
-    expect(mcpPostBodies[1]).not.toHaveProperty("credential_id");
-
-    await userEvent.click(screen.getByRole("button", { name: "移除 MCP ops-mcp" }));
-    await expect
-      .poll(() =>
-        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-servers/mcp-existing", "DELETE"),
+        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-bindings/binding-existing", "DELETE"),
       )
       .toBe(true);
   });

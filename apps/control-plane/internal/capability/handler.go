@@ -28,7 +28,11 @@ type HandlerService interface {
 	ListMCPServerDefinitions(ctx context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error)
 	DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error
 	CreateTeamMCPBinding(ctx context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error)
+	ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error)
+	DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBindingRequest) error
 	CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error)
+	ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error)
+	DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error
 	ListEffectiveMCPConfig(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
 }
 
@@ -456,6 +460,96 @@ func (h *HTTPHandler) ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, effectiveMCPServerResponses(servers))
 }
 
+func (h *HTTPHandler) ListTeamMCPBindings(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := uuidParam(w, r, "teamId", "invalid team id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp binding read", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	bindings, err := service.ListTeamMCPBindings(r.Context(), TeamScopedRequest{TenantID: tenantID, UserID: userID, TeamID: teamID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
+}
+
+func (h *HTTPHandler) DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := uuidParam(w, r, "teamId", "invalid team id")
+	if !ok {
+		return
+	}
+	bindingID, ok := uuidParam(w, r, "bindingId", "invalid mcp binding id")
+	if !ok {
+		return
+	}
+	tenantID, _, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp binding delete", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteTeamMCPBinding(r.Context(), DeleteTeamMCPBindingRequest{TenantID: tenantID, TeamID: teamID, BindingID: bindingID}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := uuidParam(w, r, "employeeId", "invalid employee id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionEmployeeCapabilityEdit, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee mcp binding read", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	bindings, err := service.ListEmployeeMCPBindingsV2(r.Context(), EmployeeScopedRequest{TenantID: tenantID, UserID: userID, DigitalEmployeeID: employeeID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
+}
+
+func (h *HTTPHandler) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := uuidParam(w, r, "employeeId", "invalid employee id")
+	if !ok {
+		return
+	}
+	bindingID, ok := uuidParam(w, r, "bindingId", "invalid mcp binding id")
+	if !ok {
+		return
+	}
+	tenantID, _, ok := h.authorize(w, r, authz.ActionEmployeeCapabilityEdit, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee mcp binding delete", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteEmployeeMCPBindingV2(r.Context(), DeleteEmployeeMCPBindingV2Request{TenantID: tenantID, DigitalEmployeeID: employeeID, BindingID: bindingID}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "capability service is not configured", http.StatusServiceUnavailable)
@@ -602,6 +696,14 @@ func mcpDefinitionResponseFromDomain(item MCPDefinition) mcpDefinitionResponse {
 		CreatedAt:          formatTime(item.CreatedAt),
 		UpdatedAt:          formatTime(item.UpdatedAt),
 	}
+}
+
+func mcpBindingResponses(items []MCPBinding) []mcpBindingResponse {
+	responses := make([]mcpBindingResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, mcpBindingResponseFromDomain(item))
+	}
+	return responses
 }
 
 func mcpBindingResponseFromDomain(item MCPBinding) mcpBindingResponse {
