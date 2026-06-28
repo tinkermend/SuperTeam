@@ -1,6 +1,6 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::controlplane::RuntimeCapabilityInput;
+use superteam_runtime_agent::controlplane::{ControlPlaneClient, RuntimeCapabilityInput};
 use superteam_runtime_agent::daemon::{RuntimeDaemon, connect_runtime_session};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -464,6 +464,104 @@ async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
         Some("66666666-6666-4666-8666-666666666666")
     );
     assert_eq!(snapshot.token.as_deref(), Some("fresh-session-token"));
+}
+
+#[tokio::test]
+async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
+    use superteam_runtime_agent::runtime_auth::RuntimeAuthState;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(6);
+
+    tokio::spawn(async move {
+        let (mut first_claim_socket, _) = listener.accept().await.unwrap();
+        let first_claim = read_http_request(&mut first_claim_socket).await;
+        request_tx.send(first_claim).await.unwrap();
+        write_status_response(
+            &mut first_claim_socket,
+            "401 Unauthorized",
+            serde_json::json!("invalid runtime authentication"),
+        )
+        .await;
+        drop(first_claim_socket);
+
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let hello = read_http_request(&mut hello_socket).await;
+        request_tx.send(hello).await.unwrap();
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "77777777-7777-4777-8777-777777777777",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "2999-06-03T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "fresh-token"
+            }),
+        )
+        .await;
+
+        let (mut caps_socket, _) = listener.accept().await.unwrap();
+        let caps = read_http_request(&mut caps_socket).await;
+        request_tx.send(caps).await.unwrap();
+        write_json_response(&mut caps_socket, serde_json::json!([])).await;
+
+        let (mut second_claim_socket, _) = listener.accept().await.unwrap();
+        let second_claim = read_http_request(&mut second_claim_socket).await;
+        request_tx.send(second_claim).await.unwrap();
+        second_claim_socket
+            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("old-session", "old-token", "2999-06-02T00:00:00Z")
+        .await
+        .expect("old session");
+
+    let client = ControlPlaneClient::with_runtime_auth(
+        config.runtime.control_plane_url.clone(),
+        auth.clone(),
+    );
+    let first_result = client.claim_task(1).await;
+    assert!(first_result.is_err());
+    superteam_runtime_agent::daemon::reenroll_runtime_session(&config, auth.clone(), vec![])
+        .await
+        .expect("re-enroll");
+    client.claim_task(1).await.expect("second claim");
+
+    let first_claim = request_rx.recv().await.expect("first claim");
+    let hello = request_rx.recv().await.expect("hello");
+    let caps = request_rx.recv().await.expect("capabilities");
+    let second_claim = request_rx.recv().await.expect("second claim");
+    assert!(first_claim.contains("authorization: Bearer old-token"));
+    assert_eq!(
+        hello.lines().next().unwrap(),
+        "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
+    );
+    assert!(caps.contains("authorization: Bearer fresh-token"));
+    assert!(second_claim.contains("authorization: Bearer fresh-token"));
 }
 
 #[tokio::test]

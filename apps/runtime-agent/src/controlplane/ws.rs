@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures_util::StreamExt;
 use http::HeaderValue;
 use tokio_tungstenite::connect_async;
@@ -13,20 +13,33 @@ use crate::controlplane::models::RuntimeCommand;
 
 const COMMAND_LOOP_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-pub async fn run_command_loop(config: RuntimeConfig, session_token: String) -> Result<()> {
+pub async fn run_command_loop(
+    config: RuntimeConfig,
+    control_plane: ControlPlaneClient,
+) -> Result<()> {
     let ws_url = runtime_ws_url(&config.runtime.control_plane_url)?;
-    let authorization = HeaderValue::from_str(&format!("Bearer {session_token}"))
-        .context("runtime session token is not a valid websocket authorization header")?;
-    let control_plane = ControlPlaneClient::with_session_token(
-        config.runtime.control_plane_url.clone(),
-        session_token,
-        config.runtime.node_id.clone(),
-    );
-    let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane);
+    let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane.clone());
 
     loop {
-        if let Err(error) = run_command_loop_once(&executor, &ws_url, &authorization).await {
-            eprintln!("Runtime command loop connection failed: {}", error);
+        match control_plane.runtime_authorization_header().await {
+            Ok(authorization) => {
+                if let Err(error) = run_command_loop_once(&executor, &ws_url, &authorization).await
+                {
+                    if control_plane
+                        .report_websocket_auth_error(error.as_ref())
+                        .await
+                    {
+                        eprintln!(
+                            "Runtime command loop auth expired; waiting for re-authentication"
+                        );
+                    } else {
+                        eprintln!("Runtime command loop connection failed: {}", error);
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("Runtime command loop waiting for runtime auth: {}", error);
+            }
         }
         tokio::time::sleep(COMMAND_LOOP_RECONNECT_DELAY).await;
     }
@@ -208,6 +221,61 @@ mod tests {
         assert!(!agent_home_dir.join("state").exists());
         assert!(!agent_home_dir.join("sessions").exists());
         assert!(!agent_home_dir.join("runs").exists());
+    }
+
+    #[tokio::test]
+    async fn websocket_handshake_unauthorized_reports_runtime_auth_failure() {
+        use crate::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0; 1024];
+            let _ = stream.readable().await;
+            let _ = stream.try_read(&mut buffer);
+            stream
+                .try_write(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write 401");
+        });
+
+        let auth = RuntimeAuthState::new("node-1");
+        auth.set_session("session-1", "expired-token", "2999-06-02T00:00:00Z")
+            .await
+            .expect("session");
+        let control_plane =
+            ControlPlaneClient::with_runtime_auth(format!("http://{addr}"), auth.clone());
+        let mut config = RuntimeConfig::new("node-1").expect("config");
+        config.runtime.control_plane_url = format!("http://{addr}");
+        let executor = RuntimeCommandExecutor::with_control_plane_client(
+            config.clone(),
+            control_plane.clone(),
+        );
+        let authorization = control_plane
+            .runtime_authorization_header()
+            .await
+            .expect("authorization");
+
+        let error = run_command_loop_once(
+            &executor,
+            &runtime_ws_url(&config.runtime.control_plane_url).expect("ws url"),
+            &authorization,
+        )
+        .await
+        .expect_err("handshake should fail");
+
+        assert!(
+            control_plane
+                .report_websocket_auth_error(error.as_ref())
+                .await
+        );
+        assert_eq!(
+            auth.snapshot().await.status,
+            RuntimeAuthStatus::Reauthenticating
+        );
+        server.await.expect("server task");
     }
 
     #[tokio::test]

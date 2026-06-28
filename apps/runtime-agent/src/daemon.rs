@@ -33,11 +33,6 @@ pub struct RuntimeDaemon {
     config: RuntimeConfig,
 }
 
-struct RuntimeSessionContext {
-    client: ControlPlaneClient,
-    session_token: String,
-}
-
 impl RuntimeDaemon {
     pub fn new(config: RuntimeConfig) -> Self {
         Self { config }
@@ -52,30 +47,58 @@ impl RuntimeDaemon {
 
     pub async fn run(self) -> Result<()> {
         let capabilities = build_capabilities(&self.config, &self.config.tools.probe_names).await;
-        let Some(session_context) = establish_runtime_session(&self.config, capabilities).await?
-        else {
-            return Ok(());
-        };
+        let auth = RuntimeAuthState::new(self.config.runtime.node_id.clone());
+
+        loop {
+            if establish_runtime_auth_session(&self.config, capabilities.clone(), auth.clone())
+                .await?
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+
+        let supervisor_config = self.config.clone();
+        let supervisor_capabilities = capabilities.clone();
+        let supervisor_auth = auth.clone();
+        tokio::spawn(async move {
+            session_supervisor_loop(supervisor_config, supervisor_capabilities, supervisor_auth)
+                .await;
+        });
+
+        let control_plane = ControlPlaneClient::with_runtime_auth(
+            self.config.runtime.control_plane_url.clone(),
+            auth,
+        );
 
         let command_config = self.config.clone();
-        let command_session_token = session_context.session_token.clone();
+        let command_client = control_plane.clone();
         tokio::spawn(async move {
-            if let Err(error) = run_command_loop(command_config, command_session_token).await {
+            if let Err(error) = run_command_loop(command_config, command_client).await {
                 eprintln!("Runtime command loop failed: {}", error);
             }
         });
 
-        let heartbeat_client = session_context.client.clone();
+        let heartbeat_client = control_plane.clone();
         let heartbeat_config = self.config.clone();
         tokio::spawn(async move {
             heartbeat_loop(heartbeat_client, heartbeat_config).await;
         });
 
-        let executor = TaskExecutor::new(self.config, session_context.client);
+        let executor = TaskExecutor::new(self.config, control_plane);
         executor.run().await?;
 
         Ok(())
     }
+}
+
+pub async fn reenroll_runtime_session(
+    config: &RuntimeConfig,
+    auth: RuntimeAuthState,
+    capabilities: Vec<RuntimeCapabilityInput>,
+) -> Result<bool> {
+    auth.mark_status(RuntimeAuthStatus::Reauthenticating).await;
+    establish_runtime_auth_session(config, capabilities, auth).await
 }
 
 pub async fn connect_runtime_session(
@@ -91,30 +114,6 @@ pub async fn connect_runtime_session(
     } else {
         Ok(None)
     }
-}
-
-async fn establish_runtime_session(
-    config: &RuntimeConfig,
-    capabilities: Vec<RuntimeCapabilityInput>,
-) -> Result<Option<RuntimeSessionContext>> {
-    let auth = RuntimeAuthState::new(config.runtime.node_id.clone());
-    if !establish_runtime_auth_session(config, capabilities.clone(), auth.clone()).await? {
-        return Ok(None);
-    }
-
-    let snapshot = auth.snapshot().await;
-    let session_token = snapshot
-        .token
-        .clone()
-        .context("runtime session token is not available after enrollment")?;
-    spawn_runtime_auth_renewal_loop(config.clone(), auth.clone(), capabilities);
-    Ok(Some(RuntimeSessionContext {
-        client: ControlPlaneClient::with_runtime_auth(
-            config.runtime.control_plane_url.clone(),
-            auth,
-        ),
-        session_token,
-    }))
 }
 
 pub async fn establish_runtime_auth_session(
@@ -198,8 +197,7 @@ pub async fn renew_or_reenroll_once(
             Ok(())
         }
         Err(error) if is_runtime_auth_expired(error.as_ref()) => {
-            auth.mark_status(RuntimeAuthStatus::Reauthenticating).await;
-            if !establish_runtime_auth_session(config, capabilities, auth).await? {
+            if !reenroll_runtime_session(config, auth, capabilities).await? {
                 anyhow::bail!("runtime enrollment is not approved");
             }
             Ok(())
@@ -209,6 +207,61 @@ pub async fn renew_or_reenroll_once(
             Err(error)
         }
     }
+}
+
+async fn session_supervisor_loop(
+    config: RuntimeConfig,
+    capabilities: Vec<RuntimeCapabilityInput>,
+    auth: RuntimeAuthState,
+) {
+    let mut last_seen_reauth_generation = auth.snapshot().await.reauth_generation;
+    loop {
+        let snapshot = auth.snapshot().await;
+        let delay = snapshot
+            .expires_at
+            .map(|expires_at| refresh_delay(expires_at, auth.refresh_margin()))
+            .unwrap_or(Duration::from_secs(30));
+
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => {
+                if let Err(error) =
+                    renew_or_reenroll_once(&config, auth.clone(), capabilities.clone()).await
+                {
+                    eprintln!("Runtime session refresh failed: {}", error);
+                    if auth.snapshot().await.status == RuntimeAuthStatus::Refreshing {
+                        auth.mark_status(RuntimeAuthStatus::Connected).await;
+                    }
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                }
+                last_seen_reauth_generation = auth.snapshot().await.reauth_generation;
+            }
+            next_generation = auth.wait_for_next_reauth_event(last_seen_reauth_generation) => {
+                loop {
+                    match reenroll_runtime_session(&config, auth.clone(), capabilities.clone()).await {
+                        Ok(true) => {
+                            last_seen_reauth_generation = next_generation;
+                            break;
+                        }
+                        Ok(false) => tokio::time::sleep(Duration::from_secs(30)).await,
+                        Err(error) => {
+                            eprintln!("Runtime session re-authentication failed: {}", error);
+                            tokio::time::sleep(Duration::from_secs(30)).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn refresh_delay(expires_at: OffsetDateTime, refresh_margin: Duration) -> Duration {
+    let renew_at = expires_at - time::Duration::seconds(refresh_margin.as_secs() as i64);
+    let now = OffsetDateTime::now_utc();
+    if renew_at <= now {
+        return Duration::ZERO;
+    }
+
+    (renew_at - now).try_into().unwrap_or(Duration::ZERO)
 }
 
 pub fn spawn_runtime_auth_renewal_loop(
