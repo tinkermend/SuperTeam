@@ -89,7 +89,7 @@ import {
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
-import { CreateProjectDrawer } from "./components/create-project-drawer";
+import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
 
@@ -227,7 +227,8 @@ export function ProjectsView({
     refetchOnMount: "always",
     staleTime: 0,
   });
-  const currentUserId = currentUserQuery.data?.user.id;
+  const currentUser = currentUserQuery.data?.user;
+  const currentUserId = currentUser?.id;
 
   const projectTeamScopesQuery = useQuery({
     enabled: createOpen && Boolean(currentUserId),
@@ -816,19 +817,20 @@ export function ProjectsView({
               </div>
             </>
           )}
-      <CreateProjectDrawer
-        availableTeams={availableProjectTeamScopes}
-        currentUserError={currentUserQuery.error?.message}
-        currentUserId={currentUserId}
-        isCurrentUserLoading={currentUserQuery.isFetching}
-        isSubmitting={createMutation.isPending}
-        isTeamsLoading={projectTeamScopesQuery.isFetching}
-        open={createOpen}
-        submitError={createMutation.error?.message}
-        teamsError={projectTeamScopesQuery.error?.message}
-        onOpenChange={setCreateOpen}
-        onSubmit={(input) => createMutation.mutate(input)}
-      />
+      {createOpen ? (
+        <CreateProjectShell
+          availableTeams={availableProjectTeamScopes}
+          currentUser={currentUser}
+          currentUserError={currentUserQuery.error?.message}
+          isCurrentUserLoading={currentUserQuery.isFetching}
+          isSubmitting={createMutation.isPending}
+          isTeamsLoading={projectTeamScopesQuery.isFetching}
+          submitError={createMutation.error?.message}
+          teamsError={projectTeamScopesQuery.error?.message}
+          onCancel={() => setCreateOpen(false)}
+          onSubmit={(input) => createMutation.mutate(input)}
+        />
+      ) : null}
       <SubmitDemandDialog
         isSubmitting={submitDemandMutation.isPending}
         open={demandOpen}
