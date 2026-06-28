@@ -1,0 +1,106 @@
+package prompttemplate
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+
+	"github.com/superteam/control-plane/internal/auth"
+)
+
+type TeamMembershipResolver interface {
+	ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]auth.UserProjectTeamScopeSummary, error)
+}
+
+type Service struct {
+	repo     Repository
+	resolver TeamMembershipResolver
+}
+
+func NewService(repo Repository, resolver TeamMembershipResolver) *Service {
+	return &Service{
+		repo:     repo,
+		resolver: resolver,
+	}
+}
+
+func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserContext) ([]PromptTemplate, error) {
+	if authCtx == nil || authCtx.User == nil {
+		return nil, errors.New("unauthorized")
+	}
+
+	scopes, err := s.resolver.ListUserProjectTeamScopes(ctx, authCtx.TenantID, authCtx.User.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user team scopes: %w", err)
+	}
+
+	var teamIDs []uuid.UUID
+	for _, scope := range scopes {
+		teamIDs = append(teamIDs, scope.TeamID)
+	}
+
+	return s.repo.List(ctx, authCtx.TenantID, teamIDs, authCtx.User.ID)
+}
+
+func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
+	if input.Scope == "TEAM" {
+		if input.TeamID == nil || *input.TeamID == uuid.Nil {
+			return PromptTemplate{}, errors.New("team_id is required for TEAM scope")
+		}
+
+		scopes, err := s.resolver.ListUserProjectTeamScopes(ctx, input.TenantID, input.CreatorID)
+		if err != nil {
+			return PromptTemplate{}, fmt.Errorf("failed to list user team scopes: %w", err)
+		}
+
+		found := false
+		for _, scope := range scopes {
+			if scope.TeamID == *input.TeamID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return PromptTemplate{}, errors.New("unauthorized team_id: user does not belong to this team")
+		}
+	}
+
+	// Validate variables ↔ {{tokens}}
+	matches := tokenRegex.FindAllStringSubmatch(input.Content, -1)
+	tokensInContent := make(map[string]bool)
+	for _, m := range matches {
+		if len(m) >= 2 {
+			tokensInContent[m[1]] = true
+		}
+	}
+
+	varsDefined := make(map[string]bool)
+	for _, v := range input.Variables {
+		varsDefined[v.Name] = true
+		if !tokensInContent[v.Name] {
+			return PromptTemplate{}, fmt.Errorf("variable %q is defined but not used in the template content", v.Name)
+		}
+	}
+
+	for token := range tokensInContent {
+		if !varsDefined[token] {
+			return PromptTemplate{}, fmt.Errorf("token %q is used in the template content but not defined in variables", token)
+		}
+	}
+
+	return s.repo.Create(ctx, input)
+}
+
+func (s *Service) ApplyTemplate(ctx context.Context, id uuid.UUID, authCtx *auth.CurrentUserContext) error {
+	if authCtx == nil {
+		return errors.New("unauthorized")
+	}
+	err := s.repo.IncrementUseCount(ctx, id, authCtx.TenantID)
+	if err != nil {
+		// Log the error but don't fail the operation to prevent breaking the picker
+		return nil
+	}
+	return nil
+}
