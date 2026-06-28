@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -79,7 +79,8 @@ export function PromptTemplateDialog({
     if (selectedTemplate.variables) {
       for (const v of selectedTemplate.variables) {
         const val = variableValues[v.name] || "";
-        result = result.replaceAll(`{{${v.name}}}`, val);
+        // split/join 替代 replaceAll：语义等价且不依赖 es2021 lib，避免 typecheck 报错。
+        result = result.split(`{{${v.name}}}`).join(val);
       }
     }
     
@@ -250,7 +251,10 @@ export function PromptTemplateDialog({
               {/* Grid */}
               <div className="flex-1 bg-v3-bg py-4">
                 <ScrollArea className="h-full px-6">
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {/* 列数跟随容器宽度，而非视口断点：Dialog 内容区约 660px，
+                      minmax(15rem,1fr) 下稳定 2 列、卡片宽约 320px，
+                      容器更宽时自动 3 列，避免在窄 Dialog 内被视口 xl 断点压成过窄卡片。 */}
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4">
                     {filteredTemplates.map((template) => (
                       <SoftCard
                         key={template.id}
