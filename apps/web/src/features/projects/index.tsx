@@ -684,7 +684,7 @@ export function ProjectsView({
                   项目管理
                 </h1>
                 <p className="mt-1 text-sm text-v3-ink-2">
-                  项目事实、成员池、任务、事件和需求记录
+                  围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环
                 </p>
               </div>
             </div>
@@ -961,7 +961,7 @@ function ProjectsV3Table({
             状态
           </V3Th>
           <V3Th className="min-w-36" role="columnheader">
-            协调线程
+            推进状态
           </V3Th>
           <V3Th className="min-w-36" role="columnheader">
             负责人
@@ -1042,8 +1042,8 @@ function ProjectsV3TableRow({
         </StatusPill>
       </V3Td>
       <V3Td>
-        <span className="font-mono text-[12px] text-v3-ink-2">
-          {project.coordination_status || "registered"}
+        <span className="text-[13px] font-semibold text-v3-ink-2">
+          {projectMainLoopLabel(project.status)}
         </span>
       </V3Td>
       <V3Td>
@@ -1127,6 +1127,15 @@ function projectStatusLabel(status: ProjectStatus | string) {
     running: "运行中",
   };
   return labels[status] ?? status;
+}
+
+function projectMainLoopLabel(status: ProjectStatus | string) {
+  if (status === "draft" || status === "configuring") return "待配置";
+  if (status === "running") return "推进中";
+  if (status === "paused") return "已暂停";
+  if (status === "acceptance") return "待确认结果";
+  if (status === "archived") return "已关闭";
+  return "待推进";
 }
 
 function projectStatusTone(status: ProjectStatus | string): V3Tone {

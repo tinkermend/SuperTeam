@@ -1,12 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
   Archive,
   Bot,
+  ChevronDown,
+  CircleDot,
   ClipboardList,
   FileCheck2,
-  FileArchive,
   ExternalLink,
   FileText,
   GitBranch,
@@ -15,12 +16,18 @@ import {
   UserRound,
 } from "lucide-react";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   IconTile,
   SoftCard,
   StatusPill,
   V3Button,
   type V3Tone,
 } from "@/components/superteam";
+import { cn } from "@/lib/utils";
 import type {
   Project,
   ProjectAcceptanceRecord,
@@ -134,6 +141,8 @@ export function ProjectOperationalDetail({
   tasks,
   transferRequests,
 }: ProjectOperationalDetailProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   if (!project) {
     return (
       <SoftCard className="flex min-h-[460px] items-center justify-center p-8 text-sm text-v3-ink-2">
@@ -144,11 +153,20 @@ export function ProjectOperationalDetail({
 
   const humanRoles = overview?.human_roles ?? [];
   const digitalPool = overview?.digital_employee_pool ?? [];
+  const servicePool = digitalPool;
+  const projectOwners = ownerMembers(humanRoles, project.human_owner_user_id);
+  const latestDemand = demands[0];
+  const latestResult = executionSummaries[0];
+  const pendingOwnerDecisions = decisionRequests.filter(
+    (decision) => decision.status_snapshot === "pending",
+  );
+  const pendingOwnerActionItems = pendingOwnerDecisions.filter(
+    (decision) => decision.decision_type !== "plan_review",
+  );
+  const businessBlocker = projectBusinessBlocker(dispatchGates ?? []);
   const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
-  const taskSummary = overview?.task_summary;
   const currentPhase = overview?.status_summary.current_phase || project.status;
-  const evidencePolicyConfigured = Object.keys(project.evidence_policy ?? {}).length > 0;
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
@@ -196,29 +214,8 @@ export function ProjectOperationalDetail({
                 to="/projects/$projectId/config"
               >
                 <Settings2 data-icon="inline-start" />
-                配置
+                配置项目
               </Link>
-            </V3Button>
-            <V3Button asChild variant="outline">
-              <Link search={{ project_id: project.id }} to="/audit">
-                <History data-icon="inline-start" />
-                审计
-              </Link>
-            </V3Button>
-            <V3Button asChild variant="outline">
-              <Link search={{ project_id: project.id }} to="/costs">
-                <FileCheck2 data-icon="inline-start" />
-                成本
-              </Link>
-            </V3Button>
-            <V3Button
-              disabled={isArchived}
-              type="button"
-              variant="outline"
-              onClick={onArchiveProject}
-            >
-              <Archive data-icon="inline-start" />
-              归档
             </V3Button>
           </div>
         </div>
@@ -227,22 +224,22 @@ export function ProjectOperationalDetail({
           <FactTile
             icon={<GitBranch />}
             label="当前阶段"
-            value={currentPhase}
+            value={projectPhaseLabel(currentPhase)}
           />
           <FactTile
             icon={<UserRound />}
-            label="待人工处理"
-            value={`${taskSummary?.pending_human_tasks ?? 0} 项`}
+            label="待负责人处理"
+            value={`${pendingOwnerDecisions.length} 项`}
           />
           <FactTile
-            icon={<FileArchive />}
-            label="证据策略"
-            value={evidencePolicyConfigured ? "已配置" : "未配置"}
+            icon={<FileText />}
+            label="当前需求"
+            value={latestDemand?.title ?? "暂无需求"}
           />
           <FactTile
             icon={<ClipboardList />}
-            label="活跃任务"
-            value={`${activeTasks.length} 个`}
+            label="当前执行"
+            value={`${activeTasks.length} 个任务`}
           />
         </div>
       </SoftCard>
@@ -251,8 +248,26 @@ export function ProjectOperationalDetail({
         <section className="grid min-w-0 gap-4">
           <SoftCard className="overflow-hidden">
             <PanelHeader
+              icon={<FileText />}
+              title="当前需求"
+              meta={latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"}
+            />
+            {latestDemand ? (
+              <div className="grid gap-2 p-4">
+                <p className="text-sm font-semibold text-v3-ink">{latestDemand.title}</p>
+                <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
+                  {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
+                </p>
+              </div>
+            ) : (
+              <EmptyLine label="暂无提交到项目的需求" />
+            )}
+          </SoftCard>
+
+          <SoftCard className="overflow-hidden">
+            <PanelHeader
               icon={<GitBranch />}
-              title="计划版本"
+              title="计划确认"
               meta={
                 latestPlanRevision
                   ? `v${latestPlanRevision.revision_number}`
@@ -366,7 +381,7 @@ export function ProjectOperationalDetail({
                 </div>
               </div>
             ) : (
-              <EmptyLine label="暂无计划版本" />
+              <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
             )}
           </SoftCard>
 
@@ -374,7 +389,7 @@ export function ProjectOperationalDetail({
             <div className="grid gap-2">
               <div className="flex items-center gap-2 px-1">
                 <ClipboardList className="size-4 text-v3-ink-2" />
-                <h3 className="text-sm font-semibold tracking-normal">任务计划</h3>
+                <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
                 <StatusPill tone="mute">{`${taskGraph.nodes.length} 项`}</StatusPill>
               </div>
               <PlanTaskGraph
@@ -388,12 +403,12 @@ export function ProjectOperationalDetail({
             <SoftCard className="overflow-hidden">
               <PanelHeader
                 icon={<ClipboardList />}
-                title="任务计划"
+                title="当前执行"
                 meta={`${activeTasks.length} 项`}
               />
               <div className="divide-y divide-v3-line">
                 {activeTasks.length === 0 ? (
-                  <EmptyLine label="当前项目暂无活跃任务" />
+                  <EmptyLine label="当前没有正在执行的数字员工任务" />
                 ) : (
                   activeTasks.slice(0, 6).map((task) => (
                     <div className="grid gap-1 p-4" key={task.id}>
@@ -404,7 +419,7 @@ export function ProjectOperationalDetail({
                         <StatusPill tone="info">{task.status}</StatusPill>
                       </div>
                       <p className="line-clamp-2 text-xs text-v3-ink-2">
-                        {task.summary || "等待项目协调线程分派执行对象"}
+                        {task.summary || "等待系统分派数字员工执行。"}
                       </p>
                     </div>
                   ))
@@ -413,22 +428,40 @@ export function ProjectOperationalDetail({
             </SoftCard>
           )}
 
-          <DispatchGateSummary
-            gates={dispatchGates ?? []}
-            taskTitle={dispatchGateTaskTitle}
-          />
+          <SoftCard className="overflow-hidden">
+            <PanelHeader
+              icon={<FileCheck2 />}
+              title="最新结果"
+              meta={latestResult ? "已回写" : "暂无结果"}
+            />
+            {latestResult ? (
+              <div className="grid gap-2 p-4">
+                <p className="line-clamp-3 text-sm font-medium text-v3-ink">
+                  {latestResult.conclusion}
+                </p>
+                {latestResult.recommended_next_action ? (
+                  <p className="line-clamp-2 text-xs text-v3-ink-2">
+                    {latestResult.recommended_next_action}
+                  </p>
+                ) : null}
+                <RuntimeMeta label="执行员工" value={latestResult.digital_employee_id} />
+              </div>
+            ) : (
+              <EmptyLine label="数字员工完成任务后会在这里回写结果" />
+            )}
+          </SoftCard>
 
           <SoftCard className="overflow-hidden">
             <PanelHeader
               icon={<UserRound />}
-              title="人类决策队列"
-              meta={`${decisionRequests.length} 项`}
+              title="待负责人处理"
+              meta={`${pendingOwnerActionItems.length} 项`}
             />
             <div className="divide-y divide-v3-line">
-              {decisionRequests.length === 0 ? (
-                <EmptyLine label="当前没有待处理的人类决策" />
+              {pendingOwnerActionItems.length === 0 ? (
+                <EmptyLine label="当前没有需要项目负责人处理的事项" />
               ) : (
-                decisionRequests.slice(0, 5).map((decision) => (
+                pendingOwnerActionItems.slice(0, 5).map((decision) => (
                   <div className="grid gap-3 p-4" key={decision.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -446,64 +479,9 @@ export function ProjectOperationalDetail({
                         {decision.status_snapshot}
                       </StatusPill>
                     </div>
-                    {decision.status_snapshot === "pending" ? (
-                      <div className="flex flex-wrap gap-2">
-                        <V3Button
-                          aria-label={`批准：${decision.title_snapshot}`}
-                          size="sm"
-                          type="button"
-                          onClick={() => onResolveDecision(decision.id, "approved")}
-                        >
-                          批准
-                        </V3Button>
-                        <V3Button
-                          aria-label={`要求补证：${decision.title_snapshot}`}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            onResolveDecision(decision.id, "needs_more_evidence")
-                          }
-                        >
-                          要求补证
-                        </V3Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
-
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<GitBranch />}
-              title="路由决策"
-              meta={`${routeDecisions.length} 条`}
-            />
-            <div className="divide-y divide-v3-line">
-              {routeDecisions.length === 0 ? (
-                <EmptyLine label="暂无路由决策" />
-              ) : (
-                routeDecisions.slice(0, 5).map((decision) => (
-                  <div className="grid gap-2 p-4" key={decision.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
-                        {decision.reason}
-                      </p>
-                      {decision.requires_human_review ? (
-                        <StatusPill tone="warn">需人工复核</StatusPill>
-                      ) : (
-                        <StatusPill tone="ok">已规划</StatusPill>
-                      )}
-                    </div>
-                    <RuntimeMeta
-                      label="已选数字员工"
-                      value={formatIdList(decision.selected_digital_employee_ids)}
-                    />
-                    <RuntimeMeta
-                      label="候选数字员工"
-                      value={formatIdList(decision.candidate_digital_employee_ids)}
+                    <DecisionRequestActions
+                      decision={decision}
+                      onResolveDecision={onResolveDecision}
                     />
                   </div>
                 ))
@@ -511,33 +489,15 @@ export function ProjectOperationalDetail({
             </div>
           </SoftCard>
 
-          <ProjectExecutionTracePanel
-            errorMessage={executionTraceErrorMessage}
-            isError={executionTraceIsError}
-            isLoading={executionTraceIsLoading}
-            onRetry={onRetryExecutionTrace}
-            trace={executionTrace}
-          />
-
-          <ProjectGovernanceTabs
-            acceptance={acceptance}
-            archivePreview={archivePreview}
-            archiveSnapshots={archiveSnapshots}
-            artifacts={artifacts}
-            budgetLedger={budgetLedger}
-            budgetSummary={budgetSummary}
-            decisionRequestCount={decisionRequests.length}
-            demandCount={demands.length}
-            evidence={evidence}
-            executionSummaryCount={executionSummaries.length}
-            onCreateAcceptance={onCreateAcceptance}
-            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-            onCreateEvidence={onCreateEvidence}
-            onPatchEvidence={onPatchEvidence}
-            reports={reports}
-            routeDecisionCount={routeDecisions.length}
-            taskCount={tasks.length}
-          />
+          {businessBlocker ? (
+            <SoftCard className="overflow-hidden">
+              <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={businessBlocker.status} />
+              <div className="grid gap-2 p-4">
+                <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
+                <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
+              </div>
+            </SoftCard>
+          ) : null}
 
           <SoftCard className="overflow-hidden">
             <PanelHeader
@@ -549,185 +509,133 @@ export function ProjectOperationalDetail({
               {recentEvents.length === 0 ? (
                 <EmptyLine label="暂无项目事件" />
               ) : (
-                recentEvents.slice(0, 8).map((event) => (
-                  <div className="flex gap-3 p-4" key={event.id}>
-                    <span className="mt-1 size-2 rounded-full bg-v3-brand" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{event.event_type}</p>
-                        <span className="text-xs text-v3-ink-2">
-                          #{event.sequence_number}
-                        </span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                        {event.summary || "项目事件已记录"}
-                      </p>
-                      {event.resource_type || event.resource_id ? (
-                        <p className="mt-1 text-xs text-v3-ink-2">
-                          {event.resource_type ?? "resource"} ·{" "}
-                          {event.resource_id ?? "-"}
+                recentEvents.slice(0, 8).map((event) => {
+                  const eventDisplay = projectEventDisplay(event);
+                  return (
+                    <div className="flex gap-3 p-4" key={event.id}>
+                      <span className="mt-1 size-2 rounded-full bg-v3-brand" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{eventDisplay.title}</p>
+                          <span className="text-xs text-v3-ink-2">
+                            #{event.sequence_number}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
+                          {eventDisplay.summary}
                         </p>
-                      ) : null}
+                        {eventDisplay.resource ? (
+                          <p className="mt-1 text-xs text-v3-ink-2">
+                            {eventDisplay.resource}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </SoftCard>
         </section>
 
         <aside className="grid min-w-0 gap-4">
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<GitBranch />}
-              title="协调任务"
-              meta={`${coordinationJobs.length} 条`}
-            />
-            <div className="divide-y divide-v3-line">
-              {coordinationJobs.length === 0 ? (
-                <EmptyLine label="暂无协调任务" />
-              ) : (
-                coordinationJobs.slice(0, 4).map((job) => (
-                  <div className="grid gap-2 p-4" key={job.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="min-w-0 truncate text-sm font-medium">
-                        {job.job_type}
-                      </p>
-                      <StatusPill tone={jobTone(job.status)}>{job.status}</StatusPill>
-                    </div>
-                    <p className="truncate text-xs text-v3-ink-2">
-                      {job.workflow_id}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
-
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<FileCheck2 />}
-              title="执行摘要"
-              meta={`${executionSummaries.length} 条`}
-            />
-            <div className="divide-y divide-v3-line">
-              {executionSummaries.length === 0 ? (
-                <EmptyLine label="暂无执行回写摘要" />
-              ) : (
-                executionSummaries.slice(0, 4).map((summary) => (
-                  <div className="grid gap-2 p-4" key={summary.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
-                        {summary.conclusion}
-                      </p>
-                      {summary.requires_human_review ? (
-                        <StatusPill tone="warn">需复核</StatusPill>
-                      ) : (
-                        <StatusPill tone="ok">已回写</StatusPill>
-                      )}
-                    </div>
-                    <RuntimeMeta
-                      label="执行员工"
-                      value={summary.digital_employee_id}
-                    />
-                    {summary.recommended_next_action ? (
-                      <p className="line-clamp-2 text-xs text-v3-ink-2">
-                        {summary.recommended_next_action}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
-
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<Bot />}
-              title="转派请求"
-              meta={`${transferRequests.length} 条`}
-            />
-            <div className="divide-y divide-v3-line">
-              {transferRequests.length === 0 ? (
-                <EmptyLine label="暂无转派请求" />
-              ) : (
-                transferRequests.slice(0, 4).map((request) => (
-                  <div className="grid gap-2 p-4" key={request.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
-                        {request.reason}
-                      </p>
-                      <StatusPill tone={requestTone(request.status)}>
-                        {request.status}
-                      </StatusPill>
-                    </div>
-                    <RuntimeMeta
-                      label="发起员工"
-                      value={request.requested_by_digital_employee_id}
-                    />
-                    <RuntimeMeta
-                      label="建议员工"
-                      value={formatIdList(request.suggested_digital_employee_ids)}
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
-
           <MemberPanel
+            emptyLabel="当前项目尚未设置项目负责人"
             icon={<UserRound />}
-            members={humanRoles}
-            title="人类角色"
+            members={projectOwners}
+            title="项目负责人组"
           />
           <MemberPanel
+            emptyLabel="当前项目服务池为空"
             icon={<Bot />}
-            members={digitalPool}
-            title="数字员工池"
+            members={servicePool}
+            title="项目服务池"
           />
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<GitBranch />}
-              title="协调线程"
-              meta={overview?.coordination_workflow.status || project.coordination_status}
-            />
-            <div className="p-4">
-              <p className="truncate text-sm font-medium">
-                {project.coordination_workflow_id}
-              </p>
-              <p className="mt-1 text-xs text-v3-ink-2">
-                虚拟协调线程，仅作为项目 Workflow 元数据展示。
-              </p>
-            </div>
-          </SoftCard>
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<FileText />}
-              title="需求记录"
-              meta={`${demands.length} 条`}
-            />
-            <div className="divide-y divide-v3-line">
-              {demands.length === 0 ? (
-                <EmptyLine label="暂无提交到项目的需求" />
-              ) : (
-                demands.slice(0, 4).map((demand) => (
-                  <div className="grid gap-1 p-4" key={demand.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium">
-                        {demand.title}
-                      </p>
-                      <StatusPill tone="mute">{demand.source_type}</StatusPill>
-                    </div>
-                    <p className="line-clamp-2 text-xs text-v3-ink-2">
-                      {demand.content || "需求内容已记录"}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
         </aside>
       </div>
+
+      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <div className="overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
+          <CollapsibleTrigger asChild>
+            <button
+              aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
+              className="flex w-full items-center justify-between gap-3 border-b border-v3-line p-4 text-left"
+              type="button"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <IconTile tone="brand" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
+                  <GitBranch />
+                </IconTile>
+                <span className="min-w-0">
+                  <span className="block font-semibold text-v3-ink">高级项目事实</span>
+                  <span className="mt-0.5 block text-xs text-v3-ink-2">
+                    计划历史、任务图、执行记录、治理、预算、归档和内部协调事实
+                  </span>
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-v3-ink-2">
+                {advancedOpen ? "收起" : "展开"}
+                <ChevronDown
+                  className={cn("size-4 transition-transform", advancedOpen && "rotate-180")}
+                />
+              </span>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+              <section className="grid min-w-0 gap-4">
+                <DispatchGateSummary
+                  gates={dispatchGates ?? []}
+                  taskTitle={dispatchGateTaskTitle}
+                />
+                <AdvancedRouteDecisions routeDecisions={routeDecisions} />
+                <ProjectExecutionTracePanel
+                  errorMessage={executionTraceErrorMessage}
+                  isError={executionTraceIsError}
+                  isLoading={executionTraceIsLoading}
+                  onRetry={onRetryExecutionTrace}
+                  trace={executionTrace}
+                />
+                <ProjectGovernanceTabs
+                  acceptance={acceptance}
+                  archivePreview={archivePreview}
+                  archiveSnapshots={archiveSnapshots}
+                  artifacts={artifacts}
+                  budgetLedger={budgetLedger}
+                  budgetSummary={budgetSummary}
+                  decisionRequestCount={decisionRequests.length}
+                  demandCount={demands.length}
+                  evidence={evidence}
+                  executionSummaryCount={executionSummaries.length}
+                  onCreateAcceptance={onCreateAcceptance}
+                  onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+                  onCreateEvidence={onCreateEvidence}
+                  onPatchEvidence={onPatchEvidence}
+                  reports={reports}
+                  routeDecisionCount={routeDecisions.length}
+                  taskCount={tasks.length}
+                />
+              </section>
+              <aside className="grid min-w-0 gap-4">
+                <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
+                <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
+                <AdvancedTransferRequests transferRequests={transferRequests} />
+                <AdvancedWorkflow project={project} overview={overview} />
+                <AdvancedDemands demands={demands} />
+                <V3Button
+                  disabled={isArchived}
+                  type="button"
+                  variant="outline"
+                  onClick={onArchiveProject}
+                >
+                  <Archive data-icon="inline-start" />
+                  归档项目
+                </V3Button>
+              </aside>
+            </div>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
     </div>
   );
 }
@@ -755,7 +663,7 @@ function DispatchGateSummary({
     <SoftCard className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-v3-ink">Pre-dispatch gate</h3>
+          <h3 className="text-sm font-semibold text-v3-ink">Dispatch gate 技术详情</h3>
           {taskTitle ? (
             <p className="mt-1 truncate text-xs text-v3-ink-2">{taskTitle}</p>
           ) : null}
@@ -786,6 +694,229 @@ function DispatchGateSummary({
           Retry after {formatDateTime(latest.retry_after)}
         </p>
       ) : null}
+    </SoftCard>
+  );
+}
+
+function AdvancedRouteDecisions({
+  routeDecisions,
+}: {
+  routeDecisions: ProjectRouteDecision[];
+}) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<GitBranch />}
+        title="路由决策"
+        meta={`${routeDecisions.length} 条`}
+      />
+      <div className="divide-y divide-v3-line">
+        {routeDecisions.length === 0 ? (
+          <EmptyLine label="暂无路由决策" />
+        ) : (
+          routeDecisions.slice(0, 5).map((decision) => (
+            <div className="grid gap-2 p-4" key={decision.id}>
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                  {decision.reason}
+                </p>
+                {decision.requires_human_review ? (
+                  <StatusPill tone="warn">需人工复核</StatusPill>
+                ) : (
+                  <StatusPill tone="ok">已规划</StatusPill>
+                )}
+              </div>
+              <RuntimeMeta
+                label="已选数字员工"
+                value={formatIdList(decision.selected_digital_employee_ids)}
+              />
+              <RuntimeMeta
+                label="候选数字员工"
+                value={formatIdList(decision.candidate_digital_employee_ids)}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </SoftCard>
+  );
+}
+
+function AdvancedCoordinationJobs({
+  coordinationJobs,
+}: {
+  coordinationJobs: ProjectCoordinationJob[];
+}) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<GitBranch />}
+        title="协调任务"
+        meta={`${coordinationJobs.length} 条`}
+      />
+      <div className="divide-y divide-v3-line">
+        {coordinationJobs.length === 0 ? (
+          <EmptyLine label="暂无协调任务" />
+        ) : (
+          coordinationJobs.slice(0, 4).map((job) => (
+            <div className="grid gap-2 p-4" key={job.id}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-sm font-medium">
+                  {job.job_type}
+                </p>
+                <StatusPill tone={jobTone(job.status)}>{job.status}</StatusPill>
+              </div>
+              <p className="truncate text-xs text-v3-ink-2">
+                {job.workflow_id}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+    </SoftCard>
+  );
+}
+
+function AdvancedExecutionSummaries({
+  executionSummaries,
+}: {
+  executionSummaries: ProjectExecutionSummary[];
+}) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<FileCheck2 />}
+        title="执行摘要"
+        meta={`${executionSummaries.length} 条`}
+      />
+      <div className="divide-y divide-v3-line">
+        {executionSummaries.length === 0 ? (
+          <EmptyLine label="暂无执行回写摘要" />
+        ) : (
+          executionSummaries.slice(0, 4).map((summary) => (
+            <div className="grid gap-2 p-4" key={summary.id}>
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                  {summary.conclusion}
+                </p>
+                {summary.requires_human_review ? (
+                  <StatusPill tone="warn">需复核</StatusPill>
+                ) : (
+                  <StatusPill tone="ok">已回写</StatusPill>
+                )}
+              </div>
+              <RuntimeMeta
+                label="执行员工"
+                value={summary.digital_employee_id}
+              />
+              {summary.recommended_next_action ? (
+                <p className="line-clamp-2 text-xs text-v3-ink-2">
+                  {summary.recommended_next_action}
+                </p>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+    </SoftCard>
+  );
+}
+
+function AdvancedTransferRequests({
+  transferRequests,
+}: {
+  transferRequests: ProjectTransferRequest[];
+}) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<Bot />}
+        title="转派请求"
+        meta={`${transferRequests.length} 条`}
+      />
+      <div className="divide-y divide-v3-line">
+        {transferRequests.length === 0 ? (
+          <EmptyLine label="暂无转派请求" />
+        ) : (
+          transferRequests.slice(0, 4).map((request) => (
+            <div className="grid gap-2 p-4" key={request.id}>
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                  {request.reason}
+                </p>
+                <StatusPill tone={requestTone(request.status)}>
+                  {request.status}
+                </StatusPill>
+              </div>
+              <RuntimeMeta
+                label="发起员工"
+                value={request.requested_by_digital_employee_id}
+              />
+              <RuntimeMeta
+                label="建议员工"
+                value={formatIdList(request.suggested_digital_employee_ids)}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </SoftCard>
+  );
+}
+
+function AdvancedWorkflow({
+  project,
+  overview,
+}: {
+  project: Project;
+  overview?: ProjectOverview;
+}) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<GitBranch />}
+        title="协调线程"
+        meta={overview?.coordination_workflow.status || project.coordination_status}
+      />
+      <div className="p-4">
+        <p className="truncate text-sm font-medium">
+          {project.coordination_workflow_id}
+        </p>
+        <p className="mt-1 text-xs text-v3-ink-2">
+          虚拟协调线程，仅作为项目 Workflow 元数据展示。
+        </p>
+      </div>
+    </SoftCard>
+  );
+}
+
+function AdvancedDemands({ demands }: { demands: ProjectDemand[] }) {
+  return (
+    <SoftCard className="overflow-hidden">
+      <PanelHeader
+        icon={<FileText />}
+        title="需求记录"
+        meta={`${demands.length} 条`}
+      />
+      <div className="divide-y divide-v3-line">
+        {demands.length === 0 ? (
+          <EmptyLine label="暂无提交到项目的需求" />
+        ) : (
+          demands.slice(0, 4).map((demand) => (
+            <div className="grid gap-1 p-4" key={demand.id}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-medium">
+                  {demand.title}
+                </p>
+                <StatusPill tone="mute">{demand.source_type}</StatusPill>
+              </div>
+              <p className="line-clamp-2 text-xs text-v3-ink-2">
+                {demand.content || "需求内容已记录"}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
     </SoftCard>
   );
 }
@@ -835,10 +966,12 @@ function PanelHeader({
 }
 
 function MemberPanel({
+  emptyLabel,
   icon,
   members,
   title,
 }: {
+  emptyLabel: string;
   icon: ReactNode;
   members: ProjectMember[];
   title: string;
@@ -848,7 +981,7 @@ function MemberPanel({
       <PanelHeader icon={icon} title={title} meta={`${members.length} 个`} />
       <div className="divide-y divide-v3-line">
         {members.length === 0 ? (
-          <EmptyLine label={`${title}为空`} />
+          <EmptyLine label={emptyLabel} />
         ) : (
           members.slice(0, 6).map((member) => (
             <div className="flex items-center justify-between gap-3 p-4" key={member.id}>
@@ -857,7 +990,7 @@ function MemberPanel({
                   {member.display_name_snapshot || member.principal_id}
                 </p>
                 <p className="truncate text-xs text-v3-ink-2">
-                  {member.project_role} · {member.principal_type}
+                  {projectMemberBusinessLabel(member)}
                 </p>
               </div>
               <ExternalLink className="size-3.5 text-v3-ink-2" />
@@ -886,8 +1019,214 @@ function RuntimeMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DecisionRequestActions({
+  decision,
+  onResolveDecision,
+}: {
+  decision: ProjectDecisionRequest;
+  onResolveDecision: (decisionId: string, decision: string) => void;
+}) {
+  if (decision.status_snapshot !== "pending") {
+    return null;
+  }
+
+  const actions = [
+    { ariaLabel: `批准：${decision.title_snapshot}`, label: "批准", value: "approved" },
+    {
+      ariaLabel: `要求补证：${decision.title_snapshot}`,
+      label: "要求补证",
+      value: "needs_more_evidence",
+    },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {actions.map((action) => (
+        <V3Button
+          aria-label={action.ariaLabel}
+          key={action.value}
+          size="sm"
+          type="button"
+          variant={action.value === "approved" ? "primary" : "outline"}
+          onClick={() => onResolveDecision(decision.id, action.value)}
+        >
+          {action.label}
+        </V3Button>
+      ))}
+    </div>
+  );
+}
+
 function formatIdList(ids: string[]) {
   return ids.length > 0 ? ids.join("、") : "未指定";
+}
+
+function projectMemberBusinessLabel(member: ProjectMember) {
+  if (member.principal_type === "digital_employee") {
+    const sourceTeam = stringFromUnknown(member.settings?.source_team_name);
+    return sourceTeam ? `数字员工 · ${sourceTeam}` : "数字员工";
+  }
+  if (member.project_role === "owner") {
+    return "项目负责人";
+  }
+  return "项目参与人";
+}
+
+function projectEventDisplay(event: ProjectEvent) {
+  const labels: Record<string, { summary: string; title: string }> = {
+    "coordination_job.created": {
+      summary: "系统已开始推进下一步项目工作。",
+      title: "项目推进已启动",
+    },
+    "decision.requested": {
+      summary: "有事项需要项目负责人处理。",
+      title: "等待负责人处理",
+    },
+    "decision.submitted": {
+      summary: "负责人处理结果已记录。",
+      title: "负责人已处理",
+    },
+    "demand.submitted": {
+      summary: "新的项目需求已进入处理队列。",
+      title: "需求已提交",
+    },
+    "project.acceptance.submitted": {
+      summary: "项目验收结论已提交。",
+      title: "验收结论已提交",
+    },
+    "project.archive.retention_pending": {
+      summary: "项目归档前仍有保留事项待处理。",
+      title: "归档保留事项待处理",
+    },
+    "project.archive_snapshot.created": {
+      summary: "项目归档快照已生成。",
+      title: "归档快照已生成",
+    },
+    "project.archived": {
+      summary: "项目已归档关闭。",
+      title: "项目已归档",
+    },
+    "project.artifact.linked": {
+      summary: "新的项目工件已关联。",
+      title: "工件已关联",
+    },
+    "project.budget.recorded": {
+      summary: "项目预算记录已更新。",
+      title: "预算记录已更新",
+    },
+    "project.config.changed": {
+      summary: "项目配置已更新。",
+      title: "配置已更新",
+    },
+    "project.created": {
+      summary: "项目已创建。",
+      title: "项目已创建",
+    },
+    "project.evidence.linked": {
+      summary: "新的项目证据已关联。",
+      title: "证据已关联",
+    },
+    "project.evidence.verified": {
+      summary: "项目证据已完成核验。",
+      title: "证据已核验",
+    },
+    "project.report.linked": {
+      summary: "项目报告已关联。",
+      title: "报告已关联",
+    },
+    "project_task.completed": {
+      summary: "数字员工任务已完成并回写结果。",
+      title: "执行任务已完成",
+    },
+    "project_task.created": {
+      summary: "新的执行任务已进入项目推进队列。",
+      title: "执行任务已创建",
+    },
+    "project_task.dispatched": {
+      summary: "系统已安排数字员工执行任务。",
+      title: "执行任务已分派",
+    },
+    "project_task.dispatch_gate.blocked": {
+      summary: "当前执行条件未满足，系统已记录阻塞原因。",
+      title: "执行条件未满足",
+    },
+    "project_task.dispatch_gate.checked": {
+      summary: "系统已检查任务执行条件。",
+      title: "执行条件已检查",
+    },
+    "project_task.dispatch_gate.replan_required": {
+      summary: "当前计划需要调整后继续推进。",
+      title: "计划需要调整",
+    },
+    "project_task.dispatch_gate.retry_later": {
+      summary: "运行条件暂不可用，系统会稍后重试。",
+      title: "稍后重试执行",
+    },
+    "project_task.dispatch_gate.waiting_human": {
+      summary: "当前执行需要负责人确认。",
+      title: "等待负责人确认",
+    },
+    "project_task.failed": {
+      summary: "数字员工任务执行失败，系统已记录原因。",
+      title: "执行任务失败",
+    },
+    "route_decision.created": {
+      summary: "系统已生成任务分派方案。",
+      title: "任务分派方案已生成",
+    },
+    "transfer.requested": {
+      summary: "项目执行需要调整服务员工。",
+      title: "服务员工调整待处理",
+    },
+    "workflow.signaled": {
+      summary: "项目推进状态已更新。",
+      title: "项目推进已更新",
+    },
+  };
+  const label = labels[event.event_type] ?? {
+    summary: "项目状态已有新记录。",
+    title: "项目动态已更新",
+  };
+  return {
+    resource: event.resource_id ? `项目对象 · ${shortIdentifier(event.resource_id)}` : undefined,
+    summary: label.summary,
+    title: label.title,
+  };
+}
+
+function shortIdentifier(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function stringFromUnknown(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "";
+}
+
+function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
+  const owners = members.filter(
+    (member) =>
+      member.principal_type === "human_user" &&
+      member.status === "active" &&
+      (member.project_role === "owner" || member.principal_id === fallbackOwnerID),
+  );
+  if (owners.length > 0) {
+    return owners;
+  }
+  if (!fallbackOwnerID) {
+    return [];
+  }
+  return [
+    {
+      id: `owner-${fallbackOwnerID}`,
+      principal_id: fallbackOwnerID,
+      principal_type: "human_user" as const,
+      project_id: "",
+      project_role: "owner" as const,
+      settings: {},
+      status: "active",
+      tenant_id: "",
+    },
+  ];
 }
 
 function projectStatusLabel(status: ProjectStatus | string) {
@@ -898,6 +1237,32 @@ function projectStatusLabel(status: ProjectStatus | string) {
     draft: "草稿",
     paused: "已暂停",
     running: "运行中",
+  };
+  return labels[status] ?? status;
+}
+
+function projectPhaseLabel(phase: string) {
+  const labels: Record<string, string> = {
+    acceptance: "待确认结果",
+    archived: "已关闭",
+    configuring: "配置中",
+    draft: "待配置",
+    paused: "已暂停",
+    running: "执行中",
+  };
+  return labels[phase] ?? phase;
+}
+
+function demandStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    completed: "已完成",
+    executing: "执行中",
+    failed: "失败",
+    planned: "已计划",
+    planning_pending: "待计划",
+    recorded: "已记录",
+    submitted: "待计划",
   };
   return labels[status] ?? status;
 }
@@ -1072,6 +1437,40 @@ function dispatchGateTone(status: DispatchGateStatus): V3Tone {
     return "danger";
   }
   return "mute";
+}
+
+function projectBusinessBlocker(gates: DispatchGateResult[]) {
+  const latest = gates[0];
+  if (!latest || latest.status === "passed") {
+    return undefined;
+  }
+  const blockerKeys = latest.blockers.map((blocker) => blocker.key);
+  if (blockerKeys.some((key) => key.includes("runtime"))) {
+    return {
+      description: "目标运行资源暂不可用。项目负责人无需处理，系统会等待平台资源恢复或稍后重试。",
+      status: "等待平台处理",
+      title: "运行节点暂不可用，系统会稍后重试",
+    };
+  }
+  if (latest.status === "waiting_human") {
+    return {
+      description: "当前任务需要负责人确认后才能继续推进。",
+      status: "待负责人处理",
+      title: "需要负责人确认",
+    };
+  }
+  if (latest.status === "replan_required") {
+    return {
+      description: "当前计划不再满足执行条件，需要重新编排后继续。",
+      status: "需重新计划",
+      title: "计划需要调整",
+    };
+  }
+  return {
+    description: "当前执行条件尚未满足，系统已保留阻塞原因。",
+    status: "待处理",
+    title: "执行条件未满足",
+  };
 }
 
 function formatDateTime(value?: string | null) {
