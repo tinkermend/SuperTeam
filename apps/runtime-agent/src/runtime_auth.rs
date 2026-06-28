@@ -36,6 +36,7 @@ pub struct RuntimeAuthSnapshot {
     pub token: Option<String>,
     pub expires_at: Option<OffsetDateTime>,
     pub generation: u64,
+    pub reauth_generation: u64,
     pub status: RuntimeAuthStatus,
 }
 
@@ -92,6 +93,7 @@ impl RuntimeAuthState {
             token: None,
             expires_at: None,
             generation: 0,
+            reauth_generation: 0,
             status: RuntimeAuthStatus::Empty,
         });
         Self {
@@ -142,6 +144,7 @@ impl RuntimeAuthState {
     pub async fn report_auth_failure(&self, generation: Option<u64>) {
         self.inner.state.send_modify(|state| {
             if generation.is_none() || generation == Some(state.generation) {
+                state.reauth_generation += 1;
                 state.status = RuntimeAuthStatus::Reauthenticating;
             }
         });
@@ -174,16 +177,22 @@ impl RuntimeAuthState {
         credentials_from_snapshot(&self.snapshot().await)
     }
 
-    pub async fn wait_until_reauthenticating(&self) {
+    pub async fn wait_for_next_reauth_event(&self, seen_generation: u64) -> u64 {
         let mut state = self.inner.state.subscribe();
         loop {
-            if state.borrow_and_update().status == RuntimeAuthStatus::Reauthenticating {
-                return;
+            let reauth_generation = state.borrow_and_update().reauth_generation;
+            if reauth_generation > seen_generation {
+                return reauth_generation;
             }
             if state.changed().await.is_err() {
-                return;
+                return state.borrow().reauth_generation;
             }
         }
+    }
+
+    pub async fn wait_until_reauthenticating(&self) {
+        let seen_generation = self.snapshot().await.reauth_generation;
+        self.wait_for_next_reauth_event(seen_generation).await;
     }
 
     pub fn refresh_margin(&self) -> Duration {
@@ -225,5 +234,12 @@ pub fn is_runtime_auth_failure(status: StatusCode, body: &str) -> bool {
 }
 
 pub fn is_runtime_auth_expired(error: &(dyn std::error::Error + 'static)) -> bool {
-    error.downcast_ref::<RuntimeAuthExpired>().is_some()
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if error.downcast_ref::<RuntimeAuthExpired>().is_some() {
+            return true;
+        }
+        current = error.source();
+    }
+    false
 }

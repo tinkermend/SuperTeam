@@ -416,6 +416,43 @@ async fn controlplane_client_classifies_runtime_auth_unauthorized() {
 }
 
 #[tokio::test]
+async fn runtime_auth_reauth_wait_observes_fast_status_transitions() {
+    use superteam_runtime_agent::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus};
+
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("session-1", "token-one", "2999-06-02T00:00:00Z")
+        .await
+        .expect("session");
+
+    let seen_generation = auth.snapshot().await.reauth_generation;
+    auth.report_auth_failure(None).await;
+    auth.mark_status(RuntimeAuthStatus::Connected).await;
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        auth.wait_for_next_reauth_event(seen_generation),
+    )
+    .await
+    .expect("reauth event should not be missed");
+}
+
+#[test]
+fn runtime_auth_expired_detection_walks_error_sources() {
+    use reqwest::StatusCode;
+    use superteam_runtime_agent::runtime_auth::{RuntimeAuthExpired, is_runtime_auth_expired};
+
+    let error = anyhow::Error::new(RuntimeAuthExpired {
+        operation: "Claim task",
+        status: StatusCode::UNAUTHORIZED,
+        body: "invalid runtime authentication".to_string(),
+        generation: Some(1),
+    })
+    .context("claim loop failed");
+
+    assert!(is_runtime_auth_expired(error.as_ref()));
+}
+
+#[tokio::test]
 async fn controlplane_client_upsert_capabilities_sends_openapi_wrapper_body() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
