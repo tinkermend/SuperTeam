@@ -41,7 +41,7 @@ describe("v3 组件族 · 基础渲染", () => {
     await expect.element(card).toHaveAttribute("data-slot", "v3-soft-card");
     await expect.element(card).toHaveClass("rounded-v3-card");
     await expect.element(card).toHaveClass("bg-v3-card");
-    await expect.element(card).toHaveClass("shadow-v3");
+    await expect.element(card).toHaveClass("shadow-sm");
   });
 
   it("IconTile 应用 tone 与柔色背景 class", async () => {
