@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -79,7 +79,7 @@ export function PromptTemplateDialog({
     if (selectedTemplate.variables) {
       for (const v of selectedTemplate.variables) {
         const val = variableValues[v.name] || "";
-        result = result.replaceAll(`{{${v.name}}}`, val);
+        result = result.replace(new RegExp(`\\{\\{${v.name}\\}\\}`, 'g'), val);
       }
     }
     

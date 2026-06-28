@@ -25,7 +25,7 @@ import type {
   ReviewerSelectionReason,
   SubmitProjectDemandInput,
 } from "@/lib/api/projects";
-import { Button } from "@/components/ui/button";
+
 import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
