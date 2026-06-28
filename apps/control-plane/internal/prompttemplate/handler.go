@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/auth"
 )
 
@@ -16,12 +18,16 @@ type HandlerService interface {
 	ApplyTemplate(ctx context.Context, id uuid.UUID, authCtx *auth.CurrentUserContext) error
 }
 
-type HTTPHandler struct {
-	service     HandlerService
-	authService *auth.Service
+type AuthService interface {
+	GetCurrentUserContext(ctx context.Context, sessionToken string) (*auth.CurrentUserContext, error)
 }
 
-func NewHandler(service HandlerService, authService *auth.Service) *HTTPHandler {
+type HTTPHandler struct {
+	service     HandlerService
+	authService AuthService
+}
+
+func NewHandler(service HandlerService, authService AuthService) *HTTPHandler {
 	return &HTTPHandler{service: service, authService: authService}
 }
 
@@ -56,28 +62,27 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	var req createPromptTemplateRequest
+	var req gen.CreatePromptTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	
 	var teamID *uuid.UUID
-	if req.TeamID != "" {
-		parsed, err := uuid.Parse(req.TeamID)
-		if err != nil {
-			http.Error(w, "invalid team_id", http.StatusBadRequest)
-			return
-		}
-		teamID = &parsed
+	if req.TeamId != nil {
+		id := uuid.UUID(*req.TeamId)
+		teamID = &id
 	}
 
-	variables := make([]PromptTemplateVariable, len(req.Variables))
-	for i, v := range req.Variables {
-		variables[i] = PromptTemplateVariable{
-			Name:        v.Name,
-			Description: v.Description,
-			Required:    v.Required,
+	var variables []PromptTemplateVariable
+	if req.Variables != nil {
+		variables = make([]PromptTemplateVariable, len(*req.Variables))
+		for i, v := range *req.Variables {
+			variables[i] = PromptTemplateVariable{
+				Name:        v.Name,
+				Description: v.Description,
+				Required:    v.Required,
+			}
 		}
 	}
 
@@ -88,7 +93,7 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 		Title:        req.Title,
 		Content:      req.Content,
 		CategoryCode: req.CategoryCode,
-		Scope:        req.Scope,
+		Scope:        string(req.Scope),
 		TeamID:       teamID,
 		Variables:    variables,
 	})
@@ -141,71 +146,49 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
-// DTOs
+// DTO helpers
 
-type createPromptTemplateRequest struct {
-	Title        string                       `json:"title"`
-	Content      string                       `json:"content"`
-	CategoryCode string                       `json:"category_code"`
-	Scope        string                       `json:"scope"`
-	TeamID       string                       `json:"team_id,omitempty"`
-	Variables    []promptTemplateVariableDTO  `json:"variables,omitempty"`
-}
-
-type promptTemplateVariableDTO struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
-
-type promptTemplateResponse struct {
-	ID           string                       `json:"id"`
-	TenantID     string                       `json:"tenant_id"`
-	Title        string                       `json:"title"`
-	Content      string                       `json:"content"`
-	CategoryCode string                       `json:"category_code"`
-	Scope        string                       `json:"scope"`
-	TeamID       string                       `json:"team_id,omitempty"`
-	CreatorID    string                       `json:"creator_id"`
-	Variables    []promptTemplateVariableDTO  `json:"variables"`
-	UseCount     int32                        `json:"use_count"`
-	CreatedAt    string                       `json:"created_at"`
-	UpdatedAt    string                       `json:"updated_at"`
-}
-
-func promptTemplateResponses(templates []PromptTemplate) []promptTemplateResponse {
-	responses := make([]promptTemplateResponse, len(templates))
+func promptTemplateResponses(templates []PromptTemplate) []gen.PromptTemplate {
+	responses := make([]gen.PromptTemplate, len(templates))
 	for i, t := range templates {
 		responses[i] = promptTemplateResponseFromDomain(t)
 	}
 	return responses
 }
 
-func promptTemplateResponseFromDomain(t PromptTemplate) promptTemplateResponse {
-	vars := make([]promptTemplateVariableDTO, len(t.Variables))
+func promptTemplateResponseFromDomain(t PromptTemplate) gen.PromptTemplate {
+	vars := make([]gen.PromptTemplateVariable, len(t.Variables))
 	for i, v := range t.Variables {
-		vars[i] = promptTemplateVariableDTO{
+		vars[i] = gen.PromptTemplateVariable{
 			Name:        v.Name,
 			Description: v.Description,
 			Required:    v.Required,
 		}
 	}
-	var teamID string
-	if t.TeamID != nil {
-		teamID = t.TeamID.String()
+	var pVars *[]gen.PromptTemplateVariable
+	if len(vars) > 0 {
+		pVars = &vars
+	} else {
+		emptyVars := []gen.PromptTemplateVariable{}
+		pVars = &emptyVars
 	}
-	return promptTemplateResponse{
-		ID:           t.ID.String(),
-		TenantID:     t.TenantID.String(),
+	var teamID *openapi_types.UUID
+	if t.TeamID != nil {
+		id := openapi_types.UUID(*t.TeamID)
+		teamID = &id
+	}
+	return gen.PromptTemplate{
+		Id:           openapi_types.UUID(t.ID),
+		TenantId:     openapi_types.UUID(t.TenantID),
 		Title:        t.Title,
 		Content:      t.Content,
 		CategoryCode: t.CategoryCode,
 		Scope:        t.Scope,
-		TeamID:       teamID,
-		CreatorID:    t.CreatorID.String(),
-		Variables:    vars,
+		TeamId:       teamID,
+		CreatorId:    openapi_types.UUID(t.CreatorID),
+		Variables:    pVars,
 		UseCount:     t.UseCount,
-		CreatedAt:    t.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:    t.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:    t.CreatedAt,
+		UpdatedAt:    t.UpdatedAt,
 	}
 }
