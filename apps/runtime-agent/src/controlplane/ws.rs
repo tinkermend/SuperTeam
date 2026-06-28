@@ -21,12 +21,16 @@ pub async fn run_command_loop(
     let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane.clone());
 
     loop {
-        match control_plane.runtime_authorization_header().await {
+        match control_plane.runtime_authorization().await {
             Ok(authorization) => {
-                if let Err(error) = run_command_loop_once(&executor, &ws_url, &authorization).await
+                if let Err(error) =
+                    run_command_loop_once(&executor, &ws_url, &authorization.header).await
                 {
                     if control_plane
-                        .report_websocket_auth_error(error.as_ref())
+                        .report_websocket_auth_error_for_generation(
+                            error.as_ref(),
+                            authorization.generation,
+                        )
                         .await
                     {
                         eprintln!(
@@ -275,6 +279,66 @@ mod tests {
             auth.snapshot().await.status,
             RuntimeAuthStatus::Reauthenticating
         );
+        server.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn stale_websocket_unauthorized_does_not_reauth_fresh_session() {
+        use crate::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0; 1024];
+            let _ = stream.readable().await;
+            let _ = stream.try_read(&mut buffer);
+            stream
+                .try_write(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write 401");
+        });
+
+        let auth = RuntimeAuthState::new("node-1");
+        auth.set_session("session-1", "expired-token", "2999-06-02T00:00:00Z")
+            .await
+            .expect("old session");
+        let control_plane =
+            ControlPlaneClient::with_runtime_auth(format!("http://{addr}"), auth.clone());
+        let mut config = RuntimeConfig::new("node-1").expect("config");
+        config.runtime.control_plane_url = format!("http://{addr}");
+        let executor = RuntimeCommandExecutor::with_control_plane_client(
+            config.clone(),
+            control_plane.clone(),
+        );
+        let authorization = control_plane
+            .runtime_authorization()
+            .await
+            .expect("authorization");
+
+        auth.set_session("session-2", "fresh-token", "2999-06-03T00:00:00Z")
+            .await
+            .expect("fresh session");
+        let fresh_snapshot = auth.snapshot().await;
+
+        let error = run_command_loop_once(
+            &executor,
+            &runtime_ws_url(&config.runtime.control_plane_url).expect("ws url"),
+            &authorization.header,
+        )
+        .await
+        .expect_err("old handshake should fail");
+
+        assert!(
+            control_plane
+                .report_websocket_auth_error_for_generation(error.as_ref(), authorization.generation)
+                .await
+        );
+        let snapshot = auth.snapshot().await;
+        assert_eq!(snapshot.status, RuntimeAuthStatus::Connected);
+        assert_eq!(snapshot.reauth_generation, fresh_snapshot.reauth_generation);
+        assert_eq!(snapshot.token.as_deref(), Some("fresh-token"));
         server.await.expect("server task");
     }
 

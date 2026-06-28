@@ -32,6 +32,11 @@ pub struct ControlPlaneClient {
     client: Client,
 }
 
+pub struct RuntimeAuthorization {
+    pub header: http::HeaderValue,
+    pub generation: u64,
+}
+
 impl ControlPlaneClient {
     /// Create a new Control Plane client
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
@@ -87,14 +92,40 @@ impl ControlPlaneClient {
     }
 
     pub async fn runtime_authorization_header(&self) -> Result<http::HeaderValue> {
+        Ok(self.runtime_authorization().await?.header)
+    }
+
+    pub async fn runtime_authorization(&self) -> Result<RuntimeAuthorization> {
         let auth = self.runtime_credentials().await?;
-        http::HeaderValue::from_str(&format!("Bearer {}", auth.token))
-            .context("runtime session token is not a valid websocket authorization header")
+        let header = http::HeaderValue::from_str(&format!("Bearer {}", auth.token))
+            .context("runtime session token is not a valid websocket authorization header")?;
+        Ok(RuntimeAuthorization {
+            header,
+            generation: auth.generation,
+        })
     }
 
     pub async fn report_websocket_auth_error(
         &self,
         error: &(dyn std::error::Error + Send + Sync + 'static),
+    ) -> bool {
+        self.report_websocket_auth_error_with_generation(error, None)
+            .await
+    }
+
+    pub async fn report_websocket_auth_error_for_generation(
+        &self,
+        error: &(dyn std::error::Error + Send + Sync + 'static),
+        generation: u64,
+    ) -> bool {
+        self.report_websocket_auth_error_with_generation(error, Some(generation))
+            .await
+    }
+
+    async fn report_websocket_auth_error_with_generation(
+        &self,
+        error: &(dyn std::error::Error + Send + Sync + 'static),
+        generation: Option<u64>,
     ) -> bool {
         let is_auth = error
             .downcast_ref::<tokio_tungstenite::tungstenite::Error>()
@@ -104,10 +135,10 @@ impl ControlPlaneClient {
                     tokio_tungstenite::tungstenite::Error::Http(response)
                         if response.status().as_u16() == StatusCode::UNAUTHORIZED.as_u16()
                 )
-            });
+        });
         if is_auth {
             if let RuntimeAuthMode::Shared(auth) = &self.auth {
-                auth.report_auth_failure(None).await;
+                auth.report_auth_failure(generation).await;
             }
         }
         is_auth

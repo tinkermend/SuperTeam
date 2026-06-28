@@ -233,13 +233,12 @@ async fn session_supervisor_loop(
                     }
                     tokio::time::sleep(Duration::from_secs(30)).await;
                 }
-                last_seen_reauth_generation = auth.snapshot().await.reauth_generation;
             }
-            next_generation = auth.wait_for_next_reauth_event(last_seen_reauth_generation) => {
+            _ = auth.wait_for_next_reauth_event(last_seen_reauth_generation) => {
                 loop {
                     match reenroll_runtime_session(&config, auth.clone(), capabilities.clone()).await {
                         Ok(true) => {
-                            last_seen_reauth_generation = next_generation;
+                            last_seen_reauth_generation = auth.snapshot().await.reauth_generation;
                             break;
                         }
                         Ok(false) => tokio::time::sleep(Duration::from_secs(30)).await,
