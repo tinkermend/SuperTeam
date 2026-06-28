@@ -436,6 +436,38 @@ async fn runtime_auth_reauth_wait_observes_fast_status_transitions() {
     .expect("reauth event should not be missed");
 }
 
+#[tokio::test]
+async fn shared_runtime_auth_blocks_business_requests_inside_safety_window() {
+    use std::time::Duration;
+    use superteam_runtime_agent::runtime_auth::RuntimeAuthState;
+
+    let auth =
+        RuntimeAuthState::with_windows("node-1", Duration::from_secs(60), Duration::from_secs(60));
+    auth.set_session("session-1", "token-one", "1970-01-01T00:00:00Z")
+        .await
+        .expect("expired session");
+
+    let wait = tokio::spawn({
+        let auth = auth.clone();
+        async move { auth.wait_for_business_credentials().await.unwrap() }
+    });
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !wait.is_finished(),
+        "business credentials should wait while unsafe"
+    );
+
+    auth.set_session("session-2", "token-two", "2999-06-02T00:00:00Z")
+        .await
+        .expect("fresh session");
+    let credentials = tokio::time::timeout(Duration::from_secs(2), wait)
+        .await
+        .expect("wait should unblock")
+        .expect("join");
+    assert_eq!(credentials.token, "token-two");
+}
+
 #[test]
 fn runtime_auth_expired_detection_walks_error_sources() {
     use reqwest::StatusCode;
