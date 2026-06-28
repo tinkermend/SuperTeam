@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::commands::payload::RuntimeMCPServerPayload;
 use crate::workspace_files::atomic_write;
@@ -78,17 +78,29 @@ fn validate_server(server: &RuntimeMCPServerPayload) -> Result<()> {
     server_url(server)?;
     if let Some(name) = server.credential_env_var.as_deref() {
         if !name.is_empty() && !is_valid_env_name(name) {
-            bail!("invalid credential_env_var for {}: {}", server.server_key, name);
+            bail!(
+                "invalid credential_env_var for {}: {}",
+                server.server_key,
+                name
+            );
         }
     }
     for name in &server.required_env_vars {
         if !is_valid_env_name(name) {
-            bail!("invalid required env var for {}: {}", server.server_key, name);
+            bail!(
+                "invalid required env var for {}: {}",
+                server.server_key,
+                name
+            );
         }
     }
     for value in server.headers_env.values() {
         if !is_valid_env_name(value) {
-            bail!("invalid headers_env value for {}: {}", server.server_key, value);
+            bail!(
+                "invalid headers_env value for {}: {}",
+                server.server_key,
+                value
+            );
         }
     }
     Ok(())
@@ -99,7 +111,12 @@ fn server_url(server: &RuntimeMCPServerPayload) -> Result<&str> {
         .url
         .as_deref()
         .filter(|url| !url.is_empty())
-        .ok_or_else(|| anyhow!("mcp server {} requires a url for http transport", server.server_key))
+        .ok_or_else(|| {
+            anyhow!(
+                "mcp server {} requires a url for http transport",
+                server.server_key
+            )
+        })
 }
 
 fn is_valid_server_key(key: &str) -> bool {
@@ -191,7 +208,10 @@ pub fn render_claude_code_mcp_config(servers: &[RuntimeMCPServerPayload]) -> Res
     let mut entries = serde_json::Map::new();
     for server in servers {
         let mut entry = serde_json::Map::new();
-        entry.insert("type".to_string(), serde_json::Value::String("http".to_string()));
+        entry.insert(
+            "type".to_string(),
+            serde_json::Value::String("http".to_string()),
+        );
         entry.insert(
             "url".to_string(),
             serde_json::Value::String(server_url(server)?.to_string()),
@@ -232,13 +252,14 @@ fn claude_code_headers(
 // OpenCode (opencode.json, read-merge-preserve `mcp` key)
 // ----------------------------------------------------------------------------
 
-pub fn render_opencode_mcp_value(
-    servers: &[RuntimeMCPServerPayload],
-) -> Result<serde_json::Value> {
+pub fn render_opencode_mcp_value(servers: &[RuntimeMCPServerPayload]) -> Result<serde_json::Value> {
     let mut entries = serde_json::Map::new();
     for server in servers {
         let mut entry = serde_json::Map::new();
-        entry.insert("type".to_string(), serde_json::Value::String("remote".to_string()));
+        entry.insert(
+            "type".to_string(),
+            serde_json::Value::String("remote".to_string()),
+        );
         entry.insert(
             "url".to_string(),
             serde_json::Value::String(server_url(server)?.to_string()),
@@ -328,7 +349,8 @@ mod tests {
 
     #[test]
     fn renders_claude_code_http_mcp() {
-        let rendered = render_claude_code_mcp_config(&[github_server()]).expect("render claude mcp");
+        let rendered =
+            render_claude_code_mcp_config(&[github_server()]).expect("render claude mcp");
         assert!(rendered.contains("\"mcpServers\""));
         assert!(rendered.contains("\"type\": \"http\""));
         assert!(rendered.contains("Bearer ${GITHUB_TOKEN}"));
@@ -344,7 +366,10 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&merged).unwrap();
         assert_eq!(value["theme"], "dark");
         assert!(value["mcp"].get("github").is_some());
-        assert!(value["mcp"].get("old").is_none(), "mcp key should be replaced");
+        assert!(
+            value["mcp"].get("old").is_none(),
+            "mcp key should be replaced"
+        );
     }
 
     #[test]

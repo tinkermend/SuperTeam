@@ -332,7 +332,10 @@ mod tests {
 
         assert!(
             control_plane
-                .report_websocket_auth_error_for_generation(error.as_ref(), authorization.generation)
+                .report_websocket_auth_error_for_generation(
+                    error.as_ref(),
+                    authorization.generation
+                )
                 .await
         );
         let snapshot = auth.snapshot().await;

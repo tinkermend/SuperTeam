@@ -135,7 +135,7 @@ impl ControlPlaneClient {
                     tokio_tungstenite::tungstenite::Error::Http(response)
                         if response.status().as_u16() == StatusCode::UNAUTHORIZED.as_u16()
                 )
-        });
+            });
         if is_auth {
             if let RuntimeAuthMode::Shared(auth) = &self.auth {
                 auth.report_auth_failure(generation).await;
