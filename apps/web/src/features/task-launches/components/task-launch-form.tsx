@@ -24,6 +24,8 @@ import type {
   ReviewerSelectionReason,
   SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { Button } from "@/components/ui/button";
+import { PromptTemplateDialog } from "./prompt-template-dialog";
 
 export type ReviewerDefaultResolution = {
   member?: ProjectMember;
@@ -117,6 +119,7 @@ export function TaskLaunchForm({
   const [riskLevel, setRiskLevel] = useState("medium");
   const [reviewerId, setReviewerId] = useState("");
   const [error, setError] = useState("");
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
   const project = activeProjects.find((item) => item.id === projectId);
   const currentProjectMembers = useMemo(
@@ -185,6 +188,18 @@ export function TaskLaunchForm({
     });
   }
 
+  function handleInsertTemplate(text: string) {
+    if (content.trim()) {
+      if (window.confirm("当前内容已存在。\n点击「确定」将覆盖当前内容，\n点击「取消」将追加到末尾。")) {
+        setContent(text);
+      } else {
+        setContent(content + "\n\n" + text);
+      }
+    } else {
+      setContent(text);
+    }
+  }
+
   return (
     <SoftCard className="mx-auto w-full max-w-[1120px] overflow-hidden p-0">
       <div className="grid gap-6 p-4 sm:p-6 xl:p-7">
@@ -223,7 +238,17 @@ export function TaskLaunchForm({
               placeholder="描述你希望项目协调线程处理的目标或问题场景"
               value={content}
             />
-            <div className="mt-3 flex justify-end border-t border-v3-line pt-3">
+            <div className="mt-3 flex items-center justify-between border-t border-v3-line pt-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 text-xs text-v3-brand hover:text-v3-brand-deep"
+                onClick={() => setTemplateDialogOpen(true)}
+                type="button"
+              >
+                <Sparkles className="size-3.5" />
+                浏览模板库
+              </Button>
               <span className="text-xs tabular-nums text-v3-ink-3">
                 {content.length} / 5000
               </span>
@@ -342,6 +367,11 @@ export function TaskLaunchForm({
           提交任务
         </V3Button>
       </div>
+      <PromptTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onInsert={handleInsertTemplate}
+      />
     </SoftCard>
   );
 }
