@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::task::JoinHandle;
@@ -15,7 +15,7 @@ use crate::controlplane::ws::run_command_loop;
 use crate::executor::TaskExecutor;
 use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
 use crate::providers::catalog;
-use crate::session::RuntimeSession;
+use crate::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus, is_runtime_auth_expired};
 use crate::tools::probe_tool;
 
 const SESSION_RENEWAL_MARGIN: Duration = Duration::from_secs(5 * 60);
@@ -82,70 +82,132 @@ pub async fn connect_runtime_session(
     config: &RuntimeConfig,
     capabilities: Vec<RuntimeCapabilityInput>,
 ) -> Result<Option<ControlPlaneClient>> {
-    Ok(establish_runtime_session(config, capabilities)
-        .await?
-        .map(|context| context.client))
+    let auth = RuntimeAuthState::new(config.runtime.node_id.clone());
+    if establish_runtime_auth_session(config, capabilities, auth.clone()).await? {
+        Ok(Some(ControlPlaneClient::with_runtime_auth(
+            config.runtime.control_plane_url.clone(),
+            auth,
+        )))
+    } else {
+        Ok(None)
+    }
 }
 
 async fn establish_runtime_session(
     config: &RuntimeConfig,
     capabilities: Vec<RuntimeCapabilityInput>,
 ) -> Result<Option<RuntimeSessionContext>> {
+    let auth = RuntimeAuthState::new(config.runtime.node_id.clone());
+    if !establish_runtime_auth_session(config, capabilities, auth.clone()).await? {
+        return Ok(None);
+    }
+
+    let snapshot = auth.snapshot().await;
+    let session_token = snapshot
+        .token
+        .clone()
+        .context("runtime session token is not available after enrollment")?;
+    Ok(Some(RuntimeSessionContext {
+        client: ControlPlaneClient::with_runtime_auth(
+            config.runtime.control_plane_url.clone(),
+            auth,
+        ),
+        session_token,
+    }))
+}
+
+pub async fn establish_runtime_auth_session(
+    config: &RuntimeConfig,
+    capabilities: Vec<RuntimeCapabilityInput>,
+    auth: RuntimeAuthState,
+) -> Result<bool> {
     let bootstrap_client = ControlPlaneClient::new(&config.runtime.control_plane_url, "");
     let supported_providers = build_supported_providers(config);
+    let hello = bootstrap_client
+        .enroll_hello(EnrollHelloRequest {
+            node_id: config.runtime.node_id.clone(),
+            name: format!("runtime-{}", config.runtime.node_id),
+            supported_providers,
+            max_slots: config.runtime.max_concurrent_tasks as i32,
+            bootstrap_key: config.runtime.bootstrap_key.clone(),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            metadata: Some(runtime_metadata()),
+            capabilities: capabilities.clone(),
+        })
+        .await?;
 
-    let hello_req = EnrollHelloRequest {
-        node_id: config.runtime.node_id.clone(),
-        name: format!("runtime-{}", config.runtime.node_id),
-        supported_providers,
-        max_slots: config.runtime.max_concurrent_tasks as i32,
-        bootstrap_key: config.runtime.bootstrap_key.clone(),
-        version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        metadata: Some(runtime_metadata()),
-        capabilities: capabilities.clone(),
-    };
-
-    let hello = bootstrap_client.enroll_hello(hello_req).await?;
     if hello.enrollment.status != EnrollmentStatus::Approved {
+        auth.mark_status(RuntimeAuthStatus::PendingApproval).await;
         println!(
             "runtime-agent node={} enrollment={}; waiting for approval",
             config.runtime.node_id,
             enrollment_status_label(&hello.enrollment.status)
         );
-        return Ok(None);
+        return Ok(false);
     }
 
-    let Some(session_response) = hello.session.as_ref() else {
-        anyhow::bail!("approved runtime enrollment did not return a session");
-    };
-    let session = RuntimeSession::new(
-        hello.session_token.unwrap_or_default(),
-        Some(session_response.expires_at.clone()),
-    );
-    if session.is_empty() {
-        anyhow::bail!("approved runtime enrollment did not return a session token");
-    }
+    let session_response = hello
+        .session
+        .as_ref()
+        .context("approved runtime enrollment did not return a session")?;
+    let session_token = hello
+        .session_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .context("approved runtime enrollment did not return a session token")?;
 
-    let client = ControlPlaneClient::with_session_token(
-        &config.runtime.control_plane_url,
-        &session.token,
-        &config.runtime.node_id,
-    );
-    client
-        .upsert_capabilities(&config.runtime.node_id, capabilities)
-        .await?;
-    spawn_session_renewal_loop(
-        client.clone(),
+    auth.set_session(
         session_response.id.clone(),
-        session.expires_at.clone(),
-    );
-    let session_token = session.token.clone();
-    println!("Runtime session established");
+        session_token.to_string(),
+        &session_response.expires_at,
+    )
+    .await?;
 
-    Ok(Some(RuntimeSessionContext {
-        client,
-        session_token,
-    }))
+    if !capabilities.is_empty() {
+        let client = ControlPlaneClient::with_runtime_auth(
+            config.runtime.control_plane_url.clone(),
+            auth.clone(),
+        );
+        client
+            .upsert_capabilities(&config.runtime.node_id, capabilities)
+            .await?;
+    }
+
+    println!("Runtime session established");
+    Ok(true)
+}
+
+pub async fn renew_or_reenroll_once(
+    config: &RuntimeConfig,
+    auth: RuntimeAuthState,
+    capabilities: Vec<RuntimeCapabilityInput>,
+) -> Result<()> {
+    auth.mark_status(RuntimeAuthStatus::Refreshing).await;
+    let client = ControlPlaneClient::with_runtime_auth(
+        config.runtime.control_plane_url.clone(),
+        auth.clone(),
+    );
+    let credentials = auth.renewal_credentials().await?;
+    match client.renew_session(&credentials.session_id).await {
+        Ok(session) => {
+            auth.set_session(
+                credentials.session_id,
+                credentials.token,
+                session.expires_at,
+            )
+            .await?;
+            Ok(())
+        }
+        Err(error) if is_runtime_auth_expired(error.as_ref()) => {
+            auth.mark_status(RuntimeAuthStatus::Reauthenticating).await;
+            establish_runtime_auth_session(config, capabilities, auth).await?;
+            Ok(())
+        }
+        Err(error) => {
+            auth.mark_status(RuntimeAuthStatus::Connected).await;
+            Err(error)
+        }
+    }
 }
 
 pub fn spawn_session_renewal_loop(

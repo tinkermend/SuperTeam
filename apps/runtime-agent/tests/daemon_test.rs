@@ -1,9 +1,7 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::controlplane::{ControlPlaneClient, RuntimeCapabilityInput};
-use superteam_runtime_agent::daemon::{
-    RuntimeDaemon, connect_runtime_session, spawn_session_renewal_loop,
-};
+use superteam_runtime_agent::controlplane::RuntimeCapabilityInput;
+use superteam_runtime_agent::daemon::{RuntimeDaemon, connect_runtime_session};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -374,57 +372,87 @@ runtime:
 }
 
 #[tokio::test]
-async fn daemon_runtime_session_renewal_loop_attempts_renew_before_expiry() {
+async fn session_supervisor_reenrolls_when_renew_returns_runtime_auth_401() {
+    use superteam_runtime_agent::runtime_auth::RuntimeAuthState;
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let (request_tx, request_rx) = oneshot::channel();
+    let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(4);
 
     tokio::spawn(async move {
-        let (mut socket, _) = listener.accept().await.unwrap();
-        let request = read_http_request(&mut socket).await;
-        let _ = request_tx.send(request);
+        let (mut renew_socket, _) = listener.accept().await.unwrap();
+        let renew_request = read_http_request(&mut renew_socket).await;
+        request_tx.send(renew_request).await.unwrap();
+        write_status_response(
+            &mut renew_socket,
+            "401 Unauthorized",
+            serde_json::json!("invalid runtime session"),
+        )
+        .await;
 
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let hello_request = read_http_request(&mut hello_socket).await;
+        request_tx.send(hello_request).await.unwrap();
         write_json_response(
-            &mut socket,
+            &mut hello_socket,
             serde_json::json!({
-                "id": "55555555-5555-4555-8555-555555555555",
-                "tenant_id": "22222222-2222-4222-8222-222222222222",
-                "runtime_node_id": "33333333-3333-4333-8333-333333333333",
-                "node_id": "node-1",
-                "enrollment_id": "11111111-1111-4111-8111-111111111111",
-                "expires_at": "2026-06-03T00:00:00Z",
-                "last_seen_at": "2026-06-02T00:00:00Z",
-                "created_at": "2026-06-02T00:00:00Z",
-                "updated_at": "2026-06-02T00:00:00Z"
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "66666666-6666-4666-8666-666666666666",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "2999-06-03T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "fresh-session-token"
             }),
         )
         .await;
     });
 
-    let client = ControlPlaneClient::with_session_token(
-        format!("http://{}", addr),
-        "session-token",
-        "node-1",
-    );
-    let handle = spawn_session_renewal_loop(
-        client,
-        "55555555-5555-4555-8555-555555555555".to_string(),
-        Some("2026-06-01T00:00:00Z".to_string()),
-    );
+    let mut config = RuntimeConfig::new("node-1").expect("config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
 
-    let request = tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("old-session", "old-token", "1970-01-01T00:00:00Z")
         .await
-        .expect("renew request should be attempted")
-        .expect("renew request should be captured");
-    handle.abort();
+        .expect("old session");
+    superteam_runtime_agent::daemon::renew_or_reenroll_once(&config, auth.clone(), vec![])
+        .await
+        .expect("renew or re-enroll");
 
-    let request_line = request.lines().next().unwrap();
+    let renew_request = request_rx.recv().await.expect("renew request");
+    let hello_request = request_rx.recv().await.expect("hello request");
     assert_eq!(
-        request_line,
-        "POST /api/v1/runtime/sessions/55555555-5555-4555-8555-555555555555/renew HTTP/1.1"
+        renew_request.lines().next().unwrap(),
+        "POST /api/v1/runtime/sessions/old-session/renew HTTP/1.1"
     );
-    assert!(request.contains("authorization: Bearer session-token"));
-    assert!(request.contains("x-node-id: node-1"));
+    assert!(renew_request.contains("authorization: Bearer old-token"));
+    assert_eq!(
+        hello_request.lines().next().unwrap(),
+        "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
+    );
+
+    let snapshot = auth.snapshot().await;
+    assert_eq!(
+        snapshot.session_id.as_deref(),
+        Some("66666666-6666-4666-8666-666666666666")
+    );
+    assert_eq!(snapshot.token.as_deref(), Some("fresh-session-token"));
 }
 
 #[tokio::test]
@@ -655,7 +683,7 @@ async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_u
                     "runtime_node_id": "33333333-3333-4333-8333-333333333333",
                     "node_id": "node-1",
                     "enrollment_id": "11111111-1111-4111-8111-111111111111",
-                    "expires_at": "1970-01-01T00:00:00Z",
+                    "expires_at": "2999-06-03T00:00:00Z",
                     "last_seen_at": "2026-06-02T00:00:00Z",
                     "created_at": "2026-06-02T00:00:00Z",
                     "updated_at": "2026-06-02T00:00:00Z"
