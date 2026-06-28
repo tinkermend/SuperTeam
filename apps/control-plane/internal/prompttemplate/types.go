@@ -39,6 +39,7 @@ type CreateTemplateInput struct {
 	Scope        string                   `json:"scope"`
 	TeamID       *uuid.UUID               `json:"team_id"`
 	CreatorID    uuid.UUID                `json:"creator_id"`
+	IsAdmin      bool                     `json:"is_admin"`
 	Variables    []PromptTemplateVariable `json:"variables"`
 }
 

@@ -38,7 +38,7 @@ func (m *mockResolver) ListUserProjectTeamScopes(ctx context.Context, tenantID, 
 func TestService_ListTemplates(t *testing.T) {
 	repo := &mockRepository{}
 	resolver := &mockResolver{}
-	svc := NewService(repo, resolver)
+	svc := NewService(repo, resolver, nil)
 
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -83,7 +83,7 @@ func TestService_ListTemplates(t *testing.T) {
 func TestService_CreateTemplate(t *testing.T) {
 	repo := &mockRepository{}
 	resolver := &mockResolver{}
-	svc := NewService(repo, resolver)
+	svc := NewService(repo, resolver, nil)
 
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -206,7 +206,7 @@ func TestService_CreateTemplate(t *testing.T) {
 func TestService_ApplyTemplate(t *testing.T) {
 	repo := &mockRepository{}
 	resolver := &mockResolver{}
-	svc := NewService(repo, resolver)
+	svc := NewService(repo, resolver, nil)
 
 	ctx := context.Background()
 	tenantID := uuid.New()

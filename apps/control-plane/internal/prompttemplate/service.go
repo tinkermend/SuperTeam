@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 
@@ -17,12 +18,14 @@ type TeamMembershipResolver interface {
 type Service struct {
 	repo     Repository
 	resolver TeamMembershipResolver
+	logger   *slog.Logger
 }
 
-func NewService(repo Repository, resolver TeamMembershipResolver) *Service {
+func NewService(repo Repository, resolver TeamMembershipResolver, logger *slog.Logger) *Service {
 	return &Service{
 		repo:     repo,
 		resolver: resolver,
+		logger:   logger,
 	}
 }
 
@@ -36,7 +39,7 @@ func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserCo
 		return nil, fmt.Errorf("failed to list user team scopes: %w", err)
 	}
 
-	var teamIDs []uuid.UUID
+	teamIDs := make([]uuid.UUID, 0, len(scopes))
 	for _, scope := range scopes {
 		teamIDs = append(teamIDs, scope.TeamID)
 	}
@@ -45,7 +48,7 @@ func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserCo
 }
 
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
-	if input.Scope == "TEAM" {
+	if input.Scope == "TEAM" && !input.IsAdmin {
 		if input.TeamID == nil || *input.TeamID == uuid.Nil {
 			return PromptTemplate{}, errors.New("team_id is required for TEAM scope")
 		}
@@ -99,7 +102,9 @@ func (s *Service) ApplyTemplate(ctx context.Context, id uuid.UUID, authCtx *auth
 	}
 	err := s.repo.IncrementUseCount(ctx, id, authCtx.TenantID)
 	if err != nil {
-		// Log the error but don't fail the operation to prevent breaking the picker
+		if s.logger != nil {
+			s.logger.ErrorContext(ctx, "failed to increment template use count", "template_id", id, "error", err)
+		}
 		return nil
 	}
 	return nil
