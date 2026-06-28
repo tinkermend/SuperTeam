@@ -10,6 +10,7 @@ pub mod instances;
 pub mod mcp_config;
 pub mod providers;
 pub mod runs;
+pub mod runtime_auth;
 pub mod server;
 pub mod session;
 pub mod skills;

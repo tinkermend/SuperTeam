@@ -1,6 +1,10 @@
-use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode};
+use anyhow::{Context, Result, anyhow};
+use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use std::time::Duration;
+
+use crate::runtime_auth::{
+    RuntimeAuthExpired, RuntimeAuthState, RuntimeCredentials, is_runtime_auth_failure,
+};
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
@@ -10,18 +14,40 @@ use super::models::{
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse, Task,
 };
 
+#[derive(Clone)]
+enum RuntimeAuthMode {
+    None,
+    Static {
+        token: String,
+        node_id: Option<String>,
+    },
+    Shared(RuntimeAuthState),
+}
+
 /// Control Plane HTTP client
 #[derive(Clone)]
 pub struct ControlPlaneClient {
     base_url: String,
-    token: String,
-    node_id: Option<String>,
+    auth: RuntimeAuthMode,
     client: Client,
 }
 
 impl ControlPlaneClient {
     /// Create a new Control Plane client
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
+        let token = token.into();
+        let auth = if token.is_empty() {
+            RuntimeAuthMode::None
+        } else {
+            RuntimeAuthMode::Static {
+                token,
+                node_id: None,
+            }
+        };
+        Self::with_auth(base_url, auth)
+    }
+
+    fn with_auth(base_url: impl Into<String>, auth: RuntimeAuthMode) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(65)) // Slightly longer than max poll timeout
             .build()
@@ -29,8 +55,7 @@ impl ControlPlaneClient {
 
         Self {
             base_url: base_url.into(),
-            token: token.into(),
-            node_id: None,
+            auth,
             client,
         }
     }
@@ -40,9 +65,13 @@ impl ControlPlaneClient {
         token: impl Into<String>,
         node_id: impl Into<String>,
     ) -> Self {
-        let mut client = Self::new(base_url, token);
-        client.node_id = Some(node_id.into());
-        client
+        Self::with_auth(
+            base_url,
+            RuntimeAuthMode::Static {
+                token: token.into(),
+                node_id: Some(node_id.into()),
+            },
+        )
     }
 
     pub fn with_session_token(
@@ -51,6 +80,10 @@ impl ControlPlaneClient {
         node_id: impl Into<String>,
     ) -> Self {
         Self::with_node_id(base_url, token, node_id)
+    }
+
+    pub fn with_runtime_auth(base_url: impl Into<String>, auth: RuntimeAuthState) -> Self {
+        Self::with_auth(base_url, RuntimeAuthMode::Shared(auth))
     }
 
     pub async fn enroll_hello(&self, req: EnrollHelloRequest) -> Result<EnrollHelloResponse> {
@@ -81,11 +114,12 @@ impl ControlPlaneClient {
     /// Register this runtime node with the Control Plane
     pub async fn register(&self, req: RegisterNodeRequest) -> Result<RegisterNodeResponse> {
         let url = format!("{}/api/v1/runtime/register", self.base_url);
+        let token = self.bearer_token().await?;
 
         let response = self
             .client
             .post(&url)
-            .bearer_auth(&self.token)
+            .bearer_auth(token)
             .header("X-Node-ID", &req.node_id)
             .json(&req)
             .send()
@@ -108,12 +142,9 @@ impl ControlPlaneClient {
 
     pub async fn renew_session(&self, session_id: &str) -> Result<RuntimeSessionResponse> {
         let url = self.session_renew_url(session_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, true).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&serde_json::json!({}))
             .send()
             .await
@@ -122,11 +153,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Runtime session renew failed with status {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error("Runtime session renew", status, body, Some(auth.generation))
+                .await);
         }
 
         let session = response
@@ -143,12 +172,9 @@ impl ControlPlaneClient {
         capabilities: Vec<RuntimeCapabilityInput>,
     ) -> Result<Vec<RuntimeCapabilityResponse>> {
         let url = self.capabilities_url(node_id);
+        let (request, auth) = self.runtime_request(Method::PUT, &url, false).await?;
 
-        let response = self
-            .client
-            .put(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&RuntimeCapabilitiesRequest { capabilities })
             .send()
             .await
@@ -157,11 +183,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Runtime capabilities upsert failed with status {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error(
+                    "Runtime capabilities upsert",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         let capabilities = response
@@ -175,12 +204,9 @@ impl ControlPlaneClient {
     /// Send heartbeat to Control Plane
     pub async fn heartbeat(&self, req: HeartbeatRequest) -> Result<HeartbeatResponse> {
         let url = format!("{}/api/v1/runtime/heartbeat", self.base_url);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&req)
             .send()
             .await
@@ -189,7 +215,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Heartbeat failed with status {}: {}", status, body);
+            return Err(self
+                .runtime_error("Heartbeat", status, body, Some(auth.generation))
+                .await);
         }
 
         let node = response
@@ -206,12 +234,9 @@ impl ControlPlaneClient {
     /// Returns `Ok(None)` if no task is available within the timeout.
     pub async fn claim_task(&self, timeout_secs: u64) -> Result<Option<Task>> {
         let url = self.claim_task_url(timeout_secs);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .send()
             .await
             .context("Failed to send claim task request")?;
@@ -227,7 +252,9 @@ impl ControlPlaneClient {
             StatusCode::NO_CONTENT => Ok(None),
             status => {
                 let body = response.text().await.unwrap_or_default();
-                anyhow::bail!("Claim task failed with status {}: {}", status, body);
+                Err(self
+                    .runtime_error("Claim task", status, body, Some(auth.generation))
+                    .await)
             }
         }
     }
@@ -239,12 +266,9 @@ impl ControlPlaneClient {
         status: super::models::TaskStatus,
     ) -> Result<()> {
         let url = self.task_status_url(task_id);
+        let (request, auth) = self.runtime_request(Method::PUT, &url, false).await?;
 
-        let response = self
-            .client
-            .put(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&serde_json::json!({"status": status}))
             .send()
             .await
@@ -253,7 +277,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Update task status failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Update task status", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -266,12 +292,9 @@ impl ControlPlaneClient {
         event: &crate::events::ProviderEvent,
     ) -> Result<()> {
         let url = self.task_events_url(task_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&serde_json::json!({"events": [event]}))
             .send()
             .await
@@ -280,7 +303,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Push event failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Push event", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -289,12 +314,9 @@ impl ControlPlaneClient {
     /// Complete task
     pub async fn complete_task(&self, task_id: i64, result: serde_json::Value) -> Result<()> {
         let url = self.task_complete_url(task_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&serde_json::json!({"result": result}))
             .send()
             .await
@@ -303,7 +325,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Complete task failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Complete task", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -312,12 +336,9 @@ impl ControlPlaneClient {
     /// Fail task
     pub async fn fail_task(&self, task_id: i64, error: String) -> Result<()> {
         let url = self.task_fail_url(task_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(&serde_json::json!({"error": error}))
             .send()
             .await
@@ -326,7 +347,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Fail task failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Fail task", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -338,12 +361,9 @@ impl ControlPlaneClient {
         terminal: &RuntimeCommandTerminalWriteback,
     ) -> Result<()> {
         let url = self.runtime_command_complete_url(command_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(terminal)
             .send()
             .await
@@ -352,7 +372,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Complete runtime command failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error(
+                    "Complete runtime command",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -364,12 +391,9 @@ impl ControlPlaneClient {
         event: &RuntimeCommandEventWriteback,
     ) -> Result<()> {
         let url = self.runtime_command_events_url(command_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(event)
             .send()
             .await
@@ -378,11 +402,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Record runtime command event failed with {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error(
+                    "Record runtime command event",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -394,12 +421,9 @@ impl ControlPlaneClient {
         terminal: &RuntimeCommandTerminalWriteback,
     ) -> Result<()> {
         let url = self.runtime_command_fail_url(command_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(terminal)
             .send()
             .await
@@ -408,7 +432,9 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Fail runtime command failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Fail runtime command", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -420,12 +446,9 @@ impl ControlPlaneClient {
         terminal: &RuntimeCommandTerminalWriteback,
     ) -> Result<()> {
         let url = self.runtime_command_cancelled_url(command_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(terminal)
             .send()
             .await
@@ -434,7 +457,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Cancel runtime command failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error(
+                    "Cancel runtime command",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -446,12 +476,9 @@ impl ControlPlaneClient {
         writeback: &ProjectTaskCompleteWriteback,
     ) -> Result<()> {
         let url = self.project_task_attempt_complete_url(attempt_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(writeback)
             .send()
             .await
@@ -460,11 +487,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Complete project task attempt failed with {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error(
+                    "Complete project task attempt",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -476,12 +506,9 @@ impl ControlPlaneClient {
         writeback: &ProjectTaskStartWriteback,
     ) -> Result<()> {
         let url = self.project_task_attempt_started_url(attempt_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(writeback)
             .send()
             .await
@@ -490,11 +517,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Start project task attempt failed with {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error(
+                    "Start project task attempt",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -506,12 +536,9 @@ impl ControlPlaneClient {
         writeback: &ProjectTaskFailWriteback,
     ) -> Result<()> {
         let url = self.project_task_attempt_fail_url(attempt_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(writeback)
             .send()
             .await
@@ -520,7 +547,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Fail project task attempt failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error(
+                    "Fail project task attempt",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -532,12 +566,9 @@ impl ControlPlaneClient {
         writeback: &ProjectTaskWaitHumanWriteback,
     ) -> Result<()> {
         let url = self.project_task_attempt_wait_human_url(attempt_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
+        let response = request
             .json(writeback)
             .send()
             .await
@@ -546,11 +577,14 @@ impl ControlPlaneClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Wait-human project task attempt failed with {}: {}",
-                status,
-                body
-            );
+            return Err(self
+                .runtime_error(
+                    "Wait-human project task attempt",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
         }
 
         Ok(())
@@ -559,20 +593,16 @@ impl ControlPlaneClient {
     /// Renew task lease
     pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
         let url = self.task_lease_url(task_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.token)
-            .headers(self.runtime_headers()?)
-            .send()
-            .await
-            .context("Failed to renew lease")?;
+        let response = request.send().await.context("Failed to renew lease")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Renew lease failed with {}: {}", status, body);
+            return Err(self
+                .runtime_error("Renew lease", status, body, Some(auth.generation))
+                .await);
         }
 
         Ok(())
@@ -603,11 +633,66 @@ impl ControlPlaneClient {
         )
     }
 
-    fn runtime_headers(&self) -> Result<reqwest::header::HeaderMap> {
-        let node_id = self
-            .node_id
-            .as_ref()
-            .filter(|node_id| !node_id.trim().is_empty())
+    async fn bearer_token(&self) -> Result<String> {
+        match &self.auth {
+            RuntimeAuthMode::Shared(auth) => Ok(auth.renewal_credentials().await?.token),
+            RuntimeAuthMode::Static { token, .. } => Ok(token.clone()),
+            RuntimeAuthMode::None => {
+                anyhow::bail!("runtime auth is required for authenticated Runtime API requests")
+            }
+        }
+    }
+
+    async fn runtime_credentials(&self) -> Result<RuntimeCredentials> {
+        match &self.auth {
+            RuntimeAuthMode::Shared(auth) => auth.wait_for_business_credentials().await,
+            RuntimeAuthMode::Static { token, node_id } => Ok(RuntimeCredentials {
+                node_id: node_id
+                    .clone()
+                    .filter(|node_id| !node_id.trim().is_empty())
+                    .context(
+                        "Runtime node_id is required for authenticated Runtime API requests",
+                    )?,
+                session_id: String::new(),
+                token: token.clone(),
+                expires_at: time::OffsetDateTime::UNIX_EPOCH,
+                generation: 0,
+            }),
+            RuntimeAuthMode::None => {
+                anyhow::bail!("runtime auth is required for authenticated Runtime API requests")
+            }
+        }
+    }
+
+    async fn renewal_credentials(&self) -> Result<RuntimeCredentials> {
+        match &self.auth {
+            RuntimeAuthMode::Shared(auth) => auth.renewal_credentials().await,
+            _ => self.runtime_credentials().await,
+        }
+    }
+
+    async fn runtime_request(
+        &self,
+        method: Method,
+        url: &str,
+        allow_unsafe_for_renewal: bool,
+    ) -> Result<(RequestBuilder, RuntimeCredentials)> {
+        let auth = if allow_unsafe_for_renewal {
+            self.renewal_credentials().await?
+        } else {
+            self.runtime_credentials().await?
+        };
+        let request = self
+            .client
+            .request(method, url)
+            .bearer_auth(&auth.token)
+            .headers(Self::runtime_headers_for(&auth.node_id)?);
+        Ok((request, auth))
+    }
+
+    fn runtime_headers_for(node_id: &str) -> Result<reqwest::header::HeaderMap> {
+        let node_id = (!node_id.trim().is_empty())
+            .then_some(node_id)
             .context("Runtime node_id is required for authenticated Runtime API requests")?;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
@@ -616,6 +701,29 @@ impl ControlPlaneClient {
                 .context("Runtime node_id is not a valid header value")?,
         );
         Ok(headers)
+    }
+
+    async fn runtime_error(
+        &self,
+        operation: &'static str,
+        status: StatusCode,
+        body: String,
+        generation: Option<u64>,
+    ) -> anyhow::Error {
+        if is_runtime_auth_failure(status, &body) {
+            if let RuntimeAuthMode::Shared(auth) = &self.auth {
+                auth.report_auth_failure(generation).await;
+            }
+            RuntimeAuthExpired {
+                operation,
+                status,
+                body,
+                generation,
+            }
+            .into()
+        } else {
+            anyhow!("{} failed with status {}: {}", operation, status, body)
+        }
     }
 
     fn task_events_url(&self, task_id: i64) -> String {
@@ -706,8 +814,15 @@ mod tests {
     fn test_client_creation() {
         let client = ControlPlaneClient::new("http://localhost:8080", "test-token");
         assert_eq!(client.base_url, "http://localhost:8080");
-        assert_eq!(client.token, "test-token");
-        assert_eq!(client.node_id, None);
+        match client.auth {
+            RuntimeAuthMode::Static { token, node_id } => {
+                assert_eq!(token, "test-token");
+                assert_eq!(node_id, None);
+            }
+            RuntimeAuthMode::None | RuntimeAuthMode::Shared(_) => {
+                panic!("expected static auth mode")
+            }
+        }
     }
 
     #[test]

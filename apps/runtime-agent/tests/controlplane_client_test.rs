@@ -344,6 +344,46 @@ async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
 }
 
 #[tokio::test]
+async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
+    use superteam_runtime_agent::runtime_auth::RuntimeAuthState;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
+
+    tokio::spawn(async move {
+        for _ in 0..2 {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            request_tx.send(request).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
+        }
+    });
+
+    let auth = RuntimeAuthState::new("node-1");
+    auth.set_session("session-1", "token-one", "2999-06-02T00:00:00Z")
+        .await
+        .expect("initial session");
+    let client = ControlPlaneClient::with_runtime_auth(format!("http://{}", addr), auth.clone());
+
+    client.claim_task(1).await.unwrap();
+    auth.set_session("session-2", "token-two", "2999-06-03T00:00:00Z")
+        .await
+        .expect("refreshed session");
+    client.claim_task(1).await.unwrap();
+
+    let first = request_rx.recv().await.expect("first request");
+    let second = request_rx.recv().await.expect("second request");
+    assert!(first.contains("authorization: Bearer token-one"));
+    assert!(second.contains("authorization: Bearer token-two"));
+    assert!(first.contains("x-node-id: node-1"));
+    assert!(second.contains("x-node-id: node-1"));
+}
+
+#[tokio::test]
 async fn controlplane_client_upsert_capabilities_sends_openapi_wrapper_body() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
