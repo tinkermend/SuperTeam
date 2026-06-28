@@ -107,7 +107,9 @@ export function PromptTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] min-h-[60vh] w-[90vw] max-w-[900px] flex-col overflow-hidden p-0">
+      {/* sm:max-w-[900px] 覆盖 DialogContent 默认的 sm:max-w-lg(512px)，
+          否则模板库侧栏+双列卡片会被压回窄弹窗。 */}
+      <DialogContent className="flex max-h-[85vh] min-h-[60vh] w-[90vw] max-w-[900px] sm:max-w-[900px] flex-col overflow-hidden p-0">
         <DialogHeader className="border-b border-v3-line px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Sparkles className="size-5 text-v3-brand" />
