@@ -224,14 +224,17 @@ async fn session_supervisor_loop(
 
         tokio::select! {
             _ = tokio::time::sleep(delay) => {
-                if let Err(error) =
-                    renew_or_reenroll_once(&config, auth.clone(), capabilities.clone()).await
-                {
-                    eprintln!("Runtime session refresh failed: {}", error);
-                    if auth.snapshot().await.status == RuntimeAuthStatus::Refreshing {
-                        auth.mark_status(RuntimeAuthStatus::Connected).await;
+                match renew_or_reenroll_once(&config, auth.clone(), capabilities.clone()).await {
+                    Ok(()) => {
+                        last_seen_reauth_generation = auth.snapshot().await.reauth_generation;
                     }
-                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    Err(error) => {
+                        eprintln!("Runtime session refresh failed: {}", error);
+                        if auth.snapshot().await.status == RuntimeAuthStatus::Refreshing {
+                            auth.mark_status(RuntimeAuthStatus::Connected).await;
+                        }
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                    }
                 }
             }
             _ = auth.wait_for_next_reauth_event(last_seen_reauth_generation) => {
@@ -578,4 +581,176 @@ where
 
 fn merge_tool_sets(baseline: &[String], required: &[String]) -> Vec<String> {
     normalize_tool_set(baseline.iter().cloned().chain(required.iter().cloned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn session_supervisor_consumes_reauth_event_after_renewal_reenroll() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(8);
+
+        let server = tokio::spawn(async move {
+            let (mut renew_socket, _) = listener.accept().await.unwrap();
+            let renew_request = read_http_request(&mut renew_socket).await;
+            request_tx.send(renew_request).await.unwrap();
+            write_status_response(
+                &mut renew_socket,
+                "401 Unauthorized",
+                serde_json::json!("invalid runtime session"),
+            )
+            .await;
+
+            let (mut hello_socket, _) = listener.accept().await.unwrap();
+            let hello_request = read_http_request(&mut hello_socket).await;
+            request_tx.send(hello_request).await.unwrap();
+            write_json_response(
+                &mut hello_socket,
+                serde_json::json!({
+                    "enrollment": {
+                        "id": "11111111-1111-4111-8111-111111111111",
+                        "tenant_id": "22222222-2222-4222-8222-222222222222",
+                        "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                        "node_id": "node-1",
+                        "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                        "status": "approved",
+                        "created_at": "2026-06-02T00:00:00Z",
+                        "updated_at": "2026-06-02T00:00:00Z"
+                    },
+                    "session": {
+                        "id": "66666666-6666-4666-8666-666666666666",
+                        "tenant_id": "22222222-2222-4222-8222-222222222222",
+                        "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                        "node_id": "node-1",
+                        "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                        "expires_at": "2999-06-03T00:00:00Z",
+                        "last_seen_at": "2026-06-02T00:00:00Z",
+                        "created_at": "2026-06-02T00:00:00Z",
+                        "updated_at": "2026-06-02T00:00:00Z"
+                    },
+                    "session_token": "fresh-session-token"
+                }),
+            )
+            .await;
+
+            let (mut capabilities_socket, _) = listener.accept().await.unwrap();
+            let capabilities_request = read_http_request(&mut capabilities_socket).await;
+            request_tx.send(capabilities_request).await.unwrap();
+            write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
+
+            if let Ok(Ok((mut extra_socket, _))) =
+                tokio::time::timeout(Duration::from_millis(500), listener.accept()).await
+            {
+                let extra_request = read_http_request(&mut extra_socket).await;
+                request_tx.send(extra_request).await.unwrap();
+                write_json_response(&mut extra_socket, serde_json::json!([])).await;
+            }
+        });
+
+        let mut config = RuntimeConfig::new("node-1").expect("config");
+        config.runtime.control_plane_url = format!("http://{}", addr);
+        config.runtime.bootstrap_key = "bootstrap-key".to_string();
+
+        let auth = RuntimeAuthState::new("node-1");
+        auth.set_session("old-session", "old-token", "1970-01-01T00:00:00Z")
+            .await
+            .expect("old session");
+
+        let supervisor = tokio::spawn(session_supervisor_loop(config, vec![], auth));
+
+        let renew_request = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .expect("renew request")
+            .expect("renew request");
+        let hello_request = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .expect("hello request")
+            .expect("hello request");
+        let capabilities_request = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .expect("capabilities request")
+            .expect("capabilities request");
+
+        assert_eq!(
+            renew_request.lines().next().unwrap(),
+            "POST /api/v1/runtime/sessions/old-session/renew HTTP/1.1"
+        );
+        assert_eq!(
+            hello_request.lines().next().unwrap(),
+            "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
+        );
+        assert_eq!(
+            capabilities_request.lines().next().unwrap(),
+            "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1"
+        );
+
+        let extra_request = tokio::time::timeout(Duration::from_secs(1), request_rx.recv()).await;
+        if let Ok(Some(request)) = extra_request {
+            panic!(
+                "supervisor should not re-enroll a second time for the renewal 401 event; extra request: {request}"
+            );
+        }
+
+        supervisor.abort();
+        server.abort();
+    }
+
+    async fn read_http_request(socket: &mut TcpStream) -> String {
+        let mut buf = vec![0_u8; 8192];
+        let mut bytes = Vec::new();
+        loop {
+            let n = socket.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+            if bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+
+    async fn write_json_response(socket: &mut TcpStream, body: serde_json::Value) {
+        let body = body.to_string();
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
+
+    async fn write_status_response(
+        socket: &mut TcpStream,
+        status_line: &str,
+        body: serde_json::Value,
+    ) {
+        let body = body.to_string();
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_line,
+                    body.len(),
+                    body
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
 }
