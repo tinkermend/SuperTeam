@@ -294,7 +294,7 @@ func TestService_ApplyTemplate(t *testing.T) {
 	}
 
 	err := svc.ApplyTemplate(ctx, templateID, authCtx)
-	if err != nil {
-		t.Fatalf("expected no error (best-effort), got %v", err)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
 	}
 }

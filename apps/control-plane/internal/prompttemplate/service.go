@@ -109,7 +109,7 @@ func (s *Service) ApplyTemplate(ctx context.Context, id uuid.UUID, authCtx *auth
 		if s.logger != nil {
 			s.logger.ErrorContext(ctx, "failed to increment template use count", "template_id", id, "error", err)
 		}
-		return nil
+		return err
 	}
 	return nil
 }

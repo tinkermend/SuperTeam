@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/superteam/control-plane/internal/api/gen"
+	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/auth"
 )
 
@@ -32,19 +34,19 @@ func NewHandler(service HandlerService, authService AuthService) *HTTPHandler {
 }
 
 func (h *HTTPHandler) ListPromptTemplates(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(auth.SessionCookieName)
-	if err != nil {
-		http.Error(w, "missing session", http.StatusUnauthorized)
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
-	if err != nil || authCtx == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+	authCtx := &auth.CurrentUserContext{
+		TenantID: tenantID,
+		User:     &auth.User{ID: userID},
 	}
 	templates, err := h.service.ListTemplates(r.Context(), authCtx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHandlerError(w, err)
 		return
 	}
 	
@@ -52,19 +54,19 @@ func (h *HTTPHandler) ListPromptTemplates(w http.ResponseWriter, r *http.Request
 }
 
 func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(auth.SessionCookieName)
-	if err != nil {
-		http.Error(w, "missing session", http.StatusUnauthorized)
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
-	if err != nil || authCtx == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+	authCtx := &auth.CurrentUserContext{
+		TenantID: tenantID,
+		User:     &auth.User{ID: userID},
 	}
 	var req gen.CreatePromptTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	
@@ -98,7 +100,7 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 		Variables:    variables,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeHandlerError(w, err)
 		return
 	}
 	
@@ -106,32 +108,32 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) ApplyPromptTemplate(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(auth.SessionCookieName)
-	if err != nil {
-		http.Error(w, "missing session", http.StatusUnauthorized)
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	authCtx, err := h.authService.GetCurrentUserContext(r.Context(), cookie.Value)
-	if err != nil || authCtx == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+	authCtx := &auth.CurrentUserContext{
+		TenantID: tenantID,
+		User:     &auth.User{ID: userID},
 	}
 	
 	idStr := chi.URLParam(r, "id")
 	
 	if idStr == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing id")
 		return
 	}
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	
 	err = h.service.ApplyTemplate(r.Context(), id, authCtx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHandlerError(w, err)
 		return
 	}
 	
@@ -144,6 +146,31 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	if data != nil {
 		json.NewEncoder(w).Encode(data)
 	}
+}
+
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, ErrorResponse{Error: message})
+}
+
+func writeHandlerError(w http.ResponseWriter, err error) {
+	msg := err.Error()
+	if msg == "unauthorized" || strings.Contains(msg, "does not belong to this team") {
+		writeError(w, http.StatusForbidden, msg)
+		return
+	}
+	if strings.Contains(msg, "no rows in result set") || msg == "not found" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if strings.Contains(msg, "team_id is required") || strings.Contains(msg, "not defined in variables") || strings.Contains(msg, "defined but not used") {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "internal server error")
 }
 
 // DTO helpers
