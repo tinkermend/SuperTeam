@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-06-28 23:14 完成了「任务编排模板库」的全栈开发，包括 OpenAPI 契约、后台 SQLC 和服务、控制平面 API 路由、前端模板选择器组件和插入表单的对接集成。
+
 ### Changed
 
 - 2026-06-28 03:26：项目管理详情默认视图收敛为项目负责人主循环：前置当前需求、当前执行、最新结果、待负责人处理、当前阻塞、项目负责人组和项目服务池；路由决策、协调任务、执行摘要、转派请求、协调线程、Dispatch gate 技术详情、治理和归档入口统一折叠到“高级项目事实”。默认事件流改为负责人可读动态，避免泄漏 `route_decision` 等内部协调对象。验证：`corepack pnpm --filter ./apps/web run test -- src/features/projects/index.test.tsx`、`corepack pnpm --filter ./apps/web run typecheck`、`git diff --check` 通过；真实 Web 连接真实 Control Plane 打开带 dispatch gate 的项目，默认视图业务标签可见、内部标签折叠隐藏，展开高级事实后内部面板可见且无横向溢出。

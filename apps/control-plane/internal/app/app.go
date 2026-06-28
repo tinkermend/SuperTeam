@@ -23,6 +23,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/prompttemplate"
 	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
@@ -71,6 +72,7 @@ type Container struct {
 	ProjectHandler                 *project.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
 	CapabilityHandler              *capability.HTTPHandler
+	PromptTemplateHandler          *prompttemplate.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
 	TeamLendingHandler             *teamlending.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
@@ -567,6 +569,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
 	capabilityHandler := capability.NewHandler(capabilityService)
+	promptTemplateRepository := prompttemplate.NewPgRepository(q)
+	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
+	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
 	tenantHandler := tenant.NewHandler(tenantService)
 	teamLendingHandler := teamlending.NewHandler(teamLendingService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
@@ -580,6 +585,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
 	server.SetCapabilityHandler(capabilityHandler)
+	server.SetPromptTemplateHandler(promptTemplateHandler)
 
 	return &Container{
 		Queries:                        q,
@@ -613,6 +619,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		ProjectHandler:                 projectHandler,
 		SkillHandler:                   skillHandler,
 		CapabilityHandler:              capabilityHandler,
+		PromptTemplateHandler:          promptTemplateHandler,
 		TenantHandler:                  tenantHandler,
 		TeamLendingHandler:             teamLendingHandler,
 		AuthzHandler:                   authzCenterHandler,
