@@ -201,6 +201,75 @@ func TestService_CreateTemplate(t *testing.T) {
 			t.Fatalf("expected unused variable error, got %v", err)
 		}
 	})
+
+	t.Run("fail team scope missing teamID for admin", func(t *testing.T) {
+		input := CreateTemplateInput{
+			TenantID:     tenantID,
+			Title:        "Title",
+			Content:      "Content",
+			Scope:        "TEAM",
+			CreatorID:    userID,
+			IsAdmin:      true,
+		}
+
+		_, err := svc.CreateTemplate(ctx, input)
+		if err == nil || err.Error() != "team_id is required for TEAM scope" {
+			t.Fatalf("expected missing team_id error, got %v", err)
+		}
+	})
+
+	t.Run("success team scope for admin without team access", func(t *testing.T) {
+		resolver.listUserProjectTeamScopesFn = func(ctx context.Context, tID, uID uuid.UUID) ([]auth.UserProjectTeamScopeSummary, error) {
+			return []auth.UserProjectTeamScopeSummary{{TeamID: uuid.New()}}, nil // different team
+		}
+		repo.createFn = func(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
+			return PromptTemplate{ID: uuid.New(), Title: input.Title}, nil
+		}
+
+		input := CreateTemplateInput{
+			TenantID:     tenantID,
+			Title:        "Title",
+			Content:      "Content",
+			Scope:        "TEAM",
+			TeamID:       &teamID,
+			CreatorID:    userID,
+			IsAdmin:      true,
+		}
+
+		res, err := svc.CreateTemplate(ctx, input)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.Title != "Title" {
+			t.Fatalf("unexpected result: %+v", res)
+		}
+	})
+
+	t.Run("success clearing TeamID for non-TEAM scope", func(t *testing.T) {
+		repo.createFn = func(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
+			if input.TeamID != nil {
+				t.Fatalf("expected TeamID to be nil, got %v", *input.TeamID)
+			}
+			return PromptTemplate{ID: uuid.New(), Title: input.Title}, nil
+		}
+
+		input := CreateTemplateInput{
+			TenantID:     tenantID,
+			Title:        "Title",
+			Content:      "Content",
+			Scope:        "GLOBAL",
+			TeamID:       &teamID,
+			CreatorID:    userID,
+		}
+
+		res, err := svc.CreateTemplate(ctx, input)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.Title != "Title" {
+			t.Fatalf("unexpected result: %+v", res)
+		}
+	})
 }
 
 func TestService_ApplyTemplate(t *testing.T) {

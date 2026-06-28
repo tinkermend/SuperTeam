@@ -48,26 +48,30 @@ func (s *Service) ListTemplates(ctx context.Context, authCtx *auth.CurrentUserCo
 }
 
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (PromptTemplate, error) {
-	if input.Scope == "TEAM" && !input.IsAdmin {
+	if input.Scope == "TEAM" {
 		if input.TeamID == nil || *input.TeamID == uuid.Nil {
 			return PromptTemplate{}, errors.New("team_id is required for TEAM scope")
 		}
 
-		scopes, err := s.resolver.ListUserProjectTeamScopes(ctx, input.TenantID, input.CreatorID)
-		if err != nil {
-			return PromptTemplate{}, fmt.Errorf("failed to list user team scopes: %w", err)
-		}
+		if !input.IsAdmin {
+			scopes, err := s.resolver.ListUserProjectTeamScopes(ctx, input.TenantID, input.CreatorID)
+			if err != nil {
+				return PromptTemplate{}, fmt.Errorf("failed to list user team scopes: %w", err)
+			}
 
-		found := false
-		for _, scope := range scopes {
-			if scope.TeamID == *input.TeamID {
-				found = true
-				break
+			found := false
+			for _, scope := range scopes {
+				if scope.TeamID == *input.TeamID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return PromptTemplate{}, errors.New("unauthorized team_id: user does not belong to this team")
 			}
 		}
-		if !found {
-			return PromptTemplate{}, errors.New("unauthorized team_id: user does not belong to this team")
-		}
+	} else {
+		input.TeamID = nil
 	}
 
 	// Validate variables ↔ {{tokens}}
