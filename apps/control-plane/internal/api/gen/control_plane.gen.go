@@ -3576,9 +3576,13 @@ type PromptTemplate struct {
 
 // PromptTemplateVariable defines model for PromptTemplateVariable.
 type PromptTemplateVariable struct {
-	Description string `json:"description"`
-	Name        string `json:"name"`
-	Required    bool   `json:"required"`
+	Default     *string   `json:"default,omitempty"`
+	Description string    `json:"description"`
+	Label       *string   `json:"label,omitempty"`
+	Name        string    `json:"name"`
+	Options     *[]string `json:"options,omitempty"`
+	Required    bool      `json:"required"`
+	Type        *string   `json:"type,omitempty"`
 }
 
 // ProviderSession defines model for ProviderSession.

@@ -3732,10 +3732,20 @@ components:
       properties:
         name:
           type: string
+        label:
+          type: string
+        type:
+          type: string
         description:
           type: string
         required:
           type: boolean
+        default:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
     CreatePromptTemplateRequest:
       type: object
       required:
