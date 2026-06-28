@@ -2147,6 +2147,22 @@ type TaskEvent struct {
 	Metadata []byte `json:"metadata"`
 }
 
+type TaskPromptTemplate struct {
+	ID           uuid.UUID          `json:"id"`
+	TenantID     uuid.UUID          `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Content      string             `json:"content"`
+	CategoryCode string             `json:"category_code"`
+	Scope        string             `json:"scope"`
+	TeamID       uuid.NullUUID      `json:"team_id"`
+	CreatorID    uuid.UUID          `json:"creator_id"`
+	Variables    []byte             `json:"variables"`
+	UseCount     int32              `json:"use_count"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 任务运行记录表
 type TaskRun struct {
 	// 任务运行主键 UUID

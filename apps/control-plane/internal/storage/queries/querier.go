@@ -97,6 +97,7 @@ type Querier interface {
 	CreateProjectTaskDispatchGateResult(ctx context.Context, arg CreateProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	CreateProjectTaskResult(ctx context.Context, arg CreateProjectTaskResultParams) (ProjectTaskResult, error)
 	CreateProjectTransferRequest(ctx context.Context, arg CreateProjectTransferRequestParams) (ProjectTransferRequest, error)
+	CreatePromptTemplate(ctx context.Context, arg CreatePromptTemplateParams) (TaskPromptTemplate, error)
 	CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error)
 	CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, arg CreateProviderSessionEventIfAbsentParams) (CreateProviderSessionEventIfAbsentRow, error)
@@ -234,6 +235,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
+	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
 	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
 	LinkProjectTaskDispatchGateAttempt(ctx context.Context, arg LinkProjectTaskDispatchGateAttemptParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context, arg LinkProjectTaskDispatchGateDecisionRequestParams) (ProjectTaskDispatchGateResult, error)
@@ -308,6 +310,7 @@ type Querier interface {
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
+	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
 	ListRequiredToolsForNode(ctx context.Context, arg ListRequiredToolsForNodeParams) ([]string, error)
