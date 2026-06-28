@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -118,6 +119,7 @@ func (h *HTTPHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Reques
 		Variables:    variables,
 	})
 	if err != nil {
+		log.Printf("ERROR creating template: %v", err)
 		writeHandlerError(w, err)
 		return
 	}

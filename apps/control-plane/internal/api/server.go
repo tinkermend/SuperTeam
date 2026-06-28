@@ -415,6 +415,15 @@ func (s *Server) registerRoutes() {
 			})
 		}
 
+		if s.promptTemplateHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/templates", s.promptTemplateHandler.ListPromptTemplates)
+				r.Post("/templates", s.promptTemplateHandler.CreatePromptTemplate)
+				r.Post("/templates/{id}/apply", s.promptTemplateHandler.ApplyPromptTemplate)
+			})
+		}
+
 		r.Route("/runtime", func(r chi.Router) {
 			r.Get("/nodes", s.runtimeHandler.ListNodes)
 			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)
