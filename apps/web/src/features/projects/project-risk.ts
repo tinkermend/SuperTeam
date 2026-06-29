@@ -78,6 +78,7 @@ const failedTaskStatuses = new Set(["failed", "error", "blocked", "cancelled"]);
 const waitingHumanTaskStatuses = new Set([
   "waiting_human",
   "pending_human",
+  "pending_review",
   "approval_required",
 ]);
 const healthyCoordinationStatuses = new Set([

@@ -98,6 +98,32 @@ describe("project risk model", () => {
     expect(summary.reasons.map((reason) => reason.type)).toContain("human_decision");
   });
 
+  it("marks pending review tasks as human decisions without approval flag", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-pending-review"),
+      tasks: [
+        task("project-pending-review", {
+          requires_human_approval: false,
+          status: "pending_review",
+        }),
+      ],
+    });
+
+    expect(summary.level).toBe("danger");
+    expect(summary.requiresHuman).toBe(true);
+    expect(summary.primaryReason?.type).toBe("human_decision");
+    expect(summary.reasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "tasks",
+          type: "human_decision",
+        }),
+      ]),
+    );
+  });
+
   it("marks failed tasks as execution failure danger", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],
