@@ -3260,6 +3260,87 @@ func TestCreateProjectRequiresMandatoryFields(t *testing.T) {
 	}
 }
 
+func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	credentialRef := "  git-credential:primary  "
+
+	unbound, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      ownerID,
+		Name:             "无仓库绑定项目",
+		Goal:             "验证仓库绑定可为空",
+		HumanOwnerUserID: ownerID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectRepoBindingStatusUnbound, unbound.Project.RepoBinding.Status)
+	require.Empty(t, unbound.Project.RepoBinding.URL)
+	require.Empty(t, unbound.Project.RepoBinding.DefaultBranch)
+	require.Nil(t, unbound.Project.RepoBinding.GitCredentialRef)
+	require.Empty(t, unbound.Project.RepoBinding.Scope)
+
+	bound, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      ownerID,
+		Name:             "仓库绑定项目",
+		Goal:             "验证仓库绑定归一化",
+		HumanOwnerUserID: ownerID,
+		RepoBinding: &ProjectRepoBindingInput{
+			URL:              "  https://github.com/acme/superteam.git  ",
+			DefaultBranch:    "  main  ",
+			GitCredentialRef: &credentialRef,
+			Scope:            []string{" apps/control-plane ", "", "apps/web", "apps/control-plane"},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectRepoBindingStatusBound, bound.Project.RepoBinding.Status)
+	require.Equal(t, "https://github.com/acme/superteam.git", bound.Project.RepoBinding.URL)
+	require.Equal(t, "main", bound.Project.RepoBinding.DefaultBranch)
+	require.NotNil(t, bound.Project.RepoBinding.GitCredentialRef)
+	require.Equal(t, "git-credential:primary", *bound.Project.RepoBinding.GitCredentialRef)
+	require.Equal(t, []string{"apps/control-plane", "apps/web"}, bound.Project.RepoBinding.Scope)
+}
+
+func TestCreateProjectRejectsPartialRepoBinding(t *testing.T) {
+	service, err := NewService(newMemoryRepository())
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+
+	for _, tc := range []struct {
+		name        string
+		repoBinding *ProjectRepoBindingInput
+	}{
+		{
+			name: "missing default branch",
+			repoBinding: &ProjectRepoBindingInput{
+				URL: "https://github.com/acme/superteam.git",
+			},
+		},
+		{
+			name: "missing url",
+			repoBinding: &ProjectRepoBindingInput{
+				DefaultBranch: "main",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := service.CreateProject(context.Background(), CreateProjectRequest{
+				TenantID:         tenantID,
+				ActorUserID:      ownerID,
+				Name:             "部分仓库绑定项目",
+				Goal:             "验证仓库绑定必须完整",
+				HumanOwnerUserID: ownerID,
+				RepoBinding:      tc.repoBinding,
+			})
+			require.ErrorIs(t, err, ErrInvalidProject)
+		})
+	}
+}
+
 func TestCreateProjectRejectsCoordinatorMemberRole(t *testing.T) {
 	service, err := NewService(newMemoryRepository())
 	if err != nil {
@@ -6320,6 +6401,55 @@ func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectConfigPreservesAndClearsRepoBinding(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	credentialRef := "git-credential:primary"
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "仓库绑定项目",
+		Goal:             "验证更新语义",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+		RepoBinding: ProjectRepoBinding{
+			Status:           ProjectRepoBindingStatusBound,
+			URL:              "https://github.com/acme/superteam.git",
+			DefaultBranch:    "main",
+			GitCredentialRef: &credentialRef,
+			Scope:            []string{"apps/control-plane"},
+		},
+	}
+
+	preserved, err := service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: ownerID,
+		Name:        "仓库绑定项目改名",
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectRepoBindingStatusBound, preserved.RepoBinding.Status)
+	require.Equal(t, "https://github.com/acme/superteam.git", preserved.RepoBinding.URL)
+	require.Equal(t, []string{"apps/control-plane"}, preserved.RepoBinding.Scope)
+
+	cleared, err := service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: ownerID,
+		RepoBinding: &ProjectRepoBindingInput{},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectRepoBindingStatusUnbound, cleared.RepoBinding.Status)
+	require.Empty(t, cleared.RepoBinding.URL)
+	require.Empty(t, cleared.RepoBinding.DefaultBranch)
+	require.Nil(t, cleared.RepoBinding.GitCredentialRef)
+	require.Empty(t, cleared.RepoBinding.Scope)
+}
+
 func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{policySignalErr: errors.New("temporal unavailable")}
@@ -6790,6 +6920,7 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		CoordinationPolicy:     req.CoordinationPolicy,
 		ApprovalPolicy:         req.ApprovalPolicy,
 		EvidencePolicy:         req.EvidencePolicy,
+		RepoBinding:            repoBindingFromInput(req.RepoBinding),
 	}
 	r.projects[project.ID] = project
 	return project, nil
@@ -6853,8 +6984,27 @@ func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdatePr
 	if req.EvidencePolicy != nil {
 		project.EvidencePolicy = req.EvidencePolicy
 	}
+	if req.RepoBinding != nil {
+		project.RepoBinding = repoBindingFromInput(req.RepoBinding)
+	}
 	r.projects[project.ID] = project
 	return project, nil
+}
+
+func repoBindingFromInput(input *ProjectRepoBindingInput) ProjectRepoBinding {
+	if input == nil {
+		return unboundProjectRepoBinding()
+	}
+	if strings.TrimSpace(input.URL) == "" && strings.TrimSpace(input.DefaultBranch) == "" && trimmedStringPtr(input.GitCredentialRef) == nil && len(normalizeProjectRepoBindingScope(input.Scope)) == 0 {
+		return unboundProjectRepoBinding()
+	}
+	return ProjectRepoBinding{
+		Status:           ProjectRepoBindingStatusBound,
+		URL:              input.URL,
+		DefaultBranch:    input.DefaultBranch,
+		GitCredentialRef: input.GitCredentialRef,
+		Scope:            append([]string(nil), input.Scope...),
+	}
 }
 
 func (r *memoryRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {

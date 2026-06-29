@@ -403,7 +403,12 @@ INSERT INTO projects (
     coordination_status,
     coordination_policy,
     approval_policy,
-    evidence_policy
+    evidence_policy,
+    repo_url,
+    repo_default_branch,
+    repo_git_credential_ref,
+    repo_scope,
+    repo_binding_status
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -419,7 +424,12 @@ INSERT INTO projects (
     $12::varchar,
     COALESCE($13::jsonb, '{}'::jsonb),
     COALESCE($14::jsonb, '{}'::jsonb),
-    COALESCE($15::jsonb, '{}'::jsonb)
+    COALESCE($15::jsonb, '{}'::jsonb),
+    $16::text,
+    $17::varchar,
+    $18::varchar,
+    COALESCE($19::jsonb, '[]'::jsonb),
+    COALESCE($20::varchar, 'unbound')
 ) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
@@ -439,6 +449,11 @@ type CreateProjectParams struct {
 	CoordinationPolicy     []byte        `json:"coordination_policy"`
 	ApprovalPolicy         []byte        `json:"approval_policy"`
 	EvidencePolicy         []byte        `json:"evidence_policy"`
+	RepoUrl                pgtype.Text   `json:"repo_url"`
+	RepoDefaultBranch      pgtype.Text   `json:"repo_default_branch"`
+	RepoGitCredentialRef   pgtype.Text   `json:"repo_git_credential_ref"`
+	RepoScope              []byte        `json:"repo_scope"`
+	RepoBindingStatus      pgtype.Text   `json:"repo_binding_status"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -458,6 +473,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.CoordinationPolicy,
 		arg.ApprovalPolicy,
 		arg.EvidencePolicy,
+		arg.RepoUrl,
+		arg.RepoDefaultBranch,
+		arg.RepoGitCredentialRef,
+		arg.RepoScope,
+		arg.RepoBindingStatus,
 	)
 	var i Project
 	err := row.Scan(
@@ -6815,26 +6835,52 @@ SET
     coordination_policy = COALESCE($8::jsonb, coordination_policy),
     approval_policy = COALESCE($9::jsonb, approval_policy),
     evidence_policy = COALESCE($10::jsonb, evidence_policy),
+    repo_url = CASE
+        WHEN $11::varchar IS NULL THEN repo_url
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $12::text
+    END,
+    repo_default_branch = CASE
+        WHEN $11::varchar IS NULL THEN repo_default_branch
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $13::varchar
+    END,
+    repo_git_credential_ref = CASE
+        WHEN $11::varchar IS NULL THEN repo_git_credential_ref
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $14::varchar
+    END,
+    repo_scope = CASE
+        WHEN $11::varchar IS NULL THEN repo_scope
+        WHEN $11::varchar = 'unbound' THEN '[]'::jsonb
+        ELSE COALESCE($15::jsonb, '[]'::jsonb)
+    END,
+    repo_binding_status = COALESCE($11::varchar, repo_binding_status),
     updated_at = NOW()
-WHERE tenant_id = $11::uuid
-  AND id = $12::uuid
+WHERE tenant_id = $16::uuid
+  AND id = $17::uuid
   AND archived_at IS NULL
 RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
 type UpdateProjectParams struct {
-	Name               pgtype.Text   `json:"name"`
-	Description        pgtype.Text   `json:"description"`
-	Goal               pgtype.Text   `json:"goal"`
-	Status             pgtype.Text   `json:"status"`
-	HumanOwnerUserID   uuid.NullUUID `json:"human_owner_user_id"`
-	LeaderUserID       uuid.NullUUID `json:"leader_user_id"`
-	AcceptanceUserID   uuid.NullUUID `json:"acceptance_user_id"`
-	CoordinationPolicy []byte        `json:"coordination_policy"`
-	ApprovalPolicy     []byte        `json:"approval_policy"`
-	EvidencePolicy     []byte        `json:"evidence_policy"`
-	TenantID           uuid.UUID     `json:"tenant_id"`
-	ID                 uuid.UUID     `json:"id"`
+	Name                 pgtype.Text   `json:"name"`
+	Description          pgtype.Text   `json:"description"`
+	Goal                 pgtype.Text   `json:"goal"`
+	Status               pgtype.Text   `json:"status"`
+	HumanOwnerUserID     uuid.NullUUID `json:"human_owner_user_id"`
+	LeaderUserID         uuid.NullUUID `json:"leader_user_id"`
+	AcceptanceUserID     uuid.NullUUID `json:"acceptance_user_id"`
+	CoordinationPolicy   []byte        `json:"coordination_policy"`
+	ApprovalPolicy       []byte        `json:"approval_policy"`
+	EvidencePolicy       []byte        `json:"evidence_policy"`
+	RepoBindingStatus    pgtype.Text   `json:"repo_binding_status"`
+	RepoUrl              pgtype.Text   `json:"repo_url"`
+	RepoDefaultBranch    pgtype.Text   `json:"repo_default_branch"`
+	RepoGitCredentialRef pgtype.Text   `json:"repo_git_credential_ref"`
+	RepoScope            []byte        `json:"repo_scope"`
+	TenantID             uuid.UUID     `json:"tenant_id"`
+	ID                   uuid.UUID     `json:"id"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
@@ -6849,6 +6895,11 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.CoordinationPolicy,
 		arg.ApprovalPolicy,
 		arg.EvidencePolicy,
+		arg.RepoBindingStatus,
+		arg.RepoUrl,
+		arg.RepoDefaultBranch,
+		arg.RepoGitCredentialRef,
+		arg.RepoScope,
 		arg.TenantID,
 		arg.ID,
 	)

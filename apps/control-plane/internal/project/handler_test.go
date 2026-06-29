@@ -88,6 +88,86 @@ func TestProjectHandlerMapsUnauthorizedTeamScope(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerMapsCreateRepoBinding(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	credentialRef := "git-credential:primary"
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{
+		"name":"仓库绑定项目",
+		"goal":"验证 HTTP 创建映射",
+		"human_owner_user_id":"`+ownerID.String()+`",
+		"repo_binding":{
+			"url":"https://github.com/acme/superteam.git",
+			"default_branch":"main",
+			"git_credential_ref":"`+credentialRef+`",
+			"scope":["apps/control-plane","apps/web"]
+		}
+	}`))
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.CreateProject(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected create to return 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.createReq.TenantID != tenantID || service.createReq.ActorUserID != actorID {
+		t.Fatalf("expected create context ids, got %#v", service.createReq)
+	}
+	if service.createReq.RepoBinding == nil || service.createReq.RepoBinding.URL != "https://github.com/acme/superteam.git" || service.createReq.RepoBinding.DefaultBranch != "main" {
+		t.Fatalf("expected repo binding request to be forwarded, got %#v", service.createReq.RepoBinding)
+	}
+	var body struct {
+		Project projectResponse `json:"project"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if body.Project.RepoBinding.Status != ProjectRepoBindingStatusBound || body.Project.RepoBinding.URL != "https://github.com/acme/superteam.git" {
+		t.Fatalf("expected bound repo binding response, got %#v", body.Project.RepoBinding)
+	}
+}
+
+func TestProjectHandlerMapsUpdateRepoBinding(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+projectID.String()+"/config", strings.NewReader(`{
+		"repo_binding":{
+			"url":"https://github.com/acme/superteam.git",
+			"default_branch":"develop",
+			"scope":["apps/runtime-agent"]
+		}
+	}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.UpdateProjectConfig(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected update to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.updateConfigReq.TenantID != tenantID || service.updateConfigReq.ProjectID != projectID || service.updateConfigReq.ActorUserID != actorID {
+		t.Fatalf("expected update context/path ids, got %#v", service.updateConfigReq)
+	}
+	if service.updateConfigReq.RepoBinding == nil || service.updateConfigReq.RepoBinding.DefaultBranch != "develop" {
+		t.Fatalf("expected repo binding update to be forwarded, got %#v", service.updateConfigReq.RepoBinding)
+	}
+	var body projectResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if body.RepoBinding.Status != ProjectRepoBindingStatusBound || body.RepoBinding.DefaultBranch != "develop" {
+		t.Fatalf("expected repo binding in update response, got %#v", body.RepoBinding)
+	}
+}
+
 func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{submitDemandErr: ErrProjectArchived}
@@ -1485,6 +1565,7 @@ func withRuntimeContext(req *http.Request, tenantID, runtimeNodeID uuid.UUID) *h
 type handlerTestService struct {
 	createReq                         CreateProjectRequest
 	createErr                         error
+	updateConfigReq                   UpdateProjectConfigRequest
 	submitDemandReq                   SubmitProjectDemandRequest
 	submitDemandErr                   error
 	workflowInstances                 []WorkflowInstanceSummary
@@ -1536,6 +1617,7 @@ func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjec
 	project := testProject(req.TenantID, uuid.New(), req.HumanOwnerUserID)
 	project.Name = req.Name
 	project.Goal = req.Goal
+	project.RepoBinding = repoBindingFromInput(req.RepoBinding)
 	return &CreateProjectResult{Project: project}, nil
 }
 
@@ -1554,7 +1636,9 @@ func (s *handlerTestService) ListWorkflowInstances(ctx context.Context, req List
 }
 
 func (s *handlerTestService) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error) {
+	s.updateConfigReq = req
 	project := testProject(req.TenantID, req.ProjectID, uuid.New())
+	project.RepoBinding = repoBindingFromInput(req.RepoBinding)
 	return &project, nil
 }
 
@@ -1893,6 +1977,7 @@ func testProject(tenantID, projectID, ownerID uuid.UUID) Project {
 		CoordinationPolicy:     map[string]any{},
 		ApprovalPolicy:         map[string]any{},
 		EvidencePolicy:         map[string]any{},
+		RepoBinding:            unboundProjectRepoBinding(),
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}

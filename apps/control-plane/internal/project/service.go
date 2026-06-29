@@ -94,6 +94,11 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	if err := s.validateProjectTeamScopes(ctx, req); err != nil {
 		return nil, err
 	}
+	repoBinding, err := normalizeProjectRepoBindingInput(req.RepoBinding)
+	if err != nil {
+		return nil, err
+	}
+	req.RepoBinding = projectRepoBindingInputFromBinding(repoBinding)
 
 	projectID := uuid.New()
 	workflowID := fmt.Sprintf("project-coordinator:%s", projectID)
@@ -381,6 +386,13 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 			return nil, err
 		}
 	}
+	if req.RepoBinding != nil {
+		repoBinding, err := normalizeProjectRepoBindingInput(req.RepoBinding)
+		if err != nil {
+			return nil, err
+		}
+		req.RepoBinding = projectRepoBindingInputFromBinding(repoBinding)
+	}
 
 	updated, err := s.repository.UpdateProjectConfig(ctx, req)
 	if err != nil {
@@ -418,6 +430,70 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 		return nil, err
 	}
 	return &updated, nil
+}
+
+func normalizeProjectRepoBindingInput(input *ProjectRepoBindingInput) (ProjectRepoBinding, error) {
+	if input == nil {
+		return unboundProjectRepoBinding(), nil
+	}
+	url := strings.TrimSpace(input.URL)
+	defaultBranch := strings.TrimSpace(input.DefaultBranch)
+	credentialRef := trimmedStringPtr(input.GitCredentialRef)
+	scope := normalizeProjectRepoBindingScope(input.Scope)
+	if url == "" && defaultBranch == "" && credentialRef == nil && len(scope) == 0 {
+		return unboundProjectRepoBinding(), nil
+	}
+	if url == "" || defaultBranch == "" {
+		return ProjectRepoBinding{}, ErrInvalidProject
+	}
+	return ProjectRepoBinding{
+		Status:           ProjectRepoBindingStatusBound,
+		URL:              url,
+		DefaultBranch:    defaultBranch,
+		GitCredentialRef: credentialRef,
+		Scope:            scope,
+	}, nil
+}
+
+func unboundProjectRepoBinding() ProjectRepoBinding {
+	return ProjectRepoBinding{Status: ProjectRepoBindingStatusUnbound, Scope: []string{}}
+}
+
+func projectRepoBindingInputFromBinding(binding ProjectRepoBinding) *ProjectRepoBindingInput {
+	if binding.Status != ProjectRepoBindingStatusBound {
+		return &ProjectRepoBindingInput{Scope: []string{}}
+	}
+	return &ProjectRepoBindingInput{
+		URL:              binding.URL,
+		DefaultBranch:    binding.DefaultBranch,
+		GitCredentialRef: binding.GitCredentialRef,
+		Scope:            append([]string(nil), binding.Scope...),
+	}
+}
+
+func normalizeProjectRepoBindingScope(values []string) []string {
+	seen := map[string]bool{}
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+func trimmedStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error) {
