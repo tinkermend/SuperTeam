@@ -382,3 +382,13 @@ func (a *recordingAuthorizer) Check(ctx context.Context, req authz.CheckRequest)
 	}
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
 }
+
+func (a *recordingAuthorizer) CheckBulkTeamActions(_ context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if !a.allowed {
+		return nil, nil
+	}
+	return req.Actions, nil
+}
