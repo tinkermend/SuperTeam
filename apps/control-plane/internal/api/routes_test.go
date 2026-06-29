@@ -2105,6 +2105,22 @@ func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.Crea
 	return nil
 }
 
+func (r *routeAuthRepo) CreateCaptchaChallenge(ctx context.Context, params auth.CreateCaptchaChallengeParams) (*auth.CaptchaChallengeRecord, error) {
+	return nil, auth.ErrCaptchaInvalid
+}
+
+func (r *routeAuthRepo) GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*auth.CaptchaChallengeRecord, error) {
+	return nil, auth.ErrCaptchaInvalid
+}
+
+func (r *routeAuthRepo) ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error {
+	return auth.ErrCaptchaInvalid
+}
+
+func (r *routeAuthRepo) DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error {
+	return nil
+}
+
 func (r *routeAuthRepo) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]auth.UserProjectTeamScopeSummary, error) {
 	r.scopeTeamIDs[userID] = append([]uuid.UUID(nil), teamIDs...)
 	return r.ListUserProjectTeamScopes(ctx, tenantID, userID)

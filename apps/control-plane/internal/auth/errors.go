@@ -17,4 +17,8 @@ var (
 
 	// ErrUnauthorized 未授权
 	ErrUnauthorized = errors.New("unauthorized")
+
+	ErrCaptchaInvalid = errors.New("captcha invalid")
+	ErrCaptchaExpired = errors.New("captcha expired")
+	ErrCaptchaUsed    = errors.New("captcha already used")
 )

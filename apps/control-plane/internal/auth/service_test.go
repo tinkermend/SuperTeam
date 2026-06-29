@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,11 +18,20 @@ type mockRepo struct {
 	sessions            map[string]*Session
 	loginLogs           []LoginLog
 	operationLogs       []mockOperationLog
+	captchaChallenges   map[uuid.UUID]*CaptchaChallengeRecord
+	captchaConsumeCalls []uuid.UUID
+	lastCaptchaCleanup  *time.Time
+	failCaptchaGet      error
+	failCaptchaConsume  error
+	failCaptchaCleanup  error
+	failLoginLogInTx    bool
 	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
 	invalidTeamIDs      map[uuid.UUID]bool
 	failScopeReplace    error
 	lastListUsersFilter ListUsersFilter
 	lastLoginLogFilter  ListLoginLogsFilter
+	transactionCalls    int
+	inTransaction       bool
 }
 
 type recordingProjectTeamScopeSyncer struct {
@@ -48,14 +58,15 @@ func (s *recordingProjectTeamScopeSyncer) SyncProjectTeamScope(ctx context.Conte
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{
-		users:          make(map[string]*User),
-		usersByID:      make(map[uuid.UUID]*User),
-		runtimeTokens:  make(map[string]*RuntimeToken),
-		sessions:       make(map[string]*Session),
-		loginLogs:      []LoginLog{},
-		operationLogs:  []mockOperationLog{},
-		scopeTeamIDs:   make(map[uuid.UUID][]uuid.UUID),
-		invalidTeamIDs: make(map[uuid.UUID]bool),
+		users:             make(map[string]*User),
+		usersByID:         make(map[uuid.UUID]*User),
+		runtimeTokens:     make(map[string]*RuntimeToken),
+		sessions:          make(map[string]*Session),
+		loginLogs:         []LoginLog{},
+		operationLogs:     []mockOperationLog{},
+		captchaChallenges: make(map[uuid.UUID]*CaptchaChallengeRecord),
+		scopeTeamIDs:      make(map[uuid.UUID][]uuid.UUID),
+		invalidTeamIDs:    make(map[uuid.UUID]bool),
 	}
 }
 
@@ -70,6 +81,9 @@ type mockOperationLog struct {
 }
 
 func (m *mockRepo) WithTransaction(ctx context.Context, fn func(Repository) error) error {
+	m.transactionCalls++
+	m.inTransaction = true
+	defer func() { m.inTransaction = false }()
 	users := make(map[string]*User, len(m.users))
 	for key, value := range m.users {
 		copied := *value
@@ -84,10 +98,18 @@ func (m *mockRepo) WithTransaction(ctx context.Context, fn func(Repository) erro
 	for key, value := range m.scopeTeamIDs {
 		scopeTeamIDs[key] = append([]uuid.UUID(nil), value...)
 	}
+	captchaChallenges := make(map[uuid.UUID]*CaptchaChallengeRecord, len(m.captchaChallenges))
+	for key, value := range m.captchaChallenges {
+		copied := *value
+		captchaChallenges[key] = &copied
+	}
+	captchaConsumeCalls := append([]uuid.UUID(nil), m.captchaConsumeCalls...)
 	if err := fn(m); err != nil {
 		m.users = users
 		m.usersByID = usersByID
 		m.scopeTeamIDs = scopeTeamIDs
+		m.captchaChallenges = captchaChallenges
+		m.captchaConsumeCalls = captchaConsumeCalls
 		return err
 	}
 	return nil
@@ -218,6 +240,9 @@ func (m *mockRepo) UpdateSessionLastSeen(ctx context.Context, token string, last
 }
 
 func (m *mockRepo) CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error {
+	if m.failLoginLogInTx && m.inTransaction {
+		return errors.New("login log called inside transaction")
+	}
 	m.loginLogs = append(m.loginLogs, LoginLog{
 		ID:            uuid.New(),
 		EventType:     params.EventType,
@@ -256,6 +281,66 @@ func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperatio
 		Action:       params.Action,
 		Result:       params.Result,
 	})
+	return nil
+}
+
+func (m *mockRepo) CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error) {
+	record := &CaptchaChallengeRecord{
+		ID:         params.ID,
+		TenantID:   params.TenantID,
+		AnswerHash: params.AnswerHash,
+		ExpiresAt:  params.ExpiresAt,
+		ClientIP:   params.ClientIP,
+		UserAgent:  params.UserAgent,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if record.ID == uuid.Nil {
+		record.ID = uuid.New()
+	}
+	m.captchaChallenges[record.ID] = record
+	return record, nil
+}
+
+func (m *mockRepo) GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*CaptchaChallengeRecord, error) {
+	if m.failCaptchaGet != nil {
+		return nil, m.failCaptchaGet
+	}
+	record, ok := m.captchaChallenges[id]
+	if !ok {
+		return nil, ErrCaptchaInvalid
+	}
+	copied := *record
+	return &copied, nil
+}
+
+func (m *mockRepo) ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error {
+	m.captchaConsumeCalls = append(m.captchaConsumeCalls, id)
+	if m.failCaptchaConsume != nil {
+		return m.failCaptchaConsume
+	}
+	record, ok := m.captchaChallenges[id]
+	if !ok {
+		return ErrCaptchaInvalid
+	}
+	if record.UsedAt != nil {
+		return ErrCaptchaUsed
+	}
+	record.UsedAt = &usedAt
+	record.UpdatedAt = usedAt
+	return nil
+}
+
+func (m *mockRepo) DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error {
+	m.lastCaptchaCleanup = &before
+	if m.failCaptchaCleanup != nil {
+		return m.failCaptchaCleanup
+	}
+	for id, record := range m.captchaChallenges {
+		if record.ExpiresAt.Before(before) {
+			delete(m.captchaChallenges, id)
+		}
+	}
 	return nil
 }
 
@@ -753,6 +838,281 @@ func TestListCurrentUserLoginLogsFiltersToActor(t *testing.T) {
 	}
 	if repo.lastLoginLogFilter.Limit != 20 || repo.lastLoginLogFilter.Offset != 0 {
 		t.Fatalf("expected normalized pagination 20/0, got %#v", repo.lastLoginLogFilter)
+	}
+}
+
+func TestCreateCaptchaChallengeReturnsImageAndPersistsHash(t *testing.T) {
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		TTL:    5 * time.Minute,
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	challenge, err := svc.CreateCaptcha(context.Background(), "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("create captcha: %v", err)
+	}
+	if challenge.ID == uuid.Nil {
+		t.Fatal("expected captcha id")
+	}
+	if !strings.HasPrefix(challenge.ImageDataURL, "data:image/png;base64,") {
+		t.Fatalf("expected png data url, got %q", challenge.ImageDataURL)
+	}
+	if !challenge.ExpiresAt.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("expected ttl expiry, got %s", challenge.ExpiresAt)
+	}
+	if repo.lastCaptchaCleanup == nil || !repo.lastCaptchaCleanup.Equal(now) {
+		t.Fatalf("expected captcha cleanup at %s, got %v", now, repo.lastCaptchaCleanup)
+	}
+	record := repo.captchaChallenges[challenge.ID]
+	if record == nil {
+		t.Fatal("expected persisted challenge")
+	}
+	if record.AnswerHash == "" || len(record.AnswerHash) < 32 {
+		t.Fatalf("expected answer hash, got %q", record.AnswerHash)
+	}
+}
+
+func TestCreateCaptchaContinuesWhenExpiredCleanupFails(t *testing.T) {
+	repo := newMockRepo()
+	repo.failCaptchaCleanup = errors.New("cleanup unavailable")
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		TTL:    5 * time.Minute,
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	challenge, err := svc.CreateCaptcha(context.Background(), "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("create captcha should ignore cleanup failure: %v", err)
+	}
+	if challenge.ID == uuid.Nil {
+		t.Fatal("expected captcha id")
+	}
+	if repo.captchaChallenges[challenge.ID] == nil {
+		t.Fatal("expected persisted challenge")
+	}
+	if repo.lastCaptchaCleanup == nil || !repo.lastCaptchaCleanup.Equal(now) {
+		t.Fatalf("expected cleanup attempt at %s, got %v", now, repo.lastCaptchaCleanup)
+	}
+}
+
+func TestCaptchaCodeGenerationIncludesDigitAndLetter(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		code, err := generateCaptchaCode()
+		if err != nil {
+			t.Fatalf("generate code: %v", err)
+		}
+		if len(code) != 4 {
+			t.Fatalf("expected four characters, got %q", code)
+		}
+		if !captchaHasDigit(code) || !captchaHasLetter(code) {
+			t.Fatalf("expected digit and letter in %q", code)
+		}
+	}
+}
+
+func TestValidateAndConsumeCaptchaIsCaseInsensitiveAndOneTime(t *testing.T) {
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	captchaID := uuid.New()
+	record := &CaptchaChallengeRecord{
+		ID:         captchaID,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
+		ExpiresAt:  now.Add(time.Minute),
+	}
+	repo.captchaChallenges[record.ID] = record
+
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), record.ID, "a7k2", "admin", "127.0.0.1", "agent"); err != nil {
+		t.Fatalf("validate captcha: %v", err)
+	}
+	if repo.transactionCalls != 1 {
+		t.Fatalf("expected validation in one transaction, got %d", repo.transactionCalls)
+	}
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), record.ID, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaUsed) {
+		t.Fatalf("expected used captcha, got %v", err)
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaInvalid)
+}
+
+func TestValidateAndConsumeCaptchaConsumesExpiredAndWrongAnswers(t *testing.T) {
+	repo := newMockRepo()
+	repo.failLoginLogInTx = true
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	expiredID := uuid.New()
+	repo.captchaChallenges[expiredID] = &CaptchaChallengeRecord{
+		ID:         expiredID,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(expiredID.String(), "A7K2"),
+		ExpiresAt:  now.Add(-time.Second),
+	}
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), expiredID, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaExpired) {
+		t.Fatalf("expected expired captcha, got %v", err)
+	}
+	if repo.captchaChallenges[expiredID].UsedAt == nil {
+		t.Fatal("expected expired captcha to be consumed")
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaExpired)
+
+	wrongID := uuid.New()
+	repo.captchaChallenges[wrongID] = &CaptchaChallengeRecord{
+		ID:         wrongID,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(wrongID.String(), "B7K2"),
+		ExpiresAt:  now.Add(time.Minute),
+	}
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), wrongID, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaInvalid) {
+		t.Fatalf("expected invalid captcha, got %v", err)
+	}
+	if repo.captchaChallenges[wrongID].UsedAt == nil {
+		t.Fatal("expected wrong-answer captcha to be consumed")
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaInvalid)
+	if len(repo.captchaConsumeCalls) != 2 || repo.captchaConsumeCalls[0] != expiredID || repo.captchaConsumeCalls[1] != wrongID {
+		t.Fatalf("expected expired and wrong captcha consume calls, got %#v", repo.captchaConsumeCalls)
+	}
+}
+
+func TestValidateAndConsumeCaptchaPropagatesInfrastructureErrors(t *testing.T) {
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	getErr := errors.New("captcha store unavailable")
+	repo.failCaptchaGet = getErr
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), uuid.New(), "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, getErr) {
+		t.Fatalf("expected get infrastructure error, got %v", err)
+	}
+	if len(repo.loginLogs) != 0 {
+		t.Fatalf("expected no captcha failure login log for infrastructure error, got %#v", repo.loginLogs)
+	}
+
+	repo.failCaptchaGet = nil
+	consumeErr := errors.New("captcha consume write failed")
+	repo.failCaptchaConsume = consumeErr
+	captchaID := uuid.New()
+	repo.captchaChallenges[captchaID] = &CaptchaChallengeRecord{
+		ID:         captchaID,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
+		ExpiresAt:  now.Add(time.Minute),
+	}
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), captchaID, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, consumeErr) {
+		t.Fatalf("expected consume infrastructure error, got %v", err)
+	}
+}
+
+func TestValidateAndConsumeCaptchaRejectsNilIDBeforeLookup(t *testing.T) {
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), uuid.Nil, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaInvalid) {
+		t.Fatalf("expected invalid captcha, got %v", err)
+	}
+	if repo.transactionCalls != 0 {
+		t.Fatalf("expected nil captcha id to be rejected before transaction, got %d", repo.transactionCalls)
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaInvalid)
+}
+
+func TestValidateAndConsumeCaptchaLogsUsedFailureAfterTransaction(t *testing.T) {
+	repo := newMockRepo()
+	repo.failLoginLogInTx = true
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	captchaID := uuid.New()
+	usedAt := now.Add(-time.Second)
+	repo.captchaChallenges[captchaID] = &CaptchaChallengeRecord{
+		ID:         captchaID,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
+		ExpiresAt:  now.Add(time.Minute),
+		UsedAt:     &usedAt,
+	}
+
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), captchaID, "A7K2", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaUsed) {
+		t.Fatalf("expected used captcha, got %v", err)
+	}
+	if repo.transactionCalls != 1 {
+		t.Fatalf("expected validation in one transaction, got %d", repo.transactionCalls)
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaInvalid)
+}
+
+func TestValidateAndConsumeCaptchaRejectsInvalidAnswerLengthBeforeLookup(t *testing.T) {
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if err := svc.ValidateAndConsumeCaptcha(context.Background(), uuid.New(), "A7K25", "admin", "127.0.0.1", "agent"); !errors.Is(err, ErrCaptchaInvalid) {
+		t.Fatalf("expected invalid captcha, got %v", err)
+	}
+	if repo.transactionCalls != 0 {
+		t.Fatalf("expected invalid answer length to be rejected before transaction, got %d", repo.transactionCalls)
+	}
+	if len(repo.captchaConsumeCalls) != 0 {
+		t.Fatalf("expected no consume for invalid answer length, got %#v", repo.captchaConsumeCalls)
+	}
+}
+
+func assertLastLoginFailureReason(t *testing.T, repo *mockRepo, reason string) {
+	t.Helper()
+	if len(repo.loginLogs) == 0 {
+		t.Fatalf("expected login failure log with reason %q", reason)
+	}
+	log := repo.loginLogs[len(repo.loginLogs)-1]
+	if log.EventType != LoginEventFailed || log.Result != LoginResultFailed || log.FailureReason != reason {
+		t.Fatalf("expected login failure reason %q, got %#v", reason, log)
 	}
 }
 

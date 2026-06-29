@@ -40,6 +40,10 @@ type Repository interface {
 	CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error
 	ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error)
 	CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error
+	CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error)
+	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*CaptchaChallengeRecord, error)
+	ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error
+	DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error
 	ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error)
 	ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error)
 	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
@@ -50,6 +54,41 @@ type Repository interface {
 type Service struct {
 	repo                   Repository
 	projectTeamScopeSyncer ProjectTeamScopeSyncer
+	captchaSecret          []byte
+	captchaTTL             time.Duration
+	now                    func() time.Time
+}
+
+type ServiceOption func(*Service) error
+
+type CaptchaOptions struct {
+	Secret string
+	TTL    time.Duration
+	Now    func() time.Time
+}
+
+func WithCaptchaOptions(options CaptchaOptions) ServiceOption {
+	return func(s *Service) error {
+		if options.TTL <= 0 {
+			options.TTL = 5 * time.Minute
+		}
+		if options.Now == nil {
+			options.Now = func() time.Time { return time.Now().UTC() }
+		}
+		secret := strings.TrimSpace(options.Secret)
+		if secret == "" {
+			token, err := GenerateToken()
+			if err != nil {
+				return err
+			}
+			secret = token
+			log.Println("auth captcha secret is not configured; using process-local secret")
+		}
+		s.captchaSecret = []byte(secret)
+		s.captchaTTL = options.TTL
+		s.now = options.Now
+		return nil
+	}
 }
 
 type ProjectTeamScopeSyncer interface {
@@ -62,11 +101,24 @@ type CurrentUserContext struct {
 	TeamID   *uuid.UUID
 }
 
-func NewService(repo Repository) (*Service, error) {
+func NewService(repo Repository, options ...ServiceOption) (*Service, error) {
 	if repo == nil {
 		return nil, errors.New("repository is required")
 	}
-	return &Service{repo: repo}, nil
+	svc := &Service{
+		repo:       repo,
+		captchaTTL: 5 * time.Minute,
+		now:        func() time.Time { return time.Now().UTC() },
+	}
+	if err := WithCaptchaOptions(CaptchaOptions{})(svc); err != nil {
+		return nil, err
+	}
+	for _, option := range options {
+		if err := option(svc); err != nil {
+			return nil, err
+		}
+	}
+	return svc, nil
 }
 
 func (s *Service) SetProjectTeamScopeSyncer(syncer ProjectTeamScopeSyncer) {

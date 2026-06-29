@@ -68,7 +68,36 @@ const (
 
 	LoginFailureInvalidCredentials = "invalid_credentials"
 	LoginFailureUserDisabled       = "user_disabled"
+	LoginFailureCaptchaInvalid     = "captcha_invalid"
+	LoginFailureCaptchaExpired     = "captcha_expired"
 )
+
+type CaptchaChallenge struct {
+	ID           uuid.UUID
+	ImageDataURL string
+	ExpiresAt    time.Time
+}
+
+type CaptchaChallengeRecord struct {
+	ID         uuid.UUID
+	TenantID   uuid.UUID
+	AnswerHash string
+	ExpiresAt  time.Time
+	UsedAt     *time.Time
+	ClientIP   string
+	UserAgent  string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type CreateCaptchaChallengeParams struct {
+	ID         uuid.UUID
+	TenantID   uuid.UUID
+	AnswerHash string
+	ExpiresAt  time.Time
+	ClientIP   string
+	UserAgent  string
+}
 
 const (
 	OperationModuleAuth                  = "auth"
