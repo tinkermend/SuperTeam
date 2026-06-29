@@ -24,12 +24,12 @@ impl OpenCodeProvider {
     pub fn build_command(&self, request: &ProviderRequest) -> Command {
         let mut command = Command::new(&self.bin_path);
         command.current_dir(&request.workspace_path);
-        apply_environment(&mut command, request);
         if let Some(agent_home) = &request.agent_home_dir {
             let config_dir = agent_home.join(".opencode");
             command.env("OPENCODE_CONFIG_DIR", &config_dir);
             command.env("OPENCODE_CONFIG", config_dir.join("opencode.json"));
         }
+        apply_environment(&mut command, request);
         command.arg("run").arg("--format").arg("json");
         command.arg("--dir").arg(&request.workspace_path);
         if let Some(model) = &request.model {

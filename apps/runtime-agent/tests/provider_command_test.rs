@@ -25,6 +25,17 @@ fn request_with_agent_home(agent_home_dir: PathBuf) -> ProviderRequest {
     }
 }
 
+fn request_with_agent_home_and_env(
+    agent_home_dir: PathBuf,
+    environment: BTreeMap<String, String>,
+) -> ProviderRequest {
+    ProviderRequest {
+        agent_home_dir: Some(agent_home_dir),
+        environment,
+        ..request(None, false)
+    }
+}
+
 #[test]
 fn claude_new_turn_pins_explicit_session_id() {
     let provider = ClaudeProvider::new("claude");
@@ -153,6 +164,35 @@ fn codex_uses_agent_home_for_codex_home_and_workspace_for_cd() {
 }
 
 #[test]
+fn codex_preserves_explicit_codex_home_environment() {
+    let provider = CodexProvider::new("codex");
+    let command = provider.build_command(&request_with_agent_home_and_env(
+        PathBuf::from("/tmp/agent-home"),
+        BTreeMap::from([(
+            "CODEX_HOME".to_string(),
+            "/tmp/explicit-codex-home".to_string(),
+        )]),
+    ));
+    let envs: std::collections::HashMap<_, _> = command
+        .as_std()
+        .get_envs()
+        .filter_map(|(key, value)| {
+            value.map(|value| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.to_string_lossy().to_string(),
+                )
+            })
+        })
+        .collect();
+
+    assert_eq!(
+        envs.get("CODEX_HOME").map(String::as_str),
+        Some("/tmp/explicit-codex-home")
+    );
+}
+
+#[test]
 fn opencode_uses_agent_home_config_and_workspace_dir() {
     let provider = OpenCodeProvider::new("opencode");
     let command =
@@ -186,6 +226,45 @@ fn opencode_uses_agent_home_config_and_workspace_dir() {
     assert_eq!(
         envs.get("OPENCODE_CONFIG").map(String::as_str),
         Some("/tmp/agent-home/.opencode/opencode.json")
+    );
+}
+
+#[test]
+fn opencode_preserves_explicit_config_environment() {
+    let provider = OpenCodeProvider::new("opencode");
+    let command = provider.build_command(&request_with_agent_home_and_env(
+        PathBuf::from("/tmp/agent-home"),
+        BTreeMap::from([
+            (
+                "OPENCODE_CONFIG_DIR".to_string(),
+                "/tmp/explicit-opencode".to_string(),
+            ),
+            (
+                "OPENCODE_CONFIG".to_string(),
+                "/tmp/explicit-opencode/custom.json".to_string(),
+            ),
+        ]),
+    ));
+    let envs: std::collections::HashMap<_, _> = command
+        .as_std()
+        .get_envs()
+        .filter_map(|(key, value)| {
+            value.map(|value| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.to_string_lossy().to_string(),
+                )
+            })
+        })
+        .collect();
+
+    assert_eq!(
+        envs.get("OPENCODE_CONFIG_DIR").map(String::as_str),
+        Some("/tmp/explicit-opencode")
+    );
+    assert_eq!(
+        envs.get("OPENCODE_CONFIG").map(String::as_str),
+        Some("/tmp/explicit-opencode/custom.json")
     );
 }
 
