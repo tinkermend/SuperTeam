@@ -30,6 +30,13 @@ impl ClaudeProvider {
         command.arg("--verbose");
         command.arg("--include-partial-messages");
         command.arg("--permission-mode").arg("bypassPermissions");
+        if let Some(agent_home) = &request.agent_home_dir {
+            let mcp_config = agent_home.join(".mcp.json");
+            if mcp_config.exists() {
+                command.arg("--mcp-config").arg(mcp_config);
+                command.arg("--strict-mcp-config");
+            }
+        }
         if request.continue_session {
             if let Some(session_id) = &request.session_id {
                 command.arg("--resume").arg(session_id);

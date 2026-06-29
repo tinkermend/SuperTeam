@@ -13,6 +13,7 @@ async fn store_records_provider_session_events_and_replays_them() {
             RunSpec {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
+                agent_home_dir: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,
@@ -101,6 +102,7 @@ async fn store_preserves_runtime_command_metadata_on_snapshot() {
             RunSpec {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
+                agent_home_dir: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,
@@ -126,6 +128,7 @@ async fn store_does_not_cancel_completed_runs() {
             RunSpec {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
+                agent_home_dir: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,

@@ -130,6 +130,7 @@ async fn run_provider(args: RunArgs) -> anyhow::Result<()> {
     let request = ProviderRequest {
         prompt: args.prompt,
         workspace_path: args.workspace,
+        agent_home_dir: None,
         session_id: args.session_id,
         continue_session: args.continue_session,
         model: args.model,

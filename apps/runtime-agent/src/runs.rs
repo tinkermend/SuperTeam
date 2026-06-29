@@ -40,6 +40,8 @@ pub struct RuntimeCommandRunContext {
 pub struct RunSpec {
     pub provider_kind: String,
     pub workspace_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_home_dir: Option<PathBuf>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -75,6 +77,8 @@ pub struct RunSnapshot {
     pub id: String,
     pub provider_kind: String,
     pub workspace_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_home_dir: Option<PathBuf>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -130,6 +134,7 @@ impl RuntimeRunStore {
             id: id.clone(),
             provider_kind: spec.provider_kind,
             workspace_path: spec.workspace_path,
+            agent_home_dir: spec.agent_home_dir,
             prompt: spec.prompt,
             session_id: spec.session_id,
             continue_session: spec.continue_session,

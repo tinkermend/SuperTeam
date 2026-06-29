@@ -27,6 +27,9 @@ impl CodexProvider {
         let mut command = Command::new(&self.bin_path);
         command.current_dir(&request.workspace_path);
         apply_environment(&mut command, request);
+        if let Some(agent_home) = &request.agent_home_dir {
+            command.env("CODEX_HOME", agent_home.join(".codex"));
+        }
         command.arg("exec");
         if request.continue_session {
             command.arg("resume");
@@ -36,6 +39,7 @@ impl CodexProvider {
                 command.arg("--last");
             }
             command.arg("--json");
+            command.arg("--cd").arg(&request.workspace_path);
             command.arg("--dangerously-bypass-approvals-and-sandbox");
             command.arg("--skip-git-repo-check");
         } else {

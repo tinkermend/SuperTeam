@@ -23,6 +23,7 @@ fn request(workspace_path: &Path) -> ProviderRequest {
     ProviderRequest {
         prompt: "hello".to_string(),
         workspace_path: workspace_path.to_path_buf(),
+        agent_home_dir: None,
         session_id: Some("session-1".to_string()),
         continue_session: false,
         model: None,

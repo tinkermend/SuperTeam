@@ -10,10 +10,18 @@ fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest 
     ProviderRequest {
         prompt: "hello".to_string(),
         workspace_path: PathBuf::from("/tmp/workspace"),
+        agent_home_dir: None,
         session_id: session_id.map(ToString::to_string),
         continue_session,
         model: Some("model-a".to_string()),
         environment: BTreeMap::from([("GH_TOKEN".to_string(), "plain-token".to_string())]),
+    }
+}
+
+fn request_with_agent_home(agent_home_dir: PathBuf) -> ProviderRequest {
+    ProviderRequest {
+        agent_home_dir: Some(agent_home_dir),
+        ..request(None, false)
     }
 }
 
@@ -90,6 +98,95 @@ fn providers_inject_runtime_environment() {
             Some("plain-token")
         );
     }
+}
+
+#[test]
+fn claude_uses_agent_home_mcp_config_when_present() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mcp_config = tmp.path().join(".mcp.json");
+    std::fs::write(&mcp_config, "{}").unwrap();
+    let provider = ClaudeProvider::new("claude");
+    let command = provider.build_command(&request_with_agent_home(tmp.path().to_path_buf()));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert!(args.windows(2).any(|window| {
+        window[0] == "--mcp-config" && window[1] == mcp_config.to_string_lossy()
+    }));
+    assert!(args.iter().any(|arg| arg == "--strict-mcp-config"));
+}
+
+#[test]
+fn codex_uses_agent_home_for_codex_home_and_workspace_for_cd() {
+    let provider = CodexProvider::new("codex");
+    let command =
+        provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+    let envs: std::collections::HashMap<_, _> = command
+        .as_std()
+        .get_envs()
+        .filter_map(|(key, value)| {
+            value.map(|value| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.to_string_lossy().to_string(),
+                )
+            })
+        })
+        .collect();
+
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--cd", "/tmp/workspace"])
+    );
+    assert_eq!(
+        envs.get("CODEX_HOME").map(String::as_str),
+        Some("/tmp/agent-home/.codex")
+    );
+}
+
+#[test]
+fn opencode_uses_agent_home_config_and_workspace_dir() {
+    let provider = OpenCodeProvider::new("opencode");
+    let command =
+        provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+    let envs: std::collections::HashMap<_, _> = command
+        .as_std()
+        .get_envs()
+        .filter_map(|(key, value)| {
+            value.map(|value| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.to_string_lossy().to_string(),
+                )
+            })
+        })
+        .collect();
+
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--dir", "/tmp/workspace"])
+    );
+    assert_eq!(
+        envs.get("OPENCODE_CONFIG_DIR").map(String::as_str),
+        Some("/tmp/agent-home/.opencode")
+    );
+    assert_eq!(
+        envs.get("OPENCODE_CONFIG").map(String::as_str),
+        Some("/tmp/agent-home/.opencode/opencode.json")
+    );
 }
 
 #[test]
@@ -174,7 +271,10 @@ fn codex_resume_uses_resume_subcommand_and_bypass_flag() {
             .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox")
     );
     assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
-    assert!(!args.iter().any(|arg| arg == "--cd"));
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--cd", "/tmp/workspace"])
+    );
     assert!(
         args.windows(2)
             .any(|window| window == ["--model", "model-a"])
@@ -196,6 +296,10 @@ fn codex_resume_without_session_uses_last_so_prompt_is_not_session_id() {
     assert_eq!(args[1], "resume");
     assert!(args.iter().any(|arg| arg == "--last"));
     assert!(args.iter().any(|arg| arg == "--json"));
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--cd", "/tmp/workspace"])
+    );
     assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
     assert_eq!(args.last().map(String::as_str), Some("hello"));
 }
