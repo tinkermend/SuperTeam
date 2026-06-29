@@ -247,12 +247,10 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
         <V3Table>
           <thead>
             <tr>
-              <V3Th className="min-w-[260px]">项目</V3Th>
-              <V3Th className="min-w-36">风险</V3Th>
-              <V3Th className="min-w-32">状态</V3Th>
-              <V3Th className="min-w-36">负责人</V3Th>
-              <V3Th className="min-w-[220px]">处置落点</V3Th>
-              <V3Th className="min-w-32 text-right">操作</V3Th>
+              <V3Th className="min-w-[20rem]">项目</V3Th>
+              <V3Th className="min-w-[18rem]">风险与落点</V3Th>
+              <V3Th className="min-w-[7.5rem]">状态</V3Th>
+              <V3Th className="min-w-[8.5rem] text-right">操作</V3Th>
             </tr>
           </thead>
           <tbody>
@@ -267,7 +265,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             ))}
             {sortedProjects.length === 0 ? (
               <tr>
-                <V3Td colSpan={6}>
+                <V3Td colSpan={4}>
                   <V3EmptyState
                     description="调整风险筛选、搜索关键词或项目状态后重试。"
                     icon={<FolderKanban />}
@@ -305,18 +303,22 @@ export function ProjectSelectedContextPanel({
     : undefined;
 
   return (
-    <aside className="hidden min-w-0 2xl:block" aria-label="选中项目上下文">
-      <WorkSurface className="p-5">
+    <aside
+      className="hidden min-w-0 xl:block"
+      aria-label="选中项目上下文"
+      data-testid="project-selected-context-panel"
+    >
+      <WorkSurface className="p-4">
         {!project ? (
           <V3EmptyState
             description="从项目队列中选择项目后查看上下文。"
             title="选择一个项目"
           />
         ) : (
-          <div className="flex min-w-0 flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-4">
             <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="truncate text-lg font-extrabold text-v3-ink">
+                <h2 className="line-clamp-2 text-base font-extrabold leading-6 text-v3-ink">
                   {project.name}
                 </h2>
                 <p className="mt-1 truncate font-mono text-xs text-v3-ink-3">
@@ -330,7 +332,7 @@ export function ProjectSelectedContextPanel({
               </StatusPill>
             </div>
 
-            <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-4">
+            <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
               <div className="text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase">
                 主要风险
               </div>
@@ -343,15 +345,15 @@ export function ProjectSelectedContextPanel({
             </div>
 
             <dl className="grid gap-3 text-[13px]">
-              <div className="min-w-0">
+              <div className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
                 <dt className="text-v3-ink-3">负责人</dt>
-                <dd className="mt-1 truncate font-mono text-v3-ink">
+                <dd className="truncate font-mono text-v3-ink">
                   {project.human_owner_user_id || "未设置"}
                 </dd>
               </div>
-              <div className="min-w-0">
+              <div className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
                 <dt className="text-v3-ink-3">协调状态</dt>
-                <dd className="mt-1">
+                <dd>
                   <StatusPill tone={coordinationStatusTone(project.coordination_status)}>
                     {project.coordination_status || "未登记"}
                   </StatusPill>
@@ -388,7 +390,7 @@ export function ProjectSelectedContextPanel({
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-end gap-2 border-t border-v3-line pt-4">
+            <div className="flex flex-wrap justify-end gap-2 border-t border-v3-line pt-3">
               <V3Button asChild size="sm" variant="outline">
                 <Link params={{ projectId: project.id }} to="/projects/$projectId">
                   详情
@@ -419,15 +421,9 @@ function ProjectRiskQueueRow({
   selected: boolean;
 }) {
   const summary = riskSummary ?? emptyProjectRiskSummary(project);
-  const tone =
-    summary.level === "danger" || summary.state === "error"
-      ? "danger"
-      : summary.level === "warn"
-        ? "warn"
-        : undefined;
 
   return (
-    <V3Tr className={cn(selected && "[&>td]:bg-v3-brand-soft/60")} tone={tone}>
+    <V3Tr className={cn(selected && "[&>td]:bg-v3-brand-soft/60")}>
       <V3Td className="whitespace-normal">
         <button
           aria-current={selected ? "true" : undefined}
@@ -446,16 +442,25 @@ function ProjectRiskQueueRow({
             <span className="mt-0.5 block truncate font-mono text-[12px] text-v3-ink-3">
               {project.id}
             </span>
+            <span className="mt-1 block truncate text-[12px] text-v3-ink-3">
+              负责人{" "}
+              <span className="font-mono">
+                {project.human_owner_user_id || "未设置"}
+              </span>
+            </span>
           </span>
         </button>
       </V3Td>
-      <V3Td>
+      <V3Td className="whitespace-normal">
         <div className="flex min-w-0 flex-col gap-1">
           <StatusPill tone={projectRiskLevelTone(summary.level)}>
             {projectRiskLevelLabel(summary)}
           </StatusPill>
-          <span className="line-clamp-1 text-xs text-v3-ink-3">
+          <span className="line-clamp-2 text-xs text-v3-ink-3">
             {summary.primaryReason?.detail ?? summary.primaryReason?.title ?? "当前页暂无风险"}
+          </span>
+          <span className="line-clamp-1 text-[12px] text-v3-ink-2">
+            处置：{disposalTargetLabel(summary)}
           </span>
         </div>
       </V3Td>
@@ -463,16 +468,6 @@ function ProjectRiskQueueRow({
         <StatusPill tone={projectStatusTone(project.status)}>
           {projectStatusLabel(project.status)}
         </StatusPill>
-      </V3Td>
-      <V3Td>
-        <span className="block max-w-[11rem] truncate font-mono text-[12px] text-v3-ink-2">
-          {project.human_owner_user_id || "未设置"}
-        </span>
-      </V3Td>
-      <V3Td className="whitespace-normal">
-        <span className="line-clamp-2 text-[13px] leading-5 text-v3-ink-2">
-          {disposalTargetLabel(summary)}
-        </span>
       </V3Td>
       <V3Td>
         <div className="flex justify-end gap-2">

@@ -1,0 +1,1526 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>右侧菜单栏视觉方向 · SuperTeam</title>
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --shell: #f6f8fb;
+        --card: #ffffff;
+        --card-soft: #f7f8fa;
+        --ink: #0b0d12;
+        --ink-2: #697586;
+        --ink-3: #9aa4b2;
+        --line: #eef1f4;
+        --line-strong: #dfe4ea;
+        --brand: #2f5fff;
+        --brand-deep: #2348e0;
+        --brand-soft: #e9efff;
+        --ok: #15a06b;
+        --ok-soft: #e4f6ee;
+        --warn: #cf7a14;
+        --warn-soft: #fdf0db;
+        --danger: #e5484d;
+        --danger-soft: #fde8e9;
+        --artifact: #7c5cff;
+        --artifact-soft: #efeaff;
+        --mute: #64748b;
+        --mute-soft: #eef1f4;
+        --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 12px 30px rgba(16, 24, 40, .055);
+        --shadow-pop: 0 18px 48px rgba(16, 24, 40, .12);
+        --r-card: 22px;
+        --r-inner: 14px;
+        --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--shell);
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 18% 0%, rgba(47, 95, 255, .12), transparent 32%),
+          radial-gradient(circle at 92% 12%, rgba(21, 160, 107, .08), transparent 34%),
+          linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        content: "";
+        background:
+          linear-gradient(90deg, rgba(47, 95, 255, .045) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(47, 95, 255, .04) 1px, transparent 1px);
+        background-size: 34px 34px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, .92), rgba(0, 0, 0, .42) 56%, transparent);
+        pointer-events: none;
+      }
+
+      button {
+        color: inherit;
+        font: inherit;
+      }
+
+      .page {
+        width: min(1420px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 390px;
+        gap: 24px;
+        align-items: stretch;
+        margin-bottom: 24px;
+      }
+
+      .hero-main,
+      .audit-card {
+        border: 1px solid rgba(255, 255, 255, .78);
+        border-radius: var(--r-card);
+        background: rgba(255, 255, 255, .72);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(22px) saturate(1.24);
+        -webkit-backdrop-filter: blur(22px) saturate(1.24);
+      }
+
+      .hero-main {
+        position: relative;
+        overflow: hidden;
+        min-height: 238px;
+        padding: 30px;
+      }
+
+      .hero-main::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background:
+          linear-gradient(90deg, rgba(47, 95, 255, .09) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(47, 95, 255, .07) 1px, transparent 1px);
+        background-size: 38px 38px;
+        mask-image: linear-gradient(90deg, rgba(0, 0, 0, .72), transparent 72%);
+        pointer-events: none;
+      }
+
+      .hero-main > * {
+        position: relative;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--brand-deep);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .eyebrow::before {
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+        background: var(--brand);
+        box-shadow: 0 0 0 5px rgba(47, 95, 255, .11);
+        content: "";
+      }
+
+      h1 {
+        max-width: 700px;
+        margin: 18px 0 12px;
+        font-size: clamp(34px, 4vw, 54px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .hero-text {
+        max-width: 760px;
+        margin: 0;
+        color: var(--ink-2);
+        font-size: 16px;
+        line-height: 1.7;
+      }
+
+      .thesis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 26px;
+      }
+
+      .thesis-item {
+        border: 1px solid rgba(223, 228, 234, .84);
+        border-radius: 16px;
+        padding: 12px 13px;
+        background: rgba(255, 255, 255, .62);
+      }
+
+      .thesis-item strong {
+        display: block;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .thesis-item span {
+        display: block;
+        margin-top: 4px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .audit-card {
+        padding: 22px;
+      }
+
+      .audit-card h2,
+      .concept-copy h2 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .audit-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .audit-item {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .audit-index {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 11px;
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+        font-weight: 850;
+      }
+
+      .audit-item strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .audit-item span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .concepts {
+        display: grid;
+        gap: 24px;
+      }
+
+      .concept {
+        display: grid;
+        grid-template-columns: minmax(310px, 380px) minmax(0, 1fr);
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .concept-copy {
+        display: flex;
+        min-height: 620px;
+        flex-direction: column;
+        border: 1px solid rgba(255, 255, 255, .78);
+        border-radius: var(--r-card);
+        padding: 22px;
+        background: rgba(255, 255, 255, .70);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px) saturate(1.2);
+        -webkit-backdrop-filter: blur(18px) saturate(1.2);
+      }
+
+      .concept-kicker {
+        margin-bottom: 10px;
+        color: var(--brand-deep);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .concept-copy p {
+        margin: 10px 0 0;
+        color: var(--ink-2);
+        line-height: 1.72;
+      }
+
+      .principles {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .principle {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(247, 248, 250, .64);
+      }
+
+      .principle strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .principle span {
+        display: block;
+        margin-top: 4px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .fit {
+        margin-top: auto;
+        border-radius: 16px;
+        padding: 14px;
+        color: #17325f;
+        background: linear-gradient(135deg, rgba(233, 239, 255, .96), rgba(255, 255, 255, .72));
+        box-shadow: inset 0 0 0 1px rgba(47, 95, 255, .12);
+        font-size: 13px;
+        line-height: 1.62;
+      }
+
+      .stage {
+        min-height: 620px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, .78);
+        border-radius: var(--r-card);
+        background:
+          radial-gradient(circle at 30% 0%, rgba(47, 95, 255, .12), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, .80), rgba(248, 250, 252, .76));
+        box-shadow: var(--shadow);
+      }
+
+      .mock-app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        min-height: 620px;
+      }
+
+      .sidebar {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 14px;
+        height: 620px;
+        padding: 16px 14px 14px;
+        color: var(--ink-2);
+      }
+
+      .sidebar::after {
+        position: absolute;
+        inset: 0 0 0 auto;
+        width: 1px;
+        content: "";
+        background: rgba(223, 228, 234, .82);
+      }
+
+      .brand {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        min-height: 54px;
+        padding: 2px 6px 14px;
+      }
+
+      .brand-mark {
+        position: relative;
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 15px;
+        color: #fff;
+        background: linear-gradient(135deg, #5b8bff, var(--brand) 56%, var(--brand-deep));
+        box-shadow: 0 14px 26px rgba(47, 95, 255, .26);
+        font-weight: 900;
+      }
+
+      .brand-mark::before,
+      .brand-mark::after {
+        position: absolute;
+        border-radius: 999px;
+        content: "";
+      }
+
+      .brand-mark::before {
+        inset: 8px;
+        border: 1px solid rgba(255, 255, 255, .62);
+      }
+
+      .brand-mark::after {
+        width: 6px;
+        height: 6px;
+        background: #76f3d7;
+        box-shadow:
+          -12px 0 0 rgba(118, 243, 215, .76),
+          12px 0 0 rgba(118, 243, 215, .76),
+          0 -12px 0 rgba(118, 243, 215, .76),
+          0 12px 0 rgba(118, 243, 215, .76);
+      }
+
+      .brand-title {
+        overflow: hidden;
+        color: var(--brand-deep);
+        font-size: 22px;
+        font-weight: 900;
+        line-height: 1.04;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .brand-subtitle {
+        margin-top: 4px;
+        overflow: hidden;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 760;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .nav-scroll {
+        min-height: 0;
+        overflow: auto;
+        padding-right: 2px;
+        scrollbar-width: none;
+      }
+
+      .nav-scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-group {
+        margin-top: 14px;
+      }
+
+      .nav-group:first-child {
+        margin-top: 0;
+      }
+
+      .nav-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 26px;
+        padding: 0 10px;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .nav-title .line {
+        flex: 1;
+        height: 1px;
+        margin-left: 10px;
+        background: linear-gradient(90deg, rgba(223, 228, 234, .92), transparent);
+      }
+
+      .nav-item {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        min-height: 42px;
+        margin-top: 3px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        text-align: left;
+      }
+
+      .nav-icon {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        margin-left: 8px;
+        place-items: center;
+        color: currentColor;
+        font-size: 15px;
+        font-weight: 850;
+      }
+
+      .nav-label {
+        min-width: 0;
+        margin-left: 10px;
+        overflow: hidden;
+        font-size: 15px;
+        font-weight: 760;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .badge {
+        display: grid;
+        min-width: 22px;
+        height: 22px;
+        margin-left: auto;
+        margin-right: 8px;
+        place-items: center;
+        border-radius: 8px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 900;
+      }
+
+      .main-surface {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 52px;
+      }
+
+      .search {
+        display: flex;
+        align-items: center;
+        width: min(420px, 50%);
+        min-height: 40px;
+        border: 1px solid rgba(47, 95, 255, .13);
+        border-radius: 14px;
+        padding: 0 12px;
+        color: var(--ink-3);
+        background: rgba(255, 255, 255, .72);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 10px 24px rgba(39, 54, 75, .07);
+      }
+
+      .keycap {
+        margin-left: auto;
+        border: 1px solid rgba(223, 228, 234, .92);
+        border-radius: 7px;
+        padding: 2px 6px;
+        color: var(--ink-3);
+        background: rgba(255, 255, 255, .86);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .chip {
+        border: 1px solid rgba(223, 228, 234, .82);
+        border-radius: 12px;
+        padding: 8px 10px;
+        color: var(--ink-2);
+        background: rgba(255, 255, 255, .70);
+        font-weight: 760;
+      }
+
+      .content-grid {
+        display: grid;
+        grid-template-columns: 1.1fr .9fr;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .panel {
+        min-height: 186px;
+        border: 1px solid rgba(238, 241, 244, .92);
+        border-radius: 20px;
+        padding: 18px;
+        background: rgba(255, 255, 255, .78);
+        box-shadow: var(--shadow);
+      }
+
+      .panel h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .panel p {
+        margin: 8px 0 0;
+        color: var(--ink-2);
+      }
+
+      .fake-table {
+        display: grid;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .fake-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 88px 80px;
+        gap: 12px;
+        align-items: center;
+        min-height: 38px;
+        border-radius: 12px;
+        padding: 0 10px;
+        background: rgba(247, 248, 250, .78);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .status.info {
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      .status.warn {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+
+      .status.ok {
+        color: var(--ok);
+        background: var(--ok-soft);
+      }
+
+      .status.danger {
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      .mini-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .metric {
+        border: 1px solid rgba(238, 241, 244, .92);
+        border-radius: 16px;
+        padding: 13px;
+        background: rgba(247, 248, 250, .72);
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 24px;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+
+      .metric span {
+        display: block;
+        margin-top: 6px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .user-card {
+        position: relative;
+        z-index: 1;
+        margin-top: auto;
+      }
+
+      .avatar {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 13px;
+        color: #fff;
+        background: var(--brand);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .user-name,
+      .user-mail {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .user-name {
+        color: var(--ink);
+        font-weight: 850;
+      }
+
+      .user-mail {
+        margin-top: 1px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .chev {
+        margin-left: auto;
+        color: var(--ink-2);
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .concept-a .sidebar {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .68)),
+          radial-gradient(circle at 0% 0%, rgba(47, 95, 255, .12), transparent 34%);
+        box-shadow: 16px 0 44px rgba(16, 24, 40, .05);
+        backdrop-filter: blur(24px) saturate(1.22);
+        -webkit-backdrop-filter: blur(24px) saturate(1.22);
+      }
+
+      .concept-a .brand {
+        border-bottom: 1px solid rgba(223, 228, 234, .84);
+      }
+
+      .concept-a .nav-item {
+        color: var(--ink-2);
+      }
+
+      .concept-a .nav-item:hover {
+        background: rgba(255, 255, 255, .58);
+      }
+
+      .concept-a .nav-item.active {
+        color: var(--brand-deep);
+        background: rgba(233, 239, 255, .84);
+        box-shadow:
+          inset 0 0 0 1px rgba(47, 95, 255, .10),
+          0 10px 20px rgba(47, 95, 255, .055);
+      }
+
+      .concept-a .nav-item.active::before {
+        position: absolute;
+        left: 0;
+        top: 10px;
+        bottom: 10px;
+        width: 3px;
+        border-radius: 99px;
+        background: var(--brand);
+        content: "";
+      }
+
+      .concept-a .nav-item.active .nav-icon {
+        color: var(--brand);
+      }
+
+      .concept-a .badge {
+        color: var(--brand-deep);
+        background: #fff;
+        box-shadow: inset 0 0 0 1px rgba(47, 95, 255, .18);
+      }
+
+      .concept-a .user-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid rgba(223, 228, 234, .82);
+        border-radius: 18px;
+        padding: 10px;
+        background: rgba(255, 255, 255, .78);
+        box-shadow: 0 12px 26px rgba(16, 24, 40, .06);
+      }
+
+      .concept-b .stage {
+        background:
+          radial-gradient(circle at 0% 0%, rgba(47, 95, 255, .14), transparent 26%),
+          linear-gradient(180deg, rgba(248, 251, 255, .86), rgba(241, 246, 251, .76));
+      }
+
+      .concept-b .sidebar {
+        overflow: hidden;
+        background:
+          linear-gradient(90deg, rgba(47, 95, 255, .052) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(47, 95, 255, .045) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(255, 255, 255, .84), rgba(255, 255, 255, .64));
+        background-size: 28px 28px, 28px 28px, auto;
+      }
+
+      .concept-b .sidebar::before {
+        position: absolute;
+        inset: 74px 20px auto 20px;
+        height: 1px;
+        content: "";
+        background: linear-gradient(90deg, transparent, rgba(47, 95, 255, .38), transparent);
+      }
+
+      .concept-b .brand {
+        border-bottom: 0;
+      }
+
+      .concept-b .nav-title {
+        margin-top: 4px;
+      }
+
+      .concept-b .nav-item {
+        color: #526075;
+      }
+
+      .concept-b .nav-item::before {
+        position: absolute;
+        left: 20px;
+        width: 7px;
+        height: 7px;
+        border: 1px solid rgba(100, 116, 139, .34);
+        border-radius: 99px;
+        background: rgba(255, 255, 255, .78);
+        content: "";
+        opacity: 0;
+      }
+
+      .concept-b .nav-item.active {
+        color: var(--brand-deep);
+        background:
+          linear-gradient(90deg, rgba(233, 239, 255, .96), rgba(255, 255, 255, .58));
+        box-shadow: inset 0 0 0 1px rgba(47, 95, 255, .12);
+      }
+
+      .concept-b .nav-item.active::before {
+        left: 12px;
+        border-color: var(--brand);
+        background: var(--brand);
+        box-shadow: 0 0 0 5px rgba(47, 95, 255, .10);
+        opacity: 1;
+      }
+
+      .concept-b .nav-item.active .nav-icon {
+        margin-left: 18px;
+      }
+
+      .concept-b .badge {
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      .concept-b .user-card {
+        border: 1px solid rgba(47, 95, 255, .13);
+        border-radius: 18px;
+        padding: 12px;
+        background:
+          linear-gradient(135deg, rgba(233, 239, 255, .92), rgba(255, 255, 255, .72));
+      }
+
+      .concept-b .user-card-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .concept-b .node-strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 10px;
+        border-top: 1px solid rgba(47, 95, 255, .12);
+        padding-top: 9px;
+        color: var(--ink-2);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .concept-b .node-strip span:last-child {
+        color: var(--ok);
+      }
+
+      .concept-c .stage {
+        background:
+          radial-gradient(circle at 18% 6%, rgba(47, 95, 255, .14), transparent 30%),
+          radial-gradient(circle at 78% 0%, rgba(21, 160, 107, .09), transparent 30%),
+          linear-gradient(135deg, rgba(251, 252, 255, .86), rgba(238, 243, 249, .88));
+      }
+
+      .concept-c .mock-app {
+        grid-template-columns: 272px minmax(0, 1fr);
+      }
+
+      .concept-c .sidebar {
+        margin: 14px 0 14px 14px;
+        height: calc(620px - 28px);
+        border: 1px solid rgba(255, 255, 255, .76);
+        border-radius: 26px;
+        background: rgba(255, 255, 255, .48);
+        box-shadow: 0 18px 44px rgba(16, 24, 40, .08);
+        backdrop-filter: blur(28px) saturate(1.35);
+        -webkit-backdrop-filter: blur(28px) saturate(1.35);
+      }
+
+      .concept-c .sidebar::after {
+        display: none;
+      }
+
+      .concept-c .brand {
+        border-bottom: 0;
+      }
+
+      .concept-c .quick-card {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid rgba(47, 95, 255, .12);
+        border-radius: 18px;
+        padding: 10px 12px;
+        color: #17325f;
+        background:
+          linear-gradient(135deg, rgba(233, 239, 255, .90), rgba(255, 255, 255, .58));
+      }
+
+      .concept-c .quick-card strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .concept-c .quick-card span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-2);
+        font-size: 11px;
+      }
+
+      .concept-c .quick-card button {
+        border: 0;
+        border-radius: 10px;
+        padding: 7px 9px;
+        color: #fff;
+        background: var(--brand);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .concept-c .nav-item {
+        color: #556174;
+      }
+
+      .concept-c .nav-item.active {
+        color: var(--brand-deep);
+        background: rgba(255, 255, 255, .72);
+        box-shadow:
+          inset 0 0 0 1px rgba(47, 95, 255, .14),
+          0 12px 26px rgba(47, 95, 255, .075);
+      }
+
+      .concept-c .nav-item.active .nav-icon {
+        border-radius: 10px;
+        color: #fff;
+        background: var(--brand);
+      }
+
+      .concept-c .badge {
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      .concept-c .user-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid rgba(255, 255, 255, .86);
+        border-radius: 18px;
+        padding: 10px;
+        background: rgba(255, 255, 255, .64);
+      }
+
+      .concept-c .main-surface {
+        padding-left: 28px;
+      }
+
+      .concept-d .stage {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, .90), rgba(247, 249, 252, .80));
+      }
+
+      .concept-d .mock-app {
+        grid-template-columns: 236px minmax(0, 1fr);
+      }
+
+      .concept-d .sidebar {
+        gap: 10px;
+        background: #ffffff;
+        box-shadow: 10px 0 30px rgba(16, 24, 40, .035);
+      }
+
+      .concept-d .brand {
+        min-height: 48px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .concept-d .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+      }
+
+      .concept-d .brand-title {
+        font-size: 19px;
+      }
+
+      .concept-d .brand-subtitle {
+        font-size: 11px;
+      }
+
+      .concept-d .nav-group {
+        margin-top: 10px;
+      }
+
+      .concept-d .nav-title {
+        min-height: 22px;
+        font-size: 11px;
+      }
+
+      .concept-d .nav-item {
+        min-height: 36px;
+        margin-top: 2px;
+        border-radius: 10px;
+        color: #5f6b7a;
+      }
+
+      .concept-d .nav-icon {
+        width: 24px;
+        height: 24px;
+        margin-left: 8px;
+        font-size: 13px;
+      }
+
+      .concept-d .nav-label {
+        margin-left: 8px;
+        font-size: 14px;
+        font-weight: 740;
+      }
+
+      .concept-d .nav-item.active {
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      .concept-d .nav-item.active::before {
+        position: absolute;
+        left: 0;
+        top: 8px;
+        bottom: 8px;
+        width: 3px;
+        border-radius: 999px;
+        background: var(--brand);
+        content: "";
+      }
+
+      .concept-d .badge {
+        height: 20px;
+        min-width: 20px;
+        margin-right: 8px;
+        color: var(--brand-deep);
+        background: #fff;
+        box-shadow: inset 0 0 0 1px rgba(47, 95, 255, .16);
+        font-size: 11px;
+      }
+
+      .concept-d .ops-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        padding: 0 4px;
+      }
+
+      .concept-d .ops-chip {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 7px 4px;
+        text-align: center;
+        background: var(--card-soft);
+      }
+
+      .concept-d .ops-chip strong {
+        display: block;
+        color: var(--ink);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .concept-d .ops-chip span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-size: 10px;
+      }
+
+      .concept-d .user-card {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border-top: 1px solid var(--line);
+        padding: 12px 8px 0;
+      }
+
+      @media (max-width: 1120px) {
+        .hero,
+        .concept {
+          grid-template-columns: 1fr;
+        }
+
+        .concept-copy {
+          min-height: auto;
+        }
+
+        .fit {
+          margin-top: 18px;
+        }
+      }
+
+      @media (max-width: 820px) {
+        .page {
+          width: min(100% - 24px, 620px);
+          padding-top: 18px;
+        }
+
+        .hero-main,
+        .audit-card,
+        .concept-copy {
+          padding: 18px;
+        }
+
+        .thesis {
+          grid-template-columns: 1fr;
+        }
+
+        .stage {
+          overflow-x: auto;
+        }
+
+        .mock-app {
+          width: 820px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <div class="hero-main">
+          <div class="eyebrow">SuperTeam 侧边菜单视觉探索</div>
+          <h1>背景要高级，但更关键的是让导航像控制平面。</h1>
+          <p class="hero-text">
+            当前截图的问题不只是底色平。菜单项、分组、激活态和底部账号区都在同一层级上，品牌识别主要靠蓝色文字。
+            下面的四个方向都保留 v3 Soft-Flat 的浅色、蓝色主强调和 236-248px 导航密度，只改变壳层背景、状态表达和菜单组织。
+          </p>
+          <div class="thesis">
+            <div class="thesis-item"><strong>环境层</strong><span>用低对比网格、冷灰 wash 和玻璃面提升质感。</span></div>
+            <div class="thesis-item"><strong>当前位置</strong><span>激活态加左侧锚点、柔蓝底和稳定计数。</span></div>
+            <div class="thesis-item"><strong>分组节奏</strong><span>标题更轻、间距更克制，降低长菜单疲劳。</span></div>
+            <div class="thesis-item"><strong>账号区</strong><span>从普通按钮变成身份与节点状态的小面板。</span></div>
+          </div>
+        </div>
+
+        <aside class="audit-card">
+          <h2>截图里的可优化点</h2>
+          <div class="audit-list">
+            <div class="audit-item">
+              <div class="audit-index">1</div>
+              <div><strong>背景太像默认浅灰</strong><span>缺少 SuperTeam 的“节点、网络、中枢”母题，右侧边缘也没有壳层深度。</span></div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-index">2</div>
+              <div><strong>激活态信息少</strong><span>只有大块柔蓝底，未明确告诉用户“当前位置”还是“待处理状态”。</span></div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-index">3</div>
+              <div><strong>图标和文字过重</strong><span>图标、标题、菜单文字尺寸接近，长列表扫读会显得笨重。</span></div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-index">4</div>
+              <div><strong>底部账号区被截断</strong><span>账号卡需要固定高度、清晰层级和邮箱省略策略，避免遮挡菜单。</span></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <main class="concepts">
+        <section id="concept-a" class="concept concept-a">
+          <div class="concept-copy">
+            <div class="concept-kicker">方向 A · Acrylic Shell</div>
+            <h2>最稳的高级感：保持现有结构，升级背景和激活态。</h2>
+            <p>这是最接近当前产品的方向。它用轻玻璃白面、冷灰渐变和柔和右侧阴影提升质感，但菜单密度、分组顺序和当前视觉纪律都不大改。</p>
+            <div class="principles">
+              <div class="principle"><strong>适合直接落地</strong><span>对现有 shadcn sidebar 改动小，风险最低。</span></div>
+              <div class="principle"><strong>选中态更像定位</strong><span>柔蓝底保留，增加 3px 品牌色竖条和细边框。</span></div>
+              <div class="principle"><strong>账号区收成白面卡</strong><span>头像、姓名、邮箱和展开入口明确分层。</span></div>
+            </div>
+            <div class="fit">建议：如果目标是“先让现在的菜单变高级”，优先用 A 做第一版。</div>
+          </div>
+
+          <div class="stage">
+            <div class="mock-app">
+              <aside class="sidebar">
+                <div class="brand">
+                  <div class="brand-mark">ST</div>
+                  <div>
+                    <div class="brand-title">矩枢平台</div>
+                    <div class="brand-subtitle">新炬网络</div>
+                  </div>
+                </div>
+                <nav class="nav-scroll" aria-label="方向 A 菜单">
+                  <div class="nav-group">
+                    <div class="nav-title">工作区 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">▦</span><span class="nav-label">工作台</span></button>
+                    <button class="nav-item active"><span class="nav-icon">▱</span><span class="nav-label">收件箱</span><span class="badge">4</span></button>
+                    <button class="nav-item"><span class="nav-icon">▷</span><span class="nav-label">任务发起</span></button>
+                    <button class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">项目管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌘</span><span class="nav-label">数字员工</span></button>
+                    <button class="nav-item"><span class="nav-icon">◫</span><span class="nav-label">技能管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♙</span><span class="nav-label">团队管理</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">核心导航 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⌁</span><span class="nav-label">流程编排</span></button>
+                    <button class="nav-item"><span class="nav-icon">◷</span><span class="nav-label">自动化任务</span></button>
+                    <button class="nav-item"><span class="nav-icon">✣</span><span class="nav-label">外部能力</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌬</span><span class="nav-label">MCP 管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▢</span><span class="nav-label">协作集成</span></button>
+                    <button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label">审批中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">▤</span><span class="nav-label">Runtime 节点</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">平台管理 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⚿</span><span class="nav-label">权限中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">¥</span><span class="nav-label">成本管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♟</span><span class="nav-label">用户管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▥</span><span class="nav-label">审计日志</span></button>
+                  </div>
+                </nav>
+                <div class="user-card">
+                  <div class="avatar">开发</div>
+                  <div style="min-width:0">
+                    <div class="user-name">开发管理员</div>
+                    <div class="user-mail">admin@superteam.local</div>
+                  </div>
+                  <div class="chev">⌄</div>
+                </div>
+              </aside>
+              <section class="main-surface">
+                <div class="topbar">
+                  <div class="search">搜索或输入命令 <span class="keycap">⌘ K</span></div>
+                  <div class="spacer"></div>
+                  <button class="chip">今日</button>
+                  <button class="chip">通知 3</button>
+                </div>
+                <div class="content-grid">
+                  <div class="panel">
+                    <h3>收件箱</h3>
+                    <p>人类审批、补证请求和高风险动作聚合在这里。</p>
+                    <div class="fake-table">
+                      <div class="fake-row"><strong>生产发布审批</strong><span class="status danger">高风险</span><span>2m</span></div>
+                      <div class="fake-row"><strong>客户侧 Runtime 接入</strong><span class="status warn">待补证</span><span>18m</span></div>
+                      <div class="fake-row"><strong>验收结论确认</strong><span class="status info">待处理</span><span>1h</span></div>
+                    </div>
+                  </div>
+                  <div class="panel">
+                    <h3>今日状态</h3>
+                    <div class="mini-metrics">
+                      <div class="metric"><strong>4</strong><span>待处理</span></div>
+                      <div class="metric"><strong>2</strong><span>高风险</span></div>
+                      <div class="metric"><strong>11</strong><span>已完成</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="concept-b" class="concept concept-b">
+          <div class="concept-copy">
+            <div class="concept-kicker">方向 B · Topology Grid</div>
+            <h2>更有平台识别度：把“矩枢”的网络语言放进侧栏。</h2>
+            <p>这个方向最强调“控制平面”。背景不是普通渐变，而是低对比节点网格。选中项像被路由选中的节点，适合让产品从普通后台变成 AI 调度平台。</p>
+            <div class="principles">
+              <div class="principle"><strong>品牌母题更强</strong><span>节点、细线、柔蓝路径构成专属识别。</span></div>
+              <div class="principle"><strong>状态和位置分离</strong><span>当前位置用节点锚点，数字角标仍表达待处理数量。</span></div>
+              <div class="principle"><strong>底部加入运行信号</strong><span>账号区带 Runtime/Provider 健康摘要。</span></div>
+            </div>
+            <div class="fit">建议：如果你想让菜单“不像模板后台”，B 是最有辨识度的方向。</div>
+          </div>
+
+          <div class="stage">
+            <div class="mock-app">
+              <aside class="sidebar">
+                <div class="brand">
+                  <div class="brand-mark">ST</div>
+                  <div>
+                    <div class="brand-title">矩枢平台</div>
+                    <div class="brand-subtitle">Control Plane</div>
+                  </div>
+                </div>
+                <nav class="nav-scroll" aria-label="方向 B 菜单">
+                  <div class="nav-group">
+                    <div class="nav-title">工作区 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">▦</span><span class="nav-label">工作台</span></button>
+                    <button class="nav-item active"><span class="nav-icon">▱</span><span class="nav-label">收件箱</span><span class="badge">4</span></button>
+                    <button class="nav-item"><span class="nav-icon">▷</span><span class="nav-label">任务发起</span></button>
+                    <button class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">项目管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌘</span><span class="nav-label">数字员工</span></button>
+                    <button class="nav-item"><span class="nav-icon">◫</span><span class="nav-label">技能管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♙</span><span class="nav-label">团队管理</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">核心导航 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⌁</span><span class="nav-label">流程编排</span></button>
+                    <button class="nav-item"><span class="nav-icon">◷</span><span class="nav-label">自动化任务</span></button>
+                    <button class="nav-item"><span class="nav-icon">✣</span><span class="nav-label">外部能力</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌬</span><span class="nav-label">MCP 管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▢</span><span class="nav-label">协作集成</span></button>
+                    <button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label">审批中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">▤</span><span class="nav-label">Runtime 节点</span></button>
+                  </div>
+                </nav>
+                <div class="user-card">
+                  <div class="user-card-top">
+                    <div class="avatar">开发</div>
+                    <div style="min-width:0">
+                      <div class="user-name">开发管理员</div>
+                      <div class="user-mail">admin@superteam.local</div>
+                    </div>
+                    <div class="chev">⌄</div>
+                  </div>
+                  <div class="node-strip"><span>节点 4/4 在线</span><span>可调度</span></div>
+                </div>
+              </aside>
+              <section class="main-surface">
+                <div class="topbar">
+                  <div class="search">搜索项目、审批或 Runtime <span class="keycap">⌘ K</span></div>
+                  <div class="spacer"></div>
+                  <button class="chip">新建任务</button>
+                </div>
+                <div class="content-grid">
+                  <div class="panel">
+                    <h3>中枢路由</h3>
+                    <p>收件箱被表达为当前人类决策节点，和执行链路更贴合。</p>
+                    <div class="fake-table">
+                      <div class="fake-row"><strong>审批节点</strong><span class="status warn">等待</span><span>4</span></div>
+                      <div class="fake-row"><strong>Runtime 节点</strong><span class="status ok">在线</span><span>4/4</span></div>
+                      <div class="fake-row"><strong>Provider</strong><span class="status info">可用</span><span>8</span></div>
+                    </div>
+                  </div>
+                  <div class="panel">
+                    <h3>工作负载</h3>
+                    <div class="mini-metrics">
+                      <div class="metric"><strong>37</strong><span>运行项目</span></div>
+                      <div class="metric"><strong>9</strong><span>待决策</span></div>
+                      <div class="metric"><strong>5</strong><span>阻塞风险</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="concept-c" class="concept concept-c">
+          <div class="concept-copy">
+            <div class="concept-kicker">方向 C · Floating Workbench</div>
+            <h2>更现代、更轻：侧栏像浮在 Shell 上的工作台。</h2>
+            <p>这个方向比 A 更有空间感。侧栏不贴死页面边界，而是一个浮动玻璃面板；上方增加“发起任务”快捷入口，让菜单不只是导航，也像控制台的入口区。</p>
+            <div class="principles">
+              <div class="principle"><strong>高级感最明显</strong><span>浮动容器、玻璃边框和柔阴影形成更强层次。</span></div>
+              <div class="principle"><strong>适合大屏</strong><span>宽度略增到 272px，更适合展示快捷任务入口。</span></div>
+              <div class="principle"><strong>实现成本较高</strong><span>需要确认与现有 inset/floating sidebar 变体的兼容。</span></div>
+            </div>
+            <div class="fit">建议：如果未来要整体升级 Shell，C 可以作为更大胆的第二阶段。</div>
+          </div>
+
+          <div class="stage">
+            <div class="mock-app">
+              <aside class="sidebar">
+                <div class="brand">
+                  <div class="brand-mark">ST</div>
+                  <div>
+                    <div class="brand-title">矩枢平台</div>
+                    <div class="brand-subtitle">新炬网络</div>
+                  </div>
+                </div>
+                <div class="quick-card">
+                  <div><strong>任务中枢</strong><span>从当前团队发起调度</span></div>
+                  <button>发起</button>
+                </div>
+                <nav class="nav-scroll" aria-label="方向 C 菜单">
+                  <div class="nav-group">
+                    <div class="nav-title">工作区 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">▦</span><span class="nav-label">工作台</span></button>
+                    <button class="nav-item active"><span class="nav-icon">▱</span><span class="nav-label">收件箱</span><span class="badge">4</span></button>
+                    <button class="nav-item"><span class="nav-icon">▷</span><span class="nav-label">任务发起</span></button>
+                    <button class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">项目管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌘</span><span class="nav-label">数字员工</span></button>
+                    <button class="nav-item"><span class="nav-icon">◫</span><span class="nav-label">技能管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♙</span><span class="nav-label">团队管理</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">核心导航 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⌁</span><span class="nav-label">流程编排</span></button>
+                    <button class="nav-item"><span class="nav-icon">◷</span><span class="nav-label">自动化任务</span></button>
+                    <button class="nav-item"><span class="nav-icon">✣</span><span class="nav-label">外部能力</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌬</span><span class="nav-label">MCP 管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▢</span><span class="nav-label">协作集成</span></button>
+                    <button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label">审批中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">▤</span><span class="nav-label">Runtime 节点</span></button>
+                  </div>
+                </nav>
+                <div class="user-card">
+                  <div class="avatar">开发</div>
+                  <div style="min-width:0">
+                    <div class="user-name">开发管理员</div>
+                    <div class="user-mail">admin@superteam.local</div>
+                  </div>
+                  <div class="chev">⌄</div>
+                </div>
+              </aside>
+              <section class="main-surface">
+                <div class="topbar">
+                  <div class="search">搜索或输入命令 <span class="keycap">⌘ K</span></div>
+                  <div class="spacer"></div>
+                  <button class="chip">团队</button>
+                  <button class="chip">环境</button>
+                </div>
+                <div class="content-grid">
+                  <div class="panel">
+                    <h3>工作台空间</h3>
+                    <p>侧栏更像左侧工作台，主内容的层级会显得更轻。</p>
+                    <div class="fake-table">
+                      <div class="fake-row"><strong>项目协调线程</strong><span class="status info">运行</span><span>37</span></div>
+                      <div class="fake-row"><strong>审批与验收</strong><span class="status warn">待办</span><span>9</span></div>
+                      <div class="fake-row"><strong>外部能力</strong><span class="status ok">健康</span><span>12</span></div>
+                    </div>
+                  </div>
+                  <div class="panel">
+                    <h3>快捷入口</h3>
+                    <div class="mini-metrics">
+                      <div class="metric"><strong>+</strong><span>发起任务</span></div>
+                      <div class="metric"><strong>审</strong><span>审批</span></div>
+                      <div class="metric"><strong>R</strong><span>Runtime</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="concept-d" class="concept concept-d">
+          <div class="concept-copy">
+            <div class="concept-kicker">方向 D · Dense Operator</div>
+            <h2>最专业的后台感：压低尺寸，增强可扫读和运行摘要。</h2>
+            <p>这个方向不追求明显玻璃质感，而是让菜单更像给高频使用者的操作台。它减少字号和行高，加入运行摘要，适合长期盯控和频繁切页面的人。</p>
+            <div class="principles">
+              <div class="principle"><strong>信息密度最高</strong><span>菜单项 36px 高，更接近专业控制台。</span></div>
+              <div class="principle"><strong>背景最克制</strong><span>白面实底，靠细线、摘要和激活锚点表达质感。</span></div>
+              <div class="principle"><strong>适合运维/管理人群</strong><span>底部账号区上方展示收件箱、审批、Runtime 摘要。</span></div>
+            </div>
+            <div class="fit">建议：如果你的目标是“长期使用不累、别太花”，D 的可用性最好。</div>
+          </div>
+
+          <div class="stage">
+            <div class="mock-app">
+              <aside class="sidebar">
+                <div class="brand">
+                  <div class="brand-mark">ST</div>
+                  <div>
+                    <div class="brand-title">矩枢平台</div>
+                    <div class="brand-subtitle">新炬网络</div>
+                  </div>
+                </div>
+                <div class="ops-strip">
+                  <div class="ops-chip"><strong>4</strong><span>收件</span></div>
+                  <div class="ops-chip"><strong>9</strong><span>审批</span></div>
+                  <div class="ops-chip"><strong>4/4</strong><span>节点</span></div>
+                </div>
+                <nav class="nav-scroll" aria-label="方向 D 菜单">
+                  <div class="nav-group">
+                    <div class="nav-title">工作区 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">▦</span><span class="nav-label">工作台</span></button>
+                    <button class="nav-item active"><span class="nav-icon">▱</span><span class="nav-label">收件箱</span><span class="badge">4</span></button>
+                    <button class="nav-item"><span class="nav-icon">▷</span><span class="nav-label">任务发起</span></button>
+                    <button class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">项目管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌘</span><span class="nav-label">数字员工</span></button>
+                    <button class="nav-item"><span class="nav-icon">◫</span><span class="nav-label">技能管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♙</span><span class="nav-label">团队管理</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">核心导航 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⌁</span><span class="nav-label">流程编排</span></button>
+                    <button class="nav-item"><span class="nav-icon">◷</span><span class="nav-label">自动化任务</span></button>
+                    <button class="nav-item"><span class="nav-icon">✣</span><span class="nav-label">外部能力</span></button>
+                    <button class="nav-item"><span class="nav-icon">⌬</span><span class="nav-label">MCP 管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▢</span><span class="nav-label">协作集成</span></button>
+                    <button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label">审批中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">▤</span><span class="nav-label">Runtime 节点</span></button>
+                  </div>
+                  <div class="nav-group">
+                    <div class="nav-title">平台管理 <span class="line"></span></div>
+                    <button class="nav-item"><span class="nav-icon">⚿</span><span class="nav-label">权限中心</span></button>
+                    <button class="nav-item"><span class="nav-icon">¥</span><span class="nav-label">成本管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">♟</span><span class="nav-label">用户管理</span></button>
+                    <button class="nav-item"><span class="nav-icon">▥</span><span class="nav-label">审计日志</span></button>
+                  </div>
+                </nav>
+                <div class="user-card">
+                  <div class="avatar">开发</div>
+                  <div style="min-width:0">
+                    <div class="user-name">开发管理员</div>
+                    <div class="user-mail">admin@superteam.local</div>
+                  </div>
+                  <div class="chev">⌄</div>
+                </div>
+              </aside>
+              <section class="main-surface">
+                <div class="topbar">
+                  <div class="search">搜索或输入命令 <span class="keycap">⌘ K</span></div>
+                  <div class="spacer"></div>
+                  <button class="chip">紧凑</button>
+                </div>
+                <div class="content-grid">
+                  <div class="panel">
+                    <h3>操作队列</h3>
+                    <p>高频用户可以更快扫完整个导航和关键状态。</p>
+                    <div class="fake-table">
+                      <div class="fake-row"><strong>补证请求</strong><span class="status warn">待处理</span><span>4</span></div>
+                      <div class="fake-row"><strong>审批中心</strong><span class="status danger">高风险</span><span>2</span></div>
+                      <div class="fake-row"><strong>Runtime</strong><span class="status ok">健康</span><span>4/4</span></div>
+                    </div>
+                  </div>
+                  <div class="panel">
+                    <h3>治理摘要</h3>
+                    <div class="mini-metrics">
+                      <div class="metric"><strong>18</strong><span>今日完成</span></div>
+                      <div class="metric"><strong>2</strong><span>阻塞</span></div>
+                      <div class="metric"><strong>6</strong><span>审计</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -401,8 +401,15 @@ func (s *Service) ValidateAndConsumeCaptcha(ctx context.Context, captchaID uuid.
 	err := s.repo.WithTransaction(ctx, func(repo Repository) error {
 		record, err := repo.GetCaptchaChallengeForUpdate(ctx, captchaID)
 		if err != nil {
-			result = ErrCaptchaInvalid
-			return nil
+			// Only a genuinely missing challenge is a user-facing "invalid
+			// captcha". Any other error (timeout, connection loss) is an
+			// infrastructure failure and must roll the transaction back and
+			// propagate, not be masked as a wrong code.
+			if errors.Is(err, ErrCaptchaInvalid) {
+				result = ErrCaptchaInvalid
+				return nil
+			}
+			return err
 		}
 		now := s.now()
 		if record.UsedAt != nil {

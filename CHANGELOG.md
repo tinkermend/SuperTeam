@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-06-30 01:06 项目管理风险首页布局改为队列主导：桌面首页右侧上下文收窄为辅助栏，风险队列表格从 6 列收敛为“项目 / 风险与落点 / 状态 / 操作”4 列，并将负责人和处置落点折入行内次级信息，减少宽屏首屏挤压。
+
 - 2026-06-30 00:08 项目管理首页改为风险优先队列，基于当前页项目补强任务、决策、证据和协调状态风险信号，并保留统一详情跳转。
+
+- 2026-06-30 00:21：Web 默认首页改为“任务中枢”，复用任务发起表单作为首页任务提交入口；侧栏工作区首项同步改为“任务中枢”，并移除重复的“任务发起”菜单项；默认侧栏样式切换为浮动玻璃面板，增加 26px 圆角、渐变背景和激活项左侧锚点。验证：`corepack pnpm --filter ./apps/web run test -- src/components/layout/sidebar-data.test.ts src/context/search-provider.test.tsx src/features/dashboard/index.test.tsx src/features/task-launches/index.test.tsx src/styles/v3-shell-background.test.tsx src/components/config-drawer.test.tsx src/components/layout/sidebar-menu-sizing.test.tsx`、`git diff --check` 通过；真实运行 Web 登录 `admin/admin` 打开 `/`，页面标题为“任务中枢”，侧栏有“任务中枢/收件箱”且无“任务发起”，浮动侧栏计算样式生效，并确认 `/api/auth/me`、`/api/v1/projects` 真实 Control Plane 返回 200。
 
 - 2026-06-29 14:23 项目创建流程收敛为负责人池模型：新建项目使用主负责人 + 额外 owner 成员，多来源团队只用于筛选数字员工；任务发起不再要求选择审核人，后端默认派给主负责人。
 

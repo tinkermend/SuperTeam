@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Dashboard } from "@/features/dashboard";
+import { TaskLaunchPage } from "@/features/task-launches";
 
 export const Route = createFileRoute("/_authenticated/")({
-  component: Dashboard,
+  component: () => <TaskLaunchPage title="任务中枢" />,
 });

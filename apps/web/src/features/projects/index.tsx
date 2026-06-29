@@ -762,7 +762,14 @@ export function ProjectsView({
                 riskSummaries={currentPageRiskSignals.summaries}
               />
 
-              <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]">
+              <div
+                className={
+                  routeProjectId
+                    ? "grid min-w-0 items-start gap-5 2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]"
+                    : "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"
+                }
+                data-testid="projects-risk-home-layout"
+              >
                 <ProjectRiskQueue
                   activePage={activeProjectListPage}
                   filters={filters}

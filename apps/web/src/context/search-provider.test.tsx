@@ -228,7 +228,7 @@ describe('SearchProvider and CommandMenu', () => {
     expect(queryByText('浅色')).not.toBeNull()
     expect(queryByText('深色')).not.toBeNull()
     expect(queryByText('跟随系统')).not.toBeNull()
-    expect(queryByText('工作台')).not.toBeNull()
+    expect(queryByText('任务中枢')).not.toBeNull()
   })
 
   it('does not show the dialog content when search is closed', async () => {
@@ -253,16 +253,16 @@ describe('SearchProvider and CommandMenu', () => {
     }
   )
 
-  it('navigates to a top-level route and closes the palette when a nav item is selected', async () => {
+  it('navigates to the task hub homepage and closes the palette when selected', async () => {
     await renderWithSearchProvider()
 
     await openCommandPalette()
 
     await act(async () => {
-      getByText('任务发起').click()
+      getByText('任务中枢').click()
     })
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/task-launches' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/' })
     await vi.waitFor(() => {
       expect(queryByPlaceholder(COMMAND_MENU_PLACEHOLDER)).toBeNull()
     })
@@ -315,5 +315,14 @@ describe('SearchProvider and CommandMenu', () => {
       expect(queryByText('没有找到结果。')).not.toBeNull()
       expect(queryByText('任务发起')).toBeNull()
     })
+  })
+
+  it('does not expose a duplicate task launch menu entry', async () => {
+    await renderWithSearchProvider()
+
+    await openCommandPalette()
+
+    expect(queryByText('任务中枢')).not.toBeNull()
+    expect(queryByText('任务发起')).toBeNull()
   })
 })

@@ -11,16 +11,25 @@ import {
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 
-export function TaskLaunchPage() {
-  return <TaskLaunchView apiBaseUrl={resolveControlPlaneUrl()} />;
+type TaskLaunchPageProps = {
+  title?: string;
+};
+
+export function TaskLaunchPage({ title = "任务发起" }: TaskLaunchPageProps) {
+  return <TaskLaunchView apiBaseUrl={resolveControlPlaneUrl()} title={title} />;
 }
 
 type TaskLaunchViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
+  title?: string;
 };
 
-export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
+export function TaskLaunchView({
+  apiBaseUrl,
+  fetcher,
+  title = "任务发起",
+}: TaskLaunchViewProps) {
   const navigate = useNavigate();
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -66,7 +75,7 @@ export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
 
   return (
     <TaskLaunchShell
-      title="任务发起"
+      title={title}
       description="提交需求到项目，由项目协调线程编排后续任务"
     >
       <TaskLaunchForm

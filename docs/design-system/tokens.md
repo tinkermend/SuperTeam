@@ -79,6 +79,8 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 
 常见幻觉名（不存在，勿用）：主色没有 `v3-primary`（shadcn 主色是 `bg-primary`，v3 品牌色是 `bg-v3-brand`）；阴影只有 `shadow-v3` 与 `shadow-v3-pop`，没有 soft 变体；`--v3-shell-*` 与 `--v3-signature-*` 未暴露为颜色类，仅在壳层 / signature 卡片用 `var(--v3-...)`（arbitrary value 或 inline style）。本表与 `theme.css` 的一致性由 `verify-design-system.mjs` 校验。
 
+新代码取舍：与 shadcn 语义层重叠的（`card` / `foreground` / `muted-foreground` / `primary` / `border` / `accent` / `destructive`）优先用 shadcn 类（`bg-card` / `text-foreground` 等）；`v3-*` 仅用于 shadcn 覆盖不到的部分——状态色及其软底（`info` / `ok` / `warn` / `danger` / `artifact` / `mute` + `-soft`）、文字与面的层级（`ink-3` / `card-soft` / `card-inner` / `line`）、以及尺度（`rounded-v3-*` / `shadow-v3*`）。不为图省事再造平行别名，存量 `v3-*` 不强制改写。
+
 ## 项目级语义变量
 
 优先通过 `theme.css` 使用或扩展项目变量，不要在页面内重复拼复杂视觉 class：

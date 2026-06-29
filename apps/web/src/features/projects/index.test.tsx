@@ -1220,7 +1220,22 @@ describe("ProjectsView", () => {
     expect(listSurface).toBeTruthy();
     expect(listSurface?.querySelector('[data-slot="v3-work-surface"]')).toBeTruthy();
     expect(listSurface?.querySelector('[data-slot="v3-table"]')).toBeTruthy();
-    expect(listSurface?.querySelectorAll("thead th").length).toBeGreaterThanOrEqual(5);
+    const headers = Array.from(
+      listSurface?.querySelectorAll("thead th") ?? [],
+      (header) => header.textContent?.trim(),
+    );
+    expect(headers).toEqual(["项目", "风险与落点", "状态", "操作"]);
+  });
+
+  it("keeps the projects index queue-dominant instead of splitting the page evenly", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+
+    const layout = screen.getByTestId("projects-risk-home-layout").element();
+    expect(layout.className).toContain("xl:grid-cols-[minmax(0,1fr)_360px]");
+    expect(layout.className).not.toContain("2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]");
   });
 
   it("keeps project filtering and v3 pagination controls working", async () => {

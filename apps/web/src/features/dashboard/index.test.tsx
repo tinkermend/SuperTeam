@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { Dashboard } from "@/features/dashboard";
+import { TaskLaunchView } from "@/features/task-launches";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -80,31 +80,19 @@ function createQueryClient() {
   });
 }
 
-async function renderDashboard() {
+async function renderHomepageTaskHub() {
   return render(
     <QueryClientProvider client={createQueryClient()}>
-      <Dashboard />
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" title="任务中枢" />
     </QueryClientProvider>,
   );
 }
 
-describe("Dashboard", () => {
-  it("renders the authenticated homepage with v3 soft-flat surfaces", async () => {
-    const screen = await renderDashboard();
+describe("Homepage task hub", () => {
+  it("renders the task launch experience as the authenticated homepage", async () => {
+    const screen = await renderHomepageTaskHub();
 
-    await expect.element(screen.getByRole("heading", { name: "工作台" })).toBeVisible();
-    await expect.element(screen.getByText("平台管理员")).toBeVisible();
-    await expect.element(screen.getByText("Control Plane", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("最近登录日志")).toBeVisible();
-    await expect.element(screen.getByText("事件", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("来源", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("登录失败")).toBeVisible();
-
-    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-signature-card"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    await expect.element(screen.getByRole("heading", { name: "任务中枢" })).toBeVisible();
+    await expect.element(screen.getByText("提交需求到项目，由项目协调线程编排后续任务")).toBeVisible();
   });
 });

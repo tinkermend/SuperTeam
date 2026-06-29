@@ -2,6 +2,8 @@ import { Activity } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-react'
 import {
+  SidebarGroup,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -10,7 +12,7 @@ import {
 import '@/styles/index.css'
 
 describe('sidebar menu sizing', () => {
-  it('uses compact 15px labels and a 44px menu row for expanded navigation', async () => {
+  it('uses compact 14px labels and a 40px menu row for expanded navigation', async () => {
     await render(
       <SidebarProvider>
         <SidebarMenu>
@@ -24,6 +26,7 @@ describe('sidebar menu sizing', () => {
       </SidebarProvider>
     )
 
+    const menu = document.querySelector('[data-slot="sidebar-menu"]')
     const button = document.querySelector(
       '[data-testid="sidebar-menu-button"]'
     )
@@ -31,15 +34,55 @@ describe('sidebar menu sizing', () => {
       '[data-testid="sidebar-menu-button"] span'
     )
 
+    expect(menu).toBeInstanceOf(HTMLElement)
     expect(button).toBeInstanceOf(HTMLElement)
     expect(label).toBeInstanceOf(HTMLElement)
 
+    const menuStyle = getComputedStyle(menu as HTMLElement)
     const buttonStyle = getComputedStyle(button as HTMLElement)
     const labelStyle = getComputedStyle(label as HTMLElement)
 
-    expect(buttonStyle.height).toBe('44px')
-    expect(buttonStyle.fontSize).toBe('15px')
-    expect(labelStyle.fontSize).toBe('15px')
+    expect(menuStyle.gap).toBe('2px')
+    expect(buttonStyle.height).toBe('40px')
+    expect(buttonStyle.fontSize).toBe('14px')
+    expect(buttonStyle.color).toBe('rgb(31, 41, 55)')
+    expect(buttonStyle.fontWeight).toBe('500')
+    expect(labelStyle.fontSize).toBe('14px')
+  })
+
+  it('keeps group labels quiet and close to their menu group', async () => {
+    await render(
+      <SidebarProvider>
+        <SidebarGroup>
+          <SidebarGroupLabel data-testid='first-sidebar-group-label'>
+            工作区
+          </SidebarGroupLabel>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel data-testid='sidebar-group-label'>
+            编排
+          </SidebarGroupLabel>
+        </SidebarGroup>
+      </SidebarProvider>
+    )
+
+    const firstLabel = document.querySelector(
+      '[data-testid="first-sidebar-group-label"]'
+    )
+    const label = document.querySelector('[data-testid="sidebar-group-label"]')
+
+    expect(firstLabel).toBeInstanceOf(HTMLElement)
+    expect(label).toBeInstanceOf(HTMLElement)
+
+    const firstLabelStyle = getComputedStyle(firstLabel as HTMLElement)
+    const labelStyle = getComputedStyle(label as HTMLElement)
+
+    expect(firstLabelStyle.marginBlockStart).toBe('0px')
+    expect(labelStyle.height).toBe('24px')
+    expect(labelStyle.marginBlockStart).toBe('6px')
+    expect(labelStyle.color).toBe('rgb(154, 164, 178)')
+    expect(labelStyle.fontSize).toBe('12px')
+    expect(labelStyle.fontWeight).toBe('500')
   })
 
   it('uses a restrained node-active state for selected menu rows', async () => {
@@ -75,12 +118,14 @@ describe('sidebar menu sizing', () => {
     const iconStyle = getComputedStyle(icon as SVGElement)
     const beforeStyle = getComputedStyle(button as HTMLElement, '::before')
 
-    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.68)')
+    expect(buttonStyle.position).toBe('relative')
+    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.72)')
+    expect(buttonStyle.backgroundImage).toBe('none')
     expect(buttonStyle.color).toBe('rgb(35, 72, 224)')
     expect(buttonStyle.boxShadow).toBe('none')
     expect(beforeStyle.content).not.toBe('none')
     expect(beforeStyle.width).toBe('3px')
-    expect(beforeStyle.height).toBe('20px')
+    expect(beforeStyle.height).toBe('18px')
     expect(beforeStyle.backgroundColor).toBe('rgb(47, 95, 255)')
     expect(labelStyle.color).toBe('rgb(35, 72, 224)')
     expect(labelStyle.fontWeight).toBe('600')
@@ -125,8 +170,8 @@ describe('sidebar menu sizing', () => {
     const labelStyle = getComputedStyle(label as HTMLElement)
     const badgeStyle = getComputedStyle(badge as HTMLElement)
 
-    expect(buttonStyle.height).toBe('44px')
-    expect(labelStyle.fontSize).toBe('15px')
+    expect(buttonStyle.height).toBe('40px')
+    expect(labelStyle.fontSize).toBe('14px')
     expect(badgeStyle.minWidth).toBe('20px')
     expect(badgeStyle.height).toBe('20px')
     expect(badgeStyle.backgroundColor).toBe('rgb(233, 239, 255)')
@@ -157,7 +202,7 @@ describe('sidebar menu sizing', () => {
 
     const iconStyle = getComputedStyle(icon as SVGElement)
 
-    expect(iconStyle.color).toBe('rgb(100, 116, 139)')
+    expect(iconStyle.color).toBe('rgb(91, 102, 122)')
     expect(iconStyle.width).toBe('20px')
     expect(iconStyle.height).toBe('20px')
   })

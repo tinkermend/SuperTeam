@@ -114,16 +114,14 @@ describe('ConfigDrawer (integration)', () => {
   })
 
   describe('sidebar variant', () => {
-    it('selecting floating updates layout_variant cookie', async () => {
+    it('uses floating as the default sidebar style', async () => {
       const screen = await renderConfigDrawer()
       await openDrawer(screen)
 
-      await userEvent.click(
-        screen.getByRole('radio', { name: /选择浮动/ })
-      )
-      await vi.waitFor(() =>
-        expect(getCookie('layout_variant')).toBe('floating')
-      )
+      await expect
+        .element(screen.getByRole('radio', { name: /选择浮动/ }))
+        .toHaveAttribute('data-state', 'checked')
+      expect(getCookie('layout_variant')).toBeUndefined()
     })
 
     it('selecting sidebar updates layout_variant cookie', async () => {
@@ -138,16 +136,9 @@ describe('ConfigDrawer (integration)', () => {
       )
     })
 
-    it('selecting inset updates layout_variant cookie after another variant', async () => {
+    it('selecting inset updates layout_variant cookie from the floating default', async () => {
       const screen = await renderConfigDrawer()
       await openDrawer(screen)
-
-      await userEvent.click(
-        screen.getByRole('radio', { name: /选择浮动/ })
-      )
-      await vi.waitFor(() =>
-        expect(getCookie('layout_variant')).toBe('floating')
-      )
 
       await userEvent.click(
         screen.getByRole('radio', { name: /选择嵌入/ })
@@ -207,15 +198,15 @@ describe('ConfigDrawer (integration)', () => {
       expect(getCookie('dir')).toBe('ltr')
     })
 
-    it('resets sidebar style via section control after choosing floating', async () => {
+    it('resets sidebar style via section control after choosing standard sidebar', async () => {
       const screen = await renderConfigDrawer()
       await openDrawer(screen)
 
       await userEvent.click(
-        screen.getByRole('radio', { name: /选择浮动/ })
+        screen.getByRole('radio', { name: /^选择标准侧栏$/ })
       )
       await vi.waitFor(() =>
-        expect(getCookie('layout_variant')).toBe('floating')
+        expect(getCookie('layout_variant')).toBe('sidebar')
       )
 
       await userEvent.click(
@@ -223,7 +214,7 @@ describe('ConfigDrawer (integration)', () => {
           name: /恢复默认侧栏样式/,
         })
       )
-      await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('inset'))
+      await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('floating'))
     })
 
     it('resets layout via section control after choosing compact', async () => {
@@ -288,7 +279,7 @@ describe('ConfigDrawer (integration)', () => {
       screen.getByRole('radio', { name: /选择从右到左/ })
     )
     await userEvent.click(
-      screen.getByRole('radio', { name: /选择浮动/ })
+      screen.getByRole('radio', { name: /^选择标准侧栏$/ })
     )
     await userEvent.click(
       screen.getByRole('radio', { name: /选择全宽布局/ })
@@ -296,7 +287,7 @@ describe('ConfigDrawer (integration)', () => {
 
     await vi.waitFor(() => expect(getCookie('vite-ui-theme')).toBe('dark'))
     await vi.waitFor(() => expect(getCookie('dir')).toBe('rtl'))
-    await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('floating'))
+    await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('sidebar'))
     await vi.waitFor(() =>
       expect(getCookie('layout_collapsible')).toBe('offcanvas')
     )
@@ -310,7 +301,7 @@ describe('ConfigDrawer (integration)', () => {
     await vi.waitFor(() => expect(getCookie('sidebar_state')).toBe('true'))
     await vi.waitFor(() => expect(getCookie('dir')).toBeUndefined())
     await vi.waitFor(() => expect(getCookie('vite-ui-theme')).toBeUndefined())
-    await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('inset'))
+    await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('floating'))
     await vi.waitFor(() => expect(getCookie('layout_collapsible')).toBe('icon'))
     await vi.waitFor(() =>
       expect(document.documentElement.getAttribute('dir')).toBe('ltr')

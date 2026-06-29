@@ -2,35 +2,40 @@ import { describe, expect, it } from 'vitest'
 import { buildSidebarData, sidebarData } from './data/sidebar-data'
 
 describe('sidebarData', () => {
-  it('places inbox between dashboard and task launch in the workspace group', () => {
+  it('uses task hub as the homepage and removes the duplicate task launch menu item', () => {
     const workspaceItems = sidebarData.navGroups.find(
       (group) => group.title === '工作区'
     )?.items
 
     expect(workspaceItems?.map((item) => item.title)).toEqual([
-      '工作台',
+      '任务中枢',
       '收件箱',
-      '任务发起',
       '项目管理',
       '数字员工',
       '技能管理',
       '团队管理',
     ])
+    expect(workspaceItems?.[0]).toMatchObject({
+      title: '任务中枢',
+      url: '/',
+      iconTone: 'neutral',
+    })
     expect(workspaceItems?.[1]).toMatchObject({
       title: '收件箱',
       url: '/inbox',
       iconTone: 'neutral',
     })
     expect(workspaceItems?.[2]).toMatchObject({
-      title: '任务发起',
-      url: '/task-launches',
+      title: '项目管理',
+      url: '/projects',
       iconTone: 'neutral',
     })
-    expect(workspaceItems?.[6]).toMatchObject({
+    expect(workspaceItems?.[5]).toMatchObject({
       title: '团队管理',
       url: '/teams',
       iconTone: 'neutral',
     })
+    expect(workspaceItems?.some((item) => item.title === '任务发起')).toBe(false)
   })
 
   it('places automation tasks between workflows and external capabilities in the core navigation group', () => {
@@ -42,6 +47,7 @@ describe('sidebarData', () => {
       '流程编排',
       '自动化任务',
       '外部能力',
+      'MCP 管理',
       '协作集成',
       '审批中心',
       'Runtime 节点',

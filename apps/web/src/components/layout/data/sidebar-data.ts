@@ -8,7 +8,6 @@ import {
   GitBranch,
   Inbox,
   KeyRound,
-  LayoutDashboard,
   MessagesSquare,
   Network,
   Puzzle,
@@ -33,9 +32,9 @@ export function buildSidebarData({
         title: "工作区",
         items: [
           {
-            title: "工作台",
+            title: "任务中枢",
             url: "/",
-            icon: LayoutDashboard,
+            icon: SendHorizontal,
             iconTone: "neutral",
           },
           {
@@ -44,12 +43,6 @@ export function buildSidebarData({
             icon: Inbox,
             iconTone: "neutral",
             ...(inboxBadge ? { badge: inboxBadge } : {}),
-          },
-          {
-            title: "任务发起",
-            url: "/task-launches",
-            icon: SendHorizontal,
-            iconTone: "neutral",
           },
           {
             title: "项目管理",

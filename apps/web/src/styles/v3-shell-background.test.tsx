@@ -205,6 +205,44 @@ describe('authenticated v3 shell background styles', () => {
     expect(innerStyle.backdropFilter).toContain('blur')
   })
 
+  it('uses a floating glass sidebar panel for the default task hub shell', async () => {
+    const restoreMatchMedia = forceDesktopSidebar()
+
+    try {
+      await render(
+        <SidebarProvider>
+          <Sidebar collapsible='icon' variant='floating'>
+            Sidebar
+          </Sidebar>
+          <SidebarInset>Shell</SidebarInset>
+        </SidebarProvider>
+      )
+    } finally {
+      restoreMatchMedia()
+    }
+
+    const sidebarContainer = document.querySelector(
+      '[data-slot="sidebar-container"]'
+    )
+    const sidebarInner = document.querySelector('[data-slot="sidebar-inner"]')
+
+    expect(sidebarContainer).toBeInstanceOf(HTMLElement)
+    expect(sidebarInner).toBeInstanceOf(HTMLElement)
+
+    const containerStyle = getComputedStyle(sidebarContainer as HTMLElement)
+    const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
+
+    expect(containerStyle.paddingTop).toBe('8px')
+    expect(containerStyle.borderInlineEndWidth).toBe('0px')
+    expect(innerStyle.borderTopLeftRadius).toBe('26px')
+    expect(innerStyle.borderTopRightRadius).toBe('26px')
+    expect(innerStyle.borderTopWidth).toBe('1px')
+    expect(innerStyle.backgroundImage).toContain('radial-gradient')
+    expect(innerStyle.backgroundImage).toContain('linear-gradient')
+    expect(innerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.08)')
+    expect(innerStyle.backdropFilter).toContain('blur')
+  })
+
   it('keeps active sidebar items translucent over the acrylic panel', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
@@ -232,7 +270,9 @@ describe('authenticated v3 shell background styles', () => {
 
     const buttonStyle = getComputedStyle(menuButton as HTMLElement)
 
-    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.68)')
-    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.2)')
+    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.72)')
+    expect(buttonStyle.backgroundImage).toBe('none')
+    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.14)')
+    expect(buttonStyle.boxShadow).toBe('none')
   })
 })
