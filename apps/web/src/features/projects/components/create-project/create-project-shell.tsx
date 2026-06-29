@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
 import type { CreateProjectInput } from "@/lib/api/projects";
@@ -52,6 +52,7 @@ export function CreateProjectShell({
   const [draft, setDraft] = useState<ProjectCreateDraft>(emptyProjectCreateDraft);
   const [activeStep, setActiveStep] = useState<ProjectCreateStep>("basics");
   const [localError, setLocalError] = useState("");
+  const hasHydratedDefaultSourceTeam = useRef(false);
   const validation = projectCreateValidation(draft, currentUser?.id, selectableTeams);
   const activeIndex = projectCreateSteps.findIndex((step) => step.id === activeStep);
   const isAuthorizationLoading = Boolean(isCurrentUserLoading || isTeamsLoading);
@@ -62,15 +63,21 @@ export function CreateProjectShell({
       const selectableTeamIds = new Set(selectableTeams.map((scope) => scope.team_id));
       const sourceTeamIds = current.sourceTeamIds.filter((teamId) => selectableTeamIds.has(teamId));
       if (selectableTeams.length === 0) {
+        hasHydratedDefaultSourceTeam.current = false;
         if (current.sourceTeamIds.length === 0 && current.selectedDigitalEmployees.length === 0) {
           return current;
         }
         return { ...current, sourceTeamIds: [], selectedDigitalEmployees: [] };
       }
       const allSelectedTeamsGone = current.sourceTeamIds.length > 0 && sourceTeamIds.length === 0;
+      const shouldHydrateDefaultSourceTeam =
+        sourceTeamIds.length === 0 && !hasHydratedDefaultSourceTeam.current;
       const nextSourceTeamIds = sourceTeamIds.length > 0
         ? sourceTeamIds
-        : [selectableTeams[0].team_id];
+        : shouldHydrateDefaultSourceTeam
+          ? [selectableTeams[0].team_id]
+          : [];
+      hasHydratedDefaultSourceTeam.current = true;
       const selectedDigitalEmployees = allSelectedTeamsGone
         ? []
         : current.selectedDigitalEmployees.filter(

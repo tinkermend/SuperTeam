@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Archive,
   CircleDot,
@@ -147,6 +147,92 @@ export function ProjectConfigPage({
   );
 }
 
+export function CreateProjectPage({ fetcher }: ProjectsPageProps = {}) {
+  return (
+    <CreateProjectView
+      apiBaseUrl={resolveControlPlaneUrl()}
+      fetcher={fetcher}
+    />
+  );
+}
+
+export function CreateProjectView({
+  apiBaseUrl,
+  fetcher,
+}: Omit<ProjectsViewProps, "routeProjectId">) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const apiOptions = useMemo<ApiClientOptions>(
+    () => ({ baseUrl: apiBaseUrl, fetcher }),
+    [apiBaseUrl, fetcher],
+  );
+
+  const currentUserQuery = useQuery({
+    queryKey: ["auth", "current-user", "project-create"],
+    queryFn: () => getCurrentUser(apiOptions),
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+  const currentUser = currentUserQuery.data?.user;
+  const currentUserId = currentUser?.id;
+
+  const projectTeamScopesQuery = useQuery({
+    enabled: Boolean(currentUserId),
+    queryKey: ["auth", "users", currentUserId, "project-team-scopes", "project-create"],
+    queryFn: () => listUserProjectTeamScopes(apiOptions, currentUserId as string),
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
+  const availableProjectTeamScopes = useMemo<UserProjectTeamScope[]>(
+    () =>
+      (projectTeamScopesQuery.data?.items ?? []).filter(
+        (scope) =>
+          scope.status === "active" &&
+          !scope.revoked_at &&
+          scope.team.status === "active",
+      ),
+    [projectTeamScopesQuery.data?.items],
+  );
+
+  const createMutation = useMutation({
+    mutationFn: (input: CreateProjectInput) => createProject(apiOptions, input),
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.setQueryData(["project", response.project.id], response.project);
+      void navigate({
+        params: { projectId: response.project.id },
+        to: "/projects/$projectId",
+      });
+    },
+  });
+
+  return (
+    <>
+      <Header>
+        <Search />
+        <ThemeSwitch />
+      </Header>
+      <Main className="min-w-0 overflow-x-hidden">
+        <CreateProjectShell
+          apiBaseUrl={apiBaseUrl}
+          availableTeams={availableProjectTeamScopes}
+          currentUser={currentUser}
+          currentUserError={currentUserQuery.error?.message}
+          fetcher={fetcher}
+          isCurrentUserLoading={currentUserQuery.isFetching}
+          isSubmitting={createMutation.isPending}
+          isTeamsLoading={projectTeamScopesQuery.isFetching}
+          submitError={createMutation.error?.message}
+          teamsError={projectTeamScopesQuery.error?.message}
+          onCancel={() => void navigate({ to: "/projects" })}
+          onSubmit={(input) => createMutation.mutate(input)}
+        />
+      </Main>
+    </>
+  );
+}
+
 export function ProjectsView({
   apiBaseUrl,
   fetcher,
@@ -162,7 +248,6 @@ export function ProjectsView({
     status: "all",
   });
   const [selectedProjectId, setSelectedProjectId] = useState(routeProjectId);
-  const [createOpen, setCreateOpen] = useState(false);
   const [demandOpen, setDemandOpen] = useState(false);
   const [projectListPage, setProjectListPage] = useState(1);
   const [projectListPageSize, setProjectListPageSize] = useState(10);
@@ -219,35 +304,6 @@ export function ProjectsView({
       ? selectedProjectQuery.data
       : undefined);
   const effectiveProjectId = selectedProjectId;
-
-  const currentUserQuery = useQuery({
-    enabled: createOpen,
-    queryKey: ["auth", "current-user", "project-create"],
-    queryFn: () => getCurrentUser(apiOptions),
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
-  const currentUser = currentUserQuery.data?.user;
-  const currentUserId = currentUser?.id;
-
-  const projectTeamScopesQuery = useQuery({
-    enabled: createOpen && Boolean(currentUserId),
-    queryKey: ["auth", "users", currentUserId, "project-team-scopes", "project-create"],
-    queryFn: () => listUserProjectTeamScopes(apiOptions, currentUserId as string),
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
-
-  const availableProjectTeamScopes = useMemo<UserProjectTeamScope[]>(
-    () =>
-      (projectTeamScopesQuery.data?.items ?? []).filter(
-        (scope) =>
-          scope.status === "active" &&
-          !scope.revoked_at &&
-          scope.team.status === "active",
-      ),
-    [projectTeamScopesQuery.data?.items],
-  );
 
   useEffect(() => {
     if (routeProjectId || projects.length === 0) {
@@ -450,16 +506,6 @@ export function ProjectsView({
     queryFn: () =>
       listProjectArchiveSnapshots(apiOptions, effectiveProjectId as string, { limit: 10 }),
     placeholderData: keepPreviousData,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (input: CreateProjectInput) => createProject(apiOptions, input),
-    onSuccess: async (response) => {
-      setCreateOpen(false);
-      setSelectedProjectId(response.project.id);
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.setQueryData(["project", response.project.id], response.project);
-    },
   });
 
   const archiveMutation = useMutation({
@@ -690,12 +736,13 @@ export function ProjectsView({
               </div>
             </div>
             <V3Button
+              asChild
               className="h-11 self-start px-5"
-              type="button"
-              onClick={() => setCreateOpen(true)}
             >
-              <Plus data-icon="inline-start" />
-              新建项目
+              <Link to="/projects/new">
+                <Plus data-icon="inline-start" />
+                新建项目
+              </Link>
             </V3Button>
           </header>
 
@@ -737,7 +784,6 @@ export function ProjectsView({
                   activePage={activeProjectListPage}
                   filters={filters}
                   isFetching={projectsQuery.isFetching}
-                  onCreateProject={() => setCreateOpen(true)}
                   onFiltersChange={setFilters}
                   onPageChange={setProjectListPage}
                   onPageSizeChange={(size) => {
@@ -817,22 +863,6 @@ export function ProjectsView({
               </div>
             </>
           )}
-      {createOpen ? (
-        <CreateProjectShell
-          apiBaseUrl={apiBaseUrl}
-          availableTeams={availableProjectTeamScopes}
-          currentUser={currentUser}
-          currentUserError={currentUserQuery.error?.message}
-          fetcher={fetcher}
-          isCurrentUserLoading={currentUserQuery.isFetching}
-          isSubmitting={createMutation.isPending}
-          isTeamsLoading={projectTeamScopesQuery.isFetching}
-          submitError={createMutation.error?.message}
-          teamsError={projectTeamScopesQuery.error?.message}
-          onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => createMutation.mutate(input)}
-        />
-      ) : null}
       <SubmitDemandDialog
         isSubmitting={submitDemandMutation.isPending}
         open={demandOpen}
@@ -851,7 +881,6 @@ function ProjectsV3List({
   activePage,
   filters,
   isFetching,
-  onCreateProject,
   onFiltersChange,
   onPageChange,
   onPageSizeChange,
@@ -865,7 +894,6 @@ function ProjectsV3List({
   activePage: number;
   filters: UiProjectListFilters;
   isFetching: boolean;
-  onCreateProject: () => void;
   onFiltersChange: (filters: UiProjectListFilters) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
@@ -893,9 +921,11 @@ function ProjectsV3List({
               ) : null}
             </div>
           </div>
-          <V3Button type="button" variant="outline" onClick={onCreateProject}>
-            <Plus data-icon="inline-start" />
-            新建
+          <V3Button asChild variant="outline">
+            <Link to="/projects/new">
+              <Plus data-icon="inline-start" />
+              新建
+            </Link>
           </V3Button>
         </div>
 

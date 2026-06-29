@@ -43,6 +43,7 @@ import { Route as AuthenticatedTaskLaunchesDemandIdRouteImport } from './routes/
 import { Route as AuthenticatedSkillsUploadRouteImport } from './routes/_authenticated/skills/upload'
 import { Route as AuthenticatedSkillsSkillIdRouteImport } from './routes/_authenticated/skills/$skillId'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects/$projectId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
@@ -238,6 +239,12 @@ const AuthenticatedSettingsAccountRoute =
     path: '/settings/account',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedProjectsNewRoute =
+  AuthenticatedProjectsNewRouteImport.update({
+    id: '/projects/new',
+    path: '/projects/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdRoute =
   AuthenticatedProjectsProjectIdRouteImport.update({
     id: '/projects/$projectId',
@@ -300,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -343,6 +351,7 @@ export interface FileRoutesByTo {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -388,6 +397,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/_authenticated/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -433,6 +443,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/projects/new'
     | '/settings/account'
     | '/skills/$skillId'
     | '/skills/upload'
@@ -476,6 +487,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/projects/new'
     | '/settings/account'
     | '/skills/$skillId'
     | '/skills/upload'
@@ -520,6 +532,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/new'
     | '/_authenticated/errors/$error'
     | '/_authenticated/projects/$projectId'
+    | '/_authenticated/projects/new'
     | '/_authenticated/settings/account'
     | '/_authenticated/skills/$skillId'
     | '/_authenticated/skills/upload'
@@ -802,6 +815,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/projects/new': {
+      id: '/_authenticated/projects/new'
+      path: '/projects/new'
+      fullPath: '/projects/new'
+      preLoaderRoute: typeof AuthenticatedProjectsNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/$projectId': {
       id: '/_authenticated/projects/$projectId'
       path: '/projects/$projectId'
@@ -897,6 +917,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedEmployeesNewRoute: typeof AuthenticatedEmployeesNewRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSkillsSkillIdRoute: typeof AuthenticatedSkillsSkillIdRoute
   AuthenticatedSkillsUploadRoute: typeof AuthenticatedSkillsUploadRoute
@@ -934,6 +955,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedProjectsProjectIdRoute:
     AuthenticatedProjectsProjectIdRouteWithChildren,
+  AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
   AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedSkillsSkillIdRoute: AuthenticatedSkillsSkillIdRoute,
   AuthenticatedSkillsUploadRoute: AuthenticatedSkillsUploadRoute,

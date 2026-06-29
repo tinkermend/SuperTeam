@@ -14,6 +14,7 @@ const TEAM_DISABLED_ID = "team-disabled-1";
 const LEADER_USER_ID = "leader-user-1";
 const ACCEPTANCE_USER_ID = "acceptance-user-1";
 const REVIEWER_USER_ID = "reviewer-user-1";
+const EMPLOYEE_PLATFORM_ID = "employee-platform-1";
 const EMPLOYEE_ASSISTANT_ID = "employee-assistant-1";
 const EMPLOYEE_QA_ID = "employee-qa-1";
 
@@ -249,8 +250,24 @@ function usersResponse(q?: string) {
   };
 }
 
-function digitalEmployeesResponse() {
-  return [
+function digitalEmployeesResponse(teamId?: string | null) {
+  const employees = [
+    {
+      approval_policy: {},
+      context_policy: {},
+      created_at: "2026-06-01T00:00:00Z",
+      employee_type: "ops",
+      id: EMPLOYEE_PLATFORM_ID,
+      metadata: { effective_config_label: "平台值守" },
+      name: "平台值守员",
+      owner_user_id: CURRENT_USER_ID,
+      permission_policy: {},
+      risk_level: "low",
+      role: "platform-operator",
+      status: "active",
+      team_id: TEAM_AUTHORIZED_ID,
+      tenant_id: "tenant-1",
+    },
     {
       approval_policy: {},
       context_policy: {},
@@ -284,6 +301,7 @@ function digitalEmployeesResponse() {
       tenant_id: "tenant-1",
     },
   ];
+  return teamId ? employees.filter((employee) => employee.team_id === teamId) : employees;
 }
 
 function createProjectFetcher(
@@ -346,7 +364,7 @@ function createProjectFetcher(
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
-      return jsonResponse(digitalEmployeesResponse());
+      return jsonResponse(digitalEmployeesResponse(url.searchParams.get("team_id")));
     }
 
     if (url.pathname === "/api/v1/projects" && method === "GET") {
@@ -1473,8 +1491,38 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "选择 leader" }).first());
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByText("平台值守员")).toBeInTheDocument();
+    await expect.element(screen.getByText("研发助手")).not.toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/digital-employees" &&
+            target.searchParams.get("team_id") === TEAM_AUTHORIZED_ID &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+    });
+
     await userEvent.click(screen.getByRole("button", { name: "风控审查" }));
     await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
+    await expect.element(screen.getByText("平台值守员")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("研发助手")).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/digital-employees" &&
+            target.searchParams.get("team_id") === TEAM_REVIEW_ID &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+    });
+
     await userEvent.click(screen.getByText("研发助手"));
     await userEvent.click(screen.getByText("测试工程师"));
 
@@ -1544,6 +1592,36 @@ describe("ProjectsView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
+    expect(
+      fetchCalls(fetcher).some(([url, init]) => {
+        return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps source teams cleared after authorization scopes refresh", async () => {
+    const fetcher = createProjectFetcher();
+    const queryClient = createQueryClient();
+    const screen = await renderProjectCreate(fetcher, queryClient);
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "清空来源团队");
+    await userEvent.fill(screen.getByLabelText("项目目标 *"), "刷新授权范围后仍保持清空");
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByText("平台值守员")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
+    await expect.element(screen.getByRole("button", { name: "平台运营" })).toHaveAttribute("aria-pressed", "false");
+    const refreshedScopes = userProjectTeamScopesResponse();
+    refreshedScopes.items[0].updated_at = "2026-06-04T02:29:13Z";
+    queryClient.setQueryData(
+      ["auth", "users", CURRENT_USER_ID, "project-team-scopes", "project-create"],
+      refreshedScopes,
+    );
+    await expect.element(screen.getByRole("button", { name: "平台运营" })).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
     await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     expect(
       fetchCalls(fetcher).some(([url, init]) => {
