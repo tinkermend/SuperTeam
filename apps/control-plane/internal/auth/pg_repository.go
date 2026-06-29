@@ -306,6 +306,65 @@ func (r *PgRepository) UpdateSessionLastSeen(ctx context.Context, tokenHash stri
 	return err
 }
 
+func (r *PgRepository) CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error) {
+	row, err := r.q.CreateCaptchaChallenge(ctx, queries.CreateCaptchaChallengeParams{
+		ID:         params.ID,
+		TenantID:   params.TenantID,
+		AnswerHash: params.AnswerHash,
+		ExpiresAt: pgtype.Timestamptz{
+			Time:  params.ExpiresAt,
+			Valid: true,
+		},
+		ClientIp: pgtype.Text{
+			String: params.ClientIP,
+			Valid:  params.ClientIP != "",
+		},
+		UserAgent: pgtype.Text{
+			String: params.UserAgent,
+			Valid:  params.UserAgent != "",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toDomainCaptchaChallenge(row), nil
+}
+
+func (r *PgRepository) GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*CaptchaChallengeRecord, error) {
+	row, err := r.q.GetCaptchaChallengeForUpdate(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrCaptchaInvalid
+		}
+		return nil, err
+	}
+	return toDomainCaptchaChallenge(row), nil
+}
+
+func (r *PgRepository) ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error {
+	rows, err := r.q.ConsumeCaptchaChallenge(ctx, queries.ConsumeCaptchaChallengeParams{
+		ID: id,
+		UsedAt: pgtype.Timestamptz{
+			Time:  usedAt,
+			Valid: true,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrCaptchaUsed
+	}
+	return nil
+}
+
+func (r *PgRepository) DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error {
+	return r.q.DeleteExpiredCaptchaChallenges(ctx, pgtype.Timestamptz{
+		Time:  before,
+		Valid: true,
+	})
+}
+
 func (r *PgRepository) CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error {
 	_, err := r.q.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
 		EventType: params.EventType,
@@ -327,6 +386,20 @@ func (r *PgRepository) CreateLoginLog(ctx context.Context, params CreateLoginLog
 		},
 	})
 	return err
+}
+
+func toDomainCaptchaChallenge(row queries.AuthCaptchaChallenge) *CaptchaChallengeRecord {
+	return &CaptchaChallengeRecord{
+		ID:         row.ID,
+		TenantID:   row.TenantID,
+		AnswerHash: row.AnswerHash,
+		ExpiresAt:  row.ExpiresAt.Time,
+		UsedAt:     timePtr(row.UsedAt),
+		ClientIP:   row.ClientIp.String,
+		UserAgent:  row.UserAgent.String,
+		CreatedAt:  row.CreatedAt.Time,
+		UpdatedAt:  row.UpdatedAt.Time,
+	}
 }
 
 func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error) {

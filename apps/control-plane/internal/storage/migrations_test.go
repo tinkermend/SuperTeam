@@ -285,6 +285,38 @@ func TestDigitalEmployeeEnvironmentVariablesMigration(t *testing.T) {
 	}
 }
 
+func TestAuthCaptchaChallengeMigrationAddsOneTimeChallengeStorage(t *testing.T) {
+	body, err := os.ReadFile("migrations/039_auth_captcha_challenges.sql")
+	if err != nil {
+		t.Fatalf("read auth captcha migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS auth_captcha_challenges",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid",
+		"answer_hash VARCHAR(255) NOT NULL",
+		"expires_at TIMESTAMPTZ NOT NULL",
+		"used_at TIMESTAMPTZ",
+		"client_ip VARCHAR(255)",
+		"user_agent TEXT",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"CREATE INDEX IF NOT EXISTS idx_auth_captcha_challenges_expires_at",
+		"CREATE INDEX IF NOT EXISTS idx_auth_captcha_challenges_used_at",
+		"CREATE INDEX IF NOT EXISTS idx_auth_captcha_challenges_created_at",
+		"pg_trigger",
+		"tgname = 'update_auth_captcha_challenges_updated_at'",
+		"CREATE TRIGGER update_auth_captcha_challenges_updated_at",
+		"COMMENT ON TABLE auth_captcha_challenges IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected auth captcha migration to contain %q", expected)
+		}
+	}
+}
+
 func TestMCPHTTPCapabilityRegistryMigration(t *testing.T) {
 	body, err := os.ReadFile("migrations/037_mcp_http_capability_registry.sql")
 	if err != nil {

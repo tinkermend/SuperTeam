@@ -123,6 +123,28 @@ type AuditEvent struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Web 登录图形验证码挑战表
+type AuthCaptchaChallenge struct {
+	// 验证码挑战主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 验证码答案哈希，不保存明文
+	AnswerHash string `json:"answer_hash"`
+	// 验证码过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// 验证码消费时间；非空表示已使用
+	UsedAt pgtype.Timestamptz `json:"used_at"`
+	// 创建验证码的客户端 IP
+	ClientIp pgtype.Text `json:"client_ip"`
+	// 创建验证码的 User-Agent
+	UserAgent pgtype.Text `json:"user_agent"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Runtime Agent 认证令牌表
 type AuthRuntimeToken struct {
 	// Runtime 令牌主键 UUID

@@ -31,6 +31,7 @@ type Querier interface {
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountActiveTenantTeamsByIDs(ctx context.Context, arg CountActiveTenantTeamsByIDsParams) (int32, error)
@@ -58,6 +59,7 @@ type Querier interface {
 	CreateApprovalRequest(ctx context.Context, arg CreateApprovalRequestParams) (ApprovalRequest, error)
 	CreateArtifactRetentionHold(ctx context.Context, arg CreateArtifactRetentionHoldParams) (ArtifactRetentionHold, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
+	CreateCaptchaChallenge(ctx context.Context, arg CreateCaptchaChallengeParams) (AuthCaptchaChallenge, error)
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, arg CreateDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
@@ -131,6 +133,7 @@ type Querier interface {
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteDigitalEmployeeMCPBinding(ctx context.Context, arg DeleteDigitalEmployeeMCPBindingParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
+	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
@@ -155,6 +158,7 @@ type Querier interface {
 	GetApprovalRequest(ctx context.Context, arg GetApprovalRequestParams) (ApprovalRequest, error)
 	GetApprovalRequestByResource(ctx context.Context, arg GetApprovalRequestByResourceParams) (ApprovalRequest, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
+	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthCaptchaChallenge, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurrentProjectTaskAttemptParams) (ProjectTaskAttempt, error)

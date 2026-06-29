@@ -29,8 +29,6 @@ const (
 	captchaChars   = captchaDigits + captchaLetters
 )
 
-var errCaptchaRepositoryNotImplemented = errors.New("captcha repository not implemented")
-
 func (s *Service) CreateCaptcha(ctx context.Context, clientIP, userAgent string) (*CaptchaChallenge, error) {
 	now := s.now().UTC()
 	if err := s.repo.DeleteExpiredCaptchaChallenges(ctx, now); err != nil {
@@ -270,20 +268,4 @@ var captchaGlyphs = map[rune][]string{
 	'X': {"10001", "10001", "01010", "00100", "01010", "10001", "10001"},
 	'Y': {"10001", "10001", "01010", "00100", "00100", "00100", "00100"},
 	'Z': {"11111", "00001", "00010", "00100", "01000", "10000", "11111"},
-}
-
-func (r *PgRepository) CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error) {
-	return nil, errCaptchaRepositoryNotImplemented
-}
-
-func (r *PgRepository) GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*CaptchaChallengeRecord, error) {
-	return nil, errCaptchaRepositoryNotImplemented
-}
-
-func (r *PgRepository) ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error {
-	return errCaptchaRepositoryNotImplemented
-}
-
-func (r *PgRepository) DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error {
-	return errCaptchaRepositoryNotImplemented
 }
