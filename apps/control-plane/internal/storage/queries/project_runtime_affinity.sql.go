@@ -392,7 +392,7 @@ SET
     ),
     budget_tripped_at = CASE
         WHEN $3::varchar IS NULL THEN budget_tripped_at
-        ELSE COALESCE(budget_tripped_at, NOW())
+        ELSE COALESCE(budget_tripped_at, statement_timestamp())
     END,
     budget_trip_reason = COALESCE(budget_trip_reason, $3::varchar)
 WHERE tenant_id = $4::uuid

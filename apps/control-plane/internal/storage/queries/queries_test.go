@@ -603,7 +603,9 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 
 	_, err = db.Exec(ctx, `
 		UPDATE project_task_attempts
-		SET budget_last_heartbeat_at = NULL
+		SET budget_last_heartbeat_at = NULL,
+		    budget_tripped_at = NULL,
+		    budget_trip_reason = NULL
 		WHERE tenant_id = $1 AND project_task_id = $2 AND id = $3
 	`, tenantID, task.ID, attempt.ID)
 	require.NoError(t, err)
@@ -624,10 +626,15 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 		AttemptID:                attempt.ID,
 		ConsumedWallClockSec:     1,
 		ConsumedTokens:           1,
+		TripReason:               pgtype.Text{String: "statement_time_trip", Valid: true},
 	})
 	require.NoError(t, err)
 	require.True(t, delayed.BudgetLastHeartbeatAt.Valid)
+	require.True(t, delayed.BudgetTrippedAt.Valid)
 	require.True(t, delayed.BudgetLastHeartbeatAt.Time.After(transactionStartedAt))
+	require.True(t, delayed.BudgetTrippedAt.Time.After(transactionStartedAt))
+	require.False(t, delayed.BudgetTrippedAt.Time.Before(delayed.BudgetLastHeartbeatAt.Time))
+	require.Equal(t, "statement_time_trip", delayed.BudgetTripReason.String)
 	require.NoError(t, tx.Commit(ctx))
 
 	_, err = q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{

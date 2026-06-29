@@ -174,7 +174,7 @@ SET
     ),
     budget_tripped_at = CASE
         WHEN sqlc.narg('trip_reason')::varchar IS NULL THEN budget_tripped_at
-        ELSE COALESCE(budget_tripped_at, NOW())
+        ELSE COALESCE(budget_tripped_at, statement_timestamp())
     END,
     budget_trip_reason = COALESCE(budget_trip_reason, sqlc.narg('trip_reason')::varchar)
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
