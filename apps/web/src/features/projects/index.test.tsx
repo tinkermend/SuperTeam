@@ -1174,6 +1174,34 @@ describe("ProjectsView", () => {
       .not.toBeInTheDocument();
   });
 
+  it("does not count a source team as ready until the user selects one", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjectCreate(fetcher);
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith(`/api/auth/users/${CURRENT_USER_ID}/project-team-scopes`) &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+    });
+    await expect.element(screen.getByText("必备项 1 / 3 已就绪")).toBeInTheDocument();
+    await expect.element(screen.getByText("未选择")).toBeInTheDocument();
+
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "授权检查");
+    await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
+    await expect.element(screen.getByText("必备项 2 / 3 已就绪")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
+
+    await expect.element(screen.getByText("必备项 3 / 3 已就绪")).toBeInTheDocument();
+  });
+
   it("renders the project list as a v3 work surface table", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
@@ -1491,6 +1519,7 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "选择 leader" }).first());
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await expect.element(screen.getByText("平台值守员")).toBeInTheDocument();
     await expect.element(screen.getByText("研发助手")).not.toBeInTheDocument();
     await vi.waitFor(() => {
@@ -1590,7 +1619,6 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByRole("button", { name: "平台运营" })).toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "未授权团队" })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     expect(
@@ -1609,6 +1637,9 @@ describe("ProjectsView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("button", { name: "平台运营" })).toHaveAttribute("aria-pressed", "false");
+    await expect.element(screen.getByText("请先选择数字员工来源团队")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await expect.element(screen.getByText("平台值守员")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
