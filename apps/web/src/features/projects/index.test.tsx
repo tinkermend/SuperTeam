@@ -1917,13 +1917,33 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByLabelText("选中项目上下文")).toBeVisible();
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeVisible();
-    await expect.element(screen.getByText("project-coordinator:project-1")).toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "发起任务" }))
-      .toHaveAttribute("href", "/task-launches?projectId=project-1");
+    await userEvent.click(
+      screen.getByRole("button", { name: "查看项目上下文 生产巡检整改" }),
+    );
+
+    let panel = screen.getByLabelText("选中项目上下文").element();
+    await vi.waitFor(() => {
+      expect(panel.textContent).toContain("生产巡检整改");
+      expect(panel.textContent).toContain("project-coordinator:project-2");
+      expect(panel.textContent).not.toContain("客户接入验收");
+    });
+    expect(panel.querySelector('a[href="/task-launches?projectId=project-2"]')?.textContent).toContain(
+      "发起任务",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "查看项目上下文 客户接入验收" }),
+    );
+
+    panel = screen.getByLabelText("选中项目上下文").element();
+    await vi.waitFor(() => {
+      expect(panel.textContent).toContain("客户接入验收");
+      expect(panel.textContent).toContain("project-coordinator:project-1");
+      expect(panel.textContent).not.toContain("生产巡检整改");
+    });
+    expect(panel.querySelector('a[href="/task-launches?projectId=project-1"]')?.textContent).toContain(
+      "发起任务",
+    );
   });
 
   it("keeps the full operational detail on project detail routes", async () => {
@@ -1934,6 +1954,11 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeVisible();
     await expect.element(screen.getByText("整理接入证据")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "提交需求" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
+    await expect.element(screen.getByText("路由决策")).toBeVisible();
+    await expect.element(screen.getByText("协调任务")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "归档项目" })).toBeVisible();
     expect(screen.container.querySelector('[aria-label="选中项目上下文"]')).toBeNull();
   });
 
