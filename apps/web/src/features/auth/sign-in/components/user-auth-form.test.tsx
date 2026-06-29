@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
+import { ApiRequestError } from '@/lib/api'
 import { UserAuthForm } from './user-auth-form'
 
 const { getLoginCaptcha, login, navigate } = vi.hoisted(() => ({
@@ -271,6 +272,45 @@ describe('UserAuthForm', () => {
     await vi.waitFor(() => expect(getLoginCaptcha).toHaveBeenCalledTimes(2))
     await expect.element(username).toHaveValue('admin')
     await expect.element(password).toHaveValue('wrong')
+    await expect.element(captchaCode).toHaveValue('')
+    await expect
+      .element(screen.getByRole('img', { name: /^图形验证码$/i }))
+      .toHaveAttribute('src', refreshedCaptcha.image_data_url)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('shows the captcha error message when the captcha is invalid', async () => {
+    const refreshedCaptcha = {
+      captcha_id: '22222222-2222-4222-8222-222222222222',
+      expires_at: '2026-06-30T08:05:00Z',
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
+    }
+    getLoginCaptcha
+      .mockResolvedValueOnce(defaultCaptcha)
+      .mockResolvedValueOnce(refreshedCaptcha)
+    login.mockRejectedValueOnce(
+      new ApiRequestError('auth login', 401, '验证码不正确或已过期')
+    )
+    const screen = await render(<UserAuthForm />)
+
+    const username = screen.getByRole('textbox', { name: /^账号$/i })
+    const password = screen.getByLabelText(/^密码$/i)
+    const captchaCode = screen.getByRole('textbox', { name: /^图形验证码$/i })
+
+    await userEvent.fill(username, 'admin')
+    await userEvent.fill(password, 'admin')
+    await userEvent.fill(captchaCode, 'ZZZZ')
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
+
+    await expect
+      .element(screen.getByText('验证码不正确或已过期'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByText('用户名或密码不正确'))
+      .not.toBeInTheDocument()
+    await vi.waitFor(() => expect(getLoginCaptcha).toHaveBeenCalledTimes(2))
+    await expect.element(username).toHaveValue('admin')
+    await expect.element(password).toHaveValue('admin')
     await expect.element(captchaCode).toHaveValue('')
     await expect
       .element(screen.getByRole('img', { name: /^图形验证码$/i }))

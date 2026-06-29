@@ -5,7 +5,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2, LogIn, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/features/auth/use-auth'
-import { getLoginCaptcha, type CaptchaChallengeResponse } from '@/lib/api'
+import {
+  ApiRequestError,
+  getLoginCaptcha,
+  type CaptchaChallengeResponse,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { V3Button, V3IconButton } from '@/components/superteam'
 import {
@@ -120,8 +124,8 @@ export function UserAuthForm({
         captcha_code: data.captcha_code.toUpperCase(),
       })
       navigate({ to: redirectTo || '/', replace: true })
-    } catch {
-      setFormError('用户名或密码不正确')
+    } catch (error) {
+      setFormError(loginErrorMessage(error))
       void refreshCaptcha()
     } finally {
       submitInFlightRef.current = false
@@ -252,4 +256,14 @@ export function UserAuthForm({
       </form>
     </Form>
   )
+}
+
+function loginErrorMessage(error: unknown) {
+  if (
+    error instanceof ApiRequestError &&
+    error.message.includes('验证码不正确或已过期')
+  ) {
+    return '验证码不正确或已过期'
+  }
+  return '用户名或密码不正确'
 }
