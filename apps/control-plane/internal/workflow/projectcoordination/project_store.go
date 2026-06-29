@@ -1873,6 +1873,14 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	attemptID := projectTaskDispatchAttemptID(task.ID, nextAttemptNo)
 	leaseToken := projectTaskAttemptLeaseToken(task.ID, nextAttemptNo)
 	handoffContract := projectTaskDispatchHandoffContract(task.HandoffContract)
+	workspaceMode := WorkspaceModeForTaskKind(stringPtrValue(task.TaskKind))
+	projectGit := projectGitMetadata(projectRecord.RepoBinding)
+	baseRef := ""
+	if projectRecord.RepoBinding.Status == project.ProjectRepoBindingStatusBound {
+		baseRef = projectRecord.RepoBinding.DefaultBranch
+	} else {
+		workspaceMode = WorkspaceModeNone
+	}
 	runMetadata := map[string]any{
 		"source":                           "project_task_dispatch",
 		"actor_type":                       "project_coordinator",
@@ -1885,6 +1893,11 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		"expected_outputs":                 append([]any(nil), task.ExpectedOutputs...),
 		"input_requirements":               cloneAnyMap(task.InputRequirements),
 		"handoff_contract":                 handoffContract,
+		"workspace_mode":                   workspaceMode,
+		"base_ref":                         baseRef,
+	}
+	if projectGit != nil {
+		runMetadata["project_git"] = projectGit
 	}
 	addDispatchGateMetadata(runMetadata, gate.Gate)
 	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
@@ -1898,6 +1911,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
 		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
 		Metadata:          runMetadata,
+		WorkspaceMode:     workspaceMode,
+		BaseRef:           baseRef,
+		ProjectGit:        projectGit,
 	})
 	if err != nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
@@ -2021,6 +2037,31 @@ func dispatchFailurePayload(task project.ProjectTask, err error, retryable bool)
 		"retryable":           retryable,
 		"dispatch_actor_type": "project_coordinator",
 	}
+}
+
+func projectGitMetadata(binding project.ProjectRepoBinding) map[string]any {
+	if binding.Status != project.ProjectRepoBindingStatusBound {
+		return nil
+	}
+	values := map[string]any{
+		"url":            strings.TrimSpace(binding.URL),
+		"default_branch": strings.TrimSpace(binding.DefaultBranch),
+	}
+	if binding.GitCredentialRef != nil {
+		if credentialRef := strings.TrimSpace(*binding.GitCredentialRef); credentialRef != "" {
+			values["git_credential_ref"] = credentialRef
+		}
+	}
+	scope := make([]any, 0, len(binding.Scope))
+	for _, item := range binding.Scope {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			scope = append(scope, trimmed)
+		}
+	}
+	if len(scope) > 0 {
+		values["scope"] = scope
+	}
+	return values
 }
 
 func addDispatchGateMetadata(target map[string]any, gate project.PreDispatchGateResult) {

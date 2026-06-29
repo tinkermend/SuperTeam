@@ -240,6 +240,9 @@ type StartProjectTaskRunRequest struct {
 	Prompt            string
 	IdempotencyKey    string
 	Metadata          map[string]any
+	WorkspaceMode     string
+	BaseRef           string
+	ProjectGit        map[string]any
 }
 
 type StartProjectTaskRunResult struct {

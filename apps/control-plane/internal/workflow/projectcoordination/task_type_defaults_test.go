@@ -34,6 +34,27 @@ func TestDefaultRequiredCapabilitiesUnknownKindReturnsNil(t *testing.T) {
 	require.Nil(t, DefaultRequiredCapabilities("some_custom_kind"))
 }
 
+func TestWorkspaceModeForTaskKind(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		want string
+	}{
+		{name: "feature development uses branch workspace", kind: "feature_development", want: WorkspaceModeBranch},
+		{name: "code review uses diff workspace", kind: "code_review", want: WorkspaceModeDiff},
+		{name: "test verification uses detached run workspace", kind: "test_verification", want: WorkspaceModeDetachedRun},
+		{name: "incident triage uses readonly workspace", kind: "incident_triage", want: WorkspaceModeReadonly},
+		{name: "status report uses no workspace", kind: "status_report", want: WorkspaceModeNone},
+		{name: "unknown kind uses no workspace", kind: "some_custom_kind", want: WorkspaceModeNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, WorkspaceModeForTaskKind(tt.kind))
+		})
+	}
+}
+
 func TestDefaultRequiredCapabilitiesReturnsCopy(t *testing.T) {
 	first := DefaultRequiredCapabilities("database_analysis")
 	first[0] = "mutated"
@@ -45,11 +66,11 @@ func TestApplyTaskTypeDefaultsFillsMissingCapabilities(t *testing.T) {
 	plan := RouteDecisionPlan{
 		Reason: "reason",
 		Tasks: []PlannedTask{{
-			Key:                  "analyze-db",
-			TaskKind:             "database_analysis",
-			SelectedEmployeeID:   uuid.New(),
+			Key:                     "analyze-db",
+			TaskKind:                "database_analysis",
+			SelectedEmployeeID:      uuid.New(),
 			EmployeeSelectionReason: "db employee",
-			RequiredCapabilities: []string{"database.read"},
+			RequiredCapabilities:    []string{"database.read"},
 		}},
 	}
 
@@ -65,9 +86,9 @@ func TestApplyTaskTypeDefaultsPreservesExplicitCapabilities(t *testing.T) {
 	plan := RouteDecisionPlan{
 		Reason: "reason",
 		Tasks: []PlannedTask{{
-			Key:                  "analyze-db",
-			TaskKind:             "database_analysis",
-			SelectedEmployeeID:   uuid.New(),
+			Key:                     "analyze-db",
+			TaskKind:                "database_analysis",
+			SelectedEmployeeID:      uuid.New(),
 			EmployeeSelectionReason: "db employee",
 			// Custom capability plus one that overlaps a default — union must dedupe.
 			RequiredCapabilities: []string{"custom.cap", "sql.analysis"},
@@ -85,11 +106,11 @@ func TestApplyTaskTypeDefaultsSkipsUnknownKind(t *testing.T) {
 	plan := RouteDecisionPlan{
 		Reason: "reason",
 		Tasks: []PlannedTask{{
-			Key:                  "do-thing",
-			TaskKind:             "custom_kind",
-			SelectedEmployeeID:   uuid.New(),
+			Key:                     "do-thing",
+			TaskKind:                "custom_kind",
+			SelectedEmployeeID:      uuid.New(),
 			EmployeeSelectionReason: "custom",
-			RequiredCapabilities: []string{"only.this"},
+			RequiredCapabilities:    []string{"only.this"},
 		}},
 	}
 
@@ -108,11 +129,11 @@ func TestApplyTaskTypeDefaultsDoesNotRecordWhenAlreadyComplete(t *testing.T) {
 	plan := RouteDecisionPlan{
 		Reason: "reason",
 		Tasks: []PlannedTask{{
-			Key:                  "analyze-db",
-			TaskKind:             "database_analysis",
-			SelectedEmployeeID:   uuid.New(),
+			Key:                     "analyze-db",
+			TaskKind:                "database_analysis",
+			SelectedEmployeeID:      uuid.New(),
 			EmployeeSelectionReason: "db employee",
-			RequiredCapabilities: DefaultRequiredCapabilities("database_analysis"),
+			RequiredCapabilities:    DefaultRequiredCapabilities("database_analysis"),
 		}},
 	}
 

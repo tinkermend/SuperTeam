@@ -401,6 +401,66 @@ func TestRunServiceCreateRunEnrichesProjectTaskAttemptMetadata(t *testing.T) {
 	}
 }
 
+func TestRunServiceStartSessionPayloadAndIdempotencyFingerprintIncludeWorkspaceMetadata(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	req := validCreateRunServiceRequest()
+	req.Metadata = map[string]any{
+		"source":         "project_task_dispatch",
+		"workspace_mode": "branch",
+		"base_ref":       "main",
+		"project_git": map[string]any{
+			"url":            "https://github.com/acme/app.git",
+			"default_branch": "main",
+			"scope":          []any{"apps/web", "packages/shared"},
+		},
+	}
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if len(repo.createRunRequests) != 1 {
+		t.Fatalf("expected one create run request, got %d", len(repo.createRunRequests))
+	}
+	paramsMetadata, ok := repo.createRunRequests[0].Params["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected params metadata object, got %#v", repo.createRunRequests[0].Params["metadata"])
+	}
+	requireWorkspaceMetadata(t, paramsMetadata)
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	payloadMetadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected payload metadata object, got %#v", payload["metadata"])
+	}
+	requireWorkspaceMetadata(t, payloadMetadata)
+
+	sameFingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+	if err != nil {
+		t.Fatalf("compute fingerprint: %v", err)
+	}
+	changedReq := req
+	changedReq.Metadata = cloneMap(req.Metadata)
+	changedReq.Metadata["workspace_mode"] = "readonly"
+	changedFingerprint, err := computeRunIdempotencyFingerprint(changedReq, strings.TrimSpace(changedReq.Objective), strings.TrimSpace(changedReq.Prompt), repo.preflight)
+	if err != nil {
+		t.Fatalf("compute changed fingerprint: %v", err)
+	}
+	if repo.createRunRequests[0].IdempotencyFingerprint == nil || *repo.createRunRequests[0].IdempotencyFingerprint != sameFingerprint {
+		t.Fatalf("expected persisted fingerprint to include workspace metadata")
+	}
+	if sameFingerprint == changedFingerprint {
+		t.Fatalf("expected workspace metadata change to alter idempotency fingerprint")
+	}
+}
+
 func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFiles(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
@@ -1156,6 +1216,24 @@ func commandPayload(t *testing.T, command cpruntime.RuntimeCommand) map[string]a
 		t.Fatalf("decode command payload: %v", err)
 	}
 	return payload
+}
+
+func requireWorkspaceMetadata(t *testing.T, metadata map[string]any) {
+	t.Helper()
+	if metadata["workspace_mode"] != "branch" || metadata["base_ref"] != "main" {
+		t.Fatalf("expected workspace metadata, got %#v", metadata)
+	}
+	projectGit, ok := metadata["project_git"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected project_git metadata object, got %#v", metadata["project_git"])
+	}
+	if projectGit["url"] != "https://github.com/acme/app.git" || projectGit["default_branch"] != "main" {
+		t.Fatalf("expected project git url/default branch, got %#v", projectGit)
+	}
+	scope, ok := projectGit["scope"].([]any)
+	if !ok || len(scope) != 2 || scope[0] != "apps/web" || scope[1] != "packages/shared" {
+		t.Fatalf("expected project git scope, got %#v", projectGit["scope"])
+	}
 }
 
 var (

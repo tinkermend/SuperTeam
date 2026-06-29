@@ -1938,6 +1938,51 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	}
 }
 
+func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	attemptID := projectTaskDispatchAttemptID(taskID, 1)
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, Name: "Code project", HumanOwnerUserID: uuid.New(),
+			RepoBinding: project.ProjectRepoBinding{
+				Status:        project.ProjectRepoBindingStatusBound,
+				URL:           "https://github.com/acme/app.git",
+				DefaultBranch: "main",
+				Scope:         []string{"apps/web", "packages/shared"},
+			},
+		},
+		demand:  project.ProjectDemand{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "Fix login"},
+		members: []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectTaskStatusPlanned,
+			Title: "Implement fix", AssignedDigitalEmployeeID: &employeeID, TaskKind: stringPtr("feature_development"),
+		}},
+	}
+	repo.tasks[0].DemandID = &repo.demand.ID
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID, DispatchReason: project.DispatchReasonRootReady,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	require.Equal(t, "branch", starter.requests[0].Metadata["workspace_mode"])
+	require.Equal(t, "main", starter.requests[0].Metadata["base_ref"])
+	require.Equal(t, attemptID.String(), starter.requests[0].Metadata["project_task_attempt_id"])
+	require.Equal(t, map[string]any{
+		"url":            "https://github.com/acme/app.git",
+		"default_branch": "main",
+		"scope":          []any{"apps/web", "packages/shared"},
+	}, starter.requests[0].Metadata["project_git"])
+}
+
 func TestProjectStoreDispatchProjectTaskRunsGateBeforeRunStart(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
