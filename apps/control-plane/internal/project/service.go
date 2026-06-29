@@ -1100,18 +1100,6 @@ func selectReviewer(explicit *uuid.UUID, explicitReason ReviewerSelectionReason,
 		}
 		return ProjectMember{}, "", false, ErrInvalidProjectMember
 	}
-	reviewers := make([]ProjectMember, 0, len(members))
-	for _, member := range members {
-		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleReviewer && member.Status == "active" {
-			reviewers = append(reviewers, member)
-		}
-	}
-	if len(reviewers) == 1 {
-		return reviewers[0], ReviewerSelectionProjectReviewerDefault, true, nil
-	}
-	if len(reviewers) > 1 {
-		return ProjectMember{}, "", false, ErrInvalidProjectMember
-	}
 	for _, member := range members {
 		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == project.HumanOwnerUserID && member.ProjectRole == ProjectRoleOwner && member.Status == "active" {
 			return member, ReviewerSelectionProjectHumanOwnerFallback, true, nil

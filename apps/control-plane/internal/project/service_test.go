@@ -3705,7 +3705,7 @@ func TestListWorkflowInstancesKeepsOptionalReadModelFieldsAndSortsAttentionFirst
 	}
 }
 
-func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
+func TestSubmitDemandPersistsPrimaryOwnerFallbackWhenReviewerOmitted(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	ownerID := uuid.New()
@@ -3745,14 +3745,14 @@ func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
 	if demand.ReviewerPreference == nil {
 		t.Fatalf("expected reviewer preference on demand: %#v", demand)
 	}
-	if demand.ReviewerPreference.ReviewerUserID != reviewerID {
-		t.Fatalf("expected reviewer %s, got %#v", reviewerID, demand.ReviewerPreference)
+	if demand.ReviewerPreference.ReviewerUserID != ownerID {
+		t.Fatalf("expected owner %s, got %#v", ownerID, demand.ReviewerPreference)
 	}
-	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectReviewerDefault {
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectHumanOwnerFallback {
 		t.Fatalf("unexpected reviewer reason: %#v", demand.ReviewerPreference)
 	}
-	if demand.SourceRefs["reviewer_user_id"] != reviewerID.String() {
-		t.Fatalf("expected reviewer persisted in source refs: %#v", demand.SourceRefs)
+	if demand.SourceRefs["reviewer_user_id"] != ownerID.String() {
+		t.Fatalf("expected owner persisted in source refs: %#v", demand.SourceRefs)
 	}
 }
 
@@ -4069,7 +4069,7 @@ func TestSubmitDemandRejectsDigitalEmployeeReviewer(t *testing.T) {
 	}
 }
 
-func TestSubmitDemandRequiresExplicitReviewerWhenMultipleReviewers(t *testing.T) {
+func TestSubmitDemandFallsBackToPrimaryOwnerWhenMultipleReviewersExist(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	ownerID := uuid.New()
@@ -4097,12 +4097,18 @@ func TestSubmitDemandRequiresExplicitReviewerWhenMultipleReviewers(t *testing.T)
 		t.Fatalf("new service: %v", err)
 	}
 
-	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "多审核人项目",
 	})
-	if !errors.Is(err, ErrInvalidProjectMember) {
-		t.Fatalf("expected reviewer selection error, got %v", err)
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	if demand.ReviewerPreference == nil || demand.ReviewerPreference.ReviewerUserID != ownerID {
+		t.Fatalf("expected owner fallback preference: %#v", demand.ReviewerPreference)
+	}
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectHumanOwnerFallback {
+		t.Fatalf("expected owner fallback reason, got %#v", demand.ReviewerPreference)
 	}
 }
 
