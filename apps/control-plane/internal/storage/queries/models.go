@@ -750,6 +750,15 @@ type Project struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 项目更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 项目 Phase 1 源码仓库 URL；为空表示项目不绑定源码。
+	RepoUrl pgtype.Text `json:"repo_url"`
+	// 项目源码默认 base ref，不保存本地绝对路径。
+	RepoDefaultBranch pgtype.Text `json:"repo_default_branch"`
+	// 项目级 git 凭据引用，与员工 MCP 凭据分离。
+	RepoGitCredentialRef pgtype.Text `json:"repo_git_credential_ref"`
+	// 仓库 sparse checkout scope，必须由业务侧保证包含传递依赖闭包。
+	RepoScope         []byte `json:"repo_scope"`
+	RepoBindingStatus string `json:"repo_binding_status"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险
@@ -1166,6 +1175,20 @@ type ProjectMember struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 项目到 Runtime 节点的动态亲和放置状态，不保存本地绝对路径。
+type ProjectPlacement struct {
+	ID              uuid.UUID          `json:"id"`
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	ProjectID       uuid.UUID          `json:"project_id"`
+	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
+	PlacementStatus string             `json:"placement_status"`
+	PlacementReason pgtype.Text        `json:"placement_reason"`
+	AssignedAt      pgtype.Timestamptz `json:"assigned_at"`
+	ReleasedAt      pgtype.Timestamptz `json:"released_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 计划版本分解幂等声明表，保证 accepted PlanRevision 精确一次转换为 ProjectTask DAG。
 type ProjectPlanDecompositionClaim struct {
 	// 分解声明ID。
@@ -1452,6 +1475,14 @@ type ProjectTaskAttempt struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 创建该尝试前通过的 gate 结果ID。
 	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
+	// 该尝试的墙钟预算上限，空表示未设置。
+	BudgetWallClockLimitSec    pgtype.Int4        `json:"budget_wall_clock_limit_sec"`
+	BudgetLastHeartbeatAt      pgtype.Timestamptz `json:"budget_last_heartbeat_at"`
+	BudgetConsumedWallClockSec int32              `json:"budget_consumed_wall_clock_sec"`
+	BudgetConsumedTokens       int32              `json:"budget_consumed_tokens"`
+	BudgetTrippedAt            pgtype.Timestamptz `json:"budget_tripped_at"`
+	// 预算熔断原因，例如 wall_clock_exceeded、token_limit_exceeded。
+	BudgetTripReason pgtype.Text `json:"budget_trip_reason"`
 }
 
 type ProjectTaskAttemptContextUpdate struct {
@@ -1465,6 +1496,35 @@ type ProjectTaskAttemptContextUpdate struct {
 	CreatedEventID uuid.NullUUID      `json:"created_event_id"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime 对项目任务执行的结构化证明，保存命令、退出码、日志哈希、产物哈希和 git 证据引用。
+type ProjectTaskAttestation struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	ProjectID         uuid.UUID          `json:"project_id"`
+	ProjectTaskID     uuid.UUID          `json:"project_task_id"`
+	AttemptID         uuid.UUID          `json:"attempt_id"`
+	RuntimeNodeID     uuid.UUID          `json:"runtime_node_id"`
+	ProviderSessionID pgtype.Text        `json:"provider_session_id"`
+	AttestationType   string             `json:"attestation_type"`
+	Status            string             `json:"status"`
+	CommandArgv       []byte             `json:"command_argv"`
+	ExitCode          pgtype.Int4        `json:"exit_code"`
+	DurationMs        pgtype.Int8        `json:"duration_ms"`
+	LogRef            pgtype.Text        `json:"log_ref"`
+	StdoutSha256      pgtype.Text        `json:"stdout_sha256"`
+	StderrSha256      pgtype.Text        `json:"stderr_sha256"`
+	ArtifactRefs      []byte             `json:"artifact_refs"`
+	ArtifactHashes    []byte             `json:"artifact_hashes"`
+	GitBranch         pgtype.Text        `json:"git_branch"`
+	GitBaseRef        pgtype.Text        `json:"git_base_ref"`
+	GitHeadSha        pgtype.Text        `json:"git_head_sha"`
+	GitDiffSha256     pgtype.Text        `json:"git_diff_sha256"`
+	Metadata          []byte             `json:"metadata"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目任务依赖边，记录一个任务被另一个任务完成结果阻塞的DAG关系
