@@ -317,11 +317,7 @@ impl RuntimeSessionCommandPayload {
             project_task_attempt_id: metadata_string(&self.metadata, "project_task_attempt_id"),
             workspace_mode: metadata_string(&self.metadata, "workspace_mode"),
             base_ref: metadata_string(&self.metadata, "base_ref"),
-            project_git: self
-                .metadata
-                .get("project_git")
-                .cloned()
-                .and_then(|value| serde_json::from_value(value).ok()),
+            project_git: project_git_metadata(&self.metadata),
         }
     }
 
@@ -482,6 +478,51 @@ fn metadata_string(metadata: &serde_json::Value, key: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn project_git_metadata(metadata: &serde_json::Value) -> Option<RuntimeProjectGitPayload> {
+    let project_git = metadata.get("project_git")?.as_object()?;
+    let url = project_git
+        .get("url")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let default_branch = project_git
+        .get("default_branch")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let git_credential_ref = project_git
+        .get("git_credential_ref")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let scope = project_git
+        .get("scope")
+        .and_then(|value| value.as_array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| {
+                    value
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(RuntimeProjectGitPayload {
+        url,
+        default_branch,
+        git_credential_ref,
+        scope,
+    })
+}
+
 fn default_recoverable() -> bool {
     true
 }
@@ -570,5 +611,122 @@ mod tests {
         assert_eq!(git.default_branch.as_deref(), Some("main"));
         assert_eq!(git.git_credential_ref.as_deref(), Some("git-creds"));
         assert_eq!(git.scope, vec!["apps/web".to_string()]);
+    }
+
+    #[test]
+    fn test_project_workspace_project_git_metadata_normalizes_strings() {
+        let payload = RuntimeSessionCommandPayload {
+            command_id: "cmd-test".to_string(),
+            tenant_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+            team_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            digital_employee_id: "35a3799b-7665-4913-9097-35ee53d30e74".to_string(),
+            execution_instance_id: "8e64dd8c-d70d-417d-b8bf-fe57a61f4205".to_string(),
+            runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            provider_type: "codex".to_string(),
+            agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            workspace_files: Vec::new(),
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            environment: Vec::new(),
+            session_policy: RuntimeSessionPolicy {
+                mode: SessionPolicyMode::New,
+                provider_session_id: None,
+                recoverable: true,
+            },
+            prompt: Some("hello".to_string()),
+            input: Some("hello".to_string()),
+            context_refs: Vec::new(),
+            artifact_refs: Vec::new(),
+            model: None,
+            metadata: serde_json::json!({
+                "project_git": {
+                    "url": " https://github.com/acme/app.git ",
+                    "default_branch": " main ",
+                    "git_credential_ref": " git-creds ",
+                    "scope": [" apps/web ", "", null, 7, " packages/api "]
+                }
+            }),
+        };
+
+        let git = payload.project_workspace().project_git.unwrap();
+
+        assert_eq!(git.url, "https://github.com/acme/app.git");
+        assert_eq!(git.default_branch.as_deref(), Some("main"));
+        assert_eq!(git.git_credential_ref.as_deref(), Some("git-creds"));
+        assert_eq!(
+            git.scope,
+            vec!["apps/web".to_string(), "packages/api".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_project_workspace_omits_invalid_project_git_metadata() {
+        for project_git in [
+            serde_json::Value::Null,
+            serde_json::json!("https://github.com/acme/app.git"),
+            serde_json::json!(["https://github.com/acme/app.git"]),
+            serde_json::json!({}),
+            serde_json::json!({"url": null}),
+            serde_json::json!({"url": 7}),
+            serde_json::json!({"url": "   "}),
+        ] {
+            let payload = RuntimeSessionCommandPayload {
+                command_id: "cmd-test".to_string(),
+                tenant_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+                team_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+                digital_employee_id: "35a3799b-7665-4913-9097-35ee53d30e74".to_string(),
+                execution_instance_id: "8e64dd8c-d70d-417d-b8bf-fe57a61f4205".to_string(),
+                runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+                provider_type: "codex".to_string(),
+                agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+                workspace_files: Vec::new(),
+                skills: Vec::new(),
+                mcp_servers: Vec::new(),
+                environment: Vec::new(),
+                session_policy: RuntimeSessionPolicy {
+                    mode: SessionPolicyMode::New,
+                    provider_session_id: None,
+                    recoverable: true,
+                },
+                prompt: Some("hello".to_string()),
+                input: Some("hello".to_string()),
+                context_refs: Vec::new(),
+                artifact_refs: Vec::new(),
+                model: None,
+                metadata: serde_json::json!({
+                    "project_git": project_git,
+                }),
+            };
+
+            assert_eq!(payload.project_workspace().project_git, None);
+        }
+
+        let missing_project_git = RuntimeSessionCommandPayload {
+            command_id: "cmd-test".to_string(),
+            tenant_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+            team_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            digital_employee_id: "35a3799b-7665-4913-9097-35ee53d30e74".to_string(),
+            execution_instance_id: "8e64dd8c-d70d-417d-b8bf-fe57a61f4205".to_string(),
+            runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            provider_type: "codex".to_string(),
+            agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            workspace_files: Vec::new(),
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            environment: Vec::new(),
+            session_policy: RuntimeSessionPolicy {
+                mode: SessionPolicyMode::New,
+                provider_session_id: None,
+                recoverable: true,
+            },
+            prompt: Some("hello".to_string()),
+            input: Some("hello".to_string()),
+            context_refs: Vec::new(),
+            artifact_refs: Vec::new(),
+            model: None,
+            metadata: serde_json::json!({}),
+        };
+
+        assert_eq!(missing_project_git.project_workspace().project_git, None);
     }
 }
