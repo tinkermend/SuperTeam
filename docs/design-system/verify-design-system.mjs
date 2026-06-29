@@ -145,6 +145,55 @@ async function verifyPrototypeKit(failures, warnings) {
   }
 }
 
+async function verifyTokenClassTable(failures) {
+  const themeCssPath = path.join(repoRoot, "apps/web/src/styles/theme.css");
+  const tokensDocPath = path.join(designDir, "tokens.md");
+  if (!(await exists(themeCssPath)) || !(await exists(tokensDocPath))) {
+    return;
+  }
+
+  const themeCss = await readText(themeCssPath);
+  const colorTokens = new Set(
+    [...themeCss.matchAll(/--color-(v3-[a-z0-9-]+)\s*:/g)].map((match) => match[1]),
+  );
+  const radiusTokens = new Set(
+    [...themeCss.matchAll(/--radius-(v3-[a-z0-9-]+)\s*:/g)].map((match) => match[1]),
+  );
+  const shadowTokens = new Set(
+    [...themeCss.matchAll(/--shadow-(v3(?:-[a-z0-9-]+)?)\s*:/g)].map((match) => match[1]),
+  );
+
+  // 只校验文档表格行（以 | 开头）里出现的 v3 工具类，避免误伤散文里的反例说明。
+  const tableRows = (await readText(tokensDocPath))
+    .split("\n")
+    .filter((line) => /^\s*\|/.test(line))
+    .join("\n");
+
+  const colorClassRe =
+    /\b(?:bg|text|border|ring|fill|stroke|from|to|via|divide|outline)-(v3-[a-z][a-z0-9-]*)/g;
+  for (const match of tableRows.matchAll(colorClassRe)) {
+    if (!colorTokens.has(match[1])) {
+      failures.push(
+        `tokens.md uses Tailwind class for missing color token --color-${match[1]} (not exposed in theme.css @theme inline)`,
+      );
+    }
+  }
+  for (const match of tableRows.matchAll(/\brounded-(v3-[a-z][a-z0-9-]*)/g)) {
+    if (!radiusTokens.has(match[1])) {
+      failures.push(
+        `tokens.md uses rounded-${match[1]} but --radius-${match[1]} is not exposed in theme.css`,
+      );
+    }
+  }
+  for (const match of tableRows.matchAll(/\bshadow-(v3(?:-[a-z0-9-]+)?)\b/g)) {
+    if (!shadowTokens.has(match[1])) {
+      failures.push(
+        `tokens.md uses shadow-${match[1]} but --shadow-${match[1]} is not exposed in theme.css`,
+      );
+    }
+  }
+}
+
 async function verifyNoForbiddenPatterns(failures) {
   const checkedFiles = [
     path.join(repoRoot, "DESIGN.md"),
@@ -177,6 +226,7 @@ async function main() {
 
   await verifyDesignDocs(failures);
   await verifyPrototypeKit(failures, warnings);
+  await verifyTokenClassTable(failures);
   await verifyNoForbiddenPatterns(failures);
 
   for (const warning of warnings) {

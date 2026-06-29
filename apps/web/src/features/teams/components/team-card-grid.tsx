@@ -356,8 +356,8 @@ function TeamCard({
       )}
     >
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-3 px-5 pt-5">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-start justify-between gap-3 px-5 pt-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <IconTile aria-label={displayConfig.label} role="img" tone={teamDisplayTone(displayConfig.tone)}>
             {displayConfig.dynamicName ? (
               <DynamicIcon
@@ -368,8 +368,11 @@ function TeamCard({
               <TeamIcon aria-hidden="true" />
             )}
           </IconTile>
-          <div className="min-w-0">
-            <h3 className="truncate text-base font-bold leading-tight text-v3-ink">
+          <div className="min-w-0 flex-1">
+            <h3
+              className="line-clamp-2 text-base font-bold leading-tight text-v3-ink"
+              title={team.name}
+            >
               {team.name}
             </h3>
             <p className="mt-0.5 text-xs text-v3-ink-2">

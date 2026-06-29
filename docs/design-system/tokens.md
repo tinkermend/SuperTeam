@@ -56,6 +56,29 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 - 间距：以 4px 基线倍数组织页面外边距、卡片内边距、表单组、步骤链和工具栏。
 - 数字：比较场景一律 `font-variant-numeric: tabular-nums`；ID / UUID / 路径 / 哈希用等宽字体 `--mono`。
 
+### token → Tailwind class 速查（直接可用，勿写原生调色板）
+
+`theme.css` 的 `@theme inline` 已把下列 token 暴露为 Tailwind 工具类，构建页面时直接用这些类，不要写 `bg-blue-600` 之类原生调色板，也不要用 inline style 拼 `var(--v3-*)`（壳层 / signature 例外，见表后说明）。
+
+| 概念 / 用途 | CSS token | Tailwind class |
+| --- | --- | --- |
+| 页面底色 | `--v3-bg` | `bg-v3-bg` |
+| 卡片面 / 软底 / 内层 | `--v3-card` / `--v3-card-soft` / `--v3-card-inner` | `bg-v3-card` / `bg-v3-card-soft` / `bg-v3-card-inner` |
+| 主 / 次 / 三级文字 | `--v3-ink` / `--v3-ink-2` / `--v3-ink-3` | `text-v3-ink` / `text-v3-ink-2` / `text-v3-ink-3` |
+| 分隔线 / 强边框 | `--v3-line` / `--v3-line-strong` | `border-v3-line` / `border-v3-line-strong` |
+| 品牌色（背景 / 文字 / 软底） | `--v3-brand` / `--v3-brand-deep` / `--v3-brand-soft` | `bg-v3-brand` `text-v3-brand` / `text-v3-brand-deep` / `bg-v3-brand-soft` |
+| 焦点环 | `--v3-brand` | `ring-v3-brand`（如 `focus-visible:ring-v3-brand/60`） |
+| 信息 / 运行 | `--v3-info` / `--v3-info-soft` | `text-v3-info` / `bg-v3-info-soft` |
+| 成功 / 通过 | `--v3-ok` / `--v3-ok-soft` | `text-v3-ok` / `bg-v3-ok-soft` |
+| 预警 / 等待 | `--v3-warn` / `--v3-warn-soft` | `text-v3-warn` / `bg-v3-warn-soft` |
+| 危险 / 阻断 | `--v3-danger` / `--v3-danger-soft` | `text-v3-danger` / `bg-v3-danger-soft` |
+| 工件 / 产物 | `--v3-artifact` / `--v3-artifact-soft` | `text-v3-artifact` / `bg-v3-artifact-soft` |
+| 中性 / 审计 | `--v3-mute` / `--v3-mute-soft` | `text-v3-mute` / `bg-v3-mute-soft` |
+| 卡片圆角 / 内层圆角 | `--v3-r-card` / `--v3-r-inner` | `rounded-v3-card` / `rounded-v3-inner` |
+| 弥散阴影 / 浮层阴影 | `--v3-shadow` / `--v3-shadow-pop` | `shadow-v3` / `shadow-v3-pop` |
+
+常见幻觉名（不存在，勿用）：主色没有 `v3-primary`（shadcn 主色是 `bg-primary`，v3 品牌色是 `bg-v3-brand`）；阴影只有 `shadow-v3` 与 `shadow-v3-pop`，没有 soft 变体；`--v3-shell-*` 与 `--v3-signature-*` 未暴露为颜色类，仅在壳层 / signature 卡片用 `var(--v3-...)`（arbitrary value 或 inline style）。本表与 `theme.css` 的一致性由 `verify-design-system.mjs` 校验。
+
 ## 项目级语义变量
 
 优先通过 `theme.css` 使用或扩展项目变量，不要在页面内重复拼复杂视觉 class：
@@ -88,7 +111,7 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 - `--v3-r-card`
 - `--v3-r-inner`
 - `--v3-shadow`
-- `--v3-shadow-hover`
+- `--v3-shadow-pop`
 
 ## 使用规则
 

@@ -71,6 +71,26 @@ describe('UserAuthForm', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 
+  it('ignores repeated submits while login is still running', async () => {
+    login.mockImplementationOnce(() => new Promise(() => {}))
+    const screen = await render(<UserAuthForm />)
+
+    await userEvent.fill(
+      screen.getByRole('textbox', { name: /^账号$/i }),
+      'admin'
+    )
+    await userEvent.fill(screen.getByLabelText(/^密码$/i), 'admin')
+
+    const form = screen.container.querySelector('form')
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(login).toHaveBeenCalledTimes(1))
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('navigates to redirectTo after successful login', async () => {
     const screen = await render(<UserAuthForm redirectTo='/tasks' />)
 

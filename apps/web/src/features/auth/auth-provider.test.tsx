@@ -3,13 +3,33 @@ import { render } from 'vitest-browser-react'
 import { AuthProvider } from './auth-provider'
 import { useAuth } from './use-auth'
 
-function createDeferredResponse() {
-  let resolve!: (response: Response) => void
-  const promise = new Promise<Response>((promiseResolve) => {
+type TestCurrentUserResponse = {
+  user: {
+    id: number;
+    status: string;
+    username: string;
+  };
+};
+
+function createDeferredJsonResponse<T>() {
+  let resolve!: (payload: T) => void
+  const payloadPromise = new Promise<T>((promiseResolve) => {
     resolve = promiseResolve
   })
 
-  return { promise, resolve }
+  return {
+    response: () =>
+      payloadPromise.then(
+        (payload) =>
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          })
+      ),
+    resolve,
+  }
 }
 
 function AuthStatus() {
@@ -95,12 +115,14 @@ describe('AuthProvider', () => {
   })
 
   it('keeps a newer login user when the initial current-user request resolves later', async () => {
-    const initialMe = createDeferredResponse()
-    let currentUserCalls = 0
+    const initialMe = createDeferredJsonResponse<TestCurrentUserResponse>()
+    const loginMe = createDeferredJsonResponse<TestCurrentUserResponse>()
+    let didLogin = false
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
 
       if (url.endsWith('/api/auth/login')) {
+        didLogin = true
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -120,28 +142,7 @@ describe('AuthProvider', () => {
         )
       }
 
-      currentUserCalls += 1
-      if (currentUserCalls === 1) {
-        return initialMe.promise
-      }
-
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            user: {
-              id: 1,
-              username: 'old',
-              status: 'active',
-            },
-          }),
-          {
-            status: 200,
-            headers: {
-              'content-type': 'application/json',
-            },
-          }
-        )
-      )
+      return didLogin ? loginMe.response() : initialMe.response()
     })
 
     const screen = await render(
@@ -152,32 +153,77 @@ describe('AuthProvider', () => {
     )
 
     await screen.getByRole('button', { name: 'Login' }).click()
-    await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+    loginMe.resolve({
+      user: {
+        id: 2,
+        username: 'new',
+        status: 'active',
+      },
+    })
 
-    initialMe.resolve(
-      new Response(
-        JSON.stringify({
-          user: {
-            id: 1,
-            username: 'old',
-            status: 'active',
-          },
-        }),
-        {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-          },
-        }
-      )
-    )
+    initialMe.resolve({
+      user: {
+        id: 1,
+        username: 'old',
+        status: 'active',
+      },
+    })
 
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
   })
 
+  it('waits for current user confirmation before completing login', async () => {
+    const loginMe = createDeferredJsonResponse<TestCurrentUserResponse>()
+    let didLogin = false
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('/api/auth/login')) {
+        didLogin = true
+        return Promise.resolve(
+          new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          })
+        )
+      }
+
+      if (didLogin) {
+        return loginMe.response()
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401,
+          headers: {
+            'content-type': 'application/json',
+          },
+        })
+      )
+    })
+
+    const screen = await render(
+      <AuthProvider apiBaseUrl='http://control-plane.local' fetcher={fetcher}>
+        <AuthStatus />
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await expect.element(screen.getByText('Signed out')).toBeVisible()
+    await screen.getByRole('button', { name: 'Login' }).click()
+
+    expect(screen.getByText('Signed in as new')).not.toBeInTheDocument()
+
+    loginMe.resolve({ user: { id: 2, username: 'new', status: 'active' } })
+
+    await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+  })
+
   it('clears loading when login fails after superseding a slow initial current-user request', async () => {
-    const initialMe = createDeferredResponse()
+    const initialMe = createDeferredJsonResponse<TestCurrentUserResponse>()
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
 
@@ -192,7 +238,7 @@ describe('AuthProvider', () => {
         )
       }
 
-      return initialMe.promise
+      return initialMe.response()
     })
 
     const screen = await render(
@@ -207,23 +253,13 @@ describe('AuthProvider', () => {
     await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(screen.getByText('Loading')).not.toBeInTheDocument()
 
-    initialMe.resolve(
-      new Response(
-        JSON.stringify({
-          user: {
-            id: 1,
-            username: 'old',
-            status: 'active',
-          },
-        }),
-        {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-          },
-        }
-      )
-    )
+    initialMe.resolve({
+      user: {
+        id: 1,
+        username: 'old',
+        status: 'active',
+      },
+    })
 
     await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()

@@ -76,10 +76,11 @@ export function AuthProvider({
     async (credentials: { password: string; username: string }) => {
       const requestId = startAuthRequest()
       try {
-        const response = await loginRequest(
+        await loginRequest(
           { baseUrl: apiBaseUrl, fetcher },
           credentials
         )
+        const response = await getCurrentUser({ baseUrl: apiBaseUrl, fetcher })
         if (isCurrentRequest(requestId)) {
           setUser(response.user)
         }

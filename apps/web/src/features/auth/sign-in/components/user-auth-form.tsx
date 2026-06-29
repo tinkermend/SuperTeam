@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -34,6 +34,7 @@ export function UserAuthForm({
 }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const submitInFlightRef = useRef(false)
   const navigate = useNavigate()
   const { login } = useAuth()
 
@@ -46,6 +47,11 @@ export function UserAuthForm({
   })
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
+    if (submitInFlightRef.current) {
+      return
+    }
+
+    submitInFlightRef.current = true
     setIsLoading(true)
     setFormError(null)
 
@@ -55,6 +61,7 @@ export function UserAuthForm({
     } catch {
       setFormError('用户名或密码不正确')
     } finally {
+      submitInFlightRef.current = false
       setIsLoading(false)
     }
   }

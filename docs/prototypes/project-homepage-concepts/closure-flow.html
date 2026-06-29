@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目管理首页 · 任务闭环型 · SuperTeam</title>
+    <link rel="stylesheet" href="shared.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">S</span> SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制平面</div>
+          <a class="nav-item" href="#"><span class="nav-ico">⌘</span>协调台</a>
+          <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理<span class="badge-count">5</span></a>
+          <a class="nav-item" href="#"><span class="nav-ico">↗</span>任务发起</a>
+          <a class="nav-item" href="#"><span class="nav-ico">◇</span>工作流</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">资源</div>
+          <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+          <a class="nav-item" href="#"><span class="nav-ico">▣</span>Runtime</a>
+          <a class="nav-item" href="#"><span class="nav-ico">✓</span>审批</a>
+          <a class="nav-item" href="#"><span class="nav-ico">≡</span>审计</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="command">
+            <span>⌘</span>
+            <input placeholder="发起需求、查找证据、定位项目闭环…" />
+            <span class="keycap">⌘ K</span>
+          </div>
+          <div class="grow"></div>
+          <button class="soft-button">本周</button>
+          <button class="icon-button">◐</button>
+          <div class="avatar">林</div>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">项目控制台 · 任务闭环型</span>
+            <h1 class="page-title">按“需求 → 任务 → 证据 → 验收”管理项目</h1>
+            <p class="page-desc">适合把项目看作一次具体问题场景的闭环。首页不是只列项目，而是让负责人看到每个项目离可验收结论还差哪一步。</p>
+          </div>
+          <div>
+            <div class="view-switch">
+              <a href="command-center.html">指挥中心</a>
+              <a class="on" href="closure-flow.html">闭环链路</a>
+              <a href="risk-first.html">风险优先</a>
+            </div>
+            <button class="top-action secondary" style="margin-left:10px">进入项目详情</button>
+            <button class="top-action" style="margin-left:10px">＋ 新建项目</button>
+          </div>
+        </div>
+
+        <div class="management-strip">
+          <span class="management-strip-label">项目详情应承载</span>
+          <button class="action-small">发起任务</button>
+          <button class="action-small">编辑项目</button>
+          <button class="action-small">成员与角色</button>
+          <button class="action-small">策略配置</button>
+          <button class="action-small">协调线程</button>
+          <button class="action-small">证据与审计</button>
+          <button class="action-small">归档项目</button>
+        </div>
+
+        <section class="workflow-band">
+          <div class="stage">
+            <div class="stage-head"><span class="stage-index">1</span><span class="stage-title">需求进入</span><span class="status info" style="margin-left:auto">12</span></div>
+            <div class="stage-item"><b>支付网关迁移</b><span>目标已确认 · 负责人已绑定</span></div>
+            <div class="stage-item"><b>客户数据治理</b><span>缺少数据范围确认</span></div>
+          </div>
+          <div class="stage">
+            <div class="stage-head"><span class="stage-index">2</span><span class="stage-title">任务分派</span><span class="status warn" style="margin-left:auto">9</span></div>
+            <div class="stage-item"><b>api-builder</b><span>3 项运行中 · 1 项排队</span></div>
+            <div class="stage-item"><b>test-runner</b><span>等待上游工件</span></div>
+          </div>
+          <div class="stage">
+            <div class="stage-head"><span class="stage-index">3</span><span class="stage-title">证据回写</span><span class="status artifact" style="margin-left:auto">26</span></div>
+            <div class="stage-item"><b>发布包</b><span>需负责人审批后可执行</span></div>
+            <div class="stage-item"><b>测试报告</b><span>2 个失败断言待处理</span></div>
+          </div>
+          <div class="stage">
+            <div class="stage-head"><span class="stage-index">4</span><span class="stage-title">验收结论</span><span class="status ok" style="margin-left:auto">7</span></div>
+            <div class="stage-item"><b>智能客服上线</b><span>待业务验收</span></div>
+            <div class="stage-item"><b>知识库整理</b><span>已验收归档</span></div>
+          </div>
+        </section>
+
+        <section class="split" style="margin-top:16px">
+          <div class="card" style="overflow:hidden">
+            <div class="panel-head">
+              <div>
+                <h2 class="panel-title">项目闭环进度</h2>
+                <div class="panel-note">每行展示项目当前所处阶段、缺口和下一个动作。</div>
+              </div>
+              <span class="status brand-status">按阶段分组</span>
+            </div>
+            <table class="table">
+              <thead><tr><th>项目</th><th>闭环阶段</th><th>负责人</th><th>当前缺口</th><th>完成度</th><th>下一步</th></tr></thead>
+              <tbody>
+                <tr class="row-danger"><td><span class="row-title">支付网关迁移</span><span class="row-sub">目标：完成新网关切换并可回滚</span></td><td><span class="status artifact">证据回写</span></td><td>林 Anna</td><td>生产发布审批</td><td><div class="progress"><div class="track"><div class="fill" style="width:72%;background:var(--danger)"></div></div><span class="num">72%</span></div></td><td><span class="action-group"><button class="action-small action-primary-small">审批发布</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr class="row-warn"><td><span class="row-title">客户数据治理</span><span class="row-sub">目标：建立导出权限与审计规则</span></td><td><span class="status warn">任务分派</span></td><td>周 Ming</td><td>PII 范围确认</td><td><div class="progress"><div class="track"><div class="fill" style="width:46%;background:var(--warn)"></div></div><span class="num">46%</span></div></td><td><span class="action-group"><button class="action-small action-primary-small">补充范围</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">智能客服上线</span><span class="row-sub">目标：首批 30 个问题上线</span></td><td><span class="status ok">验收结论</span></td><td>林 Anna</td><td>业务确认</td><td><div class="progress"><div class="track"><div class="fill" style="width:88%;background:var(--ok)"></div></div><span class="num">88%</span></div></td><td><span class="action-group"><button class="action-small action-primary-small">验收</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">对账系统重构</span><span class="row-sub">目标：减少人工对账工作</span></td><td><span class="status danger">证据失败</span></td><td>许 Kai</td><td>测试失败判断</td><td><div class="progress"><div class="track"><div class="fill" style="width:58%;background:var(--danger)"></div></div><span class="num">58%</span></div></td><td><span class="action-group"><button class="action-small action-primary-small">处理失败</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="panel-head">
+              <div><h2 class="panel-title">闭环摘要</h2><div class="panel-note">把项目管理从列表推进到可验收结论。</div></div>
+            </div>
+            <div class="list">
+              <div class="list-row"><div class="mini-icon">1</div><div class="list-main"><div class="list-title">12 个项目已有明确负责人</div><div class="list-sub">human_owner 为空的项目不会进入健康统计</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--warn);background:var(--warn-soft)">2</div><div class="list-main"><div class="list-title">9 个项目卡在人工判断</div><div class="list-sub">审批、补证、验收是主要瓶颈</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--artifact);background:var(--artifact-soft)">3</div><div class="list-main"><div class="list-title">26 份证据可追踪</div><div class="list-sub">工件、RouteDecision、任务结果可进入审计</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--ok);background:var(--ok-soft)">4</div><div class="list-main"><div class="list-title">7 个项目可进入验收</div><div class="list-sub">下一步是负责人确认结论，而不是继续执行</div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" style="margin-top:16px;overflow:hidden">
+          <div class="panel-head"><div><h2 class="panel-title">最近闭环事件</h2><div class="panel-note">按业务闭环顺序回放，而不是按系统日志噪音排序。</div></div></div>
+          <table class="table">
+            <thead><tr><th>时间</th><th>项目</th><th>阶段变化</th><th>结构化对象</th><th>责任方</th><th>结果</th></tr></thead>
+            <tbody>
+              <tr><td class="num">11:20</td><td>支付网关迁移</td><td>任务分派 → 证据回写</td><td class="mono">art_2f1caa</td><td>api-builder</td><td><span class="status artifact">已生成工件</span></td></tr>
+              <tr class="row-warn"><td class="num">11:08</td><td>客户数据治理</td><td>需求进入 → 待补证</td><td class="mono">req_2f10aa</td><td>human_owner</td><td><span class="status warn">等待确认</span></td></tr>
+              <tr class="row-danger"><td class="num">10:52</td><td>对账系统重构</td><td>证据回写 → 失败判断</td><td class="mono">tsk_30a2bbf1</td><td>test-runner</td><td><span class="status danger">测试失败</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

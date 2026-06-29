@@ -866,6 +866,51 @@ describe("TeamsView", () => {
     expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
   });
 
+  it("keeps long team names inside the card header", async () => {
+    const longTeamName =
+      "Codex Execution Ledger Smoke 20260628-171756-very-long-team-name-for-layout-regression";
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      if (url.pathname === "/api/v1/teams" && method === "GET") {
+        return jsonResponse([
+          {
+            ...makeTeamSummary(1),
+            digital_employee_count: 1,
+            id: "team-long",
+            name: longTeamName,
+            slug: "codex-execution-ledger-smoke",
+          },
+        ]);
+      }
+      if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+        return jsonResponse([]);
+      }
+
+      return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    const headingLocator = screen.getByRole("heading", { name: longTeamName });
+    await expect.element(headingLocator).toBeVisible();
+    const heading = headingLocator.element();
+    const textColumn = heading.parentElement;
+    const identityGroup = textColumn?.parentElement;
+    const cardHeader = identityGroup?.parentElement;
+
+    await expect.element(screen.getByText("L1")).toBeVisible();
+    expect(heading).toHaveAttribute("title", longTeamName);
+    expect(heading).toHaveClass("line-clamp-2");
+    expect(textColumn).toHaveClass("min-w-0");
+    expect(textColumn).toHaveClass("flex-1");
+    expect(identityGroup).toHaveClass("min-w-0");
+    expect(identityGroup).toHaveClass("flex-1");
+    expect(cardHeader).toHaveClass("min-w-0");
+  });
+
 
 
   it("filters team summaries through the real list endpoint", async () => {

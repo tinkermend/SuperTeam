@@ -42,6 +42,81 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
 
+## 概念到代码（组件与 token 速查）
+
+容器选择规则里的每个概念在 `apps/web/src/components/superteam/`（统一从 `@/components/superteam` 导入）都已有现成组件，构建页面优先组合这些组件，不要手搓 `div` 重拼卡片 / 表格 / 状态样式。token 与 Tailwind class 的对照见 `docs/design-system/tokens.md` 的「token → Tailwind class 速查」。
+
+| 概念 / 场景 | 组件 |
+| --- | --- |
+| 柔和卡片（外壳 / 面板 / 表格容器） | `SoftCard` |
+| 概览指标卡（大数字 + 标签） | `V3MetricCard` |
+| signature 母题卡（每屏最多一块） | `SignatureCard` |
+| 脆数据面（装密集表格的软壳） | `WorkSurface` |
+| 密集表格及其单元 | `V3Table` / `V3Th` / `V3Td` / `V3Tr`（`tone="danger"\|"warn"` 给整行 accent bar） |
+| 语义状态胶囊 | `StatusPill`（`tone` 表达状态紧迫度） |
+| 语义图标芯片 | `IconTile` |
+| 页面标题区（标题 + 副标题 + 主操作） | `V3PageHeader` |
+| 主 / 次 / 危险 / 幽灵按钮 | `V3Button`（`variant`、`asChild` 用于 Link 按钮化） |
+| 图标按钮 / 筛选 chip / 分段 / Tabs | `V3IconButton` / `V3Chip` / `V3Segmented` / `V3Tabs` + `V3TabList` + `V3Tab` |
+| 工具栏搜索 / 分页 | `V3ToolbarSearch` / `V3Pagination` |
+| 加载 / 空 / 错误 / 无权限四态 | `V3StateSurface`（或单用 `V3LoadingState` / `V3EmptyState` / `V3ErrorState` / `V3PermissionDenied`） |
+
+最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/v3-components.tsx` 为准，文案 / 数据来自当前业务）：
+
+```tsx
+import { Link } from "@tanstack/react-router";
+import {
+  V3PageHeader, V3MetricCard, WorkSurface,
+  V3Table, V3Th, V3Td, V3Tr, V3Button, V3StateSurface, StatusPill,
+} from "@/components/superteam";
+
+<div className="flex min-w-0 flex-col gap-6">
+  <V3PageHeader
+    icon={<Blocks />}
+    iconTone="artifact"
+    title="技能市场"
+    subtitle="发现、查看并治理技能档案"
+    actions={
+      <V3Button asChild>
+        <Link to="/skills/upload">上传技能</Link>
+      </V3Button>
+    }
+  />
+
+  <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <V3MetricCard icon={<Boxes />} label="技能总数" value={total} />
+  </section>
+
+  <WorkSurface>
+    <V3StateSurface
+      isLoading={query.isPending}
+      isError={query.isError}
+      error={query.error}
+      empty={rows.length === 0}
+    >
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th>名称</V3Th>
+            <V3Th>状态</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <V3Tr key={row.id} tone={row.risk === "high" ? "danger" : undefined}>
+              <V3Td>{row.name}</V3Td>
+              <V3Td>
+                <StatusPill tone="ok">已通过</StatusPill>
+              </V3Td>
+            </V3Tr>
+          ))}
+        </tbody>
+      </V3Table>
+    </V3StateSurface>
+  </WorkSurface>
+</div>
+```
+
 ## 落地策略
 
 - **统一基线**：新增页面、被触达页面和设计文档都按 v3 Soft-Flat 表达，不再把非 v3 视觉作为可选目标。

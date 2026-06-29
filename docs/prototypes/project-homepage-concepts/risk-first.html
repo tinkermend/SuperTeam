@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目管理首页 · 风险优先型 · SuperTeam</title>
+    <link rel="stylesheet" href="shared.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">S</span> SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制平面</div>
+          <a class="nav-item" href="#"><span class="nav-ico">⌘</span>协调台</a>
+          <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理<span class="badge-count">5</span></a>
+          <a class="nav-item" href="#"><span class="nav-ico">↗</span>任务发起</a>
+          <a class="nav-item" href="#"><span class="nav-ico">◇</span>工作流</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">资源</div>
+          <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+          <a class="nav-item" href="#"><span class="nav-ico">▣</span>Runtime</a>
+          <a class="nav-item" href="#"><span class="nav-ico">✓</span>审批</a>
+          <a class="nav-item" href="#"><span class="nav-ico">≡</span>审计</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="command">
+            <span>⌘</span>
+            <input placeholder="处理风险、查看失败证据、打开审批…" />
+            <span class="keycap">⌘ K</span>
+          </div>
+          <div class="grow"></div>
+          <button class="soft-button">风险视图</button>
+          <button class="icon-button">◐</button>
+          <div class="avatar">林</div>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">项目控制台 · 风险优先型</span>
+            <h1 class="page-title">先处理阻塞、失败和待确认，再浏览项目</h1>
+            <p class="page-desc">适合项目数量变多后的日常运营：首屏只放真正会阻断进展的对象，健康项目退到下方队列。</p>
+          </div>
+          <div>
+            <div class="view-switch">
+              <a href="command-center.html">指挥中心</a>
+              <a href="closure-flow.html">闭环链路</a>
+              <a class="on" href="risk-first.html">风险优先</a>
+            </div>
+            <button class="top-action secondary" style="margin-left:10px">进入项目详情</button>
+            <button class="top-action" style="margin-left:10px">＋ 新建项目</button>
+          </div>
+        </div>
+
+        <div class="management-strip">
+          <span class="management-strip-label">项目级管理入口</span>
+          <button class="action-small">发起任务</button>
+          <button class="action-small">编辑项目</button>
+          <button class="action-small">成员与角色</button>
+          <button class="action-small">数字员工池</button>
+          <button class="action-small">策略与预算</button>
+          <button class="action-small">协调线程</button>
+          <button class="action-small">证据与审计</button>
+          <button class="action-small">归档项目</button>
+        </div>
+
+        <section class="risk-hero">
+          <div class="card risk-card">
+            <div class="panel-head" style="padding:0 0 16px">
+              <div>
+                <h2 class="panel-title">今日风险雷达</h2>
+                <div class="panel-note">按“是否需要人介入”和“是否阻断运行链路”计算。</div>
+              </div>
+              <span class="status danger">需处理</span>
+            </div>
+            <div class="risk-score">
+              <div class="score-ring"><div class="score-ring-inner"><div><b class="num">5</b><span>阻塞项目</span></div></div></div>
+              <div>
+                <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin:0">
+                  <div class="metric" style="padding:0"><div class="metric-label">高风险审批</div><div class="metric-value num" style="color:var(--danger)">2</div><div class="metric-sub">发布 / 权限</div></div>
+                  <div class="metric" style="padding:0"><div class="metric-label">测试失败</div><div class="metric-value num" style="color:var(--danger)">3</div><div class="metric-sub">需业务判断</div></div>
+                  <div class="metric" style="padding:0"><div class="metric-label">SLA 预警</div><div class="metric-value num" style="color:var(--warn)">7</div><div class="metric-sub">最久 38m</div></div>
+                </div>
+                <p class="page-desc" style="margin-top:18px">建议先处理生产发布和 PII 权限两项高风险审批，然后查看对账系统重构的失败证据。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="decision-grid">
+            <div class="decision-card hot">
+              <span class="status danger">高风险</span>
+              <div class="decision-title">生产发布请求</div>
+              <div class="decision-meta">支付网关迁移 · 等待 2 分钟 · 不可逆操作</div>
+              <div class="decision-actions"><button class="action-small action-primary-small">审批</button><button class="action-small">项目详情</button></div>
+            </div>
+            <div class="decision-card hot">
+              <span class="status danger">权限提升</span>
+              <div class="decision-title">读取 PII 数据</div>
+              <div class="decision-meta">客户数据治理 · 等待 38 分钟 · 缺少范围说明</div>
+              <div class="decision-actions"><button class="action-small action-primary-small">补证</button><button class="action-small">项目详情</button></div>
+            </div>
+            <div class="decision-card warn-left">
+              <span class="status warn">失败判断</span>
+              <div class="decision-title">回归测试失败</div>
+              <div class="decision-meta">对账系统重构 · 3 项断言失败 · 已生成证据包</div>
+              <div class="decision-actions"><button class="action-small action-primary-small">处理</button><button class="action-small">项目详情</button></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="split">
+          <div class="card" style="overflow:hidden">
+            <div class="panel-head">
+              <div><h2 class="panel-title">风险排序项目队列</h2><div class="panel-note">健康项目不抢首屏，阻塞对象固定靠前。</div></div>
+              <span class="status brand-status">风险优先</span>
+            </div>
+            <table class="table">
+              <thead><tr><th>项目</th><th>风险来源</th><th>负责人</th><th>Runtime/任务</th><th>等待</th><th>动作</th></tr></thead>
+              <tbody>
+                <tr class="row-danger"><td><span class="row-title">支付网关迁移</span><span class="row-sub mono">project-coordinator:a91f</span></td><td><span class="status danger">生产发布审批</span></td><td>林 Anna</td><td>3 运行 · 1 待审批</td><td class="num">2m</td><td><span class="action-group"><button class="action-small action-primary-small">审批</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr class="row-danger"><td><span class="row-title">客户数据治理</span><span class="row-sub mono">project-coordinator:77be</span></td><td><span class="status danger">PII 权限</span></td><td>周 Ming</td><td>2 排队 · 1 等待</td><td class="num">38m</td><td><span class="action-group"><button class="action-small action-primary-small">补证</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr class="row-warn"><td><span class="row-title">对账系统重构</span><span class="row-sub mono">project-coordinator:30a2</span></td><td><span class="status warn">测试失败</span></td><td>许 Kai</td><td>1 失败 · 2 完成</td><td class="num">6m</td><td><span class="action-group"><button class="action-small action-primary-small">处理</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">智能客服上线</span><span class="row-sub mono">project-coordinator:b8d4</span></td><td><span class="status ok">待验收</span></td><td>林 Anna</td><td>4 完成 · 0 阻塞</td><td class="num">12m</td><td><span class="action-group"><button class="action-small action-primary-small">验收</button><button class="action-small">进入项目</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">知识库整理</span><span class="row-sub mono">project-coordinator:90ab</span></td><td><span class="status info">运行中</span></td><td>陈 Wei</td><td>2 运行 · 1 排队</td><td class="num">—</td><td><span class="action-group"><button class="action-small">进入项目</button><button class="action-small">发起任务</button><button class="action-small action-more">⋯</button></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="panel-head">
+              <div><h2 class="panel-title">风险处理原则</h2><div class="panel-note">让人类决策成为首页一等对象。</div></div>
+            </div>
+            <div class="list">
+              <div class="list-row"><div class="mini-icon" style="color:var(--danger);background:var(--danger-soft)">1</div><div class="list-main"><div class="list-title">高风险动作必须先停住</div><div class="list-sub">上线、删除、权限提升不进入自动继续执行</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--warn);background:var(--warn-soft)">2</div><div class="list-main"><div class="list-title">证据不足时要求补证</div><div class="list-sub">不要把模糊需求交给数字员工自由发挥</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--artifact);background:var(--artifact-soft)">3</div><div class="list-main"><div class="list-title">每次处理都落审计</div><div class="list-sub">审批、驳回、补证和验收都能追踪</div></div></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--ok);background:var(--ok-soft)">4</div><div class="list-main"><div class="list-title">健康项目保持可扫读</div><div class="list-sub">但不抢占人类负责人第一视线</div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" style="margin-top:16px">
+          <div class="panel-head"><div><h2 class="panel-title">风险时间线</h2><div class="panel-note">从最近的阻塞事件回溯到产生原因。</div></div></div>
+          <div class="timeline">
+            <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft)"></span><span class="event-line"></span></div><div><div class="event-title">deploy-bot 提交生产发布审批</div><div class="event-meta">刚刚 · 支付网关迁移 · 需要 human_owner 判断</div></div></div>
+            <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--warn);box-shadow:0 0 0 4px var(--warn-soft)"></span><span class="event-line"></span></div><div><div class="event-title">协调线程要求补充 PII 范围说明</div><div class="event-meta">12 分钟前 · 客户数据治理 · 当前无法分派导出任务</div></div></div>
+            <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft)"></span><span class="event-line"></span></div><div><div class="event-title">test-runner 写回失败证据包</div><div class="event-meta">18 分钟前 · 对账系统重构 · 3 项断言失败</div></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

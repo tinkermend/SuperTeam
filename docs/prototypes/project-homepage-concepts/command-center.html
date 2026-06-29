@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目管理首页 · 指挥中心型 · SuperTeam</title>
+    <link rel="stylesheet" href="shared.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">S</span> SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制平面</div>
+          <a class="nav-item" href="#"><span class="nav-ico">⌘</span>协调台</a>
+          <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理<span class="badge-count">5</span></a>
+          <a class="nav-item" href="#"><span class="nav-ico">↗</span>任务发起</a>
+          <a class="nav-item" href="#"><span class="nav-ico">◇</span>工作流</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">资源</div>
+          <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+          <a class="nav-item" href="#"><span class="nav-ico">▣</span>Runtime</a>
+          <a class="nav-item" href="#"><span class="nav-ico">✓</span>审批</a>
+          <a class="nav-item" href="#"><span class="nav-ico">≡</span>审计</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="command">
+            <span>⌘</span>
+            <input value="" placeholder="搜索项目、负责人、证据，或输入命令…" />
+            <span class="keycap">⌘ K</span>
+          </div>
+          <div class="grow"></div>
+          <button class="soft-button">今日</button>
+          <button class="icon-button">◐</button>
+          <div class="avatar">林</div>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">项目控制台 · 指挥中心型</span>
+            <h1 class="page-title">先看全局健康，再处理项目队列</h1>
+            <p class="page-desc">适合管理者每天进入项目管理时快速判断：哪些项目健康，哪些需要人介入，哪些协调线程和 Runtime 需要关注。</p>
+          </div>
+          <div>
+            <div class="view-switch">
+              <a class="on" href="command-center.html">指挥中心</a>
+              <a href="closure-flow.html">闭环链路</a>
+              <a href="risk-first.html">风险优先</a>
+            </div>
+            <button class="top-action secondary" style="margin-left:10px">进入项目详情</button>
+            <button class="top-action" style="margin-left:10px">＋ 新建项目</button>
+          </div>
+        </div>
+
+        <div class="management-strip">
+          <span class="management-strip-label">项目级管理入口</span>
+          <button class="action-small">发起任务</button>
+          <button class="action-small">编辑项目</button>
+          <button class="action-small">成员与角色</button>
+          <button class="action-small">数字员工池</button>
+          <button class="action-small">策略与预算</button>
+          <button class="action-small">协调线程</button>
+          <button class="action-small">证据与审计</button>
+        </div>
+
+        <section class="metric-grid">
+          <div class="card metric"><div class="metric-label">运行中项目</div><div class="metric-value num">37</div><div class="metric-sub">较昨日 +6 · 5 个跨节点</div></div>
+          <div class="card metric"><div class="metric-label">待人工决策</div><div class="metric-value num" style="color:var(--warn)">9</div><div class="metric-sub">4 个需要负责人处理</div></div>
+          <div class="card metric"><div class="metric-label">阻塞风险</div><div class="metric-value num" style="color:var(--danger)">5</div><div class="metric-sub">2 个高风险发布</div></div>
+          <div class="card metric"><div class="metric-label">今日完成</div><div class="metric-value num">18</div><div class="metric-sub">含 7 份验收结论</div></div>
+          <div class="card metric"><div class="metric-label">Runtime 健康</div><div class="metric-value num">4/5</div><div class="metric-sub">node-4 离线 12 分钟</div></div>
+        </section>
+
+        <section class="section-grid">
+          <div class="card node-card">
+            <div class="panel-head" style="padding:0 0 10px">
+              <div>
+                <h2 class="panel-title">协调中枢</h2>
+                <div class="panel-note">项目、协调线程、任务、证据和审批之间的当前路由关系。</div>
+              </div>
+              <span class="status info">实时</span>
+            </div>
+            <div class="hub">
+              <div class="hub-line line-a"></div>
+              <div class="hub-line line-b"></div>
+              <div class="hub-line line-c"></div>
+              <div class="hub-line line-d"></div>
+              <div class="hub-center">项目协调线程</div>
+              <div class="hub-node node-a"><b>支付网关迁移</b><span>3 任务运行 · 1 审批</span></div>
+              <div class="hub-node node-b"><b>数字员工池</b><span>api-builder · test-runner</span></div>
+              <div class="hub-node node-c"><b>证据与工件</b><span>14 份 · 2 份待验收</span></div>
+              <div class="hub-node node-d"><b>人类负责人</b><span>林 Anna · 4 项待处理</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="panel-head">
+              <div>
+                <h2 class="panel-title">待处理决策</h2>
+                <div class="panel-note">只显示需要人类判断的事项。</div>
+              </div>
+              <span class="status warn">4 项</span>
+            </div>
+            <div class="list">
+              <div class="list-row"><div class="mini-icon" style="color:var(--danger);background:var(--danger-soft)">!</div><div class="list-main"><div class="list-title">生产发布请求</div><div class="list-sub">支付网关迁移 · 高风险不可逆</div></div><button class="action-small action-primary-small">审批</button></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--warn);background:var(--warn-soft)">?</div><div class="list-main"><div class="list-title">读取 PII 权限提升</div><div class="list-sub">客户数据导出 · 等待 38 分钟</div></div><button class="action-small">查看</button></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--danger);background:var(--danger-soft)">×</div><div class="list-main"><div class="list-title">回归测试失败</div><div class="list-sub">对账系统重构 · 需业务判断</div></div><button class="action-small">处理</button></div>
+              <div class="list-row"><div class="mini-icon" style="color:var(--artifact);background:var(--artifact-soft)">◎</div><div class="list-main"><div class="list-title">交接包待验收</div><div class="list-sub">4 份证据 · 1 份结论摘要</div></div><button class="action-small">验收</button></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="split" style="margin-top:16px">
+          <div class="card" style="overflow:hidden">
+            <div class="panel-head">
+              <div><h2 class="panel-title">项目队列</h2><div class="panel-note">默认按“需要介入程度”排序，仍保留扫描和比较能力。</div></div>
+              <span class="status brand-status">舒适密度</span>
+            </div>
+            <table class="table">
+              <thead><tr><th>项目</th><th>负责人</th><th>协调状态</th><th>活跃任务</th><th>最新证据</th><th>SLA</th><th>动作</th></tr></thead>
+              <tbody>
+                <tr class="row-danger"><td><span class="row-title">支付网关迁移</span><span class="row-sub mono">prj_a91f7d2c</span></td><td>林 Anna</td><td><span class="status danger">待审批</span></td><td class="num">3</td><td><span class="status artifact">发布包</span></td><td class="num">2m</td><td><span class="action-group"><button class="action-small action-primary-small">审批</button><button class="action-small">详情</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr class="row-warn"><td><span class="row-title">客户数据治理</span><span class="row-sub mono">prj_77be0d31</span></td><td>周 Ming</td><td><span class="status warn">待确认</span></td><td class="num">6</td><td><span class="status artifact">权限说明</span></td><td class="num">38m</td><td><span class="action-group"><button class="action-small action-primary-small">补证</button><button class="action-small">详情</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">智能客服上线</span><span class="row-sub mono">prj_b8d46e09</span></td><td>林 Anna</td><td><span class="status info">运行中</span></td><td class="num">4</td><td><span class="status artifact">测试报告</span></td><td class="num">2h</td><td><span class="action-group"><button class="action-small">进入项目</button><button class="action-small">发起任务</button><button class="action-small action-more">⋯</button></span></td></tr>
+                <tr><td><span class="row-title">对账系统重构</span><span class="row-sub mono">prj_30a2bbf1</span></td><td>许 Kai</td><td><span class="status danger">测试失败</span></td><td class="num">2</td><td><span class="status artifact">失败证据</span></td><td class="num">6m</td><td><span class="action-group"><button class="action-small action-primary-small">处理</button><button class="action-small">详情</button><button class="action-small action-more">⋯</button></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="panel-head"><div><h2 class="panel-title">最近证据与审计</h2><div class="panel-note">所有状态变化都有来源。</div></div></div>
+            <div class="timeline">
+              <div class="event"><div class="event-rail"><span class="event-dot"></span><span class="event-line"></span></div><div><div class="event-title">api-builder 完成接口层实现</div><div class="event-meta">刚刚 · art_2f1caa · 支付网关迁移</div></div></div>
+              <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--warn);box-shadow:0 0 0 4px var(--warn-soft)"></span><span class="event-line"></span></div><div><div class="event-title">负责人收到权限确认请求</div><div class="event-meta">12 分钟前 · req_2f10aa</div></div></div>
+              <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft)"></span><span class="event-line"></span></div><div><div class="event-title">回归测试失败并生成证据包</div><div class="event-meta">18 分钟前 · test-runner</div></div></div>
+              <div class="event"><div class="event-rail"><span class="event-dot" style="background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)"></span><span class="event-line"></span></div><div><div class="event-title">需求交接包验收通过</div><div class="event-meta">42 分钟前 · human_owner</div></div></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
