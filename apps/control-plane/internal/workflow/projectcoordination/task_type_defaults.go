@@ -74,6 +74,7 @@ var taskKindWorkspaceModes = map[string]string{
 	"testing_verification":   WorkspaceModeDetachedRun,
 	"build_verification":     WorkspaceModeDetachedRun,
 	"test":                   WorkspaceModeDetachedRun,
+	"testing":                WorkspaceModeDetachedRun,
 	"build":                  WorkspaceModeDetachedRun,
 	"verification":           WorkspaceModeDetachedRun,
 	"qa":                     WorkspaceModeDetachedRun,
