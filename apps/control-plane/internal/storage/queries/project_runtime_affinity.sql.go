@@ -13,75 +13,112 @@ import (
 )
 
 const CreateProjectTaskAttestation = `-- name: CreateProjectTaskAttestation :one
-INSERT INTO project_task_attestations (
-    tenant_id,
-    project_id,
-    project_task_id,
-    attempt_id,
-    runtime_node_id,
-    provider_session_id,
-    attestation_type,
-    status,
-    command_argv,
-    exit_code,
-    duration_ms,
-    log_ref,
-    stdout_sha256,
-    stderr_sha256,
-    artifact_refs,
-    artifact_hashes,
-    git_branch,
-    git_base_ref,
-    git_head_sha,
-    git_diff_sha256,
-    metadata,
-    idempotency_key
-) VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    $4::uuid,
-    $5::uuid,
-    $6::varchar,
-    $7::varchar,
-    $8::varchar,
-    COALESCE($9::jsonb, '[]'::jsonb),
-    $10::integer,
-    $11::bigint,
-    $12::text,
-    $13::varchar,
-    $14::varchar,
-    COALESCE($15::jsonb, '[]'::jsonb),
-    COALESCE($16::jsonb, '{}'::jsonb),
-    $17::varchar,
-    $18::varchar,
-    $19::varchar,
-    $20::varchar,
-    COALESCE($21::jsonb, '{}'::jsonb),
-    $22::varchar
+WITH input AS (
+    SELECT
+        $1::uuid AS tenant_id,
+        $2::uuid AS project_id,
+        $3::uuid AS project_task_id,
+        $4::uuid AS attempt_id,
+        $5::uuid AS runtime_node_id,
+        $6::varchar AS provider_session_id,
+        $7::varchar AS attestation_type,
+        $8::varchar AS status,
+        COALESCE($9::jsonb, '[]'::jsonb) AS command_argv,
+        $10::integer AS exit_code,
+        $11::bigint AS duration_ms,
+        $12::text AS log_ref,
+        $13::varchar AS stdout_sha256,
+        $14::varchar AS stderr_sha256,
+        COALESCE($15::jsonb, '[]'::jsonb) AS artifact_refs,
+        COALESCE($16::jsonb, '{}'::jsonb) AS artifact_hashes,
+        $17::varchar AS git_branch,
+        $18::varchar AS git_base_ref,
+        $19::varchar AS git_head_sha,
+        $20::varchar AS git_diff_sha256,
+        COALESCE($21::jsonb, '{}'::jsonb) AS metadata,
+        $22::varchar AS idempotency_key
+),
+inserted AS (
+    INSERT INTO project_task_attestations (
+        tenant_id,
+        project_id,
+        project_task_id,
+        attempt_id,
+        runtime_node_id,
+        provider_session_id,
+        attestation_type,
+        status,
+        command_argv,
+        exit_code,
+        duration_ms,
+        log_ref,
+        stdout_sha256,
+        stderr_sha256,
+        artifact_refs,
+        artifact_hashes,
+        git_branch,
+        git_base_ref,
+        git_head_sha,
+        git_diff_sha256,
+        metadata,
+        idempotency_key
+    )
+    SELECT
+        tenant_id,
+        project_id,
+        project_task_id,
+        attempt_id,
+        runtime_node_id,
+        provider_session_id,
+        attestation_type,
+        status,
+        command_argv,
+        exit_code,
+        duration_ms,
+        log_ref,
+        stdout_sha256,
+        stderr_sha256,
+        artifact_refs,
+        artifact_hashes,
+        git_branch,
+        git_base_ref,
+        git_head_sha,
+        git_diff_sha256,
+        metadata,
+        idempotency_key
+    FROM input
+    ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO NOTHING
+    RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
 )
-ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO UPDATE SET
-    idempotency_key = EXCLUDED.idempotency_key
-WHERE project_task_attestations.project_id = EXCLUDED.project_id
-  AND project_task_attestations.project_task_id = EXCLUDED.project_task_id
-  AND project_task_attestations.runtime_node_id = EXCLUDED.runtime_node_id
-  AND project_task_attestations.provider_session_id IS NOT DISTINCT FROM EXCLUDED.provider_session_id
-  AND project_task_attestations.attestation_type = EXCLUDED.attestation_type
-  AND project_task_attestations.status = EXCLUDED.status
-  AND project_task_attestations.command_argv = EXCLUDED.command_argv
-  AND project_task_attestations.exit_code IS NOT DISTINCT FROM EXCLUDED.exit_code
-  AND project_task_attestations.duration_ms IS NOT DISTINCT FROM EXCLUDED.duration_ms
-  AND project_task_attestations.log_ref IS NOT DISTINCT FROM EXCLUDED.log_ref
-  AND project_task_attestations.stdout_sha256 IS NOT DISTINCT FROM EXCLUDED.stdout_sha256
-  AND project_task_attestations.stderr_sha256 IS NOT DISTINCT FROM EXCLUDED.stderr_sha256
-  AND project_task_attestations.artifact_refs = EXCLUDED.artifact_refs
-  AND project_task_attestations.artifact_hashes = EXCLUDED.artifact_hashes
-  AND project_task_attestations.git_branch IS NOT DISTINCT FROM EXCLUDED.git_branch
-  AND project_task_attestations.git_base_ref IS NOT DISTINCT FROM EXCLUDED.git_base_ref
-  AND project_task_attestations.git_head_sha IS NOT DISTINCT FROM EXCLUDED.git_head_sha
-  AND project_task_attestations.git_diff_sha256 IS NOT DISTINCT FROM EXCLUDED.git_diff_sha256
-  AND project_task_attestations.metadata = EXCLUDED.metadata
-RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
+SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
+FROM inserted
+UNION ALL
+SELECT existing.id, existing.tenant_id, existing.project_id, existing.project_task_id, existing.attempt_id, existing.runtime_node_id, existing.provider_session_id, existing.attestation_type, existing.status, existing.command_argv, existing.exit_code, existing.duration_ms, existing.log_ref, existing.stdout_sha256, existing.stderr_sha256, existing.artifact_refs, existing.artifact_hashes, existing.git_branch, existing.git_base_ref, existing.git_head_sha, existing.git_diff_sha256, existing.metadata, existing.idempotency_key, existing.created_at, existing.updated_at
+FROM project_task_attestations existing
+JOIN input
+  ON existing.tenant_id = input.tenant_id
+ AND existing.attempt_id = input.attempt_id
+ AND existing.idempotency_key = input.idempotency_key
+WHERE NOT EXISTS (SELECT 1 FROM inserted)
+  AND existing.project_id = input.project_id
+  AND existing.project_task_id = input.project_task_id
+  AND existing.runtime_node_id = input.runtime_node_id
+  AND existing.provider_session_id IS NOT DISTINCT FROM input.provider_session_id
+  AND existing.attestation_type = input.attestation_type
+  AND existing.status = input.status
+  AND existing.command_argv = input.command_argv
+  AND existing.exit_code IS NOT DISTINCT FROM input.exit_code
+  AND existing.duration_ms IS NOT DISTINCT FROM input.duration_ms
+  AND existing.log_ref IS NOT DISTINCT FROM input.log_ref
+  AND existing.stdout_sha256 IS NOT DISTINCT FROM input.stdout_sha256
+  AND existing.stderr_sha256 IS NOT DISTINCT FROM input.stderr_sha256
+  AND existing.artifact_refs = input.artifact_refs
+  AND existing.artifact_hashes = input.artifact_hashes
+  AND existing.git_branch IS NOT DISTINCT FROM input.git_branch
+  AND existing.git_base_ref IS NOT DISTINCT FROM input.git_base_ref
+  AND existing.git_head_sha IS NOT DISTINCT FROM input.git_head_sha
+  AND existing.git_diff_sha256 IS NOT DISTINCT FROM input.git_diff_sha256
+  AND existing.metadata = input.metadata
 `
 
 type CreateProjectTaskAttestationParams struct {
@@ -109,7 +146,35 @@ type CreateProjectTaskAttestationParams struct {
 	IdempotencyKey    string      `json:"idempotency_key"`
 }
 
-func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreateProjectTaskAttestationParams) (ProjectTaskAttestation, error) {
+type CreateProjectTaskAttestationRow struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	ProjectID         uuid.UUID          `json:"project_id"`
+	ProjectTaskID     uuid.UUID          `json:"project_task_id"`
+	AttemptID         uuid.UUID          `json:"attempt_id"`
+	RuntimeNodeID     uuid.UUID          `json:"runtime_node_id"`
+	ProviderSessionID pgtype.Text        `json:"provider_session_id"`
+	AttestationType   string             `json:"attestation_type"`
+	Status            string             `json:"status"`
+	CommandArgv       []byte             `json:"command_argv"`
+	ExitCode          pgtype.Int4        `json:"exit_code"`
+	DurationMs        pgtype.Int8        `json:"duration_ms"`
+	LogRef            pgtype.Text        `json:"log_ref"`
+	StdoutSha256      pgtype.Text        `json:"stdout_sha256"`
+	StderrSha256      pgtype.Text        `json:"stderr_sha256"`
+	ArtifactRefs      []byte             `json:"artifact_refs"`
+	ArtifactHashes    []byte             `json:"artifact_hashes"`
+	GitBranch         pgtype.Text        `json:"git_branch"`
+	GitBaseRef        pgtype.Text        `json:"git_base_ref"`
+	GitHeadSha        pgtype.Text        `json:"git_head_sha"`
+	GitDiffSha256     pgtype.Text        `json:"git_diff_sha256"`
+	Metadata          []byte             `json:"metadata"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreateProjectTaskAttestationParams) (CreateProjectTaskAttestationRow, error) {
 	row := q.db.QueryRow(ctx, CreateProjectTaskAttestation,
 		arg.TenantID,
 		arg.ProjectID,
@@ -134,7 +199,7 @@ func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreatePr
 		arg.Metadata,
 		arg.IdempotencyKey,
 	)
-	var i ProjectTaskAttestation
+	var i CreateProjectTaskAttestationRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

@@ -95,7 +95,7 @@ type Querier interface {
 	CreateProjectTask(ctx context.Context, arg CreateProjectTaskParams) (ProjectTask, error)
 	CreateProjectTaskAttempt(ctx context.Context, arg CreateProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	CreateProjectTaskAttemptContextUpdate(ctx context.Context, arg CreateProjectTaskAttemptContextUpdateParams) (ProjectTaskAttemptContextUpdate, error)
-	CreateProjectTaskAttestation(ctx context.Context, arg CreateProjectTaskAttestationParams) (ProjectTaskAttestation, error)
+	CreateProjectTaskAttestation(ctx context.Context, arg CreateProjectTaskAttestationParams) (CreateProjectTaskAttestationRow, error)
 	CreateProjectTaskDependency(ctx context.Context, arg CreateProjectTaskDependencyParams) (ProjectTaskDependency, error)
 	CreateProjectTaskDispatchGateResult(ctx context.Context, arg CreateProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	CreateProjectTaskResult(ctx context.Context, arg CreateProjectTaskResultParams) (ProjectTaskResult, error)

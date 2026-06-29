@@ -41,75 +41,112 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND placement_status = 'active';
 
 -- name: CreateProjectTaskAttestation :one
-INSERT INTO project_task_attestations (
-    tenant_id,
-    project_id,
-    project_task_id,
-    attempt_id,
-    runtime_node_id,
-    provider_session_id,
-    attestation_type,
-    status,
-    command_argv,
-    exit_code,
-    duration_ms,
-    log_ref,
-    stdout_sha256,
-    stderr_sha256,
-    artifact_refs,
-    artifact_hashes,
-    git_branch,
-    git_base_ref,
-    git_head_sha,
-    git_diff_sha256,
-    metadata,
-    idempotency_key
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('project_id')::uuid,
-    sqlc.arg('project_task_id')::uuid,
-    sqlc.arg('attempt_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.narg('provider_session_id')::varchar,
-    sqlc.arg('attestation_type')::varchar,
-    sqlc.arg('status')::varchar,
-    COALESCE(sqlc.narg('command_argv')::jsonb, '[]'::jsonb),
-    sqlc.narg('exit_code')::integer,
-    sqlc.narg('duration_ms')::bigint,
-    sqlc.narg('log_ref')::text,
-    sqlc.narg('stdout_sha256')::varchar,
-    sqlc.narg('stderr_sha256')::varchar,
-    COALESCE(sqlc.narg('artifact_refs')::jsonb, '[]'::jsonb),
-    COALESCE(sqlc.narg('artifact_hashes')::jsonb, '{}'::jsonb),
-    sqlc.narg('git_branch')::varchar,
-    sqlc.narg('git_base_ref')::varchar,
-    sqlc.narg('git_head_sha')::varchar,
-    sqlc.narg('git_diff_sha256')::varchar,
-    COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb),
-    sqlc.arg('idempotency_key')::varchar
+WITH input AS (
+    SELECT
+        sqlc.arg('tenant_id')::uuid AS tenant_id,
+        sqlc.arg('project_id')::uuid AS project_id,
+        sqlc.arg('project_task_id')::uuid AS project_task_id,
+        sqlc.arg('attempt_id')::uuid AS attempt_id,
+        sqlc.arg('runtime_node_id')::uuid AS runtime_node_id,
+        sqlc.narg('provider_session_id')::varchar AS provider_session_id,
+        sqlc.arg('attestation_type')::varchar AS attestation_type,
+        sqlc.arg('status')::varchar AS status,
+        COALESCE(sqlc.narg('command_argv')::jsonb, '[]'::jsonb) AS command_argv,
+        sqlc.narg('exit_code')::integer AS exit_code,
+        sqlc.narg('duration_ms')::bigint AS duration_ms,
+        sqlc.narg('log_ref')::text AS log_ref,
+        sqlc.narg('stdout_sha256')::varchar AS stdout_sha256,
+        sqlc.narg('stderr_sha256')::varchar AS stderr_sha256,
+        COALESCE(sqlc.narg('artifact_refs')::jsonb, '[]'::jsonb) AS artifact_refs,
+        COALESCE(sqlc.narg('artifact_hashes')::jsonb, '{}'::jsonb) AS artifact_hashes,
+        sqlc.narg('git_branch')::varchar AS git_branch,
+        sqlc.narg('git_base_ref')::varchar AS git_base_ref,
+        sqlc.narg('git_head_sha')::varchar AS git_head_sha,
+        sqlc.narg('git_diff_sha256')::varchar AS git_diff_sha256,
+        COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb) AS metadata,
+        sqlc.arg('idempotency_key')::varchar AS idempotency_key
+),
+inserted AS (
+    INSERT INTO project_task_attestations (
+        tenant_id,
+        project_id,
+        project_task_id,
+        attempt_id,
+        runtime_node_id,
+        provider_session_id,
+        attestation_type,
+        status,
+        command_argv,
+        exit_code,
+        duration_ms,
+        log_ref,
+        stdout_sha256,
+        stderr_sha256,
+        artifact_refs,
+        artifact_hashes,
+        git_branch,
+        git_base_ref,
+        git_head_sha,
+        git_diff_sha256,
+        metadata,
+        idempotency_key
+    )
+    SELECT
+        tenant_id,
+        project_id,
+        project_task_id,
+        attempt_id,
+        runtime_node_id,
+        provider_session_id,
+        attestation_type,
+        status,
+        command_argv,
+        exit_code,
+        duration_ms,
+        log_ref,
+        stdout_sha256,
+        stderr_sha256,
+        artifact_refs,
+        artifact_hashes,
+        git_branch,
+        git_base_ref,
+        git_head_sha,
+        git_diff_sha256,
+        metadata,
+        idempotency_key
+    FROM input
+    ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO NOTHING
+    RETURNING *
 )
-ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO UPDATE SET
-    idempotency_key = EXCLUDED.idempotency_key
-WHERE project_task_attestations.project_id = EXCLUDED.project_id
-  AND project_task_attestations.project_task_id = EXCLUDED.project_task_id
-  AND project_task_attestations.runtime_node_id = EXCLUDED.runtime_node_id
-  AND project_task_attestations.provider_session_id IS NOT DISTINCT FROM EXCLUDED.provider_session_id
-  AND project_task_attestations.attestation_type = EXCLUDED.attestation_type
-  AND project_task_attestations.status = EXCLUDED.status
-  AND project_task_attestations.command_argv = EXCLUDED.command_argv
-  AND project_task_attestations.exit_code IS NOT DISTINCT FROM EXCLUDED.exit_code
-  AND project_task_attestations.duration_ms IS NOT DISTINCT FROM EXCLUDED.duration_ms
-  AND project_task_attestations.log_ref IS NOT DISTINCT FROM EXCLUDED.log_ref
-  AND project_task_attestations.stdout_sha256 IS NOT DISTINCT FROM EXCLUDED.stdout_sha256
-  AND project_task_attestations.stderr_sha256 IS NOT DISTINCT FROM EXCLUDED.stderr_sha256
-  AND project_task_attestations.artifact_refs = EXCLUDED.artifact_refs
-  AND project_task_attestations.artifact_hashes = EXCLUDED.artifact_hashes
-  AND project_task_attestations.git_branch IS NOT DISTINCT FROM EXCLUDED.git_branch
-  AND project_task_attestations.git_base_ref IS NOT DISTINCT FROM EXCLUDED.git_base_ref
-  AND project_task_attestations.git_head_sha IS NOT DISTINCT FROM EXCLUDED.git_head_sha
-  AND project_task_attestations.git_diff_sha256 IS NOT DISTINCT FROM EXCLUDED.git_diff_sha256
-  AND project_task_attestations.metadata = EXCLUDED.metadata
-RETURNING *;
+SELECT *
+FROM inserted
+UNION ALL
+SELECT existing.*
+FROM project_task_attestations existing
+JOIN input
+  ON existing.tenant_id = input.tenant_id
+ AND existing.attempt_id = input.attempt_id
+ AND existing.idempotency_key = input.idempotency_key
+WHERE NOT EXISTS (SELECT 1 FROM inserted)
+  AND existing.project_id = input.project_id
+  AND existing.project_task_id = input.project_task_id
+  AND existing.runtime_node_id = input.runtime_node_id
+  AND existing.provider_session_id IS NOT DISTINCT FROM input.provider_session_id
+  AND existing.attestation_type = input.attestation_type
+  AND existing.status = input.status
+  AND existing.command_argv = input.command_argv
+  AND existing.exit_code IS NOT DISTINCT FROM input.exit_code
+  AND existing.duration_ms IS NOT DISTINCT FROM input.duration_ms
+  AND existing.log_ref IS NOT DISTINCT FROM input.log_ref
+  AND existing.stdout_sha256 IS NOT DISTINCT FROM input.stdout_sha256
+  AND existing.stderr_sha256 IS NOT DISTINCT FROM input.stderr_sha256
+  AND existing.artifact_refs = input.artifact_refs
+  AND existing.artifact_hashes = input.artifact_hashes
+  AND existing.git_branch IS NOT DISTINCT FROM input.git_branch
+  AND existing.git_base_ref IS NOT DISTINCT FROM input.git_base_ref
+  AND existing.git_head_sha IS NOT DISTINCT FROM input.git_head_sha
+  AND existing.git_diff_sha256 IS NOT DISTINCT FROM input.git_diff_sha256
+  AND existing.metadata = input.metadata;
 
 -- name: ListProjectTaskAttestations :many
 SELECT *

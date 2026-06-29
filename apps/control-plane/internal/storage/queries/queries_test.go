@@ -621,9 +621,12 @@ func TestCreateProjectTaskAttestationRejectsDivergentIdempotencyReplay(t *testin
 	created, err := q.CreateProjectTaskAttestation(ctx, params)
 	require.NoError(t, err)
 
+	time.Sleep(20 * time.Millisecond)
 	replayed, err := q.CreateProjectTaskAttestation(ctx, params)
 	require.NoError(t, err)
 	require.Equal(t, created.ID, replayed.ID)
+	require.Equal(t, created.CreatedAt, replayed.CreatedAt)
+	require.Equal(t, created.UpdatedAt, replayed.UpdatedAt)
 
 	params.StdoutSha256 = pgtype.Text{String: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", Valid: true}
 	_, err = q.CreateProjectTaskAttestation(ctx, params)
