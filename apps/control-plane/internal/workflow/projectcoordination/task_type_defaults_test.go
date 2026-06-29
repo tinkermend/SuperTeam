@@ -41,12 +41,23 @@ func TestWorkspaceModeForTaskKind(t *testing.T) {
 		want string
 	}{
 		{name: "feature development uses branch workspace", kind: "feature_development", want: WorkspaceModeBranch},
+		{name: "feature uses branch workspace", kind: "feature", want: WorkspaceModeBranch},
+		{name: "software uses branch workspace", kind: "software", want: WorkspaceModeBranch},
+		{name: "code uses branch workspace", kind: "code", want: WorkspaceModeBranch},
+		{name: "bugfix uses branch workspace", kind: "bugfix", want: WorkspaceModeBranch},
 		{name: "code review uses diff workspace", kind: "code_review", want: WorkspaceModeDiff},
 		{name: "test verification uses detached run workspace", kind: "test_verification", want: WorkspaceModeDetachedRun},
+		{name: "test uses detached run workspace", kind: "test", want: WorkspaceModeDetachedRun},
 		{name: "build verification uses detached run workspace", kind: "build_verification", want: WorkspaceModeDetachedRun},
+		{name: "build uses detached run workspace", kind: "build", want: WorkspaceModeDetachedRun},
 		{name: "incident triage uses readonly workspace", kind: "incident_triage", want: WorkspaceModeReadonly},
 		{name: "analysis uses readonly workspace", kind: "analysis", want: WorkspaceModeReadonly},
+		{name: "incident uses readonly workspace", kind: "incident", want: WorkspaceModeReadonly},
+		{name: "database analysis uses readonly workspace", kind: "database analysis", want: WorkspaceModeReadonly},
 		{name: "status report uses no workspace", kind: "status_report", want: WorkspaceModeNone},
+		{name: "status uses no workspace", kind: "status", want: WorkspaceModeNone},
+		{name: "human uses no workspace", kind: "human", want: WorkspaceModeNone},
+		{name: "acceptance uses no workspace", kind: "acceptance", want: WorkspaceModeNone},
 		{name: "unknown kind uses no workspace", kind: "some_custom_kind", want: WorkspaceModeNone},
 	}
 
