@@ -7,13 +7,8 @@ import {
 } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  Archive,
-  CircleDot,
-  ClipboardList,
   FolderKanban,
-  ListChecks,
   Plus,
-  type LucideIcon,
 } from "lucide-react";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
@@ -58,7 +53,6 @@ import {
   type CreateProjectEvidenceInput,
   type CreateProjectInput,
   type ListProjectsFilters,
-  type Project,
   type ProjectEvidenceVerificationStatus,
   type ProjectExecutionTrace,
   type ProjectTask,
@@ -72,26 +66,22 @@ import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
   IconTile,
-  StatusPill,
   V3Button,
-  V3EmptyState,
   V3ErrorState,
   V3LoadingState,
-  V3MetricCard,
-  V3Pagination,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3ToolbarSearch,
-  V3Tr,
   WorkSurface,
-  type V3Tone,
 } from "@/components/superteam";
-import { cn } from "@/lib/utils";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
+import {
+  ProjectHomeRiskSummaryBar,
+  ProjectRiskQueue,
+  ProjectSelectedContextPanel,
+} from "./components/project-risk-home";
+import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
+import type { ProjectRiskFilter } from "./project-risk";
 
 type ProjectsPageProps = {
   fetcher?: typeof fetch;
@@ -105,17 +95,9 @@ type ProjectsViewProps = {
 
 type UiProjectListFilters = {
   q: string;
+  risk: ProjectRiskFilter;
   status: "all" | ProjectStatus;
 };
-
-const statusOptions: Array<{ label: string; value: UiProjectListFilters["status"] }> = [
-  { label: "全部状态", value: "all" },
-  { label: "运行中", value: "running" },
-  { label: "配置中", value: "configuring" },
-  { label: "验收中", value: "acceptance" },
-  { label: "已暂停", value: "paused" },
-  { label: "已归档", value: "archived" },
-];
 
 export function ProjectsPage({ fetcher }: ProjectsPageProps = {}) {
   return <ProjectsView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
@@ -245,6 +227,7 @@ export function ProjectsView({
   );
   const [filters, setFilters] = useState<UiProjectListFilters>({
     q: "",
+    risk: "all",
     status: "all",
   });
   const [selectedProjectId, setSelectedProjectId] = useState(routeProjectId);
@@ -267,7 +250,7 @@ export function ProjectsView({
       request.status = filters.status as ProjectStatus;
     }
     return request;
-  }, [filters]);
+  }, [filters.q, filters.status]);
 
   const projectsQuery = useQuery({
     queryKey: ["projects", listFilters],
@@ -281,11 +264,14 @@ export function ProjectsView({
     (activeProjectListPage - 1) * projectListPageSize,
     activeProjectListPage * projectListPageSize,
   );
-  const projectStats = useMemo(() => buildProjectStats(projects), [projects]);
+  const currentPageRiskSignals = useProjectRiskSignals({
+    apiOptions,
+    projects: pagedProjects,
+  });
 
   useEffect(() => {
     setProjectListPage(1);
-  }, [filters.q, filters.status]);
+  }, [filters.q, filters.risk, filters.status]);
 
   const selectedProjectFromList = selectedProjectId
     ? projects.find((project) => project.id === selectedProjectId)
@@ -317,6 +303,18 @@ export function ProjectsView({
       setSelectedProjectId(projects[0].id);
     }
   }, [projects, routeProjectId, selectedProjectId]);
+
+  useEffect(() => {
+    if (routeProjectId || pagedProjects.length === 0) {
+      return;
+    }
+    if (
+      !selectedProjectId ||
+      !pagedProjects.some((project) => project.id === selectedProjectId)
+    ) {
+      setSelectedProjectId(pagedProjects[0].id);
+    }
+  }, [pagedProjects, routeProjectId, selectedProjectId]);
 
   const overviewQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -760,30 +758,15 @@ export function ProjectsView({
             </WorkSurface>
           ) : (
             <>
-              <section
-                aria-label="项目管理指标"
-                className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-              >
-                {projectStats.map((metric) => {
-                  const Icon = metric.icon;
-                  return (
-                    <V3MetricCard
-                      key={metric.label}
-                      icon={<Icon />}
-                      iconTone={metric.tone}
-                      label={metric.label}
-                      loud={metric.loud}
-                      value={metric.value}
-                    />
-                  );
-                })}
-              </section>
+              <ProjectHomeRiskSummaryBar
+                riskSummaries={currentPageRiskSignals.summaries}
+              />
 
               <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]">
-                <ProjectsV3List
+                <ProjectRiskQueue
                   activePage={activeProjectListPage}
                   filters={filters}
-                  isFetching={projectsQuery.isFetching}
+                  isFetching={projectsQuery.isFetching || currentPageRiskSignals.isFetching}
                   onFiltersChange={setFilters}
                   onPageChange={setProjectListPage}
                   onPageSizeChange={(size) => {
@@ -794,72 +777,86 @@ export function ProjectsView({
                   pageCount={projectListPageCount}
                   pageSize={projectListPageSize}
                   projects={pagedProjects}
+                  riskSummaries={currentPageRiskSignals.summaries}
                   selectedProjectId={effectiveProjectId}
                   total={projects.length}
                 />
-                <ProjectOperationalDetail
-                  acceptance={projectAcceptance}
-                  archivePreview={projectArchivePreview}
-                  archiveSnapshots={projectArchiveSnapshots}
-                  artifacts={projectArtifacts}
-                  budgetLedger={projectBudgetLedger}
-                  budgetSummary={projectBudgetSummary}
-                  coordinationJobs={projectCoordinationJobs}
-                  decisionRequests={projectDecisionRequests}
-                  demands={projectDemands}
-                  dispatchGateTaskTitle={dispatchGateTask?.title}
-                  dispatchGates={projectDispatchGates}
-                  evidence={projectEvidence}
-                  events={projectEvents}
-                  executionTrace={projectExecutionTrace}
-                  executionTraceErrorMessage={projectExecutionTraceErrorMessage}
-                  executionTraceIsError={projectExecutionTraceIsError}
-                  executionTraceIsLoading={projectExecutionTraceIsLoading}
-                  executionSummaries={projectExecutionSummaries}
-                  isArchived={isArchived}
-                  onArchiveProject={() => {
-                    if (effectiveProjectId) {
-                      archiveMutation.mutate(effectiveProjectId);
+                {routeProjectId ? (
+                  <ProjectOperationalDetail
+                    acceptance={projectAcceptance}
+                    archivePreview={projectArchivePreview}
+                    archiveSnapshots={projectArchiveSnapshots}
+                    artifacts={projectArtifacts}
+                    budgetLedger={projectBudgetLedger}
+                    budgetSummary={projectBudgetSummary}
+                    coordinationJobs={projectCoordinationJobs}
+                    decisionRequests={projectDecisionRequests}
+                    demands={projectDemands}
+                    dispatchGateTaskTitle={dispatchGateTask?.title}
+                    dispatchGates={projectDispatchGates}
+                    evidence={projectEvidence}
+                    events={projectEvents}
+                    executionTrace={projectExecutionTrace}
+                    executionTraceErrorMessage={projectExecutionTraceErrorMessage}
+                    executionTraceIsError={projectExecutionTraceIsError}
+                    executionTraceIsLoading={projectExecutionTraceIsLoading}
+                    executionSummaries={projectExecutionSummaries}
+                    isArchived={isArchived}
+                    onArchiveProject={() => {
+                      if (effectiveProjectId) {
+                        archiveMutation.mutate(effectiveProjectId);
+                      }
+                    }}
+                    onCreateAcceptance={(input) => {
+                      if (effectiveProjectId) {
+                        createAcceptanceMutation.mutate(input);
+                      }
+                    }}
+                    onCreateArchiveSnapshot={(input) => {
+                      if (effectiveProjectId) {
+                        createArchiveSnapshotMutation.mutate(input);
+                      }
+                    }}
+                    onCreateEvidence={(input) => {
+                      if (effectiveProjectId) {
+                        createEvidenceMutation.mutate(input);
+                      }
+                    }}
+                    onPatchEvidence={(evidenceId, verificationStatus) => {
+                      if (effectiveProjectId) {
+                        patchEvidenceMutation.mutate({ evidenceId, verificationStatus });
+                      }
+                    }}
+                    onRetryExecutionTrace={() => {
+                      void executionTraceQuery.refetch();
+                    }}
+                    onResolveDecision={(decisionId, decision) => {
+                      if (effectiveProjectId) {
+                        resolveDecisionMutation.mutate({ decisionId, decision });
+                      }
+                    }}
+                    onSubmitDemand={() => setDemandOpen(true)}
+                    overview={overview}
+                    project={displayedProject}
+                    reports={projectReports}
+                    planRevisions={projectPlanRevisions}
+                    routeDecisions={projectRouteDecisions}
+                    taskGraph={taskGraphQuery.data}
+                    tasks={projectTasks}
+                    transferRequests={projectTransferRequests}
+                  />
+                ) : (
+                  <ProjectSelectedContextPanel
+                    isLoading={eventsQuery.isFetching}
+                    project={displayedProject}
+                    recentEvents={projectEvents}
+                    riskSummary={
+                      effectiveProjectId
+                        ? currentPageRiskSignals.summaries[effectiveProjectId]
+                        : undefined
                     }
-                  }}
-                  onCreateAcceptance={(input) => {
-                    if (effectiveProjectId) {
-                      createAcceptanceMutation.mutate(input);
-                    }
-                  }}
-                  onCreateArchiveSnapshot={(input) => {
-                    if (effectiveProjectId) {
-                      createArchiveSnapshotMutation.mutate(input);
-                    }
-                  }}
-                  onCreateEvidence={(input) => {
-                    if (effectiveProjectId) {
-                      createEvidenceMutation.mutate(input);
-                    }
-                  }}
-                  onPatchEvidence={(evidenceId, verificationStatus) => {
-                    if (effectiveProjectId) {
-                      patchEvidenceMutation.mutate({ evidenceId, verificationStatus });
-                    }
-                  }}
-                  onRetryExecutionTrace={() => {
-                    void executionTraceQuery.refetch();
-                  }}
-                  onResolveDecision={(decisionId, decision) => {
-                    if (effectiveProjectId) {
-                      resolveDecisionMutation.mutate({ decisionId, decision });
-                    }
-                  }}
-                  onSubmitDemand={() => setDemandOpen(true)}
-                  overview={overview}
-                  project={displayedProject}
-                  reports={projectReports}
-                  planRevisions={projectPlanRevisions}
-                  routeDecisions={projectRouteDecisions}
-                  taskGraph={taskGraphQuery.data}
-                  tasks={projectTasks}
-                  transferRequests={projectTransferRequests}
-                />
+                  />
+                )}
               </div>
             </>
           )}
@@ -875,309 +872,6 @@ export function ProjectsView({
       </Main>
     </>
   );
-}
-
-function ProjectsV3List({
-  activePage,
-  filters,
-  isFetching,
-  onFiltersChange,
-  onPageChange,
-  onPageSizeChange,
-  onSelectProject,
-  pageCount,
-  pageSize,
-  projects,
-  selectedProjectId,
-  total,
-}: {
-  activePage: number;
-  filters: UiProjectListFilters;
-  isFetching: boolean;
-  onFiltersChange: (filters: UiProjectListFilters) => void;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-  onSelectProject: (projectId: string) => void;
-  pageCount: number;
-  pageSize: number;
-  projects: Project[];
-  selectedProjectId?: string;
-  total: number;
-}) {
-  return (
-    <section data-testid="projects-v3-list" className="min-w-0" aria-label="项目列表">
-      <WorkSurface className="min-w-0">
-        <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-extrabold text-v3-ink">项目列表</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <StatusPill tone={isFetching ? "info" : "mute"}>
-                {isFetching ? "正在刷新" : `${total} 个项目`}
-              </StatusPill>
-              {filters.status !== "all" ? (
-                <StatusPill tone={projectStatusTone(filters.status)}>
-                  {projectStatusLabel(filters.status)}
-                </StatusPill>
-              ) : null}
-            </div>
-          </div>
-          <V3Button asChild variant="outline">
-            <Link to="/projects/new">
-              <Plus data-icon="inline-start" />
-              新建
-            </Link>
-          </V3Button>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-center">
-          <V3ToolbarSearch
-            aria-label="搜索项目"
-            onChange={(event) => onFiltersChange({ ...filters, q: event.target.value })}
-            placeholder="搜索项目、目标"
-            type="search"
-            value={filters.q}
-          />
-          <select
-            aria-label="项目状态筛选"
-            className="h-10 rounded-xl border border-v3-line-strong bg-v3-card-soft px-3 text-[13px] font-semibold text-v3-ink-2 outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 lg:w-[136px]"
-            value={filters.status}
-            onChange={(event) =>
-              onFiltersChange({
-                ...filters,
-                status: event.target.value as UiProjectListFilters["status"],
-              })
-            }
-          >
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <ProjectsV3Table
-          onSelectProject={onSelectProject}
-          projects={projects}
-          selectedProjectId={selectedProjectId}
-        />
-        <V3Pagination
-          page={activePage}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          pageSizeOptions={[1, 10, 20, 50]}
-          total={total}
-          onPageChange={onPageChange}
-          onPageSizeChange={onPageSizeChange}
-        />
-      </WorkSurface>
-    </section>
-  );
-}
-
-function ProjectsV3Table({
-  onSelectProject,
-  projects,
-  selectedProjectId,
-}: {
-  onSelectProject: (projectId: string) => void;
-  projects: Project[];
-  selectedProjectId?: string;
-}) {
-  return (
-    <V3Table>
-      <thead>
-        <tr>
-          <V3Th className="min-w-[260px]" role="columnheader">
-            项目
-          </V3Th>
-          <V3Th className="min-w-24" role="columnheader">
-            状态
-          </V3Th>
-          <V3Th className="min-w-36" role="columnheader">
-            推进状态
-          </V3Th>
-          <V3Th className="min-w-36" role="columnheader">
-            负责人
-          </V3Th>
-          <V3Th className="min-w-[260px]" role="columnheader">
-            目标
-          </V3Th>
-          <V3Th className="min-w-32 text-right" role="columnheader">
-            操作
-          </V3Th>
-        </tr>
-      </thead>
-      <tbody>
-        {projects.map((project) => (
-          <ProjectsV3TableRow
-            key={project.id}
-            onSelectProject={onSelectProject}
-            project={project}
-            selected={project.id === selectedProjectId}
-          />
-        ))}
-        {projects.length === 0 ? (
-          <tr>
-            <V3Td colSpan={6}>
-              <V3EmptyState
-                icon={<FolderKanban />}
-                title="没有符合筛选条件的项目"
-                description="调整搜索关键词或项目状态筛选后重试。"
-              />
-            </V3Td>
-          </tr>
-        ) : null}
-      </tbody>
-    </V3Table>
-  );
-}
-
-function ProjectsV3TableRow({
-  onSelectProject,
-  project,
-  selected,
-}: {
-  onSelectProject: (projectId: string) => void;
-  project: Project;
-  selected: boolean;
-}) {
-  const rowTone =
-    project.status === "acceptance" || project.status === "paused" ? "warn" : undefined;
-
-  return (
-    <V3Tr
-      className={cn(selected && "[&>td]:bg-v3-brand-soft/60")}
-      data-state={selected ? "selected" : undefined}
-      tone={rowTone}
-    >
-      <V3Td className="whitespace-normal">
-        <button
-          aria-current={selected ? "true" : undefined}
-          aria-label={`选择项目 ${project.name}`}
-          className="flex min-w-0 items-start gap-3 text-left"
-          type="button"
-          onClick={() => onSelectProject(project.id)}
-        >
-          <IconTile tone={projectStatusTone(project.status)} size="sm">
-            {project.status === "archived" ? <Archive /> : <CircleDot />}
-          </IconTile>
-          <span className="min-w-0">
-            <span className="block truncate font-bold text-v3-ink">{project.name}</span>
-            <span className="mt-0.5 block font-mono text-[12px] text-v3-ink-3">
-              {project.id}
-            </span>
-          </span>
-        </button>
-      </V3Td>
-      <V3Td>
-        <StatusPill tone={projectStatusTone(project.status)}>
-          {projectStatusLabel(project.status)}
-        </StatusPill>
-      </V3Td>
-      <V3Td>
-        <span className="text-[13px] font-semibold text-v3-ink-2">
-          {projectMainLoopLabel(project.status)}
-        </span>
-      </V3Td>
-      <V3Td>
-        <span className="font-mono text-[12px] text-v3-ink-2">
-          {project.human_owner_user_id || "未设置"}
-        </span>
-      </V3Td>
-      <V3Td className="whitespace-normal">
-        <span className="line-clamp-2 text-[13px] leading-5 text-v3-ink-2">
-          {project.goal || "暂无目标说明"}
-        </span>
-      </V3Td>
-      <V3Td>
-        <div className="flex justify-end gap-2">
-          <V3Button
-            aria-label="选择项目"
-            onClick={() => onSelectProject(project.id)}
-            size="sm"
-            type="button"
-            variant={selected ? "primary" : "outline"}
-          >
-            选择
-          </V3Button>
-          <V3Button asChild size="sm" variant="ghost">
-            <Link params={{ projectId: project.id }} to="/projects/$projectId">
-              详情
-            </Link>
-          </V3Button>
-        </div>
-      </V3Td>
-    </V3Tr>
-  );
-}
-
-function buildProjectStats(projects: Project[]): Array<{
-  icon: LucideIcon;
-  label: string;
-  loud?: boolean;
-  tone: V3Tone;
-  value: number;
-}> {
-  const running = projects.filter((project) => project.status === "running").length;
-  const acceptance = projects.filter((project) => project.status === "acceptance").length;
-  const archived = projects.filter((project) => project.status === "archived").length;
-  return [
-    {
-      icon: ClipboardList,
-      label: "项目总数",
-      tone: "brand",
-      value: projects.length,
-    },
-    {
-      icon: CircleDot,
-      label: "运行中",
-      tone: "ok",
-      value: running,
-    },
-    {
-      icon: ListChecks,
-      label: "验收中",
-      loud: acceptance > 0,
-      tone: "warn",
-      value: acceptance,
-    },
-    {
-      icon: Archive,
-      label: "已归档",
-      tone: "mute",
-      value: archived,
-    },
-  ];
-}
-
-function projectStatusLabel(status: ProjectStatus | string) {
-  const labels: Record<string, string> = {
-    acceptance: "验收中",
-    archived: "已归档",
-    configuring: "配置中",
-    draft: "草稿",
-    paused: "已暂停",
-    running: "运行中",
-  };
-  return labels[status] ?? status;
-}
-
-function projectMainLoopLabel(status: ProjectStatus | string) {
-  if (status === "draft" || status === "configuring") return "待配置";
-  if (status === "running") return "推进中";
-  if (status === "paused") return "已暂停";
-  if (status === "acceptance") return "待确认结果";
-  if (status === "archived") return "已关闭";
-  return "待推进";
-}
-
-function projectStatusTone(status: ProjectStatus | string): V3Tone {
-  if (status === "running") return "ok";
-  if (status === "archived") return "mute";
-  if (status === "paused" || status === "acceptance") return "warn";
-  if (status === "configuring" || status === "draft") return "info";
-  return "mute";
 }
 
 function queryErrorMessage(error: unknown) {
