@@ -533,13 +533,6 @@ func TestPgRepositoryProjectRepoBindingPersistsPreservesAndClears(t *testing.T) 
 	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_consistent")
 
 	requireProjectRepoBindingStatusConstraintRejectsInvalidValue(t, pool, tenantID, projectID)
-
-	_, err = pool.Exec(ctx, `
-		UPDATE projects
-		SET repo_binding_status = 'invalid'
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, projectID)
-	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_consistent")
 }
 
 func TestPgRepositoryListUnresolvedBlockersRequiresAcceptedLatestResult(t *testing.T) {
