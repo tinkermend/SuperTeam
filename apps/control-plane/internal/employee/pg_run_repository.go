@@ -38,9 +38,11 @@ func (r *PgRunRepository) WithTransaction(ctx context.Context, fn func(DigitalEm
 	if err != nil {
 		return fmt.Errorf("begin run transaction: %w", err)
 	}
+	// Roll back unconditionally on any early return or panic; it is a no-op
+	// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+	defer func() { _ = tx.Rollback(ctx) }()
 	txRepo := &PgRunRepository{q: r.q.WithTx(tx)}
 	if err := fn(txRepo); err != nil {
-		_ = tx.Rollback(ctx)
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {

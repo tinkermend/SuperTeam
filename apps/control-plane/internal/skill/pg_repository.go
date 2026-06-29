@@ -97,9 +97,9 @@ func (r *PgRepository) UpsertSkillPackage(ctx context.Context, req UpsertSkillPa
 		return nil, err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		}
+		// Roll back unconditionally on any early return or panic; it is a no-op
+		// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+		_ = tx.Rollback(ctx)
 	}()
 	var skillID uuid.UUID
 	metadata, err := marshalSkillMetadata(req.Metadata, req.RuntimeDependencies)
@@ -165,9 +165,9 @@ func (r *PgRepository) DeleteSkill(ctx context.Context, req DeleteSkillRequest) 
 		return err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		}
+		// Roll back unconditionally on any early return or panic; it is a no-op
+		// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+		_ = tx.Rollback(ctx)
 	}()
 	if _, err = tx.Exec(ctx, `DELETE FROM skill_team_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
 		return err
@@ -608,9 +608,9 @@ func (r *PgRepository) MarkInstallCommandTimedOut(ctx context.Context, tenantID 
 		return err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		}
+		// Roll back unconditionally on any early return or panic; it is a no-op
+		// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+		_ = tx.Rollback(ctx)
 	}()
 	qtx := r.q.WithTx(tx)
 	receipt, err := qtx.GetRuntimeCommandReceiptByCommandIDForUpdate(ctx, queries.GetRuntimeCommandReceiptByCommandIDForUpdateParams{
@@ -681,9 +681,9 @@ func (r *PgRepository) PersistInstallSuccess(ctx context.Context, req PersistSki
 		return InstallSkillResult{}, err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		}
+		// Roll back unconditionally on any early return or panic; it is a no-op
+		// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+		_ = tx.Rollback(ctx)
 	}()
 	if req.TargetScope == SkillInstallTargetTeam {
 		if _, err = tx.Exec(ctx, `

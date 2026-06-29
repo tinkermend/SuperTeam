@@ -50,9 +50,11 @@ func withProjectQueries[T any](ctx context.Context, r *PgRepository, label strin
 	if err != nil {
 		return zero, fmt.Errorf("begin %s transaction: %w", label, err)
 	}
+	// Roll back unconditionally on any early return or panic; it is a no-op
+	// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
+	defer func() { _ = tx.Rollback(ctx) }()
 	result, err := fn(r.q.WithTx(tx))
 	if err != nil {
-		_ = tx.Rollback(ctx)
 		return zero, err
 	}
 	if err := tx.Commit(ctx); err != nil {
