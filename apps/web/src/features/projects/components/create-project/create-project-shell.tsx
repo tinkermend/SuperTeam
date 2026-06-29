@@ -15,7 +15,7 @@ import {
 } from "./create-project-draft";
 import { ProjectBasicsStep } from "./project-basics-step";
 import { ProjectDigitalEmployeesStep } from "./project-digital-employees-step";
-import { ProjectHumanRolesStep } from "./project-human-roles-step";
+import { ProjectHumanOwnersStep } from "./project-human-owners-step";
 import { ProjectPolicyStep } from "./project-policy-step";
 import { ProjectReviewPanel } from "./project-review-panel";
 
@@ -59,10 +59,31 @@ export function CreateProjectShell({
 
   useEffect(() => {
     setDraft((current) => {
-      if (current.teamId && selectableTeams.some((scope) => scope.team_id === current.teamId)) {
+      const selectableTeamIds = new Set(selectableTeams.map((scope) => scope.team_id));
+      const sourceTeamIds = current.sourceTeamIds.filter((teamId) => selectableTeamIds.has(teamId));
+      if (selectableTeams.length === 0) {
+        if (current.sourceTeamIds.length === 0 && current.selectedDigitalEmployees.length === 0) {
+          return current;
+        }
+        return { ...current, sourceTeamIds: [], selectedDigitalEmployees: [] };
+      }
+      const allSelectedTeamsGone = current.sourceTeamIds.length > 0 && sourceTeamIds.length === 0;
+      const nextSourceTeamIds = sourceTeamIds.length > 0
+        ? sourceTeamIds
+        : [selectableTeams[0].team_id];
+      const selectedDigitalEmployees = allSelectedTeamsGone
+        ? []
+        : current.selectedDigitalEmployees.filter(
+            (employee) => !employee.team_id || nextSourceTeamIds.includes(employee.team_id),
+          );
+
+      if (
+        arraysEqual(current.sourceTeamIds, nextSourceTeamIds) &&
+        selectedDigitalEmployees.length === current.selectedDigitalEmployees.length
+      ) {
         return current;
       }
-      return { ...current, teamId: selectableTeams[0]?.team_id ?? "", selectedDigitalEmployees: [] };
+      return { ...current, sourceTeamIds: nextSourceTeamIds, selectedDigitalEmployees };
     });
   }, [selectableTeams]);
 
@@ -92,9 +113,14 @@ export function CreateProjectShell({
       setLocalError("当前用户未加载，无法创建项目");
       return;
     }
-    if (!validation.basics || !validation.teamAuthorized) {
-      setLocalError("请补齐项目名称、目标和授权团队");
+    if (!validation.basics) {
+      setLocalError("请补齐项目名称和目标");
       setActiveStep("basics");
+      return;
+    }
+    if (!validation.teamAuthorized) {
+      setLocalError("请选择已授权的数字员工来源团队");
+      setActiveStep("digitalEmployees");
       return;
     }
     setLocalError("");
@@ -111,11 +137,10 @@ export function CreateProjectShell({
   return (
     <div
       aria-labelledby="project-create-title"
-      aria-modal="true"
-      className="fixed inset-0 z-50 overflow-hidden bg-[var(--v3-shell-background)]"
-      role="dialog"
+      className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-v3-card bg-v3-bg shadow-v3"
+      data-testid="project-create-page"
     >
-      <div className="flex h-full flex-col">
+      <div className="flex min-h-[calc(100svh-7rem)] flex-col">
         <header className="border-b border-v3-line bg-v3-card/90 px-4 py-5 backdrop-blur lg:px-8">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -166,15 +191,9 @@ export function CreateProjectShell({
               </div>
             ) : null}
             {activeStep === "basics" ? (
-              <ProjectBasicsStep
-                currentUser={currentUser}
-                draft={draft}
-                isAuthorizationLoading={isAuthorizationLoading}
-                onChange={setDraft}
-                selectableTeams={selectableTeams}
-              />
-            ) : activeStep === "roles" ? (
-              <ProjectHumanRolesStep
+              <ProjectBasicsStep draft={draft} onChange={setDraft} />
+            ) : activeStep === "owners" ? (
+              <ProjectHumanOwnersStep
                 apiBaseUrl={apiBaseUrl}
                 currentUser={currentUser}
                 draft={draft}
@@ -187,14 +206,10 @@ export function CreateProjectShell({
                 draft={draft}
                 fetcher={fetcher}
                 onChange={setDraft}
+                selectableTeams={selectableTeams}
               />
             ) : activeStep === "policies" ? (
               <ProjectPolicyStep draft={draft} onChange={setDraft} />
-            ) : activeStep === "review" ? (
-              <div className="grid gap-4">
-                <h3 className="text-xl font-semibold text-v3-ink">确认创建</h3>
-                <p className="text-sm text-v3-ink-2">请在右侧审阅项目事实、人类责任、数字员工池和策略配置。确认后只创建项目容器，不发起任务。</p>
-              </div>
             ) : (
               <div className="rounded-xl border border-dashed border-v3-line-strong bg-v3-card-soft p-8 text-sm text-v3-ink-2">
                 {projectCreateSteps.find((step) => step.id === activeStep)?.label} 步骤将在后续任务中接入。
@@ -215,9 +230,9 @@ export function CreateProjectShell({
               <ArrowLeft className="mr-2 size-4" />
               上一步
             </Button>
-            {activeStep === "review" ? (
+            {activeIndex === projectCreateSteps.length - 1 ? (
               <Button disabled={isSubmitting || !canSubmit} onClick={submit} type="button">
-                确认创建
+                创建项目
               </Button>
             ) : (
               <Button onClick={goNext} type="button">
@@ -230,4 +245,8 @@ export function CreateProjectShell({
       </div>
     </div>
   );
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }

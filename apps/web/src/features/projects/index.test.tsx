@@ -1,9 +1,9 @@
 import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { ProjectsView } from "@/features/projects";
+import { CreateProjectView, ProjectsView } from "@/features/projects";
 import type { Project } from "@/lib/api/projects";
 
 const CURRENT_USER_ID = "current-user-1";
@@ -11,12 +11,15 @@ const TEAM_AUTHORIZED_ID = "team-authorized-1";
 const TEAM_REVIEW_ID = "team-review-1";
 const TEAM_REVOKED_ID = "team-revoked-1";
 const TEAM_DISABLED_ID = "team-disabled-1";
-const TEAM_UNAUTHORIZED_ID = "team-unauthorized-1";
 const LEADER_USER_ID = "leader-user-1";
 const ACCEPTANCE_USER_ID = "acceptance-user-1";
 const REVIEWER_USER_ID = "reviewer-user-1";
 const EMPLOYEE_ASSISTANT_ID = "employee-assistant-1";
 const EMPLOYEE_QA_ID = "employee-qa-1";
+
+const routerMock = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}));
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -57,7 +60,14 @@ vi.mock("@tanstack/react-router", () => {
   );
   Link.displayName = "MockRouterLink";
 
-  return { Link };
+  return {
+    Link,
+    useNavigate: () => routerMock.navigate,
+  };
+});
+
+beforeEach(() => {
+  routerMock.navigate.mockClear();
 });
 
 function createQueryClient(options: { staleTime?: number } = {}) {
@@ -1020,6 +1030,20 @@ async function renderProjects(
   );
 }
 
+async function renderProjectCreate(
+  fetcher: typeof fetch,
+  queryClient = createQueryClient(),
+) {
+  return await render(
+    <QueryClientProvider client={queryClient}>
+      <CreateProjectView
+        apiBaseUrl="http://control-plane.test"
+        fetcher={fetcher}
+      />
+    </QueryClientProvider>,
+  );
+}
+
 describe("ProjectsView", () => {
   it("filters project plan revisions to the latest demand", async () => {
     const fetcher = createProjectFetcher();
@@ -1101,6 +1125,35 @@ describe("ProjectsView", () => {
         }),
       ).toBe(true);
     });
+  });
+
+  it("links project creation to the standalone route", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect
+      .element(screen.getByRole("link", { name: "新建项目" }))
+      .toHaveAttribute("href", "/projects/new");
+    await expect
+      .element(screen.getByRole("link", { name: "新建" }))
+      .toHaveAttribute("href", "/projects/new");
+  });
+
+  it("renders project creation as a standalone page without project management content behind it", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjectCreate(fetcher);
+
+    await expect
+      .element(screen.getByRole("heading", { name: "新建项目" }))
+      .toBeInTheDocument();
+    expect(screen.container.querySelector('[data-testid="project-create-page"]')).toBeTruthy();
+    expect(screen.container.querySelector('[data-testid="projects-v3-list"]')).toBeNull();
+    expect(
+      screen.container.querySelector('[aria-label="项目管理指标"]'),
+    ).toBeNull();
+    await expect
+      .element(screen.getByRole("heading", { name: "项目管理" }))
+      .not.toBeInTheDocument();
   });
 
   it("renders the project list as a v3 work surface table", async () => {
@@ -1329,17 +1382,19 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("fetches current user and authorized project teams when opening the create drawer", async () => {
+  it("fetches current user and authorized project teams on the create route", async () => {
     const fetcher = createProjectFetcher();
-    const screen = await renderProjects(fetcher);
+    const screen = await renderProjectCreate(fetcher);
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "授权检查");
+    await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
 
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByLabelText("授权团队")).toBeInTheDocument();
-    await expect.element(screen.getByRole("option", { name: "平台运营" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("option", { name: "风控审查" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("option", { name: "已撤销团队" })).not.toBeInTheDocument();
-    await expect.element(screen.getByRole("option", { name: "停用团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "平台运营" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "风控审查" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "已撤销团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "停用团队" })).not.toBeInTheDocument();
 
     await vi.waitFor(() => {
       expect(
@@ -1380,15 +1435,15 @@ describe("ProjectsView", () => {
       ["auth", "users", CURRENT_USER_ID, "project-team-scopes", "project-create"],
       userProjectTeamScopesResponse(),
     );
-    const screen = await renderProjects(fetcher, undefined, queryClient);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher, queryClient);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "缓存授权项目");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "等待授权范围刷新后才能提交");
 
     try {
-      await expect.element(screen.getByLabelText("授权团队")).toBeDisabled();
-      await expect.element(screen.getByText("固定负责人（人类）")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
       expect(
         fetchCalls(fetcher).some(([url, init]) => {
           return (
@@ -1407,40 +1462,34 @@ describe("ProjectsView", () => {
     }
   });
 
-  it("creates a project from the split console with roles, employees, and policies", async () => {
+  it("creates a project from the split console with human owners, source teams, employees, and policies", async () => {
     const fetcher = createProjectFetcher();
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "客户验收推进");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
-    await userEvent.selectOptions(screen.getByLabelText("授权团队"), TEAM_REVIEW_ID);
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.fill(screen.getByLabelText("搜索项目负责人"), "李娜");
+    await userEvent.fill(screen.getByLabelText("搜索项目人类负责人"), "李娜");
     await userEvent.click(screen.getByRole("button", { name: "选择 leader" }).first());
-    await userEvent.fill(screen.getByLabelText("搜索验收负责人"), "王磊");
-    await userEvent.click(screen.getByRole("button", { name: "选择 acceptance" }).first());
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "风控审查" }));
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await userEvent.click(screen.getByText("研发助手"));
     await userEvent.click(screen.getByText("测试工程师"));
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: /高风险审批/ }));
-
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "确认创建", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: "创建项目", exact: true }));
 
     await vi.waitFor(() => {
       const postCall = fetchCalls(fetcher).find(([url, init]) => {
         return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
       });
       expect(postCall).toBeTruthy();
-      expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-        acceptance_user_id: ACCEPTANCE_USER_ID,
+      const body = JSON.parse(String(postCall?.[1]?.body));
+      expect(body).toMatchObject({
         human_owner_user_id: CURRENT_USER_ID,
-        leader_user_id: LEADER_USER_ID,
         name: "客户验收推进",
         team_id: TEAM_REVIEW_ID,
         approval_policy: {
@@ -1454,18 +1503,14 @@ describe("ProjectsView", () => {
           preset: "highRisk",
         },
       });
-      const body = JSON.parse(String(postCall?.[1]?.body));
+      expect(body).not.toHaveProperty("leader_user_id");
+      expect(body).not.toHaveProperty("acceptance_user_id");
       expect(body.members).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             principal_id: LEADER_USER_ID,
             principal_type: "human_user",
-            project_role: "leader",
-          }),
-          expect.objectContaining({
-            principal_id: ACCEPTANCE_USER_ID,
-            principal_type: "human_user",
-            project_role: "acceptance",
+            project_role: "owner",
           }),
           expect.objectContaining({
             principal_id: EMPLOYEE_ASSISTANT_ID,
@@ -1474,35 +1519,32 @@ describe("ProjectsView", () => {
           }),
         ]),
       );
+      expect(body.members).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ principal_type: "team" }),
+          expect.objectContaining({ project_role: "leader" }),
+          expect.objectContaining({ project_role: "acceptance" }),
+          expect.objectContaining({ project_role: "reviewer" }),
+        ]),
+      );
     });
   });
 
-  it("does not submit a project when the selected team is not authorized", async () => {
+  it("does not offer unauthorized teams as digital-employee source teams", async () => {
     const fetcher = createProjectFetcher();
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
-    await expect.element(screen.getByLabelText("授权团队")).toBeInTheDocument();
-
-    const teamSelect = document.querySelector(
-      'select[aria-label="授权团队"]',
-    ) as HTMLSelectElement | null;
-    expect(teamSelect).toBeTruthy();
-
-    const unauthorizedOption = document.createElement("option");
-    unauthorizedOption.value = TEAM_UNAUTHORIZED_ID;
-    unauthorizedOption.textContent = "未授权团队";
-    teamSelect?.append(unauthorizedOption);
-
+    const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "越权团队项目");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "尝试提交未授权团队");
-    await userEvent.selectOptions(screen.getByLabelText("授权团队"), TEAM_UNAUTHORIZED_ID);
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("button", { name: "平台运营" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "未授权团队" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByRole("button", { name: "确认创建", exact: true })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     expect(
       fetchCalls(fetcher).some(([url, init]) => {
         return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
@@ -1512,18 +1554,15 @@ describe("ProjectsView", () => {
 
   it("shows an empty state and disables project creation when no teams are selectable", async () => {
     const fetcher = createProjectFetcher({ projectTeamScopesStatus: "empty" });
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "客户验收推进");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
 
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByText("暂无可选团队")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByRole("button", { name: "确认创建", exact: true })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
   });
 
   it("keeps project creation disabled while the current user is loading", async () => {
@@ -1532,36 +1571,33 @@ describe("ProjectsView", () => {
       currentUserDeferred: deferred,
       currentUserStatus: "loading",
     });
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
 
     try {
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await expect.element(screen.getByText("正在加载当前用户...")).toBeInTheDocument();
-      await expect.element(screen.getByText("固定负责人（人类）")).toBeInTheDocument();
     } finally {
-      deferred.resolve(jsonResponse({
-        user: {
-          avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
-          avatar_asset_id: null,
-          display_name: "当前用户",
-          email: "current@example.com",
-          id: CURRENT_USER_ID,
-          status: "active",
-          username: "current-user",
-        },
-      }));
+      deferred.resolve(
+        jsonResponse({
+          user: {
+            avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
+            avatar_asset_id: null,
+            display_name: "当前用户",
+            email: "current@example.com",
+            id: CURRENT_USER_ID,
+            status: "active",
+            username: "current-user",
+          },
+        }),
+      );
     }
   });
 
   it("keeps project creation disabled when the current user fails to load", async () => {
     const fetcher = createProjectFetcher({ currentUserStatus: "error" });
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
 
     await expect.element(screen.getByText("加载当前用户失败")).toBeInTheDocument();
-    await expect.element(screen.getByText("固定负责人（人类）")).toBeInTheDocument();
   });
 
   it("keeps project creation disabled while selectable teams are loading", async () => {
@@ -1570,13 +1606,15 @@ describe("ProjectsView", () => {
       projectTeamScopesDeferred: deferred,
       projectTeamScopesStatus: "loading",
     });
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
 
     try {
-      await expect.element(screen.getByLabelText("授权团队")).toBeDisabled();
-      await expect.element(screen.getByText("固定负责人（人类）")).toBeInTheDocument();
+      await userEvent.fill(screen.getByLabelText("项目名称 *"), "等待团队");
+      await userEvent.fill(screen.getByLabelText("项目目标 *"), "团队加载中");
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     } finally {
       deferred.resolve(jsonResponse(userProjectTeamScopesResponse()));
     }
@@ -1584,12 +1622,9 @@ describe("ProjectsView", () => {
 
   it("keeps project creation disabled when selectable teams fail to load", async () => {
     const fetcher = createProjectFetcher({ projectTeamScopesStatus: "error" });
-    const screen = await renderProjects(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const screen = await renderProjectCreate(fetcher);
 
     await expect.element(screen.getByText("加载可选团队失败")).toBeInTheDocument();
-    await expect.element(screen.getByText("固定负责人（人类）")).toBeInTheDocument();
   });
 
   it("submits a demand to the current project", async () => {

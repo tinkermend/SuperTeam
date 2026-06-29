@@ -57,25 +57,25 @@ export function ProjectPolicyStep({ draft, onChange }: ProjectPolicyStepProps) {
       <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line bg-v3-card">
         <PolicyToggle
           checked={draft.policyToggles.newDemandNeedsHumanConfirmation}
-          description="任何新需求在执行前需由负责人或审批人确认。"
+          description="任何新需求在执行前需由主负责人确认。"
           label="新需求需要人工确认"
           onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, newDemandNeedsHumanConfirmation: checked } })}
         />
         <PolicyToggle
           checked={draft.policyToggles.highRiskActionNeedsConfirmation}
-          description="涉及数据删除、权限变更、外部调用等高风险动作需暂停确认。"
+          description="涉及数据删除、权限变更、外部调用等高风险动作需暂停并等待主负责人确认。"
           label="高风险动作暂停等待确认"
           onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, highRiskActionNeedsConfirmation: checked } })}
         />
         <PolicyToggle
           checked={draft.policyToggles.requireEvidenceBeforeAcceptance}
-          description="验收前必须补齐产出、测试、日志或审计证据。"
+          description="最终验收前必须补齐产出、测试、日志或审计证据。"
           label="验收前必须补齐证据"
           onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, requireEvidenceBeforeAcceptance: checked } })}
         />
         <PolicyToggle
           checked={draft.policyToggles.budgetOverrunNeedsOwnerApproval}
-          description="实际消耗超过预算阈值时，需要负责人审批后继续。"
+          description="实际消耗超过预算阈值时，需要主负责人审批后继续。"
           label="预算超限需负责人审批"
           onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, budgetOverrunNeedsOwnerApproval: checked } })}
         />

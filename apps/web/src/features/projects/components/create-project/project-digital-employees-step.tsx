@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { Check, Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill, WorkSurface } from "@/components/superteam";
+import type { UserProjectTeamScope } from "@/lib/api";
 import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
 import { cn } from "@/lib/utils";
 import type { ProjectCreateDraft } from "./create-project-draft";
@@ -14,6 +15,7 @@ type ProjectDigitalEmployeesStepProps = {
   draft: ProjectCreateDraft;
   fetcher?: typeof fetch;
   onChange: (draft: ProjectCreateDraft) => void;
+  selectableTeams: UserProjectTeamScope[];
 };
 
 type FilterMode = "all" | "schedulable" | "needsConfig";
@@ -23,23 +25,37 @@ export function ProjectDigitalEmployeesStep({
   draft,
   fetcher,
   onChange,
+  selectableTeams,
 }: ProjectDigitalEmployeesStepProps) {
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
-  const employeesQuery = useQuery({
-    enabled: Boolean(draft.teamId),
-    queryKey: ["project-create", "digital-employees", draft.teamId],
-    queryFn: () => listDigitalEmployees({ baseUrl: apiBaseUrl, fetcher }, { team_id: draft.teamId }),
+  const employeeQueries = useQueries({
+    queries: draft.sourceTeamIds.map((teamId) => ({
+      queryKey: ["project-create", "digital-employees", teamId],
+      queryFn: () => listDigitalEmployees({ baseUrl: apiBaseUrl, fetcher }, { team_id: teamId }),
+    })),
   });
   const selectedIds = useMemo(() => new Set(draft.selectedDigitalEmployees.map((employee) => employee.id)), [draft.selectedDigitalEmployees]);
-  const employees = (employeesQuery.data ?? []).filter((employee) => {
-    const textMatch = `${employee.name} ${employee.role}`.toLowerCase().includes(query.trim().toLowerCase());
-    const modeMatch =
-      filterMode === "all" ||
-      (filterMode === "schedulable" && employee.status === "active") ||
-      (filterMode === "needsConfig" && employee.status !== "active");
-    return textMatch && modeMatch;
-  });
+  const employees = useMemo(() => {
+    const byId = new Map<string, DigitalEmployee>();
+    for (const employeeQuery of employeeQueries) {
+      for (const employee of employeeQuery.data ?? []) {
+        byId.set(employee.id, employee);
+      }
+    }
+    const normalizedQuery = query.trim().toLowerCase();
+    return Array.from(byId.values()).filter((employee) => {
+      const textMatch = `${employee.name} ${employee.role}`.toLowerCase().includes(normalizedQuery);
+      const modeMatch =
+        filterMode === "all" ||
+        (filterMode === "schedulable" && employee.status === "active") ||
+        (filterMode === "needsConfig" && employee.status !== "active");
+      return textMatch && modeMatch;
+    });
+  }, [employeeQueries, filterMode, query]);
+  const isEmployeesLoading = employeeQueries.some((employeeQuery) => employeeQuery.isLoading);
+  const isEmployeesError = employeeQueries.some((employeeQuery) => employeeQuery.isError);
+  const sourceTeamIds = useMemo(() => new Set(draft.sourceTeamIds), [draft.sourceTeamIds]);
 
   function toggleEmployee(employee: DigitalEmployee) {
     if (selectedIds.has(employee.id)) {
@@ -52,12 +68,54 @@ export function ProjectDigitalEmployeesStep({
     onChange({ ...draft, selectedDigitalEmployees: [...draft.selectedDigitalEmployees, employee] });
   }
 
+  function toggleSourceTeam(teamId: string) {
+    const nextSourceTeamIds = sourceTeamIds.has(teamId)
+      ? draft.sourceTeamIds.filter((sourceTeamId) => sourceTeamId !== teamId)
+      : [...draft.sourceTeamIds, teamId];
+    const nextAllowed = new Set(nextSourceTeamIds);
+    onChange({
+      ...draft,
+      sourceTeamIds: nextSourceTeamIds,
+      selectedDigitalEmployees: draft.selectedDigitalEmployees.filter(
+        (employee) => !employee.team_id || nextAllowed.has(employee.team_id),
+      ),
+    });
+  }
+
   return (
     <div className="grid gap-5">
       <div>
         <h3 className="text-xl font-semibold text-v3-ink">选择数字员工池</h3>
         <p className="mt-1 text-sm text-v3-ink-2">仅从项目数字员工池中选取执行员工；人类负责人不归入数字员工。</p>
       </div>
+
+      <section className="grid gap-3 rounded-xl border border-v3-line bg-v3-card-soft p-4">
+        <div>
+          <h4 className="text-sm font-semibold text-v3-ink">数字员工来源团队</h4>
+          <p className="mt-1 text-xs text-v3-ink-3">来源团队只用于筛选候选数字员工，不会作为项目团队成员提交。</p>
+        </div>
+        {selectableTeams.length === 0 ? (
+          <p className="text-sm text-v3-ink-2">暂无可选团队</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {selectableTeams.map((scope) => {
+              const active = sourceTeamIds.has(scope.team_id);
+              return (
+                <Button
+                  aria-pressed={active}
+                  className={cn("rounded-xl", active && "border-v3-brand bg-v3-brand-soft text-v3-brand")}
+                  key={scope.id}
+                  onClick={() => toggleSourceTeam(scope.team_id)}
+                  type="button"
+                  variant="outline"
+                >
+                  {scope.team.name}
+                </Button>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[260px] flex-1">
@@ -86,12 +144,12 @@ export function ProjectDigitalEmployeesStep({
           <span>能力标签</span>
           <span>状态</span>
         </div>
-        {employeesQuery.isLoading ? (
+        {isEmployeesLoading ? (
           <p className="px-4 py-6 text-sm text-v3-ink-2">正在加载数字员工...</p>
-        ) : employeesQuery.isError ? (
+        ) : isEmployeesError ? (
           <p className="px-4 py-6 text-sm text-v3-danger">数字员工加载失败</p>
         ) : employees.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-v3-ink-2">{draft.teamId ? "暂无匹配数字员工" : "请先选择授权团队"}</p>
+          <p className="px-4 py-6 text-sm text-v3-ink-2">{draft.sourceTeamIds.length > 0 ? "暂无匹配数字员工" : "请先选择数字员工来源团队"}</p>
         ) : (
           employees.map((employee) => {
             const selected = selectedIds.has(employee.id);

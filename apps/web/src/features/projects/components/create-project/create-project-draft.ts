@@ -2,24 +2,22 @@ import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
 import type { DigitalEmployee } from "@/lib/api/employees";
 import type { CreateProjectInput, ProjectMemberInput } from "@/lib/api/projects";
 
-export type ProjectCreateStep = "basics" | "roles" | "digitalEmployees" | "policies" | "review";
+export type ProjectCreateStep = "basics" | "owners" | "digitalEmployees" | "policies";
 
 export const projectCreateSteps: Array<{ id: ProjectCreateStep; label: string }> = [
   { id: "basics", label: "基础信息" },
-  { id: "roles", label: "团队与人类角色" },
+  { id: "owners", label: "人类负责人" },
   { id: "digitalEmployees", label: "数字员工池" },
   { id: "policies", label: "策略预设" },
-  { id: "review", label: "确认创建" },
 ];
 
 export type ProjectPolicyPreset = "standard" | "lightweight" | "highRisk";
 
 export type ProjectCreateDraft = {
-  acceptanceUser?: UserSummary;
   description: string;
   goal: string;
-  leaderUser?: UserSummary;
   name: string;
+  ownerUsers: UserSummary[];
   policyPreset: ProjectPolicyPreset;
   policyToggles: {
     auditLogEnabled: boolean;
@@ -28,9 +26,8 @@ export type ProjectCreateDraft = {
     newDemandNeedsHumanConfirmation: boolean;
     requireEvidenceBeforeAcceptance: boolean;
   };
-  reviewerUsers: UserSummary[];
   selectedDigitalEmployees: DigitalEmployee[];
-  teamId: string;
+  sourceTeamIds: string[];
 };
 
 export const emptyProjectCreateDraft: ProjectCreateDraft = {
@@ -45,9 +42,9 @@ export const emptyProjectCreateDraft: ProjectCreateDraft = {
     newDemandNeedsHumanConfirmation: true,
     requireEvidenceBeforeAcceptance: true,
   },
-  reviewerUsers: [],
+  ownerUsers: [],
   selectedDigitalEmployees: [],
-  teamId: "",
+  sourceTeamIds: [],
 };
 
 export function activeSelectableTeams(scopes: UserProjectTeamScope[] | undefined) {
@@ -56,8 +53,12 @@ export function activeSelectableTeams(scopes: UserProjectTeamScope[] | undefined
   );
 }
 
-export function selectedTeam(scopes: UserProjectTeamScope[] | undefined, teamId: string) {
-  return activeSelectableTeams(scopes).find((scope) => scope.team_id === teamId);
+export function selectedSourceTeams(
+  scopes: UserProjectTeamScope[] | undefined,
+  sourceTeamIds: string[],
+) {
+  const selectedIds = new Set(sourceTeamIds);
+  return activeSelectableTeams(scopes).filter((scope) => selectedIds.has(scope.team_id));
 }
 
 const POLICY_PRESETS: Record<ProjectPolicyPreset, ProjectCreateDraft["policyToggles"]> = {
@@ -99,12 +100,17 @@ export function projectCreateValidation(
   selectableTeams: UserProjectTeamScope[],
 ) {
   const authorizedTeamIds = new Set(activeSelectableTeams(selectableTeams).map((scope) => scope.team_id));
+  const sourceTeamsAuthorized =
+    draft.sourceTeamIds.length > 0 &&
+    draft.sourceTeamIds.every((sourceTeamId) => authorizedTeamIds.has(sourceTeamId));
+
   return {
-    basics: Boolean(draft.name.trim()) && Boolean(draft.goal.trim()) && Boolean(draft.teamId),
+    basics: Boolean(draft.name.trim()) && Boolean(draft.goal.trim()),
     currentUser: Boolean(currentUserId),
     digitalEmployees: true, // global constraint: optional
     policies: draft.policyToggles.auditLogEnabled,
-    teamAuthorized: Boolean(draft.teamId) && authorizedTeamIds.has(draft.teamId),
+    sourceTeams: sourceTeamsAuthorized,
+    teamAuthorized: sourceTeamsAuthorized,
   };
 }
 
@@ -112,34 +118,12 @@ export function buildProjectCreateInput(
   draft: ProjectCreateDraft,
   currentUser: UserSummary,
 ): CreateProjectInput {
-  const members: ProjectMemberInput[] = [];
-
-  if (draft.leaderUser) {
-    members.push({
-      display_name_snapshot: draft.leaderUser.display_name ?? draft.leaderUser.username,
-      principal_id: draft.leaderUser.id,
-      principal_type: "human_user",
-      project_role: "leader",
-    });
-  }
-
-  if (draft.acceptanceUser) {
-    members.push({
-      display_name_snapshot: draft.acceptanceUser.display_name ?? draft.acceptanceUser.username,
-      principal_id: draft.acceptanceUser.id,
-      principal_type: "human_user",
-      project_role: "acceptance",
-    });
-  }
-
-  for (const reviewer of draft.reviewerUsers) {
-    members.push({
-      display_name_snapshot: reviewer.display_name ?? reviewer.username,
-      principal_id: reviewer.id,
-      principal_type: "human_user",
-      project_role: "reviewer",
-    });
-  }
+  const members: ProjectMemberInput[] = draft.ownerUsers.map((owner) => ({
+    display_name_snapshot: owner.display_name ?? owner.username,
+    principal_id: owner.id,
+    principal_type: "human_user",
+    project_role: "owner",
+  }));
 
   for (const employee of draft.selectedDigitalEmployees) {
     members.push({
@@ -172,10 +156,8 @@ export function buildProjectCreateInput(
     },
     goal: draft.goal.trim(),
     human_owner_user_id: currentUser.id,
-    leader_user_id: draft.leaderUser?.id,
-    acceptance_user_id: draft.acceptanceUser?.id,
     members,
     name: draft.name.trim(),
-    team_id: draft.teamId,
+    team_id: draft.sourceTeamIds[0],
   };
 }

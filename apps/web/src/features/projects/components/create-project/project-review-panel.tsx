@@ -11,10 +11,10 @@ type ProjectReviewPanelProps = {
 };
 
 export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: ProjectReviewPanelProps) {
-  const team = selectableTeams.find((scope) => scope.team_id === draft.teamId);
+  const sourceTeams = selectableTeams.filter((scope) => draft.sourceTeamIds.includes(scope.team_id));
   const requiredPassed = [
     Boolean(draft.name.trim()) && Boolean(draft.goal.trim()),
-    Boolean(team),
+    sourceTeams.length > 0,
     draft.policyToggles.auditLogEnabled,
   ].filter(Boolean).length;
 
@@ -31,15 +31,13 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
 
         <ReviewSection title="项目事实">
           <ReviewRow label="项目名称" value={draft.name || "未填写"} />
-          <ReviewRow label="所属团队" value={team?.team.name ?? "未选择"} />
+          <ReviewRow label="来源团队" value={sourceTeams.length > 0 ? `${sourceTeams.length} 个已选` : "未选择"} />
           <ReviewRow label="目标" value={draft.goal || "未填写"} />
         </ReviewSection>
 
-        <ReviewSection title="人类责任">
-          <ReviewRow label="固定负责人" value={currentUser?.display_name ?? currentUser?.username ?? "未加载"} />
-          <ReviewRow label="项目负责人" value={draft.leaderUser?.display_name ?? draft.leaderUser?.username ?? "未选择"} />
-          <ReviewRow label="验收负责人" value={draft.acceptanceUser?.display_name ?? draft.acceptanceUser?.username ?? "未选择"} />
-          <ReviewRow label="审核人" value={`${draft.reviewerUsers.length} 位已选`} />
+        <ReviewSection title="人类负责人">
+          <ReviewRow label="主负责人" value={currentUser?.display_name ?? currentUser?.username ?? "未加载"} />
+          <ReviewRow label="额外负责人" value={`${draft.ownerUsers.length} 位已选`} />
         </ReviewSection>
 
         <ReviewSection title="数字员工池">
@@ -67,7 +65,7 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
         </div>
         <div className="mt-3 grid gap-2 text-sm text-v3-ink-2">
           <CheckLine checked={Boolean(draft.name.trim()) && Boolean(draft.goal.trim())} label="基础信息已填写" />
-          <CheckLine checked={Boolean(team)} label="团队授权有效" />
+          <CheckLine checked={sourceTeams.length > 0} label="来源团队已选择" />
           <CheckLine checked={draft.policyToggles.auditLogEnabled} label="审计策略已开启" />
           <CheckLine checked={draft.selectedDigitalEmployees.length > 0} label="数字员工池已选择（可选）" />
         </div>
