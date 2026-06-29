@@ -1888,6 +1888,55 @@ describe("ProjectsView", () => {
     expect(queueText).toContain("执行失败");
   });
 
+  it("filters the queue by risk category without changing the base project list request", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "执行失败" }));
+
+    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    expect(queueText).toContain("生产巡检整改");
+    expect(queueText).not.toContain("客户接入验收");
+
+    const projectListCalls = fetchCalls(fetcher).filter(([input, init]) => {
+      const url = new URL(String(input));
+      return url.pathname === "/api/v1/projects" && init?.method === "GET";
+    });
+    expect(projectListCalls.length).toBeGreaterThan(0);
+    expect(
+      projectListCalls.every(([input]) => {
+        const url = new URL(String(input));
+        return !url.searchParams.has("risk");
+      }),
+    ).toBe(true);
+  });
+
+  it("shows a lightweight selected-project context on the projects index", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByLabelText("选中项目上下文")).toBeVisible();
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeVisible();
+    await expect.element(screen.getByText("project-coordinator:project-1")).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "发起任务" }))
+      .toHaveAttribute("href", "/task-launches?projectId=project-1");
+  });
+
+  it("keeps the full operational detail on project detail routes", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeVisible();
+    await expect.element(screen.getByText("整理接入证据")).toBeVisible();
+    expect(screen.container.querySelector('[aria-label="选中项目上下文"]')).toBeNull();
+  });
+
   it("keeps the base project list usable when one project's risk enrichment fails", async () => {
     const fetcher = createProjectFetcher({ riskSignalFailureProjectId: "project-2" });
     const screen = await renderProjects(fetcher);
