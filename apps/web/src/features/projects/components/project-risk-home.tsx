@@ -57,6 +57,7 @@ export type ProjectRiskQueueProps = {
   onSelectProject: (projectId: string) => void;
   pageCount: number;
   pageSize: number;
+  /** Unsorted current server page; this queue owns risk sorting and risk-chip filtering within that page. */
   projects: Project[];
   riskSummaries: ProjectRiskSummaryMap;
   selectedProjectId?: string;
@@ -152,7 +153,11 @@ export function ProjectHomeRiskSummaryBar({
 }
 
 export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
-  const riskCounts = buildRiskCounts(Object.values(props.riskSummaries));
+  const currentPageSummaries = props.projects.map(
+    (project) =>
+      props.riskSummaries[project.id] ?? emptyProjectRiskSummary(project),
+  );
+  const riskCounts = buildRiskCounts(currentPageSummaries);
   const sortedProjects = sortProjectsByRisk(
     props.projects,
     props.riskSummaries,
@@ -426,7 +431,7 @@ function ProjectRiskQueueRow({
       <V3Td className="whitespace-normal">
         <button
           aria-current={selected ? "true" : undefined}
-          aria-label={`选择项目 ${project.name}`}
+          aria-label={`查看项目上下文 ${project.name}`}
           className="flex min-w-0 items-start gap-3 text-left"
           onClick={() => onSelectProject(project.id)}
           type="button"
