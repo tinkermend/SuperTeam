@@ -311,6 +311,7 @@ function createProjectFetcher(
     projectTeamScopesDeferred?: ReturnType<typeof makeDeferred<Response>>;
     projectTeamScopesStatus?: "default" | "empty" | "error" | "loading";
     project2OverviewGate?: Promise<void>;
+    riskSignalFailureProjectId?: string;
     slowFilteredList?: boolean;
   } = {},
 ) {
@@ -508,6 +509,51 @@ function createProjectFetcher(
           pending_human_tasks: 0,
         },
       });
+    }
+
+    if (
+      options.riskSignalFailureProjectId &&
+      url.pathname.startsWith(`/api/v1/projects/${options.riskSignalFailureProjectId}/`) &&
+      ["/tasks", "/decisions", "/evidence", "/events"].some((suffix) =>
+        url.pathname.endsWith(suffix),
+      ) &&
+      method === "GET"
+    ) {
+      return jsonResponse({ error: "risk signal load failed" }, 500);
+    }
+
+    if (url.pathname === "/api/v1/projects/project-2/tasks" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "task-project-2-failed",
+          project_id: "project-2",
+          requires_human_approval: false,
+          status: "failed",
+          tenant_id: "tenant-1",
+          title: "巡检脚本失败",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-2/decisions" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/v1/projects/project-2/evidence" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/v1/projects/project-2/events" && method === "GET") {
+      return jsonResponse([
+        {
+          actor_id: "runtime",
+          actor_type: "system",
+          event_type: "project_task.failed",
+          id: "event-project-2-failed",
+          payload: {},
+          project_id: "project-2",
+          sequence_number: 3,
+          summary: "巡检脚本失败",
+          tenant_id: "tenant-1",
+        },
+      ]);
     }
 
     if (url.pathname.endsWith("/tasks") && method === "GET") {
@@ -1882,5 +1928,30 @@ describe("ProjectsView", () => {
         }),
       ).toBe(true);
     });
+  });
+
+  it("orders the project queue by current-page risk signals", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByText("巡检脚本失败")).toBeVisible();
+
+    const queue = screen.getByTestId("project-risk-queue");
+    const queueText = (await queue.element().textContent) ?? "";
+    expect(queueText.indexOf("生产巡检整改")).toBeLessThan(
+      queueText.indexOf("客户接入验收"),
+    );
+    expect(queueText).toContain("执行失败");
+  });
+
+  it("keeps the base project list usable when one project's risk enrichment fails", async () => {
+    const fetcher = createProjectFetcher({ riskSignalFailureProjectId: "project-2" });
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByText("生产巡检整改")).toBeVisible();
+    await expect.element(screen.getByText("风险待确认")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "详情" })).toBeVisible();
   });
 });
