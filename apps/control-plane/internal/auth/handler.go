@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -26,10 +27,33 @@ func NewHandler(service *Service, authorizer ...authz.Authorizer) *HTTPHandler {
 	return &HTTPHandler{service: service, authorizer: az}
 }
 
+func (h *HTTPHandler) CreateCaptcha(w http.ResponseWriter, r *http.Request) {
+	challenge, err := h.service.CreateCaptcha(r.Context(), clientIP(r), r.UserAgent())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, CaptchaChallengeResponse{
+		CaptchaId:    openapi_types.UUID(challenge.ID),
+		ImageDataUrl: challenge.ImageDataURL,
+		ExpiresAt:    challenge.ExpiresAt,
+	})
+}
+
 func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var body LoginJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	captchaID := uuid.UUID(body.CaptchaId)
+	if captchaID == uuid.Nil || strings.TrimSpace(body.CaptchaCode) == "" {
+		writeError(w, http.StatusBadRequest, "captcha is required")
+		return
+	}
+	if err := h.service.ValidateAndConsumeCaptcha(r.Context(), captchaID, body.CaptchaCode, body.Username, clientIP(r), r.UserAgent()); err != nil {
+		h.writeAuthError(w, err)
 		return
 	}
 
@@ -383,6 +407,8 @@ func (h *HTTPHandler) writeAuthError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUserDisabled):
 		writeError(w, http.StatusForbidden, "user account is disabled")
+	case errors.Is(err, ErrCaptchaInvalid), errors.Is(err, ErrCaptchaExpired), errors.Is(err, ErrCaptchaUsed):
+		writeError(w, http.StatusUnauthorized, "验证码不正确或已过期")
 	case errors.Is(err, ErrInvalidCredentials), errors.Is(err, ErrUnauthorized), errors.Is(err, ErrSessionNotFound), errors.Is(err, ErrSessionExpired):
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 	default:

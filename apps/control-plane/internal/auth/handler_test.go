@@ -7,12 +7,106 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/authz"
 )
+
+func TestHTTPHandlerCreatesCaptchaChallenge(t *testing.T) {
+	_, _, handler := newCaptchaLoginHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/captcha", nil)
+	request.RemoteAddr = "127.0.0.1:32000"
+	request.Header.Set("user-agent", "Chrome 125")
+	recorder := httptest.NewRecorder()
+
+	handler.CreateCaptcha(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response CaptchaChallengeResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if uuid.UUID(response.CaptchaId) == uuid.Nil {
+		t.Fatal("expected captcha id")
+	}
+	if !strings.HasPrefix(response.ImageDataUrl, "data:image/png;base64,") {
+		t.Fatalf("expected png data url, got %q", response.ImageDataUrl)
+	}
+	if response.ExpiresAt.IsZero() {
+		t.Fatal("expected expiry timestamp")
+	}
+}
+
+func TestHTTPHandlerLoginRequiresCaptcha(t *testing.T) {
+	_, _, handler := newCaptchaLoginHandler(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{
+		"username": "operator",
+		"password": "secret"
+	}`))
+	recorder := httptest.NewRecorder()
+
+	handler.Login(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHTTPHandlerLoginRejectsInvalidCaptchaBeforePassword(t *testing.T) {
+	repo, svc, handler := newCaptchaLoginHandler(t)
+	challenge := createCaptchaForHandlerTest(t, svc, "A7K2")
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(fmt.Sprintf(`{
+		"username": "operator",
+		"password": "wrong-password",
+		"captcha_id": "%s",
+		"captcha_code": "B7K2"
+	}`, challenge.ID)))
+	recorder := httptest.NewRecorder()
+
+	handler.Login(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	assertLastLoginFailureReason(t, repo, LoginFailureCaptchaInvalid)
+	if len(repo.loginLogs) != 1 {
+		t.Fatalf("expected only captcha failure log before password validation, got %#v", repo.loginLogs)
+	}
+}
+
+func TestHTTPHandlerLoginWithValidCaptchaSetsSessionToken(t *testing.T) {
+	_, svc, handler := newCaptchaLoginHandler(t)
+	challenge := createCaptchaForHandlerTest(t, svc, "A7K2")
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(fmt.Sprintf(`{
+		"username": "operator",
+		"password": "secret",
+		"captcha_id": "%s",
+		"captcha_code": "a7k2"
+	}`, challenge.ID)))
+	recorder := httptest.NewRecorder()
+
+	handler.Login(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	cookie := findCookie(recorder.Result().Cookies(), SessionCookieName)
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("expected session token cookie, got %#v", recorder.Result().Cookies())
+	}
+	var response LoginResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.User.Username != "operator" {
+		t.Fatalf("expected operator user, got %#v", response.User)
+	}
+}
 
 func TestHTTPHandlerUpdatesCurrentUserProfile(t *testing.T) {
 	repo, svc, handler, token := newAuthenticatedHandler(t)
@@ -360,6 +454,49 @@ func newAuthenticatedHandler(t *testing.T) (*mockRepo, *Service, *HTTPHandler, s
 		t.Fatalf("login: %v", err)
 	}
 	return repo, svc, NewHandler(svc), token
+}
+
+func newCaptchaLoginHandler(t *testing.T) (*mockRepo, *Service, *HTTPHandler) {
+	t.Helper()
+	repo := newMockRepo()
+	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+		TTL:    5 * time.Minute,
+		Now:    func() time.Time { return now },
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	if _, err := svc.CreateUser(t.Context(), "operator", "secret"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return repo, svc, NewHandler(svc)
+}
+
+func createCaptchaForHandlerTest(t *testing.T, svc *Service, code string) *CaptchaChallengeRecord {
+	t.Helper()
+	id := uuid.New()
+	now := svc.now().UTC()
+	record, err := svc.repo.CreateCaptchaChallenge(t.Context(), CreateCaptchaChallengeParams{
+		ID:         id,
+		TenantID:   uuid.MustParse(DefaultTenantID),
+		AnswerHash: svc.hashCaptchaAnswer(id.String(), code),
+		ExpiresAt:  now.Add(svc.captchaTTL),
+	})
+	if err != nil {
+		t.Fatalf("create captcha challenge: %v", err)
+	}
+	return record
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }
 
 func ptrInt32(value int32) *int32 {

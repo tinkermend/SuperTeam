@@ -9,6 +9,19 @@ servers:
     description: 本地开发环境
 
 paths:
+  /api/auth/captcha:
+    get:
+      summary: 创建登录验证码挑战
+      operationId: createCaptcha
+      tags:
+        - Auth
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaChallengeResponse'
   /api/auth/login:
     post:
       summary: 用户登录
@@ -24,6 +37,8 @@ paths:
               required:
                 - username
                 - password
+                - captcha_id
+                - captcha_code
               properties:
                 username:
                   type: string
@@ -35,6 +50,13 @@ paths:
                   format: password
                   minLength: 1
                   example: admin
+                captcha_id:
+                  type: string
+                  format: uuid
+                captcha_code:
+                  type: string
+                  minLength: 4
+                  maxLength: 4
       responses:
         '200':
           description: 登录成功
@@ -443,6 +465,19 @@ components:
       properties:
         user:
           $ref: '#/components/schemas/UserSummary'
+
+    CaptchaChallengeResponse:
+      type: object
+      required: [captcha_id, image_data_url, expires_at]
+      properties:
+        captcha_id:
+          type: string
+          format: uuid
+        image_data_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
 
     LoginLogListResponse:
       type: object
