@@ -22,6 +22,10 @@ func (a *allowAllAuthorizer) Check(ctx context.Context, req authz.CheckRequest) 
 	return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed}, nil
 }
 
+func (a *allowAllAuthorizer) CheckBulkTeamActions(ctx context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	return req.Actions, nil
+}
+
 func newTestHandler(service HandlerService) *HTTPHandler {
 	handler := &HTTPHandler{service: service}
 	handler.SetAuthorizer(&allowAllAuthorizer{})
