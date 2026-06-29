@@ -8,6 +8,13 @@
 
 **Tech Stack:** React 19, TypeScript, TanStack Query, TanStack Router, SuperTeam v3 components, Vitest browser tests through `corepack pnpm --filter ./apps/web run test`.
 
+## Execution Status (2026-06-30)
+
+- Status: Implemented on branch `codex/project-risk-homepage`.
+- Subagent review: approved, no blocker findings.
+- Verification passed: targeted project tests, Web typecheck, `git diff --check`, real `/projects` UI smoke through the current Web branch and real Control Plane.
+- Verification caveat: full Web suite is still blocked by unrelated baseline failures in sidebar/auth/skills tests; project-specific tests pass.
+
 ---
 
 ## Review Revisions (2026-06-29)
