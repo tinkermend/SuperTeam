@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   CircleAlert,
@@ -7,7 +7,6 @@ import {
   PencilLine,
   SendHorizontal,
   Sparkles,
-  UserRoundCheck,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,92 +20,26 @@ import { SoftCard, V3Button } from "@/components/superteam";
 import type {
   Project,
   ProjectDemandSourceType,
-  ProjectMember,
-  ReviewerSelectionReason,
   SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
-export type ReviewerDefaultResolution = {
-  member?: ProjectMember;
-  reason: ReviewerSelectionReason;
-  requiresChoice: boolean;
-};
-
 type TaskLaunchFormProps = {
   isSubmitting?: boolean;
-  isReviewerLoading?: boolean;
-  members: ProjectMember[];
   onProjectChange: (projectId: string) => void;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
   projects: Project[];
   selectedProjectId?: string;
 };
 
-export function resolveDefaultReviewer(
-  project: Project | undefined,
-  members: ProjectMember[],
-): ReviewerDefaultResolution | undefined {
-  if (!project) {
-    return undefined;
-  }
-
-  const activeHumanMembers = members.filter(
-    (member) => member.principal_type === "human_user" && member.status === "active",
-  );
-  const reviewers = activeHumanMembers.filter(
-    (member) => member.project_role === "reviewer",
-  );
-
-  if (reviewers.length === 1) {
-    return {
-      member: reviewers[0],
-      reason: "project_reviewer_default",
-      requiresChoice: false,
-    };
-  }
-
-  if (reviewers.length > 1) {
-    return {
-      reason: "user_selected",
-      requiresChoice: true,
-    };
-  }
-
-  const owner = activeHumanMembers.find(
-    (member) => member.principal_id === project.human_owner_user_id,
-  );
-  if (!owner) {
-    return undefined;
-  }
-
-  return {
-    member: owner,
-    reason: "project_human_owner_fallback",
-    requiresChoice: false,
-  };
-}
-
 function deriveTitle(content: string): string {
   return content.trim().split(/\n+/)[0]?.slice(0, 80) ?? "";
 }
 
-function reviewerSortKey(member: ProjectMember): string {
-  return member.display_name_snapshot || member.principal_id;
-}
-
-function reviewerLabel(member: ProjectMember): string {
-  const identity =
-    member.display_name_snapshot || `${member.principal_id.slice(0, 8)}...`;
-  return `${identity} · ${member.project_role}`;
-}
-
 export function TaskLaunchForm({
   isSubmitting = false,
-  isReviewerLoading = false,
-  members,
   onProjectChange,
   onSubmit,
   projects,
@@ -119,7 +52,6 @@ export function TaskLaunchForm({
   const [content, setContent] = useState("");
   const [priority, setPriority] = useState("high");
   const [riskLevel, setRiskLevel] = useState("medium");
-  const [reviewerId, setReviewerId] = useState("");
   const [error, setError] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
@@ -128,40 +60,8 @@ export function TaskLaunchForm({
     mutationFn: (id: string) => applyPromptTemplate(apiOptions, id),
   });
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
-  const project = activeProjects.find((item) => item.id === projectId);
-  const currentProjectMembers = useMemo(
-    () => members.filter((member) => member.project_id === projectId),
-    [members, projectId],
-  );
-  const reviewerDefault = useMemo(
-    () => resolveDefaultReviewer(project, currentProjectMembers),
-    [project, currentProjectMembers],
-  );
-  const selectedReviewerId = reviewerId || reviewerDefault?.member?.principal_id || "";
-  const selectedReason: ReviewerSelectionReason | undefined = reviewerId
-    ? "user_selected"
-    : reviewerDefault?.reason;
-  const humanReviewers = useMemo(() => {
-    const activeHumanMembers = currentProjectMembers.filter(
-      (member) => member.principal_type === "human_user" && member.status === "active",
-    );
-    return [...activeHumanMembers].sort((left, right) => {
-      if (left.project_role === "reviewer" && right.project_role !== "reviewer") {
-        return -1;
-      }
-      if (left.project_role !== "reviewer" && right.project_role === "reviewer") {
-        return 1;
-      }
-      return reviewerSortKey(left).localeCompare(reviewerSortKey(right));
-    });
-  }, [currentProjectMembers]);
-
-  useEffect(() => {
-    setReviewerId("");
-  }, [selectedProjectId]);
 
   function handleProjectChange(nextProjectId: string) {
-    setReviewerId("");
     setError("");
     onProjectChange(nextProjectId);
   }
@@ -178,17 +78,11 @@ export function TaskLaunchForm({
       setError("请选择项目");
       return;
     }
-    if (!selectedReviewerId || !selectedReason) {
-      setError("请选择审核人");
-      return;
-    }
 
     setError("");
     onSubmit(projectId, {
       attachments: [],
       content: trimmedContent,
-      reviewer_selection_reason: selectedReason,
-      reviewer_user_id: selectedReviewerId,
       source_refs: {},
       source_type: "manual" as ProjectDemandSourceType,
       title: resolvedTitle,
@@ -271,7 +165,7 @@ export function TaskLaunchForm({
             <div className="min-w-0">
               <h3 className="text-sm font-extrabold tracking-normal text-v3-ink">编排参数</h3>
               <p className="mt-1 text-xs leading-5 text-v3-ink-2">
-                先固定项目、审核与风险边界，再交给协调线程拆解。
+                先固定项目、优先级与风险边界，再交给协调线程拆解。
               </p>
             </div>
             <span className="rounded-lg border border-v3-line-strong bg-v3-card px-2.5 py-1 text-xs font-bold text-v3-ink-2">
@@ -279,7 +173,7 @@ export function TaskLaunchForm({
             </span>
           </div>
           <div
-            className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(15rem,1.1fr)_minmax(14rem,1fr)_minmax(9rem,0.55fr)_minmax(10rem,0.65fr)] xl:items-end"
+            className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(15rem,1.1fr)_minmax(9rem,0.55fr)_minmax(10rem,0.65fr)] xl:items-end"
             data-testid="task-launch-parameters"
           >
             <LaunchSelect
@@ -295,25 +189,6 @@ export function TaskLaunchForm({
                   {activeProjects.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
                       {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </LaunchSelect>
-
-            <LaunchSelect
-              icon={<UserRoundCheck className="size-4" />}
-              label="审核人"
-              required
-            >
-              <Select value={selectedReviewerId} onValueChange={setReviewerId}>
-                <SelectTrigger aria-label="审核人" className="h-11 w-full min-w-0 rounded-xl border-v3-line-strong bg-v3-card px-3 text-base font-semibold text-v3-ink shadow-none">
-                  <SelectValue placeholder="选择审核人" />
-                </SelectTrigger>
-                <SelectContent>
-                  {humanReviewers.map((member) => (
-                    <SelectItem key={member.id} value={member.principal_id}>
-                      {reviewerLabel(member)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -369,7 +244,7 @@ export function TaskLaunchForm({
         </V3Button>
         <V3Button
           className="w-full sm:w-auto"
-          disabled={isSubmitting || isReviewerLoading}
+          disabled={isSubmitting}
           onClick={handleSubmit}
           type="button"
         >

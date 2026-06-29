@@ -4,11 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskLaunchView } from "@/features/task-launches";
-import {
-  resolveDefaultReviewer,
-  type ReviewerDefaultResolution,
-} from "@/features/task-launches/components/task-launch-form";
-import type { Project, ProjectMember } from "@/lib/api/projects";
+import type { Project } from "@/lib/api/projects";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -145,34 +141,14 @@ function makeProject(id = "project-1", status: Project["status"] = "running"): P
   };
 }
 
-function makeMember(
-  id: string,
-  overrides: Partial<ProjectMember> = {},
-): ProjectMember {
-  return {
-    display_name_snapshot: id,
-    id,
-    principal_id: id,
-    principal_type: "human_user",
-    project_id: "project-1",
-    project_role: "reviewer",
-    settings: {},
-    status: "active",
-    tenant_id: "tenant-1",
-    ...overrides,
-  };
-}
-
 function createTaskLaunchFetcher({
   includeSecondProject = false,
   launchDetail = false,
-  multipleReviewers = false,
   emptyFacts = false,
 }: {
   emptyFacts?: boolean;
   includeSecondProject?: boolean;
   launchDetail?: boolean;
-  multipleReviewers?: boolean;
 } = {}) {
   const submittedDemand = {
     attachments: [],
@@ -192,45 +168,6 @@ function createTaskLaunchFetcher({
     tenant_id: "tenant-1",
     title: "审查这个开源项目的 PR，并按数量分配数字员工",
   };
-  const projectOneMembers = [
-    makeMember("owner-member", {
-      display_name_snapshot: "负责人",
-      principal_id: "owner-1",
-      project_role: "owner",
-    }),
-    makeMember("reviewer-member-1", {
-      display_name_snapshot: "王审核",
-      principal_id: "reviewer-1",
-    }),
-    makeMember("executor-member-1", {
-      display_name_snapshot: "数字员工",
-      principal_id: "employee-1",
-      principal_type: "digital_employee",
-      project_role: "reviewer",
-    }),
-    ...(multipleReviewers
-      ? [
-          makeMember("reviewer-member-2", {
-            display_name_snapshot: "李审核",
-            principal_id: "reviewer-2",
-          }),
-        ]
-      : []),
-  ];
-  const projectTwoMembers = [
-    makeMember("project-2-owner-member", {
-      display_name_snapshot: "第二项目负责人",
-      principal_id: "owner-2",
-      project_id: "project-2",
-      project_role: "owner",
-    }),
-    makeMember("project-2-reviewer-member", {
-      display_name_snapshot: "赵审核",
-      principal_id: "reviewer-2",
-      project_id: "project-2",
-    }),
-  ];
-
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -246,12 +183,6 @@ function createTaskLaunchFetcher({
         makeProject(),
         ...(includeSecondProject ? [makeProject("project-2")] : []),
       ]);
-    }
-    if (url.pathname === "/api/v1/projects/project-1/members" && method === "GET") {
-      return jsonResponse(projectOneMembers);
-    }
-    if (url.pathname === "/api/v1/projects/project-2/members" && method === "GET") {
-      return jsonResponse(projectTwoMembers);
     }
     if (url.pathname === "/api/v1/projects/project-1/demands" && method === "POST") {
       return jsonResponse(submittedDemand, 201);
@@ -398,65 +329,6 @@ async function renderWithQueryClient(children: ReactNode) {
   return { container, queryClient, root };
 }
 
-function expectReviewerResolution(
-  resolution: ReviewerDefaultResolution | undefined,
-  expected: Partial<ReviewerDefaultResolution> & { principalId?: string },
-) {
-  expect(resolution?.reason).toBe(expected.reason);
-  expect(resolution?.requiresChoice).toBe(expected.requiresChoice);
-  expect(resolution?.member?.principal_id).toBe(expected.principalId);
-}
-
-describe("resolveDefaultReviewer", () => {
-  it("uses the only active human reviewer as the project reviewer default", () => {
-    const resolution = resolveDefaultReviewer(makeProject(), [
-      makeMember("employee-1", {
-        principal_type: "digital_employee",
-        project_role: "reviewer",
-      }),
-      makeMember("reviewer-1", { principal_id: "reviewer-1" }),
-    ]);
-
-    expectReviewerResolution(resolution, {
-      principalId: "reviewer-1",
-      reason: "project_reviewer_default",
-      requiresChoice: false,
-    });
-  });
-
-  it("requires explicit user selection when multiple active human reviewers exist", () => {
-    const resolution = resolveDefaultReviewer(makeProject(), [
-      makeMember("reviewer-1", { principal_id: "reviewer-1" }),
-      makeMember("reviewer-2", { principal_id: "reviewer-2" }),
-    ]);
-
-    expectReviewerResolution(resolution, {
-      reason: "user_selected",
-      requiresChoice: true,
-    });
-  });
-
-  it("falls back to the active human owner when there is no human reviewer", () => {
-    const resolution = resolveDefaultReviewer(makeProject(), [
-      makeMember("employee-1", {
-        principal_id: "employee-1",
-        principal_type: "digital_employee",
-        project_role: "reviewer",
-      }),
-      makeMember("owner-1", {
-        principal_id: "owner-1",
-        project_role: "owner",
-      }),
-    ]);
-
-    expectReviewerResolution(resolution, {
-      principalId: "owner-1",
-      reason: "project_human_owner_fallback",
-      requiresChoice: false,
-    });
-  });
-});
-
 describe("TaskLaunchView", () => {
   afterEach(() => {
     for (const root of mountedRoots.splice(0)) {
@@ -467,7 +339,7 @@ describe("TaskLaunchView", () => {
     document.body.innerHTML = "";
   });
 
-  it("defaults reviewer to the only active human reviewer and submits demand", async () => {
+  it("submits demand without reviewer fields", async () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
@@ -475,20 +347,21 @@ describe("TaskLaunchView", () => {
     );
 
     await typeInLabeledField("需求描述", "审查这个开源项目的 PR，并按数量分配数字员工");
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
 
-    await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await clickButton("提交任务");
 
-    expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toEqual({
-      title: "审查这个开源项目的 PR，并按数量分配数字员工",
-      content: "审查这个开源项目的 PR，并按数量分配数字员工",
-      source_type: "manual",
-      source_refs: {},
-      attachments: [],
-      reviewer_user_id: "reviewer-1",
-      reviewer_selection_reason: "project_reviewer_default",
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toEqual({
+        title: "审查这个开源项目的 PR，并按数量分配数字员工",
+        content: "审查这个开源项目的 PR，并按数量分配数字员工",
+        source_type: "manual",
+        source_refs: {},
+        attachments: [],
+      });
     });
-    await vi.waitFor(() => {
+    expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
+    await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
         to: "/workflows/$demandId",
@@ -496,47 +369,33 @@ describe("TaskLaunchView", () => {
     });
   });
 
-  it("uses the selected project's reviewer after project changes", async () => {
+  it("submits demand for the selected project without reviewer fields", async () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher({ includeSecondProject: true });
     await renderWithQueryClient(
       <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    await vi.waitFor(() => expect(getByText("生产巡检项目")).toBeTruthy());
+    await waitFor(() => expect(getByText("生产巡检项目")).toBeTruthy());
     await clickButton("生产巡检项目");
     await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
 
-    await vi.waitFor(() => expect(getByText("赵审核 · reviewer")).toBeTruthy());
     await clickButton("提交任务");
 
-    expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
+    const body = postBody(fetcher, "/api/v1/projects/project-2/demands");
+    expect(body).toMatchObject({
       content: "处理第二个项目的巡检问题",
-      reviewer_selection_reason: "project_reviewer_default",
-      reviewer_user_id: "reviewer-2",
       title: "处理第二个项目的巡检问题",
     });
-    await vi.waitFor(() => {
+    expect(body).not.toHaveProperty("reviewer_user_id");
+    expect(body).not.toHaveProperty("reviewer_selection_reason");
+    expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-2/members");
+    await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-2" },
         to: "/workflows/$demandId",
       });
     });
-  });
-
-  it("requires explicit reviewer selection when the selected project has multiple active human reviewers", async () => {
-    const fetcher = createTaskLaunchFetcher({ multipleReviewers: true });
-    await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
-
-    await typeInLabeledField("需求描述", "需要两位审核人项目确认");
-    await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
-    await vi.waitFor(() => expect(getByText("李审核 · reviewer")).toBeTruthy());
-    expect(textOrder("王审核 · reviewer")).toBeLessThan(textOrder("负责人 · owner"));
-    await clickButton("提交任务");
-
-    await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
   });
 
   it("renders the pre-submit launch composer without orchestration state controls", async () => {
@@ -545,7 +404,7 @@ describe("TaskLaunchView", () => {
       <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    await vi.waitFor(() => expect(getByText("中枢指令区")).toBeTruthy());
+    await waitFor(() => expect(getByText("中枢指令区")).toBeTruthy());
 
     expect(getByText("中枢指令区")).toBeTruthy();
     expect(getByText("命令中心")).toBeTruthy();
@@ -553,7 +412,8 @@ describe("TaskLaunchView", () => {
     expect(getByText("项目路由")).toBeTruthy();
     expect(getByText("保存草稿")).toBeTruthy();
     expect(getByLabelText("项目")).toBeTruthy();
-    expect(getByLabelText("审核人")).toBeTruthy();
+    expect(() => getByLabelText("审核人")).toThrow();
+    expect(queryByText("审核人")).toBeNull();
     expect(getByLabelText("优先级")).toBeTruthy();
     expect(getByLabelText("风险级别")).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
@@ -607,11 +467,6 @@ function getByLabelText(label: string) {
   return element;
 }
 
-function textOrder(text: string) {
-  const element = getByText(text);
-  return Array.from(document.body.querySelectorAll<HTMLElement>("*")).indexOf(element);
-}
-
 function postBody(fetcher: ReturnType<typeof createTaskLaunchFetcher>, path: string) {
   const call = fetcher.mock.calls.find(([url]) => {
     const parsed = new URL(String(url));
@@ -621,8 +476,12 @@ function postBody(fetcher: ReturnType<typeof createTaskLaunchFetcher>, path: str
   return JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;
 }
 
+function fetchPaths(fetcher: ReturnType<typeof createTaskLaunchFetcher>) {
+  return fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname);
+}
+
 async function typeInLabeledField(label: string, value: string) {
-  await vi.waitFor(() => expect(getByLabelText(label)).toBeTruthy());
+  await waitFor(() => expect(getByLabelText(label)).toBeTruthy());
   const input = getByLabelText(label) as HTMLInputElement | HTMLTextAreaElement;
   await act(async () => {
     setInputValue(input, value);
@@ -630,14 +489,26 @@ async function typeInLabeledField(label: string, value: string) {
 }
 
 async function clickButton(name: string) {
+  await waitFor(() => expect(getButton(name).disabled).toBe(false));
+  const button = getButton(name);
+  await act(async () => {
+    button.click();
+  });
+}
+
+function getButton(name: string) {
   const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
     (item) => item.textContent === name,
   );
   if (!button) {
     throw new Error(`Unable to find button: ${name}`);
   }
+  return button;
+}
+
+async function waitFor(assertion: () => void) {
   await act(async () => {
-    button.click();
+    await vi.waitFor(assertion);
   });
 }
 
