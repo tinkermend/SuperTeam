@@ -43,7 +43,9 @@ func TestWorkspaceModeForTaskKind(t *testing.T) {
 		{name: "feature development uses branch workspace", kind: "feature_development", want: WorkspaceModeBranch},
 		{name: "code review uses diff workspace", kind: "code_review", want: WorkspaceModeDiff},
 		{name: "test verification uses detached run workspace", kind: "test_verification", want: WorkspaceModeDetachedRun},
+		{name: "build verification uses detached run workspace", kind: "build_verification", want: WorkspaceModeDetachedRun},
 		{name: "incident triage uses readonly workspace", kind: "incident_triage", want: WorkspaceModeReadonly},
+		{name: "analysis uses readonly workspace", kind: "analysis", want: WorkspaceModeReadonly},
 		{name: "status report uses no workspace", kind: "status_report", want: WorkspaceModeNone},
 		{name: "unknown kind uses no workspace", kind: "some_custom_kind", want: WorkspaceModeNone},
 	}
