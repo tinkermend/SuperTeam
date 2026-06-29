@@ -378,7 +378,10 @@ func (q *Queries) ListProjectTaskAttestations(ctx context.Context, arg ListProje
 const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttemptBudgetHeartbeat :one
 UPDATE project_task_attempts
 SET
-    budget_last_heartbeat_at = NOW(),
+    budget_last_heartbeat_at = GREATEST(
+        COALESCE(budget_last_heartbeat_at, NOW()),
+        NOW()
+    ),
     budget_consumed_wall_clock_sec = GREATEST(
         budget_consumed_wall_clock_sec,
         $1::integer

@@ -562,6 +562,7 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.Equal(t, int32(120), first.BudgetConsumedWallClockSec)
 	require.Equal(t, int32(1000), first.BudgetConsumedTokens)
 	require.Equal(t, "wall_clock_exceeded", first.BudgetTripReason.String)
+	require.True(t, first.BudgetLastHeartbeatAt.Valid)
 	require.True(t, first.BudgetTrippedAt.Valid)
 
 	second, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
@@ -575,8 +576,30 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(120), second.BudgetConsumedWallClockSec)
 	require.Equal(t, int32(1000), second.BudgetConsumedTokens)
+	require.True(t, second.BudgetLastHeartbeatAt.Valid)
+	require.False(t, second.BudgetLastHeartbeatAt.Time.Before(first.BudgetLastHeartbeatAt.Time))
 	require.Equal(t, first.BudgetTrippedAt.Time, second.BudgetTrippedAt.Time)
 	require.Equal(t, "wall_clock_exceeded", second.BudgetTripReason.String)
+
+	futureHeartbeat := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET budget_last_heartbeat_at = $1
+		WHERE tenant_id = $2 AND project_task_id = $3 AND id = $4
+	`, futureHeartbeat, tenantID, task.ID, attempt.ID)
+	require.NoError(t, err)
+
+	third, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     121,
+		ConsumedTokens:           1001,
+	})
+	require.NoError(t, err)
+	require.True(t, third.BudgetLastHeartbeatAt.Valid)
+	require.True(t, third.BudgetLastHeartbeatAt.Time.Equal(futureHeartbeat))
+	require.False(t, third.BudgetLastHeartbeatAt.Time.Before(second.BudgetLastHeartbeatAt.Time))
 
 	_, err = q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
 		TenantID:                 tenantID,

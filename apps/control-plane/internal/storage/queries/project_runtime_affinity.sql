@@ -160,7 +160,10 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 -- name: UpdateProjectTaskAttemptBudgetHeartbeat :one
 UPDATE project_task_attempts
 SET
-    budget_last_heartbeat_at = NOW(),
+    budget_last_heartbeat_at = GREATEST(
+        COALESCE(budget_last_heartbeat_at, NOW()),
+        NOW()
+    ),
     budget_consumed_wall_clock_sec = GREATEST(
         budget_consumed_wall_clock_sec,
         sqlc.arg('consumed_wall_clock_sec')::integer
