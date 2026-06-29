@@ -1951,7 +1951,7 @@ func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
 			RepoBinding: project.ProjectRepoBinding{
 				Status:           project.ProjectRepoBindingStatusBound,
 				URL:              "https://github.com/acme/app.git",
-				DefaultBranch:    "main",
+				DefaultBranch:    "  main  ",
 				GitCredentialRef: &credentialRef,
 				Scope:            []string{"apps/web", "packages/shared"},
 			},

@@ -1877,7 +1877,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	projectGit := projectGitMetadata(projectRecord.RepoBinding)
 	baseRef := ""
 	if projectRecord.RepoBinding.Status == project.ProjectRepoBindingStatusBound {
-		baseRef = projectRecord.RepoBinding.DefaultBranch
+		baseRef, _ = projectGit["default_branch"].(string)
 	} else {
 		workspaceMode = WorkspaceModeNone
 	}
