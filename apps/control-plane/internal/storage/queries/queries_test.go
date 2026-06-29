@@ -601,6 +601,35 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.True(t, third.BudgetLastHeartbeatAt.Time.Equal(futureHeartbeat))
 	require.False(t, third.BudgetLastHeartbeatAt.Time.Before(second.BudgetLastHeartbeatAt.Time))
 
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET budget_last_heartbeat_at = NULL
+		WHERE tenant_id = $1 AND project_task_id = $2 AND id = $3
+	`, tenantID, task.ID, attempt.ID)
+	require.NoError(t, err)
+
+	tx, err := db.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	txQueries := q.WithTx(tx)
+
+	var transactionStartedAt time.Time
+	err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&transactionStartedAt)
+	require.NoError(t, err)
+	time.Sleep(25 * time.Millisecond)
+
+	delayed, err := txQueries.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     1,
+		ConsumedTokens:           1,
+	})
+	require.NoError(t, err)
+	require.True(t, delayed.BudgetLastHeartbeatAt.Valid)
+	require.True(t, delayed.BudgetLastHeartbeatAt.Time.After(transactionStartedAt))
+	require.NoError(t, tx.Commit(ctx))
+
 	_, err = q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
 		TenantID:                 tenantID,
 		ProjectTaskID:            task.ID,

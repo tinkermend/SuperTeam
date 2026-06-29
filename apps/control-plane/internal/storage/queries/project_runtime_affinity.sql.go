@@ -379,8 +379,8 @@ const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttem
 UPDATE project_task_attempts
 SET
     budget_last_heartbeat_at = GREATEST(
-        COALESCE(budget_last_heartbeat_at, NOW()),
-        NOW()
+        COALESCE(budget_last_heartbeat_at, statement_timestamp()),
+        statement_timestamp()
     ),
     budget_consumed_wall_clock_sec = GREATEST(
         budget_consumed_wall_clock_sec,
