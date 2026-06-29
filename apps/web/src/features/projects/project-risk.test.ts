@@ -10,6 +10,7 @@ import {
   deriveProjectRiskSummary,
   matchesProjectRiskFilter,
   sortProjectsByRisk,
+  type ProjectRiskSummaryMap,
 } from "./project-risk";
 
 const tenantId = "tenant-1";
@@ -200,7 +201,7 @@ describe("project risk model", () => {
     const danger = project("danger", { updated_at: "2026-06-29T07:00:00.000Z" });
     const warn = project("warn", { updated_at: "2026-06-29T09:00:00.000Z" });
     const healthy = project("healthy", { updated_at: "2026-06-29T10:00:00.000Z" });
-    const summaries = {
+    const summaries: ProjectRiskSummaryMap = {
       danger: deriveProjectRiskSummary({
         decisions: [decision("danger")],
         evidence: [],
@@ -233,7 +234,7 @@ describe("project risk model", () => {
     const failedProject = project("failed");
     const evidenceProject = project("evidence");
     const healthyProject = project("healthy");
-    const summaries = {
+    const summaries: ProjectRiskSummaryMap = {
       evidence: deriveProjectRiskSummary({
         decisions: [],
         evidence: [evidence("evidence", { verification_status: "rejected" })],

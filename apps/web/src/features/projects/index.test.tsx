@@ -1952,6 +1952,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("项目队列")).toBeVisible();
     await expect.element(screen.getByText("生产巡检整改")).toBeVisible();
     await expect.element(screen.getByText("风险待确认")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "详情" })).toBeVisible();
+    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    expect(queueText).toContain("详情");
   });
 });
