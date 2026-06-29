@@ -450,6 +450,8 @@ func TestPgRepositoryProjectRepoBindingPersistsPreservesAndClears(t *testing.T) 
 	projectID := uuid.New()
 	ownerID := uuid.New()
 	credentialRef := "git-credential:primary"
+	requireProjectRepoBindingConstraint(t, pool, "chk_projects_repo_binding_status")
+	requireProjectRepoBindingConstraint(t, pool, "chk_projects_repo_binding_consistent")
 
 	created, err := repo.CreateProject(ctx, CreateProjectRequest{
 		TenantID:         tenantID,
@@ -511,6 +513,33 @@ func TestPgRepositoryProjectRepoBindingPersistsPreservesAndClears(t *testing.T) 
 	require.False(t, storedCredentialRef.Valid, "repo_git_credential_ref should be NULL after clearing")
 	require.Equal(t, "[]", scopeJSON)
 	require.Equal(t, string(ProjectRepoBindingStatusUnbound), status)
+
+	_, err = pool.Exec(ctx, `
+		UPDATE projects
+		SET repo_binding_status = 'bound',
+		    repo_url = NULL,
+		    repo_default_branch = 'main'
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, projectID)
+	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_consistent")
+
+	_, err = pool.Exec(ctx, `
+		UPDATE projects
+		SET repo_binding_status = 'bound',
+		    repo_url = 'https://github.com/acme/superteam.git',
+		    repo_default_branch = NULL
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, projectID)
+	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_consistent")
+
+	requireProjectRepoBindingStatusConstraintRejectsInvalidValue(t, pool, tenantID, projectID)
+
+	_, err = pool.Exec(ctx, `
+		UPDATE projects
+		SET repo_binding_status = 'invalid'
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, projectID)
+	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_consistent")
 }
 
 func TestPgRepositoryListUnresolvedBlockersRequiresAcceptedLatestResult(t *testing.T) {
@@ -3660,6 +3689,53 @@ func requireProjectRepoBindingUnbound(t *testing.T, binding ProjectRepoBinding) 
 	require.Empty(t, binding.DefaultBranch)
 	require.Nil(t, binding.GitCredentialRef)
 	require.Empty(t, binding.Scope)
+}
+
+func requireProjectRepoBindingConstraint(t *testing.T, pool *pgxpool.Pool, constraintName string) {
+	t.Helper()
+
+	var exists bool
+	err := pool.QueryRow(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_constraint
+			WHERE conrelid = 'projects'::regclass
+			  AND contype = 'c'
+			  AND conname = $1
+		)
+	`, constraintName).Scan(&exists)
+	require.NoError(t, err)
+	require.True(t, exists, "expected projects check constraint %s", constraintName)
+}
+
+func requireProjectRepoBindingStatusConstraintRejectsInvalidValue(t *testing.T, pool *pgxpool.Pool, tenantID, projectID uuid.UUID) {
+	t.Helper()
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	_, err = tx.Exec(ctx, `ALTER TABLE projects DROP CONSTRAINT chk_projects_repo_binding_consistent`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+		UPDATE projects
+		SET repo_binding_status = 'invalid'
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, projectID)
+	requirePgCheckConstraintViolation(t, err, "chk_projects_repo_binding_status")
+}
+
+func requirePgCheckConstraintViolation(t *testing.T, err error, constraintName string) {
+	t.Helper()
+
+	require.Error(t, err)
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr)
+	require.Equal(t, "23514", pgErr.Code)
+	require.Equal(t, constraintName, pgErr.ConstraintName)
 }
 
 func createDemandFixture(t *testing.T, repo Repository, tenantID, projectID uuid.UUID) uuid.UUID {
