@@ -62,6 +62,25 @@ INSERT INTO project_task_attestations (
 )
 ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO UPDATE SET
     idempotency_key = EXCLUDED.idempotency_key
+WHERE project_task_attestations.project_id = EXCLUDED.project_id
+  AND project_task_attestations.project_task_id = EXCLUDED.project_task_id
+  AND project_task_attestations.runtime_node_id = EXCLUDED.runtime_node_id
+  AND project_task_attestations.provider_session_id IS NOT DISTINCT FROM EXCLUDED.provider_session_id
+  AND project_task_attestations.attestation_type = EXCLUDED.attestation_type
+  AND project_task_attestations.status = EXCLUDED.status
+  AND project_task_attestations.command_argv = EXCLUDED.command_argv
+  AND project_task_attestations.exit_code IS NOT DISTINCT FROM EXCLUDED.exit_code
+  AND project_task_attestations.duration_ms IS NOT DISTINCT FROM EXCLUDED.duration_ms
+  AND project_task_attestations.log_ref IS NOT DISTINCT FROM EXCLUDED.log_ref
+  AND project_task_attestations.stdout_sha256 IS NOT DISTINCT FROM EXCLUDED.stdout_sha256
+  AND project_task_attestations.stderr_sha256 IS NOT DISTINCT FROM EXCLUDED.stderr_sha256
+  AND project_task_attestations.artifact_refs = EXCLUDED.artifact_refs
+  AND project_task_attestations.artifact_hashes = EXCLUDED.artifact_hashes
+  AND project_task_attestations.git_branch IS NOT DISTINCT FROM EXCLUDED.git_branch
+  AND project_task_attestations.git_base_ref IS NOT DISTINCT FROM EXCLUDED.git_base_ref
+  AND project_task_attestations.git_head_sha IS NOT DISTINCT FROM EXCLUDED.git_head_sha
+  AND project_task_attestations.git_diff_sha256 IS NOT DISTINCT FROM EXCLUDED.git_diff_sha256
+  AND project_task_attestations.metadata = EXCLUDED.metadata
 RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
 `
 
@@ -295,16 +314,24 @@ const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttem
 UPDATE project_task_attempts
 SET
     budget_last_heartbeat_at = NOW(),
-    budget_consumed_wall_clock_sec = $1::integer,
-    budget_consumed_tokens = $2::integer,
+    budget_consumed_wall_clock_sec = GREATEST(
+        budget_consumed_wall_clock_sec,
+        $1::integer
+    ),
+    budget_consumed_tokens = GREATEST(
+        budget_consumed_tokens,
+        $2::integer
+    ),
     budget_tripped_at = CASE
         WHEN $3::varchar IS NULL THEN budget_tripped_at
-        ELSE NOW()
+        ELSE COALESCE(budget_tripped_at, NOW())
     END,
-    budget_trip_reason = COALESCE($3::varchar, budget_trip_reason)
+    budget_trip_reason = COALESCE(budget_trip_reason, $3::varchar)
 WHERE tenant_id = $4::uuid
   AND project_task_id = $5::uuid
   AND id = $6::uuid
+  AND $1::integer >= 0
+  AND $2::integer >= 0
 RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 

@@ -90,6 +90,25 @@ INSERT INTO project_task_attestations (
 )
 ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO UPDATE SET
     idempotency_key = EXCLUDED.idempotency_key
+WHERE project_task_attestations.project_id = EXCLUDED.project_id
+  AND project_task_attestations.project_task_id = EXCLUDED.project_task_id
+  AND project_task_attestations.runtime_node_id = EXCLUDED.runtime_node_id
+  AND project_task_attestations.provider_session_id IS NOT DISTINCT FROM EXCLUDED.provider_session_id
+  AND project_task_attestations.attestation_type = EXCLUDED.attestation_type
+  AND project_task_attestations.status = EXCLUDED.status
+  AND project_task_attestations.command_argv = EXCLUDED.command_argv
+  AND project_task_attestations.exit_code IS NOT DISTINCT FROM EXCLUDED.exit_code
+  AND project_task_attestations.duration_ms IS NOT DISTINCT FROM EXCLUDED.duration_ms
+  AND project_task_attestations.log_ref IS NOT DISTINCT FROM EXCLUDED.log_ref
+  AND project_task_attestations.stdout_sha256 IS NOT DISTINCT FROM EXCLUDED.stdout_sha256
+  AND project_task_attestations.stderr_sha256 IS NOT DISTINCT FROM EXCLUDED.stderr_sha256
+  AND project_task_attestations.artifact_refs = EXCLUDED.artifact_refs
+  AND project_task_attestations.artifact_hashes = EXCLUDED.artifact_hashes
+  AND project_task_attestations.git_branch IS NOT DISTINCT FROM EXCLUDED.git_branch
+  AND project_task_attestations.git_base_ref IS NOT DISTINCT FROM EXCLUDED.git_base_ref
+  AND project_task_attestations.git_head_sha IS NOT DISTINCT FROM EXCLUDED.git_head_sha
+  AND project_task_attestations.git_diff_sha256 IS NOT DISTINCT FROM EXCLUDED.git_diff_sha256
+  AND project_task_attestations.metadata = EXCLUDED.metadata
 RETURNING *;
 
 -- name: ListProjectTaskAttestations :many
@@ -105,14 +124,22 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 UPDATE project_task_attempts
 SET
     budget_last_heartbeat_at = NOW(),
-    budget_consumed_wall_clock_sec = sqlc.arg('consumed_wall_clock_sec')::integer,
-    budget_consumed_tokens = sqlc.arg('consumed_tokens')::integer,
+    budget_consumed_wall_clock_sec = GREATEST(
+        budget_consumed_wall_clock_sec,
+        sqlc.arg('consumed_wall_clock_sec')::integer
+    ),
+    budget_consumed_tokens = GREATEST(
+        budget_consumed_tokens,
+        sqlc.arg('consumed_tokens')::integer
+    ),
     budget_tripped_at = CASE
         WHEN sqlc.narg('trip_reason')::varchar IS NULL THEN budget_tripped_at
-        ELSE NOW()
+        ELSE COALESCE(budget_tripped_at, NOW())
     END,
-    budget_trip_reason = COALESCE(sqlc.narg('trip_reason')::varchar, budget_trip_reason)
+    budget_trip_reason = COALESCE(budget_trip_reason, sqlc.narg('trip_reason')::varchar)
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
   AND id = sqlc.arg('attempt_id')::uuid
+  AND sqlc.arg('consumed_wall_clock_sec')::integer >= 0
+  AND sqlc.arg('consumed_tokens')::integer >= 0
 RETURNING *;
