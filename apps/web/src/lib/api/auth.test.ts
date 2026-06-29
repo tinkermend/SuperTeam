@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   createUser,
+  getLoginCaptcha,
   getCurrentUser,
   listCurrentUserLoginLogs,
   listLoginLogs,
@@ -59,6 +60,8 @@ describe("auth api client", () => {
         {
           username: "admin",
           password: "admin",
+          captcha_id: "11111111-1111-4111-8111-111111111111",
+          captcha_code: "A7K2",
         },
       ),
     ).resolves.toMatchObject({
@@ -68,13 +71,47 @@ describe("auth api client", () => {
     });
 
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/login", {
-      body: JSON.stringify({ username: "admin", password: "admin" }),
+      body: JSON.stringify({
+        username: "admin",
+        password: "admin",
+        captcha_id: "11111111-1111-4111-8111-111111111111",
+        captcha_code: "A7K2",
+      }),
       credentials: "include",
       headers: {
         accept: "application/json",
         "content-type": "application/json",
       },
       method: "POST",
+    });
+  });
+
+  it("loads a login captcha challenge with cookie credentials", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        captcha_id: "11111111-1111-4111-8111-111111111111",
+        image_data_url: "data:image/png;base64,abc123",
+        expires_at: "2026-06-30T08:00:00Z",
+      }),
+    );
+
+    await expect(
+      getLoginCaptcha({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+      }),
+    ).resolves.toEqual({
+      captcha_id: "11111111-1111-4111-8111-111111111111",
+      image_data_url: "data:image/png;base64,abc123",
+      expires_at: "2026-06-30T08:00:00Z",
+    });
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/captcha", {
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
     });
   });
 
@@ -694,9 +731,26 @@ describe("auth api client", () => {
         {
           username: "admin",
           password: "wrong",
+          captcha_id: "11111111-1111-4111-8111-111111111111",
+          captcha_code: "A7K2",
         },
       ),
     ).rejects.toThrow("auth login request failed with status 401");
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/login", {
+      body: JSON.stringify({
+        username: "admin",
+        password: "wrong",
+        captcha_id: "11111111-1111-4111-8111-111111111111",
+        captcha_code: "A7K2",
+      }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
   });
 
   it("exposes the response status on rejected auth requests", async () => {

@@ -21,12 +21,20 @@ export type UserAvatar = {
 };
 
 export type LoginRequest = {
+  captcha_code: string;
+  captcha_id: string;
   password: string;
   username: string;
 };
 
 export type LoginResponse = {
   user: UserSummary;
+};
+
+export type CaptchaChallengeResponse = {
+  captcha_id: string;
+  expires_at: string;
+  image_data_url: string;
 };
 
 export type CurrentUserResponse = {
@@ -150,6 +158,19 @@ export async function login(options: ApiClientOptions, input: LoginRequest): Pro
   });
 
   return parseJson<LoginResponse>(response, "auth login");
+}
+
+export async function getLoginCaptcha(options: ApiClientOptions): Promise<CaptchaChallengeResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/captcha"), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<CaptchaChallengeResponse>(response, "auth captcha");
 }
 
 export async function getCurrentUser(options: ApiClientOptions): Promise<CurrentUserResponse> {

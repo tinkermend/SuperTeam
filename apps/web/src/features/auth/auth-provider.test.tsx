@@ -50,7 +50,16 @@ function LoginProbe() {
   const { login } = useAuth()
 
   return (
-    <button onClick={() => void login({ username: 'new', password: 'secret' })}>
+    <button
+      onClick={() =>
+        void login({
+          username: 'new',
+          password: 'secret',
+          captcha_id: '11111111-1111-4111-8111-111111111111',
+          captcha_code: 'A7K2',
+        })
+      }
+    >
       Login
     </button>
   )
@@ -62,7 +71,12 @@ function FailedLoginProbe() {
   return (
     <button
       onClick={() => {
-        void login({ username: 'new', password: 'wrong' }).catch(() => {})
+        void login({
+          username: 'new',
+          password: 'wrong',
+          captcha_id: '11111111-1111-4111-8111-111111111111',
+          captcha_code: 'A7K2',
+        }).catch(() => {})
       }}
     >
       Login
@@ -70,7 +84,48 @@ function FailedLoginProbe() {
   )
 }
 
+function ApiBaseUrlProbe() {
+  const { apiBaseUrl } = useAuth()
+
+  return <p>{apiBaseUrl}</p>
+}
+
+const expectedSuccessfulLoginBody = JSON.stringify({
+  username: 'new',
+  password: 'secret',
+  captcha_id: '11111111-1111-4111-8111-111111111111',
+  captcha_code: 'A7K2',
+})
+
+const expectedFailedLoginBody = JSON.stringify({
+  username: 'new',
+  password: 'wrong',
+  captcha_id: '11111111-1111-4111-8111-111111111111',
+  captcha_code: 'A7K2',
+})
+
 describe('AuthProvider', () => {
+  it('exposes the api base URL through context', async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401,
+          headers: {
+            'content-type': 'application/json',
+          },
+        })
+      )
+    )
+
+    const screen = await render(
+      <AuthProvider apiBaseUrl='http://control-plane.local' fetcher={fetcher}>
+        <ApiBaseUrlProbe />
+      </AuthProvider>
+    )
+
+    await expect.element(screen.getByText('http://control-plane.local')).toBeVisible()
+  })
+
   it('clears the authenticated user when focus refresh receives 401', async () => {
     const fetcher = vi
       .fn()
@@ -171,6 +226,15 @@ describe('AuthProvider', () => {
 
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledWith('http://control-plane.local/api/auth/login', {
+      body: expectedSuccessfulLoginBody,
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
   })
 
   it('waits for current user confirmation before completing login', async () => {
@@ -220,6 +284,15 @@ describe('AuthProvider', () => {
     loginMe.resolve({ user: { id: 2, username: 'new', status: 'active' } })
 
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+    expect(fetcher).toHaveBeenCalledWith('http://control-plane.local/api/auth/login', {
+      body: expectedSuccessfulLoginBody,
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
   })
 
   it('clears loading when login fails after superseding a slow initial current-user request', async () => {
@@ -263,5 +336,14 @@ describe('AuthProvider', () => {
 
     await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledWith('http://control-plane.local/api/auth/login', {
+      body: expectedFailedLoginBody,
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
   })
 })

@@ -27,6 +27,7 @@ describe("Header", () => {
     const screen = await render(
       <AuthContext
         value={{
+          apiBaseUrl: "http://control-plane.local",
           isAuthenticated: true,
           isLoading: false,
           login: vi.fn(),

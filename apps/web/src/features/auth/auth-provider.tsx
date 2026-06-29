@@ -14,7 +14,7 @@ import {
   type ApiClientOptions,
   type UserSummary,
 } from '@/lib/api'
-import { AuthContext } from './auth-context'
+import { AuthContext, type LoginCredentials } from './auth-context'
 
 type AuthProviderProps = {
   apiBaseUrl: string
@@ -73,12 +73,21 @@ export function AuthProvider({
   )
 
   const login = useCallback(
-    async (credentials: { password: string; username: string }) => {
+    async (credentials: LoginCredentials) => {
       const requestId = startAuthRequest()
       try {
+        if (!credentials.captcha_id || !credentials.captcha_code) {
+          throw new Error('Login captcha is required')
+        }
+
         await loginRequest(
           { baseUrl: apiBaseUrl, fetcher },
-          credentials
+          {
+            username: credentials.username,
+            password: credentials.password,
+            captcha_id: credentials.captcha_id,
+            captcha_code: credentials.captcha_code,
+          }
         )
         const response = await getCurrentUser({ baseUrl: apiBaseUrl, fetcher })
         if (isCurrentRequest(requestId)) {
@@ -145,6 +154,7 @@ export function AuthProvider({
 
   const value = useMemo(
     () => ({
+      apiBaseUrl,
       isAuthenticated: Boolean(user),
       isLoading,
       login,
@@ -152,7 +162,7 @@ export function AuthProvider({
       refreshCurrentUser,
       user,
     }),
-    [isLoading, login, logout, refreshCurrentUser, user]
+    [apiBaseUrl, isLoading, login, logout, refreshCurrentUser, user]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
