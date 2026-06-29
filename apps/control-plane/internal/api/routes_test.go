@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -232,14 +235,7 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 		nil,
 		authorizer,
 	)
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
-	loginReq.Header.Set("Content-Type", "application/json")
-	loginResp := httptest.NewRecorder()
-	server.ServeHTTP(loginResp, loginReq)
-	if loginResp.Code != http.StatusOK {
-		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
-	}
-	cookie := loginResp.Result().Cookies()[0]
+	cookie := routeLogin(t, server, "admin", "admin")
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/enrollments", nil)
 	listReq.AddCookie(cookie)
@@ -681,22 +677,13 @@ func TestAuthRoutesAreRegistered(t *testing.T) {
 		authService,
 	)
 
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
-	loginReq.Header.Set("Content-Type", "application/json")
-	loginResp := httptest.NewRecorder()
-
-	server.ServeHTTP(loginResp, loginReq)
-
-	if loginResp.Code != http.StatusOK {
-		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
-	}
-	cookies := loginResp.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != auth.SessionCookieName {
-		t.Fatalf("expected session cookie, got %#v", cookies)
+	cookie := routeLogin(t, server, "admin", "admin")
+	if cookie.Name != auth.SessionCookieName {
+		t.Fatalf("expected session cookie, got %#v", cookie)
 	}
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	meReq.AddCookie(cookies[0])
+	meReq.AddCookie(cookie)
 	meResp := httptest.NewRecorder()
 
 	server.ServeHTTP(meResp, meReq)
@@ -706,7 +693,7 @@ func TestAuthRoutesAreRegistered(t *testing.T) {
 	}
 
 	logsReq := httptest.NewRequest(http.MethodGet, "/api/auth/login-logs?limit=10&offset=0", nil)
-	logsReq.AddCookie(cookies[0])
+	logsReq.AddCookie(cookie)
 	logsResp := httptest.NewRecorder()
 
 	server.ServeHTTP(logsResp, logsReq)
@@ -751,16 +738,10 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 		authorizer,
 	)
 
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
-	loginReq.Header.Set("Content-Type", "application/json")
-	loginResp := httptest.NewRecorder()
-	server.ServeHTTP(loginResp, loginReq)
-	if loginResp.Code != http.StatusOK {
-		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
-	}
+	cookie := routeLogin(t, server, "admin", "admin")
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	meReq.AddCookie(loginResp.Result().Cookies()[0])
+	meReq.AddCookie(cookie)
 	meResp := httptest.NewRecorder()
 	server.ServeHTTP(meResp, meReq)
 
@@ -865,14 +846,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		authService,
 	)
 
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
-	loginReq.Header.Set("Content-Type", "application/json")
-	loginResp := httptest.NewRecorder()
-	server.ServeHTTP(loginResp, loginReq)
-	if loginResp.Code != http.StatusOK {
-		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
-	}
-	cookie := loginResp.Result().Cookies()[0]
+	cookie := routeLogin(t, server, "admin", "admin")
 
 	teamID := uuid.New()
 	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","avatar":{"provider":"dicebear","style":"adventurer","seed":"user:operator"},"selectable_team_ids":["`+teamID.String()+`"]}`))
@@ -1911,6 +1885,7 @@ type routeAuthRepo struct {
 	users               map[string]*auth.User
 	usersByID           map[uuid.UUID]*auth.User
 	sessions            map[string]*auth.Session
+	captchaChallenges   map[uuid.UUID]*auth.CaptchaChallengeRecord
 	loginLogs           []auth.LoginLog
 	operationLogs       []auth.CreateOperationLogParams
 	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
@@ -1919,12 +1894,13 @@ type routeAuthRepo struct {
 
 func newRouteAuthRepo() *routeAuthRepo {
 	return &routeAuthRepo{
-		users:         map[string]*auth.User{},
-		usersByID:     map[uuid.UUID]*auth.User{},
-		sessions:      map[string]*auth.Session{},
-		loginLogs:     []auth.LoginLog{},
-		operationLogs: []auth.CreateOperationLogParams{},
-		scopeTeamIDs:  map[uuid.UUID][]uuid.UUID{},
+		users:             map[string]*auth.User{},
+		usersByID:         map[uuid.UUID]*auth.User{},
+		sessions:          map[string]*auth.Session{},
+		captchaChallenges: map[uuid.UUID]*auth.CaptchaChallengeRecord{},
+		loginLogs:         []auth.LoginLog{},
+		operationLogs:     []auth.CreateOperationLogParams{},
+		scopeTeamIDs:      map[uuid.UUID][]uuid.UUID{},
 	}
 }
 
@@ -2106,18 +2082,49 @@ func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.Crea
 }
 
 func (r *routeAuthRepo) CreateCaptchaChallenge(ctx context.Context, params auth.CreateCaptchaChallengeParams) (*auth.CaptchaChallengeRecord, error) {
-	return nil, auth.ErrCaptchaInvalid
+	now := time.Now().UTC()
+	record := &auth.CaptchaChallengeRecord{
+		ID:         params.ID,
+		TenantID:   params.TenantID,
+		AnswerHash: params.AnswerHash,
+		ExpiresAt:  params.ExpiresAt,
+		ClientIP:   params.ClientIP,
+		UserAgent:  params.UserAgent,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	r.captchaChallenges[record.ID] = record
+	return record, nil
 }
 
 func (r *routeAuthRepo) GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*auth.CaptchaChallengeRecord, error) {
-	return nil, auth.ErrCaptchaInvalid
+	record, ok := r.captchaChallenges[id]
+	if !ok {
+		return nil, auth.ErrCaptchaInvalid
+	}
+	return record, nil
 }
 
 func (r *routeAuthRepo) ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error {
-	return auth.ErrCaptchaInvalid
+	record, ok := r.captchaChallenges[id]
+	if !ok {
+		return auth.ErrCaptchaInvalid
+	}
+	if record.UsedAt != nil {
+		return auth.ErrCaptchaUsed
+	}
+	used := usedAt
+	record.UsedAt = &used
+	record.UpdatedAt = usedAt
+	return nil
 }
 
 func (r *routeAuthRepo) DeleteExpiredCaptchaChallenges(ctx context.Context, before time.Time) error {
+	for id, record := range r.captchaChallenges {
+		if !record.ExpiresAt.After(before) {
+			delete(r.captchaChallenges, id)
+		}
+	}
 	return nil
 }
 
@@ -2183,7 +2190,30 @@ func (r *routeAuthRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantI
 
 func routeLogin(t *testing.T, server *Server, username, password string) *http.Cookie {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
+	captchaReq := httptest.NewRequest(http.MethodGet, "/api/auth/captcha", nil)
+	captchaResp := httptest.NewRecorder()
+	server.ServeHTTP(captchaResp, captchaReq)
+	if captchaResp.Code != http.StatusOK {
+		t.Fatalf("expected captcha challenge, got %d: %s", captchaResp.Code, captchaResp.Body.String())
+	}
+	var captchaBody struct {
+		CaptchaID    string `json:"captcha_id"`
+		ImageDataURL string `json:"image_data_url"`
+	}
+	if err := json.NewDecoder(captchaResp.Body).Decode(&captchaBody); err != nil {
+		t.Fatalf("decode captcha response: %v", err)
+	}
+	captchaCode := routeDecodeCaptchaAnswer(t, captchaBody.ImageDataURL)
+	body, err := json.Marshal(map[string]string{
+		"username":     username,
+		"password":     password,
+		"captcha_id":   captchaBody.CaptchaID,
+		"captcha_code": captchaCode,
+	})
+	if err != nil {
+		t.Fatalf("marshal login body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	server.ServeHTTP(resp, req)
@@ -2195,6 +2225,79 @@ func routeLogin(t *testing.T, server *Server, username, password string) *http.C
 		t.Fatalf("expected session cookie")
 	}
 	return cookies[0]
+}
+
+func routeDecodeCaptchaAnswer(t *testing.T, imageDataURL string) string {
+	t.Helper()
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(imageDataURL, prefix) {
+		t.Fatalf("expected captcha PNG data URL, got %q", imageDataURL)
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(imageDataURL, prefix))
+	if err != nil {
+		t.Fatalf("decode captcha image: %v", err)
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("decode captcha PNG: %v", err)
+	}
+	var answer strings.Builder
+	for i := 0; i < 4; i++ {
+		rows := make([]string, 0, 7)
+		for row := 0; row < 7; row++ {
+			var pattern strings.Builder
+			for col := 0; col < 5; col++ {
+				r, g, b, _ := img.At(20+i*28+col*3+1, 10+row*4+1).RGBA()
+				if r>>8 < 100 && g>>8 < 100 && b>>8 < 120 {
+					pattern.WriteByte('1')
+				} else {
+					pattern.WriteByte('0')
+				}
+			}
+			rows = append(rows, pattern.String())
+		}
+		ch, ok := routeCaptchaGlyphs[strings.Join(rows, "\n")]
+		if !ok {
+			t.Fatalf("unknown captcha glyph at position %d: %#v", i, rows)
+		}
+		answer.WriteRune(ch)
+	}
+	return answer.String()
+}
+
+var routeCaptchaGlyphs = map[string]rune{
+	"11110\n00001\n00001\n11110\n10000\n10000\n11111": '2',
+	"11110\n00001\n00001\n01110\n00001\n00001\n11110": '3',
+	"10010\n10010\n10010\n11111\n00010\n00010\n00010": '4',
+	"11111\n10000\n10000\n11110\n00001\n00001\n11110": '5',
+	"01111\n10000\n10000\n11110\n10001\n10001\n01110": '6',
+	"11111\n00001\n00010\n00100\n01000\n01000\n01000": '7',
+	"01110\n10001\n10001\n01110\n10001\n10001\n01110": '8',
+	"01110\n10001\n10001\n01111\n00001\n00001\n11110": '9',
+	"01110\n10001\n10001\n11111\n10001\n10001\n10001": 'A',
+	"11110\n10001\n10001\n11110\n10001\n10001\n11110": 'B',
+	"01111\n10000\n10000\n10000\n10000\n10000\n01111": 'C',
+	"11110\n10001\n10001\n10001\n10001\n10001\n11110": 'D',
+	"11111\n10000\n10000\n11110\n10000\n10000\n11111": 'E',
+	"11111\n10000\n10000\n11110\n10000\n10000\n10000": 'F',
+	"01111\n10000\n10000\n10011\n10001\n10001\n01111": 'G',
+	"10001\n10001\n10001\n11111\n10001\n10001\n10001": 'H',
+	"00111\n00010\n00010\n00010\n10010\n10010\n01100": 'J',
+	"10001\n10010\n10100\n11000\n10100\n10010\n10001": 'K',
+	"10000\n10000\n10000\n10000\n10000\n10000\n11111": 'L',
+	"10001\n11011\n10101\n10101\n10001\n10001\n10001": 'M',
+	"10001\n11001\n10101\n10011\n10001\n10001\n10001": 'N',
+	"11110\n10001\n10001\n11110\n10000\n10000\n10000": 'P',
+	"01110\n10001\n10001\n10001\n10101\n10010\n01101": 'Q',
+	"11110\n10001\n10001\n11110\n10100\n10010\n10001": 'R',
+	"01111\n10000\n10000\n01110\n00001\n00001\n11110": 'S',
+	"11111\n00100\n00100\n00100\n00100\n00100\n00100": 'T',
+	"10001\n10001\n10001\n10001\n10001\n10001\n01110": 'U',
+	"10001\n10001\n10001\n10001\n10001\n01010\n00100": 'V',
+	"10001\n10001\n10001\n10101\n10101\n11011\n10001": 'W',
+	"10001\n10001\n01010\n00100\n01010\n10001\n10001": 'X',
+	"10001\n10001\n01010\n00100\n00100\n00100\n00100": 'Y',
+	"11111\n00001\n00010\n00100\n01000\n10000\n11111": 'Z',
 }
 
 type routeAuthorizer struct {

@@ -327,6 +327,13 @@ func (a *installHandlerAuthorizer) Check(_ context.Context, req authz.CheckReque
 	return authz.Decision{Allowed: a.allowed}, nil
 }
 
+func (a *installHandlerAuthorizer) CheckBulkTeamActions(_ context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if !a.allowed {
+		return nil, nil
+	}
+	return req.Actions, nil
+}
+
 func withSkillRouteContext(req *http.Request, skillID uuid.UUID) *http.Request {
 	routeCtx := chi.NewRouteContext()
 	routeCtx.URLParams.Add("skillId", skillID.String())

@@ -715,6 +715,16 @@ func (a *claimAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (au
 	return authz.Decision{Allowed: a.allowed, Reason: authz.ReasonAllowed}, nil
 }
 
+func (a *claimAuthorizer) CheckBulkTeamActions(ctx context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if a.allowed {
+		return req.Actions, nil
+	}
+	return nil, nil
+}
+
 func runtimeRequest(method string, target string, routePattern string, taskID uuid.UUID, body []byte) *http.Request {
 	request := httptest.NewRequest(method, target, bytes.NewReader(body))
 	routeContext := chi.NewRouteContext()

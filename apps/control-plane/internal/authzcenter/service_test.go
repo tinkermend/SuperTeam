@@ -109,6 +109,16 @@ func (a *serviceAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (
 	return a.decision, nil
 }
 
+func (a *serviceAuthorizer) CheckBulkTeamActions(ctx context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if !a.decision.Allowed {
+		return nil, nil
+	}
+	return req.Actions, nil
+}
+
 type serviceEngineAuthorizer struct {
 	serviceAuthorizer
 	status authz.EngineStatus

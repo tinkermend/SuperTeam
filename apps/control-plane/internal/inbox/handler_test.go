@@ -487,3 +487,13 @@ func (a *handlerAuthorizer) Check(_ context.Context, req authz.CheckRequest) (au
 	}
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership}, nil
 }
+
+func (a *handlerAuthorizer) CheckBulkTeamActions(_ context.Context, req authz.BulkTeamActionsRequest) ([]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if !a.allowed {
+		return nil, nil
+	}
+	return req.Actions, nil
+}
