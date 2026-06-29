@@ -21,6 +21,11 @@ CREATE INDEX idx_projects_repo_binding_status
     ON projects(tenant_id, repo_binding_status)
     WHERE repo_binding_status = 'bound';
 
+-- Required target for the project placement FK. PostgreSQL requires composite
+-- foreign keys to reference a unique or primary-key-backed column set.
+CREATE UNIQUE INDEX uq_projects_tenant_id
+    ON projects(tenant_id, id);
+
 CREATE TABLE project_placements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,

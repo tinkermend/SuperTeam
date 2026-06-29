@@ -706,6 +706,8 @@ func TestProjectRepoBindingAndAttestationMigration(t *testing.T) {
 		"ADD COLUMN repo_git_credential_ref VARCHAR(255)",
 		"ADD COLUMN repo_scope JSONB NOT NULL DEFAULT '[]'::jsonb",
 		"ADD COLUMN repo_binding_status VARCHAR(32) NOT NULL DEFAULT 'unbound'",
+		"CREATE UNIQUE INDEX uq_projects_tenant_id",
+		"ON projects(tenant_id, id)",
 		"CREATE TABLE project_placements",
 		"CREATE TABLE project_task_attestations",
 		"ALTER TABLE project_task_attempts",
