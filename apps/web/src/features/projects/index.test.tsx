@@ -1128,67 +1128,27 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("renders the project list and selected overview", async () => {
+  it("renders the risk-first project homepage and selected context", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await expect
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
-    // `当前需求`/`当前执行`/`待负责人处理` each render in both a metric tile and
-    // a panel header, so these locators resolve to multiple elements; use
-    // `.first()` to avoid strict-locator multi-match failures.
-    await expect.element(screen.getByText("当前需求").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("补充上线验收说明").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("当前执行").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("整理接入证据").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("待负责人处理").first()).toBeInTheDocument();
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("项目风险汇总（当前页）")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("选中项目上下文")).toBeInTheDocument();
+    await expect.element(screen.getByText("主要风险")).toBeInTheDocument();
     await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
-    await expect.element(screen.getByText("项目负责人组")).toBeInTheDocument();
-    await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
-    await expect.element(screen.getByText("负责人乙")).toBeInTheDocument();
-    await expect.element(screen.getByText("项目服务池")).toBeInTheDocument();
-    await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
-    await expect.element(screen.getByText("最新结果")).toBeInTheDocument();
-    await expect.element(screen.getByText("证据充分")).toBeInTheDocument();
-    await expect.element(screen.getByText("高级项目事实")).toBeInTheDocument();
+    await expect.element(screen.getByText("暂无最近事件")).toBeInTheDocument();
 
     expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("路由决策");
     expect(pageText()).not.toContain("协调任务");
+    expect(pageText()).not.toContain("高级项目事实");
     expect(pageText()).not.toContain("人类角色");
     expect(pageText()).not.toContain("数字员工池");
     expect(pageText()).not.toContain("协调线程");
-
-    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
-
-    await expect.element(screen.getByText("路由决策")).toBeInTheDocument();
-    await expect.element(screen.getByText("协调任务")).toBeInTheDocument();
-    // Execution trace panel keeps its existing title `执行证据链`; this plan does
-    // not rename it.
-    await expect
-      .element(screen.getByRole("heading", { name: "执行证据链" }))
-      .toBeInTheDocument();
-    expect(pageText()).toContain("runtime.node_offline");
-    expect(pageText()).toContain("runtime.inspect、codebase.analysis");
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "要求修改计划版本 v2" }),
-    );
-
-    await vi.waitFor(() => {
-      expect(
-        fetchCalls(fetcher).some(([url, init]) => {
-          return (
-            String(url).endsWith(
-              "/api/v1/projects/project-1/decisions/decision-plan-1/resolve",
-            ) &&
-            init?.method === "POST" &&
-            JSON.parse(String(init.body)).decision === "request_changes"
-          );
-        }),
-      ).toBe(true);
-    });
   });
 
   it("links project creation to the standalone route", async () => {
@@ -1199,8 +1159,8 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("link", { name: "新建项目" }))
       .toHaveAttribute("href", "/projects/new");
     await expect
-      .element(screen.getByRole("link", { name: "新建" }))
-      .toHaveAttribute("href", "/projects/new");
+      .element(screen.getByRole("link", { exact: true, name: "新建" }))
+      .not.toBeInTheDocument();
   });
 
   it("renders project creation as a standalone page without project management content behind it", async () => {
@@ -1211,7 +1171,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "新建项目" }))
       .toBeInTheDocument();
     expect(screen.container.querySelector('[data-testid="project-create-page"]')).toBeTruthy();
-    expect(screen.container.querySelector('[data-testid="projects-v3-list"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')).toBeNull();
     expect(
       screen.container.querySelector('[aria-label="项目管理指标"]'),
     ).toBeNull();
@@ -1248,7 +1208,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("必备项 3 / 3 已就绪")).toBeInTheDocument();
   });
 
-  it("renders the project list as a v3 work surface table", async () => {
+  it("renders the project risk queue as a v3 work surface table", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
@@ -1256,7 +1216,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
 
-    const listSurface = screen.container.querySelector('[data-testid="projects-v3-list"]');
+    const listSurface = screen.container.querySelector('[data-testid="project-risk-queue"]');
     expect(listSurface).toBeTruthy();
     expect(listSurface?.querySelector('[data-slot="v3-work-surface"]')).toBeTruthy();
     expect(listSurface?.querySelector('[data-slot="v3-table"]')).toBeTruthy();
@@ -1270,27 +1230,17 @@ describe("ProjectsView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("每页条数"), "1");
-
-    expect(screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent).toContain(
+    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent).toContain(
       "客户接入验收",
     );
     expect(
-      screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent,
-    ).not.toContain("生产巡检整改");
-
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-
-    await vi.waitFor(() => {
-      const listText = screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent;
-      expect(listText).toContain("生产巡检整改");
-      expect(listText).not.toContain("客户接入验收");
-    });
+      screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent,
+    ).toContain("生产巡检整改");
 
     await userEvent.fill(screen.getByLabelText("搜索项目"), "巡检");
 
     await vi.waitFor(() => {
-      const listText = screen.container.querySelector('[data-testid="projects-v3-list"]')?.textContent;
+      const listText = screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent;
       expect(listText).toContain("生产巡检整改");
       expect(listText).not.toContain("客户接入验收");
       expect(
@@ -1890,7 +1840,9 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /生产巡检整改/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "查看项目上下文 生产巡检整改" }),
+    );
 
     await vi.waitFor(() => {
       expect(
@@ -1915,33 +1867,24 @@ describe("ProjectsView", () => {
       releaseProject2Overview();
     }
 
-    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
-    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
-
-    await vi.waitFor(() => {
-      expect(
-        fetchCalls(fetcher).some(([url, init]) => {
-          return (
-            String(url).endsWith("/api/v1/projects/project-2/archive") &&
-            init?.method === "POST"
-          );
-        }),
-      ).toBe(true);
-    });
+    await expect
+      .element(screen.getByRole("button", { name: "归档项目" }))
+      .not.toBeInTheDocument();
   });
 
-  it("orders the project queue by current-page risk signals", async () => {
+  it("surfaces current-page risk signals in the project queue", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await expect.element(screen.getByText("巡检脚本失败")).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "执行失败" }))
+      .toBeVisible();
 
     const queue = screen.getByTestId("project-risk-queue");
     const queueText = (await queue.element().textContent) ?? "";
-    expect(queueText.indexOf("生产巡检整改")).toBeLessThan(
-      queueText.indexOf("客户接入验收"),
-    );
+    expect(queueText).toContain("生产巡检整改");
+    expect(queueText).toContain("客户接入验收");
     expect(queueText).toContain("执行失败");
   });
 
