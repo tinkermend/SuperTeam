@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>用户管理方案 3 · 账号画像工作台</title>
+    <link rel="stylesheet" href="./shared.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 312px;
+        gap: 14px;
+      }
+
+      .profile-card {
+        padding: 22px 24px;
+      }
+
+      .identity-row {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .identity-row h2 {
+        margin: 0;
+        font-size: 30px;
+        line-height: 1.1;
+      }
+
+      .identity-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      .identity-field {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .identity-field span {
+        display: block;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .identity-field strong {
+        display: block;
+        margin-top: 2px;
+        font-size: 14px;
+      }
+
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .matrix-cell {
+        min-height: 104px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card-soft);
+      }
+
+      .matrix-cell span {
+        display: block;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .matrix-cell strong {
+        display: block;
+        margin-top: 11px;
+        font-size: 19px;
+      }
+
+      .rail {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .action-stack {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .rail-action {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card-soft);
+        font-weight: 720;
+        text-align: left;
+      }
+
+      .related {
+        margin-top: 14px;
+        display: grid;
+        gap: 9px;
+      }
+
+      .related-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card-soft);
+      }
+
+      @media (max-width: 1260px) {
+        .workspace,
+        .identity-grid,
+        .matrix {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .rail {
+          grid-column: 1 / -1;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 780px) {
+        .workspace,
+        .identity-grid,
+        .matrix,
+        .rail {
+          grid-template-columns: 1fr;
+        }
+
+        .identity-row {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark"><i data-lucide="zap"></i></span>SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制台</div>
+          <a class="nav-item" href="#"><i data-lucide="layout-dashboard"></i>概览</a>
+          <a class="nav-item" href="#"><i data-lucide="folder-kanban"></i>项目</a>
+          <a class="nav-item" href="#"><i data-lucide="bot"></i>数字员工</a>
+          <a class="nav-item" href="#"><i data-lucide="blocks"></i>技能</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">平台管理</div>
+          <a class="nav-item" href="#"><i data-lucide="key-round"></i>权限中心</a>
+          <a class="nav-item active" href="#"><i data-lucide="users-round"></i>用户管理</a>
+          <a class="nav-item" href="#"><i data-lucide="file-clock"></i>审计日志</a>
+          <a class="nav-item" href="#"><i data-lucide="settings"></i>设置</a>
+        </div>
+        <div class="tenant">
+          <span class="tenant-icon"><i data-lucide="building-2"></i></span>
+          <div><strong>Acme Corp</strong><span>企业版</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="command"><i data-lucide="search"></i><input placeholder="搜索用户（姓名、邮箱、ID）" /></div>
+          <div class="spacer"></div>
+          <button class="icon-btn"><i data-lucide="circle-help"></i></button>
+          <div class="me"><span class="avatar">A</span><div><strong>Admin</strong><span>平台管理员</span></div></div>
+        </div>
+
+        <div class="page-head">
+          <div class="page-title">
+            <h1>用户管理</h1>
+            <p>以账号状态为中心治理人类用户，日志流水统一进入审计日志。</p>
+          </div>
+          <div class="actions">
+            <button class="btn primary"><i data-lucide="plus"></i>新建用户</button>
+          </div>
+        </div>
+
+        <section class="workspace">
+          <div>
+            <div class="soft-card profile-card">
+              <div class="identity-row">
+                <span class="avatar lg"><img alt="" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80" /></span>
+                <div>
+                  <h2>李娜</h2>
+                  <div class="actions" style="margin-top:10px">
+                    <span class="pill ok"><span class="dot"></span>活跃</span>
+                    <span class="pill brand">控制台访问：允许</span>
+                  </div>
+                  <p class="mono" style="margin:10px 0 0;color:var(--ink-2)">用户 ID：usr_01H8K7Z3N9Q2V5B1M2X4Y6Z7A8</p>
+                </div>
+              </div>
+              <div class="identity-grid">
+                <div class="identity-field"><span class="tile tone-mute"><i data-lucide="building-2"></i></span><div><span>所属组织</span><strong>Acme Corp</strong></div></div>
+                <div class="identity-field"><span class="tile tone-brand"><i data-lucide="calendar"></i></span><div><span>加入时间</span><strong>2024-03-18</strong></div></div>
+                <div class="identity-field"><span class="tile tone-artifact"><i data-lucide="users"></i></span><div><span>最后登录</span><strong>2025-05-19 14:32</strong></div></div>
+                <div class="identity-field"><span class="tile tone-ok"><i data-lucide="shield-check"></i></span><div><span>MFA 状态</span><strong>已启用</strong></div></div>
+              </div>
+            </div>
+
+            <div class="soft-card" style="margin-top:14px">
+              <div class="section-head" style="padding:0 0 14px">
+                <div><h2>账号状态矩阵</h2><p>这里只展示账号当前状态，不展示操作流水。</p></div>
+                <button class="btn ghost"><i data-lucide="refresh-cw"></i>刷新</button>
+              </div>
+              <div class="matrix">
+                <div class="matrix-cell"><span>状态</span><strong><span class="pill ok">活跃</span></strong><span>健康</span></div>
+                <div class="matrix-cell"><span>控制台访问</span><strong><span class="pill ok">允许</span></strong><span>Web 控制台</span></div>
+                <div class="matrix-cell"><span>MFA</span><strong><span class="pill ok">已启用</span></strong><span>强制</span></div>
+                <div class="matrix-cell"><span>可选团队</span><strong class="num">5</strong><span>已授权范围</span></div>
+                <div class="matrix-cell"><span>成员身份</span><strong class="num">7</strong><span>团队 / 角色数</span></div>
+                <div class="matrix-cell"><span>最近账号变更</span><strong>2 天前</strong><span>密码重置</span></div>
+              </div>
+            </div>
+
+            <div class="work-surface" style="margin-top:14px">
+              <div class="section-head">
+                <div><h2>团队与角色</h2><p>团队、角色和审批关系是账号治理主体。</p></div>
+                <div class="search" style="min-width:260px"><i data-lucide="search"></i><input placeholder="搜索团队或角色" /></div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>团队</th><th>角色</th><th>状态</th><th>所有者 / 审批关系</th><th>管理入口</th></tr></thead>
+                  <tbody>
+                    <tr><td>平台研发部</td><td>开发者</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>直属团队（所有者：张伟）</td><td><a href="#" class="mono">打开团队</a></td></tr>
+                    <tr><td>运维部</td><td>运维工程师</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>审批者：王强</td><td><a href="#" class="mono">打开团队</a></td></tr>
+                    <tr><td>安全团队</td><td>安全审计员</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>审批者：赵磊</td><td><a href="#" class="mono">打开团队</a></td></tr>
+                    <tr><td>财务部</td><td>财务查看者</td><td><span class="pill warn"><span class="dot"></span>待生效</span></td><td>审批中（审批者：陈晨）</td><td><a href="#" class="mono">打开团队</a></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="soft-card" style="margin-top:14px">
+              <h3>关联账号</h3>
+              <p>同一邮箱或统一身份源下的账号关系。</p>
+              <div class="related">
+                <div class="related-row"><strong>lina@acme.com</strong><span class="pill ok">当前账号</span><span>企业 SSO</span></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="rail">
+            <div class="soft-card">
+              <h3>账号操作</h3>
+              <div class="action-stack">
+                <button class="rail-action"><span class="tile tone-danger"><i data-lucide="ban"></i></span>禁用账号</button>
+                <button class="rail-action"><span class="tile tone-brand"><i data-lucide="key-round"></i></span>重置密码</button>
+                <button class="rail-action"><span class="tile tone-artifact"><i data-lucide="users"></i></span>调整团队范围</button>
+                <button class="rail-action"><span class="tile tone-ok"><i data-lucide="shield"></i></span>查看权限中心</button>
+              </div>
+            </div>
+
+            <div class="soft-card audit-handoff">
+              <h3><i data-lucide="file-clock"></i> 审计日志</h3>
+              <p>所有与该账号相关的操作、登录、授权与团队变更记录均在审计日志中查看。</p>
+              <div class="filter-row">
+                <span class="chip active">账号操作</span>
+                <span class="chip">登录事件</span>
+                <span class="chip">授权决策</span>
+                <span class="chip">团队变更</span>
+              </div>
+              <button class="btn primary"><i data-lucide="external-link"></i>带筛选打开审计日志</button>
+              <div class="footer-note">在审计日志页面应用以上筛选条件。</div>
+            </div>
+
+            <div class="soft-card">
+              <h3>治理建议</h3>
+              <div class="action-stack">
+                <div class="rail-action"><span class="tile tone-warn"><i data-lucide="clock-3"></i></span><span>可选团队过多<br><span class="subtext">建议按最小权限原则收敛范围。</span></span></div>
+                <div class="rail-action"><span class="tile tone-warn"><i data-lucide="timer"></i></span><span>密码有效期提醒<br><span class="subtext">该账号密码将在 12 天后过期。</span></span></div>
+              </div>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <script>lucide.createIcons();</script>
+  </body>
+</html>

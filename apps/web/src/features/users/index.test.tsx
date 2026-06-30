@@ -68,9 +68,6 @@ const USER_ADMIN_ID = "77777777-7777-4777-8777-777777777777";
 const TENANT_ID = "88888888-8888-4888-8888-888888888888";
 const SCOPE_OPS_ID = "99999999-9999-4999-8999-999999999999";
 const SCOPE_RISK_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const LOGIN_EVENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-const SESSION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-const AUTHZ_DECISION_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const NEW_USER_AVATAR = {
   provider: "dicebear" as const,
   seed: "user:zhoumin",
@@ -344,46 +341,6 @@ function createUsersFetcher({
       });
     }
 
-    if (url.pathname === "/api/auth/login-logs" && method === "GET") {
-      return jsonResponse({
-        items: [
-          {
-            id: LOGIN_EVENT_ID,
-            event_type: "login_succeeded",
-            user_id: USER_OPERATOR_ID,
-            username: "operator",
-            session_id: SESSION_ID,
-            client_ip: "127.0.0.1",
-            user_agent: "Chrome 125 / macOS",
-            result: "succeeded",
-            created_at: "2026-06-04T02:28:13Z",
-          },
-        ],
-      });
-    }
-
-    if (url.pathname === "/api/authz/decisions" && method === "GET") {
-      return jsonResponse({
-        items: [
-          {
-            id: AUTHZ_DECISION_ID,
-            tenant_id: TENANT_ID,
-            user_id: USER_OPERATOR_ID,
-            username: "operator",
-            module: "team",
-            action: "team.member.change_role",
-            result: "failed",
-            resource_type: "team",
-            resource_id: TEAM_OPS_ID,
-            reason: "requires privileged role approval",
-            actor_type: "user",
-            actor_id: USER_OPERATOR_ID,
-            created_at: "2026-06-04T01:44:00Z",
-          },
-        ],
-      });
-    }
-
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
       status: 404,
@@ -392,7 +349,7 @@ function createUsersFetcher({
 }
 
 describe("Users", () => {
-  it("renders a master detail user management workspace", async () => {
+  it("renders a table governance user management workspace without embedded logs", async () => {
     const fetcher = createUsersFetcher();
     vi.stubGlobal("fetch", fetcher);
 
@@ -404,28 +361,40 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await expect.element(screen.getByRole("main")).toHaveAttribute("data-fluid", "true");
-    await expect.element(screen.getByTestId("users-management-layout")).toHaveAttribute("data-columns", "wide-list-balanced-detail");
-    await expect.element(screen.getByTestId("users-overview-hero")).toHaveAttribute("data-layout", "equal-three-cards");
-    await expect.element(screen.getByTestId("users-overview-basic-card")).toBeInTheDocument();
-    await expect.element(screen.getByTestId("users-overview-permission-card")).toBeInTheDocument();
-    await expect.element(screen.getByTestId("users-overview-timeline-card")).toBeInTheDocument();
-    await expect.element(screen.getByRole("tab", { name: "可选团队" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("tab", { name: "团队与角色" })).not.toBeInTheDocument();
-    await expect.element(screen.getByText("成员身份记录")).toBeInTheDocument();
-    await expect.element(screen.getByText("团队与角色")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("所属团队 & 角色")).not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("users-management-layout")).toHaveAttribute("data-layout", "table-governance");
+    const governanceTable = screen.getByTestId("users-governance-table");
+    await expect.element(governanceTable).toBeInTheDocument();
+    await expect.element(screen.getByRole("row", { name: /平台管理员/ })).toBeInTheDocument();
+    await expect.element(governanceTable.getByText("用户", { exact: true })).toBeInTheDocument();
+    await expect.element(governanceTable.getByText("状态", { exact: true })).toBeInTheDocument();
+    await expect.element(governanceTable.getByText("控制台访问", { exact: true })).toBeInTheDocument();
+    await expect.element(governanceTable.getByText("成员身份", { exact: true })).toBeInTheDocument();
+    await expect.element(governanceTable.getByText("操作", { exact: true })).toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
-    await expect.element(screen.getByText("用户 360")).toBeInTheDocument();
+    await expect.element(screen.getByText("用户治理台")).toBeInTheDocument();
     await expect.element(screen.getByText("operator@example.com").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("team.member.change_role", { exact: true }).first()).toBeInTheDocument();
-    await expect.element(screen.getByText("Chrome 125 / macOS").first()).toBeInTheDocument();
+    const governanceLayout = screen.getByTestId("users-management-layout");
+    await expect.element(screen.getByText("租户 Owner")).toBeInTheDocument();
+    await expect.element(screen.getByText("团队 Admin")).toBeInTheDocument();
+    await expect.element(governanceLayout.getByText("可选团队", { exact: true })).not.toBeInTheDocument();
+    await expect.element(governanceLayout.getByText("审计日志", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("账号操作", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("登录事件", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("授权决策", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("团队变更", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("link", { name: "在审计日志中查看" })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("账号操作记录")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("最近登录日志")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("登录与会话")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("审计记录")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("team.member.change_role", { exact: true }).first()).not.toBeInTheDocument();
+    await expect.element(screen.getByText("Chrome 125 / macOS").first()).not.toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-icon-tile"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
     await expect.element(screen.getByRole("link", { name: "去团队管理分配" })).toHaveAttribute("data-router-link", "true");
-    await expect.element(screen.getByRole("link", { name: "查看权限中心" })).toHaveAttribute("data-router-link", "true");
 
     const avatar = screen.getByAltText("平台管理员 的头像").first();
     await expect.element(avatar).toBeInTheDocument();
@@ -433,14 +402,9 @@ describe("Users", () => {
     await expect.element(avatar).not.toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/auth/users?limit=50&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/authz/members?limit=100&offset=0"), expect.any(Object));
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/authz/decisions?result=failed&actor_type=user&actor_id=${USER_OPERATOR_ID}&limit=8&offset=0`),
-      expect.any(Object),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes`),
-      expect.any(Object),
-    );
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname === "/api/auth/login-logs")).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname === "/api/authz/decisions")).toBe(false);
   });
 
   it("filters users by disabled account status", async () => {
@@ -471,23 +435,25 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    const createDialog = screen.getByRole("dialog", { name: "新建用户" });
 
-    await expect.element(screen.getByLabelText("用户名")).toBeInTheDocument();
-    await expect.element(screen.getByLabelText("名称")).toBeInTheDocument();
-    await expect.element(screen.getByLabelText("密码")).toBeInTheDocument();
-    await expect.element(screen.getByText("头像", { exact: true })).toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "选择头像 人类头像 03" })).toBeInTheDocument();
-    await expect.element(screen.getByText("选择可选团队", { exact: true })).toBeInTheDocument();
-    await expect.element(screen.getByText("平台运营")).toBeInTheDocument();
-    await expect.element(screen.getByText("风控审查")).toBeInTheDocument();
-    await expect.element(screen.getByText("停用团队")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByLabelText("用户名")).toBeInTheDocument();
+    await expect.element(createDialog.getByLabelText("名称")).toBeInTheDocument();
+    await expect.element(createDialog.getByLabelText("密码")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("头像", { exact: true })).toBeInTheDocument();
+    await expect.element(createDialog.getByRole("button", { name: "选择头像 人类头像 03" })).toBeInTheDocument();
+    await expect.element(createDialog.getByText("可管理的团队")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("（可选）")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("平台运营")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("风控审查")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("停用团队")).not.toBeInTheDocument();
 
-    await expect.element(screen.getByText("头像种子")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("发送邀请链接")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("MFA")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("团队归属")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("可调用团队员工池")).not.toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    await expect.element(createDialog.getByText("头像种子")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByText("发送邀请链接")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByText("MFA")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByText("团队归属")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByText("可调用团队员工池")).not.toBeInTheDocument();
+    await expect.element(createDialog.getByRole("button", { name: "创建用户" })).toBeDisabled();
 
     expect(
       fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname === "/api/v1/digital-employee-avatar-assets"),
@@ -515,7 +481,7 @@ describe("Users", () => {
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
     await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "选择头像 人类头像 03" }));
-    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
     await userEvent.click(screen.getByRole("checkbox", { name: "平台运营" }));
     await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
     await userEvent.click(screen.getByRole("checkbox", { name: "风控审查" }));
@@ -630,12 +596,12 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
-    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
+    await expect.element(screen.getByText("加载团队中")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
     await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
     await userEvent.click(screen.getByRole("button", { name: "选择头像 人类头像 03" }));
-    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
     deferred.resolve(jsonResponse([]));
   });
 
@@ -651,12 +617,12 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
-    await expect.element(screen.getByText("可选团队加载失败")).toBeInTheDocument();
+    await expect.element(screen.getByText("团队列表加载失败")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
     await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
     await userEvent.click(screen.getByRole("button", { name: "选择头像 人类头像 03" }));
-    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
   });
 
   it("keeps user creation disabled when selectable teams are empty", async () => {
@@ -671,12 +637,12 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
-    await expect.element(screen.getByText("暂无可选团队。")).toBeInTheDocument();
+    await expect.element(screen.getByText("暂无可用团队，可在创建用户后前往团队管理添加。")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
     await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
     await userEvent.click(screen.getByRole("button", { name: "选择头像 人类头像 03" }));
-    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
   });
 
   it("blocks retained team choices while create drawer team query refetches", async () => {
@@ -738,7 +704,7 @@ describe("Users", () => {
     mode = "loading";
     void queryClient.invalidateQueries({ queryKey: ["users", "create"] });
 
-    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
+    await expect.element(screen.getByText("加载团队中")).toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "选择头像 人类头像 03" })).toBeInTheDocument();
     await expect.element(screen.getByRole("checkbox", { name: "平台运营" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
@@ -753,7 +719,7 @@ describe("Users", () => {
     teamsDeferred.resolve(jsonResponse([]));
   });
 
-  it("renders selected user selectable team scopes", async () => {
+  it("does not render selected user selectable team scopes in the governance details panel", async () => {
     const fetcher = createUsersFetcher();
     vi.stubGlobal("fetch", fetcher);
 
@@ -763,67 +729,9 @@ describe("Users", () => {
       </QueryClientProvider>,
     );
 
-    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("tab", { name: "可选团队" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
-
-    await expect.element(screen.getByText("当前用户创建或协作项目时可选择的团队范围。")).toBeInTheDocument();
-    await expect.element(screen.getByText("平台运营")).toBeInTheDocument();
-    await expect.element(screen.getByText("风控审查")).toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes`),
-      expect.any(Object),
-    );
-  });
-
-  it("renders selected user selectable team scope loading state", async () => {
-    const deferred = createDeferredResponse();
-    const fetcher = createUsersFetcher({
-      projectTeamScopesDeferred: deferred,
-      projectTeamScopesStatus: "loading",
-    });
-    vi.stubGlobal("fetch", fetcher);
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <Users />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
-    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
-    deferred.resolve(jsonResponse({ items: [] }));
-  });
-
-  it("renders selected user selectable team scope error state", async () => {
-    const fetcher = createUsersFetcher({ projectTeamScopesStatus: "error" });
-    vi.stubGlobal("fetch", fetcher);
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <Users />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
-    await expect.element(screen.getByText("可选团队加载失败")).toBeInTheDocument();
-    await expect.element(screen.getByText("请检查用户团队范围接口。")).toBeInTheDocument();
-  });
-
-  it("renders selected user selectable team scope empty state", async () => {
-    const fetcher = createUsersFetcher({ projectTeamScopesStatus: "empty" });
-    vi.stubGlobal("fetch", fetcher);
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <Users />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
-    await expect.element(screen.getByText("暂无可选团队。")).toBeInTheDocument();
+    const governanceLayout = screen.getByTestId("users-management-layout");
+    await expect.element(governanceLayout.getByText("当前用户创建或协作项目时可选择的团队范围。")).not.toBeInTheDocument();
+    await expect.element(governanceLayout.getByText("可选团队", { exact: true })).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(false);
   });
 });

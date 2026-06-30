@@ -2,22 +2,17 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Activity,
-  ArrowUpRight,
   Ban,
   CheckCircle2,
-  Clock3,
   KeyRound,
   LockKeyhole,
   RotateCcw,
-  SearchIcon,
-  ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   UserPlus,
   UsersRound,
 } from "lucide-react";
 import {
-  IconTile,
   SoftCard,
   StatusPill,
   V3Button,
@@ -25,11 +20,13 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
+  V3PageHeader,
+  V3Segmented,
   V3Table,
   V3Td,
   V3Th,
+  V3ToolbarSearch,
   V3Tr,
-  V3Tabs,
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
@@ -53,25 +50,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  listAuthzDecisions,
   listAuthzMembers,
-  listLoginLogs,
   createUser,
-  listUserProjectTeamScopes,
   listUsers,
   resetUserPassword,
   updateUserStatus,
-  type AuthzDecisionRecord,
   type AuthzMemberRecord,
   type CreateUserRequest,
-  type LoginLogRecord,
-  type UserProjectTeamScope,
   type UserSummary,
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { cn } from "@/lib/utils";
 import {
   CreateUserDrawer,
   type CreateUserDraft,
@@ -80,6 +69,7 @@ import {
 const apiBaseUrl = resolveControlPlaneUrl();
 
 type UserStatusFilter = "all" | "active" | "disabled";
+type UserTableDensity = "comfortable" | "compact";
 
 type UserManagementFilters = {
   q: string;
@@ -95,9 +85,6 @@ const defaultUserFilters: UserManagementFilters = {
   status: "all",
 };
 
-const v3TabTriggerClass =
-  "min-w-max flex-1 rounded-[10px] px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none";
-
 export function Users() {
   return <UsersView />;
 }
@@ -110,6 +97,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [tableDensity, setTableDensity] = useState<UserTableDensity>("comfortable");
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
@@ -138,15 +126,6 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
       }),
     queryKey: ["users", "authz-members"],
   });
-  const loginLogsQuery = useQuery({
-    queryFn: () =>
-      listLoginLogs({
-        ...apiOptions,
-        limit: 50,
-        offset: 0,
-      }),
-    queryKey: ["users", "login-logs"],
-  });
 
   const users = usersQuery.data?.items ?? [];
   const authzMembersByUserId = useMemo(() => {
@@ -155,34 +134,6 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0];
   const selectedMember = selectedUser ? authzMembersByUserId.get(selectedUser.id) : undefined;
   const selectedIdentity = selectedUser ? mergeUserIdentity(selectedUser, selectedMember) : undefined;
-  const selectedLoginLogs = useMemo(() => {
-    if (!selectedUser) {
-      return [];
-    }
-
-    return (loginLogsQuery.data?.items ?? [])
-      .filter((record) => record.user_id === selectedUser.id || record.username === selectedUser.username)
-      .slice(0, 5);
-  }, [loginLogsQuery.data?.items, selectedUser]);
-  const deniedDecisionsQuery = useQuery({
-    enabled: Boolean(selectedUser?.id),
-    queryFn: () =>
-      listAuthzDecisions({
-        ...apiOptions,
-        actor_id: selectedUser?.id,
-        actor_type: "user",
-        limit: 8,
-        offset: 0,
-        result: "failed",
-      }),
-    queryKey: ["users", "authz-denied-decisions", selectedUser?.id],
-  });
-  const projectTeamScopesQuery = useQuery({
-    enabled: Boolean(selectedUser?.id),
-    queryFn: () => listUserProjectTeamScopes(apiOptions, selectedUser?.id ?? ""),
-    queryKey: ["users", "project-team-scopes", selectedUser?.id],
-  });
-  const deniedDecisions = deniedDecisionsQuery.data?.items ?? [];
   const stats = getUserStats(users, authzMembersQuery.data?.items ?? []);
 
   useEffect(() => {
@@ -253,87 +204,74 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
         <ThemeSwitch />
       </Header>
       <Main className="min-w-0 overflow-x-hidden" fluid>
-        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <IconTile tone="mute" size="lg">
-              <UsersRound />
-            </IconTile>
-            <div className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-normal text-v3-ink">用户管理</h1>
-                <StatusPill tone="info" showDot={false}>用户 360</StatusPill>
-              </div>
-              <p className="text-sm text-v3-ink-2">
-                平台人类用户、账号状态、可选团队、登录审计与权限诊断。
-              </p>
-            </div>
-          </div>
-          <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
-            <UserPlus data-icon="inline-start" />
-            新建用户
-          </V3Button>
-        </div>
+        <V3PageHeader
+          className="mb-4"
+          icon={<UsersRound />}
+          iconTone="mute"
+          title={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              用户管理
+              <StatusPill className="align-middle" tone="info" showDot={false}>用户治理台</StatusPill>
+            </span>
+          }
+          subtitle="管理平台人类用户、账号状态、控制台访问与成员身份；本页只处理账号治理动作。"
+          actions={
+            <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
+              <UserPlus data-icon="inline-start" />
+              新建用户
+            </V3Button>
+          }
+        />
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <UserMetric icon={<CheckCircle2 />} label="活跃用户" tone="ok" value={stats.active} />
           <UserMetric icon={<Ban />} label="禁用用户" tone="danger" value={stats.disabled} />
           <UserMetric icon={<ShieldCheck />} label="控制台访问" tone="brand" value={stats.consoleAccess} />
           <UserMetric icon={<KeyRound />} label="成员身份" tone="artifact" value={stats.tenantRoles} />
-          <UserMetric icon={<ShieldAlert />} label="近期拒绝" tone="warn" value={deniedDecisions.length} />
         </div>
 
         <div
-          className="grid min-w-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)_300px]"
-          data-columns="wide-list-balanced-detail"
+          className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_324px]"
+          data-layout="table-governance"
           data-testid="users-management-layout"
         >
-          <UserListRail
+          <UserGovernanceTable
+            authzMembersByUserId={authzMembersByUserId}
+            density={tableDensity}
             filters={filters}
             isError={usersQuery.isError}
             isLoading={usersQuery.isLoading}
+            isStatusPending={statusMutation.isPending}
+            onDensityChange={setTableDensity}
             onFiltersChange={setFilters}
+            onResetPassword={(userId) => {
+              setSelectedUserId(userId);
+              setResetPasswordOpen(true);
+            }}
             onSelectUser={setSelectedUserId}
+            onToggleStatus={(user) =>
+              statusMutation.mutate({
+                status: user.status === "active" ? "disabled" : "active",
+                userId: user.id,
+              })
+            }
             selectedUserId={selectedUser?.id}
             users={users}
           />
 
-          <section className="min-w-0">
-            {selectedIdentity && selectedUser ? (
-              <SelectedUserWorkspace
-                authzMembersError={authzMembersQuery.isError}
-                deniedDecisions={deniedDecisions}
-                deniedDecisionsError={deniedDecisionsQuery.isError}
-                isStatusPending={statusMutation.isPending}
-                loginLogs={selectedLoginLogs}
-                loginLogsError={loginLogsQuery.isError}
-                member={selectedMember}
-                onResetPassword={() => setResetPasswordOpen(true)}
-                onToggleStatus={() =>
-                  statusMutation.mutate({
-                    status: selectedUser.status === "active" ? "disabled" : "active",
-                    userId: selectedUser.id,
-                  })
-                }
-                projectTeamScopes={projectTeamScopesQuery.data?.items ?? []}
-                projectTeamScopesError={projectTeamScopesQuery.isError}
-                projectTeamScopesLoading={projectTeamScopesQuery.isLoading}
-                user={selectedIdentity}
-              />
-            ) : (
-              <SoftCard className="min-h-[420px]">
-                {usersQuery.isLoading ? (
-                  <V3LoadingState className="min-h-[420px]" label="加载用户中" />
-                ) : (
-                  <V3EmptyState className="min-h-[420px]" title="请选择一个用户查看详情" />
-                )}
-              </SoftCard>
-            )}
-          </section>
-
-          <UserDiagnosticsRail
-            deniedDecisions={deniedDecisions}
-            deniedDecisionsError={deniedDecisionsQuery.isError}
+          <UserGovernancePreview
+            isStatusPending={statusMutation.isPending}
             member={selectedMember}
+            onResetPassword={() => setResetPasswordOpen(true)}
+            onToggleStatus={() => {
+              if (!selectedUser) {
+                return;
+              }
+              statusMutation.mutate({
+                status: selectedUser.status === "active" ? "disabled" : "active",
+                userId: selectedUser.id,
+              });
+            }}
             user={selectedIdentity}
           />
         </div>
@@ -369,596 +307,287 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   );
 }
 
-function UserListRail({
+function UserGovernanceTable({
+  authzMembersByUserId,
+  density,
   filters,
   isError,
   isLoading,
+  isStatusPending,
+  onDensityChange,
   onFiltersChange,
+  onResetPassword,
   onSelectUser,
+  onToggleStatus,
   selectedUserId,
   users,
 }: {
+  authzMembersByUserId: Map<string, AuthzMemberRecord>;
+  density: UserTableDensity;
   filters: UserManagementFilters;
   isError: boolean;
   isLoading: boolean;
+  isStatusPending: boolean;
+  onDensityChange: (density: UserTableDensity) => void;
   onFiltersChange: (filters: UserManagementFilters) => void;
+  onResetPassword: (userId: string) => void;
   onSelectUser: (userId: string) => void;
+  onToggleStatus: (user: UserSummary) => void;
   selectedUserId?: string;
   users: UserSummary[];
 }) {
   return (
-    <SoftCard className="min-w-0 p-4">
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold text-v3-ink">用户列表</h2>
-            <p className="text-sm text-v3-ink-2">按账号状态和关键字快速定位。</p>
+    <WorkSurface className="min-w-0" data-testid="users-governance-table">
+      <div className="flex flex-col gap-3 border-b border-v3-line p-4">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-v3-ink">用户治理表</h2>
+            <p className="text-sm text-v3-ink-2">逐行治理人类用户的账号状态、控制台访问与成员身份。</p>
           </div>
-          <StatusPill tone="mute" showDot={false}>{users.length}</StatusPill>
+          <V3Segmented
+            aria-label="表格密度"
+            onChange={onDensityChange}
+            options={[
+              { label: "舒适", value: "comfortable" },
+              { label: "紧凑", value: "compact" },
+            ]}
+            value={density}
+          />
         </div>
-        <div className="flex items-center gap-2 rounded-[10px] bg-v3-card-soft px-3 py-2 text-v3-ink-3">
-          <SearchIcon className="size-4" />
-          <Input
+        <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
+          <V3ToolbarSearch
             aria-label="搜索用户"
-            className="h-7 border-0 bg-transparent p-0 text-v3-ink shadow-none focus-visible:ring-0"
             onChange={(event) =>
               onFiltersChange({
                 ...filters,
                 q: event.target.value,
               })
             }
-            placeholder="搜索用户名"
+            placeholder="搜索用户名、姓名或邮箱"
             type="search"
             value={filters.q}
           />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            ["all", "全部"],
-            ["active", "活跃"],
-            ["disabled", "禁用"],
-          ].map(([status, label]) => (
-            <V3Button
-              aria-pressed={filters.status === status}
-              key={status}
-              onClick={() =>
-                onFiltersChange({
-                  ...filters,
-                  status: status as UserStatusFilter,
-                })
-              }
-              size="sm"
-              type="button"
-              variant={filters.status === status ? "primary" : "outline"}
-            >
-              {label}
-            </V3Button>
-          ))}
-        </div>
-      </div>
-      <div className="mt-4">
-        {isLoading ? (
-          <V3LoadingState className="py-10" label="加载用户中" />
-        ) : null}
-        {isError ? (
-          <V3ErrorState title="用户列表加载失败" description="请刷新页面或检查 Control Plane 连接。" />
-        ) : null}
-        {!isLoading && users.length === 0 ? (
-          <V3EmptyState className="py-10" title="暂无匹配用户。" />
-        ) : (
-          <div className="flex min-w-0 flex-col gap-2">
-            {users.map((user) => (
-              <button
-                className={cn(
-                  "flex w-full min-w-0 items-center justify-between gap-3 rounded-v3-inner border p-3 text-left transition-colors",
-                  selectedUserId === user.id
-                    ? "border-v3-brand bg-v3-brand-soft"
-                    : "border-v3-line bg-v3-card hover:bg-v3-card-soft",
-                )}
-                key={user.id}
-                onClick={() => onSelectUser(user.id)}
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["all", "全部"],
+              ["active", "活跃"],
+              ["disabled", "禁用"],
+            ].map(([status, label]) => (
+              <V3Button
+                aria-pressed={filters.status === status}
+                key={status}
+                onClick={() =>
+                  onFiltersChange({
+                    ...filters,
+                    status: status as UserStatusFilter,
+                  })
+                }
+                size="sm"
                 type="button"
+                variant={filters.status === status ? "primary" : "outline"}
               >
-                <UserIdentity
-                  className="min-w-0 flex-1"
-                  showSecondary
-                  user={{
-                    avatar: user.avatar,
-                    avatar_asset_id: user.avatar_asset_id,
-                    display_name: user.display_name,
-                    email: user.email,
-                    id: user.id,
-                    status: user.status,
-                    username: user.username,
-                  }}
-                />
-                <StatusPill tone={userStatusTone(user.status)}>
-                  {formatUserStatus(user.status)}
-                </StatusPill>
-              </button>
+                {label}
+              </V3Button>
             ))}
           </div>
-        )}
+        </div>
       </div>
-    </SoftCard>
+
+      {isLoading ? <V3LoadingState className="min-h-[360px]" label="加载用户中" /> : null}
+      {isError ? (
+        <V3ErrorState className="m-4" title="用户列表加载失败" description="请刷新页面或检查 Control Plane 连接。" />
+      ) : null}
+      {!isLoading && !isError && users.length === 0 ? (
+        <V3EmptyState className="min-h-[360px]" title="暂无匹配用户。" />
+      ) : null}
+      {!isLoading && !isError && users.length > 0 ? (
+        <>
+          <V3Table className={density === "compact" ? "[&_td]:py-2 [&_th]:py-2" : undefined}>
+            <thead>
+              <V3Tr>
+                <V3Th>用户</V3Th>
+                <V3Th>状态</V3Th>
+                <V3Th>控制台访问</V3Th>
+                <V3Th>成员身份</V3Th>
+                <V3Th>操作</V3Th>
+              </V3Tr>
+            </thead>
+            <tbody>
+              {users.map((user) => {
+                const member = authzMembersByUserId.get(user.id);
+                const selected = user.id === selectedUserId;
+                const identity = mergeUserIdentity(user, member);
+                return (
+                  <V3Tr
+                    className={selected ? "[&>td]:bg-v3-brand-soft/55" : undefined}
+                    key={user.id}
+                    onClick={() => onSelectUser(user.id)}
+                    tone={user.status === "disabled" ? "danger" : undefined}
+                  >
+                    <V3Td className="min-w-[220px]">
+                      <UserIdentity className="min-w-0" showSecondary user={identity} />
+                    </V3Td>
+                    <V3Td>
+                      <StatusPill tone={userStatusTone(user.status)}>{formatUserStatus(user.status)}</StatusPill>
+                    </V3Td>
+                    <V3Td>
+                      <StatusPill tone={member?.console_access ? "ok" : "mute"}>
+                        {member?.console_access ? "允许" : "未确认"}
+                      </StatusPill>
+                    </V3Td>
+                    <V3Td className="min-w-[150px]">{formatMembershipSummary(member)}</V3Td>
+                    <V3Td>
+                      <div className="flex min-w-max gap-2">
+                        <V3Button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSelectUser(user.id);
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          详情
+                        </V3Button>
+                        <V3Button
+                          disabled={isStatusPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onToggleStatus(user);
+                          }}
+                          size="sm"
+                          type="button"
+                          variant={user.status === "active" ? "danger" : "outline"}
+                        >
+                          {user.status === "active" ? "禁用账号" : "启用账号"}
+                        </V3Button>
+                        <V3Button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onResetPassword(user.id);
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          重置密码
+                        </V3Button>
+                      </div>
+                    </V3Td>
+                  </V3Tr>
+                );
+              })}
+            </tbody>
+          </V3Table>
+          <div className="flex flex-col gap-2 border-t border-v3-line px-4 py-3 text-sm text-v3-ink-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="tabular-nums">共 {users.length} 个用户</span>
+            <span className="inline-flex items-center gap-2">
+              <SlidersHorizontal className="size-4" />
+              状态与关键字筛选保持在当前工作台内
+            </span>
+          </div>
+        </>
+      ) : null}
+    </WorkSurface>
   );
 }
 
-function SelectedUserWorkspace({
-  authzMembersError,
-  deniedDecisions,
-  deniedDecisionsError,
+function UserGovernancePreview({
   isStatusPending,
-  loginLogs,
-  loginLogsError,
   member,
   onResetPassword,
   onToggleStatus,
-  projectTeamScopes,
-  projectTeamScopesError,
-  projectTeamScopesLoading,
   user,
 }: {
-  authzMembersError: boolean;
-  deniedDecisions: AuthzDecisionRecord[];
-  deniedDecisionsError: boolean;
   isStatusPending: boolean;
-  loginLogs: LoginLogRecord[];
-  loginLogsError: boolean;
   member?: AuthzMemberRecord;
   onResetPassword: () => void;
   onToggleStatus: () => void;
-  projectTeamScopes: UserProjectTeamScope[];
-  projectTeamScopesError: boolean;
-  projectTeamScopesLoading: boolean;
-  user: UserIdentityData;
+  user?: UserIdentityData;
 }) {
-  const label = getUserIdentityLabel(user);
-
-  return (
-    <Tabs className="gap-4" defaultValue="overview">
-      <SoftCard className="p-6">
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
-              <UserIdentityAvatar className="size-16" user={user} />
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 className="text-2xl font-semibold tracking-normal text-v3-ink">{label.primary}</h2>
-                  <StatusPill tone={userStatusTone(user.status)}>
-                    {formatUserStatus(user.status)}
-                  </StatusPill>
-                  <StatusPill tone={member?.console_access ? "ok" : "mute"}>
-                    控制台访问：{member?.console_access ? "允许" : "未确认"}
-                  </StatusPill>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-v3-ink-2">
-                  <span>{user.username ?? user.id}</span>
-                  <span>{label.secondary}</span>
-                  <span>用户 ID：{shortId(user.id)}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <V3Button
-                disabled={isStatusPending}
-                onClick={onToggleStatus}
-                type="button"
-                variant={user.status === "active" ? "danger" : "outline"}
-              >
-                {user.status === "active" ? <Ban data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
-                {user.status === "active" ? "禁用账号" : "启用账号"}
-              </V3Button>
-              <V3Button onClick={onResetPassword} type="button" variant="outline">
-                <LockKeyhole data-icon="inline-start" />
-                重置密码
-              </V3Button>
-              <V3Button asChild variant="outline">
-                <Link to="/teams">
-                  <UsersRound data-icon="inline-start" />
-                  去团队管理分配
-                </Link>
-              </V3Button>
-            </div>
-          </div>
-          <div className="border-t border-v3-line pt-4">
-            <V3Tabs className="w-full">
-              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
-                <TabsTrigger className={v3TabTriggerClass} value="overview">概览</TabsTrigger>
-                <TabsTrigger className={v3TabTriggerClass} value="selectable-teams">可选团队</TabsTrigger>
-                <TabsTrigger className={v3TabTriggerClass} value="sessions">登录与会话</TabsTrigger>
-                <TabsTrigger className={v3TabTriggerClass} value="audit">审计记录</TabsTrigger>
-              </TabsList>
-            </V3Tabs>
-          </div>
-        </div>
-      </SoftCard>
-
-      <TabsContent value="overview">
-        <div className="flex min-w-0 flex-col gap-4">
-          <div
-            className="grid min-w-0 gap-6 [grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr))]"
-            data-layout="equal-three-cards"
-            data-testid="users-overview-hero"
-          >
-            <BasicInfoCard user={user} />
-            <PermissionSnapshotCard member={member} user={user} />
-            <AccountTimeline
-              className="min-w-0"
-              decisions={deniedDecisions}
-              error={deniedDecisionsError}
-              logs={loginLogs}
-            />
-          </div>
-          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-            <MembershipTable error={authzMembersError} member={member} />
-            <LoginLogTable error={loginLogsError} logs={loginLogs} />
-          </div>
-        </div>
-      </TabsContent>
-      <TabsContent value="selectable-teams">
-        <SelectableTeamScopesCard
-          error={projectTeamScopesError}
-          isLoading={projectTeamScopesLoading}
-          scopes={projectTeamScopes}
-        />
-      </TabsContent>
-      <TabsContent value="sessions">
-        <LoginLogTable error={loginLogsError} logs={loginLogs} />
-      </TabsContent>
-      <TabsContent value="audit">
-        <AccountTimeline decisions={deniedDecisions} error={deniedDecisionsError} logs={loginLogs} />
-      </TabsContent>
-    </Tabs>
-  );
-}
-
-function BasicInfoCard({ user }: { user: UserIdentityData }) {
-  const label = getUserIdentityLabel(user);
-
-  return (
-    <SoftCard className="min-w-0 p-5" data-testid="users-overview-basic-card">
-      <div className="mb-4">
-        <h3 className="text-base font-bold text-v3-ink">基本信息</h3>
-        <p className="text-sm text-v3-ink-2">来自用户列表和权限中心成员视图。</p>
-      </div>
-      <div className="grid gap-3 text-sm">
-        <InfoRow label="姓名" value={label.primary} />
-        <InfoRow label="用户名" value={user.username ?? "-"} />
-        <InfoRow label="邮箱/标识" value={label.secondary} />
-        <InfoRow label="账号状态" value={formatUserStatus(user.status)} />
-        <InfoRow label="用户 ID" value={user.id} />
-      </div>
-    </SoftCard>
-  );
-}
-
-function PermissionSnapshotCard({
-  member,
-  user,
-}: {
-  member?: AuthzMemberRecord;
-  user: UserIdentityData;
-}) {
-  const firstMembership = member?.memberships[0];
-
-  return (
-    <SoftCard className="min-w-0 p-5" data-testid="users-overview-permission-card">
-      <div className="mb-4">
-        <h3 className="text-base font-bold text-v3-ink">权限快速校验</h3>
-        <p className="text-sm text-v3-ink-2">用于检查账号是否能进入关键管理动作。</p>
-      </div>
-      <div className="grid gap-3 text-sm">
-        <InfoRow label="actor" value={`user:${shortId(user.id)}`} />
-        <InfoRow label="action" value={firstMembership?.team_id ? "team.member.add" : "console.access"} />
-        <InfoRow label="resource" value={firstMembership?.team_id ? `team:${shortId(firstMembership.team_id)}` : "console:web"} />
-        <div className="flex items-center justify-between rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2">
-          <span className="text-v3-ink-2">结果</span>
-          <StatusPill tone={member?.console_access ? "ok" : "warn"}>
-            {member?.console_access ? "允许" : "待诊断"}
-          </StatusPill>
-        </div>
-      </div>
-    </SoftCard>
-  );
-}
-
-function MembershipTable({
-  error,
-  member,
-}: {
-  error: boolean;
-  member?: AuthzMemberRecord;
-}) {
-  const memberships = member?.memberships ?? [];
-
-  return (
-    <WorkSurface className="min-w-0">
-      <div className="border-b border-v3-line p-4">
-        <h3 className="text-base font-bold text-v3-ink">成员身份记录</h3>
-        <p className="text-sm text-v3-ink-2">只读审计视图，角色调整仍通过团队管理页完成。</p>
-      </div>
-        {error ? (
-          <V3ErrorState className="m-4" title="成员角色加载失败" description="权限中心成员视图暂不可用。" />
-        ) : memberships.length === 0 ? (
-          <V3EmptyState title="暂无团队或成员身份记录。" />
-        ) : (
-          <V3Table>
-            <thead>
-              <V3Tr>
-                <V3Th>范围</V3Th>
-                <V3Th>角色</V3Th>
-                <V3Th>状态</V3Th>
-              </V3Tr>
-            </thead>
-            <tbody>
-                {memberships.map((membership) => (
-                  <V3Tr key={`${membership.tenant_id}-${membership.team_id ?? "tenant"}-${membership.role}`}>
-                    <V3Td className="min-w-36">{formatMembershipScope(membership)}</V3Td>
-                    <V3Td>
-                      <StatusPill tone="mute">{membership.role}</StatusPill>
-                    </V3Td>
-                    <V3Td>
-                      <StatusPill tone={membership.status === "active" ? "ok" : "mute"}>{membership.status}</StatusPill>
-                    </V3Td>
-                  </V3Tr>
-                ))}
-            </tbody>
-          </V3Table>
-        )}
-    </WorkSurface>
-  );
-}
-
-function SelectableTeamScopesCard({
-  error,
-  isLoading,
-  scopes,
-}: {
-  error: boolean;
-  isLoading: boolean;
-  scopes: UserProjectTeamScope[];
-}) {
-  return (
-    <SoftCard className="min-w-0 p-5">
-      <div className="mb-4">
-        <h3 className="text-base font-bold text-v3-ink">可选团队</h3>
-        <p className="text-sm text-v3-ink-2">当前用户创建或协作项目时可选择的团队范围。</p>
-      </div>
-        {isLoading ? <V3LoadingState className="py-10" label="加载可选团队中" /> : null}
-        {error ? (
-          <V3ErrorState title="可选团队加载失败" description="请检查用户团队范围接口。" />
-        ) : null}
-        {!isLoading && !error && scopes.length === 0 ? (
-          <V3EmptyState className="py-10" title="暂无可选团队。" />
-        ) : null}
-        {scopes.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {scopes.map((scope) => (
-              <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3" key={scope.id}>
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-v3-ink">{scope.team.name}</p>
-                    <p className="mt-1 truncate text-xs text-v3-ink-2">
-                      {scope.team.slug} / {scope.team.governance_status}
-                    </p>
-                  </div>
-                  <StatusPill tone={scope.status === "active" ? "ok" : "mute"}>
-                    {scope.status}
-                  </StatusPill>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-v3-ink-2">
-                  <span>员工 {scope.team.digital_employee_count}</span>
-                  <span>草稿 {scope.team.pending_draft_count}</span>
-                  <span className="col-span-2 truncate">{scope.team.risk_summary}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-    </SoftCard>
-  );
-}
-
-function LoginLogTable({
-  error,
-  logs,
-}: {
-  error: boolean;
-  logs: LoginLogRecord[];
-}) {
-  return (
-    <WorkSurface className="min-w-0">
-      <div className="border-b border-v3-line p-4">
-        <h3 className="text-base font-bold text-v3-ink">最近登录日志</h3>
-        <p className="text-sm text-v3-ink-2">按当前用户从 Web 登录日志中匹配。</p>
-      </div>
-        {error ? (
-          <V3ErrorState className="m-4" title="登录日志加载失败" description="请检查 Auth API 连接。" />
-        ) : logs.length === 0 ? (
-          <V3EmptyState title="暂无登录记录。" />
-        ) : (
-          <V3Table>
-            <thead>
-              <V3Tr>
-                <V3Th>时间</V3Th>
-                <V3Th>IP 地址</V3Th>
-                <V3Th>设备 / 浏览器</V3Th>
-                <V3Th>结果</V3Th>
-              </V3Tr>
-            </thead>
-            <tbody>
-                {logs.map((log) => (
-                  <V3Tr key={log.id} tone={log.result === "succeeded" ? undefined : "danger"}>
-                    <V3Td className="min-w-32 tabular-nums">{formatDateTime(log.created_at)}</V3Td>
-                    <V3Td>{log.client_ip ?? "-"}</V3Td>
-                    <V3Td className="min-w-40">{log.user_agent ?? "-"}</V3Td>
-                    <V3Td>
-                      <StatusPill tone={log.result === "succeeded" ? "ok" : "danger"}>
-                        {log.result === "succeeded" ? "成功" : "失败"}
-                      </StatusPill>
-                    </V3Td>
-                  </V3Tr>
-                ))}
-            </tbody>
-          </V3Table>
-        )}
-    </WorkSurface>
-  );
-}
-
-function AccountTimeline({
-  className,
-  decisions,
-  error,
-  logs,
-}: {
-  className?: string;
-  decisions: AuthzDecisionRecord[];
-  error: boolean;
-  logs: LoginLogRecord[];
-}) {
-  if (error) {
+  if (!user) {
     return (
-      <V3ErrorState title="审计记录加载失败" description="授权拒绝记录暂不可用。" />
+      <aside className="flex min-w-0 flex-col gap-4">
+        <SoftCard className="min-h-[420px]">
+          <V3EmptyState className="min-h-[420px]" title="请选择一个用户查看详情" />
+        </SoftCard>
+      </aside>
     );
   }
 
-  const events = [
-    ...decisions.map((decision) => ({
-      at: decision.created_at,
-      description: decision.reason ?? decision.result,
-      title: decision.action,
-      tone: "danger" as const,
-    })),
-    ...logs.slice(0, 3).map((log) => ({
-      at: log.created_at,
-      description: `${log.user_agent ?? "unknown"} / ${log.client_ip ?? "-"}`,
-      title: `login.${log.result}`,
-      tone: log.result === "succeeded" ? ("ok" as const) : ("danger" as const),
-    })),
-  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-
-  return (
-    <SoftCard className={cn("min-w-0 p-5", className)} data-testid="users-overview-timeline-card">
-      <div className="mb-4">
-        <h3 className="text-base font-bold text-v3-ink">账号操作记录</h3>
-        <p className="text-sm text-v3-ink-2">登录事件与授权拒绝事件的合并视图。</p>
-      </div>
-        {events.length === 0 ? (
-          <V3EmptyState className="py-10" title="暂无可展示事件。" />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {events.map((event) => (
-              <div className="flex gap-3 text-sm" key={`${event.title}-${event.at}`}>
-                <span className={cn("mt-1 size-2 rounded-full bg-current", event.tone === "ok" ? "text-v3-ok" : "text-v3-danger")} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="truncate font-medium text-v3-ink">{event.title}</span>
-                    <StatusPill tone={event.tone}>{event.tone === "ok" ? "成功" : "需关注"}</StatusPill>
-                  </div>
-                  <p className="truncate text-xs text-v3-ink-2">{event.description}</p>
-                  <p className="text-xs text-v3-ink-2">{formatDateTime(event.at)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-    </SoftCard>
-  );
-}
-
-function UserDiagnosticsRail({
-  deniedDecisions,
-  deniedDecisionsError,
-  member,
-  user,
-}: {
-  deniedDecisions: AuthzDecisionRecord[];
-  deniedDecisionsError: boolean;
-  member?: AuthzMemberRecord;
-  user?: UserIdentityData;
-}) {
-  const allowRate = member?.console_access ? "可访问" : "未确认";
+  const label = getUserIdentityLabel(user);
+  const memberships = member?.memberships ?? [];
 
   return (
     <aside className="flex min-w-0 flex-col gap-4">
       <SoftCard className="p-5">
-        <div className="mb-4">
-          <h3 className="flex items-center gap-2 text-base font-bold text-v3-ink">
-            <ShieldCheck />
-            权限诊断
-          </h3>
-          <p className="text-sm text-v3-ink-2">从权限中心聚合当前用户的可访问性和拒绝信号。</p>
+        <div className="mb-4 flex min-w-0 items-start gap-3">
+          <UserIdentityAvatar className="size-14" user={user} />
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-bold tracking-normal text-v3-ink">{label.primary}</h2>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <StatusPill tone={userStatusTone(user.status)}>{formatUserStatus(user.status)}</StatusPill>
+              <StatusPill tone={member?.console_access ? "ok" : "mute"}>
+                控制台访问：{member?.console_access ? "允许" : "未确认"}
+              </StatusPill>
+            </div>
+          </div>
         </div>
         <div className="grid gap-3 text-sm">
-          <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
-            <p className="text-xs text-v3-ink-2">控制台访问</p>
-            <p className="mt-1 text-xl font-semibold text-v3-ink">{allowRate}</p>
-          </div>
-          <InfoRow label="账号状态" value={user ? formatUserStatus(user.status) : "-"} />
-          <InfoRow label="成员身份数量" value={String(member?.memberships.length ?? 0)} />
-          <InfoRow label="最近拒绝" value={member?.recent_denied_reason ?? "暂无"} />
+          <InfoRow label="邮箱/标识" value={label.secondary} />
+          <InfoRow label="用户名" value={user.username ?? "-"} />
+          <InfoRow label="用户 ID" value={shortId(user.id)} />
+          <InfoRow label="成员身份" value={formatMembershipSummary(member)} />
         </div>
-      </SoftCard>
-
-      <SoftCard className="p-5">
-        <div className="mb-4">
-          <h3 className="flex items-center gap-2 text-base font-bold text-v3-ink">
-            <ShieldAlert />
-            近期拒绝
-          </h3>
-          <p className="text-sm text-v3-ink-2">最近 8 条失败授权决策。</p>
-        </div>
-          {deniedDecisionsError ? (
-            <V3ErrorState title="拒绝事件加载失败。" />
-          ) : deniedDecisions.length === 0 ? (
-            <V3EmptyState className="py-10" title="暂无拒绝事件。" />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {deniedDecisions.map((decision) => (
-                <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3 text-sm" key={decision.id}>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate font-medium text-v3-ink">{decision.action}</span>
-                    <StatusPill tone="danger">拒绝</StatusPill>
-                  </div>
-                  <p className="mt-1 truncate text-xs text-v3-ink-2">{decision.reason ?? "-"}</p>
-                  <p className="mt-1 text-xs text-v3-ink-2">{formatDateTime(decision.created_at)}</p>
-                </div>
-              ))}
-            </div>
-          )}
-      </SoftCard>
-
-      <SoftCard className="p-5">
-        <div className="mb-4">
-          <h3 className="flex items-center gap-2 text-base font-bold text-v3-ink">
-            <Activity />
-            下一步建议
-          </h3>
-        </div>
-        <div className="flex flex-col gap-2 text-sm text-v3-ink">
-          <Recommendation icon={<KeyRound />} text="定期轮换密码或接入 SSO 后迁移认证策略。" />
-          <Recommendation icon={<UsersRound />} text="团队可选范围变更优先在团队管理中走审批链路。" />
-          <Recommendation icon={<Clock3 />} text="导出最近 30 天登录与拒绝记录，供审计复核。" />
-          <V3Button asChild className="mt-2" variant="outline">
-            <Link to="/permissions">
-              查看权限中心
-              <ArrowUpRight data-icon="inline-end" />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <V3Button
+            disabled={isStatusPending}
+            onClick={onToggleStatus}
+            size="sm"
+            type="button"
+            variant={user.status === "active" ? "danger" : "outline"}
+          >
+            {user.status === "active" ? <Ban data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
+            {user.status === "active" ? "禁用账号" : "启用账号"}
+          </V3Button>
+          <V3Button onClick={onResetPassword} size="sm" type="button" variant="outline">
+            <LockKeyhole data-icon="inline-start" />
+            重置密码
+          </V3Button>
+          <V3Button asChild size="sm" variant="outline">
+            <Link to="/teams">
+              <UsersRound data-icon="inline-start" />
+              去团队管理分配
             </Link>
           </V3Button>
         </div>
       </SoftCard>
-    </aside>
-  );
-}
 
-function Recommendation({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <div className="flex gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
-      <span className="text-v3-brand">{icon}</span>
-      <span>{text}</span>
-    </div>
+      <SoftCard className="p-5">
+        <div className="mb-4">
+          <h3 className="text-base font-bold text-v3-ink">成员身份</h3>
+          <p className="text-sm text-v3-ink-2">来自权限中心成员视图；角色调整仍通过团队管理页完成。</p>
+        </div>
+        {memberships.length === 0 ? (
+          <V3EmptyState className="py-8" title="暂无成员身份。" />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {memberships.map((membership) => (
+              <div
+                className="flex items-center justify-between gap-3 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-sm"
+                key={`${membership.tenant_id}-${membership.team_id ?? "tenant"}-${membership.role}`}
+              >
+                <span className="truncate text-v3-ink">{formatMembershipScope(membership)}</span>
+                <StatusPill tone={membership.status === "active" ? "ok" : "mute"}>
+                  {membership.status === "active" ? "有效" : membership.status}
+                </StatusPill>
+              </div>
+            ))}
+          </div>
+        )}
+      </SoftCard>
+
+    </aside>
   );
 }
 
@@ -1106,10 +735,38 @@ function userStatusTone(status: string): V3Tone {
 
 function formatMembershipScope(membership: AuthzMemberRecord["memberships"][number]) {
   if (membership.team_id) {
-    return `团队 ${shortId(membership.team_id)}`;
+    return `团队 ${formatRoleLabel(membership.role)}`;
   }
 
-  return `租户 ${shortId(membership.tenant_id)}`;
+  return `租户 ${formatRoleLabel(membership.role)}`;
+}
+
+function formatMembershipSummary(member?: AuthzMemberRecord) {
+  const memberships = member?.memberships ?? [];
+
+  if (memberships.length === 0) {
+    return "暂无成员身份";
+  }
+
+  const teamCount = new Set(memberships.map((membership) => membership.team_id).filter(Boolean)).size;
+  const roleCount = new Set(memberships.map((membership) => membership.role)).size;
+
+  if (teamCount === 0) {
+    return `租户角色 / ${roleCount} 个角色`;
+  }
+
+  return `${teamCount} 个团队 / ${roleCount} 个角色`;
+}
+
+function formatRoleLabel(role: string) {
+  if (role === "owner") {
+    return "Owner";
+  }
+  if (role === "admin") {
+    return "Admin";
+  }
+
+  return role;
 }
 
 function shortId(value: string) {
@@ -1118,20 +775,4 @@ function shortId(value: string) {
   }
 
   return `${value.slice(0, 8)}...${value.slice(-4)}`;
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
 }

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>用户管理方案 2 · 表格治理台</title>
+    <link rel="stylesheet" href="./shared.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 324px;
+        gap: 14px;
+      }
+
+      .table-actions {
+        display: flex;
+        gap: 7px;
+      }
+
+      .mini {
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 9px;
+        font-size: 12px;
+      }
+
+      .preview {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .preview-user {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .preview-list {
+        display: grid;
+        gap: 9px;
+      }
+
+      .preview-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 9px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .preview-row span:first-child {
+        color: var(--ink-2);
+      }
+
+      .preview-row strong {
+        text-align: right;
+      }
+
+      .bulk {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 13px 18px;
+        border-top: 1px solid var(--line);
+        color: var(--ink-2);
+      }
+
+      @media (max-width: 1180px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark"><i data-lucide="zap"></i></span>SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制台</div>
+          <a class="nav-item" href="#"><i data-lucide="layout-dashboard"></i>概览</a>
+          <a class="nav-item" href="#"><i data-lucide="folder-kanban"></i>项目</a>
+          <a class="nav-item" href="#"><i data-lucide="bot"></i>数字员工</a>
+          <a class="nav-item" href="#"><i data-lucide="blocks"></i>技能</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">平台管理</div>
+          <a class="nav-item" href="#"><i data-lucide="key-round"></i>权限中心</a>
+          <a class="nav-item active" href="#"><i data-lucide="users-round"></i>用户管理</a>
+          <a class="nav-item" href="#"><i data-lucide="file-clock"></i>审计日志</a>
+          <a class="nav-item" href="#"><i data-lucide="settings"></i>设置</a>
+        </div>
+        <div class="tenant">
+          <span class="tenant-icon"><i data-lucide="building-2"></i></span>
+          <div><strong>Acme Corp</strong><span>企业版</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="spacer"></div>
+          <button class="icon-btn"><i data-lucide="circle-help"></i></button>
+          <div class="me"><span class="avatar">A</span><div><strong>Admin</strong><span>平台管理员</span></div></div>
+        </div>
+
+        <div class="page-head">
+          <div class="page-title">
+            <h1>用户管理</h1>
+            <p>管理平台人类用户、访问状态与团队范围。</p>
+          </div>
+          <div class="actions">
+            <button class="btn"><i data-lucide="download"></i>导出用户</button>
+            <button class="btn primary"><i data-lucide="plus-circle"></i>新建用户</button>
+          </div>
+        </div>
+
+        <section class="metrics">
+          <div class="metric"><span class="metric-icon tone-brand"><i data-lucide="users"></i></span><div><div class="metric-label">活跃用户</div><div class="metric-value num">128</div></div></div>
+          <div class="metric"><span class="metric-icon tone-danger"><i data-lucide="ban"></i></span><div><div class="metric-label">禁用用户</div><div class="metric-value num">22</div></div></div>
+          <div class="metric"><span class="metric-icon tone-ok"><i data-lucide="shield-check"></i></span><div><div class="metric-label">控制台访问</div><div class="metric-value num">116</div></div></div>
+          <div class="metric"><span class="metric-icon tone-warn"><i data-lucide="user-round-check"></i></span><div><div class="metric-label">待复核账号</div><div class="metric-value num">8</div></div></div>
+          <div class="metric"><span class="metric-icon tone-artifact"><i data-lucide="file-clock"></i></span><div><div class="metric-label">最近审计命中</div><div class="metric-value num">23</div></div></div>
+        </section>
+
+        <section class="split">
+          <div class="work-surface">
+            <div class="toolbar">
+              <div class="search"><i data-lucide="search"></i><input placeholder="搜索用户名、姓名或邮箱" /></div>
+              <span class="chip active">状态：全部</span>
+              <span class="chip">角色：全部</span>
+              <span class="chip">团队范围：全部</span>
+              <span class="chip">清空筛选</span>
+              <div class="spacer"></div>
+              <span class="chip active">舒适</span>
+              <span class="chip">紧凑</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" checked /></th>
+                    <th>用户</th>
+                    <th>状态</th>
+                    <th>控制台访问</th>
+                    <th>团队范围</th>
+                    <th>成员身份</th>
+                    <th>最近账号变更</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><input type="checkbox" checked /></td>
+                    <td><div class="user-cell"><span class="avatar"><img alt="" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" /></span><span><strong>李娜</strong><span>lina.li</span></span></div></td>
+                    <td><span class="pill ok">活跃</span></td>
+                    <td><span class="pill ok">允许</span></td>
+                    <td>研发中心、平台工程部 <span class="pill mute">+1</span></td>
+                    <td>3 个团队 / 2 个角色</td>
+                    <td><span class="num">2025-05-19 14:32</span><span class="subtext">密码重置</span></td>
+                    <td><div class="table-actions"><button class="btn mini">详情</button><button class="btn mini danger">禁用</button><button class="btn mini">重置密码</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><div class="user-cell"><span class="avatar">张</span><span><strong>张伟</strong><span>zhang.wei</span></span></div></td>
+                    <td><span class="pill ok">活跃</span></td>
+                    <td><span class="pill ok">允许</span></td>
+                    <td>研发中心</td>
+                    <td>2 个团队 / 2 个角色</td>
+                    <td><span class="num">2025-05-18 09:11</span><span class="subtext">角色变更</span></td>
+                    <td><div class="table-actions"><button class="btn mini">详情</button><button class="btn mini danger">禁用</button><button class="btn mini">重置密码</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><div class="user-cell"><span class="avatar">王</span><span><strong>王敏</strong><span>min.wang</span></span></div></td>
+                    <td><span class="pill ok">活跃</span></td>
+                    <td><span class="pill ok">允许</span></td>
+                    <td>产品部、设计部</td>
+                    <td>2 个团队 / 1 个角色</td>
+                    <td><span class="num">2025-05-17 16:45</span><span class="subtext">团队变更</span></td>
+                    <td><div class="table-actions"><button class="btn mini">详情</button><button class="btn mini danger">禁用</button><button class="btn mini">重置密码</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><div class="user-cell"><span class="avatar">刘</span><span><strong>刘洋</strong><span>liu.yang</span></span></div></td>
+                    <td><span class="pill danger">禁用</span></td>
+                    <td><span class="pill danger">拒绝</span></td>
+                    <td>研发中心</td>
+                    <td>2 个团队 / 1 个角色</td>
+                    <td><span class="num">2025-05-15 10:20</span><span class="subtext">管理员禁用</span></td>
+                    <td><div class="table-actions"><button class="btn mini">详情</button><button class="btn mini">启用</button><button class="btn mini">重置密码</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><div class="user-cell"><span class="avatar">孙</span><span><strong>孙悦</strong><span>yue.sun</span></span></div></td>
+                    <td><span class="pill warn">待复核</span></td>
+                    <td><span class="pill ok">允许</span></td>
+                    <td>研发中心、海外业务部 <span class="pill mute">+2</span></td>
+                    <td>4 个团队 / 3 个角色</td>
+                    <td><span class="num">2025-05-11 13:21</span><span class="subtext">新建账号</span></td>
+                    <td><div class="table-actions"><button class="btn mini">详情</button><button class="btn mini danger">禁用</button><button class="btn mini">重置密码</button></div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="bulk">
+              <span>已选择 1 项</span>
+              <div class="actions"><button class="btn">批量操作</button><span>共 150 项</span><button class="btn mini">1</button><button class="btn mini">2</button><button class="btn mini">3</button></div>
+            </div>
+          </div>
+
+          <aside class="preview">
+            <div class="soft-card">
+              <div class="preview-user">
+                <span class="avatar lg"><img alt="" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80" /></span>
+                <div><h2>李娜</h2><div class="actions"><span class="pill ok">活跃</span><span class="pill brand">控制台访问：允许</span></div></div>
+              </div>
+              <div class="preview-list">
+                <div class="preview-row"><span>邮箱</span><strong>lina.li@superteam.ai</strong></div>
+                <div class="preview-row"><span>用户 ID</span><strong class="mono">usr_01H8K7...</strong></div>
+                <div class="preview-row"><span>所属团队</span><strong>共 3 个</strong></div>
+                <div class="preview-row"><span>成员身份</span><strong>3 个团队 / 2 个角色</strong></div>
+                <div class="preview-row"><span>MFA 状态</span><strong>已启用</strong></div>
+              </div>
+            </div>
+
+            <div class="soft-card audit-handoff">
+              <h3><i data-lucide="file-clock"></i> 审计日志</h3>
+              <p>在审计日志中查看该用户记录，不在用户管理中内嵌日志流水。</p>
+              <div class="filter-row">
+                <span class="chip active">账号操作</span>
+                <span class="chip">登录事件</span>
+                <span class="chip">授权决策</span>
+                <span class="chip">团队变更</span>
+              </div>
+              <button class="btn primary"><i data-lucide="external-link"></i>在审计日志中查看</button>
+              <div class="footer-note">将带入当前用户筛选条件与所选日志类型。</div>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <script>lucide.createIcons();</script>
+  </body>
+</html>

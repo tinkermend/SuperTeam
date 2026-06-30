@@ -76,14 +76,13 @@ export function CreateUserDrawer({
   const teamsReady = teamsQuery.isSuccess && !teamsQuery.isFetching && !teamsHasError && activeTeams.length > 0;
   const currentTeams = teamsReady ? activeTeams : [];
   const selectedTeamIdsAreCurrent =
-    draft.selectable_team_ids.length > 0 &&
-    draft.selectable_team_ids.every((teamId) => currentTeams.some((team) => team.id === teamId));
+    draft.selectable_team_ids.length === 0 ||
+    (teamsReady && draft.selectable_team_ids.every((teamId) => currentTeams.some((team) => team.id === teamId)));
   const canSubmit = Boolean(
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
       draft.avatar &&
-      teamsReady &&
       selectedTeamIdsAreCurrent,
   );
 
@@ -169,25 +168,33 @@ export function CreateUserDrawer({
               />
 
               <section className="rounded-md border p-3">
-                <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium">选择可选团队</h3>
-                  <span className="text-xs text-muted-foreground">
-                    已选 {draft.selectable_team_ids.length}
-                  </span>
+                <div className="mb-1 flex min-w-0 items-center justify-between gap-3">
+                  <h3 className="text-sm font-medium">
+                    可管理的团队
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">（可选）</span>
+                  </h3>
+                  {draft.selectable_team_ids.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      已选 {draft.selectable_team_ids.length}
+                    </span>
+                  )}
                 </div>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  选择此用户可以管理的团队范围。创建后可在团队管理中修改。
+                </p>
                 {teamsQuery.isLoading || teamsQuery.isFetching ? (
-                  <p className="text-sm text-muted-foreground">加载可选团队中</p>
+                  <p className="text-sm text-muted-foreground">加载团队中</p>
                 ) : null}
                 {teamsHasError ? (
                   <Alert variant="destructive">
                     <ShieldAlert />
-                    <AlertTitle>可选团队加载失败</AlertTitle>
+                    <AlertTitle>团队列表加载失败</AlertTitle>
                     <AlertDescription>请检查团队服务后重试。</AlertDescription>
                   </Alert>
                 ) : null}
                 {!teamsQuery.isLoading && !teamsQuery.isFetching && !teamsHasError && activeTeams.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    暂无可选团队。
+                    暂无可用团队，可在创建用户后前往团队管理添加。
                   </p>
                 ) : null}
                 {currentTeams.length > 0 ? (

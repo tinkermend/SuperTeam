@@ -501,7 +501,7 @@ func (r *PgRepository) EnsureActiveUser(ctx context.Context, userID uuid.UUID) e
 
 func (r *PgRepository) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error {
 	if len(teamIDs) == 0 {
-		return ErrInvalidManagedUserInput
+		return nil
 	}
 	count, err := r.q.CountActiveTenantTeamsByIDs(ctx, queries.CountActiveTenantTeamsByIDsParams{
 		TenantID: tenantID,

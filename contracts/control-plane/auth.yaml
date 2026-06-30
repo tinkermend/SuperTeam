@@ -512,7 +512,7 @@ components:
 
     CreateUserRequest:
       type: object
-      required: [username, display_name, password, avatar, selectable_team_ids]
+      required: [username, display_name, password, avatar]
       properties:
         username:
           type: string
@@ -530,10 +530,10 @@ components:
           $ref: '#/components/schemas/UserAvatar'
         selectable_team_ids:
           type: array
-          minItems: 1
           items:
             type: string
             format: uuid
+          description: 可选。此用户可以管理的团队范围，创建后可在团队管理中修改。
 
     ReplaceUserProjectTeamScopesRequest:
       type: object

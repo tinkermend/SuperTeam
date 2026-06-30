@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>用户管理方案 1 · 目录详情治理台</title>
+    <link rel="stylesheet" href="./shared.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+      .layout {
+        display: grid;
+        grid-template-columns: 330px minmax(0, 1fr) 300px;
+        gap: 14px;
+      }
+
+      .directory {
+        padding: 14px;
+      }
+
+      .directory-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .user-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .user-row {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        width: 100%;
+        padding: 11px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card);
+        text-align: left;
+      }
+
+      .user-row.active {
+        border-color: rgba(47, 95, 255, .28);
+        background: var(--brand-soft);
+        box-shadow: inset 3px 0 0 var(--brand);
+      }
+
+      .profile {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .profile-main {
+        display: flex;
+        gap: 16px;
+        min-width: 0;
+      }
+
+      .profile h2 {
+        margin: 3px 0 8px;
+        font-size: 26px;
+        line-height: 1.1;
+      }
+
+      .profile-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        color: var(--ink-2);
+        font-size: 13px;
+      }
+
+      .profile-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .center-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .summary-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 13px;
+      }
+
+      .summary-cell {
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card-soft);
+      }
+
+      .summary-cell span {
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .summary-cell strong {
+        display: block;
+        margin-top: 3px;
+        font-size: 22px;
+      }
+
+      .rail {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .advice-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .advice {
+        display: flex;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-inner);
+        background: var(--card-soft);
+      }
+
+      .advice strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .advice span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1280px) {
+        .layout {
+          grid-template-columns: 300px minmax(0, 1fr);
+        }
+
+        .rail {
+          grid-column: 1 / -1;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 900px) {
+        .layout,
+        .center-grid,
+        .rail,
+        .summary-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark"><i data-lucide="zap"></i></span>SuperTeam</div>
+        <div class="nav-section">
+          <div class="nav-title">控制台</div>
+          <a class="nav-item" href="#"><i data-lucide="layout-dashboard"></i>概览</a>
+          <a class="nav-item" href="#"><i data-lucide="folder-kanban"></i>项目</a>
+          <a class="nav-item" href="#"><i data-lucide="bot"></i>数字员工</a>
+          <a class="nav-item" href="#"><i data-lucide="blocks"></i>技能</a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">平台管理</div>
+          <a class="nav-item" href="#"><i data-lucide="key-round"></i>权限中心</a>
+          <a class="nav-item active" href="#"><i data-lucide="users-round"></i>用户管理</a>
+          <a class="nav-item" href="#"><i data-lucide="file-clock"></i>审计日志</a>
+          <a class="nav-item" href="#"><i data-lucide="settings"></i>设置</a>
+        </div>
+        <div class="tenant">
+          <span class="tenant-icon"><i data-lucide="building-2"></i></span>
+          <div><strong>Acme Corp</strong><span>企业版</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="command"><i data-lucide="search"></i><input value="" placeholder="搜索用户、团队或权限范围" /></div>
+          <div class="spacer"></div>
+          <button class="icon-btn" aria-label="帮助"><i data-lucide="circle-help"></i></button>
+          <div class="me"><span class="avatar">A</span><div><strong>Admin</strong><span>平台管理员</span></div></div>
+        </div>
+
+        <div class="page-head">
+          <div class="page-title">
+            <h1>用户管理</h1>
+            <p>管理平台人类用户、账号状态、控制台访问和团队范围。</p>
+          </div>
+          <div class="actions">
+            <button class="btn"><i data-lucide="download"></i>导出用户</button>
+            <button class="btn primary"><i data-lucide="user-plus"></i>新建用户</button>
+          </div>
+        </div>
+
+        <section class="layout">
+          <aside class="soft-card directory">
+            <div class="search"><i data-lucide="search"></i><input placeholder="搜索用户名" /></div>
+            <div class="directory-tabs">
+              <span class="chip active">全部 128</span>
+              <span class="chip">活跃 102</span>
+              <span class="chip">禁用 26</span>
+            </div>
+            <div class="user-list">
+              <button class="user-row"><span class="avatar">张</span><span class="user-cell"><span><strong>张伟</strong><span>zhang.wei</span></span></span><span class="pill ok">活跃</span></button>
+              <button class="user-row active"><span class="avatar"><img alt="" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80" /></span><span class="user-cell"><span><strong>李娜</strong><span>lina.li</span></span></span><span class="pill ok">活跃</span></button>
+              <button class="user-row"><span class="avatar">王</span><span class="user-cell"><span><strong>王敏</strong><span>min.wang</span></span></span><span class="pill ok">活跃</span></button>
+              <button class="user-row"><span class="avatar">陈</span><span class="user-cell"><span><strong>陈晨</strong><span>chen.chen</span></span></span><span class="pill ok">活跃</span></button>
+              <button class="user-row"><span class="avatar">刘</span><span class="user-cell"><span><strong>刘洋</strong><span>liu.yang</span></span></span><span class="pill danger">禁用</span></button>
+              <button class="user-row"><span class="avatar">赵</span><span class="user-cell"><span><strong>赵磊</strong><span>lei.zhao</span></span></span><span class="pill ok">活跃</span></button>
+            </div>
+          </aside>
+
+          <section>
+            <div class="soft-card">
+              <div class="profile">
+                <div class="profile-main">
+                  <span class="avatar lg"><img alt="" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80" /></span>
+                  <div>
+                    <h2>李娜</h2>
+                    <div class="actions">
+                      <span class="pill ok"><span class="dot"></span>活跃</span>
+                      <span class="pill brand">控制台访问：允许</span>
+                    </div>
+                    <div class="profile-meta">
+                      <span class="mono">usr_01H8K7Z3N9Q2V5B1M2X4Y6Z7A8</span>
+                      <span>lina.li@superteam.ai</span>
+                      <span>ACME-00456</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="profile-actions">
+                  <button class="btn danger"><i data-lucide="ban"></i>禁用账号</button>
+                  <button class="btn"><i data-lucide="key-round"></i>重置密码</button>
+                  <button class="btn"><i data-lucide="users"></i>分配团队</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="center-grid">
+              <div class="soft-card">
+                <h3>基本信息</h3>
+                <p>账号事实来自用户目录和权限中心成员视图。</p>
+                <div class="info-grid">
+                  <div class="info-row"><span>邮箱</span><strong>lina.li@superteam.ai</strong></div>
+                  <div class="info-row"><span>手机号</span><strong>+86 138 0000 1234</strong></div>
+                  <div class="info-row"><span>所属组织</span><strong>Acme Corp</strong></div>
+                  <div class="info-row"><span>MFA 状态</span><strong>已启用</strong></div>
+                </div>
+              </div>
+
+              <div class="soft-card">
+                <h3>权限摘要</h3>
+                <p>只展示当前账号状态，不展示逐行日志。</p>
+                <div class="summary-row">
+                  <div class="summary-cell"><span>团队</span><strong>3</strong></div>
+                  <div class="summary-cell"><span>角色</span><strong>5</strong></div>
+                  <div class="summary-cell"><span>权限空间</span><strong>2</strong></div>
+                  <div class="summary-cell"><span>有效权限</span><strong>42</strong></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="work-surface" style="margin-top:14px">
+              <div class="section-head">
+                <div><h2>成员身份</h2><p>角色调整仍通过团队管理页完成。</p></div>
+                <span class="pill mute">共 5 条</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>范围</th><th>角色</th><th>状态</th><th>来源</th><th>管理入口</th></tr></thead>
+                  <tbody>
+                    <tr><td>团队 / 平台研发部</td><td>开发者</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>直接分配</td><td><a class="mono" href="#">打开团队</a></td></tr>
+                    <tr><td>团队 / 运维部</td><td>运维工程师</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>直接分配</td><td><a class="mono" href="#">打开团队</a></td></tr>
+                    <tr><td>权限空间 / prod-projects</td><td>项目管理员</td><td><span class="pill ok"><span class="dot"></span>活跃</span></td><td>继承自角色</td><td><a class="mono" href="#">查看权限</a></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <aside class="rail">
+            <div class="soft-card">
+              <h3>治理建议</h3>
+              <p>面向账号状态和团队范围的下一步。</p>
+              <div class="advice-list">
+                <div class="advice"><span class="tile tone-warn"><i data-lucide="users"></i></span><div><strong>团队成员过多</strong><span>该用户在 3 个团队中，建议定期复核成员。</span></div></div>
+                <div class="advice"><span class="tile tone-brand"><i data-lucide="shield"></i></span><div><strong>高权限角色</strong><span>拥有 2 个高权限角色，请确认仍需保留。</span></div></div>
+              </div>
+            </div>
+
+            <div class="soft-card audit-handoff">
+              <h3><i data-lucide="file-clock"></i> 审计入口</h3>
+              <p>账号操作、登录事件、授权决策和团队变更统一进入审计日志。</p>
+              <div class="filter-row">
+                <span class="chip active">账号操作</span>
+                <span class="chip">登录事件</span>
+                <span class="chip">授权决策</span>
+                <span class="chip">团队变更</span>
+              </div>
+              <button class="btn primary"><i data-lucide="external-link"></i>打开审计日志</button>
+              <div class="footer-note">将携带当前用户和筛选条件。</div>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <script>lucide.createIcons();</script>
+  </body>
+</html>

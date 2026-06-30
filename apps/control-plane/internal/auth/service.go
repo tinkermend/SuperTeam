@@ -212,16 +212,17 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 		input.DisplayName == "" ||
 		input.Password == "" ||
 		input.AvatarAssetID != "" ||
-		!isExplicitSupportedUserAvatar(input.Avatar) ||
-		len(input.SelectableTeamIDs) == 0 {
+		!isExplicitSupportedUserAvatar(input.Avatar) {
 		return input, ErrInvalidManagedUserInput
 	}
 	input.Avatar = normalizeUserAvatarConfig(input.Username, input.Avatar)
-	teamIDs, err := normalizeProjectTeamScopeIDs(input.SelectableTeamIDs)
-	if err != nil {
-		return input, err
+	if len(input.SelectableTeamIDs) > 0 {
+		teamIDs, err := normalizeProjectTeamScopeIDs(input.SelectableTeamIDs)
+		if err != nil {
+			return input, err
+		}
+		input.SelectableTeamIDs = teamIDs
 	}
-	input.SelectableTeamIDs = teamIDs
 	return input, nil
 }
 
