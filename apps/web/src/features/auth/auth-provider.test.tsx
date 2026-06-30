@@ -65,6 +65,23 @@ function LoginProbe() {
   )
 }
 
+function LoginWithoutCaptchaProbe() {
+  const { login } = useAuth()
+
+  return (
+    <button
+      onClick={() =>
+        void login({
+          username: 'new',
+          password: 'secret',
+        })
+      }
+    >
+      Login
+    </button>
+  )
+}
+
 function FailedLoginProbe() {
   const { login } = useAuth()
 
@@ -102,6 +119,11 @@ const expectedFailedLoginBody = JSON.stringify({
   password: 'wrong',
   captcha_id: '11111111-1111-4111-8111-111111111111',
   captcha_code: 'A7K2',
+})
+
+const expectedLoginWithoutCaptchaBody = JSON.stringify({
+  username: 'new',
+  password: 'secret',
 })
 
 describe('AuthProvider', () => {
@@ -286,6 +308,66 @@ describe('AuthProvider', () => {
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
     expect(fetcher).toHaveBeenCalledWith('http://control-plane.local/api/auth/login', {
       body: expectedSuccessfulLoginBody,
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
+  })
+
+  it('allows login without captcha fields when the server disables captcha', async () => {
+    let didLogin = false
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('/api/auth/login')) {
+        didLogin = true
+        return Promise.resolve(
+          new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          })
+        )
+      }
+
+      if (didLogin) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          })
+        )
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401,
+          headers: {
+            'content-type': 'application/json',
+          },
+        })
+      )
+    })
+
+    const screen = await render(
+      <AuthProvider apiBaseUrl='http://control-plane.local' fetcher={fetcher}>
+        <AuthStatus />
+        <LoginWithoutCaptchaProbe />
+      </AuthProvider>
+    )
+
+    await expect.element(screen.getByText('Signed out')).toBeVisible()
+    await screen.getByRole('button', { name: 'Login' }).click()
+
+    await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+    expect(fetcher).toHaveBeenCalledWith('http://control-plane.local/api/auth/login', {
+      body: expectedLoginWithoutCaptchaBody,
       credentials: 'include',
       headers: {
         accept: 'application/json',

@@ -30,6 +30,9 @@ const (
 )
 
 func (s *Service) CreateCaptcha(ctx context.Context, clientIP, userAgent string) (*CaptchaChallenge, error) {
+	if !s.IsCaptchaEnabled() {
+		return &CaptchaChallenge{Enabled: false}, nil
+	}
 	now := s.now().UTC()
 	if err := s.repo.DeleteExpiredCaptchaChallenges(ctx, now); err != nil {
 		log.Printf("auth captcha expired cleanup skipped: err=%v", err)
@@ -57,6 +60,7 @@ func (s *Service) CreateCaptcha(ctx context.Context, clientIP, userAgent string)
 		return nil, err
 	}
 	return &CaptchaChallenge{
+		Enabled:      true,
 		ID:           record.ID,
 		ImageDataURL: imageDataURL,
 		ExpiresAt:    record.ExpiresAt,
@@ -64,6 +68,9 @@ func (s *Service) CreateCaptcha(ctx context.Context, clientIP, userAgent string)
 }
 
 func (s *Service) ValidateAndConsumeCaptcha(ctx context.Context, id uuid.UUID, answer, username, clientIP, userAgent string) error {
+	if !s.IsCaptchaEnabled() {
+		return nil
+	}
 	answer = normalizeCaptchaAnswer(answer)
 	if id == uuid.Nil || len(answer) != 4 {
 		_ = s.recordCaptchaFailure(ctx, username, clientIP, userAgent, LoginFailureCaptchaInvalid)

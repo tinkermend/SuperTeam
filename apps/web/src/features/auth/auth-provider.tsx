@@ -76,10 +76,6 @@ export function AuthProvider({
     async (credentials: LoginCredentials) => {
       const requestId = startAuthRequest()
       try {
-        if (!credentials.captcha_id || !credentials.captcha_code) {
-          throw new Error('Login captcha is required')
-        }
-
         await loginRequest(
           { baseUrl: apiBaseUrl, fetcher },
           {

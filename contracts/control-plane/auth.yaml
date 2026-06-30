@@ -37,8 +37,6 @@ paths:
               required:
                 - username
                 - password
-                - captcha_id
-                - captcha_code
               properties:
                 username:
                   type: string
@@ -53,10 +51,12 @@ paths:
                 captcha_id:
                   type: string
                   format: uuid
+                  description: 验证码开启时必填；关闭时可省略
                 captcha_code:
                   type: string
                   minLength: 4
                   maxLength: 4
+                  description: 验证码开启时必填；关闭时可省略
       responses:
         '200':
           description: 登录成功
@@ -468,16 +468,22 @@ components:
 
     CaptchaChallengeResponse:
       type: object
-      required: [captcha_id, image_data_url, expires_at]
+      required: [enabled]
       properties:
+        enabled:
+          type: boolean
+          description: 当前登录验证码是否启用
         captcha_id:
           type: string
           format: uuid
+          description: 验证码开启时返回
         image_data_url:
           type: string
+          description: 验证码开启时返回 PNG data URL
         expires_at:
           type: string
           format: date-time
+          description: 验证码开启时返回过期时间
 
     LoginLogListResponse:
       type: object

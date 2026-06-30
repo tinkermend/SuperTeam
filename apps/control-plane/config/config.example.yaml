@@ -47,6 +47,11 @@ authz:
   #   apiToken: ""
   engine: "db"
 
+auth:
+  # 开发期可通过配置或环境变量 AUTH_CAPTCHA_ENABLED=false 关闭登录验证码。
+  # 默认应保持 true，避免生产环境无意关闭验证码。
+  captchaEnabled: true
+
 planner:
   provider: "openai-compatible"
   apiKey: "replace-with-planner-api-key"

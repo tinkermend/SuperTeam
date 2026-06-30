@@ -21,8 +21,8 @@ export type UserAvatar = {
 };
 
 export type LoginRequest = {
-  captcha_code: string;
-  captcha_id: string;
+  captcha_code?: string;
+  captcha_id?: string;
   password: string;
   username: string;
 };
@@ -32,6 +32,12 @@ export type LoginResponse = {
 };
 
 export type CaptchaChallengeResponse = {
+  enabled: false;
+  captcha_id?: never;
+  expires_at?: never;
+  image_data_url?: never;
+} | {
+  enabled: true;
   captcha_id: string;
   expires_at: string;
   image_data_url: string;

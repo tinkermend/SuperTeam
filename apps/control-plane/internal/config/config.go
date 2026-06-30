@@ -17,6 +17,7 @@ type Config struct {
 	Temporal    TemporalConfig    `yaml:"temporal"`
 	Planner     PlannerConfig     `yaml:"planner"`
 	Authz       AuthzConfig       `yaml:"authz"`
+	Auth        AuthConfig        `yaml:"auth"`
 	EmployeeEnv EmployeeEnvConfig `yaml:"employeeEnv"`
 }
 
@@ -61,6 +62,10 @@ type PlannerConfig struct {
 	MaxTokens   int     `yaml:"maxTokens"`
 	Temperature float64 `yaml:"temperature"`
 	MaxAttempts int     `yaml:"maxAttempts"`
+}
+
+type AuthConfig struct {
+	CaptchaEnabled bool `yaml:"captchaEnabled"`
 }
 
 type AuthzConfig struct {
@@ -124,6 +129,9 @@ func defaultConfig() Config {
 			Temperature: 0,
 			MaxAttempts: 2,
 		},
+		Auth: AuthConfig{
+			CaptchaEnabled: true,
+		},
 		Authz: AuthzConfig{
 			Engine: "db",
 		},
@@ -172,6 +180,9 @@ func applyEnv(cfg Config) Config {
 	cfg.Authz.OpenFGA.StoreID = envOrDefault("OPENFGA_STORE_ID", cfg.Authz.OpenFGA.StoreID)
 	cfg.Authz.OpenFGA.ModelID = envOrDefault("OPENFGA_MODEL_ID", cfg.Authz.OpenFGA.ModelID)
 	cfg.Authz.OpenFGA.APIToken = envOrDefault("OPENFGA_API_TOKEN", cfg.Authz.OpenFGA.APIToken)
+	if value, ok := os.LookupEnv("AUTH_CAPTCHA_ENABLED"); ok {
+		cfg.Auth.CaptchaEnabled = parseBool(value)
+	}
 	cfg.EmployeeEnv.Keys = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_KEYS", cfg.EmployeeEnv.Keys)
 	cfg.EmployeeEnv.ActiveKeyID = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", cfg.EmployeeEnv.ActiveKeyID)
 	return cfg

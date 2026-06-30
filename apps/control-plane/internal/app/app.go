@@ -22,8 +22,8 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
-	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/prompttemplate"
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
@@ -516,7 +516,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 
 	authRepository := auth.NewPgRepository(q, stores.Postgres)
-	authService, err := auth.NewService(authRepository)
+	authService, err := auth.NewService(authRepository, auth.WithCaptchaEnabled(cfg.Auth.CaptchaEnabled))
 	if err != nil {
 		return nil, err
 	}

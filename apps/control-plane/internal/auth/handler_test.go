@@ -31,14 +31,54 @@ func TestHTTPHandlerCreatesCaptchaChallenge(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if uuid.UUID(response.CaptchaId) == uuid.Nil {
+	if response.CaptchaId == nil || uuid.UUID(*response.CaptchaId) == uuid.Nil {
 		t.Fatal("expected captcha id")
 	}
-	if !strings.HasPrefix(response.ImageDataUrl, "data:image/png;base64,") {
-		t.Fatalf("expected png data url, got %q", response.ImageDataUrl)
+	if response.ImageDataUrl == nil || !strings.HasPrefix(*response.ImageDataUrl, "data:image/png;base64,") {
+		t.Fatalf("expected png data url, got %#v", response.ImageDataUrl)
 	}
-	if response.ExpiresAt.IsZero() {
+	if response.ExpiresAt == nil || response.ExpiresAt.IsZero() {
 		t.Fatal("expected expiry timestamp")
+	}
+	if !response.Enabled {
+		t.Fatal("expected captcha response to report enabled")
+	}
+}
+
+func TestHTTPHandlerReturnsDisabledCaptchaState(t *testing.T) {
+	repo, svc, _ := newCaptchaLoginHandler(t)
+	disabled, err := NewService(repo,
+		WithCaptchaOptions(CaptchaOptions{
+			Secret: "test-captcha-secret",
+			TTL:    svc.captchaTTL,
+			Now:    svc.now,
+		}),
+		WithCaptchaEnabled(false),
+	)
+	if err != nil {
+		t.Fatalf("new disabled service: %v", err)
+	}
+	handler := NewHandler(disabled)
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/captcha", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.CreateCaptcha(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response CaptchaChallengeResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Enabled {
+		t.Fatalf("expected disabled captcha response, got %#v", response)
+	}
+	if response.CaptchaId != nil {
+		t.Fatalf("expected empty captcha id when disabled, got %s", uuid.UUID(*response.CaptchaId))
+	}
+	if response.ImageDataUrl != nil {
+		t.Fatalf("expected no captcha image when disabled, got %q", *response.ImageDataUrl)
 	}
 }
 
@@ -54,6 +94,40 @@ func TestHTTPHandlerLoginRequiresCaptcha(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHTTPHandlerLoginDoesNotRequireCaptchaWhenDisabled(t *testing.T) {
+	repo, svc, _ := newCaptchaLoginHandler(t)
+	disabled, err := NewService(repo,
+		WithCaptchaOptions(CaptchaOptions{
+			Secret: "test-captcha-secret",
+			TTL:    svc.captchaTTL,
+			Now:    svc.now,
+		}),
+		WithCaptchaEnabled(false),
+	)
+	if err != nil {
+		t.Fatalf("new disabled service: %v", err)
+	}
+	handler := NewHandler(disabled)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{
+		"username": "operator",
+		"password": "secret"
+	}`))
+	recorder := httptest.NewRecorder()
+
+	handler.Login(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(repo.captchaConsumeCalls) != 0 {
+		t.Fatalf("expected no captcha consumption when disabled, got %#v", repo.captchaConsumeCalls)
+	}
+	cookie := findCookie(recorder.Result().Cookies(), SessionCookieName)
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("expected session token cookie, got %#v", recorder.Result().Cookies())
 	}
 }
 

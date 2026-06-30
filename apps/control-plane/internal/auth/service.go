@@ -54,6 +54,7 @@ type Repository interface {
 type Service struct {
 	repo                   Repository
 	projectTeamScopeSyncer ProjectTeamScopeSyncer
+	captchaEnabled         bool
 	captchaSecret          []byte
 	captchaTTL             time.Duration
 	now                    func() time.Time
@@ -91,6 +92,13 @@ func WithCaptchaOptions(options CaptchaOptions) ServiceOption {
 	}
 }
 
+func WithCaptchaEnabled(enabled bool) ServiceOption {
+	return func(s *Service) error {
+		s.captchaEnabled = enabled
+		return nil
+	}
+}
+
 type ProjectTeamScopeSyncer interface {
 	SyncProjectTeamScope(ctx context.Context, tenantID, userID, teamID uuid.UUID, status string) error
 }
@@ -106,9 +114,10 @@ func NewService(repo Repository, options ...ServiceOption) (*Service, error) {
 		return nil, errors.New("repository is required")
 	}
 	svc := &Service{
-		repo:       repo,
-		captchaTTL: 5 * time.Minute,
-		now:        func() time.Time { return time.Now().UTC() },
+		repo:           repo,
+		captchaEnabled: true,
+		captchaTTL:     5 * time.Minute,
+		now:            func() time.Time { return time.Now().UTC() },
 	}
 	if err := WithCaptchaOptions(CaptchaOptions{})(svc); err != nil {
 		return nil, err
@@ -119,6 +128,10 @@ func NewService(repo Repository, options ...ServiceOption) (*Service, error) {
 		}
 	}
 	return svc, nil
+}
+
+func (s *Service) IsCaptchaEnabled() bool {
+	return s != nil && s.captchaEnabled
 }
 
 func (s *Service) SetProjectTeamScopeSyncer(syncer ProjectTeamScopeSyncer) {

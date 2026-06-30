@@ -144,9 +144,17 @@ func (e ListUsersParamsStatus) Valid() bool {
 
 // CaptchaChallengeResponse defines model for CaptchaChallengeResponse.
 type CaptchaChallengeResponse struct {
-	CaptchaId    openapi_types.UUID `json:"captcha_id"`
-	ExpiresAt    time.Time          `json:"expires_at"`
-	ImageDataUrl string             `json:"image_data_url"`
+	// CaptchaId 验证码开启时返回
+	CaptchaId *openapi_types.UUID `json:"captcha_id,omitempty"`
+
+	// Enabled 当前登录验证码是否启用
+	Enabled bool `json:"enabled"`
+
+	// ExpiresAt 验证码开启时返回过期时间
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// ImageDataUrl 验证码开启时返回 PNG data URL
+	ImageDataUrl *string `json:"image_data_url,omitempty"`
 }
 
 // ChangeCurrentUserPasswordRequest defines model for ChangeCurrentUserPasswordRequest.
@@ -335,10 +343,13 @@ type ListCurrentUserLoginLogsParams struct {
 
 // LoginJSONBody defines parameters for Login.
 type LoginJSONBody struct {
-	CaptchaCode string             `json:"captcha_code"`
-	CaptchaId   openapi_types.UUID `json:"captcha_id"`
-	Password    string             `json:"password"`
-	Username    string             `json:"username"`
+	// CaptchaCode 验证码开启时必填；关闭时可省略
+	CaptchaCode *string `json:"captcha_code,omitempty"`
+
+	// CaptchaId 验证码开启时必填；关闭时可省略
+	CaptchaId *openapi_types.UUID `json:"captcha_id,omitempty"`
+	Password  string              `json:"password"`
+	Username  string              `json:"username"`
 }
 
 // ListLoginLogsParams defines parameters for ListLoginLogs.

@@ -33,10 +33,20 @@ func (h *HTTPHandler) CreateCaptcha(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	if !challenge.Enabled {
+		writeJSON(w, http.StatusOK, CaptchaChallengeResponse{
+			Enabled: false,
+		})
+		return
+	}
+	captchaID := openapi_types.UUID(challenge.ID)
+	imageDataURL := challenge.ImageDataURL
+	expiresAt := challenge.ExpiresAt
 	writeJSON(w, http.StatusOK, CaptchaChallengeResponse{
-		CaptchaId:    openapi_types.UUID(challenge.ID),
-		ImageDataUrl: challenge.ImageDataURL,
-		ExpiresAt:    challenge.ExpiresAt,
+		CaptchaId:    &captchaID,
+		Enabled:      true,
+		ImageDataUrl: &imageDataURL,
+		ExpiresAt:    &expiresAt,
 	})
 }
 
@@ -47,14 +57,16 @@ func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	captchaID := uuid.UUID(body.CaptchaId)
-	if captchaID == uuid.Nil || strings.TrimSpace(body.CaptchaCode) == "" {
-		writeError(w, http.StatusBadRequest, "captcha is required")
-		return
-	}
-	if err := h.service.ValidateAndConsumeCaptcha(r.Context(), captchaID, body.CaptchaCode, body.Username, clientIP(r), r.UserAgent()); err != nil {
-		h.writeAuthError(w, err)
-		return
+	if h.service.IsCaptchaEnabled() {
+		captchaID, captchaCode, ok := captchaInput(body)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "captcha is required")
+			return
+		}
+		if err := h.service.ValidateAndConsumeCaptcha(r.Context(), captchaID, captchaCode, body.Username, clientIP(r), r.UserAgent()); err != nil {
+			h.writeAuthError(w, err)
+			return
+		}
 	}
 
 	session, user, token, err := h.service.Login(r.Context(), body.Username, body.Password, clientIP(r), r.UserAgent())
@@ -121,6 +133,15 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 		items = append(items, toGeneratedLoginLogRecord(log))
 	}
 	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
+}
+
+func captchaInput(body LoginJSONRequestBody) (uuid.UUID, string, bool) {
+	if body.CaptchaId == nil || body.CaptchaCode == nil {
+		return uuid.Nil, "", false
+	}
+	captchaID := uuid.UUID(*body.CaptchaId)
+	captchaCode := strings.TrimSpace(*body.CaptchaCode)
+	return captchaID, captchaCode, captchaID != uuid.Nil && captchaCode != ""
 }
 
 func (h *HTTPHandler) ListCurrentUserLoginLogs(w http.ResponseWriter, r *http.Request, params ListCurrentUserLoginLogsParams) {

@@ -73,6 +73,7 @@ const (
 )
 
 type CaptchaChallenge struct {
+	Enabled      bool
 	ID           uuid.UUID
 	ImageDataURL string
 	ExpiresAt    time.Time

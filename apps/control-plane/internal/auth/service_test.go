@@ -430,6 +430,43 @@ func (m *mockRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uui
 	return nil
 }
 
+func TestCaptchaEnabledDefaultsToTrue(t *testing.T) {
+	repo := newMockRepo()
+	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
+		Secret: "test-captcha-secret",
+	}))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if !svc.IsCaptchaEnabled() {
+		t.Fatal("expected captcha to be enabled by default")
+	}
+}
+
+func TestValidateAndConsumeCaptchaSkipsValidationWhenDisabled(t *testing.T) {
+	repo := newMockRepo()
+	svc, err := NewService(repo,
+		WithCaptchaOptions(CaptchaOptions{Secret: "test-captcha-secret"}),
+		WithCaptchaEnabled(false),
+	)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	err = svc.ValidateAndConsumeCaptcha(t.Context(), uuid.Nil, "", "operator", "127.0.0.1", "Chrome 125")
+
+	if err != nil {
+		t.Fatalf("expected disabled captcha validation to be skipped, got %v", err)
+	}
+	if repo.transactionCalls != 0 {
+		t.Fatalf("expected no captcha transaction when disabled, got %d", repo.transactionCalls)
+	}
+	if len(repo.loginLogs) != 0 {
+		t.Fatalf("expected no captcha failure log when disabled, got %#v", repo.loginLogs)
+	}
+}
+
 func TestNewService(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
 		t.Fatal("expected error with nil repo")

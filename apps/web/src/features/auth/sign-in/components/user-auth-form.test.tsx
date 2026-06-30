@@ -33,6 +33,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 
 describe('UserAuthForm', () => {
   const defaultCaptcha = {
+    enabled: true,
     captcha_id: '11111111-1111-4111-8111-111111111111',
     expires_at: '2026-06-30T08:00:00Z',
     image_data_url: 'data:image/svg+xml;base64,PHN2Zy8+',
@@ -81,6 +82,7 @@ describe('UserAuthForm', () => {
 
   it('shows a stable captcha failure state and keeps refresh usable', async () => {
     const refreshedCaptcha = {
+      enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
       image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
@@ -116,11 +118,13 @@ describe('UserAuthForm', () => {
     let resolveInitialCaptcha!: (value: typeof defaultCaptcha) => void
     let resolveLatestCaptcha!: (value: typeof defaultCaptcha) => void
     const staleCaptcha = {
+      enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
       image_data_url: 'data:image/svg+xml;base64,PHN2ZyBzdGFsZS8+',
     }
     const latestCaptcha = {
+      enabled: true,
       captcha_id: '33333333-3333-4333-8333-333333333333',
       expires_at: '2026-06-30T08:10:00Z',
       image_data_url: 'data:image/svg+xml;base64,PHN2ZyBsYXRlc3QvPg==',
@@ -204,6 +208,33 @@ describe('UserAuthForm', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 
+  it('hides captcha controls and logs in without captcha when disabled', async () => {
+    getLoginCaptcha.mockResolvedValueOnce({ enabled: false })
+    const screen = await render(<UserAuthForm />)
+
+    await expect
+      .element(screen.getByRole('textbox', { name: /^图形验证码$/i }))
+      .not.toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('button', { name: /^刷新验证码$/i }))
+      .not.toBeInTheDocument()
+
+    await userEvent.fill(
+      screen.getByRole('textbox', { name: /^账号$/i }),
+      'admin'
+    )
+    await userEvent.fill(screen.getByLabelText(/^密码$/i), 'admin')
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
+
+    await vi.waitFor(() =>
+      expect(login).toHaveBeenCalledWith({
+        username: 'admin',
+        password: 'admin',
+      })
+    )
+    expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
+  })
+
   it('ignores repeated submits while login is still running', async () => {
     login.mockImplementationOnce(() => new Promise(() => {}))
     const screen = await render(<UserAuthForm />)
@@ -249,6 +280,7 @@ describe('UserAuthForm', () => {
 
   it('renders a form-level error when login fails', async () => {
     const refreshedCaptcha = {
+      enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
       image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
@@ -281,6 +313,7 @@ describe('UserAuthForm', () => {
 
   it('shows the captcha error message when the captcha is invalid', async () => {
     const refreshedCaptcha = {
+      enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
       image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',

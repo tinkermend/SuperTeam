@@ -89,6 +89,7 @@ describe("auth api client", () => {
   it("loads a login captcha challenge with cookie credentials", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({
+        enabled: true,
         captcha_id: "11111111-1111-4111-8111-111111111111",
         image_data_url: "data:image/png;base64,abc123",
         expires_at: "2026-06-30T08:00:00Z",
@@ -101,6 +102,7 @@ describe("auth api client", () => {
         fetcher,
       }),
     ).resolves.toEqual({
+      enabled: true,
       captcha_id: "11111111-1111-4111-8111-111111111111",
       image_data_url: "data:image/png;base64,abc123",
       expires_at: "2026-06-30T08:00:00Z",
@@ -112,6 +114,23 @@ describe("auth api client", () => {
         accept: "application/json",
       },
       method: "GET",
+    });
+  });
+
+  it("loads a disabled login captcha state", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        enabled: false,
+      }),
+    );
+
+    await expect(
+      getLoginCaptcha({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+      }),
+    ).resolves.toEqual({
+      enabled: false,
     });
   });
 

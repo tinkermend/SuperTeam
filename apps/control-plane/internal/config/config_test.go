@@ -66,6 +66,16 @@ func TestLoadFromEnvAuthzDefaultsToDBEngine(t *testing.T) {
 	require.Empty(t, cfg.Authz.OpenFGA.ModelID)
 }
 
+func TestLoadFromEnvAuthCaptchaEnabledOverride(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("AUTH_CAPTCHA_ENABLED", "false")
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.False(t, cfg.Auth.CaptchaEnabled)
+}
+
 func TestLoadFromEnvAuthzOpenFGAShadowConfig(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("AUTHZ_ENGINE", "openfga_shadow")
@@ -130,6 +140,8 @@ objectStore:
 employeeEnv:
   keys: "v1:file-key"
   activeKeyId: "v1"
+auth:
+  captchaEnabled: false
 `)
 
 	cfg, err := LoadFromFile(path)
@@ -154,6 +166,7 @@ employeeEnv:
 	}
 	require.Equal(t, "v1:file-key", cfg.EmployeeEnv.Keys)
 	require.Equal(t, "v1", cfg.EmployeeEnv.ActiveKeyID)
+	require.False(t, cfg.Auth.CaptchaEnabled)
 }
 
 func TestLoadFromFileAllowsEnvOverrides(t *testing.T) {

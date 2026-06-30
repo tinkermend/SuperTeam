@@ -23,14 +23,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
 
-const formSchema = z.object({
+const baseFormSchema = z.object({
   username: z.string().min(1, '请输入用户名。'),
   password: z.string().min(1, '请输入密码。'),
-  captcha_code: z
-    .string()
-    .min(1, '请输入图形验证码。')
-    .length(4, '请输入 4 位图形验证码。'),
+  captcha_code: z.string(),
 })
+
+type LoginFormValues = z.infer<typeof baseFormSchema>
 
 interface UserAuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
   redirectTo?: string
@@ -50,9 +49,10 @@ export function UserAuthForm({
   const submitInFlightRef = useRef(false)
   const navigate = useNavigate()
   const { apiBaseUrl, login } = useAuth()
+  const isCaptchaEnabled = captcha?.enabled !== false
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(baseFormSchema),
     defaultValues: {
       username: '',
       password: '',
@@ -76,7 +76,7 @@ export function UserAuthForm({
         }
 
         setCaptcha(nextCaptcha)
-        if (clearInput) {
+        if (!nextCaptcha.enabled || clearInput) {
           form.setValue('captcha_code', '', {
             shouldDirty: false,
             shouldTouch: false,
@@ -103,13 +103,24 @@ export function UserAuthForm({
     void refreshCaptcha({ clearInput: false })
   }, [refreshCaptcha])
 
-  async function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onSubmit(data: LoginFormValues) {
     if (submitInFlightRef.current) {
       return
     }
-    if (!captcha) {
+    if (!captcha && isCaptchaEnabled) {
       setCaptchaError('验证码加载失败，请刷新重试')
       return
+    }
+    if (isCaptchaEnabled) {
+      const captchaCode = data.captcha_code.trim()
+      if (captchaCode === '') {
+        form.setError('captcha_code', { message: '请输入图形验证码。' })
+        return
+      }
+      if (captchaCode.length !== 4) {
+        form.setError('captcha_code', { message: '请输入 4 位图形验证码。' })
+        return
+      }
     }
 
     submitInFlightRef.current = true
@@ -117,16 +128,23 @@ export function UserAuthForm({
     setFormError(null)
 
     try {
-      await login({
+      const credentials = {
         username: data.username,
         password: data.password,
-        captcha_id: captcha.captcha_id,
-        captcha_code: data.captcha_code.toUpperCase(),
-      })
+        ...(captcha?.enabled
+          ? {
+              captcha_id: captcha.captcha_id,
+              captcha_code: data.captcha_code.toUpperCase(),
+            }
+          : {}),
+      }
+      await login(credentials)
       navigate({ to: redirectTo || '/', replace: true })
     } catch (error) {
       setFormError(loginErrorMessage(error))
-      void refreshCaptcha()
+      if (isCaptchaEnabled) {
+        void refreshCaptcha()
+      }
     } finally {
       submitInFlightRef.current = false
       setIsLoading(false)
@@ -174,65 +192,70 @@ export function UserAuthForm({
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name='captcha_code'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className='text-v3-ink-2'>图形验证码</FormLabel>
-              <div className='flex min-w-0 items-center gap-2'>
-                <FormControl>
-                  <Input
-                    className='h-12 min-w-0 flex-1 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
-                    maxLength={4}
-                    {...field}
-                    onChange={(event) =>
-                      field.onChange(event.target.value.toUpperCase())
-                    }
-                  />
-                </FormControl>
-                <div className='flex h-12 w-32 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-v3-line bg-v3-card-soft'>
-                  {captcha ? (
-                    <img
-                      alt='图形验证码'
-                      className='h-full w-full object-contain'
-                      src={captcha.image_data_url}
+        {isCaptchaEnabled ? (
+          <FormField
+            control={form.control}
+            name='captcha_code'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className='text-v3-ink-2'>图形验证码</FormLabel>
+                <div className='flex min-w-0 items-center gap-2'>
+                  <FormControl>
+                    <Input
+                      className='h-12 min-w-0 flex-1 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
+                      maxLength={4}
+                      {...field}
+                      onChange={(event) =>
+                        field.onChange(event.target.value.toUpperCase())
+                      }
                     />
-                  ) : isCaptchaLoading ? (
-                    <Loader2
-                      className='size-5 animate-spin text-v3-ink-3'
-                      data-testid='captcha-loading'
+                  </FormControl>
+                  <div className='flex h-12 w-32 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-v3-line bg-v3-card-soft'>
+                    {captcha?.enabled ? (
+                      <img
+                        alt='图形验证码'
+                        className='h-full w-full object-contain'
+                        src={captcha.image_data_url}
+                      />
+                    ) : isCaptchaLoading ? (
+                      <Loader2
+                        className='size-5 animate-spin text-v3-ink-3'
+                        data-testid='captcha-loading'
+                      />
+                    ) : (
+                      <span
+                        className='text-xs font-semibold text-v3-ink-3'
+                        data-testid='captcha-placeholder'
+                      >
+                        加载失败
+                      </span>
+                    )}
+                  </div>
+                  <V3IconButton
+                    aria-label='刷新验证码'
+                    className='size-12 shrink-0 disabled:pointer-events-none disabled:opacity-55'
+                    disabled={isCaptchaLoading}
+                    onClick={() => void refreshCaptcha()}
+                    type='button'
+                  >
+                    <RefreshCw
+                      className={cn(
+                        'size-5',
+                        isCaptchaLoading && 'animate-spin'
+                      )}
                     />
-                  ) : (
-                    <span
-                      className='text-xs font-semibold text-v3-ink-3'
-                      data-testid='captcha-placeholder'
-                    >
-                      加载失败
-                    </span>
-                  )}
+                  </V3IconButton>
                 </div>
-                <V3IconButton
-                  aria-label='刷新验证码'
-                  className='size-12 shrink-0 disabled:pointer-events-none disabled:opacity-55'
-                  disabled={isCaptchaLoading}
-                  onClick={() => void refreshCaptcha()}
-                  type='button'
-                >
-                  <RefreshCw
-                    className={cn('size-5', isCaptchaLoading && 'animate-spin')}
-                  />
-                </V3IconButton>
-              </div>
-              <FormMessage />
-              {captchaError ? (
-                <p className='text-sm font-medium text-v3-danger' role='alert'>
-                  {captchaError}
-                </p>
-              ) : null}
-            </FormItem>
-          )}
-        />
+                <FormMessage />
+                {captchaError ? (
+                  <p className='text-sm font-medium text-v3-danger' role='alert'>
+                    {captchaError}
+                  </p>
+                ) : null}
+              </FormItem>
+            )}
+          />
+        ) : null}
         {formError ? (
           <p
             className='rounded-xl bg-v3-danger-soft px-3 py-2 text-sm font-bold text-v3-danger'
@@ -243,7 +266,7 @@ export function UserAuthForm({
         ) : null}
         <V3Button
           className='mt-1 h-12 text-base'
-          disabled={isLoading || isCaptchaLoading || !captcha}
+          disabled={isLoading || isCaptchaLoading || (!captcha && isCaptchaEnabled)}
           type='submit'
         >
           {isLoading ? (
