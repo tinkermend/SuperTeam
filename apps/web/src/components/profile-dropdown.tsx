@@ -59,8 +59,8 @@ export function ProfileDropdown() {
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>
-            Sign out
+          <DropdownMenuItem variant='destructive' onSelect={() => setTimeout(() => setOpen(true), 0)}>
+            退出登录
             <DropdownMenuShortcut className='text-current'>
               ⇧⌘Q
             </DropdownMenuShortcut>

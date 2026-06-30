@@ -31,7 +31,7 @@ describe('SignOutDialog', () => {
       <SignOutDialog open onOpenChange={vi.fn()} />
     )
 
-    await userEvent.click(getByRole('button', { name: /^Sign out$/i }))
+    await userEvent.click(getByRole('button', { name: /^退出登录$/i }))
 
     expect(logout).toHaveBeenCalledOnce()
     expect(navigate).toHaveBeenCalledWith({
@@ -46,7 +46,7 @@ describe('SignOutDialog', () => {
       <SignOutDialog open onOpenChange={vi.fn()} />
     )
 
-    await userEvent.click(getByRole('button', { name: /^Cancel$/i }))
+    await userEvent.click(getByRole('button', { name: /^取消$/i }))
 
     expect(logout).not.toHaveBeenCalled()
     expect(navigate).not.toHaveBeenCalled()

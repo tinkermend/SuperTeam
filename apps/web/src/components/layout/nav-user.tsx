@@ -84,7 +84,7 @@ export function NavUser() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
-                onClick={() => setOpen(true)}
+                onSelect={() => setTimeout(() => setOpen(true), 0)}
               >
                 <LogOut />
                 退出登录

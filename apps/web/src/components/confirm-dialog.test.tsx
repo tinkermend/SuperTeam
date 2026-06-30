@@ -23,10 +23,10 @@ describe('ConfirmDialog', () => {
       .element(getByText('This action cannot be undone.'))
       .toBeInTheDocument()
     await expect
-      .element(getByRole('button', { name: 'Cancel' }))
+      .element(getByRole('button', { name: '取消' }))
       .toBeInTheDocument()
     await expect
-      .element(getByRole('button', { name: 'Continue' }))
+      .element(getByRole('button', { name: '继续' }))
       .toBeInTheDocument()
   })
 
@@ -60,7 +60,7 @@ describe('ConfirmDialog', () => {
       />
     )
 
-    const confirm = getByRole('button', { name: 'Continue' })
+    const confirm = getByRole('button', { name: '继续' })
     await expect.element(confirm).toBeDisabled()
     expect(handleConfirm).not.toHaveBeenCalled()
   })
@@ -78,9 +78,9 @@ describe('ConfirmDialog', () => {
       />
     )
 
-    await expect.element(getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    await expect.element(getByRole('button', { name: '取消' })).toBeDisabled()
     await expect
-      .element(getByRole('button', { name: 'Continue' }))
+      .element(getByRole('button', { name: '继续' }))
       .toBeDisabled()
   })
 
