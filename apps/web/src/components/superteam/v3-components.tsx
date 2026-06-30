@@ -1,4 +1,4 @@
-import { type ComponentProps, type ReactNode } from "react";
+import { forwardRef, type ComponentProps, type ReactNode } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -317,28 +317,29 @@ const buttonSize: Record<V3ButtonSize, string> = {
   icon: "size-9 p-0",
 };
 
-/** 主/次/危险/幽灵按钮。asChild 时把样式合并到子元素（用于 Link 按钮化）。 */
-function V3Button({
+const V3Button = forwardRef<HTMLButtonElement, ComponentProps<"button"> & {
+  variant?: V3ButtonVariant;
+  size?: V3ButtonSize;
+  asChild?: boolean;
+}>(({
   className,
   variant = "primary",
   size = "default",
   asChild,
   ...props
-}: ComponentProps<"button"> & {
-  variant?: V3ButtonVariant;
-  size?: V3ButtonSize;
-  asChild?: boolean;
-}) {
+}, ref) => {
   const Comp = asChild ? Slot : "button";
   return (
     <Comp
+      ref={ref}
       data-slot="v3-button"
       data-variant={variant}
       className={cn(buttonBase, buttonVariant[variant], buttonSize[size], className)}
       {...props}
     />
   );
-}
+});
+V3Button.displayName = "V3Button";
 
 /** 灰底圆角图标按钮（顶栏/行内操作）。 */
 function V3IconButton({ className, ...props }: ComponentProps<"button">) {

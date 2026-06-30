@@ -1,3 +1,4 @@
+import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -22,6 +23,23 @@ vi.mock("@/context/theme-provider", () => ({
 vi.mock("@/components/sign-out-dialog", () => ({
   SignOutDialog: () => null,
 }));
+
+vi.mock("@tanstack/react-router", () => {
+  type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: ReactNode;
+    to: string;
+  };
+  const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
+    ({ children, to, ...props }, ref) => (
+      <a {...props} data-router-link="true" href={to} ref={ref}>
+        {children}
+      </a>
+    ),
+  );
+  Link.displayName = "MockRouterLink";
+
+  return { Link };
+});
 
 describe("Header", () => {
   it("uses the global v3 shell header controls", async () => {
