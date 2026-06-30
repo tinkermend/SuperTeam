@@ -14,6 +14,9 @@ describe('AuthLayout', () => {
       .element(screen.getByRole('img', { name: '炬枢平台 - 新炬网络', exact: true }))
       .toBeVisible()
     const headerImage = document.querySelector("img[alt='炬枢平台 - 新炬网络横幅']")
+    const logoImage = document.querySelector(
+      "img[alt='炬枢平台 - 新炬网络']"
+    ) as HTMLImageElement | null
     const logoClass = document
       .querySelector("img[alt='炬枢平台 - 新炬网络']")
       ?.getAttribute('class')
@@ -22,6 +25,17 @@ describe('AuthLayout', () => {
     const shell = document.querySelector('[data-slot="v3-auth-shell"]')
     expect(shell).not.toBeNull()
     expect(shell?.getAttribute('class')).toContain('bg-v3-bg')
+    expect(logoImage).not.toBeNull()
+    if (logoImage && !logoImage.complete) {
+      await new Promise<void>((resolve, reject) => {
+        logoImage.addEventListener('load', () => resolve(), { once: true })
+        logoImage.addEventListener('error', () => reject(new Error('logo image failed to load')), {
+          once: true,
+        })
+      })
+    }
+    expect(logoImage?.naturalWidth).toBe(900)
+    expect(logoImage?.naturalHeight).toBeLessThanOrEqual(960)
     expect(logoClass).toContain('w-[22rem]')
     expect(logoClass).toContain('opacity-100')
     expect(logoClass).toContain('contrast-[1.08]')
