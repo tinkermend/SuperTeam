@@ -1,3 +1,4 @@
+DO NOT send optional commentary. Keep only necessary facts, blockers, verification evidence, risks, and actionable recommendations that directly affect the user's next decision or task outcome.
 ## 项目定位
 
 SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上下文、工件和审计纳入统一控制平面。
