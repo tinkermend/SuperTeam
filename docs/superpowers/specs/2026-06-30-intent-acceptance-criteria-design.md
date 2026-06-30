@@ -98,6 +98,9 @@ Project 目标 → Work Item.acceptance_spec → criterion
 |---|---|---|
 | 内环（06-29） | 执行基座：员工/工作区/调度 | 提供 worktree 与 attestation 的物理来源 |
 | 外环（06-30） | 闭合：返工/证明/预算/复利 | 消费本文的 criteria 作为收敛目标 |
+| 能力缓存/Auth 边界（06-30） | 员工能力 manifest 与 Provider 认证边界 | 本文可要求 evidence 记录 `capability_manifest_version`，但不编码 `agent_home_dir`、`CODEX_HOME`、`OPENCODE_CONFIG_DIR` 等物理路径 |
 | **本文（意图层）** | **定义"做对了"** | **锚**：无此层，内外环对未定义目标收敛 |
 
 > 一句话：内环让它**能跑**，外环让它**闭合可信**，意图层让它**朝对的目标闭合**。三者缺一，自治跃迁不成立。
+
+> 边界补充：Acceptance criteria 只定义要满足的业务/技术断言与所需证据类型；它可以约束“证据必须来自某次 attestation 且记录所用能力 manifest 版本”，但不能依赖 Runtime 节点上的 Provider auth home 物理位置。这样外环当前实现与未来内环实现都只对齐到 task workspace + capability manifest/version，不会把员工能力缓存误当 Provider 认证目录。

@@ -2,7 +2,7 @@
 
 > 日期：2026-06-30
 > 状态：提纲（待展开评审）
-> 配套：本文是「执行基座」内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md`）的另一半。内环让多员工"能在真实代码/资源上跑、能交接"；外环让它"判断—返工—验收—回写"真正闭合且可信、可控、可复利。
+> 配套：本文是「执行基座」内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md`）的另一半。内环让多员工"能在真实代码/资源上跑、能交接"；外环让它"判断—返工—验收—回写"真正闭合且可信、可控、可复利。员工能力缓存与 Provider 认证边界见 `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`。
 
 ## 0. 为什么需要这份
 
@@ -52,6 +52,7 @@
 - 产物哈希（测试报告/覆盖率/构建产物）。
 - git 证据：diff、commit sha、branch、base ref。
 - provider session id（可追溯到哪次会话）。
+- 能力证据：`digital_employee_id`、`capability_manifest_version`、能力投影摘要。用于说明本次 attempt 使用了哪一版员工 skills/MCP/context，但不记录也不依赖 Provider auth home 的物理路径。
 
 **契约约束（反幻觉的关键）**
 - **verdict schema 必须引用 attestation**：一个"通过"的判断若没有可核验的执行记录支撑，**按契约即无效、自动驳回**。
@@ -95,6 +96,7 @@
 | 执行证明 | Runtime 持有 worktree、捕获命令/退出码/产物 | Attestation 的证据源 |
 | 交接单血缘 | 开发产出 branch/head/base | 收敛循环按 ref 派审查、按理由派返工 |
 | 预算 | 执行槽位、心跳 | 熔断在执行中校验、迭代守卫 |
+| 员工能力版本 | `capability_manifest_version` 与任务级能力投影 | attestation 记录本轮使用的员工能力快照，返工/复核可复现 |
 
 ---
 
@@ -122,10 +124,10 @@
 > 与内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md` §12）共享本清单。两份 spec 都偏「代码交付 + 乐观路径」思维，下列项是两份共同的盲区，列出以划清边界——实现者不得默认它们已被设计。每项均为**独立专题，待立项**。
 
 1. **验收标准 / 意图规格（最大语义空洞）**：本外环讲了"全 verdict pass → 验收 → 收敛"，但未定义"acceptance criteria 从哪来、怎么流到审查/测试员"。无意图规格则支柱 B 的 attestation 与支柱 A 的"收敛"皆悬空——证明"真的跑了"≠"做对了目标"。**直接威胁外环存在意义，应最优先。**
-2. **Agent 执行隔离 + 密钥泄漏**：共享 Runtime 节点跑近乎不可信 agent 代码，沙箱模型未设计；MCP/git 密钥真实值注入进程环境后可被 agent 读取外泄，密钥生命周期未设计。
+2. **Agent 执行隔离 + 密钥泄漏**：共享 Runtime 节点跑近乎不可信 agent 代码，沙箱模型未设计；MCP/git 密钥真实值注入进程环境后可被 agent 读取外泄，密钥生命周期未设计。已新增 `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md` 明确 Provider auth 默认复用宿主统一配置、员工缓存只承载能力素材；这解决认证 home 与能力缓存的语义混淆，但不等于解决沙箱和密钥外泄。
 3. **非 git 副作用（数据库/迁移/外部调用）**：worktree 只隔离代码；有状态、不可回滚副作用未纳入 attestation/预算/熔断。关联宪法「删除写入、迁移、上线发布为高风险」。支柱 B/C 当前只覆盖 git 与命令退出码，未覆盖外部状态。
 4. **崩溃恢复与幂等**：节点半途崩溃后的恢复语义、有副作用步骤的幂等性（at-least-once vs exactly-once）未答；影响支柱 A 迭代重入与支柱 B attestation 完整性。
 5. **人类飞行中可观测性 + 多分支并行收敛**：① attestation 事后，缺实时观测/中途叫停（与「人类决策一等」相悖）；② 支柱 A 迭代状态机隐含单分支，多分支并行→集成→整体收敛未建模。
 
 > 处置建议：#1 与 #3 优先立独立专题；其余随实现阶段补。本 spec 的假设前提显式声明为「目标已定义、产出为代码分支、执行环境可信且成功」。
-> 进度：**#1 已立项** → `2026-06-30-intent-acceptance-criteria-design.md`（意图层，定义收敛目标，被本外环支柱 A/B 消费）。#2/#3/#4/#5 待立项。
+> 进度：**#1 已立项** → `2026-06-30-intent-acceptance-criteria-design.md`（意图层，定义收敛目标，被本外环支柱 A/B 消费）。**#2 的认证/能力缓存边界已立项** → `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`，但沙箱、密钥防外泄、进程隔离仍待立项。#3/#4/#5 待立项。

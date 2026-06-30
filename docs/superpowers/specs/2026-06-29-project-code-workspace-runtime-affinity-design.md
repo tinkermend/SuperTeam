@@ -1,9 +1,10 @@
 # 项目代码工作区与 Runtime 项目亲和 Spec
 
-> 日期：2026-06-29（落地分期 §2.5 补充于 2026-06-30）
+> 日期：2026-06-29（落地分期 §2.5、认证/缓存边界补充于 2026-06-30）
 > 状态：待评审
-> 决策：项目锚定节点、员工漂浮；员工家目录（技能+MCP）与任务工作区（代码 worktree）分离；项目身份存 DB、绝对路径运行时派生；中央 git remote 作持久化兜底
+> 决策：项目锚定节点、员工漂浮；员工能力缓存（skills/MCP/context）与任务工作区（代码 worktree）分离；Provider 认证默认复用宿主统一配置；项目身份存 DB、绝对路径运行时派生；中央 git remote 作持久化兜底
 > 落地顺序：先做「项目级显式 repo 绑定（可空）+ mode 按角色自动推」，资源池/场景模板 requires 列为后续扩展（见 §2.5）
+> 配套：员工能力缓存与 Provider auth 边界见 `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`
 
 ## 1. 背景与问题
 
@@ -18,8 +19,8 @@
 ### 当前实现的事实（排查结论）
 
 - 运行工作区 `executor/workspace.rs::create_run_workspace` 生成 `base_dir/instances/{instance}/runs/{run}/workspace`，是 per-run 的、隔离的。但只被简单的 `execute_task` 路径使用。
-- 员工家目录 `agent_home_dir` 实际值为 `workspaces/employees/{digital_employee_id}`：技能装进 `{agent_home}/{.claude|.agents|.opencode}/skills/{key}`，MCP config 写进 `{agent_home}/{.mcp.json|.codex/config.toml|opencode.json}`。
-- **关键问题**：command 执行路径的 `ensure_command_instance`（`commands/executor.rs`）直接把 `agent_home_dir` 当作 `workspace_path` 返回，provider 再 `current_dir(workspace_path)`。结果 **Provider 的 CWD = 员工家目录**，技能、MCP、工作文件全堆在一个 per-employee 目录里 —— HOME 与 CWD 被合并，这正是"放代码就只能往每个员工 clone"的根源。
+- 当前代码中 `agent_home_dir` 实际值为 `workspaces/employees/{digital_employee_id}`：技能装进 `{agent_home}/{.claude|.agents|.opencode}/skills/{key}`，MCP config 写进 `{agent_home}/{.mcp.json|.codex/config.toml|opencode.json}`。这是历史实现事实，不是目标态的 Provider 认证模型。
+- **关键问题**：command 执行路径的 `ensure_command_instance`（`commands/executor.rs`）直接把 `agent_home_dir` 当作 `workspace_path` 返回，provider 再 `current_dir(workspace_path)`。结果 **Provider 的 CWD = 员工能力目录**，技能、MCP、工作文件全堆在一个 per-employee 目录里；若再把该目录当 Provider home，还会切断宿主统一认证。能力目录、认证 home 与 CWD 被合并，这正是"放代码就只能往每个员工 clone"和 Provider auth 401 的根源。
 
 ## 2. 核心原则
 
@@ -58,13 +59,16 @@
 
 ```
 {data_root}/                              # Runtime 本地配置里的唯一根
-├── employees/{employee_id}/              # 员工家目录（per-employee 缓存）：技能 + MCP 配置
-│   └── {.claude|.agents|.opencode}/skills/...   .mcp.json / .codex/config.toml / opencode.json
+├── employees/{employee_id}/              # 员工能力缓存：skills/MCP/context + manifest
+│   ├── manifest.version.json
+│   ├── skills/{skill_key}/{revision_id}/...
+│   ├── mcp/{server_key}/{revision_id}/...
+│   └── context/{content_hash}/...
 ├── repos/{project_id}/.git               # 项目主仓库：每节点一份，共享 object store
 └── workspaces/{project_id}/{task_id}/    # 任务工作区：per-task git worktree（工地）
 ```
 
-- 员工家目录**只有技能和 MCP，没有项目代码** → 不会每个员工 clone 一份仓库。
+- 员工能力缓存**只有可从控制平面重建的能力素材，没有项目代码，也不承载默认 Provider 登录态** → 不会每个员工 clone 一份仓库，也不会因为员工目录切换而丢失宿主统一认证。
 - 项目代码每节点只有一份 `repos/`；每个任务在 `workspaces/` 开一个 worktree，共享 `.git`，不复制历史 → 不膨胀。
 - `node_modules`、编译产物不在 git 里，worktree 不带；依赖走**共享缓存**。
 
@@ -86,7 +90,7 @@ runtime_node:
 - `project_placement`：项目当前落在哪个节点（**动态**协调状态，调度决定，非静态文件）
 
 **派工单 —— 每任务下发**
-project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode、employee_id、技能/MCP 引用。
+project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode、employee_id、`capability_manifest_version`。
 
 ### 3.3 绝对路径派生，不存储
 
@@ -97,21 +101,26 @@ project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode
 ```
 绝对路径节点相关、项目迁节点即失效，因此**DB 也不存**。DB 存 project_id（稳定业务键）+ 仓库绑定；Runtime 存 data_root；执行那一刻拼出绝对路径，Agent 永远只在工地根下用相对路径。
 
-## 4. Provider 能力加载方案（已验证）
+## 4. Provider 能力投影与认证边界（目标态）
 
-三个 Provider 对技能/MCP 的加载约定不同，本地 `--help` / 二进制实测结论：
+三个 Provider 对工作目录、MCP、技能和认证 home 的支持不同。目标态必须区分两件事：
 
-| | 工作目录 flag（放 repo） | MCP 配置路径（指回 agent_home） | 技能 |
+- **能力投影**：Runtime 把员工的 skills/MCP/context 从能力缓存投影到任务工作区或 provider-specific config。
+- **Provider 认证**：默认复用 Runtime 所在服务器的统一 Provider 配置，不默认按员工改写 auth home。
+
+| | 工作目录（放 repo / task workspace） | 能力投影 | 默认认证来源 |
 |---|---|---|---|
-| claude-code | `--add-dir <repo>`（或 cwd） | `--mcp-config <path>` + `--strict-mcp-config` | 无 `--skills-dir`，靠 `.claude/skills`（cwd 相对）或 `~/.claude/skills` |
-| codex | `-C/--cd <DIR>` | `CODEX_HOME=<agent_home>/.codex` + `-c key=val` | `.agents/skills`，随 CODEX_HOME（需 smoke 确认） |
-| opencode | `--dir <DIR>` | `OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` | 随 config dir，含 `OPENCODE_DISABLE_EXTERNAL_SKILLS` 等开关 |
+| claude-code | `--add-dir <repo>` 或 cwd | 生成任务级 `--mcp-config <path>`；skills 软链/复制进 provider 可读位置 | 宿主 Claude Code 登录态 |
+| codex | `-C/--cd <DIR>` | 生成任务级配置/上下文；skills 通过工作区投影或非 auth overlay 加载 | 宿主 Codex 配置 |
+| opencode | `--dir <DIR>` | 生成任务级配置/上下文；避免覆盖宿主 auth config | 宿主 OpenCode 配置 |
 
-**落地 = C + B 混合：**
-- **MCP + 工作目录 → 方案 C**：每家都有"工作目录 flag" + "显式配置路径/home env"，repo worktree 作工作根，MCP config 留在 per-employee 家目录用 env/flag 指回去。真正解耦 HOME/CWD，不再依赖 `cwd==agent_home` 不变量。
-- **技能 → 方案 B 兜底**：Claude Code 无干净 `--skills-dir`，因此每次 run 把家目录该 provider 的技能目录**软链进 per-task 工作区**（幂等、便宜、三家统一）。
+**落地规则：**
+- Provider 的 `current_dir` / `--dir` / `-C` 指向任务工作区，不指向员工能力缓存。
+- Runtime 可以生成任务级 MCP config、skills symlink、上下文包索引，但这些文件是能力投影，不是 Provider auth home。
+- 不默认设置 `CODEX_HOME=<employee_cache>/.codex` 或 `OPENCODE_CONFIG_DIR=<employee_cache>/.opencode`。只有未来显式启用 `provider_auth_mode=employee` 时，才允许员工级 Provider auth materialization。
+- 若某 Provider 的 skills 只能随 home 加载，adapter 必须优先寻找不覆盖 auth 的 overlay/工作区加载方式；找不到时应把该能力标为待实现，而不是通过改写认证 home 兜底。
 
-待真实 smoke 验证项：① codex `.agents/skills` 是否随 `CODEX_HOME` 重定位；② Claude Code `--mcp-config` + 软链技能在 cwd=repo 时确实加载。
+待真实 smoke 验证项：① Codex 在 host auth 下能否加载任务级 skills/MCP 投影；② Claude Code `--mcp-config` + 软链技能在 cwd=repo 时确实加载；③ OpenCode 在不覆盖宿主 auth config 的情况下加载任务级 MCP/skills。
 
 ## 5. 任务访问模式（按角色，不一刀切建 worktree）
 
@@ -156,7 +165,7 @@ project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode
 | 5 | 测试是带副作用的任意执行 | 🟠 | detached-run 仍需沙箱 + 端口/库隔离 |
 | 6 | sparse scope 只给本目录会挂 | 🟠 | scope 含传递依赖闭包 |
 | 7 | 共享依赖缓存供应链投毒 | 🟡 | 按信任级别/项目隔离缓存 |
-| 8 | git 并发 + 技能更新竞态 | 🟡 | 同分支不能双 worktree；shared `.git` 操作串行化；家目录缓存按 (员工,版本) 键，任务记录所用技能版本 |
+| 8 | git 并发 + 能力缓存更新竞态 | 🟡 | 同分支不能双 worktree；shared `.git` 操作串行化；能力缓存按 (员工, manifest_version) 键，任务记录所用能力 manifest 版本 |
 | 9 | 并行开发共享契约冲突 | 🟡 | 编排识别共享面做依赖排序；合并冲突 owner = 人类负责人 |
 
 ## 9. 中央 remote 的定位
@@ -170,14 +179,14 @@ project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode
 
 1. 一个项目允许挂几个 Runtime（单挂=简单+单点；多挂=必需中央 remote）。
 2. 项目并行度超过单节点槽位时：排队 vs 溢出到另一挂载节点。
-3. 员工家目录缓存失效与版本固定策略（可复现性）。
+3. 员工能力缓存失效与版本固定策略（可复现性）：已由 `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md` 给出目标态，待实现。
 
 ## 11. 对当前代码的影响点（后续实现）
 
-- `ProviderRequest` 增加 `agent_home_dir` 字段（现仅 `workspace_path`）。
+- `ProviderRequest` 增加 `capability_manifest_version` 和能力投影引用；若保留 `agent_home_dir` 字段，语义必须收窄为 employee capability cache / overlay source，不代表 Provider auth home。
 - `ensure_command_instance` 不再返回 `agent_home_dir` 当 workspace_path，改为派生 per-task 工作区（复用/扩展 `create_run_workspace`）。
-- provider adapter（`claude.rs` / `codex.rs` / `opencode.rs`）spawn 时：`current_dir` = 任务工作区；按 §4 注入 `--mcp-config` / `CODEX_HOME` / `OPENCODE_CONFIG`；技能软链进工作区。
-- 派工单 / 契约：增加 base_ref、scope、workspace_mode；交接单结构（branch/head_commit/base_ref）；审查任务 payload 的上游引用。
+- provider adapter（`claude.rs` / `codex.rs` / `opencode.rs`）spawn 时：`current_dir` = 任务工作区；按 §4 注入任务级 MCP/skills/context 投影；默认复用宿主 Provider auth，不默认改写 `CODEX_HOME` / `OPENCODE_CONFIG_DIR` 到员工目录。
+- 派工单 / 契约：增加 base_ref、scope、workspace_mode、`capability_manifest_version`；交接单结构（branch/head_commit/base_ref）；审查任务 payload 的上游引用。
 - DB：projects 仓库绑定（repo_url、默认分支、git_credential_ref、scope）；project_placement。
 
 ## 12. 跨 spec 已知缺口（本设计明确不覆盖，勿默认已设计）
