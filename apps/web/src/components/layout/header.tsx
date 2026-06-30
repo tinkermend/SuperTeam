@@ -153,7 +153,7 @@ function HeaderUserMenu() {
             <Link to='/settings/account'>账户</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>
+          <DropdownMenuItem variant='destructive' onSelect={() => setTimeout(() => setOpen(true), 0)}>
             退出登录
           </DropdownMenuItem>
         </DropdownMenuContent>
