@@ -14,6 +14,7 @@ import (
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -35,6 +36,7 @@ type Server struct {
 	authzCenterHandler             *authzcenter.HTTPHandler
 	capabilityHandler              *capability.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
+	costHandler                    *cost.HTTPHandler
 	inboxHandler                   *inbox.HTTPHandler
 	projectHandler                 *project.HTTPHandler
 	promptTemplateHandler          *prompttemplate.HTTPHandler
@@ -122,6 +124,14 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	s.employeeHandler = employeeHandler
 	if employeeHandler != nil {
 		employeeHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetCostHandler(costHandler *cost.HTTPHandler) {
+	s.costHandler = costHandler
+	if costHandler != nil {
+		costHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -303,6 +313,14 @@ func (s *Server) registerRoutes() {
 				r.Get("/inbox/items", s.inboxHandler.ListItems)
 				r.Get("/inbox/badge", s.inboxHandler.GetBadge)
 				r.Post("/inbox/items/{itemId}/actions", s.inboxHandler.ExecuteAction)
+			})
+		}
+
+		if s.costHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/costs/summary", s.costHandler.GetSummary)
+				r.Get("/costs/employees", s.costHandler.ListEmployees)
 			})
 		}
 
