@@ -20,6 +20,7 @@ import (
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -573,6 +574,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
 	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
 	tenantHandler := tenant.NewHandler(tenantService)
+	costHandler := cost.NewHTTPHandler(cost.NewService(cost.NewPgRepository(stores.Postgres)))
 	teamLendingHandler := teamlending.NewHandler(teamLendingService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
@@ -580,6 +582,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetTenantHandler(tenantHandler)
 	server.SetTeamLendingHandler(teamLendingHandler)
 	server.SetEmployeeHandler(employeeHandler)
+	server.SetCostHandler(costHandler)
 	server.SetInboxHandler(inboxHandler)
 	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
