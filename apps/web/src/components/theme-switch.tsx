@@ -29,7 +29,7 @@ export function ThemeSwitch() {
         <V3Button
           variant='ghost'
           size='icon'
-          className='scale-95 rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep'
+          className='size-10 rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep'
         >
           <Sun className='size-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90' />
           <Moon className='absolute size-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0' />

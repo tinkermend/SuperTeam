@@ -76,14 +76,30 @@ export function Header({ className, fixed, children: _children, ...props }: Head
 
 function NotificationButton() {
   return (
-    <button
-      type='button'
-      aria-label='通知'
-      className='relative inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none'
-    >
-      <Bell className='size-[1.15rem]' aria-hidden='true' />
-      <span className='absolute top-1.5 right-1.5 size-2 rounded-full border border-white/80 bg-v3-artifact' />
-    </button>
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          aria-label='通知'
+          className='relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none'
+        >
+          <Bell className='size-[1.15rem]' aria-hidden='true' />
+          <span className='absolute top-1.5 right-1.5 size-2 rounded-full border border-white/80 bg-v3-artifact' />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align='end'
+        className='min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop'
+      >
+        <DropdownMenuLabel className='px-2 py-1.5 text-xs font-semibold text-v3-ink-2'>
+          通知
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled className='text-v3-ink-2'>
+          暂无新通知
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -98,7 +114,7 @@ function HeaderUserMenu() {
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button
             type='button'

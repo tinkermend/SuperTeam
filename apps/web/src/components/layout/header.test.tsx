@@ -1,3 +1,4 @@
+import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { AuthContext } from "@/features/auth/auth-context";
@@ -89,5 +90,48 @@ describe("Header", () => {
       screen.getByRole("button", { name: /用户信息：林 Anna/ }).element().className,
     ).toContain("shrink-0");
     expect(document.body.textContent).not.toContain("旧页面动作");
+  });
+
+  it("opens lightweight top-right controls without blocking neighboring clicks", async () => {
+    const screen = await render(
+      <AuthContext
+        value={{
+          apiBaseUrl: "http://control-plane.local",
+          isAuthenticated: true,
+          isLoading: false,
+          login: vi.fn(),
+          logout: vi.fn(),
+          refreshCurrentUser: vi.fn(),
+          user: {
+            display_name: "林 Anna",
+            email: "anna@example.com",
+            id: "user-1",
+            status: "active",
+            username: "anna",
+            avatar: {
+              provider: "dicebear",
+              seed: "anna",
+              style: "adventurer",
+            },
+          },
+        }}
+      >
+        <SidebarProvider>
+          <Header />
+        </SidebarProvider>
+      </AuthContext>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "切换主题" }));
+    await expect.element(screen.getByRole("menuitem", { name: /跟随系统/ })).toBeVisible();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    await userEvent.click(screen.getByRole("button", { name: "通知" }));
+    await expect.element(screen.getByText("暂无新通知")).toBeVisible();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    await userEvent.click(screen.getByRole("button", { name: /用户信息：林 Anna/ }));
+    await expect.element(screen.getByRole("menuitem", { name: "账户" })).toBeVisible();
+    expect(document.body.style.pointerEvents).not.toBe("none");
   });
 });

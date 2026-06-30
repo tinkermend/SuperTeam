@@ -6,14 +6,14 @@ export function AppTitle() {
       <div
         aria-label="炬枢平台 - 新炬网络"
         data-testid="app-title-brand-lockup"
-        className="flex h-16 min-w-0 items-center gap-3 px-2 group-data-[collapsible=icon]:h-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        className="flex h-16 min-w-0 items-center gap-3 px-2 group-data-[collapsible=icon]:h-12 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
       >
-        <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden group-data-[collapsible=icon]:size-10">
+        <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden group-data-[collapsible=icon]:size-11">
           <img
             src={BRAND_MARK_SRC}
             alt=""
             aria-hidden="true"
-            className="h-[38px] w-[38px] object-contain opacity-100 drop-shadow-none dark:brightness-[1.12] dark:saturate-[1.08] group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:w-10"
+            className="h-[46px] w-[46px] object-contain opacity-100 drop-shadow-none dark:brightness-[1.12] dark:saturate-[1.08] group-data-[collapsible=icon]:h-11 group-data-[collapsible=icon]:w-11"
           />
         </span>
         <span className="flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">

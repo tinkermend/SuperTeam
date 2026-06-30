@@ -70,7 +70,7 @@ export function Dashboard() {
           <SignatureCard className="min-h-[14rem]">
             <div className="flex h-full flex-col justify-between gap-8">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-bold text-white/80">SuperTeam Console</span>
+                <span className="text-sm font-bold text-white/80">炬枢控制台</span>
                 <span className="rounded-lg bg-white/16 px-2.5 py-1 text-xs font-bold text-white">
                   v3 Soft-Flat
                 </span>
