@@ -26,9 +26,6 @@ impl CodexProvider {
     pub fn build_command(&self, request: &ProviderRequest) -> Command {
         let mut command = Command::new(&self.bin_path);
         command.current_dir(&request.workspace_path);
-        if let Some(agent_home) = &request.agent_home_dir {
-            command.env("CODEX_HOME", agent_home.join(".codex"));
-        }
         apply_environment(&mut command, request);
         command.arg("exec");
         if request.continue_session {

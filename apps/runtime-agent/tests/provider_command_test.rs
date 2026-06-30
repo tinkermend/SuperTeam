@@ -131,7 +131,7 @@ fn claude_uses_agent_home_mcp_config_when_present() {
 }
 
 #[test]
-fn codex_uses_agent_home_for_codex_home_and_workspace_for_cd() {
+fn codex_uses_workspace_for_cd_without_default_codex_home() {
     let provider = CodexProvider::new("codex");
     let command =
         provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
@@ -157,10 +157,7 @@ fn codex_uses_agent_home_for_codex_home_and_workspace_for_cd() {
         args.windows(2)
             .any(|window| window == ["--cd", "/tmp/workspace"])
     );
-    assert_eq!(
-        envs.get("CODEX_HOME").map(String::as_str),
-        Some("/tmp/agent-home/.codex")
-    );
+    assert_eq!(envs.get("CODEX_HOME").map(String::as_str), None);
 }
 
 #[test]
@@ -193,7 +190,7 @@ fn codex_preserves_explicit_codex_home_environment() {
 }
 
 #[test]
-fn opencode_uses_agent_home_config_and_workspace_dir() {
+fn opencode_uses_workspace_dir_without_default_config_home() {
     let provider = OpenCodeProvider::new("opencode");
     let command =
         provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
@@ -219,14 +216,8 @@ fn opencode_uses_agent_home_config_and_workspace_dir() {
         args.windows(2)
             .any(|window| window == ["--dir", "/tmp/workspace"])
     );
-    assert_eq!(
-        envs.get("OPENCODE_CONFIG_DIR").map(String::as_str),
-        Some("/tmp/agent-home/.opencode")
-    );
-    assert_eq!(
-        envs.get("OPENCODE_CONFIG").map(String::as_str),
-        Some("/tmp/agent-home/.opencode/opencode.json")
-    );
+    assert_eq!(envs.get("OPENCODE_CONFIG_DIR").map(String::as_str), None);
+    assert_eq!(envs.get("OPENCODE_CONFIG").map(String::as_str), None);
 }
 
 #[test]
