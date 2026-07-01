@@ -70,6 +70,41 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 	}, store.calls)
 }
 
+func TestProjectCoordinatorSurvivesHandlerActivityFailure(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:     CoordinationSnapshot{ProjectID: projectID},
+		createJobErr: temporal.NewNonRetryableApplicationError("db down", "TransientOutage", errors.New("db down")),
+	}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:      projectID,
+			DemandID:       uuid.New(),
+			CreatedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	// A later signal must still be processed: the coordinator did not die on the failed
+	// demand handler, so shutdown drains cleanly instead of the workflow being long gone.
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// The failed handler is recorded as an audit event, then the workflow keeps looping.
+	require.Equal(t, []string{"CreateCoordinationJob", "AppendProjectEvent"}, store.calls)
+}
+
 func TestProjectCoordinatorDispatchesRootReadyReasonForRootTasks(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -299,6 +334,9 @@ func TestProjectCoordinatorRejectsPlanReviewRouteWithoutPlanReview(t *testing.T)
 			ResolvedEventID:   uuid.New(),
 		})
 	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
 
 	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
 		TenantID:   uuid.New(),
@@ -306,12 +344,12 @@ func TestProjectCoordinatorRejectsPlanReviewRouteWithoutPlanReview(t *testing.T)
 		WorkflowID: "project-coordinator:" + projectID.String(),
 	})
 
+	// A malformed plan_review route is a data-integrity fault, but it must not kill the
+	// coordinator: the handler failure is recorded as an audit event and the loop survives
+	// so later signals (and shutdown) are still processed.
 	require.True(t, env.IsWorkflowCompleted())
-	err := env.GetWorkflowError()
-	require.Error(t, err)
-	var appErr *temporal.ApplicationError
-	require.ErrorAs(t, err, &appErr)
-	require.EqualError(t, appErr.Unwrap(), project.ErrInvalidProject.Error())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{"LoadHumanDecisionRoute", "AppendProjectEvent"}, store.calls)
 }
 
 func TestProjectCoordinatorDispatchesHumanResolvedTaskThroughGate(t *testing.T) {
@@ -1113,7 +1151,7 @@ func TestProjectCoordinatorDispatchesRetryReasonAfterHumanRecoveryDecision(t *te
 	}, store.applyFailureRecoveryInputs[0])
 }
 
-func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
+func TestProjectCoordinatorSurvivesUnrecordedDispatchFailure(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	executorID := uuid.New()
@@ -1147,6 +1185,9 @@ func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
 			CreatedEventID:    uuid.New(),
 		})
 	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
 
 	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
 		TenantID:   uuid.New(),
@@ -1154,9 +1195,13 @@ func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
 		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
 	})
 
+	// An unrecorded dispatch failure aborts this demand (the job is left unfinished) but
+	// must not terminate the coordinator: the failure is captured as an audit event and the
+	// loop survives to process the shutdown signal.
 	require.True(t, env.IsWorkflowCompleted())
-	require.Error(t, env.GetWorkflowError())
+	require.NoError(t, env.GetWorkflowError())
 	require.NotContains(t, store.calls, "FinishCoordinationJob")
+	require.Contains(t, store.calls, "AppendProjectEvent")
 }
 
 func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
@@ -1309,6 +1354,7 @@ type recordingActivityStore struct {
 	failureRecoveryDecisionID    uuid.UUID
 	dispatchEvent                uuid.UUID
 	dispatchErr                  error
+	createJobErr                 error
 
 	dispatchableTaskIDs          []uuid.UUID
 	dispatchableTaskIDBatches    [][]uuid.UUID
@@ -1371,6 +1417,9 @@ func (s *recordingActivityStore) LoadProjectCoordinationSnapshot(ctx context.Con
 
 func (s *recordingActivityStore) CreateCoordinationJob(ctx context.Context, input CreateCoordinationJobInput) (CoordinationJobResult, error) {
 	s.calls = append(s.calls, "CreateCoordinationJob")
+	if s.createJobErr != nil {
+		return CoordinationJobResult{}, s.createJobErr
+	}
 	return CoordinationJobResult{ID: s.jobID}, nil
 }
 

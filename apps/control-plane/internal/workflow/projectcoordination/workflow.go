@@ -97,7 +97,17 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		})
 		selector.Select(ctx)
 		if workflowErr != nil {
-			return workflowErr
+			if workflow.GetVersion(ctx, "coordinator-survive-handler-error", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+				return workflowErr
+			}
+			// A single signal handler failing — e.g. an activity exhausting its retry budget
+			// during a transient DB/planner outage — must not terminate the long-lived
+			// coordinator. If it did, every later signal (including the human decision that
+			// would unblock the project) would be delivered to a closed workflow and lost,
+			// deadlocking the project with no recovery path. Record the failure for audit and
+			// keep the loop alive so subsequent signals are still processed.
+			recordCoordinatorHandlerFailure(ctx, input, workflowErr)
+			workflowErr = nil
 		}
 		if shouldStop {
 			return nil
@@ -799,6 +809,24 @@ func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, stat
 		OutputEventIDs: outputEventIDs,
 	}
 	return workflow.ExecuteActivity(ctx, (*Activities).FinishCoordinationJob, finishInput).Get(ctx, nil)
+}
+
+// recordCoordinatorHandlerFailure leaves an audit trail when a signal handler fails but the
+// coordinator deliberately survives. It is best-effort: if the audit activity itself fails
+// (the same outage that broke the handler), the error is swallowed and only logged — the
+// whole point is to never let a failed activity terminate the workflow.
+func recordCoordinatorHandlerFailure(ctx workflow.Context, input ProjectCoordinatorInput, handlerErr error) {
+	workflow.GetLogger(ctx).Error("coordinator signal handler failed; continuing",
+		"project_id", input.ProjectID.String(), "error", handlerErr.Error())
+	if err := workflow.ExecuteActivity(ctx, (*Activities).AppendProjectEvent, AppendProjectEventInput{
+		TenantID:  input.TenantID,
+		ProjectID: input.ProjectID,
+		EventType: "workflow.signal_failed",
+		Summary:   "coordinator signal handler failed: " + handlerErr.Error(),
+	}).Get(ctx, nil); err != nil {
+		workflow.GetLogger(ctx).Error("failed to record coordinator handler failure",
+			"project_id", input.ProjectID.String(), "error", err.Error())
+	}
 }
 
 func appendSignalObservedEvent(ctx workflow.Context, input ProjectCoordinatorInput, summary string) error {
