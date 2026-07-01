@@ -1,18 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Task status enum matching Go TaskStatus
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TaskStatus {
-    Pending,
-    Claimed,
-    Running,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
 /// Node status enum matching Go NodeStatus
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -444,22 +432,4 @@ pub struct HeartbeatResponse {
     pub last_heartbeat_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
-}
-
-/// Task from Control Plane
-#[derive(Debug, Clone, Deserialize)]
-pub struct Task {
-    pub id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub creator_id: Option<i64>,
-    pub provider_type: String,
-    pub target_node_id: Option<String>,
-    pub assigned_node_id: Option<String>,
-    pub status: TaskStatus,
-    pub workspace_path: Option<String>,
-    pub params: serde_json::Value,
-    pub priority: i32,
-    pub created_at: String,
-    pub updated_at: String,
 }
