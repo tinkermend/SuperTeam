@@ -5,7 +5,6 @@ pub mod config;
 pub mod controlplane;
 pub mod daemon;
 pub mod events;
-pub mod executor;
 pub mod health;
 pub mod instances;
 pub mod mcp_config;

@@ -65,6 +65,16 @@ func (h *TaskHandler) authorizeTaskAction(w http.ResponseWriter, r *http.Request
 	return true
 }
 
+// tenantIDPtrFromContext returns the console-authenticated tenant so task
+// operations are scoped to the caller's tenant instead of the DB default.
+func tenantIDPtrFromContext(r *http.Request) *uuid.UUID {
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == uuid.Nil {
+		return nil
+	}
+	return &tenantID
+}
+
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeTaskAction(w, r, authz.ActionTaskCreate) {
 		return
@@ -87,6 +97,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	paramsJSON, _ := json.Marshal(req.Params)
 
 	task, err := h.taskService.CreateTask(r.Context(), task.CreateTaskRequest{
+		TenantID:      tenantIDPtrFromContext(r),
 		Title:         req.Title,
 		Description:   optionalString(req.Description),
 		ProviderType:  req.ProviderType,
@@ -139,8 +150,9 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
 	tasks, err := h.taskService.ListTasks(r.Context(), task.ListTasksFilter{
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		TenantID: tenantIDPtrFromContext(r),
+		Limit:    int32(limit),
+		Offset:   int32(offset),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
