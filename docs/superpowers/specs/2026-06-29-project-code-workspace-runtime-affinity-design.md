@@ -201,3 +201,7 @@ project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode
 
 > 处置建议：#1 与 #3 优先立独立专题；其余随实现阶段补。本 spec 的假设前提显式声明为「目标已定义、产出为代码分支、执行环境可信且成功」。
 > 进度：**#1 已立项** → `2026-06-30-intent-acceptance-criteria-design.md`（意图层，定义"什么算做对了"）。#2/#3/#4/#5 待立项。
+
+## 13. 实施同步记录
+
+- 2026-06-30：`docs/superpowers/plans/2026-06-30-project-workspace-autonomous-outer-loop.md` 对本 spec 的 Phase 1 约束进行实现同步。本 worktree/plan 已实现或正在实现的约束包括：项目工作区与员工能力缓存/Provider auth 分离、Provider host auth 默认、项目 repo binding、Runtime attestation、budget heartbeat。真实链路验证尚未完成，当前记录只能作为实现同步说明，不能声明功能可用。

@@ -375,6 +375,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
             .join("employees")
             .join(DIGITAL_EMPLOYEE_ID);
         fs::create_dir_all(&agent_home_dir).expect("create agent home dir");
+        fs::create_dir_all(agent_home_dir.join(".claude").join("skills"))
+            .expect("create employee skills dir");
         let command_agent_home_dir = agent_home_dir.to_string_lossy().to_string();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -455,7 +457,21 @@ printf '%s\n' '{"type":"result","result":"done"}'
         );
         let command_context = snapshot.command_context.expect("command context");
         assert_eq!(command_context.command_id, "cmd-ws-start");
-        assert_eq!(snapshot.workspace_path, agent_home_dir);
+        assert_ne!(snapshot.workspace_path, agent_home_dir);
+        assert!(
+            snapshot
+                .workspace_path
+                .ends_with("workspaces/unscoped/manual/attempt")
+        );
+        assert_eq!(
+            snapshot.agent_home_dir.as_deref(),
+            Some(agent_home_dir.as_path())
+        );
+        assert_eq!(
+            snapshot.employee_capability_dir.as_deref(),
+            Some(agent_home_dir.as_path())
+        );
+        assert!(agent_home_dir.join(".claude").is_dir());
         assert!(snapshot.workspace_path.join(".claude").is_dir());
 
         let complete = wait_for_writeback(capture.complete.clone()).await;
@@ -568,9 +584,10 @@ printf '%s\n' '{"type":"result","result":"done"}'
         assert_eq!(complete.node_id.as_deref(), Some("node-1"));
         assert_eq!(complete.payload["status"], "completed");
         assert_eq!(
-            complete.payload["result"]["agent_home_dir"],
-            Value::String(agent_home_dir.to_string_lossy().to_string())
+            complete.payload["result"]["provisioning_status"],
+            Value::String("ready".to_string())
         );
+        assert!(complete.payload["result"].get("agent_home_dir").is_none());
 
         http_server.task.abort();
     }

@@ -755,6 +755,307 @@ func TestProjectStoreResolveReadyDownstreamRequiresAcceptedLatestBlockerResult(t
 	}, repo.statusUpdates)
 }
 
+func TestApplyTaskResultRevisionCreatesBoundedRevisionTask(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	routeDecisionID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	employeeID := uuid.New()
+	maxAttempts := int32(3)
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{{
+			ID:                        sourceTaskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			CoordinationJobID:         &coordinationJobID,
+			RouteDecisionID:           &routeDecisionID,
+			Title:                     "Implement login",
+			Summary:                   strPtr("Wire redirect flow"),
+			Status:                    project.ProjectTaskStatusCompleted,
+			AttemptCount:              1,
+			MaxAttempts:               &maxAttempts,
+			AssignedDigitalEmployeeID: &employeeID,
+			TaskKind:                  strPtr("implementation"),
+			RiskLevel:                 strPtr("medium"),
+			ExpectedOutputs:           []any{"patch", "test_evidence"},
+			InputRequirements:         map[string]any{"existing": "context"},
+			PlannerMetadata:           map[string]any{"iteration_key": "wi-login"},
+			HandoffContract:           map[string]any{"completion_path": "project_task_attempt_writeback"},
+		}},
+		projectTaskResults: []project.ProjectTaskResult{{
+			ID:            resultID,
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			ProjectTaskID: sourceTaskID,
+			ResultStatus:  project.TaskResultStatusRevisionNeeded,
+			Decision:      project.TaskResultDecisionRevisionAttempt,
+			Contract: project.TaskResultContract{
+				Status:  project.TaskResultStatusRevisionNeeded,
+				Summary: "tests failed",
+				RevisionRequest: &project.TaskResultRevisionRequest{
+					Reason:           "login test failed",
+					RequestedChanges: []string{"fix redirect"},
+				},
+			},
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateRevisionTaskForResult(context.Background(), CreateRevisionTaskForResultInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, created.TaskID)
+	revision := repo.mustTask(created.TaskID)
+	require.Equal(t, project.ProjectTaskStatusPlanned, revision.Status)
+	require.Equal(t, &sourceTaskID, revision.RevisionOfTaskID)
+	require.Equal(t, "wi-login", revision.PlannerMetadata["iteration_key"])
+	require.Equal(t, "login test failed", revision.InputRequirements["revision_reason"])
+	require.Equal(t, []string{"fix redirect"}, revision.InputRequirements["requested_changes"])
+	require.Equal(t, sourceTaskID.String(), revision.InputRequirements["source_task_id"])
+	require.Equal(t, resultID.String(), revision.InputRequirements["source_result_id"])
+	require.Equal(t, repo.tasks[0].HandoffContract, revision.HandoffContract)
+	require.Equal(t, &employeeID, revision.AssignedDigitalEmployeeID)
+}
+
+func TestApplyTaskResultRevisionStopsOnRepeatedFailureFingerprint(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	routeDecisionID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	employeeID := uuid.New()
+	maxAttempts := int32(5)
+	repeatedContract := project.TaskResultContract{
+		Status:  project.TaskResultStatusRevisionNeeded,
+		Summary: "tests failed",
+		RevisionRequest: &project.TaskResultRevisionRequest{
+			Reason:           "login test failed",
+			RequestedChanges: []string{"fix redirect"},
+		},
+	}
+	fingerprint := revisionFailureFingerprint(repeatedContract)
+	firstRevisionID := uuid.New()
+	secondRevisionID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			{
+				ID:                        sourceTaskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				DemandID:                  &demandID,
+				CoordinationJobID:         &coordinationJobID,
+				RouteDecisionID:           &routeDecisionID,
+				Title:                     "Implement login",
+				Status:                    project.ProjectTaskStatusCompleted,
+				AttemptCount:              2,
+				MaxAttempts:               &maxAttempts,
+				AssignedDigitalEmployeeID: &employeeID,
+				PlannerMetadata:           map[string]any{"iteration_key": "wi-login"},
+			},
+			{
+				ID:                firstRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				RevisionOfTaskID:  &sourceTaskID,
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannerMetadata: map[string]any{
+					"iteration_key":                "wi-login",
+					"revision_failure_fingerprint": fingerprint,
+				},
+				CreatedAt: time.Now().UTC().Add(-2 * time.Minute),
+			},
+			{
+				ID:                secondRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				RevisionOfTaskID:  &sourceTaskID,
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannerMetadata: map[string]any{
+					"iteration_key":                "wi-login",
+					"revision_failure_fingerprint": fingerprint,
+				},
+				CreatedAt: time.Now().UTC().Add(-1 * time.Minute),
+			},
+		},
+		projectTaskResults: []project.ProjectTaskResult{{
+			ID:            resultID,
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			ProjectTaskID: sourceTaskID,
+			ResultStatus:  project.TaskResultStatusRevisionNeeded,
+			Decision:      project.TaskResultDecisionRevisionAttempt,
+			Contract:      repeatedContract,
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateRevisionTaskForResult(context.Background(), CreateRevisionTaskForResultInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	})
+
+	require.NoError(t, err)
+	require.True(t, created.Exhausted)
+	require.Equal(t, uuid.Nil, created.TaskID)
+	require.Len(t, repo.tasks, 3)
+}
+
+func TestApplyTaskResultRevisionStopsWhenMaxAttemptsExhausted(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	maxAttempts := int32(2)
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{{
+			ID:           sourceTaskID,
+			TenantID:     tenantID,
+			ProjectID:    projectID,
+			Title:        "Implement login",
+			Status:       project.ProjectTaskStatusCompleted,
+			AttemptCount: 2,
+			MaxAttempts:  &maxAttempts,
+		}},
+		projectTaskResults: []project.ProjectTaskResult{{
+			ID:            resultID,
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			ProjectTaskID: sourceTaskID,
+			ResultStatus:  project.TaskResultStatusRevisionNeeded,
+			Decision:      project.TaskResultDecisionRevisionAttempt,
+			Contract: project.TaskResultContract{
+				Status: project.TaskResultStatusRevisionNeeded,
+				RevisionRequest: &project.TaskResultRevisionRequest{
+					Reason: "attempts exhausted",
+				},
+			},
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateRevisionTaskForResult(context.Background(), CreateRevisionTaskForResultInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	})
+
+	require.NoError(t, err)
+	require.True(t, created.Exhausted)
+	require.Equal(t, uuid.Nil, created.TaskID)
+	require.Len(t, repo.tasks, 1)
+}
+
+func TestApplyTaskResultRevisionStopsWhenHistoryExhaustsMaxDespiteResetMetadata(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	coordinationJobID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	maxAttempts := int32(3)
+	revisionRootID := uuid.New()
+	firstRevisionID := uuid.New()
+	secondRevisionID := uuid.New()
+	revisionContract := project.TaskResultContract{
+		Status:  project.TaskResultStatusRevisionNeeded,
+		Summary: "different failure this time",
+		RevisionRequest: &project.TaskResultRevisionRequest{
+			Reason:           "new failing assertion",
+			RequestedChanges: []string{"fix the new assertion"},
+		},
+	}
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			{
+				ID:                sourceTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Implement login revision",
+				Status:            project.ProjectTaskStatusCompleted,
+				MaxAttempts:       &maxAttempts,
+				RevisionOfTaskID:  &revisionRootID,
+				PlannerMetadata: map[string]any{
+					"iteration_key":           "wi-login",
+					"revision_root_task_id":   revisionRootID.String(),
+					"revision_attempt_count":  1,
+					"revision_max_attempts":   maxAttempts,
+					"revision_failure_marker": "tampered-low-count",
+				},
+			},
+			{
+				ID:                firstRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				CoordinationJobID: &coordinationJobID,
+				RevisionOfTaskID:  &revisionRootID,
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannerMetadata: map[string]any{
+					"iteration_key":           "wi-login",
+					"revision_root_task_id":   revisionRootID.String(),
+					"revision_attempt_count":  2,
+					"revision_failure_marker": "old-1",
+				},
+				CreatedAt: time.Now().UTC().Add(-2 * time.Minute),
+			},
+			{
+				ID:                secondRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				CoordinationJobID: &coordinationJobID,
+				RevisionOfTaskID:  &revisionRootID,
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannerMetadata: map[string]any{
+					"iteration_key":           "wi-login",
+					"revision_root_task_id":   revisionRootID.String(),
+					"revision_attempt_count":  3,
+					"revision_failure_marker": "old-2",
+				},
+				CreatedAt: time.Now().UTC().Add(-1 * time.Minute),
+			},
+		},
+		projectTaskResults: []project.ProjectTaskResult{{
+			ID:            resultID,
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			ProjectTaskID: sourceTaskID,
+			ResultStatus:  project.TaskResultStatusRevisionNeeded,
+			Decision:      project.TaskResultDecisionRevisionAttempt,
+			Contract:      revisionContract,
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateRevisionTaskForResult(context.Background(), CreateRevisionTaskForResultInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	})
+
+	require.NoError(t, err)
+	require.True(t, created.Exhausted)
+	require.Equal(t, uuid.Nil, created.TaskID)
+	require.Len(t, repo.tasks, 3)
+}
+
 func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1272,6 +1573,70 @@ func TestProjectStoreHoldDownstreamForFailureBlocksRecursiveDownstreamAndCreates
 	require.Len(t, inbox.upserts, 1)
 	require.Equal(t, decision.ID, inbox.upserts[0].ID)
 	require.Equal(t, failedTaskID, *inbox.upserts[0].ProjectTaskID)
+}
+
+func TestProjectStoreRequestProjectTaskIterationExhaustedReviewCreatesDedicatedDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	sourceTaskID := uuid.New()
+	downstreamID := uuid.New()
+	resultID := uuid.New()
+	eventID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, sourceTaskID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "planned"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, sourceTaskID),
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.RequestProjectTaskIterationExhaustedReview(context.Background(), RequestProjectTaskIterationExhaustedReviewInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  sourceTaskID,
+		ResultID:       resultID,
+		Reason:         "iteration_exhausted",
+		Summary:        "同一失败重复出现，需要人类判断是否继续",
+		CreatedEventID: eventID,
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.ID)
+	require.Equal(t, "blocked", repo.taskStatus(downstreamID))
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, sourceTaskID, approvals.last.ResourceID)
+	require.Equal(t, "project_task_iteration_exhausted", approvals.last.DecisionType)
+	require.Equal(t, "iteration_exhausted", approvals.last.ContextPayload["reason"])
+	require.Equal(t, "同一失败重复出现，需要人类判断是否继续", approvals.last.ContextPayload["summary"])
+	require.Equal(t, resultID.String(), approvals.last.ContextPayload["result_id"])
+	require.Len(t, repo.events, 1)
+	require.Equal(t, project.ProjectEventDecisionRequested, repo.events[0].EventType)
+	require.Len(t, repo.decisionRequests, 1)
+	decision := repo.decisionRequests[0]
+	require.Equal(t, approvalID, decision.ApprovalRequestID)
+	require.Equal(t, "project_task_iteration_exhausted", decision.DecisionType)
+	require.NotNil(t, decision.SummarySnapshot)
+	require.Equal(t, "同一失败重复出现，需要人类判断是否继续", *decision.SummarySnapshot)
+	require.NotNil(t, decision.ProjectTaskID)
+	require.Equal(t, sourceTaskID, *decision.ProjectTaskID)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, decision.ID, inbox.upserts[0].ID)
 }
 
 func TestParseFailureRecoveryAction(t *testing.T) {
@@ -1883,6 +2248,8 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Contains(t, req.Prompt, "expected_outputs")
 	require.Contains(t, req.Prompt, "input_requirements")
 	require.Contains(t, req.Prompt, "handoff_contract")
+	require.Contains(t, req.Prompt, "result_contract")
+	require.Contains(t, req.Prompt, "acceptance_results")
 	require.Contains(t, req.Prompt, "test_report")
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, req.Metadata["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
@@ -1984,6 +2351,49 @@ func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
 		"git_credential_ref": "git-credential:primary",
 		"scope":              []any{"apps/web", "packages/shared"},
 	}, starter.requests[0].Metadata["project_git"])
+}
+
+func TestDispatchProjectTaskBranchWorkspaceRequiresRuntimeAttestation(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, Name: "Code project", HumanOwnerUserID: uuid.New(),
+			RepoBinding: project.ProjectRepoBinding{
+				Status:        project.ProjectRepoBindingStatusBound,
+				URL:           "https://github.com/acme/app.git",
+				DefaultBranch: "main",
+			},
+		},
+		demand:  project.ProjectDemand{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "Implement login"},
+		members: []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectTaskStatusPlanned,
+			Title: "Implement login", AssignedDigitalEmployeeID: &employeeID, TaskKind: stringPtr("feature_development"),
+			HandoffContract: map[string]any{"acceptance_criteria": []any{"tests pass"}},
+		}},
+	}
+	repo.tasks[0].DemandID = &repo.demand.ID
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID, DispatchReason: project.DispatchReasonRootReady,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	runContract, ok := starter.requests[0].Metadata["handoff_contract"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, runContract["requires_runtime_attestation"])
+	require.Len(t, repo.queueRequests, 1)
+	packetContract, ok := repo.queueRequests[0].ExecutionContextPacket["handoff_contract"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, packetContract["requires_runtime_attestation"])
 }
 
 func TestDispatchProjectTaskForcesNoWorkspaceModeWithoutRepoBinding(t *testing.T) {
@@ -3035,6 +3445,7 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 		PlannedTaskKey:            req.PlannedTaskKey,
 		TaskKind:                  req.TaskKind,
 		StageIndex:                req.StageIndex,
+		RevisionOfTaskID:          req.RevisionOfTaskID,
 		AcceptedPlanRevisionID:    req.AcceptedPlanRevisionID,
 		DecompositionClaimKey:     req.DecompositionClaimKey,
 		ExpectedOutputs:           req.ExpectedOutputs,
@@ -3713,6 +4124,17 @@ func (r *projectStoreMemoryRepository) ListProjectTaskResults(ctx context.Contex
 	return results, nil
 }
 
+func (r *projectStoreMemoryRepository) LinkProjectTaskResultRevisionTask(ctx context.Context, tenantID, projectID, resultID, revisionTaskID uuid.UUID) (project.ProjectTaskResult, error) {
+	for index, result := range r.projectTaskResults {
+		if result.TenantID == tenantID && result.ProjectID == projectID && result.ID == resultID {
+			result.RevisionTaskID = &revisionTaskID
+			r.projectTaskResults[index] = result
+			return result, nil
+		}
+	}
+	return project.ProjectTaskResult{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) CreateProjectDemandSummary(ctx context.Context, req project.CreateProjectDemandSummaryRequest) (project.ProjectDemandSummary, error) {
 	if r.createDemandSummaryErr != nil {
 		return project.ProjectDemandSummary{}, r.createDemandSummaryErr
@@ -3801,6 +4223,8 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
 		TitleSnapshot:     req.TitleSnapshot,
+		SummarySnapshot:   strPtr(req.SummarySnapshot),
+		RiskLevelSnapshot: &req.RiskLevelSnapshot,
 		StatusSnapshot:    req.StatusSnapshot,
 		CreatedEventID:    req.CreatedEventID,
 		CreatedAt:         time.Now().UTC(),
@@ -3969,6 +4393,15 @@ func (r *projectStoreMemoryRepository) taskStatus(taskID uuid.UUID) string {
 		}
 	}
 	return ""
+}
+
+func (r *projectStoreMemoryRepository) mustTask(taskID uuid.UUID) project.ProjectTask {
+	for _, task := range r.tasks {
+		if task.ID == taskID {
+			return task
+		}
+	}
+	panic("project task not found")
 }
 
 func (r *projectStoreMemoryRepository) setTaskStatus(taskID uuid.UUID, status string) {

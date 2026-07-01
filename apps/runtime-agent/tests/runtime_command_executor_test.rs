@@ -24,6 +24,7 @@ const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
 const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
 const RUNTIME_NODE_EXTERNAL_ID: &str = "node-1";
+const PROJECT_ID: &str = "77777777-7777-4777-8777-777777777777";
 const PROJECT_TASK_ID: &str = "55555555-5555-4555-8555-555555555555";
 const PROJECT_TASK_ATTEMPT_ID: &str = "66666666-6666-4666-8666-666666666666";
 const PROJECT_TASK_LEASE_TOKEN: &str = "lease-token-1";
@@ -427,6 +428,10 @@ struct CommandCompletionCapture {
     project_task_complete: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_wait_human: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+    project_task_attestations: Arc<Mutex<Vec<CapturedWriteback>>>,
+    project_task_budget_heartbeats: Arc<Mutex<Vec<CapturedProjectTaskBudgetHeartbeat>>>,
+    terminal_attestation_release: Arc<tokio::sync::Notify>,
+    trip_budget_on_heartbeat: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -436,6 +441,14 @@ struct CapturedProjectTaskWriteback {
     lease_token: String,
     runtime_node_id: String,
     idempotency_key: String,
+    authorization: Option<String>,
+    node_id: Option<String>,
+    payload: Value,
+}
+
+#[derive(Clone, Debug)]
+struct CapturedProjectTaskBudgetHeartbeat {
+    attempt_id: String,
     authorization: Option<String>,
     node_id: Option<String>,
     payload: Value,
@@ -475,6 +488,14 @@ async fn serve_command_completion_writebacks(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/wait-human",
             post(capture_project_task_wait_human_writeback),
         )
+        .route(
+            "/api/v1/runtime/project-task-attestations",
+            post(capture_project_task_attestation_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/budget-heartbeat",
+            post(capture_project_task_budget_heartbeat),
+        )
         .with_state(capture);
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
@@ -482,6 +503,13 @@ async fn serve_command_completion_writebacks(
             .expect("serve completion writebacks");
     });
     CommandWritebackServer { addr, task }
+}
+
+fn command_completion_capture_with_budget_trip() -> CommandCompletionCapture {
+    CommandCompletionCapture {
+        trip_budget_on_heartbeat: true,
+        ..CommandCompletionCapture::default()
+    }
 }
 
 async fn serve_command_cancel_writebacks(
@@ -534,6 +562,41 @@ async fn serve_failing_project_task_completion(
     CommandWritebackServer { addr, task }
 }
 
+async fn serve_delayed_terminal_attestation_writebacks(
+    capture: CommandCompletionCapture,
+) -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new()
+        .route(
+            "/api/v1/runtime/commands/{command_id}/complete",
+            post(capture_complete_writeback),
+        )
+        .route(
+            "/api/v1/runtime/commands/{command_id}/events",
+            post(capture_event_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/started",
+            post(capture_project_task_started_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
+            post(capture_project_task_complete_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attestations",
+            post(delayed_terminal_attestation_writeback),
+        )
+        .with_state(capture);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("serve delayed terminal attestation writeback");
+    });
+    CommandWritebackServer { addr, task }
+}
+
 async fn capture_complete_writeback(
     AxumPath(command_id): AxumPath<String>,
     State(capture): State<CommandCompletionCapture>,
@@ -581,6 +644,45 @@ async fn capture_event_writeback(
             payload,
         });
     StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_attestation_writeback(
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    capture
+        .project_task_attestations
+        .lock()
+        .expect("attestations lock")
+        .push(CapturedWriteback {
+            command_id: payload
+                .get("metadata")
+                .and_then(|metadata| metadata.get("command_id"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            authorization: header_value(&headers, "authorization"),
+            node_id: header_value(&headers, "x-node-id"),
+            payload,
+        });
+    StatusCode::CREATED
+}
+
+async fn delayed_terminal_attestation_writeback(
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    let attestation_type = payload
+        .get("attestation_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if attestation_type == "provider_terminal" {
+        capture.terminal_attestation_release.notified().await;
+    }
+    capture_project_task_attestation_writeback(State(capture), headers, Json(payload)).await
 }
 
 async fn capture_completion_project_task_fail_writeback(
@@ -674,6 +776,32 @@ async fn capture_project_task_wait_human_writeback(
         payload,
     });
     StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_budget_heartbeat(
+    AxumPath(attempt_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Json<Value> {
+    capture
+        .project_task_budget_heartbeats
+        .lock()
+        .expect("budget heartbeats lock")
+        .push(CapturedProjectTaskBudgetHeartbeat {
+            attempt_id,
+            authorization: header_value(&headers, "authorization"),
+            node_id: header_value(&headers, "x-node-id"),
+            payload,
+        });
+    Json(json!({
+        "tripped": capture.trip_budget_on_heartbeat,
+        "trip_reason": if capture.trip_budget_on_heartbeat {
+            Some("wall_clock_exceeded")
+        } else {
+            None
+        }
+    }))
 }
 
 async fn reject_project_task_complete_writeback() -> StatusCode {
@@ -790,6 +918,28 @@ async fn wait_for_project_task_writeback(
     panic!("project task complete writeback was not received");
 }
 
+async fn assert_no_project_task_writeback(
+    slot: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+    duration: Duration,
+) {
+    tokio::time::sleep(duration).await;
+    assert!(
+        slot.lock().expect("project task writeback lock").is_none(),
+        "project task complete writeback was sent before prerequisite writeback completed"
+    );
+}
+
+async fn assert_no_command_writeback(
+    slot: Arc<Mutex<Option<CapturedWriteback>>>,
+    duration: Duration,
+) {
+    tokio::time::sleep(duration).await;
+    assert!(
+        slot.lock().expect("command writeback lock").is_none(),
+        "runtime command writeback was sent before prerequisite writeback completed"
+    );
+}
+
 async fn wait_for_captured_events(
     slot: Arc<Mutex<Vec<CapturedWriteback>>>,
     expected_count: usize,
@@ -802,6 +952,20 @@ async fn wait_for_captured_events(
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("runtime command events were not received");
+}
+
+async fn wait_for_captured_attestations(
+    slot: Arc<Mutex<Vec<CapturedWriteback>>>,
+    expected_count: usize,
+) -> Vec<CapturedWriteback> {
+    for _ in 0..100 {
+        let attestations = slot.lock().expect("attestations lock").clone();
+        if attestations.len() >= expected_count {
+            return attestations;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("project task attestations were not received");
 }
 
 fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
@@ -822,6 +986,7 @@ fn required_string_field(payload: &Value, key: &str) -> String {
 fn project_task_attempt_metadata(expected_outputs: Vec<&str>) -> Value {
     json!({
         "source": "project_task_dispatch",
+        "project_id": PROJECT_ID,
         "project_task_id": PROJECT_TASK_ID,
         "project_task_attempt_id": PROJECT_TASK_ATTEMPT_ID,
         "project_task_lease_token": PROJECT_TASK_LEASE_TOKEN,
@@ -831,6 +996,15 @@ fn project_task_attempt_metadata(expected_outputs: Vec<&str>) -> Value {
         "input_requirements": {},
         "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
     })
+}
+
+fn project_task_attempt_metadata_with_budget_trip() -> Value {
+    let mut metadata = project_task_attempt_metadata(vec!["execution_summary"]);
+    metadata["budget"] = json!({
+        "heartbeat_interval_sec": 1,
+        "wall_clock_limit_sec": 1
+    });
+    metadata
 }
 
 async fn run_project_task_completion_and_capture_writeback(summary: Option<String>) -> Value {
@@ -1039,6 +1213,99 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
         project_complete.payload["confidence_factors"]["execution_context_packet_version"],
         "v1"
     );
+
+    let attestations =
+        wait_for_captured_attestations(capture.project_task_attestations.clone(), 2).await;
+    assert!(
+        attestations.iter().any(|attestation| {
+            attestation.payload["attestation_type"] == "provider_start"
+                && attestation.payload["status"] == "succeeded"
+                && attestation.payload["project_id"] == PROJECT_ID
+                && attestation.payload["project_task_id"] == PROJECT_TASK_ID
+                && attestation.payload["attempt_id"] == PROJECT_TASK_ATTEMPT_ID
+                && attestation.payload["runtime_node_id"] == RUNTIME_NODE_ID
+                && attestation.payload["digital_employee_id"] == DIGITAL_EMPLOYEE_ID
+                && attestation.payload["provider_auth_mode"] == "host"
+        }),
+        "provider_start attestation missing from {attestations:#?}"
+    );
+    assert!(
+        attestations.iter().any(|attestation| {
+            attestation.payload["attestation_type"] == "provider_terminal"
+                && attestation.payload["status"] == "succeeded"
+                && attestation.payload["provider_session_id"] == "session-from-project-task"
+        }),
+        "provider_terminal attestation missing from {attestations:#?}"
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn terminal_writeback_waits_for_terminal_attestation_before_project_completion() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-delayed-terminal-attestation",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-hanging-attestation"}'
+printf '%s\n' '{"type":"result","result":"provider completed before attestation returned"}'
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_delayed_terminal_attestation_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-hanging-attestation",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    assert_no_project_task_writeback(
+        capture.project_task_complete.clone(),
+        Duration::from_millis(200),
+    )
+    .await;
+    assert_no_command_writeback(capture.complete.clone(), Duration::from_millis(20)).await;
+    capture.terminal_attestation_release.notify_waiters();
+    let attestations =
+        wait_for_captured_attestations(capture.project_task_attestations.clone(), 2).await;
+    assert!(
+        attestations
+            .iter()
+            .any(|attestation| attestation.payload["attestation_type"] == "provider_terminal"),
+        "provider_terminal attestation missing from {attestations:#?}"
+    );
+    let command_complete = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(
+        command_complete.command_id,
+        "cmd-project-task-hanging-attestation"
+    );
+    let project_complete =
+        wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    assert_eq!(project_complete.attempt_id, PROJECT_TASK_ATTEMPT_ID);
 
     http_server.task.abort();
 }
@@ -1684,7 +1951,7 @@ async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty
 }
 
 #[tokio::test]
-async fn start_session_uses_agent_home_dir_as_provider_cwd() {
+async fn start_session_uses_project_workspace_as_provider_cwd_and_agent_home_for_files() {
     let temp = tempfile::tempdir().unwrap();
     let cwd_file = temp.path().join("provider-cwd.txt");
     let fake_claude = make_script(
@@ -1713,13 +1980,20 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     std::fs::create_dir_all(&home).unwrap();
 
     let content = "# Execution Contract\n";
-    let command = start_session_command_with_home(
+    let mut command = start_session_command_with_home(
         "cmd-start",
         team_id,
         employee_id,
         home.to_str().unwrap(),
         content,
     );
+    command.payload["metadata"] = json!({
+        "source": "executor-test",
+        "workspace_mode": "none",
+        "project_id": "77777777-7777-4777-8777-777777777777",
+        "project_task_id": "88888888-8888-4888-8888-888888888888",
+        "project_task_attempt_id": "99999999-9999-4999-8999-999999999999"
+    });
     let outcome = executor
         .handle_command(command)
         .await
@@ -1728,15 +2002,24 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     let run_id = outcome.run_id.as_deref().unwrap();
     wait_for_status(&executor.runs(), run_id, RunStatus::Completed).await;
     let run = executor.runs().get_run(run_id).await.unwrap();
-    assert_eq!(run.workspace_path, home);
+    let expected_workspace = temp
+        .path()
+        .join("workspaces")
+        .join("workspaces")
+        .join("77777777-7777-4777-8777-777777777777")
+        .join("88888888-8888-4888-8888-888888888888")
+        .join("99999999-9999-4999-8999-999999999999");
+    assert_eq!(run.workspace_path, expected_workspace);
+    assert_eq!(run.agent_home_dir.as_deref(), Some(home.as_path()));
     assert_eq!(
         std::fs::canonicalize(std::fs::read_to_string(cwd_file).unwrap().trim_end()).unwrap(),
-        std::fs::canonicalize(&home).unwrap()
+        std::fs::canonicalize(&expected_workspace).unwrap()
     );
     assert_eq!(
-        std::fs::read_to_string(run.workspace_path.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
         content
     );
+    assert!(!run.workspace_path.join("AGENTS.md").exists());
 }
 
 #[tokio::test]
@@ -2044,7 +2327,16 @@ printf '%s\n' '{"type":"result","result":"done"}'
     let run_id = outcome.run_id.expect("run id");
     let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
 
-    assert_eq!(snapshot.workspace_path, home);
+    assert_eq!(
+        snapshot.workspace_path,
+        temp.path()
+            .join("workspaces")
+            .join("workspaces")
+            .join("unscoped")
+            .join("manual")
+            .join("attempt")
+    );
+    assert_eq!(snapshot.agent_home_dir.as_deref(), Some(home.as_path()));
     assert_eq!(
         snapshot.provider_session_id.as_deref(),
         Some("session-from-command")
@@ -2423,6 +2715,92 @@ sleep 5
         "business_cancelled"
     );
     assert_eq!(project_task_failed.payload["retryable"], false);
+    server.task.abort();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn project_task_budget_trip_cancels_provider_and_fails_project_task_writeback() {
+    let temp = TempDir::new().expect("tempdir");
+    let capture = command_completion_capture_with_budget_trip();
+    let server = serve_command_completion_writebacks(capture.clone()).await;
+    let marker_file = temp.path().join("budget-cancelled.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "budget-fuse-claude",
+        &format!(
+            r#"#!/usr/bin/env bash
+sleep 3
+printf '%s\n' survived > {}
+sleep 30
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+
+    let mut start = session_command_in_home(
+        &home,
+        "cmd-project-task-budget-trip",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("start work that will exceed budget"),
+        None,
+    );
+    start.payload["metadata"] = project_task_attempt_metadata_with_budget_trip();
+    let start = executor
+        .handle_command(start)
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+
+    wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    let runtime_fail = wait_for_writeback(capture.fail.clone()).await;
+    assert_eq!(runtime_fail.command_id, "cmd-project-task-budget-trip");
+    assert_eq!(runtime_fail.payload["status"], "failed");
+
+    let project_task_failed =
+        wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_task_failed.attempt_id, PROJECT_TASK_ATTEMPT_ID);
+    assert_eq!(
+        project_task_failed.idempotency_key,
+        format!("project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:fail:cmd-project-task-budget-trip")
+    );
+    assert_eq!(
+        project_task_failed.payload["failure_summary"],
+        "wall_clock_exceeded"
+    );
+    assert_eq!(project_task_failed.payload["failure_family"], "budget_fuse");
+    assert_eq!(project_task_failed.payload["retryable"], false);
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Failed).await;
+    let heartbeats = capture
+        .project_task_budget_heartbeats
+        .lock()
+        .expect("budget heartbeats lock")
+        .clone();
+    assert!(!heartbeats.is_empty(), "budget heartbeat was not sent");
+    assert_eq!(heartbeats[0].attempt_id, PROJECT_TASK_ATTEMPT_ID);
+    assert_eq!(
+        heartbeats[0].authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(
+        heartbeats[0].node_id.as_deref(),
+        Some(RUNTIME_NODE_EXTERNAL_ID)
+    );
+    assert_eq!(heartbeats[0].payload["project_id"], PROJECT_ID);
+    assert_eq!(heartbeats[0].payload["project_task_id"], PROJECT_TASK_ID);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert!(
+        !marker_file.exists(),
+        "provider process was not cancelled before it wrote its survival marker"
+    );
     server.task.abort();
 }
 

@@ -25,13 +25,27 @@ pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>
 pub struct ProviderRequest {
     pub prompt: String,
     pub workspace_path: PathBuf,
+    /// Legacy alias for the employee capability cache. Do not use it as a
+    /// provider auth home.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_home_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_capability_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_manifest_version: Option<String>,
+    #[serde(default = "default_provider_auth_mode")]
+    pub provider_auth_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_config_path: Option<PathBuf>,
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
+}
+
+fn default_provider_auth_mode() -> String {
+    "host".to_string()
 }
 
 pub fn apply_environment(command: &mut tokio::process::Command, request: &ProviderRequest) {

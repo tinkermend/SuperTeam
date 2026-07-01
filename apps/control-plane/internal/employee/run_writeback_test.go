@@ -700,8 +700,64 @@ func TestWritebackCompleteProvisioningMarksInstanceAndEmployeeReady(t *testing.T
 	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
 		t.Fatalf("expected completed receipt update, got %#v", repo.receiptUpdates)
 	}
+	if _, ok := repo.receiptUpdates[0].Result["agent_home_dir"]; ok {
+		t.Fatalf("expected receipt result to omit agent_home_dir, got %#v", repo.receiptUpdates[0].Result)
+	}
 	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_instance_provisioned" {
 		t.Fatalf("expected provisioning audit event, got %#v", audit.events)
+	}
+}
+
+func TestWritebackCompleteRedactsRuntimeLocalPathKeysRecursively(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+
+	err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status: DigitalEmployeeRunStatusCompleted,
+		Result: map[string]any{
+			"summary":        "done",
+			"agent_home_dir": "/srv/runtime/employees/emp-1",
+			"nested": map[string]any{
+				"workspace_path": "/srv/runtime/workspaces/project",
+				"keep":           "value",
+			},
+			"items": []any{
+				map[string]any{
+					"mcp_config_path": "/srv/runtime/workspaces/project/.superteam/mcp.json",
+					"keep":            "list-value",
+				},
+			},
+		},
+		SessionStatePatch: map[string]any{
+			"employee_capability_dir": "/srv/runtime/employees/emp-1/capabilities",
+			"keep":                    "state",
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+
+	result := repo.receiptUpdates[0].Result
+	if _, ok := result["agent_home_dir"]; ok {
+		t.Fatalf("expected result to omit agent_home_dir, got %#v", result)
+	}
+	nested := result["nested"].(map[string]any)
+	if _, ok := nested["workspace_path"]; ok {
+		t.Fatalf("expected nested result to omit workspace_path, got %#v", nested)
+	}
+	items := result["items"].([]any)
+	item := items[0].(map[string]any)
+	if _, ok := item["mcp_config_path"]; ok {
+		t.Fatalf("expected list result to omit mcp_config_path, got %#v", item)
+	}
+	if result["summary"] != "done" || nested["keep"] != "value" || item["keep"] != "list-value" {
+		t.Fatalf("expected non-sensitive values preserved, got %#v", result)
+	}
+	if _, ok := repo.runUpdates[0].SessionState["employee_capability_dir"]; ok {
+		t.Fatalf("expected session state to omit employee_capability_dir, got %#v", repo.runUpdates[0].SessionState)
 	}
 }
 
@@ -1147,8 +1203,8 @@ func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, 
 		return false, nil
 	}
 	f.taskEventKeys[key] = struct{}{}
-	req.Payload = redactRuntimeEventPayload(req.Payload)
-	req.Metadata = redactRuntimeEventPayload(req.Metadata)
+	req.Payload = redactRuntimeEventPayloadForPersistence(req.Payload)
+	req.Metadata = redactRuntimeEventPayloadForPersistence(req.Metadata)
 	f.taskEvents = append(f.taskEvents, req)
 	f.taskEventInsertCount++
 	return true, nil
@@ -1159,8 +1215,8 @@ func providerSessionEventKey(tenantID uuid.UUID, commandID string, sequenceNumbe
 }
 
 func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error) {
-	req.SessionState = redactRuntimeEventPayload(req.SessionState)
-	req.Metadata = redactRuntimeEventPayload(req.Metadata)
+	req.SessionState = redactRuntimeEventPayloadForPersistence(req.SessionState)
+	req.Metadata = redactRuntimeEventPayloadForPersistence(req.Metadata)
 	f.providerSessionUpserts = append(f.providerSessionUpserts, req)
 	key := req.TenantID.String() + ":" + req.ProviderType + ":" + req.ProviderSessionID
 	id, ok := f.providerSessionIDs[key]
@@ -1183,9 +1239,9 @@ func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ contex
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(key))
 	f.providerSessionEventIDs[key] = id
 	f.providerSessionEventKeys[key] = struct{}{}
-	req.Payload = redactRuntimeEventPayload(req.Payload)
-	req.SessionStatePatch = redactRuntimeEventPayload(req.SessionStatePatch)
-	req.Metadata = redactRuntimeEventPayload(req.Metadata)
+	req.Payload = redactRuntimeEventPayloadForPersistence(req.Payload)
+	req.SessionStatePatch = redactRuntimeEventPayloadForPersistence(req.SessionStatePatch)
+	req.Metadata = redactRuntimeEventPayloadForPersistence(req.Metadata)
 	f.providerSessionEvents = append(f.providerSessionEvents, req)
 	f.providerSessionEventInsertCount++
 	return id, nil

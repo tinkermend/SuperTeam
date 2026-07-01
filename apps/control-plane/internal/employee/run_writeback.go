@@ -92,7 +92,7 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 		CommandID:      &commandIDRef,
 		RawEventRef:    event.RawEventRef,
 		LogRef:         event.LogRef,
-		Metadata:       redactRuntimeEventPayload(event.Metadata),
+		Metadata:       redactRuntimeEventPayloadForPersistence(event.Metadata),
 	})
 	if err != nil {
 		return fmt.Errorf("create task event: %w", err)
@@ -628,12 +628,12 @@ func (s *DigitalEmployeeRunWritebackService) upsertProviderSession(ctx context.C
 		ProviderType:        run.ProviderType,
 		Status:              status,
 		Recoverable:         recoverable,
-		SessionState:        redactRuntimeEventPayload(sessionState),
+		SessionState:        redactRuntimeEventPayloadForPersistence(sessionState),
 		LastSequenceNumber:  sequenceNumber,
 		LastCommandID:       commandID,
 		LastRunID:           &runID,
 		LastErrorFamily:     errorFamily,
-		Metadata:            redactRuntimeEventPayload(metadata),
+		Metadata:            redactRuntimeEventPayloadForPersistence(metadata),
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("upsert provider session: %w", err)
@@ -648,12 +648,12 @@ func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx cont
 		ProviderSessionUUID: providerSessionUUID,
 		EventType:           eventType,
 		SequenceNumber:      sequenceNumber,
-		Payload:             redactRuntimeEventPayload(payload),
+		Payload:             redactRuntimeEventPayloadForPersistence(payload),
 		CommandID:           &commandIDRef,
 		RawEventRef:         rawEventRef,
 		LogRef:              logRef,
-		SessionStatePatch:   redactRuntimeEventPayload(sessionStatePatch),
-		Metadata:            redactRuntimeEventPayload(metadata),
+		SessionStatePatch:   redactRuntimeEventPayloadForPersistence(sessionStatePatch),
+		Metadata:            redactRuntimeEventPayloadForPersistence(metadata),
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create provider session event: %w", err)
@@ -893,13 +893,13 @@ func terminalCompatibleWithRun(run *DigitalEmployeeRun, terminal RuntimeCommandT
 			return false
 		}
 	}
-	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.Result), run.Result) {
+	if !mapSubsetEqual(redactRuntimeEventPayloadForPersistence(terminal.Result), run.Result) {
 		return false
 	}
-	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.Diagnostic), run.Diagnostic) {
+	if !mapSubsetEqual(redactRuntimeEventPayloadForPersistence(terminal.Diagnostic), run.Diagnostic) {
 		return false
 	}
-	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.SessionStatePatch), run.SessionState) {
+	if !mapSubsetEqual(redactRuntimeEventPayloadForPersistence(terminal.SessionStatePatch), run.SessionState) {
 		return false
 	}
 	if len(terminal.WorkProducts) > 0 && !reflect.DeepEqual(redactWorkProducts(terminal.WorkProducts), run.WorkProducts) {
@@ -985,7 +985,7 @@ func terminalWritebackFromRun(run *DigitalEmployeeRun) RuntimeCommandTerminalWri
 }
 
 func terminalResult(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {
-	result := redactRuntimeEventPayload(terminal.Result)
+	result := redactRuntimeEventPayloadForPersistence(terminal.Result)
 	if terminal.Summary != "" {
 		result["summary"] = terminal.Summary
 	}
@@ -997,7 +997,7 @@ func terminalResult(terminal RuntimeCommandTerminalWriteback, status DigitalEmpl
 }
 
 func terminalDiagnostic(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {
-	diagnostic := redactRuntimeEventPayload(terminal.Diagnostic)
+	diagnostic := redactRuntimeEventPayloadForPersistence(terminal.Diagnostic)
 	if terminal.ErrorCode != nil {
 		diagnostic["error_code"] = *terminal.ErrorCode
 	}
@@ -1022,7 +1022,7 @@ func terminalEventPayload(terminal RuntimeCommandTerminalWriteback, status Digit
 		payload["work_products"] = redactWorkProducts(terminal.WorkProducts)
 	}
 	if terminal.SessionStatePatch != nil {
-		payload["session_state_patch"] = redactRuntimeEventPayload(terminal.SessionStatePatch)
+		payload["session_state_patch"] = redactRuntimeEventPayloadForPersistence(terminal.SessionStatePatch)
 	}
 	return payload
 }
@@ -1049,7 +1049,7 @@ func mergeSessionStatePatch(existing, patch map[string]any) map[string]any {
 		return nil
 	}
 	merged := cloneMap(existing)
-	for key, value := range redactRuntimeEventPayload(patch) {
+	for key, value := range redactRuntimeEventPayloadForPersistence(patch) {
 		merged[key] = value
 	}
 	return merged
@@ -1062,7 +1062,7 @@ func redactWorkProducts(products []WorkProduct) []WorkProduct {
 	redacted := make([]WorkProduct, len(products))
 	for i, product := range products {
 		redacted[i] = product
-		redacted[i].Metadata = redactRuntimeEventPayload(product.Metadata)
+		redacted[i].Metadata = redactRuntimeEventPayloadForPersistence(product.Metadata)
 	}
 	return redacted
 }
@@ -1121,7 +1121,7 @@ func runtimeCommandEventRecordRequest(run *DigitalEmployeeRun, commandID, eventT
 		ProviderType:    run.ProviderType,
 		CorrelationType: "runtime_command",
 		CorrelationID:   commandID,
-		Payload:         redactRuntimeEventPayload(payload),
+		Payload:         redactRuntimeEventPayloadForPersistence(payload),
 	}
 }
 

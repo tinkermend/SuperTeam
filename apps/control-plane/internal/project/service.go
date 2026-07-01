@@ -200,6 +200,82 @@ func (s *Service) GetProject(ctx context.Context, tenantID, projectID uuid.UUID)
 	return &project, nil
 }
 
+func (s *Service) CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (*ProjectTaskAttestation, error) {
+	req.AttestationType = strings.TrimSpace(req.AttestationType)
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	req.CapabilityManifestVersion = strings.TrimSpace(req.CapabilityManifestVersion)
+	if req.ProviderAuthMode == "" {
+		req.ProviderAuthMode = ProjectTaskAttestationProviderAuthModeHost
+	}
+	if req.TenantID == uuid.Nil ||
+		req.ProjectID == uuid.Nil ||
+		req.ProjectTaskID == uuid.Nil ||
+		req.AttemptID == uuid.Nil ||
+		req.RuntimeNodeID == uuid.Nil ||
+		req.DigitalEmployeeID == uuid.Nil {
+		return nil, ErrInvalidProjectEvidence
+	}
+	if req.AttestationType == "" || req.IdempotencyKey == "" {
+		return nil, ErrInvalidProjectEvidence
+	}
+	if !validProjectTaskAttestationStatus(req.Status) || !validProjectTaskAttestationProviderAuthMode(req.ProviderAuthMode) {
+		return nil, ErrInvalidProjectEvidence
+	}
+	req.Metadata = removeRuntimeLocalPathMetadata(req.Metadata)
+	attestation, err := s.repository.CreateProjectTaskAttestation(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &attestation, nil
+}
+
+func validProjectTaskAttestationStatus(status ProjectTaskAttestationStatus) bool {
+	switch status {
+	case ProjectTaskAttestationStatusSucceeded, ProjectTaskAttestationStatusFailed, ProjectTaskAttestationStatusCancelled, ProjectTaskAttestationStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
+func validProjectTaskAttestationProviderAuthMode(mode ProjectTaskAttestationProviderAuthMode) bool {
+	switch mode {
+	case ProjectTaskAttestationProviderAuthModeHost, ProjectTaskAttestationProviderAuthModeEmployee, ProjectTaskAttestationProviderAuthModeExplicitCredential:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) RecordProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req RecordProjectTaskAttemptBudgetHeartbeatRequest) (*ProjectTaskAttemptBudgetHeartbeatResult, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.AttemptID == uuid.Nil || req.ConsumedWallClockSec < 0 || req.ConsumedTokens < 0 {
+		return nil, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.ProjectID != req.ProjectID {
+		return nil, ErrProjectNotFound
+	}
+	attempt, err := s.repository.GetProjectTaskAttempt(ctx, req.TenantID, req.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	if attempt.ProjectTaskID != req.ProjectTaskID {
+		return nil, ErrProjectNotFound
+	}
+	tripReason := ""
+	if attempt.BudgetWallClockLimitSec != nil && req.ConsumedWallClockSec > *attempt.BudgetWallClockLimitSec {
+		tripReason = "wall_clock_exceeded"
+	}
+	updated, err := s.repository.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, req, tripReason)
+	if err != nil {
+		return nil, err
+	}
+	return &ProjectTaskAttemptBudgetHeartbeatResult{Attempt: updated, Tripped: tripReason != "", TripReason: tripReason}, nil
+}
+
 func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -2040,7 +2116,10 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	} else {
 		req.Conclusion = strings.TrimSpace(resultContract.Summary)
 	}
-	validation := ValidateTaskResultContract(task, *resultContract)
+	validation, err := s.validateTaskResultContractForAttempt(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract)
+	if err != nil {
+		return nil, err
+	}
 	if !validation.Valid {
 		return s.recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract, validation)
 	}
@@ -2208,7 +2287,10 @@ func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req Submit
 	if err != nil {
 		return nil, err
 	}
-	validation := ValidateTaskResultContract(task, req.ResultContract)
+	validation, err := s.validateTaskResultContractForAttempt(ctx, task, req.ProjectTaskAttemptRuntimeRequest, req.ResultContract)
+	if err != nil {
+		return nil, err
+	}
 	if !validation.Valid {
 		return s.recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx, task, req.ProjectTaskAttemptRuntimeRequest, req.ResultContract, validation)
 	}
@@ -2228,7 +2310,10 @@ func (s *Service) SubmitProjectTaskAttemptResult(ctx context.Context, req Submit
 }
 
 func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract) (ProjectTaskResult, error) {
-	validation := ValidateTaskResultContract(task, contract)
+	validation, err := s.validateTaskResultContractForAttempt(ctx, task, runtimeReq, contract)
+	if err != nil {
+		return ProjectTaskResult{}, err
+	}
 	result, err := s.repository.RecordProjectTaskResult(ctx, projectTaskAttemptResultRecordRequest(task, runtimeReq, summaryID, eventID, contract, validation))
 	if err != nil {
 		return ProjectTaskResult{}, err
@@ -2240,6 +2325,130 @@ func (s *Service) recordProjectTaskAttemptResult(ctx context.Context, task Proje
 		return result, ErrInvalidProjectEvidence
 	}
 	return result, nil
+}
+
+func (s *Service) validateTaskResultContractForAttempt(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) (TaskResultValidation, error) {
+	validation := ValidateTaskResultContract(task, contract)
+	if !validation.Valid {
+		return validation, nil
+	}
+	errors, err := s.validateRuntimeAttestationRefs(ctx, task, runtimeReq, contract)
+	if err != nil {
+		return validation, err
+	}
+	if len(errors) > 0 {
+		validation.Valid = false
+		validation.Decision = TaskResultDecisionValidationFailed
+		validation.Errors = append(validation.Errors, errors...)
+	}
+	return validation, nil
+}
+
+func (s *Service) validateRuntimeAttestationRefs(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) ([]TaskResultValidationError, error) {
+	if contract.Status != TaskResultStatusCompleted || !boolFromTaskContract(task.HandoffContract, "requires_runtime_attestation") {
+		return nil, nil
+	}
+	refs := runtimeAttestationRefsFromVerifications(contract.Verification)
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	attestations, err := s.repository.ListProjectTaskAttestations(ctx, runtimeReq.TenantID, task.ProjectID, runtimeReq.ProjectTaskID, 1000, 0)
+	if err != nil {
+		return nil, err
+	}
+	var errors []TaskResultValidationError
+	for _, ref := range refs {
+		key, parsedAttemptID, hasParsedAttempt := parseRuntimeAttestationRef(ref)
+		if hasParsedAttempt && parsedAttemptID != runtimeReq.AttemptID {
+			errors = append(errors, "verification_attestation_ref_wrong_attempt")
+			continue
+		}
+		attestation, ok := findRuntimeAttestationForRef(attestations, key)
+		if !ok {
+			errors = append(errors, "verification_attestation_ref_not_found")
+			continue
+		}
+		if attestation.AttemptID != runtimeReq.AttemptID {
+			errors = append(errors, "verification_attestation_ref_wrong_attempt")
+			continue
+		}
+		if attestation.RuntimeNodeID != runtimeReq.RuntimeNodeID {
+			errors = append(errors, "verification_attestation_ref_wrong_runtime_node")
+			continue
+		}
+		if task.AssignedDigitalEmployeeID != nil && attestation.DigitalEmployeeID != *task.AssignedDigitalEmployeeID {
+			errors = append(errors, "verification_attestation_ref_wrong_digital_employee")
+			continue
+		}
+		if attestation.Status != ProjectTaskAttestationStatusSucceeded {
+			errors = append(errors, "verification_attestation_ref_not_succeeded")
+		}
+	}
+	return errors, nil
+}
+
+func runtimeAttestationRefsFromVerifications(verifications []TaskResultVerification) []string {
+	refs := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, verification := range verifications {
+		if verification.Status != TaskResultVerificationStatusPassed {
+			continue
+		}
+		for _, ref := range verification.EvidenceRefs {
+			if !taskResultRefIsAttestation(ref) {
+				continue
+			}
+			value := strings.TrimSpace(ref.Ref)
+			if value == "" {
+				value = strings.TrimSpace(ref.ID)
+			}
+			if value == "" {
+				value = strings.TrimSpace(ref.URI)
+			}
+			if value == "" {
+				value = strings.TrimSpace(ref.URL)
+			}
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			refs = append(refs, value)
+		}
+	}
+	return refs
+}
+
+func taskResultRefIsAttestation(ref TaskResultRef) bool {
+	return strings.EqualFold(strings.TrimSpace(ref.Kind), "attestation") ||
+		strings.EqualFold(strings.TrimSpace(ref.Type), "attestation") ||
+		strings.HasPrefix(strings.TrimSpace(ref.Ref), "attestation:")
+}
+
+func parseRuntimeAttestationRef(ref string) (string, uuid.UUID, bool) {
+	key := strings.TrimSpace(ref)
+	key = strings.TrimPrefix(key, "attestation:")
+	parts := strings.Split(key, ":")
+	if len(parts) >= 3 && parts[0] == "project-task-attempt" {
+		if attemptID, err := uuid.Parse(parts[1]); err == nil {
+			return key, attemptID, true
+		}
+	}
+	return key, uuid.Nil, false
+}
+
+func findRuntimeAttestationForRef(attestations []ProjectTaskAttestation, key string) (ProjectTaskAttestation, bool) {
+	for _, attestation := range attestations {
+		if strings.TrimSpace(attestation.IdempotencyKey) == key {
+			return attestation, true
+		}
+		if attestation.ID.String() == key {
+			return attestation, true
+		}
+	}
+	return ProjectTaskAttestation{}, false
 }
 
 func (s *Service) recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract, validation TaskResultValidation) (*ExecutionSummary, error) {
@@ -4041,6 +4250,50 @@ func cloneMap(value map[string]any) map[string]any {
 		cloned[key] = item
 	}
 	return cloned
+}
+
+func removeRuntimeLocalPathMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return map[string]any{}
+	}
+	cleaned := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		if runtimeLocalPathMetadataKey(key) {
+			continue
+		}
+		cleaned[key] = removeRuntimeLocalPathMetadataValue(value)
+	}
+	return cleaned
+}
+
+func removeRuntimeLocalPathMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return removeRuntimeLocalPathMetadata(typed)
+	case []any:
+		cleaned := make([]any, len(typed))
+		for index, item := range typed {
+			cleaned[index] = removeRuntimeLocalPathMetadataValue(item)
+		}
+		return cleaned
+	case []map[string]any:
+		cleaned := make([]map[string]any, len(typed))
+		for index, item := range typed {
+			cleaned[index] = removeRuntimeLocalPathMetadata(item)
+		}
+		return cleaned
+	default:
+		return value
+	}
+}
+
+func runtimeLocalPathMetadataKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "agent_home_dir", "workspace_base_dir", "workspace_path", "mcp_config_path", "employee_capability_dir":
+		return true
+	default:
+		return false
+	}
 }
 
 func projectTaskExecutionPacketMap(packet ProjectTaskExecutionPacket) map[string]any {

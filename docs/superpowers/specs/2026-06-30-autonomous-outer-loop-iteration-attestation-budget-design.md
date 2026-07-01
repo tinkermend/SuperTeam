@@ -131,3 +131,7 @@
 
 > 处置建议：#1 与 #3 优先立独立专题；其余随实现阶段补。本 spec 的假设前提显式声明为「目标已定义、产出为代码分支、执行环境可信且成功」。
 > 进度：**#1 已立项** → `2026-06-30-intent-acceptance-criteria-design.md`（意图层，定义收敛目标，被本外环支柱 A/B 消费）。**#2 的认证/能力缓存边界已立项** → `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`，但沙箱、密钥防外泄、进程隔离仍待立项。#3/#4/#5 待立项。
+
+## 10. 实施同步记录
+
+- 2026-06-30：`docs/superpowers/plans/2026-06-30-project-workspace-autonomous-outer-loop.md` 对本 spec 的 Phase 1 外环约束进行实现同步。本 worktree/plan 已实现或正在实现的约束包括：有界返工/重复失败升级、Runtime attestation 写回、通过类 verification 必须引用 attestation、budget heartbeat 熔断、项目工作区与员工能力缓存/Provider auth 分离。真实链路验证尚未完成，当前记录只能作为实现同步说明，不能声明功能可用。

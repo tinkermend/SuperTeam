@@ -1,9 +1,8 @@
 //! Provider-specific MCP config materialization.
 //!
 //! Renders the effective MCP server payload (HTTP/streamable HTTP only) into provider config
-//! files inside the employee `agent_home_dir`. Only env-var *names* are written — never token
-//! values — and every write is atomic. Codex and OpenCode configs are read-merge-preserve so
-//! unrelated settings survive; Claude Code's `.mcp.json` is MCP-only and fully rewritten.
+//! projection files. Only env-var *names* are written, never token values. Task execution uses
+//! `.superteam/mcp` under the task workspace so provider auth can keep using the host home.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,6 +57,59 @@ pub fn materialize_mcp_config(
 
     atomic_write(&target, content.as_bytes())?;
     Ok(vec![target])
+}
+
+/// materialize_task_mcp_config writes task-level MCP projection files under
+/// `<workspace>/.superteam/mcp`. These files are capability projection inputs,
+/// not provider auth homes.
+pub fn materialize_task_mcp_config(
+    workspace_path: &Path,
+    provider_type: &str,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<Option<PathBuf>> {
+    for server in servers {
+        validate_server(server)?;
+    }
+
+    let target = task_mcp_config_path(workspace_path, provider_type)?;
+    if !target.starts_with(workspace_path) {
+        bail!(
+            "refusing to write task mcp config outside workspace: {}",
+            target.display()
+        );
+    }
+    if servers.is_empty() {
+        return Ok(None);
+    }
+
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("failed to create task mcp config dir {}", parent.display())
+        })?;
+    }
+
+    let content = match provider_type {
+        "codex" => render_codex_mcp_config(servers)?,
+        "claude-code" => render_claude_code_mcp_config(servers)?,
+        "opencode" => render_opencode_task_mcp_config(servers)?,
+        other => bail!("unsupported provider_type for mcp config: {other}"),
+    };
+
+    atomic_write(&target, content.as_bytes())?;
+    Ok(Some(target))
+}
+
+pub fn task_mcp_config_path(workspace_path: &Path, provider_type: &str) -> Result<PathBuf> {
+    let file_name = match provider_type {
+        "codex" => "codex.toml",
+        "claude-code" => "claude.mcp.json",
+        "opencode" => "opencode.json",
+        other => bail!("unsupported provider_type for mcp config: {other}"),
+    };
+    Ok(workspace_path
+        .join(".superteam")
+        .join("mcp")
+        .join(file_name))
 }
 
 // ----------------------------------------------------------------------------
@@ -313,6 +365,13 @@ fn merge_opencode_config(target: &Path, servers: &[RuntimeMCPServerPayload]) -> 
         .context("serialize opencode config")
 }
 
+fn render_opencode_task_mcp_config(servers: &[RuntimeMCPServerPayload]) -> Result<String> {
+    let mut root = serde_json::Map::new();
+    root.insert("mcp".to_string(), render_opencode_mcp_value(servers)?);
+    serde_json::to_string_pretty(&serde_json::Value::Object(root))
+        .context("serialize opencode task mcp config")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,6 +439,21 @@ mod tests {
         let content = std::fs::read_to_string(&written[0]).unwrap();
         assert!(content.contains("[mcp_servers.github]"));
         assert!(written[0].ends_with(".codex/config.toml"));
+    }
+
+    #[test]
+    fn materialize_task_mcp_config_writes_projection_under_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspaces/project/task/attempt");
+
+        let written =
+            materialize_task_mcp_config(&workspace, "claude-code", &[github_server()]).unwrap();
+
+        let written = written.expect("task mcp config path");
+        assert!(written.ends_with(".superteam/mcp/claude.mcp.json"));
+        assert!(written.starts_with(&workspace));
+        let content = std::fs::read_to_string(written).unwrap();
+        assert!(content.contains("\"mcpServers\""));
     }
 
     #[test]

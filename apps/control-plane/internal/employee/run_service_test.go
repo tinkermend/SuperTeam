@@ -360,6 +360,27 @@ func TestRunServiceRuntimeEventPayloadRedactsEnvironmentValues(t *testing.T) {
 	}
 }
 
+func TestRunServiceRuntimeEventPayloadForPersistenceOmitsRuntimeLocalPaths(t *testing.T) {
+	redacted := redactRuntimeEventPayloadForPersistence(map[string]any{
+		"agent_home_dir": "/runtime/employees/employee-1",
+		"nested": map[string]any{
+			"workspace_path": "/runtime/workspaces/project",
+			"keep":           "value",
+		},
+	})
+
+	if _, ok := redacted["agent_home_dir"]; ok {
+		t.Fatalf("expected agent_home_dir to be omitted, got %#v", redacted)
+	}
+	nested := redacted["nested"].(map[string]any)
+	if _, ok := nested["workspace_path"]; ok {
+		t.Fatalf("expected workspace_path to be omitted, got %#v", nested)
+	}
+	if nested["keep"] != "value" {
+		t.Fatalf("expected non-path value preserved, got %#v", nested)
+	}
+}
+
 func TestRunServiceCreateRunEnrichesProjectTaskAttemptMetadata(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()

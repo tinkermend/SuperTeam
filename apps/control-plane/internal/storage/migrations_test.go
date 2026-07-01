@@ -725,6 +725,25 @@ func TestProjectRepoBindingAndAttestationMigration(t *testing.T) {
 	}
 }
 
+func TestProjectTaskAttestationRuntimeContextMigration(t *testing.T) {
+	sql := readMigration(t, "041_project_task_attestation_runtime_context.sql")
+
+	for _, want := range []string{
+		"ALTER TABLE project_task_attestations",
+		"ADD COLUMN digital_employee_id UUID",
+		"ADD COLUMN capability_manifest_version VARCHAR(255)",
+		"ADD COLUMN provider_auth_mode VARCHAR(40) NOT NULL DEFAULT 'host'",
+		"UPDATE project_task_attestations",
+		"project_tasks.assigned_digital_employee_id",
+		"ALTER COLUMN digital_employee_id SET NOT NULL",
+		"chk_project_task_attestations_provider_auth_mode",
+		"CHECK (provider_auth_mode IN ('host', 'employee', 'explicit_credential'))",
+		"COMMENT ON COLUMN project_task_attestations.digital_employee_id IS",
+	} {
+		assertMigrationContains(t, sql, want)
+	}
+}
+
 func TestProjectTasksDurableClosureColumns(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{

@@ -328,7 +328,7 @@ func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Contex
 }
 
 func (r *PgRepository) CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
-	payload, err := jsonbFromMap(redactRuntimeEventPayload(req.Payload), "payload")
+	payload, err := jsonbFromMap(redactRuntimeEventPayloadForPersistence(req.Payload), "payload")
 	if err != nil {
 		return err
 	}

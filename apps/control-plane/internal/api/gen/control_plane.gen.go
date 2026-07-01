@@ -1080,6 +1080,51 @@ func (e ProjectStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectTaskAttestationProviderAuthMode.
+const (
+	Employee           ProjectTaskAttestationProviderAuthMode = "employee"
+	ExplicitCredential ProjectTaskAttestationProviderAuthMode = "explicit_credential"
+	Host               ProjectTaskAttestationProviderAuthMode = "host"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskAttestationProviderAuthMode enum.
+func (e ProjectTaskAttestationProviderAuthMode) Valid() bool {
+	switch e {
+	case Employee:
+		return true
+	case ExplicitCredential:
+		return true
+	case Host:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectTaskAttestationStatus.
+const (
+	ProjectTaskAttestationStatusCancelled ProjectTaskAttestationStatus = "cancelled"
+	ProjectTaskAttestationStatusFailed    ProjectTaskAttestationStatus = "failed"
+	ProjectTaskAttestationStatusSucceeded ProjectTaskAttestationStatus = "succeeded"
+	ProjectTaskAttestationStatusTimedOut  ProjectTaskAttestationStatus = "timed_out"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskAttestationStatus enum.
+func (e ProjectTaskAttestationStatus) Valid() bool {
+	switch e {
+	case ProjectTaskAttestationStatusCancelled:
+		return true
+	case ProjectTaskAttestationStatusFailed:
+		return true
+	case ProjectTaskAttestationStatusSucceeded:
+		return true
+	case ProjectTaskAttestationStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResolveProjectDecisionRequestDecision.
 const (
 	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
@@ -1727,19 +1772,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
-	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
-	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
+	Cancelled ListInboxItemsParamsStatus = "cancelled"
+	Open      ListInboxItemsParamsStatus = "open"
+	Resolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case ListInboxItemsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListInboxItemsParamsStatusOpen:
+	case Open:
 		return true
-	case ListInboxItemsParamsStatusResolved:
+	case Resolved:
 		return true
 	default:
 		return false
@@ -2033,6 +2078,34 @@ type CreateProjectRequest struct {
 type CreateProjectResponse struct {
 	Members []ProjectMember `json:"members"`
 	Project Project         `json:"project"`
+}
+
+// CreateProjectTaskAttestationRequest defines model for CreateProjectTaskAttestationRequest.
+type CreateProjectTaskAttestationRequest struct {
+	ArtifactHashes            *map[string]interface{}                 `json:"artifact_hashes,omitempty"`
+	ArtifactRefs              *[]interface{}                          `json:"artifact_refs,omitempty"`
+	AttemptId                 openapi_types.UUID                      `json:"attempt_id"`
+	AttestationType           string                                  `json:"attestation_type"`
+	CapabilityManifestVersion *string                                 `json:"capability_manifest_version,omitempty"`
+	CommandArgv               *[]interface{}                          `json:"command_argv,omitempty"`
+	DigitalEmployeeId         openapi_types.UUID                      `json:"digital_employee_id"`
+	DurationMs                *int64                                  `json:"duration_ms,omitempty"`
+	ExitCode                  *int32                                  `json:"exit_code,omitempty"`
+	GitBaseRef                *string                                 `json:"git_base_ref,omitempty"`
+	GitBranch                 *string                                 `json:"git_branch,omitempty"`
+	GitDiffSha256             *string                                 `json:"git_diff_sha256,omitempty"`
+	GitHeadSha                *string                                 `json:"git_head_sha,omitempty"`
+	IdempotencyKey            string                                  `json:"idempotency_key"`
+	LogRef                    *string                                 `json:"log_ref,omitempty"`
+	Metadata                  *map[string]interface{}                 `json:"metadata,omitempty"`
+	ProjectId                 openapi_types.UUID                      `json:"project_id"`
+	ProjectTaskId             openapi_types.UUID                      `json:"project_task_id"`
+	ProviderAuthMode          *ProjectTaskAttestationProviderAuthMode `json:"provider_auth_mode,omitempty"`
+	ProviderSessionId         *string                                 `json:"provider_session_id,omitempty"`
+	RuntimeNodeId             openapi_types.UUID                      `json:"runtime_node_id"`
+	Status                    ProjectTaskAttestationStatus            `json:"status"`
+	StderrSha256              *string                                 `json:"stderr_sha256,omitempty"`
+	StdoutSha256              *string                                 `json:"stdout_sha256,omitempty"`
 }
 
 // CreatePromptTemplateRequest defines model for CreatePromptTemplateRequest.
@@ -3454,6 +3527,12 @@ type ProjectTask struct {
 	Title                     string                  `json:"title"`
 }
 
+// ProjectTaskAttemptBudgetHeartbeatResponse defines model for ProjectTaskAttemptBudgetHeartbeatResponse.
+type ProjectTaskAttemptBudgetHeartbeatResponse struct {
+	TripReason *string `json:"trip_reason,omitempty"`
+	Tripped    bool    `json:"tripped"`
+}
+
 // ProjectTaskAttemptRuntimeFields defines model for ProjectTaskAttemptRuntimeFields.
 type ProjectTaskAttemptRuntimeFields struct {
 	IdempotencyKey    string             `json:"idempotency_key"`
@@ -3462,6 +3541,44 @@ type ProjectTaskAttemptRuntimeFields struct {
 	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
 	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
 }
+
+// ProjectTaskAttestation defines model for ProjectTaskAttestation.
+type ProjectTaskAttestation struct {
+	ArtifactHashes            map[string]interface{}                 `json:"artifact_hashes"`
+	ArtifactRefs              []interface{}                          `json:"artifact_refs"`
+	AttemptId                 openapi_types.UUID                     `json:"attempt_id"`
+	AttestationType           string                                 `json:"attestation_type"`
+	CapabilityManifestVersion *string                                `json:"capability_manifest_version,omitempty"`
+	CommandArgv               []interface{}                          `json:"command_argv"`
+	CreatedAt                 time.Time                              `json:"created_at"`
+	DigitalEmployeeId         openapi_types.UUID                     `json:"digital_employee_id"`
+	DurationMs                *int64                                 `json:"duration_ms,omitempty"`
+	ExitCode                  *int32                                 `json:"exit_code,omitempty"`
+	GitBaseRef                *string                                `json:"git_base_ref,omitempty"`
+	GitBranch                 *string                                `json:"git_branch,omitempty"`
+	GitDiffSha256             *string                                `json:"git_diff_sha256,omitempty"`
+	GitHeadSha                *string                                `json:"git_head_sha,omitempty"`
+	Id                        openapi_types.UUID                     `json:"id"`
+	IdempotencyKey            string                                 `json:"idempotency_key"`
+	LogRef                    *string                                `json:"log_ref,omitempty"`
+	Metadata                  map[string]interface{}                 `json:"metadata"`
+	ProjectId                 openapi_types.UUID                     `json:"project_id"`
+	ProjectTaskId             openapi_types.UUID                     `json:"project_task_id"`
+	ProviderAuthMode          ProjectTaskAttestationProviderAuthMode `json:"provider_auth_mode"`
+	ProviderSessionId         *string                                `json:"provider_session_id,omitempty"`
+	RuntimeNodeId             openapi_types.UUID                     `json:"runtime_node_id"`
+	Status                    ProjectTaskAttestationStatus           `json:"status"`
+	StderrSha256              *string                                `json:"stderr_sha256,omitempty"`
+	StdoutSha256              *string                                `json:"stdout_sha256,omitempty"`
+	TenantId                  openapi_types.UUID                     `json:"tenant_id"`
+	UpdatedAt                 time.Time                              `json:"updated_at"`
+}
+
+// ProjectTaskAttestationProviderAuthMode defines model for ProjectTaskAttestationProviderAuthMode.
+type ProjectTaskAttestationProviderAuthMode string
+
+// ProjectTaskAttestationStatus defines model for ProjectTaskAttestationStatus.
+type ProjectTaskAttestationStatus string
 
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
@@ -3665,6 +3782,14 @@ type ProviderSessionEvent1 = interface{}
 // PushTaskEventsRequest defines model for PushTaskEventsRequest.
 type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
+}
+
+// RecordProjectTaskAttemptBudgetHeartbeatRequest defines model for RecordProjectTaskAttemptBudgetHeartbeatRequest.
+type RecordProjectTaskAttemptBudgetHeartbeatRequest struct {
+	ConsumedTokens       *int32             `json:"consumed_tokens,omitempty"`
+	ConsumedWallClockSec int32              `json:"consumed_wall_clock_sec"`
+	ProjectId            openapi_types.UUID `json:"project_id"`
+	ProjectTaskId        openapi_types.UUID `json:"project_task_id"`
 }
 
 // RegisterRuntimeNodeRequest defines model for RegisterRuntimeNodeRequest.
@@ -4953,6 +5078,11 @@ type RenewRuntimeTaskLeaseParams struct {
 	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
 }
 
+// UpdateRuntimeTaskStatusParams defines parameters for UpdateRuntimeTaskStatus.
+type UpdateRuntimeTaskStatusParams struct {
+	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
+}
+
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
@@ -5141,6 +5271,9 @@ type HeartbeatRuntimeNodeJSONRequestBody = RuntimeHeartbeatRequest
 // UpsertRuntimeCapabilitiesJSONRequestBody defines body for UpsertRuntimeCapabilities for application/json ContentType.
 type UpsertRuntimeCapabilitiesJSONRequestBody = RuntimeCapabilityReportRequest
 
+// RecordProjectTaskAttemptBudgetHeartbeatJSONRequestBody defines body for RecordProjectTaskAttemptBudgetHeartbeat for application/json ContentType.
+type RecordProjectTaskAttemptBudgetHeartbeatJSONRequestBody = RecordProjectTaskAttemptBudgetHeartbeatRequest
+
 // CompleteProjectTaskAttemptJSONRequestBody defines body for CompleteProjectTaskAttempt for application/json ContentType.
 type CompleteProjectTaskAttemptJSONRequestBody = CompleteProjectTaskAttemptRequest
 
@@ -5159,6 +5292,9 @@ type StartProjectTaskAttemptJSONRequestBody = StartProjectTaskAttemptRequest
 // WaitHumanProjectTaskAttemptJSONRequestBody defines body for WaitHumanProjectTaskAttempt for application/json ContentType.
 type WaitHumanProjectTaskAttemptJSONRequestBody = WaitHumanProjectTaskAttemptRequest
 
+// CreateProjectTaskAttestationJSONRequestBody defines body for CreateProjectTaskAttestation for application/json ContentType.
+type CreateProjectTaskAttestationJSONRequestBody = CreateProjectTaskAttestationRequest
+
 // RegisterRuntimeNodeJSONRequestBody defines body for RegisterRuntimeNode for application/json ContentType.
 type RegisterRuntimeNodeJSONRequestBody = RegisterRuntimeNodeRequest
 
@@ -5173,6 +5309,9 @@ type PushRuntimeTaskEventsJSONRequestBody = PushTaskEventsRequest
 
 // FailRuntimeTaskJSONRequestBody defines body for FailRuntimeTask for application/json ContentType.
 type FailRuntimeTaskJSONRequestBody = FailTaskRequest
+
+// UpdateRuntimeTaskStatusJSONRequestBody defines body for UpdateRuntimeTaskStatus for application/json ContentType.
+type UpdateRuntimeTaskStatusJSONRequestBody = UpdateTaskStatusRequest
 
 // UploadSkillMultipartRequestBody defines body for UploadSkill for multipart/form-data ContentType.
 type UploadSkillMultipartRequestBody = UploadSkillRequest
@@ -6007,6 +6146,9 @@ type ServerInterface interface {
 	// Get Runtime Agent fleet overview
 	// (GET /api/v1/runtime/overview)
 	GetRuntimeOverview(w http.ResponseWriter, r *http.Request)
+	// Record ProjectTask attempt budget heartbeat and return fuse status
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/budget-heartbeat)
+	RecordProjectTaskAttemptBudgetHeartbeat(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
 	// Complete a ProjectTask attempt
 	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/complete)
 	CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
@@ -6025,6 +6167,9 @@ type ServerInterface interface {
 	// Pause a ProjectTask attempt and request human input
 	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/wait-human)
 	WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Record a Runtime attestation for a ProjectTask attempt
+	// (POST /api/v1/runtime/project-task-attestations)
+	CreateProjectTaskAttestation(w http.ResponseWriter, r *http.Request)
 	// Register a Runtime Agent node
 	// (POST /api/v1/runtime/register)
 	RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams)
@@ -6049,6 +6194,9 @@ type ServerInterface interface {
 	// Acknowledge a Runtime Agent task lease heartbeat
 	// (POST /api/v1/runtime/tasks/{taskId}/lease)
 	RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams)
+	// Update a Runtime Agent task status
+	// (PUT /api/v1/runtime/tasks/{taskId}/status)
+	UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams)
 	// List skills with files and bindings
 	// (GET /api/v1/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, params ListSkillsParams)
@@ -6862,6 +7010,12 @@ func (_ Unimplemented) GetRuntimeOverview(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Record ProjectTask attempt budget heartbeat and return fuse status
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/budget-heartbeat)
+func (_ Unimplemented) RecordProjectTaskAttemptBudgetHeartbeat(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Complete a ProjectTask attempt
 // (POST /api/v1/runtime/project-task-attempts/{attemptId}/complete)
 func (_ Unimplemented) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
@@ -6895,6 +7049,12 @@ func (_ Unimplemented) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Re
 // Pause a ProjectTask attempt and request human input
 // (POST /api/v1/runtime/project-task-attempts/{attemptId}/wait-human)
 func (_ Unimplemented) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Record a Runtime attestation for a ProjectTask attempt
+// (POST /api/v1/runtime/project-task-attestations)
+func (_ Unimplemented) CreateProjectTaskAttestation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6943,6 +7103,12 @@ func (_ Unimplemented) FailRuntimeTask(w http.ResponseWriter, r *http.Request, t
 // Acknowledge a Runtime Agent task lease heartbeat
 // (POST /api/v1/runtime/tasks/{taskId}/lease)
 func (_ Unimplemented) RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a Runtime Agent task status
+// (PUT /api/v1/runtime/tasks/{taskId}/status)
+func (_ Unimplemented) UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11511,6 +11677,32 @@ func (siw *ServerInterfaceWrapper) GetRuntimeOverview(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// RecordProjectTaskAttemptBudgetHeartbeat operation middleware
+func (siw *ServerInterfaceWrapper) RecordProjectTaskAttemptBudgetHeartbeat(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecordProjectTaskAttemptBudgetHeartbeat(w, r, attemptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CompleteProjectTaskAttempt operation middleware
 func (siw *ServerInterfaceWrapper) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
 
@@ -11658,6 +11850,20 @@ func (siw *ServerInterfaceWrapper) WaitHumanProjectTaskAttempt(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.WaitHumanProjectTaskAttempt(w, r, attemptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectTaskAttestation operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectTaskAttestation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectTaskAttestation(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12029,6 +12235,60 @@ func (siw *ServerInterfaceWrapper) RenewRuntimeTaskLease(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenewRuntimeTaskLease(w, r, taskId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateRuntimeTaskStatus operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "taskId" -------------
+	var taskId TaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateRuntimeTaskStatusParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Node-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
+		var XNodeID RuntimeNodeIdHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
+			return
+		}
+
+		params.XNodeID = XNodeID
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRuntimeTaskStatus(w, r, taskId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14357,6 +14617,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/runtime/overview", wrapper.GetRuntimeOverview)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/budget-heartbeat", wrapper.RecordProjectTaskAttemptBudgetHeartbeat)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/complete", wrapper.CompleteProjectTaskAttempt)
 	})
 	r.Group(func(r chi.Router) {
@@ -14373,6 +14636,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/wait-human", wrapper.WaitHumanProjectTaskAttempt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attestations", wrapper.CreateProjectTaskAttestation)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/register", wrapper.RegisterRuntimeNode)
@@ -14397,6 +14663,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/lease", wrapper.RenewRuntimeTaskLease)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/status", wrapper.UpdateRuntimeTaskStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills", wrapper.ListSkills)

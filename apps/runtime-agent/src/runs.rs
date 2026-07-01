@@ -40,8 +40,18 @@ pub struct RuntimeCommandRunContext {
 pub struct RunSpec {
     pub provider_kind: String,
     pub workspace_path: PathBuf,
+    /// Legacy alias for the employee capability cache. Do not use it as a
+    /// provider auth home.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_home_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_capability_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_manifest_version: Option<String>,
+    #[serde(default = "default_provider_auth_mode")]
+    pub provider_auth_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_config_path: Option<PathBuf>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -72,13 +82,27 @@ pub fn redacted_environment_view(
         .collect()
 }
 
+fn default_provider_auth_mode() -> String {
+    "host".to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSnapshot {
     pub id: String,
     pub provider_kind: String,
     pub workspace_path: PathBuf,
+    /// Legacy alias for the employee capability cache. Do not use it as a
+    /// provider auth home.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_home_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_capability_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_manifest_version: Option<String>,
+    #[serde(default = "default_provider_auth_mode")]
+    pub provider_auth_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_config_path: Option<PathBuf>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -135,6 +159,10 @@ impl RuntimeRunStore {
             provider_kind: spec.provider_kind,
             workspace_path: spec.workspace_path,
             agent_home_dir: spec.agent_home_dir,
+            employee_capability_dir: spec.employee_capability_dir,
+            capability_manifest_version: spec.capability_manifest_version,
+            provider_auth_mode: spec.provider_auth_mode,
+            mcp_config_path: spec.mcp_config_path,
             prompt: spec.prompt,
             session_id: spec.session_id,
             continue_session: spec.continue_session,

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -345,6 +346,58 @@ func TestLegacyCompletionContractAdapter(t *testing.T) {
 		require.Equal(t, "请负责人确认是否接受剩余风险。", contract.FollowUpRequests[0].Summary)
 		require.NotNil(t, contract.HumanReviewRequest)
 	})
+}
+
+func TestCompletedVerificationRequiresRuntimeAttestationRef(t *testing.T) {
+	task := ProjectTask{
+		ID:              uuid.New(),
+		ExpectedOutputs: []any{"verification"},
+		HandoffContract: map[string]any{
+			"requires_runtime_attestation": true,
+		},
+	}
+	result := TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "tests passed",
+		Verification: []TaskResultVerification{{
+			Status:  TaskResultVerificationStatusPassed,
+			Type:    "unit_test",
+			Summary: "go test passed",
+		}},
+	}
+
+	validation := ValidateTaskResultContract(task, result)
+
+	require.False(t, validation.Valid)
+	require.Contains(t, validation.Errors, "verification_attestation_ref_required")
+}
+
+func TestCompletedVerificationAcceptsRuntimeAttestationRef(t *testing.T) {
+	task := ProjectTask{
+		ID:              uuid.New(),
+		ExpectedOutputs: []any{"verification"},
+		HandoffContract: map[string]any{
+			"requires_runtime_attestation": true,
+		},
+	}
+	result := TaskResultContract{
+		Status:  TaskResultStatusCompleted,
+		Summary: "tests passed",
+		Verification: []TaskResultVerification{{
+			Status:  TaskResultVerificationStatusPassed,
+			Type:    "unit_test",
+			Summary: "go test passed",
+			EvidenceRefs: []TaskResultRef{{
+				Kind: "attestation",
+				Type: "runtime_command",
+				Ref:  "attestation:123",
+			}},
+		}},
+	}
+
+	validation := ValidateTaskResultContract(task, result)
+
+	require.True(t, validation.Valid, "unexpected errors: %#v", validation.Errors)
 }
 
 func TestTaskResultContractReviewRequiredExports(t *testing.T) {

@@ -303,6 +303,82 @@ type ProjectRepoBindingInput struct {
 	Scope            []string `json:"scope"`
 }
 
+type ProjectTaskAttestationStatus string
+
+const (
+	ProjectTaskAttestationStatusSucceeded ProjectTaskAttestationStatus = "succeeded"
+	ProjectTaskAttestationStatusFailed    ProjectTaskAttestationStatus = "failed"
+	ProjectTaskAttestationStatusCancelled ProjectTaskAttestationStatus = "cancelled"
+	ProjectTaskAttestationStatusTimedOut  ProjectTaskAttestationStatus = "timed_out"
+)
+
+type ProjectTaskAttestationProviderAuthMode string
+
+const (
+	ProjectTaskAttestationProviderAuthModeHost               ProjectTaskAttestationProviderAuthMode = "host"
+	ProjectTaskAttestationProviderAuthModeEmployee           ProjectTaskAttestationProviderAuthMode = "employee"
+	ProjectTaskAttestationProviderAuthModeExplicitCredential ProjectTaskAttestationProviderAuthMode = "explicit_credential"
+)
+
+type ProjectTaskAttestation struct {
+	ID                        uuid.UUID
+	TenantID                  uuid.UUID
+	ProjectID                 uuid.UUID
+	ProjectTaskID             uuid.UUID
+	AttemptID                 uuid.UUID
+	RuntimeNodeID             uuid.UUID
+	DigitalEmployeeID         uuid.UUID
+	CapabilityManifestVersion string
+	ProviderAuthMode          ProjectTaskAttestationProviderAuthMode
+	ProviderSessionID         *string
+	AttestationType           string
+	Status                    ProjectTaskAttestationStatus
+	CommandArgv               []any
+	ExitCode                  *int32
+	DurationMs                *int64
+	LogRef                    *string
+	StdoutSha256              *string
+	StderrSha256              *string
+	ArtifactRefs              []any
+	ArtifactHashes            map[string]any
+	GitBranch                 *string
+	GitBaseRef                *string
+	GitHeadSha                *string
+	GitDiffSha256             *string
+	Metadata                  map[string]any
+	IdempotencyKey            string
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+}
+
+type CreateProjectTaskAttestationRequest struct {
+	TenantID                  uuid.UUID                              `json:"tenant_id,omitempty"`
+	ProjectID                 uuid.UUID                              `json:"project_id"`
+	ProjectTaskID             uuid.UUID                              `json:"project_task_id"`
+	AttemptID                 uuid.UUID                              `json:"attempt_id"`
+	RuntimeNodeID             uuid.UUID                              `json:"runtime_node_id"`
+	DigitalEmployeeID         uuid.UUID                              `json:"digital_employee_id"`
+	CapabilityManifestVersion string                                 `json:"capability_manifest_version"`
+	ProviderAuthMode          ProjectTaskAttestationProviderAuthMode `json:"provider_auth_mode"`
+	ProviderSessionID         *string                                `json:"provider_session_id"`
+	AttestationType           string                                 `json:"attestation_type"`
+	Status                    ProjectTaskAttestationStatus           `json:"status"`
+	CommandArgv               []any                                  `json:"command_argv"`
+	ExitCode                  *int32                                 `json:"exit_code"`
+	DurationMs                *int64                                 `json:"duration_ms"`
+	LogRef                    *string                                `json:"log_ref"`
+	StdoutSha256              *string                                `json:"stdout_sha256"`
+	StderrSha256              *string                                `json:"stderr_sha256"`
+	ArtifactRefs              []any                                  `json:"artifact_refs"`
+	ArtifactHashes            map[string]any                         `json:"artifact_hashes"`
+	GitBranch                 *string                                `json:"git_branch"`
+	GitBaseRef                *string                                `json:"git_base_ref"`
+	GitHeadSha                *string                                `json:"git_head_sha"`
+	GitDiffSha256             *string                                `json:"git_diff_sha256"`
+	Metadata                  map[string]any                         `json:"metadata"`
+	IdempotencyKey            string                                 `json:"idempotency_key"`
+}
+
 type ProjectMember struct {
 	ID                  uuid.UUID
 	TenantID            uuid.UUID
@@ -525,8 +601,29 @@ type ProjectTaskAttempt struct {
 	DispatchGateResultID          *uuid.UUID
 	CreatedEventID                *uuid.UUID
 	TerminalEventID               *uuid.UUID
+	BudgetWallClockLimitSec       *int32
+	BudgetLastHeartbeatAt         *time.Time
+	BudgetConsumedWallClockSec    int32
+	BudgetConsumedTokens          int32
+	BudgetTrippedAt               *time.Time
+	BudgetTripReason              *string
 	CreatedAt                     time.Time
 	UpdatedAt                     time.Time
+}
+
+type RecordProjectTaskAttemptBudgetHeartbeatRequest struct {
+	TenantID             uuid.UUID `json:"tenant_id,omitempty"`
+	ProjectID            uuid.UUID `json:"project_id,omitempty"`
+	ProjectTaskID        uuid.UUID `json:"project_task_id"`
+	AttemptID            uuid.UUID `json:"attempt_id"`
+	ConsumedWallClockSec int32     `json:"consumed_wall_clock_sec"`
+	ConsumedTokens       int32     `json:"consumed_tokens"`
+}
+
+type ProjectTaskAttemptBudgetHeartbeatResult struct {
+	Attempt    ProjectTaskAttempt
+	Tripped    bool
+	TripReason string
 }
 
 type QueueProjectTaskRequest struct {

@@ -301,11 +301,11 @@ func (r *PgRunRepository) HasRunEventSequence(ctx context.Context, tenantID, tas
 }
 
 func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) (bool, error) {
-	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
+	payload, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Payload), "payload")
 	if err != nil {
 		return false, err
 	}
-	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Metadata), "metadata")
 	if err != nil {
 		return false, err
 	}
@@ -334,7 +334,7 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 	if err != nil {
 		return uuid.Nil, err
 	}
-	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Metadata), "metadata")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -364,7 +364,7 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 }
 
 func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
-	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
+	payload, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Payload), "payload")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -372,7 +372,7 @@ func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context
 	if err != nil {
 		return uuid.Nil, err
 	}
-	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Metadata), "metadata")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -397,7 +397,7 @@ func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context
 }
 
 func (r *PgRunRepository) CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
-	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
+	payload, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Payload), "payload")
 	if err != nil {
 		return err
 	}
@@ -515,6 +515,14 @@ func jsonMapFromBytes(raw []byte) map[string]any {
 }
 
 func redactRuntimeEventPayload(payload map[string]any) map[string]any {
+	return redactRuntimeEventSecrets(payload)
+}
+
+func redactRuntimeEventPayloadForPersistence(payload map[string]any) map[string]any {
+	return dropRuntimeLocalPathKeys(redactRuntimeEventSecrets(payload))
+}
+
+func redactRuntimeEventSecrets(payload map[string]any) map[string]any {
 	blocked := map[string]struct{}{
 		"authorization": {},
 		"password":      {},
@@ -566,6 +574,50 @@ func redactValue(value any, blocked map[string]struct{}) any {
 		return redacted
 	default:
 		return value
+	}
+}
+
+func dropRuntimeLocalPathKeys(payload map[string]any) map[string]any {
+	if payload == nil {
+		return map[string]any{}
+	}
+	cleaned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		if runtimeLocalPathKey(key) {
+			continue
+		}
+		cleaned[key] = dropRuntimeLocalPathValue(value)
+	}
+	return cleaned
+}
+
+func dropRuntimeLocalPathValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return dropRuntimeLocalPathKeys(typed)
+	case []any:
+		cleaned := make([]any, len(typed))
+		for index, item := range typed {
+			cleaned[index] = dropRuntimeLocalPathValue(item)
+		}
+		return cleaned
+	case []map[string]any:
+		cleaned := make([]map[string]any, len(typed))
+		for index, item := range typed {
+			cleaned[index] = dropRuntimeLocalPathKeys(item)
+		}
+		return cleaned
+	default:
+		return value
+	}
+}
+
+func runtimeLocalPathKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "agent_home_dir", "workspace_base_dir", "workspace_path", "mcp_config_path", "employee_capability_dir":
+		return true
+	default:
+		return false
 	}
 }
 

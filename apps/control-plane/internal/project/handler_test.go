@@ -1461,6 +1461,102 @@ func TestCompleteProjectTaskAttemptResultRouteParsesTaskResultContract(t *testin
 	}
 }
 
+func TestCreateProjectTaskAttestationHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	nodeID := uuid.New()
+	employeeID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	body := strings.NewReader(`{
+		"project_id":"` + projectID.String() + `",
+		"project_task_id":"` + taskID.String() + `",
+		"attempt_id":"` + attemptID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"digital_employee_id":"` + employeeID.String() + `",
+		"capability_manifest_version":"cap-manifest:v3",
+		"attestation_type":"provider_start",
+		"status":"succeeded",
+		"command_argv":["codex","exec"],
+		"exit_code":0,
+		"duration_ms":1234,
+		"stdout_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"stderr_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"artifact_refs":[{"type":"log","ref":"artifact:stdout"}],
+		"artifact_hashes":{"artifact:stdout":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		"metadata":{"workspace_mode":"branch"},
+		"idempotency_key":"attestation-1"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attestations", body)
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.CreateProjectTaskAttestation(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected attestation writeback to return 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	got := service.createProjectTaskAttestationReq
+	if got.TenantID != tenantID || got.ProjectID != projectID || got.ProjectTaskID != taskID || got.AttemptID != attemptID || got.RuntimeNodeID != nodeID || got.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected attestation identity: %#v", got)
+	}
+	if got.CapabilityManifestVersion != "cap-manifest:v3" || got.ProviderAuthMode != ProjectTaskAttestationProviderAuthModeHost {
+		t.Fatalf("unexpected attestation runtime metadata: %#v", got)
+	}
+	if got.AttestationType != "provider_start" || got.Status != ProjectTaskAttestationStatusSucceeded || got.IdempotencyKey != "attestation-1" {
+		t.Fatalf("unexpected attestation payload: %#v", got)
+	}
+	if len(got.CommandArgv) != 2 || got.CommandArgv[0] != "codex" {
+		t.Fatalf("expected command argv to be forwarded, got %#v", got.CommandArgv)
+	}
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode attestation response: %v", err)
+	}
+	if response["provider_auth_mode"] != string(ProjectTaskAttestationProviderAuthModeHost) || response["digital_employee_id"] != employeeID.String() {
+		t.Fatalf("expected attestation response metadata, got %#v", response)
+	}
+}
+
+func TestRecordProjectTaskAttemptBudgetHeartbeatHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	nodeID := uuid.New()
+	service := &handlerTestService{budgetHeartbeatResult: &ProjectTaskAttemptBudgetHeartbeatResult{Tripped: true, TripReason: "wall_clock_exceeded"}}
+	handler := newTestHandler(service)
+	body := strings.NewReader(`{
+		"project_id":"` + projectID.String() + `",
+		"project_task_id":"` + taskID.String() + `",
+		"consumed_wall_clock_sec":11,
+		"consumed_tokens":123
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/budget-heartbeat", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.RecordProjectTaskAttemptBudgetHeartbeat(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected budget heartbeat to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	got := service.budgetHeartbeatReq
+	if got.TenantID != tenantID || got.ProjectID != projectID || got.ProjectTaskID != taskID || got.AttemptID != attemptID || got.ConsumedWallClockSec != 11 || got.ConsumedTokens != 123 {
+		t.Fatalf("unexpected budget heartbeat request: %#v", got)
+	}
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode heartbeat response: %v", err)
+	}
+	if response["tripped"] != true || response["trip_reason"] != "wall_clock_exceeded" {
+		t.Fatalf("unexpected heartbeat response: %#v", response)
+	}
+}
+
 func TestFailProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	tenantID := uuid.New()
 	attemptID := uuid.New()
@@ -1605,6 +1701,9 @@ type handlerTestService struct {
 	renewAttemptLeaseReq              RenewProjectTaskAttemptLeaseRequest
 	completeAttemptReq                CompleteProjectTaskAttemptRequest
 	submitProjectTaskAttemptResultReq SubmitProjectTaskAttemptResultRequest
+	createProjectTaskAttestationReq   CreateProjectTaskAttestationRequest
+	budgetHeartbeatReq                RecordProjectTaskAttemptBudgetHeartbeatRequest
+	budgetHeartbeatResult             *ProjectTaskAttemptBudgetHeartbeatResult
 	failAttemptReq                    FailProjectTaskAttemptRequest
 	waitAttemptReq                    WaitHumanProjectTaskAttemptRequest
 }
@@ -1852,6 +1951,42 @@ func (s *handlerTestService) CompleteProjectTaskAttempt(ctx context.Context, req
 func (s *handlerTestService) SubmitProjectTaskAttemptResult(ctx context.Context, req SubmitProjectTaskAttemptResultRequest) (*ExecutionSummary, error) {
 	s.submitProjectTaskAttemptResultReq = req
 	return &ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID}, nil
+}
+
+func (s *handlerTestService) CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (*ProjectTaskAttestation, error) {
+	s.createProjectTaskAttestationReq = req
+	return &ProjectTaskAttestation{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		ProjectTaskID:             req.ProjectTaskID,
+		AttemptID:                 req.AttemptID,
+		RuntimeNodeID:             req.RuntimeNodeID,
+		DigitalEmployeeID:         req.DigitalEmployeeID,
+		CapabilityManifestVersion: req.CapabilityManifestVersion,
+		ProviderAuthMode:          req.ProviderAuthMode,
+		AttestationType:           req.AttestationType,
+		Status:                    req.Status,
+		CommandArgv:               req.CommandArgv,
+		ExitCode:                  req.ExitCode,
+		DurationMs:                req.DurationMs,
+		StdoutSha256:              req.StdoutSha256,
+		StderrSha256:              req.StderrSha256,
+		ArtifactRefs:              req.ArtifactRefs,
+		ArtifactHashes:            req.ArtifactHashes,
+		Metadata:                  req.Metadata,
+		IdempotencyKey:            req.IdempotencyKey,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	}, nil
+}
+
+func (s *handlerTestService) RecordProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req RecordProjectTaskAttemptBudgetHeartbeatRequest) (*ProjectTaskAttemptBudgetHeartbeatResult, error) {
+	s.budgetHeartbeatReq = req
+	if s.budgetHeartbeatResult != nil {
+		return s.budgetHeartbeatResult, nil
+	}
+	return &ProjectTaskAttemptBudgetHeartbeatResult{}, nil
 }
 
 func (s *handlerTestService) FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error) {

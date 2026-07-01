@@ -1525,6 +1525,12 @@ type ProjectTaskAttestation struct {
 	IdempotencyKey    string             `json:"idempotency_key"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	// 生成该执行证明的数字员工 ID；历史缺失记录使用全零 UUID 占位。
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 执行时使用的员工能力 manifest 版本。
+	CapabilityManifestVersion pgtype.Text `json:"capability_manifest_version"`
+	// 执行时 Provider 认证模式：host、employee 或 explicit_credential。
+	ProviderAuthMode string `json:"provider_auth_mode"`
 }
 
 // 项目任务依赖边，记录一个任务被另一个任务完成结果阻塞的DAG关系

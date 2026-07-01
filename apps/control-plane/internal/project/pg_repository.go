@@ -1546,6 +1546,21 @@ func (r *PgRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, atte
 	return projectTaskAttemptFromRecord(row)
 }
 
+func (r *PgRepository) UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req RecordProjectTaskAttemptBudgetHeartbeatRequest, tripReason string) (ProjectTaskAttempt, error) {
+	row, err := r.q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:             req.TenantID,
+		ProjectTaskID:        req.ProjectTaskID,
+		AttemptID:            req.AttemptID,
+		ConsumedWallClockSec: req.ConsumedWallClockSec,
+		ConsumedTokens:       req.ConsumedTokens,
+		TripReason:           textOrNull(tripReason),
+	})
+	if err != nil {
+		return ProjectTaskAttempt{}, projectRepositoryError(err)
+	}
+	return projectTaskAttemptFromRecord(row)
+}
+
 func (r *PgRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTaskAttempt, error) {
 	row, err := r.q.GetCurrentProjectTaskAttempt(ctx, queries.GetCurrentProjectTaskAttemptParams{TenantID: tenantID, ProjectTaskID: projectTaskID})
 	if err != nil {
@@ -2953,6 +2968,80 @@ func (r *PgRepository) createExecutionSummaryWithQueries(ctx context.Context, q 
 		return ExecutionSummary{}, err
 	}
 	return executionSummaryFromRecord(row)
+}
+
+func (r *PgRepository) CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (ProjectTaskAttestation, error) {
+	commandArgv, err := jsonbArray(req.CommandArgv, "command_argv")
+	if err != nil {
+		return ProjectTaskAttestation{}, err
+	}
+	artifactRefs, err := jsonbArray(req.ArtifactRefs, "artifact_refs")
+	if err != nil {
+		return ProjectTaskAttestation{}, err
+	}
+	artifactHashes, err := jsonbObject(req.ArtifactHashes, "artifact_hashes")
+	if err != nil {
+		return ProjectTaskAttestation{}, err
+	}
+	metadata, err := jsonbObject(req.Metadata, "metadata")
+	if err != nil {
+		return ProjectTaskAttestation{}, err
+	}
+	row, err := r.q.CreateProjectTaskAttestation(ctx, queries.CreateProjectTaskAttestationParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ProjectTaskID:     req.ProjectTaskID,
+		AttemptID:         req.AttemptID,
+		RuntimeNodeID:     req.RuntimeNodeID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		CapabilityManifestVersion: textOrNull(
+			strings.TrimSpace(req.CapabilityManifestVersion),
+		),
+		ProviderAuthMode:  textOrNull(string(req.ProviderAuthMode)),
+		ProviderSessionID: textPtr(req.ProviderSessionID),
+		AttestationType:   req.AttestationType,
+		Status:            string(req.Status),
+		CommandArgv:       commandArgv,
+		ExitCode:          int4Ptr(req.ExitCode),
+		DurationMs:        int8Ptr(req.DurationMs),
+		LogRef:            textPtr(req.LogRef),
+		StdoutSha256:      textPtr(req.StdoutSha256),
+		StderrSha256:      textPtr(req.StderrSha256),
+		ArtifactRefs:      artifactRefs,
+		ArtifactHashes:    artifactHashes,
+		GitBranch:         textPtr(req.GitBranch),
+		GitBaseRef:        textPtr(req.GitBaseRef),
+		GitHeadSha:        textPtr(req.GitHeadSha),
+		GitDiffSha256:     textPtr(req.GitDiffSha256),
+		Metadata:          metadata,
+		IdempotencyKey:    req.IdempotencyKey,
+	})
+	if err != nil {
+		return ProjectTaskAttestation{}, err
+	}
+	return projectTaskAttestationFromCreateRow(row)
+}
+
+func (r *PgRepository) ListProjectTaskAttestations(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID, limit, offset int32) ([]ProjectTaskAttestation, error) {
+	rows, err := r.q.ListProjectTaskAttestations(ctx, queries.ListProjectTaskAttestationsParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+		Limit:         limit,
+		Offset:        offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ProjectTaskAttestation, 0, len(rows))
+	for _, row := range rows {
+		item, err := projectTaskAttestationFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (r *PgRepository) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
@@ -4589,6 +4678,126 @@ func projectRepoBindingFromRecord(row queries.Project) (ProjectRepoBinding, erro
 	}, nil
 }
 
+func projectTaskAttestationFromCreateRow(row queries.CreateProjectTaskAttestationRow) (ProjectTaskAttestation, error) {
+	commandArgv, err := anySliceFromJSON(row.CommandArgv)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("command_argv: %w", err)
+	}
+	artifactRefs, err := anySliceFromJSON(row.ArtifactRefs)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("artifact_refs: %w", err)
+	}
+	artifactHashes, err := mapFromJSON(row.ArtifactHashes)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("artifact_hashes: %w", err)
+	}
+	metadata, err := mapFromJSON(row.Metadata)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("metadata: %w", err)
+	}
+	return projectTaskAttestationFromValues(projectTaskAttestationRecordValues{
+		ID: row.ID, TenantID: row.TenantID, ProjectID: row.ProjectID, ProjectTaskID: row.ProjectTaskID, AttemptID: row.AttemptID,
+		RuntimeNodeID: row.RuntimeNodeID, DigitalEmployeeID: row.DigitalEmployeeID, CapabilityManifestVersion: row.CapabilityManifestVersion,
+		ProviderAuthMode: row.ProviderAuthMode, ProviderSessionID: row.ProviderSessionID, AttestationType: row.AttestationType, Status: row.Status,
+		CommandArgv: commandArgv, ExitCode: row.ExitCode, DurationMs: row.DurationMs, LogRef: row.LogRef, StdoutSha256: row.StdoutSha256,
+		StderrSha256: row.StderrSha256, ArtifactRefs: artifactRefs, ArtifactHashes: artifactHashes, GitBranch: row.GitBranch, GitBaseRef: row.GitBaseRef,
+		GitHeadSha: row.GitHeadSha, GitDiffSha256: row.GitDiffSha256, Metadata: metadata, IdempotencyKey: row.IdempotencyKey,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}), nil
+}
+
+func projectTaskAttestationFromRecord(row queries.ProjectTaskAttestation) (ProjectTaskAttestation, error) {
+	commandArgv, err := anySliceFromJSON(row.CommandArgv)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("command_argv: %w", err)
+	}
+	artifactRefs, err := anySliceFromJSON(row.ArtifactRefs)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("artifact_refs: %w", err)
+	}
+	artifactHashes, err := mapFromJSON(row.ArtifactHashes)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("artifact_hashes: %w", err)
+	}
+	metadata, err := mapFromJSON(row.Metadata)
+	if err != nil {
+		return ProjectTaskAttestation{}, fmt.Errorf("metadata: %w", err)
+	}
+	return projectTaskAttestationFromValues(projectTaskAttestationRecordValues{
+		ID: row.ID, TenantID: row.TenantID, ProjectID: row.ProjectID, ProjectTaskID: row.ProjectTaskID, AttemptID: row.AttemptID,
+		RuntimeNodeID: row.RuntimeNodeID, DigitalEmployeeID: row.DigitalEmployeeID, CapabilityManifestVersion: row.CapabilityManifestVersion,
+		ProviderAuthMode: row.ProviderAuthMode, ProviderSessionID: row.ProviderSessionID, AttestationType: row.AttestationType, Status: row.Status,
+		CommandArgv: commandArgv, ExitCode: row.ExitCode, DurationMs: row.DurationMs, LogRef: row.LogRef, StdoutSha256: row.StdoutSha256,
+		StderrSha256: row.StderrSha256, ArtifactRefs: artifactRefs, ArtifactHashes: artifactHashes, GitBranch: row.GitBranch, GitBaseRef: row.GitBaseRef,
+		GitHeadSha: row.GitHeadSha, GitDiffSha256: row.GitDiffSha256, Metadata: metadata, IdempotencyKey: row.IdempotencyKey,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}), nil
+}
+
+type projectTaskAttestationRecordValues struct {
+	ID                        uuid.UUID
+	TenantID                  uuid.UUID
+	ProjectID                 uuid.UUID
+	ProjectTaskID             uuid.UUID
+	AttemptID                 uuid.UUID
+	RuntimeNodeID             uuid.UUID
+	DigitalEmployeeID         uuid.UUID
+	CapabilityManifestVersion pgtype.Text
+	ProviderAuthMode          string
+	ProviderSessionID         pgtype.Text
+	AttestationType           string
+	Status                    string
+	CommandArgv               []any
+	ExitCode                  pgtype.Int4
+	DurationMs                pgtype.Int8
+	LogRef                    pgtype.Text
+	StdoutSha256              pgtype.Text
+	StderrSha256              pgtype.Text
+	ArtifactRefs              []any
+	ArtifactHashes            map[string]any
+	GitBranch                 pgtype.Text
+	GitBaseRef                pgtype.Text
+	GitHeadSha                pgtype.Text
+	GitDiffSha256             pgtype.Text
+	Metadata                  map[string]any
+	IdempotencyKey            string
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func projectTaskAttestationFromValues(row projectTaskAttestationRecordValues) ProjectTaskAttestation {
+	return ProjectTaskAttestation{
+		ID:                        row.ID,
+		TenantID:                  row.TenantID,
+		ProjectID:                 row.ProjectID,
+		ProjectTaskID:             row.ProjectTaskID,
+		AttemptID:                 row.AttemptID,
+		RuntimeNodeID:             row.RuntimeNodeID,
+		DigitalEmployeeID:         row.DigitalEmployeeID,
+		CapabilityManifestVersion: textValue(row.CapabilityManifestVersion),
+		ProviderAuthMode:          ProjectTaskAttestationProviderAuthMode(row.ProviderAuthMode),
+		ProviderSessionID:         ptrText(row.ProviderSessionID),
+		AttestationType:           row.AttestationType,
+		Status:                    ProjectTaskAttestationStatus(row.Status),
+		CommandArgv:               row.CommandArgv,
+		ExitCode:                  int32PtrFromSQL(row.ExitCode),
+		DurationMs:                ptrInt8(row.DurationMs),
+		LogRef:                    ptrText(row.LogRef),
+		StdoutSha256:              ptrText(row.StdoutSha256),
+		StderrSha256:              ptrText(row.StderrSha256),
+		ArtifactRefs:              row.ArtifactRefs,
+		ArtifactHashes:            row.ArtifactHashes,
+		GitBranch:                 ptrText(row.GitBranch),
+		GitBaseRef:                ptrText(row.GitBaseRef),
+		GitHeadSha:                ptrText(row.GitHeadSha),
+		GitDiffSha256:             ptrText(row.GitDiffSha256),
+		Metadata:                  row.Metadata,
+		IdempotencyKey:            row.IdempotencyKey,
+		CreatedAt:                 timeFromSQL(row.CreatedAt),
+		UpdatedAt:                 timeFromSQL(row.UpdatedAt),
+	}
+}
+
 func memberFromRecord(row queries.ProjectMember) (ProjectMember, error) {
 	settings, err := mapFromJSON(row.Settings)
 	if err != nil {
@@ -4758,6 +4967,12 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		DispatchGateResultID:          ptrUUID(row.DispatchGateResultID),
 		CreatedEventID:                ptrUUID(row.CreatedEventID),
 		TerminalEventID:               ptrUUID(row.TerminalEventID),
+		BudgetWallClockLimitSec:       int32PtrFromSQL(row.BudgetWallClockLimitSec),
+		BudgetLastHeartbeatAt:         ptrTime(row.BudgetLastHeartbeatAt),
+		BudgetConsumedWallClockSec:    row.BudgetConsumedWallClockSec,
+		BudgetConsumedTokens:          row.BudgetConsumedTokens,
+		BudgetTrippedAt:               ptrTime(row.BudgetTrippedAt),
+		BudgetTripReason:              ptrText(row.BudgetTripReason),
 		CreatedAt:                     row.CreatedAt.Time,
 		UpdatedAt:                     row.UpdatedAt.Time,
 	}, nil
@@ -5774,6 +5989,13 @@ func ptrTime(value pgtype.Timestamptz) *time.Time {
 	}
 	t := value.Time
 	return &t
+}
+
+func timeFromSQL(value pgtype.Timestamptz) time.Time {
+	if !value.Valid {
+		return time.Time{}
+	}
+	return value.Time
 }
 
 func timestamptzPtr(value *time.Time) pgtype.Timestamptz {

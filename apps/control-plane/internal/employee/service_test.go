@@ -2772,7 +2772,7 @@ func (r *memoryRepository) CreateRuntimeCommandReceipt(_ context.Context, req Cr
 		ResourceType:  req.ResourceType,
 		ResourceID:    req.ResourceID,
 		Status:        req.Status,
-		Payload:       redactRuntimeEventPayload(req.Payload),
+		Payload:       redactRuntimeEventPayloadForPersistence(req.Payload),
 		DispatchedAt:  cloneTimePtr(req.DispatchedAt),
 		CreatedAt:     time.Now().UTC(),
 		UpdatedAt:     time.Now().UTC(),
