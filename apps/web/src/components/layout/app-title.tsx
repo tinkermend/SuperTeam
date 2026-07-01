@@ -6,9 +6,9 @@ export function AppTitle() {
       <div
         aria-label="炬枢平台 - 新炬网络"
         data-testid="app-title-brand-lockup"
-        className="flex h-16 min-w-0 items-center gap-3 px-2 group-data-[collapsible=icon]:h-12 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        className="flex min-h-20 min-w-0 items-center gap-3 rounded-[18px] border border-[var(--v3-shell-glass-border)] bg-[linear-gradient(135deg,rgba(255,255,255,0.54),rgba(233,239,255,0.30))] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_8px_20px_rgba(47,95,255,0.045)] group-data-[collapsible=icon]:min-h-12 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:shadow-none"
       >
-        <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden group-data-[collapsible=icon]:size-11">
+        <span className="flex size-[54px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] border border-[rgba(47,95,255,0.12)] bg-[rgba(255,255,255,0.44)] shadow-[inset_0_1px_0_rgba(255,255,255,0.62)] group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none">
           <img
             src={BRAND_MARK_SRC}
             alt=""
@@ -17,18 +17,14 @@ export function AppTitle() {
           />
         </span>
         <span className="flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">
-          <span className="truncate text-[19px] font-bold leading-[1.1] text-v3-brand-deep">
+          <span className="truncate text-[22px] font-bold leading-[1.08] text-v3-brand-deep">
             炬枢平台
           </span>
-          <span className="mt-1.5 text-[12px] font-medium leading-none text-v3-ink-2">
+          <span className="mt-2 text-[14px] font-semibold leading-none text-v3-ink-2">
             新炬网络
           </span>
         </span>
       </div>
-      <div
-        data-testid="brand-accent-line"
-        className="mx-2 h-px bg-[linear-gradient(90deg,rgba(47,95,255,0),rgba(47,95,255,0.72),rgba(18,184,201,0.48),rgba(47,95,255,0))] group-data-[collapsible=icon]:hidden"
-      />
     </div>
   );
 }
