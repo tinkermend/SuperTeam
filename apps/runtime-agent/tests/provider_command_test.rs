@@ -156,6 +156,30 @@ fn codex_new_turn_uses_runtime_governed_exec_flags() {
 }
 
 #[test]
+fn codex_new_turn_does_not_rebase_relative_workspace_twice() {
+    let provider = CodexProvider::new("codex");
+    let mut request = request(None, false);
+    request.workspace_path = PathBuf::from(".superteam/workspaces/employee");
+    let command = provider.build_command(&request);
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert!(
+        args.windows(2).any(|window| window == ["--cd", "."]),
+        "relative workspace paths should not be passed to --cd after command.current_dir; args: {args:?}"
+    );
+    assert!(
+        !args
+            .windows(2)
+            .any(|window| window == ["--cd", ".superteam/workspaces/employee"]),
+        "relative workspace path would be resolved from inside the workspace and fail"
+    );
+}
+
+#[test]
 fn codex_resume_uses_resume_subcommand_and_bypass_flag() {
     let provider = CodexProvider::new("codex");
     let command = provider.build_command(&request(Some("codex-session"), true));
