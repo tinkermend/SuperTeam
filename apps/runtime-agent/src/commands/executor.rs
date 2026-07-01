@@ -2301,6 +2301,7 @@ fn normalize_verification_evidence_refs(
     {
         object.insert("status".to_string(), serde_json::Value::String(status));
     }
+    let mut summary_from_name = false;
     if let Some(name) = object
         .remove("name")
         .and_then(|value| value.as_str().and_then(|text| trimmed_optional(Some(text))))
@@ -2308,9 +2309,18 @@ fn normalize_verification_evidence_refs(
         object
             .entry("type".to_string())
             .or_insert_with(|| serde_json::Value::String(name.clone()));
-        object
-            .entry("summary".to_string())
-            .or_insert_with(|| serde_json::Value::String(name));
+        if !object.contains_key("summary") {
+            object.insert("summary".to_string(), serde_json::Value::String(name));
+            summary_from_name = true;
+        }
+    }
+    if let Some(evidence) = object
+        .remove("evidence")
+        .and_then(verification_evidence_summary)
+    {
+        if summary_from_name || !object.contains_key("summary") {
+            object.insert("summary".to_string(), serde_json::Value::String(evidence));
+        }
     }
     if let Some(refs) = object
         .remove("evidence_refs")
@@ -2322,6 +2332,13 @@ fn normalize_verification_evidence_refs(
         );
     }
     object
+}
+
+fn verification_evidence_summary(value: serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .and_then(|text| trimmed_optional(Some(text)))
+        .or_else(|| (!value.is_null()).then(|| value.to_string()))
 }
 
 fn verification_status_is_passed(object: &serde_json::Map<String, serde_json::Value>) -> bool {
@@ -3113,6 +3130,44 @@ mod tests {
                     {
                         "type": "evidence",
                         "ref": "sed -n '1,120p' smoke-note-fixed.txt"
+                    }
+                ]
+            })]
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_verification_evidence_alias() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {
+                        "name": "exact_text_match",
+                        "status": "passed",
+                        "evidence": "Output text exactly matched the expected smoke marker.",
+                        "evidence_refs": [
+                            "verification.exact_text_match"
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification,
+            vec![json!({
+                "status": "passed",
+                "type": "exact_text_match",
+                "summary": "Output text exactly matched the expected smoke marker.",
+                "evidence_refs": [
+                    {
+                        "type": "evidence",
+                        "ref": "verification.exact_text_match"
                     }
                 ]
             })]
