@@ -22,6 +22,7 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
+  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -237,30 +238,25 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
       </Header>
       <Main>
         <div className="flex min-w-0 flex-col gap-5 text-v3-ink">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <IconTile tone="info" size="lg">
-                <Server />
-              </IconTile>
-              <div className="min-w-0">
-                <h1 className="text-[28px] leading-tight font-extrabold tracking-tight text-v3-ink">Runtime 节点</h1>
-                <p className="mt-1 text-[13px] text-v3-ink-2">
-                  运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。
-                </p>
-              </div>
-            </div>
-            <V3Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                void overview.refetch();
-                void events.refetch();
-              }}
-            >
-              <RefreshCw data-icon="inline-start" />
-              刷新
-            </V3Button>
-          </div>
+          <V3PageHeader
+            icon={<Server />}
+            iconTone="info"
+            title="Runtime 节点"
+            subtitle="运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。"
+            actions={
+              <V3Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void overview.refetch();
+                  void events.refetch();
+                }}
+              >
+                <RefreshCw data-icon="inline-start" />
+                刷新
+              </V3Button>
+            }
+          />
 
           {overview.isLoading ? (
             <WorkSurface>

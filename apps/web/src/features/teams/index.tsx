@@ -6,10 +6,10 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import {
-  IconTile,
   V3Button,
   V3ErrorState,
   V3LoadingState,
+  V3PageHeader,
 } from "@/components/superteam";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
@@ -96,27 +96,20 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         <ThemeSwitch />
       </Header>
       <Main className="min-w-0 overflow-x-hidden">
-        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <IconTile tone="info" size="lg">
-              <UsersRound />
-            </IconTile>
-            <div>
-              <h1 className="text-[28px] font-extrabold tracking-tight text-v3-ink">
-                团队管理
-              </h1>
-              <p className="text-[13px] text-v3-ink-2">
-                团队负责人、治理配置和协作边界。
-              </p>
-            </div>
-          </div>
-          <V3Button asChild className="self-start sm:self-auto">
-            <Link to="/teams/new">
-              <Plus data-icon="inline-start" />
-              新建团队
-            </Link>
-          </V3Button>
-        </div>
+          <V3PageHeader
+            icon={<UsersRound />}
+            iconTone="info"
+            title="团队管理"
+            subtitle="团队负责人、治理配置和协作边界。"
+            actions={
+              <V3Button asChild className="self-start sm:self-auto">
+                <Link to="/teams/new">
+                  <Plus data-icon="inline-start" />
+                  新建团队
+                </Link>
+              </V3Button>
+            }
+          />
 
         <TeamManagementToolbar
           filters={filters}

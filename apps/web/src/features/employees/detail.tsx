@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Play, Square } from "lucide-react";
+import { ArrowLeft, Bot, Play, Square } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Header } from "@/components/layout/header";
@@ -10,7 +10,7 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusPill, type V3Tone } from "@/components/superteam";
+import { StatusPill, V3PageHeader, type V3Tone } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError } from "@/lib/api/client";
@@ -26,8 +26,6 @@ import {
 import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
-import { EmployeeAvatar } from "./avatar";
-import { employeeAvatarAsset } from "./avatar-library";
 import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
@@ -142,7 +140,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const canStartTask =
     employeeCanRun && executionInstanceCanRun && runs.isSuccess && !hasActiveRun && !runtimeCommandChannelDisconnected;
   const trimmedObjective = objective.trim();
-  const avatarAsset = employee.data ? employeeAvatarAsset(employee.data) : null;
 
   return (
     <>
@@ -151,21 +148,20 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         <ThemeSwitch />
       </Header>
       <Main className="min-w-0 overflow-x-hidden">
-        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <EmployeeAvatar asset={avatarAsset} name={employee.data?.name ?? "数字员工详情"} size="md" />
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-bold tracking-tight">{employee.data?.name ?? "数字员工详情"}</h1>
-              <p className="text-sm text-muted-foreground">执行实例、运行事件、结果和人工停止。</p>
-            </div>
-          </div>
-          <Button asChild className="self-start sm:self-auto" type="button" variant="outline">
-            <Link to="/employees">
-              <ArrowLeft className="size-4" />
-              返回列表
-            </Link>
-          </Button>
-        </div>
+        <V3PageHeader
+          icon={<Bot />}
+          iconTone="brand"
+          title={employee.data?.name ?? "数字员工详情"}
+          subtitle="执行实例、运行事件、结果和人工停止。"
+          actions={
+            <Button asChild variant="outline">
+              <Link to="/employees">
+                <ArrowLeft className="size-4" />
+                返回列表
+              </Link>
+            </Button>
+          }
+        />
 
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">数字员工加载失败</p> : null}

@@ -65,10 +65,10 @@ import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
-  IconTile,
   V3Button,
   V3ErrorState,
   V3LoadingState,
+  V3PageHeader,
   WorkSurface,
 } from "@/components/superteam";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
@@ -719,30 +719,20 @@ export function ProjectsView({
       </Header>
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <header className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <IconTile tone="brand" size="lg">
-                <FolderKanban />
-              </IconTile>
-              <div className="min-w-0">
-                <h1 className="text-[1.7rem] font-extrabold tracking-tight text-v3-ink">
-                  项目管理
-                </h1>
-                <p className="mt-1 text-sm text-v3-ink-2">
-                  围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环
-                </p>
-              </div>
-            </div>
-            <V3Button
-              asChild
-              className="h-11 self-start px-5"
-            >
-              <Link to="/projects/new">
-                <Plus data-icon="inline-start" />
-                新建项目
-              </Link>
-            </V3Button>
-          </header>
+          <V3PageHeader
+            icon={<FolderKanban />}
+            iconTone="brand"
+            title="项目管理"
+            subtitle="围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
+            actions={
+              <V3Button asChild className="h-11 self-start px-5">
+                <Link to="/projects/new">
+                  <Plus data-icon="inline-start" />
+                  新建项目
+                </Link>
+              </V3Button>
+            }
+          />
 
           {isInitialLoading ? (
             <WorkSurface>
