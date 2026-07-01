@@ -139,7 +139,7 @@ export function buildSidebarData({
             iconTone: "neutral",
           },
           {
-            title: "审计日志",
+            title: "日志管理",
             url: "/audit",
             icon: FileClock,
             iconTone: "neutral",

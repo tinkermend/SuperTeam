@@ -99,7 +99,7 @@ describe('sidebarData', () => {
       '权限中心',
       '成本管理',
       '用户管理',
-      '审计日志',
+      '日志管理',
     ])
     expect(platformItems?.[1]).toMatchObject({
       title: '成本管理',
