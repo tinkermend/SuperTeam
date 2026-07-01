@@ -14,7 +14,7 @@
 
 ## File Structure
 
-- Modify `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`: forward migration adding `project_decision_requests.plan_revision_id`.
+- Modify `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`: forward migration adding `project_decision_requests.plan_revision_id`.
 - Modify `apps/control-plane/internal/storage/migrations/atlas.sum`: generated Atlas checksum.
 - Modify `apps/control-plane/internal/storage/migrations_test.go`: schema contract test for the new column/index.
 - Modify `apps/control-plane/internal/storage/queries/project.sql`: include `plan_revision_id` in decision request insert/select/returning paths.
@@ -35,7 +35,7 @@
 ## Task 1: Persist Plan Revision Link on Decision Requests
 
 **Files:**
-- Create: `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`
+- Create: `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`
 - Modify: `apps/control-plane/internal/storage/migrations_test.go`
 - Modify: `apps/control-plane/internal/storage/queries/project.sql`
 - Modify generated: `apps/control-plane/internal/storage/queries/models.go`
@@ -49,7 +49,7 @@ Append this test to `apps/control-plane/internal/storage/migrations_test.go` nea
 
 ```go
 func TestProjectDecisionRequestsPlanRevisionResumeMigration(t *testing.T) {
-	body, err := os.ReadFile("migrations/041_project_decision_plan_revision_resume.sql")
+	body, err := os.ReadFile("migrations/043_project_decision_plan_revision_resume.sql")
 	require.NoError(t, err)
 	sql := string(body)
 
@@ -74,11 +74,11 @@ Run:
 go test ./apps/control-plane/internal/storage -run TestProjectDecisionRequestsPlanRevisionResumeMigration -count=1
 ```
 
-Expected: FAIL because `migrations/041_project_decision_plan_revision_resume.sql` does not exist.
+Expected: FAIL because `migrations/043_project_decision_plan_revision_resume.sql` does not exist.
 
 - [ ] **Step 3: Add migration**
 
-Create `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`:
+Create `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`:
 
 ```sql
 ALTER TABLE project_decision_requests
@@ -142,7 +142,7 @@ cd apps/control-plane && atlas migrate hash --dir file://internal/storage/migrat
 Expected:
 - `apps/control-plane/internal/storage/queries/models.go` includes `PlanRevisionID uuid.NullUUID` on `ProjectDecisionRequest`.
 - `apps/control-plane/internal/storage/queries/project.sql.go` includes `PlanRevisionID` in `CreateProjectDecisionRequestParams` and scans.
-- `apps/control-plane/internal/storage/migrations/atlas.sum` includes `041_project_decision_plan_revision_resume.sql`.
+- `apps/control-plane/internal/storage/migrations/atlas.sum` includes `043_project_decision_plan_revision_resume.sql`.
 
 - [ ] **Step 6: Run tests**
 
@@ -157,7 +157,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql \
+git add apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql \
   apps/control-plane/internal/storage/migrations/atlas.sum \
   apps/control-plane/internal/storage/migrations_test.go \
   apps/control-plane/internal/storage/queries/project.sql \
@@ -1366,7 +1366,7 @@ make -C apps/control-plane migrate-up
 make -C apps/control-plane migrate-status
 ```
 
-Expected: migration 041 applies. If `atlas` or DB connectivity is missing, stop and report blocked; do not claim DB migration verified.
+Expected: migrations 043 and 044 apply. If `atlas` or DB connectivity is missing, stop and report blocked; do not claim DB migration verified.
 
 - [ ] **Step 5: Optionally clear old development project data**
 
