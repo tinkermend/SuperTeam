@@ -989,6 +989,8 @@ type ProjectDecisionRequest struct {
 	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
 	// 该人类决策由哪个结构化任务结果触发。
 	ProjectTaskResultID uuid.NullUUID `json:"project_task_result_id"`
+	// 该人类决策关联的计划版本ID，用于 ProjectCoordinator Continue-As-New 后恢复 plan_review 路由。
+	PlanRevisionID uuid.NullUUID `json:"plan_revision_id"`
 }
 
 // 用户或外部系统提交到项目的需求

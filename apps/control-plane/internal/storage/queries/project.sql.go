@@ -634,6 +634,7 @@ INSERT INTO project_decision_requests (
     approval_request_id,
     coordination_job_id,
     project_task_id,
+    plan_revision_id,
     target_user_id,
     decision_type,
     title_snapshot,
@@ -648,13 +649,14 @@ INSERT INTO project_decision_requests (
     $4::uuid,
     $5::uuid,
     $6::uuid,
-    $7::varchar,
+    $7::uuid,
     $8::varchar,
-    $9::text,
-    $10::varchar,
+    $9::varchar,
+    $10::text,
     $11::varchar,
-    $12::uuid
-) RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+    $12::varchar,
+    $13::uuid
+) RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
 `
 
 type CreateProjectDecisionRequestParams struct {
@@ -663,6 +665,7 @@ type CreateProjectDecisionRequestParams struct {
 	ApprovalRequestID uuid.UUID     `json:"approval_request_id"`
 	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
 	ProjectTaskID     uuid.NullUUID `json:"project_task_id"`
+	PlanRevisionID    uuid.NullUUID `json:"plan_revision_id"`
 	TargetUserID      uuid.UUID     `json:"target_user_id"`
 	DecisionType      string        `json:"decision_type"`
 	TitleSnapshot     string        `json:"title_snapshot"`
@@ -679,6 +682,7 @@ func (q *Queries) CreateProjectDecisionRequest(ctx context.Context, arg CreatePr
 		arg.ApprovalRequestID,
 		arg.CoordinationJobID,
 		arg.ProjectTaskID,
+		arg.PlanRevisionID,
 		arg.TargetUserID,
 		arg.DecisionType,
 		arg.TitleSnapshot,
@@ -708,6 +712,7 @@ func (q *Queries) CreateProjectDecisionRequest(ctx context.Context, arg CreatePr
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
@@ -2398,7 +2403,7 @@ func (q *Queries) GetProjectCoordinationJobByTrigger(ctx context.Context, arg Ge
 }
 
 const GetProjectDecisionRequest = `-- name: GetProjectDecisionRequest :one
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND id = $3::uuid
@@ -2433,12 +2438,13 @@ func (q *Queries) GetProjectDecisionRequest(ctx context.Context, arg GetProjectD
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
 
 const GetProjectDecisionRequestByApprovalAndTask = `-- name: GetProjectDecisionRequestByApprovalAndTask :one
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND approval_request_id = $3::uuid
@@ -2482,6 +2488,7 @@ func (q *Queries) GetProjectDecisionRequestByApprovalAndTask(ctx context.Context
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
@@ -3063,7 +3070,7 @@ WHERE tenant_id = $2::uuid
       AND project_task_results.id = $1::uuid
       AND project_task_results.project_task_id = project_decision_requests.project_task_id
   )
-RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
 `
 
 type LinkDecisionRequestProjectTaskResultParams struct {
@@ -3101,6 +3108,7 @@ func (q *Queries) LinkDecisionRequestProjectTaskResult(ctx context.Context, arg 
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
@@ -3462,7 +3470,7 @@ func (q *Queries) ListDemandLaunchCoordinationJobs(ctx context.Context, arg List
 }
 
 const ListDemandLaunchDecisionRequests = `-- name: ListDemandLaunchDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND (
@@ -3516,6 +3524,7 @@ func (q *Queries) ListDemandLaunchDecisionRequests(ctx context.Context, arg List
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
 			&i.ProjectTaskResultID,
+			&i.PlanRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -3822,7 +3831,7 @@ func (q *Queries) ListProjectCoordinationJobs(ctx context.Context, arg ListProje
 }
 
 const ListProjectDecisionRequests = `-- name: ListProjectDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY created_at DESC
@@ -3870,6 +3879,7 @@ func (q *Queries) ListProjectDecisionRequests(ctx context.Context, arg ListProje
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
 			&i.ProjectTaskResultID,
+			&i.PlanRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -4379,7 +4389,7 @@ func (q *Queries) ListProjectTaskDispatchGateResults(ctx context.Context, arg Li
 }
 
 const ListProjectTaskGraphDecisionRequests = `-- name: ListProjectTaskGraphDecisionRequests :many
-SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id FROM project_decision_requests
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND (
@@ -4430,6 +4440,7 @@ func (q *Queries) ListProjectTaskGraphDecisionRequests(ctx context.Context, arg 
 			&i.ResolvedAt,
 			&i.DispatchGateResultID,
 			&i.ProjectTaskResultID,
+			&i.PlanRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -5333,7 +5344,7 @@ decision_blockers AS (
         item.updated_at AS blocker_updated_at
     FROM (
         SELECT
-            dr.id, dr.tenant_id, dr.project_id, dr.approval_request_id, dr.coordination_job_id, dr.project_task_id, dr.target_user_id, dr.decision_type, dr.title_snapshot, dr.summary_snapshot, dr.risk_level_snapshot, dr.status_snapshot, dr.created_event_id, dr.resolved_event_id, dr.created_at, dr.updated_at, dr.resolved_at, dr.dispatch_gate_result_id, dr.project_task_result_id,
+            dr.id, dr.tenant_id, dr.project_id, dr.approval_request_id, dr.coordination_job_id, dr.project_task_id, dr.target_user_id, dr.decision_type, dr.title_snapshot, dr.summary_snapshot, dr.risk_level_snapshot, dr.status_snapshot, dr.created_event_id, dr.resolved_event_id, dr.created_at, dr.updated_at, dr.resolved_at, dr.dispatch_gate_result_id, dr.project_task_result_id, dr.plan_revision_id,
             COALESCE(pt.demand_id, rd.demand_id) AS demand_id
         FROM project_decision_requests dr
         LEFT JOIN project_tasks pt
@@ -6320,7 +6331,7 @@ WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
   AND status_snapshot = 'pending'
-RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
 `
 
 type ResolveProjectDecisionRequestParams struct {
@@ -6360,6 +6371,7 @@ func (q *Queries) ResolveProjectDecisionRequest(ctx context.Context, arg Resolve
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
@@ -6544,7 +6556,7 @@ WHERE tenant_id = $2::uuid
   AND project_task_id = $4::uuid
   AND id = $5::uuid
   AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = $1::uuid)
-RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
 `
 
 type SetProjectDecisionRequestDispatchGateParams struct {
@@ -6584,6 +6596,7 @@ func (q *Queries) SetProjectDecisionRequestDispatchGate(ctx context.Context, arg
 		&i.ResolvedAt,
 		&i.DispatchGateResultID,
 		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
 	)
 	return i, err
 }
