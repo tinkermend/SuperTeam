@@ -134,7 +134,8 @@ paths:
   /api/v1/runtime/tasks/claim:
     post:
       operationId: claimRuntimeTask
-      summary: Claim the next executable task for a Runtime Agent
+      deprecated: true
+      summary: Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
       parameters:
         - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - name: timeout
@@ -156,7 +157,8 @@ paths:
   /api/v1/runtime/tasks/{taskId}/events:
     post:
       operationId: pushRuntimeTaskEvents
-      summary: Push Runtime Agent task events
+      deprecated: true
+      summary: Deprecated legacy Runtime task events; use RuntimeCommand start_session and ProjectTaskAttempt writeback
       parameters:
         - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
@@ -172,7 +174,8 @@ paths:
   /api/v1/runtime/tasks/{taskId}/complete:
     post:
       operationId: completeRuntimeTask
-      summary: Complete a Runtime Agent task
+      deprecated: true
+      summary: Deprecated legacy Runtime task completion; use RuntimeCommand start_session and ProjectTaskAttempt writeback
       parameters:
         - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
@@ -192,7 +195,8 @@ paths:
   /api/v1/runtime/tasks/{taskId}/fail:
     post:
       operationId: failRuntimeTask
-      summary: Report Runtime Agent task failure
+      deprecated: true
+      summary: Deprecated legacy Runtime task failure; use RuntimeCommand start_session and ProjectTaskAttempt writeback
       parameters:
         - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
@@ -212,7 +216,8 @@ paths:
   /api/v1/runtime/tasks/{taskId}/lease:
     post:
       operationId: renewRuntimeTaskLease
-      summary: Acknowledge a Runtime Agent task lease heartbeat
+      deprecated: true
+      summary: Deprecated legacy Runtime task lease; use RuntimeCommand start_session and ProjectTaskAttempt writeback
       parameters:
         - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
