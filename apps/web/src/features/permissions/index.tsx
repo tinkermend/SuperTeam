@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { ApiClientOptions } from "@/lib/api";
 import { ShieldCheck } from "lucide-react";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { IconTile } from "@/components/superteam";
+import { V3PageHeader } from "@/components/superteam";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -37,15 +37,12 @@ export function PermissionsCenter({ apiBaseUrl = resolveControlPlaneUrl(), fetch
         <ThemeSwitch />
       </Header>
       <Main fluid className="min-w-0 bg-v3-bg text-v3-ink">
-        <div className="mb-5 flex min-w-0 items-center gap-3">
-          <IconTile tone="artifact" size="lg">
-            <ShieldCheck />
-          </IconTile>
-          <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-2xl font-bold tracking-normal text-v3-ink">权限中心</h1>
-            <p className="text-sm text-v3-ink-2">集中查看授权决策、Runtime 执行范围和成员角色。</p>
-          </div>
-        </div>
+        <V3PageHeader
+          icon={<ShieldCheck />}
+          iconTone="artifact"
+          title="权限中心"
+          subtitle="集中查看授权决策、Runtime 执行范围和成员角色。"
+        />
         <Tabs defaultValue="overview" className="gap-4">
           <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3">
             {tabItems.map((tab) => (

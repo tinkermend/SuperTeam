@@ -360,6 +360,7 @@ type Querier interface {
 	ListUserProjectTeamScopeSummaries(ctx context.Context, arg ListUserProjectTeamScopeSummariesParams) ([]ListUserProjectTeamScopeSummariesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
+	ListWebOperationLogs(ctx context.Context, arg ListWebOperationLogsParams) ([]WebOperationLog, error)
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)

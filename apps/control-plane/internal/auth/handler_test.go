@@ -513,6 +513,52 @@ func TestHTTPHandlerListsCurrentUserLoginLogs(t *testing.T) {
 	}
 }
 
+func TestListOperationLogsFiltersByModule(t *testing.T) {
+	repo, _, handler, token := newAuthenticatedHandler(t)
+	repo.operationLogs = append(repo.operationLogs,
+		mockOperationLog{Module: "users", Action: "user.create", Result: LoginResultSucceeded},
+		mockOperationLog{Module: "teams", Action: "team.create", Result: LoginResultSucceeded},
+	)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/operation-logs?limit=20&offset=0&module=users", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	module := "users"
+	handler.ListOperationLogs(recorder, request, ListOperationLogsParams{
+		Limit:  ptrInt32(20),
+		Offset: ptrInt32(0),
+		Module: &module,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response OperationLogListResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 1 {
+		t.Fatalf("expected exactly one operation log for module=users, got %d", len(response.Items))
+	}
+	if response.Items[0].Module != "users" {
+		t.Fatalf("expected module users, got %q", response.Items[0].Module)
+	}
+}
+
+func TestListOperationLogsRequiresSession(t *testing.T) {
+	_, _, handler, _ := newAuthenticatedHandler(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/operation-logs", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.ListOperationLogs(recorder, request, ListOperationLogsParams{})
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without session, got %d", recorder.Code)
+	}
+}
+
 func newAuthenticatedHandler(t *testing.T) (*mockRepo, *Service, *HTTPHandler, string) {
 	t.Helper()
 	repo := newMockRepo()

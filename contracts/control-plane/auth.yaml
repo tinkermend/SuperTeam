@@ -143,6 +143,18 @@ paths:
             format: int32
             minimum: 0
             default: 0
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [login_succeeded, login_failed, logout_succeeded]
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [succeeded, failed]
       responses:
         '200':
           description: 成功
@@ -150,6 +162,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/operation-logs:
+    get:
+      summary: 查询 Web 控制台操作日志
+      operationId: listOperationLogs
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: module
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [succeeded, failed]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogListResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -619,6 +683,55 @@ components:
           type: string
           enum: [succeeded, failed]
         failure_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    OperationLogListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationLogRecord'
+
+    OperationLogRecord:
+      type: object
+      required: [id, module, action, result, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        module:
+          type: string
+        resource_type:
+          type: string
+          nullable: true
+        resource_id:
+          type: string
+          nullable: true
+        action:
+          type: string
+        result:
+          type: string
+          enum: [succeeded, failed]
+        request_id:
+          type: string
+          nullable: true
+        client_ip:
+          type: string
+          nullable: true
+        user_agent:
           type: string
           nullable: true
         created_at:

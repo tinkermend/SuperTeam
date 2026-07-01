@@ -21,6 +21,7 @@ import {
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
+  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -198,21 +199,13 @@ function TemplateShell({
       </Header>
       <Main>
         <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <IconTile tone="brand" size="lg">
-                <LayoutTemplate />
-              </IconTile>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-normal text-v3-ink">{title}</h1>
-                <p className="text-sm text-v3-ink-2">{subtitle}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {back}
-              {action}
-            </div>
-          </div>
+          <V3PageHeader
+            icon={<LayoutTemplate />}
+            iconTone="brand"
+            title={title}
+            subtitle={subtitle}
+            actions={<div className="flex flex-wrap items-center gap-2">{back}{action}</div>}
+          />
           {children}
         </div>
       </Main>

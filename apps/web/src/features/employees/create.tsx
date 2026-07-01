@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { IconTile } from "@/components/superteam";
+import { IconTile, V3PageHeader } from "@/components/superteam";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -377,49 +377,45 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         <ThemeSwitch />
       </Header>
       <Main>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <IconTile tone="brand" size="lg">
-              <Bot />
-            </IconTile>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">创建数字员工</h1>
-              <p className="text-sm text-muted-foreground">
-                {flowStep === "template"
-                  ? "先选择模板，再分步完成预检、配置和确认。"
-                  : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {flowStep === "template" ? (
-              <Button asChild type="button" variant="outline">
-                <Link to="/employees">
+        <V3PageHeader
+          icon={<Bot />}
+          iconTone="brand"
+          title="创建数字员工"
+          subtitle={flowStep === "template"
+            ? "先选择模板，再分步完成预检、配置和确认。"
+            : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"
+          }
+          actions={
+            <div className="flex flex-wrap gap-2">
+              {flowStep === "template" ? (
+                <Button asChild type="button" variant="outline">
+                  <Link to="/employees">
+                    <ArrowLeft data-icon="inline-start" />
+                    返回数字员工
+                  </Link>
+                </Button>
+              ) : (
+                <Button onClick={requestTemplateChange} type="button" variant="outline">
                   <ArrowLeft data-icon="inline-start" />
-                  返回数字员工
-                </Link>
+                  返回
+                </Button>
+              )}
+              <Button
+                disabled={
+                  flowStep !== "template" ||
+                  createOptions.isLoading ||
+                  createOptions.isError ||
+                  !draft.employee_type
+                }
+                onClick={enterPreflight}
+                type="button"
+              >
+                进入预检
+                <ChevronRight data-icon="inline-end" />
               </Button>
-            ) : (
-              <Button onClick={requestTemplateChange} type="button" variant="outline">
-                <ArrowLeft data-icon="inline-start" />
-                返回
-              </Button>
-            )}
-            <Button
-              disabled={
-                flowStep !== "template" ||
-                createOptions.isLoading ||
-                createOptions.isError ||
-                !draft.employee_type
-              }
-              onClick={enterPreflight}
-              type="button"
-            >
-              进入预检
-              <ChevronRight data-icon="inline-end" />
-            </Button>
-          </div>
-        </div>
+            </div>
+          }
+        />
 
         {teams.isError ? (
           <Alert className="mb-4" variant="destructive">

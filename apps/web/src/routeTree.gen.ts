@@ -48,6 +48,9 @@ import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_au
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
 import { Route as AuthenticatedEmployeesEmployeeIdRouteImport } from './routes/_authenticated/employees/$employeeId'
+import { Route as AuthenticatedLogsRuntimeIndexRouteImport } from './routes/_authenticated/logs/runtime/index'
+import { Route as AuthenticatedLogsOperationIndexRouteImport } from './routes/_authenticated/logs/operation/index'
+import { Route as AuthenticatedLogsLoginIndexRouteImport } from './routes/_authenticated/logs/login/index'
 import { Route as AuthenticatedEmployeesTemplatesIndexRouteImport } from './routes/_authenticated/employees/templates/index'
 import { Route as AuthenticatedProjectsProjectIdConfigRouteImport } from './routes/_authenticated/projects/$projectId/config'
 import { Route as AuthenticatedEmployeesTemplatesTemplateTypeRouteImport } from './routes/_authenticated/employees/templates/$templateType'
@@ -269,6 +272,24 @@ const AuthenticatedEmployeesEmployeeIdRoute =
     path: '/employees/$employeeId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedLogsRuntimeIndexRoute =
+  AuthenticatedLogsRuntimeIndexRouteImport.update({
+    id: '/logs/runtime/',
+    path: '/logs/runtime/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedLogsOperationIndexRoute =
+  AuthenticatedLogsOperationIndexRouteImport.update({
+    id: '/logs/operation/',
+    path: '/logs/operation/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedLogsLoginIndexRoute =
+  AuthenticatedLogsLoginIndexRouteImport.update({
+    id: '/logs/login/',
+    path: '/logs/login/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedEmployeesTemplatesIndexRoute =
   AuthenticatedEmployeesTemplatesIndexRouteImport.update({
     id: '/employees/templates/',
@@ -337,6 +358,9 @@ export interface FileRoutesByFullPath {
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
+  '/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
+  '/logs/runtime/': typeof AuthenticatedLogsRuntimeIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
@@ -381,6 +405,9 @@ export interface FileRoutesByTo {
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/employees/templates': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/logs/login': typeof AuthenticatedLogsLoginIndexRoute
+  '/logs/operation': typeof AuthenticatedLogsOperationIndexRoute
+  '/logs/runtime': typeof AuthenticatedLogsRuntimeIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -427,6 +454,9 @@ export interface FileRoutesById {
   '/_authenticated/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/_authenticated/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/_authenticated/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/_authenticated/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
+  '/_authenticated/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
+  '/_authenticated/logs/runtime/': typeof AuthenticatedLogsRuntimeIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -473,6 +503,9 @@ export interface FileRouteTypes {
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
     | '/employees/templates/'
+    | '/logs/login/'
+    | '/logs/operation/'
+    | '/logs/runtime/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -517,6 +550,9 @@ export interface FileRouteTypes {
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
     | '/employees/templates'
+    | '/logs/login'
+    | '/logs/operation'
+    | '/logs/runtime'
   id:
     | '__root__'
     | '/_authenticated'
@@ -562,6 +598,9 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/templates/$templateType'
     | '/_authenticated/projects/$projectId/config'
     | '/_authenticated/employees/templates/'
+    | '/_authenticated/logs/login/'
+    | '/_authenticated/logs/operation/'
+    | '/_authenticated/logs/runtime/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -850,6 +889,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesEmployeeIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/logs/runtime/': {
+      id: '/_authenticated/logs/runtime/'
+      path: '/logs/runtime'
+      fullPath: '/logs/runtime/'
+      preLoaderRoute: typeof AuthenticatedLogsRuntimeIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/logs/operation/': {
+      id: '/_authenticated/logs/operation/'
+      path: '/logs/operation'
+      fullPath: '/logs/operation/'
+      preLoaderRoute: typeof AuthenticatedLogsOperationIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/logs/login/': {
+      id: '/_authenticated/logs/login/'
+      path: '/logs/login'
+      fullPath: '/logs/login/'
+      preLoaderRoute: typeof AuthenticatedLogsLoginIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/employees/templates/': {
       id: '/_authenticated/employees/templates/'
       path: '/employees/templates'
@@ -945,6 +1005,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedEmployeesTemplatesTemplateTypeRoute: typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   AuthenticatedEmployeesTemplatesIndexRoute: typeof AuthenticatedEmployeesTemplatesIndexRoute
+  AuthenticatedLogsLoginIndexRoute: typeof AuthenticatedLogsLoginIndexRoute
+  AuthenticatedLogsOperationIndexRoute: typeof AuthenticatedLogsOperationIndexRoute
+  AuthenticatedLogsRuntimeIndexRoute: typeof AuthenticatedLogsRuntimeIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -986,6 +1049,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedEmployeesTemplatesTemplateTypeRoute,
   AuthenticatedEmployeesTemplatesIndexRoute:
     AuthenticatedEmployeesTemplatesIndexRoute,
+  AuthenticatedLogsLoginIndexRoute: AuthenticatedLogsLoginIndexRoute,
+  AuthenticatedLogsOperationIndexRoute: AuthenticatedLogsOperationIndexRoute,
+  AuthenticatedLogsRuntimeIndexRoute: AuthenticatedLogsRuntimeIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

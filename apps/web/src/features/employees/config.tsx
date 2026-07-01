@@ -8,7 +8,7 @@ import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { IconTile } from "@/components/superteam";
+import { V3PageHeader } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -305,23 +305,20 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         <ThemeSwitch />
       </Header>
       <Main>
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconTile tone="brand" size="lg">
-              <Bot />
-            </IconTile>
-            <div>
-              <h1 className="text-2xl font-bold">{employee.data?.name ?? "数字员工配置"}</h1>
-              <p className="text-sm text-muted-foreground">配置员工技能、策略和输出契约</p>
-            </div>
-          </div>
-          <Button asChild variant="outline">
-            <Link to="/employees/$employeeId" params={{ employeeId }}>
-              <ArrowLeft />
-              返回详情
-            </Link>
-          </Button>
-        </div>
+        <V3PageHeader
+          icon={<Bot />}
+          iconTone="brand"
+          title={employee.data?.name ?? "数字员工配置"}
+          subtitle="配置员工技能、策略和输出契约"
+          actions={
+            <Button asChild variant="outline">
+              <Link to="/employees/$employeeId" params={{ employeeId }}>
+                <ArrowLeft />
+                返回详情
+              </Link>
+            </Button>
+          }
+        />
 
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}

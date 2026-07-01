@@ -13,6 +13,7 @@ import {
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
+  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -148,23 +149,21 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
         <ThemeSwitch />
       </Header>
       <Main className="min-w-0 overflow-x-hidden" fluid>
-        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <IconTile tone="mute" size="lg">
-              <UserRound />
-            </IconTile>
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-normal text-v3-ink">账户设置</h1>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-v3-ink-2">
-                <span className="truncate">{identity.primary}</span>
-                <span aria-hidden="true">/</span>
-                <span className="truncate">{identity.secondary}</span>
-              </div>
-            </div>
-          </div>
-          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
-        </div>
-
+        <V3PageHeader
+          icon={<UserRound />}
+          iconTone="mute"
+          title="账户设置"
+          subtitle={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span className="truncate">{identity.primary}</span>
+              <span aria-hidden="true">/</span>
+              <span className="truncate">{identity.secondary}</span>
+            </span>
+          }
+          actions={
+            <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
+          }
+        />
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <SoftCard className="min-w-0 p-6">
             <div className="mb-5 flex items-center gap-3">

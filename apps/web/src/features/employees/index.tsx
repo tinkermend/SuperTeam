@@ -29,7 +29,6 @@ import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import {
-  IconTile,
   SoftCard,
   StatusPill,
   V3Button,
@@ -37,6 +36,7 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
+  V3PageHeader,
   type V3Tone,
 } from "@/components/superteam";
 import {
@@ -183,31 +183,28 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
       </Header>
       <Main>
         <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <IconTile tone="brand" size="lg">
-                <Bot />
-              </IconTile>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-normal">数字员工</h1>
-                <p className="text-sm text-muted-foreground">业务身份、执行实例和运行状态</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" asChild>
-                <Link to="/employees/templates">
-                  <LayoutTemplate data-icon="inline-start" />
-                  模板管理
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link to="/employees/new">
-                  <Plus data-icon="inline-start" />
-                  创建数字员工
-                </Link>
-              </Button>
-            </div>
-          </div>
+          <V3PageHeader
+            icon={<Bot />}
+            iconTone="brand"
+            title="数字员工"
+            subtitle="业务身份、执行实例和运行状态"
+            actions={
+              <>
+                <Button variant="outline" asChild>
+                  <Link to="/employees/templates">
+                    <LayoutTemplate data-icon="inline-start" />
+                    模板管理
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/employees/new">
+                    <Plus data-icon="inline-start" />
+                    创建数字员工
+                  </Link>
+                </Button>
+              </>
+            }
+          />
 
           {overview.data ? <WorkbenchMetrics overview={overview.data} /> : null}
 

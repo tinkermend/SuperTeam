@@ -25,7 +25,9 @@ INSERT INTO web_login_logs (
 
 -- name: ListWebLoginLogs :many
 SELECT * FROM web_login_logs
-WHERE sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid
+WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
+  AND (sqlc.narg('event_type')::varchar IS NULL OR event_type = sqlc.narg('event_type')::varchar)
+  AND (sqlc.narg('result')::varchar IS NULL OR result = sqlc.narg('result')::varchar)
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -57,3 +59,12 @@ INSERT INTO web_operation_logs (
     sqlc.narg('user_agent')::text,
     COALESCE(sqlc.narg('details')::jsonb, '{}'::jsonb)
 ) RETURNING *;
+
+-- name: ListWebOperationLogs :many
+SELECT * FROM web_operation_logs
+WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
+  AND (sqlc.narg('module')::varchar IS NULL OR module = sqlc.narg('module')::varchar)
+  AND (sqlc.narg('action')::varchar IS NULL OR action = sqlc.narg('action')::varchar)
+  AND (sqlc.narg('result')::varchar IS NULL OR result = sqlc.narg('result')::varchar)
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

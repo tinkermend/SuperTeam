@@ -164,19 +164,29 @@ func (q *Queries) CreateWebOperationLog(ctx context.Context, arg CreateWebOperat
 
 const ListWebLoginLogs = `-- name: ListWebLoginLogs :many
 SELECT id, tenant_id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at FROM web_login_logs
-WHERE $1::uuid IS NULL OR user_id = $1::uuid
+WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
+  AND ($2::varchar IS NULL OR event_type = $2::varchar)
+  AND ($3::varchar IS NULL OR result = $3::varchar)
 ORDER BY created_at DESC, id DESC
-LIMIT $3 OFFSET $2
+LIMIT $5 OFFSET $4
 `
 
 type ListWebLoginLogsParams struct {
-	UserID uuid.NullUUID `json:"user_id"`
-	Offset int32         `json:"offset"`
-	Limit  int32         `json:"limit"`
+	UserID    uuid.NullUUID `json:"user_id"`
+	EventType pgtype.Text   `json:"event_type"`
+	Result    pgtype.Text   `json:"result"`
+	Offset    int32         `json:"offset"`
+	Limit     int32         `json:"limit"`
 }
 
 func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error) {
-	rows, err := q.db.Query(ctx, ListWebLoginLogs, arg.UserID, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListWebLoginLogs,
+		arg.UserID,
+		arg.EventType,
+		arg.Result,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +205,67 @@ func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsPara
 			&i.UserAgent,
 			&i.Result,
 			&i.FailureReason,
+			&i.Details,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListWebOperationLogs = `-- name: ListWebOperationLogs :many
+SELECT id, tenant_id, user_id, username, module, resource_type, resource_id, action, result, request_id, client_ip, user_agent, details, created_at FROM web_operation_logs
+WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
+  AND ($2::varchar IS NULL OR module = $2::varchar)
+  AND ($3::varchar IS NULL OR action = $3::varchar)
+  AND ($4::varchar IS NULL OR result = $4::varchar)
+ORDER BY created_at DESC, id DESC
+LIMIT $6 OFFSET $5
+`
+
+type ListWebOperationLogsParams struct {
+	UserID uuid.NullUUID `json:"user_id"`
+	Module pgtype.Text   `json:"module"`
+	Action pgtype.Text   `json:"action"`
+	Result pgtype.Text   `json:"result"`
+	Offset int32         `json:"offset"`
+	Limit  int32         `json:"limit"`
+}
+
+func (q *Queries) ListWebOperationLogs(ctx context.Context, arg ListWebOperationLogsParams) ([]WebOperationLog, error) {
+	rows, err := q.db.Query(ctx, ListWebOperationLogs,
+		arg.UserID,
+		arg.Module,
+		arg.Action,
+		arg.Result,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WebOperationLog{}
+	for rows.Next() {
+		var i WebOperationLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.Username,
+			&i.Module,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Action,
+			&i.Result,
+			&i.RequestID,
+			&i.ClientIp,
+			&i.UserAgent,
 			&i.Details,
 			&i.CreatedAt,
 		); err != nil {
