@@ -30,8 +30,7 @@ impl ClaudeProvider {
         command.arg("--verbose");
         command.arg("--include-partial-messages");
         command.arg("--permission-mode").arg("bypassPermissions");
-        if let Some(agent_home) = &request.agent_home_dir {
-            let mcp_config = agent_home.join(".mcp.json");
+        if let Some(mcp_config) = &request.mcp_config_path {
             if mcp_config.exists() {
                 command.arg("--mcp-config").arg(mcp_config);
                 command.arg("--strict-mcp-config");

@@ -300,6 +300,63 @@ pub struct ProjectTaskWaitHumanWriteback {
     pub result_contract: Option<TaskResultContract>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskAttestationWriteback {
+    pub project_id: String,
+    pub project_task_id: String,
+    pub attempt_id: String,
+    pub runtime_node_id: String,
+    pub digital_employee_id: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub capability_manifest_version: Option<String>,
+    pub provider_auth_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_id: Option<String>,
+    pub attestation_type: String,
+    pub status: String,
+    pub command_argv: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub log_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub stdout_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub stderr_sha256: Option<String>,
+    #[serde(default)]
+    pub artifact_refs: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub artifact_hashes: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub git_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub git_base_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub git_head_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub git_diff_sha256: Option<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskBudgetHeartbeatWriteback {
+    pub project_id: String,
+    pub project_task_id: String,
+    pub consumed_wall_clock_sec: i32,
+    pub consumed_tokens: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProjectTaskBudgetHeartbeatResponse {
+    pub tripped: bool,
+    #[serde(default)]
+    pub trip_reason: Option<String>,
+}
+
 impl<'de> Deserialize<'de> for RuntimeCommandType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

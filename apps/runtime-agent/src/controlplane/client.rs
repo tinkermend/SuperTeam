@@ -8,10 +8,12 @@ use crate::runtime_auth::{
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
-    ProjectTaskWaitHumanWriteback, RegisterNodeRequest, RegisterNodeResponse,
-    RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
-    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse, Task,
+    ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatResponse,
+    ProjectTaskBudgetHeartbeatWriteback, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
+    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RegisterNodeRequest,
+    RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
+    RuntimeSessionResponse, Task,
 };
 
 #[derive(Clone)]
@@ -648,6 +650,68 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn create_project_task_attestation(
+        &self,
+        writeback: &ProjectTaskAttestationWriteback,
+    ) -> Result<()> {
+        let url = self.project_task_attestation_url();
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
+
+        let response = request
+            .json(writeback)
+            .send()
+            .await
+            .context("Failed to create project task attestation")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(self
+                .runtime_error(
+                    "Create project task attestation",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
+        }
+
+        Ok(())
+    }
+
+    pub async fn record_project_task_budget_heartbeat(
+        &self,
+        attempt_id: &str,
+        writeback: &ProjectTaskBudgetHeartbeatWriteback,
+    ) -> Result<ProjectTaskBudgetHeartbeatResponse> {
+        let url = self.project_task_attempt_budget_heartbeat_url(attempt_id);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
+
+        let response = request
+            .json(writeback)
+            .send()
+            .await
+            .context("Failed to record project task budget heartbeat")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(self
+                .runtime_error(
+                    "Record project task budget heartbeat",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
+        }
+
+        response
+            .json::<ProjectTaskBudgetHeartbeatResponse>()
+            .await
+            .context("Failed to parse project task budget heartbeat response")
+    }
+
     /// Renew task lease
     pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
         let url = self.task_lease_url(task_id);
@@ -859,6 +923,17 @@ impl ControlPlaneClient {
         )
     }
 
+    fn project_task_attestation_url(&self) -> String {
+        format!("{}/api/v1/runtime/project-task-attestations", self.base_url)
+    }
+
+    fn project_task_attempt_budget_heartbeat_url(&self, attempt_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/project-task-attempts/{}/budget-heartbeat",
+            self.base_url, attempt_id
+        )
+    }
+
     fn task_lease_url(&self, task_id: i64) -> String {
         format!("{}/api/v1/runtime/tasks/{}/lease", self.base_url, task_id)
     }
@@ -942,6 +1017,14 @@ mod tests {
         assert_eq!(
             client.project_task_attempt_wait_human_url("attempt-1"),
             "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/wait-human"
+        );
+        assert_eq!(
+            client.project_task_attestation_url(),
+            "http://localhost:8080/api/v1/runtime/project-task-attestations"
+        );
+        assert_eq!(
+            client.project_task_attempt_budget_heartbeat_url("attempt-1"),
+            "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/budget-heartbeat"
         );
         assert_eq!(
             client.task_lease_url(1),

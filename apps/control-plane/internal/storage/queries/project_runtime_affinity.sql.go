@@ -20,23 +20,26 @@ WITH input AS (
         $3::uuid AS project_task_id,
         $4::uuid AS attempt_id,
         $5::uuid AS runtime_node_id,
-        $6::varchar AS provider_session_id,
-        $7::varchar AS attestation_type,
-        $8::varchar AS status,
-        COALESCE($9::jsonb, '[]'::jsonb) AS command_argv,
-        $10::integer AS exit_code,
-        $11::bigint AS duration_ms,
-        $12::text AS log_ref,
-        $13::varchar AS stdout_sha256,
-        $14::varchar AS stderr_sha256,
-        COALESCE($15::jsonb, '[]'::jsonb) AS artifact_refs,
-        COALESCE($16::jsonb, '{}'::jsonb) AS artifact_hashes,
-        $17::varchar AS git_branch,
-        $18::varchar AS git_base_ref,
-        $19::varchar AS git_head_sha,
-        $20::varchar AS git_diff_sha256,
-        COALESCE($21::jsonb, '{}'::jsonb) AS metadata,
-        $22::varchar AS idempotency_key
+        $6::uuid AS digital_employee_id,
+        $7::varchar AS capability_manifest_version,
+        COALESCE($8::varchar, 'host') AS provider_auth_mode,
+        $9::varchar AS provider_session_id,
+        $10::varchar AS attestation_type,
+        $11::varchar AS status,
+        COALESCE($12::jsonb, '[]'::jsonb) AS command_argv,
+        $13::integer AS exit_code,
+        $14::bigint AS duration_ms,
+        $15::text AS log_ref,
+        $16::varchar AS stdout_sha256,
+        $17::varchar AS stderr_sha256,
+        COALESCE($18::jsonb, '[]'::jsonb) AS artifact_refs,
+        COALESCE($19::jsonb, '{}'::jsonb) AS artifact_hashes,
+        $20::varchar AS git_branch,
+        $21::varchar AS git_base_ref,
+        $22::varchar AS git_head_sha,
+        $23::varchar AS git_diff_sha256,
+        COALESCE($24::jsonb, '{}'::jsonb) AS metadata,
+        $25::varchar AS idempotency_key
 ),
 inserted AS (
     INSERT INTO project_task_attestations (
@@ -45,6 +48,9 @@ inserted AS (
         project_task_id,
         attempt_id,
         runtime_node_id,
+        digital_employee_id,
+        capability_manifest_version,
+        provider_auth_mode,
         provider_session_id,
         attestation_type,
         status,
@@ -69,6 +75,9 @@ inserted AS (
         project_task_id,
         attempt_id,
         runtime_node_id,
+        digital_employee_id,
+        capability_manifest_version,
+        provider_auth_mode,
         provider_session_id,
         attestation_type,
         status,
@@ -88,12 +97,12 @@ inserted AS (
         idempotency_key
     FROM input
     ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO NOTHING
-    RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
+    RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at, digital_employee_id, capability_manifest_version, provider_auth_mode
 )
-SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
+SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at, digital_employee_id, capability_manifest_version, provider_auth_mode
 FROM inserted
 UNION ALL
-SELECT existing.id, existing.tenant_id, existing.project_id, existing.project_task_id, existing.attempt_id, existing.runtime_node_id, existing.provider_session_id, existing.attestation_type, existing.status, existing.command_argv, existing.exit_code, existing.duration_ms, existing.log_ref, existing.stdout_sha256, existing.stderr_sha256, existing.artifact_refs, existing.artifact_hashes, existing.git_branch, existing.git_base_ref, existing.git_head_sha, existing.git_diff_sha256, existing.metadata, existing.idempotency_key, existing.created_at, existing.updated_at
+SELECT existing.id, existing.tenant_id, existing.project_id, existing.project_task_id, existing.attempt_id, existing.runtime_node_id, existing.provider_session_id, existing.attestation_type, existing.status, existing.command_argv, existing.exit_code, existing.duration_ms, existing.log_ref, existing.stdout_sha256, existing.stderr_sha256, existing.artifact_refs, existing.artifact_hashes, existing.git_branch, existing.git_base_ref, existing.git_head_sha, existing.git_diff_sha256, existing.metadata, existing.idempotency_key, existing.created_at, existing.updated_at, existing.digital_employee_id, existing.capability_manifest_version, existing.provider_auth_mode
 FROM project_task_attestations existing
 JOIN input
   ON existing.tenant_id = input.tenant_id
@@ -103,6 +112,9 @@ WHERE NOT EXISTS (SELECT 1 FROM inserted)
   AND existing.project_id = input.project_id
   AND existing.project_task_id = input.project_task_id
   AND existing.runtime_node_id = input.runtime_node_id
+  AND existing.digital_employee_id = input.digital_employee_id
+  AND existing.capability_manifest_version IS NOT DISTINCT FROM input.capability_manifest_version
+  AND existing.provider_auth_mode = input.provider_auth_mode
   AND existing.provider_session_id IS NOT DISTINCT FROM input.provider_session_id
   AND existing.attestation_type = input.attestation_type
   AND existing.status = input.status
@@ -122,56 +134,62 @@ WHERE NOT EXISTS (SELECT 1 FROM inserted)
 `
 
 type CreateProjectTaskAttestationParams struct {
-	TenantID          uuid.UUID   `json:"tenant_id"`
-	ProjectID         uuid.UUID   `json:"project_id"`
-	ProjectTaskID     uuid.UUID   `json:"project_task_id"`
-	AttemptID         uuid.UUID   `json:"attempt_id"`
-	RuntimeNodeID     uuid.UUID   `json:"runtime_node_id"`
-	ProviderSessionID pgtype.Text `json:"provider_session_id"`
-	AttestationType   string      `json:"attestation_type"`
-	Status            string      `json:"status"`
-	CommandArgv       []byte      `json:"command_argv"`
-	ExitCode          pgtype.Int4 `json:"exit_code"`
-	DurationMs        pgtype.Int8 `json:"duration_ms"`
-	LogRef            pgtype.Text `json:"log_ref"`
-	StdoutSha256      pgtype.Text `json:"stdout_sha256"`
-	StderrSha256      pgtype.Text `json:"stderr_sha256"`
-	ArtifactRefs      []byte      `json:"artifact_refs"`
-	ArtifactHashes    []byte      `json:"artifact_hashes"`
-	GitBranch         pgtype.Text `json:"git_branch"`
-	GitBaseRef        pgtype.Text `json:"git_base_ref"`
-	GitHeadSha        pgtype.Text `json:"git_head_sha"`
-	GitDiffSha256     pgtype.Text `json:"git_diff_sha256"`
-	Metadata          []byte      `json:"metadata"`
-	IdempotencyKey    string      `json:"idempotency_key"`
+	TenantID                  uuid.UUID   `json:"tenant_id"`
+	ProjectID                 uuid.UUID   `json:"project_id"`
+	ProjectTaskID             uuid.UUID   `json:"project_task_id"`
+	AttemptID                 uuid.UUID   `json:"attempt_id"`
+	RuntimeNodeID             uuid.UUID   `json:"runtime_node_id"`
+	DigitalEmployeeID         uuid.UUID   `json:"digital_employee_id"`
+	CapabilityManifestVersion pgtype.Text `json:"capability_manifest_version"`
+	ProviderAuthMode          pgtype.Text `json:"provider_auth_mode"`
+	ProviderSessionID         pgtype.Text `json:"provider_session_id"`
+	AttestationType           string      `json:"attestation_type"`
+	Status                    string      `json:"status"`
+	CommandArgv               []byte      `json:"command_argv"`
+	ExitCode                  pgtype.Int4 `json:"exit_code"`
+	DurationMs                pgtype.Int8 `json:"duration_ms"`
+	LogRef                    pgtype.Text `json:"log_ref"`
+	StdoutSha256              pgtype.Text `json:"stdout_sha256"`
+	StderrSha256              pgtype.Text `json:"stderr_sha256"`
+	ArtifactRefs              []byte      `json:"artifact_refs"`
+	ArtifactHashes            []byte      `json:"artifact_hashes"`
+	GitBranch                 pgtype.Text `json:"git_branch"`
+	GitBaseRef                pgtype.Text `json:"git_base_ref"`
+	GitHeadSha                pgtype.Text `json:"git_head_sha"`
+	GitDiffSha256             pgtype.Text `json:"git_diff_sha256"`
+	Metadata                  []byte      `json:"metadata"`
+	IdempotencyKey            string      `json:"idempotency_key"`
 }
 
 type CreateProjectTaskAttestationRow struct {
-	ID                uuid.UUID          `json:"id"`
-	TenantID          uuid.UUID          `json:"tenant_id"`
-	ProjectID         uuid.UUID          `json:"project_id"`
-	ProjectTaskID     uuid.UUID          `json:"project_task_id"`
-	AttemptID         uuid.UUID          `json:"attempt_id"`
-	RuntimeNodeID     uuid.UUID          `json:"runtime_node_id"`
-	ProviderSessionID pgtype.Text        `json:"provider_session_id"`
-	AttestationType   string             `json:"attestation_type"`
-	Status            string             `json:"status"`
-	CommandArgv       []byte             `json:"command_argv"`
-	ExitCode          pgtype.Int4        `json:"exit_code"`
-	DurationMs        pgtype.Int8        `json:"duration_ms"`
-	LogRef            pgtype.Text        `json:"log_ref"`
-	StdoutSha256      pgtype.Text        `json:"stdout_sha256"`
-	StderrSha256      pgtype.Text        `json:"stderr_sha256"`
-	ArtifactRefs      []byte             `json:"artifact_refs"`
-	ArtifactHashes    []byte             `json:"artifact_hashes"`
-	GitBranch         pgtype.Text        `json:"git_branch"`
-	GitBaseRef        pgtype.Text        `json:"git_base_ref"`
-	GitHeadSha        pgtype.Text        `json:"git_head_sha"`
-	GitDiffSha256     pgtype.Text        `json:"git_diff_sha256"`
-	Metadata          []byte             `json:"metadata"`
-	IdempotencyKey    string             `json:"idempotency_key"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                        uuid.UUID          `json:"id"`
+	TenantID                  uuid.UUID          `json:"tenant_id"`
+	ProjectID                 uuid.UUID          `json:"project_id"`
+	ProjectTaskID             uuid.UUID          `json:"project_task_id"`
+	AttemptID                 uuid.UUID          `json:"attempt_id"`
+	RuntimeNodeID             uuid.UUID          `json:"runtime_node_id"`
+	ProviderSessionID         pgtype.Text        `json:"provider_session_id"`
+	AttestationType           string             `json:"attestation_type"`
+	Status                    string             `json:"status"`
+	CommandArgv               []byte             `json:"command_argv"`
+	ExitCode                  pgtype.Int4        `json:"exit_code"`
+	DurationMs                pgtype.Int8        `json:"duration_ms"`
+	LogRef                    pgtype.Text        `json:"log_ref"`
+	StdoutSha256              pgtype.Text        `json:"stdout_sha256"`
+	StderrSha256              pgtype.Text        `json:"stderr_sha256"`
+	ArtifactRefs              []byte             `json:"artifact_refs"`
+	ArtifactHashes            []byte             `json:"artifact_hashes"`
+	GitBranch                 pgtype.Text        `json:"git_branch"`
+	GitBaseRef                pgtype.Text        `json:"git_base_ref"`
+	GitHeadSha                pgtype.Text        `json:"git_head_sha"`
+	GitDiffSha256             pgtype.Text        `json:"git_diff_sha256"`
+	Metadata                  []byte             `json:"metadata"`
+	IdempotencyKey            string             `json:"idempotency_key"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	DigitalEmployeeID         uuid.UUID          `json:"digital_employee_id"`
+	CapabilityManifestVersion pgtype.Text        `json:"capability_manifest_version"`
+	ProviderAuthMode          string             `json:"provider_auth_mode"`
 }
 
 func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreateProjectTaskAttestationParams) (CreateProjectTaskAttestationRow, error) {
@@ -181,6 +199,9 @@ func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreatePr
 		arg.ProjectTaskID,
 		arg.AttemptID,
 		arg.RuntimeNodeID,
+		arg.DigitalEmployeeID,
+		arg.CapabilityManifestVersion,
+		arg.ProviderAuthMode,
 		arg.ProviderSessionID,
 		arg.AttestationType,
 		arg.Status,
@@ -226,6 +247,9 @@ func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreatePr
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DigitalEmployeeID,
+		&i.CapabilityManifestVersion,
+		&i.ProviderAuthMode,
 	)
 	return i, err
 }
@@ -306,7 +330,7 @@ func (q *Queries) GetProjectRepoBinding(ctx context.Context, arg GetProjectRepoB
 }
 
 const ListProjectTaskAttestations = `-- name: ListProjectTaskAttestations :many
-SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at
+SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at, digital_employee_id, capability_manifest_version, provider_auth_mode
 FROM project_task_attestations
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
@@ -364,6 +388,9 @@ func (q *Queries) ListProjectTaskAttestations(ctx context.Context, arg ListProje
 			&i.IdempotencyKey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DigitalEmployeeID,
+			&i.CapabilityManifestVersion,
+			&i.ProviderAuthMode,
 		); err != nil {
 			return nil, err
 		}

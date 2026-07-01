@@ -14,6 +14,10 @@ async fn store_records_provider_session_events_and_replays_them() {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,
+                employee_capability_dir: None,
+                capability_manifest_version: None,
+                provider_auth_mode: "host".to_string(),
+                mcp_config_path: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,
@@ -103,6 +107,10 @@ async fn store_preserves_runtime_command_metadata_on_snapshot() {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,
+                employee_capability_dir: None,
+                capability_manifest_version: None,
+                provider_auth_mode: "host".to_string(),
+                mcp_config_path: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,
@@ -120,6 +128,54 @@ async fn store_preserves_runtime_command_metadata_on_snapshot() {
 }
 
 #[tokio::test]
+async fn store_preserves_capability_and_auth_metadata_on_snapshot() {
+    let temp = TempDir::new().expect("tempdir");
+    let store = RuntimeRunStore::new(temp.path().join("runs"));
+    let employee_capability_dir = temp.path().join("employees/employee-1");
+    let task_mcp_config = temp
+        .path()
+        .join("workspaces/project/task/.superteam/mcp/claude.mcp.json");
+
+    let run = store
+        .start_run(
+            RunSpec {
+                provider_kind: "claude".to_string(),
+                workspace_path: PathBuf::from("/tmp/workspace"),
+                agent_home_dir: Some(employee_capability_dir.clone()),
+                employee_capability_dir: Some(employee_capability_dir.clone()),
+                capability_manifest_version: Some("cap-manifest:v3".to_string()),
+                provider_auth_mode: "host".to_string(),
+                mcp_config_path: Some(task_mcp_config.clone()),
+                prompt: "hello".to_string(),
+                session_id: None,
+                continue_session: false,
+                model: None,
+                environment: Default::default(),
+                command_context: None,
+            },
+            None,
+        )
+        .await
+        .expect("start run");
+
+    let snapshot = store.get_run(&run.id).await.expect("run snapshot");
+
+    assert_eq!(
+        snapshot.employee_capability_dir.as_deref(),
+        Some(employee_capability_dir.as_path())
+    );
+    assert_eq!(
+        snapshot.capability_manifest_version.as_deref(),
+        Some("cap-manifest:v3")
+    );
+    assert_eq!(snapshot.provider_auth_mode, "host");
+    assert_eq!(
+        snapshot.mcp_config_path.as_deref(),
+        Some(task_mcp_config.as_path())
+    );
+}
+
+#[tokio::test]
 async fn store_does_not_cancel_completed_runs() {
     let temp = TempDir::new().expect("tempdir");
     let store = RuntimeRunStore::new(temp.path().join("runs"));
@@ -129,6 +185,10 @@ async fn store_does_not_cancel_completed_runs() {
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,
+                employee_capability_dir: None,
+                capability_manifest_version: None,
+                provider_auth_mode: "host".to_string(),
+                mcp_config_path: None,
                 prompt: "hello".to_string(),
                 session_id: None,
                 continue_session: false,

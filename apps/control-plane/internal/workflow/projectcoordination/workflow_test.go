@@ -384,6 +384,7 @@ func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *tes
 		taskIDs:             []uuid.UUID{rootTaskID, downstreamTaskID},
 		dispatchableTaskIDs: []uuid.UUID{rootTaskID},
 		readyDownstreamIDs:  []uuid.UUID{downstreamTaskID},
+		resultDecision:      InspectTaskResultDecisionResult{ResultID: uuid.New(), Decision: string(project.TaskResultDecisionCompleteAccepted)},
 		dispatchEvent:       uuid.New(),
 	}
 	activities := newRawDispatchWorkflowActivities(store)
@@ -425,6 +426,7 @@ func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *tes
 		"DispatchProjectTask",
 		"FinishCoordinationJob",
 		"AppendProjectEvent",
+		"InspectTaskResultDecision",
 		"ResolveReadyDownstream",
 		"DispatchProjectTask",
 	}, store.calls)
@@ -434,6 +436,149 @@ func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *tes
 		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: rootTaskID, DispatchReason: project.DispatchReasonRootReady},
 		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: downstreamTaskID, DispatchReason: project.DispatchReasonDependencyUnlocked},
 	}, store.dispatchInputs)
+}
+
+func TestProjectCoordinatorCreatesRevisionTaskOnRevisionResult(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	revisionTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:       CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent:  uuid.New(),
+		resultDecision: InspectTaskResultDecisionResult{ResultID: resultID, Decision: string(project.TaskResultDecisionRevisionAttempt)},
+		revisionResult: CreateRevisionTaskForResultResult{TaskID: revisionTaskID},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"CreateRevisionTaskForResult",
+		"DispatchProjectTask",
+	}, store.calls)
+	require.Len(t, store.inspectResultInputs, 1)
+	require.Equal(t, sourceTaskID, store.inspectResultInputs[0].ProjectTaskID)
+	require.Len(t, store.createRevisionInputs, 1)
+	require.Equal(t, CreateRevisionTaskForResultInput{
+		TenantID:     store.createRevisionInputs[0].TenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	}, store.createRevisionInputs[0])
+	require.Equal(t, []DispatchProjectTaskInput{{
+		TenantID:       store.dispatchInputs[0].TenantID,
+		ProjectID:      projectID,
+		TaskID:         revisionTaskID,
+		DispatchReason: project.DispatchReasonRetry,
+	}}, store.dispatchInputs)
+	require.Empty(t, store.resolveReadyInputs)
+}
+
+func TestProjectCoordinatorRequestsHumanDecisionWhenRevisionIterationExhausted(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:                     CoordinationSnapshot{ProjectID: projectID},
+		resultDecision:               InspectTaskResultDecisionResult{ResultID: resultID, Decision: string(project.TaskResultDecisionRevisionAttempt)},
+		revisionResult:               CreateRevisionTaskForResultResult{Exhausted: true},
+		iterationExhaustedDecisionID: decisionRequestID,
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"CreateRevisionTaskForResult",
+		"RequestProjectTaskIterationExhaustedReview",
+	}, store.calls)
+	require.Len(t, store.iterationExhaustedInputs, 1)
+	require.Equal(t, sourceTaskID, store.iterationExhaustedInputs[0].ProjectTaskID)
+	require.Equal(t, resultID, store.iterationExhaustedInputs[0].ResultID)
+	require.Equal(t, "iteration_exhausted", store.iterationExhaustedInputs[0].Reason)
+	require.Equal(t, "同一失败重复出现，需要人类判断是否继续", store.iterationExhaustedInputs[0].Summary)
+}
+
+func TestProjectCoordinatorDoesNotUnlockDownstreamForHumanReviewResult(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	downstreamTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:           CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent:      uuid.New(),
+		readyDownstreamIDs: []uuid.UUID{downstreamTaskID},
+		resultDecision:     InspectTaskResultDecisionResult{ResultID: uuid.New(), Decision: string(project.TaskResultDecisionWaitingHumanReview)},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{"AppendProjectEvent", "InspectTaskResultDecision"}, store.calls)
+	require.Empty(t, store.resolveReadyInputs)
+	require.Empty(t, store.dispatchInputs)
 }
 
 func TestProjectCoordinatorRedispatchesApprovedPreDispatchGateDecision(t *testing.T) {
@@ -535,6 +680,7 @@ func TestProjectCoordinatorRequestsAcceptanceReviewAndAppliesDecision(t *testing
 		taskIDs:                     []uuid.UUID{rootTaskID},
 		dispatchableTaskIDs:         []uuid.UUID{rootTaskID},
 		readyDownstreamIDs:          nil,
+		resultDecision:              InspectTaskResultDecisionResult{ResultID: uuid.New(), Decision: string(project.TaskResultDecisionCompleteAccepted)},
 		dispatchEvent:               uuid.New(),
 		acceptanceReady:             true,
 		acceptanceDecisionRequestID: acceptanceID,
@@ -855,26 +1001,32 @@ type recordingActivityStore struct {
 	dispatchEvent             uuid.UUID
 	dispatchErr               error
 
-	dispatchableTaskIDs         []uuid.UUID
-	dispatchableTaskIDBatches   [][]uuid.UUID
-	readyDownstreamIDs          []uuid.UUID
-	failureRecoveryResult       ApplyFailureRecoveryDecisionResult
-	listDispatchableInputs      []ListDispatchableTasksInput
-	resolveReadyInputs          []ResolveReadyDownstreamInput
-	acceptanceReady             bool
-	acceptanceDecisionRequestID uuid.UUID
-	acceptanceReviewInputs      []RequestProjectAcceptanceReviewInput
-	applyAcceptanceInputs       []ApplyProjectAcceptanceDecisionInput
-	applyAcceptanceErr          error
-	holdFailureInputs           []HoldDownstreamForFailureInput
-	applyFailureRecoveryInputs  []ApplyFailureRecoveryDecisionInput
-	applyPreDispatchGateInputs  []ApplyPreDispatchGateDecisionInput
-	dispatchInputs              []DispatchProjectTaskInput
-	gateDecisionTaskID          *uuid.UUID
-	persistPlanRevisionInputs   []PersistPlanRevisionInput
-	requestPlanReviewInputs     []RequestPlanRevisionReviewInput
-	resolvePlanReviewInputs     []ResolvePlanRevisionReviewInput
-	decomposePlanInputs         []DecomposeAcceptedPlanRevisionInput
+	dispatchableTaskIDs          []uuid.UUID
+	dispatchableTaskIDBatches    [][]uuid.UUID
+	readyDownstreamIDs           []uuid.UUID
+	resultDecision               InspectTaskResultDecisionResult
+	revisionResult               CreateRevisionTaskForResultResult
+	failureRecoveryResult        ApplyFailureRecoveryDecisionResult
+	iterationExhaustedDecisionID uuid.UUID
+	listDispatchableInputs       []ListDispatchableTasksInput
+	resolveReadyInputs           []ResolveReadyDownstreamInput
+	inspectResultInputs          []InspectTaskResultDecisionInput
+	createRevisionInputs         []CreateRevisionTaskForResultInput
+	iterationExhaustedInputs     []RequestProjectTaskIterationExhaustedReviewInput
+	acceptanceReady              bool
+	acceptanceDecisionRequestID  uuid.UUID
+	acceptanceReviewInputs       []RequestProjectAcceptanceReviewInput
+	applyAcceptanceInputs        []ApplyProjectAcceptanceDecisionInput
+	applyAcceptanceErr           error
+	holdFailureInputs            []HoldDownstreamForFailureInput
+	applyFailureRecoveryInputs   []ApplyFailureRecoveryDecisionInput
+	applyPreDispatchGateInputs   []ApplyPreDispatchGateDecisionInput
+	dispatchInputs               []DispatchProjectTaskInput
+	gateDecisionTaskID           *uuid.UUID
+	persistPlanRevisionInputs    []PersistPlanRevisionInput
+	requestPlanReviewInputs      []RequestPlanRevisionReviewInput
+	resolvePlanReviewInputs      []ResolvePlanRevisionReviewInput
+	decomposePlanInputs          []DecomposeAcceptedPlanRevisionInput
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -977,6 +1129,24 @@ func (s *recordingActivityStore) ResolveReadyDownstream(ctx context.Context, inp
 	s.calls = append(s.calls, "ResolveReadyDownstream")
 	s.resolveReadyInputs = append(s.resolveReadyInputs, input)
 	return s.readyDownstreamIDs, nil
+}
+
+func (s *recordingActivityStore) InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error) {
+	s.calls = append(s.calls, "InspectTaskResultDecision")
+	s.inspectResultInputs = append(s.inspectResultInputs, input)
+	return s.resultDecision, nil
+}
+
+func (s *recordingActivityStore) CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error) {
+	s.calls = append(s.calls, "CreateRevisionTaskForResult")
+	s.createRevisionInputs = append(s.createRevisionInputs, input)
+	return s.revisionResult, nil
+}
+
+func (s *recordingActivityStore) RequestProjectTaskIterationExhaustedReview(ctx context.Context, input RequestProjectTaskIterationExhaustedReviewInput) (DecisionRequestResult, error) {
+	s.calls = append(s.calls, "RequestProjectTaskIterationExhaustedReview")
+	s.iterationExhaustedInputs = append(s.iterationExhaustedInputs, input)
+	return DecisionRequestResult{ID: s.iterationExhaustedDecisionID}, nil
 }
 
 func (s *recordingActivityStore) IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error) {

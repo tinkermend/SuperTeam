@@ -160,6 +160,30 @@ type ResolveReadyDownstreamInput struct {
 	CompletedTaskID uuid.UUID
 }
 
+type InspectTaskResultDecisionInput struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+}
+
+type InspectTaskResultDecisionResult struct {
+	ResultID  uuid.UUID
+	Decision  string
+	Exhausted bool
+}
+
+type CreateRevisionTaskForResultInput struct {
+	TenantID     uuid.UUID
+	ProjectID    uuid.UUID
+	SourceTaskID uuid.UUID
+	ResultID     uuid.UUID
+}
+
+type CreateRevisionTaskForResultResult struct {
+	TaskID    uuid.UUID
+	Exhausted bool
+}
+
 type IsProjectAcceptanceReadyInput struct {
 	TenantID  uuid.UUID
 	ProjectID uuid.UUID
@@ -168,6 +192,16 @@ type IsProjectAcceptanceReadyInput struct {
 type RequestProjectAcceptanceReviewInput struct {
 	TenantID  uuid.UUID
 	ProjectID uuid.UUID
+}
+
+type RequestProjectTaskIterationExhaustedReviewInput struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	ProjectTaskID  uuid.UUID
+	ResultID       uuid.UUID
+	Reason         string
+	Summary        string
+	CreatedEventID uuid.UUID
 }
 
 type ApplyProjectAcceptanceDecisionInput struct {

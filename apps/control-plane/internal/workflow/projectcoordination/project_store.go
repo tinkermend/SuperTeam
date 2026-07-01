@@ -29,6 +29,8 @@ type ProjectStore struct {
 
 type clockFunc func() time.Time
 
+const defaultRevisionMaxAttempts int32 = 3
+
 func (s *ProjectStore) WithClock(clock clockFunc) *ProjectStore {
 	s.clock = clock
 	return s
@@ -605,6 +607,83 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 	return readyIDs, nil
 }
 
+func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error) {
+	if s.repository == nil {
+		return InspectTaskResultDecisionResult{}, ErrActivityStoreRequired
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ProjectTaskID)
+	if err != nil {
+		return InspectTaskResultDecisionResult{}, err
+	}
+	if task.ProjectID != input.ProjectID {
+		return InspectTaskResultDecisionResult{}, project.ErrProjectNotFound
+	}
+	result, err := s.latestTaskResult(ctx, task)
+	if err != nil || result == nil {
+		return InspectTaskResultDecisionResult{}, err
+	}
+	return InspectTaskResultDecisionResult{
+		ResultID:  result.ID,
+		Decision:  string(result.Decision),
+		Exhausted: s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, task),
+	}, nil
+}
+
+func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error) {
+	if s.repository == nil {
+		return CreateRevisionTaskForResultResult{}, ErrActivityStoreRequired
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, input.SourceTaskID)
+	if err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	if source.ProjectID != input.ProjectID {
+		return CreateRevisionTaskForResultResult{}, project.ErrProjectNotFound
+	}
+	result, err := s.taskResultByID(ctx, input.TenantID, input.ProjectID, input.SourceTaskID, input.ResultID)
+	if err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	if result.Decision != project.TaskResultDecisionRevisionAttempt || result.ResultStatus != project.TaskResultStatusRevisionNeeded || result.Contract.RevisionRequest == nil {
+		return CreateRevisionTaskForResultResult{}, project.ErrInvalidProject
+	}
+	if s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, source) {
+		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
+	}
+	if s.repeatedRevisionFailure(ctx, input.TenantID, input.ProjectID, source, result) {
+		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
+	}
+	revision, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
+		TenantID:                  input.TenantID,
+		ProjectID:                 input.ProjectID,
+		DemandID:                  source.DemandID,
+		Title:                     revisionTaskTitle(source, result),
+		Summary:                   revisionTaskSummary(source, result),
+		Status:                    project.ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: source.AssignedDigitalEmployeeID,
+		RiskLevel:                 stringPtrValue(source.RiskLevel),
+		RequiresHumanApproval:     source.RequiresHumanApproval,
+		CoordinationJobID:         source.CoordinationJobID,
+		RouteDecisionID:           source.RouteDecisionID,
+		PlannedTaskKey:            revisionTaskKey(source, result),
+		TaskKind:                  source.TaskKind,
+		StageIndex:                source.StageIndex,
+		RevisionOfTaskID:          &source.ID,
+		ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
+		InputRequirements:         revisionInputRequirements(source, result),
+		HandoffContract:           cloneAnyMap(source.HandoffContract),
+		PlannerMetadata:           revisionPlannerMetadata(source, result),
+		BlockedByTaskIDs:          append([]uuid.UUID(nil), source.BlockedByTaskIDs...),
+	})
+	if err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	if _, err := s.repository.LinkProjectTaskResultRevisionTask(ctx, input.TenantID, input.ProjectID, result.ID, revision.ID); err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	return CreateRevisionTaskForResultResult{TaskID: revision.ID}, nil
+}
+
 func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
 	if s.repository == nil || s.approvals == nil {
 		return DecisionRequestResult{}, ErrActivityStoreRequired
@@ -677,6 +756,103 @@ func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldD
 		DecisionType:      "task_failure_recovery",
 		TitleSnapshot:     "处理项目任务失败",
 		SummarySnapshot:   input.FailureSummary,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) RequestProjectTaskIterationExhaustedReview(ctx context.Context, input RequestProjectTaskIterationExhaustedReviewInput) (DecisionRequestResult, error) {
+	if s.repository == nil || s.approvals == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if task.ProjectID != input.ProjectID {
+		return DecisionRequestResult{}, project.ErrProjectNotFound
+	}
+	downstreamIDs, err := s.recursiveDownstreamTaskIDs(ctx, input.TenantID, input.ProjectID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	for _, taskID := range downstreamIDs {
+		downstream, err := s.repository.GetProjectTask(ctx, input.TenantID, taskID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		if downstream.ProjectID != input.ProjectID {
+			return DecisionRequestResult{}, project.ErrProjectNotFound
+		}
+		if projectTaskTerminalStatus(downstream.Status) || downstream.Status == "blocked" {
+			continue
+		}
+		if _, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "blocked", nil, failureHoldCurrentStatuses()); err != nil {
+			if errors.Is(err, project.ErrProjectConflict) {
+				continue
+			}
+			return DecisionRequestResult{}, err
+		}
+	}
+	summary := strings.TrimSpace(input.Summary)
+	if summary == "" {
+		summary = "同一失败重复出现，需要人类判断是否继续"
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		reason = "iteration_exhausted"
+	}
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   "project_task",
+		ResourceID:     input.ProjectTaskID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   projectRecord.HumanOwnerUserID,
+		DecisionType:   "project_task_iteration_exhausted",
+		Title:          "处理项目任务修订耗尽",
+		Summary:        summary,
+		RiskLevel:      "high",
+		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		ContextPayload: iterationExhaustedContext(input, reason, summary, downstreamIDs),
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.ProjectTaskID.String(), summary, map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"project_task_id":     input.ProjectTaskID.String(),
+		"result_id":           input.ResultID.String(),
+		"reason":              reason,
+		"completed_event_id":  input.CreatedEventID.String(),
+		"target_user_id":      projectRecord.HumanOwnerUserID.String(),
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	taskID := input.ProjectTaskID
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		ProjectTaskID:     &taskID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      "project_task_iteration_exhausted",
+		TitleSnapshot:     "处理项目任务修订耗尽",
+		SummarySnapshot:   summary,
 		RiskLevelSnapshot: "high",
 		StatusSnapshot:    "pending",
 		CreatedEventID:    &event.ID,
@@ -1881,6 +2057,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	} else {
 		workspaceMode = WorkspaceModeNone
 	}
+	if workspaceMode == WorkspaceModeBranch || workspaceMode == WorkspaceModeDetachedRun {
+		handoffContract["requires_runtime_attestation"] = true
+	}
 	runMetadata := map[string]any{
 		"source":                           "project_task_dispatch",
 		"actor_type":                       "project_coordinator",
@@ -2009,7 +2188,11 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"expected_outputs: " + taskContractJSON(task.ExpectedOutputs) + "\n" +
 		"input_requirements: " + taskContractJSON(task.InputRequirements) + "\n" +
 		"handoff_contract: " + taskContractJSON(task.HandoffContract) + "\n" +
-		"请按项目任务要求执行，并直接输出结论、证据、工件引用和不确定性。" +
+		"结果契约要求: 最终答案必须包含一个 ```json 代码块，顶层字段为 result_contract。" +
+		"result_contract.status 使用 completed；summary 填写结论；" +
+		"acceptance_results 必须逐条覆盖 handoff_contract.acceptance_criteria，status 使用 passed 并带 evidence_refs；" +
+		"evidence_refs/verification 用于说明已读取或验证的证据。\n" +
+		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
 }
 
@@ -2375,6 +2558,200 @@ func recoveryPlannerMetadata(source project.ProjectTask, decisionRequestID uuid.
 	return metadata
 }
 
+func revisionInputRequirements(source project.ProjectTask, result project.ProjectTaskResult) map[string]any {
+	requirements := cloneAnyMap(source.InputRequirements)
+	revision := result.Contract.RevisionRequest
+	requirements["revision_reason"] = revision.Reason
+	requirements["requested_changes"] = append([]string(nil), revision.RequestedChanges...)
+	requirements["source_task_id"] = source.ID.String()
+	requirements["source_result_id"] = result.ID.String()
+	if result.Contract.Summary != "" {
+		requirements["source_result_summary"] = result.Contract.Summary
+	}
+	return requirements
+}
+
+func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectTaskResult) map[string]any {
+	metadata := cloneAnyMap(source.PlannerMetadata)
+	metadata["revision_root_task_id"] = revisionRootTaskID(source)
+	metadata["revision_attempt_count"] = revisionAttemptCount(source) + 1
+	metadata["revision_max_attempts"] = revisionMaxAttempts(source)
+	metadata["source_task_id"] = source.ID.String()
+	metadata["source_result_id"] = result.ID.String()
+	metadata["revision_failure_fingerprint"] = revisionFailureFingerprint(result.Contract)
+	return metadata
+}
+
+func revisionFailureFingerprint(contract project.TaskResultContract) string {
+	parts := []string{string(contract.Status), strings.TrimSpace(contract.Summary)}
+	if contract.RevisionRequest != nil {
+		parts = append(parts, strings.TrimSpace(contract.RevisionRequest.Reason))
+		parts = append(parts, contract.RevisionRequest.RequestedChanges...)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func revisionTaskTitle(source project.ProjectTask, result project.ProjectTaskResult) string {
+	if result.Contract.RevisionRequest != nil && strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskTitle) != "" {
+		return strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskTitle)
+	}
+	if strings.Contains(source.Title, "修订") {
+		return source.Title
+	}
+	return source.Title + "（修订）"
+}
+
+func revisionTaskSummary(source project.ProjectTask, result project.ProjectTaskResult) string {
+	if result.Contract.RevisionRequest != nil && strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskSummary) != "" {
+		return strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskSummary)
+	}
+	if strings.TrimSpace(result.Contract.Summary) != "" {
+		return strings.TrimSpace(result.Contract.Summary)
+	}
+	return stringPtrValue(source.Summary)
+}
+
+func revisionTaskKey(source project.ProjectTask, result project.ProjectTaskResult) *string {
+	base := source.ID.String()
+	if value, ok := source.PlannerMetadata["iteration_key"].(string); ok && strings.TrimSpace(value) != "" {
+		base = strings.TrimSpace(value)
+	} else if source.PlannedTaskKey != nil && strings.TrimSpace(*source.PlannedTaskKey) != "" {
+		base = strings.TrimSpace(*source.PlannedTaskKey)
+	}
+	key := base + "#revision-" + result.ID.String()[:8]
+	if len(key) > 100 {
+		key = source.ID.String()[:8] + "#revision-" + result.ID.String()[:8]
+	}
+	return &key
+}
+
+func revisionBudgetExhausted(task project.ProjectTask) bool {
+	return revisionAttemptCount(task) >= revisionMaxAttempts(task)
+}
+
+func revisionRootTaskID(task project.ProjectTask) string {
+	if value, ok := task.PlannerMetadata["revision_root_task_id"].(string); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	if task.RevisionOfTaskID != nil && *task.RevisionOfTaskID != uuid.Nil {
+		return task.RevisionOfTaskID.String()
+	}
+	return task.ID.String()
+}
+
+func revisionAttemptCount(task project.ProjectTask) int32 {
+	if value, ok := int32FromAny(task.PlannerMetadata["revision_attempt_count"]); ok && value > 0 {
+		return value
+	}
+	if task.AttemptCount > 0 {
+		return task.AttemptCount
+	}
+	return 1
+}
+
+func revisionMaxAttempts(task project.ProjectTask) int32 {
+	if value, ok := int32FromAny(task.PlannerMetadata["revision_max_attempts"]); ok && value > 0 {
+		return value
+	}
+	if task.MaxAttempts != nil && *task.MaxAttempts > 0 {
+		return *task.MaxAttempts
+	}
+	return defaultRevisionMaxAttempts
+}
+
+func int32FromAny(value any) (int32, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int32(typed), true
+	case int32:
+		return typed, true
+	case int64:
+		return int32(typed), true
+	case float64:
+		return int32(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int32(parsed), true
+	default:
+		return 0, false
+	}
+}
+
+func (s *ProjectStore) repeatedRevisionFailure(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, result project.ProjectTaskResult) bool {
+	iterationKey, _ := source.PlannerMetadata["iteration_key"].(string)
+	fingerprint := revisionFailureFingerprint(result.Contract)
+	revisions := s.priorRevisionTasks(ctx, tenantID, projectID, source, iterationKey)
+	sort.SliceStable(revisions, func(i, j int) bool {
+		return revisions[i].CreatedAt.After(revisions[j].CreatedAt)
+	})
+	if len(revisions) < 2 {
+		return false
+	}
+	for _, task := range revisions[:2] {
+		if task.PlannerMetadata["revision_failure_fingerprint"] != fingerprint {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *ProjectStore) revisionBudgetExhausted(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask) bool {
+	maxAttempts := revisionMaxAttempts(source)
+	maxCount := revisionAttemptCount(source)
+	iterationKey, _ := source.PlannerMetadata["iteration_key"].(string)
+	for _, task := range s.priorRevisionTasks(ctx, tenantID, projectID, source, iterationKey) {
+		if count := revisionAttemptCount(task); count > maxCount {
+			maxCount = count
+		}
+	}
+	return maxCount >= maxAttempts
+}
+
+func (s *ProjectStore) priorRevisionTasks(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, iterationKey string) []project.ProjectTask {
+	if source.CoordinationJobID == nil {
+		return nil
+	}
+	tasks, err := s.repository.ListProjectTasksByCoordinationJob(ctx, tenantID, projectID, *source.CoordinationJobID)
+	if err != nil {
+		return nil
+	}
+	rootTaskID := revisionRootTaskID(source)
+	revisions := make([]project.ProjectTask, 0)
+	for _, task := range tasks {
+		if task.ID == source.ID {
+			continue
+		}
+		sameSource := task.RevisionOfTaskID != nil && *task.RevisionOfTaskID == source.ID
+		sameRoot := rootTaskID != "" && revisionRootTaskID(task) == rootTaskID
+		sameIteration := iterationKey != "" && task.PlannerMetadata["iteration_key"] == iterationKey
+		if sameSource || sameRoot || sameIteration {
+			revisions = append(revisions, task)
+		}
+	}
+	return revisions
+}
+
+func (s *ProjectStore) taskResultByID(ctx context.Context, tenantID, projectID, taskID, resultID uuid.UUID) (project.ProjectTaskResult, error) {
+	results, err := s.repository.ListProjectTaskResults(ctx, project.ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskID,
+		Limit:         100,
+	})
+	if err != nil {
+		return project.ProjectTaskResult{}, err
+	}
+	for _, result := range results {
+		if result.ID == resultID {
+			return result, nil
+		}
+	}
+	return project.ProjectTaskResult{}, project.ErrProjectNotFound
+}
+
 func dependencyExists(dependencies []project.ProjectTaskDependency, dependentTaskID, blockerTaskID uuid.UUID) bool {
 	for _, dependency := range dependencies {
 		if dependency.DependentTaskID == dependentTaskID && dependency.BlockerTaskID == blockerTaskID {
@@ -2426,6 +2803,18 @@ func failureRecoveryContext(input HoldDownstreamForFailureInput, downstreamTaskI
 		"failed_task_id":      input.FailedTaskID.String(),
 		"failed_event_id":     input.FailedEventID.String(),
 		"failure_summary":     input.FailureSummary,
+		"downstream_task_ids": uuidStrings(downstreamTaskIDs),
+	}
+}
+
+func iterationExhaustedContext(input RequestProjectTaskIterationExhaustedReviewInput, reason, summary string, downstreamTaskIDs []uuid.UUID) map[string]any {
+	return map[string]any{
+		"project_id":          input.ProjectID.String(),
+		"project_task_id":     input.ProjectTaskID.String(),
+		"result_id":           input.ResultID.String(),
+		"completed_event_id":  input.CreatedEventID.String(),
+		"reason":              reason,
+		"summary":             summary,
 		"downstream_task_ids": uuidStrings(downstreamTaskIDs),
 	}
 }

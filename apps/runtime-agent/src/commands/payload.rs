@@ -112,6 +112,10 @@ pub struct RuntimeProjectWorkspacePayload {
     pub workspace_mode: Option<String>,
     pub base_ref: Option<String>,
     pub project_git: Option<RuntimeProjectGitPayload>,
+    pub capability_manifest_version: Option<String>,
+    pub provider_auth_mode: String,
+    pub attestation_policy: Option<serde_json::Value>,
+    pub budget: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -318,6 +322,14 @@ impl RuntimeSessionCommandPayload {
             workspace_mode: metadata_string(&self.metadata, "workspace_mode"),
             base_ref: metadata_string(&self.metadata, "base_ref"),
             project_git: project_git_metadata(&self.metadata),
+            capability_manifest_version: metadata_string(
+                &self.metadata,
+                "capability_manifest_version",
+            ),
+            provider_auth_mode: metadata_string(&self.metadata, "provider_auth_mode")
+                .unwrap_or_else(|| "host".to_string()),
+            attestation_policy: metadata_object(&self.metadata, "attestation_policy"),
+            budget: metadata_object(&self.metadata, "budget"),
         }
     }
 
@@ -521,6 +533,10 @@ fn project_git_metadata(metadata: &serde_json::Value) -> Option<RuntimeProjectGi
         git_credential_ref,
         scope,
     })
+}
+
+fn metadata_object(metadata: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
+    metadata.get(key).filter(|value| value.is_object()).cloned()
 }
 
 fn default_recoverable() -> bool {

@@ -11,6 +11,10 @@ fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest 
         prompt: "hello".to_string(),
         workspace_path: PathBuf::from("/tmp/workspace"),
         agent_home_dir: None,
+        employee_capability_dir: None,
+        capability_manifest_version: None,
+        provider_auth_mode: "host".to_string(),
+        mcp_config_path: None,
         session_id: session_id.map(ToString::to_string),
         continue_session,
         model: Some("model-a".to_string()),
@@ -18,20 +22,29 @@ fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest 
     }
 }
 
-fn request_with_agent_home(agent_home_dir: PathBuf) -> ProviderRequest {
+fn request_with_employee_capability_dir(employee_capability_dir: PathBuf) -> ProviderRequest {
     ProviderRequest {
-        agent_home_dir: Some(agent_home_dir),
+        agent_home_dir: Some(employee_capability_dir.clone()),
+        employee_capability_dir: Some(employee_capability_dir),
         ..request(None, false)
     }
 }
 
-fn request_with_agent_home_and_env(
-    agent_home_dir: PathBuf,
+fn request_with_employee_capability_dir_and_env(
+    employee_capability_dir: PathBuf,
     environment: BTreeMap<String, String>,
 ) -> ProviderRequest {
     ProviderRequest {
-        agent_home_dir: Some(agent_home_dir),
+        agent_home_dir: Some(employee_capability_dir.clone()),
+        employee_capability_dir: Some(employee_capability_dir),
         environment,
+        ..request(None, false)
+    }
+}
+
+fn request_with_task_mcp_config(mcp_config_path: PathBuf) -> ProviderRequest {
+    ProviderRequest {
+        mcp_config_path: Some(mcp_config_path),
         ..request(None, false)
     }
 }
@@ -112,12 +125,17 @@ fn providers_inject_runtime_environment() {
 }
 
 #[test]
-fn claude_uses_agent_home_mcp_config_when_present() {
+fn claude_uses_task_level_mcp_config_when_present() {
     let tmp = tempfile::tempdir().unwrap();
-    let mcp_config = tmp.path().join(".mcp.json");
+    let mcp_config = tmp
+        .path()
+        .join(".superteam")
+        .join("mcp")
+        .join("claude.mcp.json");
+    std::fs::create_dir_all(mcp_config.parent().unwrap()).unwrap();
     std::fs::write(&mcp_config, "{}").unwrap();
     let provider = ClaudeProvider::new("claude");
-    let command = provider.build_command(&request_with_agent_home(tmp.path().to_path_buf()));
+    let command = provider.build_command(&request_with_task_mcp_config(mcp_config.clone()));
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -131,10 +149,29 @@ fn claude_uses_agent_home_mcp_config_when_present() {
 }
 
 #[test]
+fn claude_does_not_use_employee_home_mcp_config_without_task_projection() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join(".mcp.json"), "{}").unwrap();
+    let provider = ClaudeProvider::new("claude");
+    let command = provider.build_command(&request_with_employee_capability_dir(
+        tmp.path().to_path_buf(),
+    ));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert!(!args.iter().any(|arg| arg == "--mcp-config"));
+    assert!(!args.iter().any(|arg| arg == "--strict-mcp-config"));
+}
+
+#[test]
 fn codex_uses_workspace_for_cd_without_default_codex_home() {
     let provider = CodexProvider::new("codex");
-    let command =
-        provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
+    let command = provider.build_command(&request_with_employee_capability_dir(PathBuf::from(
+        "/tmp/agent-home",
+    )));
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -163,7 +200,7 @@ fn codex_uses_workspace_for_cd_without_default_codex_home() {
 #[test]
 fn codex_preserves_explicit_codex_home_environment() {
     let provider = CodexProvider::new("codex");
-    let command = provider.build_command(&request_with_agent_home_and_env(
+    let command = provider.build_command(&request_with_employee_capability_dir_and_env(
         PathBuf::from("/tmp/agent-home"),
         BTreeMap::from([(
             "CODEX_HOME".to_string(),
@@ -192,8 +229,9 @@ fn codex_preserves_explicit_codex_home_environment() {
 #[test]
 fn opencode_uses_workspace_dir_without_default_config_home() {
     let provider = OpenCodeProvider::new("opencode");
-    let command =
-        provider.build_command(&request_with_agent_home(PathBuf::from("/tmp/agent-home")));
+    let command = provider.build_command(&request_with_employee_capability_dir(PathBuf::from(
+        "/tmp/agent-home",
+    )));
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -223,7 +261,7 @@ fn opencode_uses_workspace_dir_without_default_config_home() {
 #[test]
 fn opencode_preserves_explicit_config_environment() {
     let provider = OpenCodeProvider::new("opencode");
-    let command = provider.build_command(&request_with_agent_home_and_env(
+    let command = provider.build_command(&request_with_employee_capability_dir_and_env(
         PathBuf::from("/tmp/agent-home"),
         BTreeMap::from([
             (

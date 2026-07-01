@@ -48,6 +48,8 @@ type HandlerService interface {
 	CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error)
 	FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error)
 	WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error)
+	CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (*ProjectTaskAttestation, error)
+	RecordProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req RecordProjectTaskAttemptBudgetHeartbeatRequest) (*ProjectTaskAttemptBudgetHeartbeatResult, error)
 	ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
 	CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error)
 	PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error)
@@ -1163,6 +1165,33 @@ func (h *HTTPHandler) SubmitProjectTaskAttemptResult(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *HTTPHandler) RecordProjectTaskAttemptBudgetHeartbeat(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
+	if !ok {
+		return
+	}
+	var body recordProjectTaskAttemptBudgetHeartbeatBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	result, err := service.RecordProjectTaskAttemptBudgetHeartbeat(r.Context(), RecordProjectTaskAttemptBudgetHeartbeatRequest{
+		TenantID:             tenantID,
+		ProjectID:            body.ProjectID,
+		ProjectTaskID:        body.ProjectTaskID,
+		AttemptID:            attemptID,
+		ConsumedWallClockSec: body.ConsumedWallClockSec,
+		ConsumedTokens:       body.ConsumedTokens,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectTaskAttemptBudgetHeartbeatResponse{
+		Tripped:    result.Tripped,
+		TripReason: nonEmptyStringPtr(result.TripReason),
+	})
+}
+
 func (h *HTTPHandler) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
 	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
 	if !ok {
@@ -1215,6 +1244,71 @@ func (h *HTTPHandler) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *HTTPHandler) CreateProjectTaskAttestation(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == uuid.Nil {
+		http.Error(w, "tenant_id not found in context", http.StatusUnauthorized)
+		return
+	}
+	runtimeNodeID := middleware.GetRuntimeNodeID(r.Context())
+	if runtimeNodeID == uuid.Nil {
+		http.Error(w, "runtime_node_id not found in context", http.StatusUnauthorized)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body createProjectTaskAttestationBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	if body.RuntimeNodeID == uuid.Nil {
+		http.Error(w, "runtime_node_id is required", http.StatusBadRequest)
+		return
+	}
+	if body.RuntimeNodeID != runtimeNodeID {
+		http.Error(w, "runtime_node_id does not match authenticated runtime node", http.StatusForbidden)
+		return
+	}
+	providerAuthMode := body.ProviderAuthMode
+	if providerAuthMode == "" {
+		providerAuthMode = ProjectTaskAttestationProviderAuthModeHost
+	}
+	attestation, err := service.CreateProjectTaskAttestation(r.Context(), CreateProjectTaskAttestationRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 body.ProjectID,
+		ProjectTaskID:             body.ProjectTaskID,
+		AttemptID:                 body.AttemptID,
+		RuntimeNodeID:             runtimeNodeID,
+		DigitalEmployeeID:         body.DigitalEmployeeID,
+		CapabilityManifestVersion: body.CapabilityManifestVersion,
+		ProviderAuthMode:          providerAuthMode,
+		ProviderSessionID:         body.ProviderSessionID,
+		AttestationType:           body.AttestationType,
+		Status:                    body.Status,
+		CommandArgv:               body.CommandArgv,
+		ExitCode:                  body.ExitCode,
+		DurationMs:                body.DurationMs,
+		LogRef:                    body.LogRef,
+		StdoutSha256:              body.StdoutSha256,
+		StderrSha256:              body.StderrSha256,
+		ArtifactRefs:              body.ArtifactRefs,
+		ArtifactHashes:            body.ArtifactHashes,
+		GitBranch:                 body.GitBranch,
+		GitBaseRef:                body.GitBaseRef,
+		GitHeadSha:                body.GitHeadSha,
+		GitDiffSha256:             body.GitDiffSha256,
+		Metadata:                  body.Metadata,
+		IdempotencyKey:            body.IdempotencyKey,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, projectTaskAttestationResponseFromDomain(*attestation))
 }
 
 func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request) {
@@ -1517,6 +1611,13 @@ type submitProjectTaskAttemptResultBody struct {
 	ResultContract TaskResultContract `json:"result_contract"`
 }
 
+type recordProjectTaskAttemptBudgetHeartbeatBody struct {
+	ProjectID            uuid.UUID `json:"project_id"`
+	ProjectTaskID        uuid.UUID `json:"project_task_id"`
+	ConsumedWallClockSec int32     `json:"consumed_wall_clock_sec"`
+	ConsumedTokens       int32     `json:"consumed_tokens"`
+}
+
 type failProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
 	FailureSummary string              `json:"failure_summary"`
@@ -1533,6 +1634,33 @@ type waitHumanProjectTaskAttemptBody struct {
 	MissingContextRefs         []any               `json:"missing_context_refs"`
 	SuggestedResolutionOptions []string            `json:"suggested_resolution_options"`
 	ResultContract             *TaskResultContract `json:"result_contract"`
+}
+
+type createProjectTaskAttestationBody struct {
+	ProjectID                 uuid.UUID                              `json:"project_id"`
+	ProjectTaskID             uuid.UUID                              `json:"project_task_id"`
+	AttemptID                 uuid.UUID                              `json:"attempt_id"`
+	RuntimeNodeID             uuid.UUID                              `json:"runtime_node_id"`
+	DigitalEmployeeID         uuid.UUID                              `json:"digital_employee_id"`
+	CapabilityManifestVersion string                                 `json:"capability_manifest_version"`
+	ProviderAuthMode          ProjectTaskAttestationProviderAuthMode `json:"provider_auth_mode"`
+	ProviderSessionID         *string                                `json:"provider_session_id"`
+	AttestationType           string                                 `json:"attestation_type"`
+	Status                    ProjectTaskAttestationStatus           `json:"status"`
+	CommandArgv               []any                                  `json:"command_argv"`
+	ExitCode                  *int32                                 `json:"exit_code"`
+	DurationMs                *int64                                 `json:"duration_ms"`
+	LogRef                    *string                                `json:"log_ref"`
+	StdoutSha256              *string                                `json:"stdout_sha256"`
+	StderrSha256              *string                                `json:"stderr_sha256"`
+	ArtifactRefs              []any                                  `json:"artifact_refs"`
+	ArtifactHashes            map[string]any                         `json:"artifact_hashes"`
+	GitBranch                 *string                                `json:"git_branch"`
+	GitBaseRef                *string                                `json:"git_base_ref"`
+	GitHeadSha                *string                                `json:"git_head_sha"`
+	GitDiffSha256             *string                                `json:"git_diff_sha256"`
+	Metadata                  map[string]any                         `json:"metadata"`
+	IdempotencyKey            string                                 `json:"idempotency_key"`
 }
 
 type createEvidenceBody struct {
@@ -2214,6 +2342,42 @@ type projectConfigRevisionResponse struct {
 	DiffSummary        map[string]any `json:"diff_summary"`
 }
 
+type projectTaskAttestationResponse struct {
+	ID                        string                                 `json:"id"`
+	TenantID                  string                                 `json:"tenant_id"`
+	ProjectID                 string                                 `json:"project_id"`
+	ProjectTaskID             string                                 `json:"project_task_id"`
+	AttemptID                 string                                 `json:"attempt_id"`
+	RuntimeNodeID             string                                 `json:"runtime_node_id"`
+	DigitalEmployeeID         string                                 `json:"digital_employee_id"`
+	CapabilityManifestVersion string                                 `json:"capability_manifest_version"`
+	ProviderAuthMode          ProjectTaskAttestationProviderAuthMode `json:"provider_auth_mode"`
+	ProviderSessionID         *string                                `json:"provider_session_id,omitempty"`
+	AttestationType           string                                 `json:"attestation_type"`
+	Status                    ProjectTaskAttestationStatus           `json:"status"`
+	CommandArgv               []any                                  `json:"command_argv"`
+	ExitCode                  *int32                                 `json:"exit_code,omitempty"`
+	DurationMs                *int64                                 `json:"duration_ms,omitempty"`
+	LogRef                    *string                                `json:"log_ref,omitempty"`
+	StdoutSha256              *string                                `json:"stdout_sha256,omitempty"`
+	StderrSha256              *string                                `json:"stderr_sha256,omitempty"`
+	ArtifactRefs              []any                                  `json:"artifact_refs"`
+	ArtifactHashes            map[string]any                         `json:"artifact_hashes"`
+	GitBranch                 *string                                `json:"git_branch,omitempty"`
+	GitBaseRef                *string                                `json:"git_base_ref,omitempty"`
+	GitHeadSha                *string                                `json:"git_head_sha,omitempty"`
+	GitDiffSha256             *string                                `json:"git_diff_sha256,omitempty"`
+	Metadata                  map[string]any                         `json:"metadata"`
+	IdempotencyKey            string                                 `json:"idempotency_key"`
+	CreatedAt                 string                                 `json:"created_at,omitempty"`
+	UpdatedAt                 string                                 `json:"updated_at,omitempty"`
+}
+
+type projectTaskAttemptBudgetHeartbeatResponse struct {
+	Tripped    bool    `json:"tripped"`
+	TripReason *string `json:"trip_reason,omitempty"`
+}
+
 type projectConfigResponse struct {
 	Project              projectResponse             `json:"project"`
 	HumanRoles           []projectMemberResponse     `json:"human_roles"`
@@ -2708,6 +2872,39 @@ func executionSummaryResponseFromDomain(summary ExecutionSummary) executionSumma
 	}
 }
 
+func projectTaskAttestationResponseFromDomain(attestation ProjectTaskAttestation) projectTaskAttestationResponse {
+	return projectTaskAttestationResponse{
+		ID:                        attestation.ID.String(),
+		TenantID:                  attestation.TenantID.String(),
+		ProjectID:                 attestation.ProjectID.String(),
+		ProjectTaskID:             attestation.ProjectTaskID.String(),
+		AttemptID:                 attestation.AttemptID.String(),
+		RuntimeNodeID:             attestation.RuntimeNodeID.String(),
+		DigitalEmployeeID:         attestation.DigitalEmployeeID.String(),
+		CapabilityManifestVersion: attestation.CapabilityManifestVersion,
+		ProviderAuthMode:          attestation.ProviderAuthMode,
+		ProviderSessionID:         attestation.ProviderSessionID,
+		AttestationType:           attestation.AttestationType,
+		Status:                    attestation.Status,
+		CommandArgv:               sliceOrEmpty(attestation.CommandArgv),
+		ExitCode:                  attestation.ExitCode,
+		DurationMs:                attestation.DurationMs,
+		LogRef:                    attestation.LogRef,
+		StdoutSha256:              attestation.StdoutSha256,
+		StderrSha256:              attestation.StderrSha256,
+		ArtifactRefs:              sliceOrEmpty(attestation.ArtifactRefs),
+		ArtifactHashes:            mapOrEmpty(attestation.ArtifactHashes),
+		GitBranch:                 attestation.GitBranch,
+		GitBaseRef:                attestation.GitBaseRef,
+		GitHeadSha:                attestation.GitHeadSha,
+		GitDiffSha256:             attestation.GitDiffSha256,
+		Metadata:                  mapOrEmpty(attestation.Metadata),
+		IdempotencyKey:            attestation.IdempotencyKey,
+		CreatedAt:                 timeValue(attestation.CreatedAt),
+		UpdatedAt:                 timeValue(attestation.UpdatedAt),
+	}
+}
+
 func executionTraceResponseFromDomain(trace ProjectExecutionTrace) projectExecutionTraceResponse {
 	return projectExecutionTraceResponse{
 		ProjectID: trace.ProjectID.String(),
@@ -3167,6 +3364,14 @@ func stringPtr(value *uuid.UUID) *string {
 		return nil
 	}
 	text := value.String()
+	return &text
+}
+
+func nonEmptyStringPtr(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	text := value
 	return &text
 }
 

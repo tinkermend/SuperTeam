@@ -1,6 +1,7 @@
 package projectcoordination
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -56,10 +57,13 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(completedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskCompleted
 			c.Receive(ctx, &signal)
-			var pending *pendingProjectAcceptance
+			var pending taskCompletionPending
 			pending, workflowErr = handleEmployeeTaskCompleted(ctx, input, signal)
-			if workflowErr == nil && pending != nil {
-				pendingAcceptance[pending.DecisionRequestID.String()] = *pending
+			if workflowErr == nil && pending.Acceptance != nil {
+				pendingAcceptance[pending.Acceptance.DecisionRequestID.String()] = *pending.Acceptance
+			}
+			if workflowErr == nil && pending.FailureRecovery != nil {
+				pendingFailureRecoveries[pending.FailureRecovery.DecisionRequestID.String()] = *pending.FailureRecovery
 			}
 		})
 		selector.AddReceive(failedCh, func(c workflow.ReceiveChannel, more bool) {
@@ -117,6 +121,11 @@ type pendingTaskFailureRecovery struct {
 type pendingProjectAcceptance struct {
 	DecisionRequestID uuid.UUID
 	ProjectID         uuid.UUID
+}
+
+type taskCompletionPending struct {
+	Acceptance      *pendingProjectAcceptance
+	FailureRecovery *pendingTaskFailureRecovery
 }
 
 func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted) (*pendingPlanRevisionReview, error) {
@@ -394,40 +403,90 @@ func planReviewChangeReason(signal HumanDecisionSubmitted) *string {
 	return &reason
 }
 
-func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (*pendingProjectAcceptance, error) {
+func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (taskCompletionPending, error) {
 	if err := appendSignalObservedEvent(ctx, input, "employee task completed"); err != nil {
-		return nil, err
+		return taskCompletionPending{}, err
+	}
+	decision, err := inspectTaskResultDecision(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
+	if err != nil {
+		return taskCompletionPending{}, err
+	}
+	if decision.Decision == string(project.TaskResultDecisionRevisionAttempt) {
+		if !decision.Exhausted && decision.ResultID != uuid.Nil {
+			revision, err := createRevisionTaskForResult(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.ResultID)
+			if err != nil {
+				return taskCompletionPending{}, err
+			}
+			if !revision.Exhausted && revision.TaskID != uuid.Nil {
+				return taskCompletionPending{}, dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, []uuid.UUID{revision.TaskID}, project.DispatchReasonRetry)
+			}
+		}
+		decision, err := requestProjectTaskIterationExhaustedReview(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID)
+		if err != nil || decision.ID == uuid.Nil {
+			return taskCompletionPending{}, err
+		}
+		return taskCompletionPending{FailureRecovery: &pendingTaskFailureRecovery{
+			DecisionRequestID: decision.ID,
+			ProjectID:         input.ProjectID,
+		}}, nil
+	}
+	if decision.Decision != "" && decision.Decision != string(project.TaskResultDecisionCompleteAccepted) {
+		return taskCompletionPending{}, nil
 	}
 	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
 	if err != nil {
-		return nil, err
+		return taskCompletionPending{}, err
 	}
 	if err := dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs, project.DispatchReasonDependencyUnlocked); err != nil {
-		return nil, err
+		return taskCompletionPending{}, err
 	}
 	// No further downstream to dispatch from this completion; if the whole project is
 	// now terminal, open a human acceptance review. Idempotent on the store side.
 	if len(readyTaskIDs) == 0 {
 		ready, err := isProjectAcceptanceReady(ctx, input.TenantID, input.ProjectID)
 		if err != nil {
-			return nil, err
+			return taskCompletionPending{}, err
 		}
 		if !ready {
-			return nil, nil
+			return taskCompletionPending{}, nil
 		}
 		decision, err := requestProjectAcceptanceReview(ctx, input.TenantID, input.ProjectID)
 		if err != nil {
-			return nil, err
+			return taskCompletionPending{}, err
 		}
 		if decision.ID == uuid.Nil {
-			return nil, nil
+			return taskCompletionPending{}, nil
 		}
-		return &pendingProjectAcceptance{
+		return taskCompletionPending{Acceptance: &pendingProjectAcceptance{
 			DecisionRequestID: decision.ID,
 			ProjectID:         input.ProjectID,
-		}, nil
+		}}, nil
 	}
-	return nil, nil
+	return taskCompletionPending{}, nil
+}
+
+type taskResultDecisionInspector interface {
+	InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error)
+}
+
+type revisionTaskCreator interface {
+	CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error)
+}
+
+func (a *Activities) InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error) {
+	store, ok := a.store.(taskResultDecisionInspector)
+	if a.store == nil || !ok {
+		return InspectTaskResultDecisionResult{}, ErrActivityStoreRequired
+	}
+	return store.InspectTaskResultDecision(ctx, input)
+}
+
+func (a *Activities) CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error) {
+	store, ok := a.store.(revisionTaskCreator)
+	if a.store == nil || !ok {
+		return CreateRevisionTaskForResultResult{}, ErrActivityStoreRequired
+	}
+	return store.CreateRevisionTaskForResult(ctx, input)
 }
 
 func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskFailed) (*pendingTaskFailureRecovery, error) {
@@ -481,6 +540,31 @@ func applyPreDispatchGateDecision(ctx workflow.Context, tenantID, projectID uuid
 	return result.ReadyTaskIDs, nil
 }
 
+func inspectTaskResultDecision(ctx workflow.Context, tenantID, projectID, projectTaskID uuid.UUID) (InspectTaskResultDecisionResult, error) {
+	var result InspectTaskResultDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).InspectTaskResultDecision, InspectTaskResultDecisionInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+	}).Get(ctx, &result); err != nil {
+		return InspectTaskResultDecisionResult{}, err
+	}
+	return result, nil
+}
+
+func createRevisionTaskForResult(ctx workflow.Context, tenantID, projectID, sourceTaskID, resultID uuid.UUID) (CreateRevisionTaskForResultResult, error) {
+	var result CreateRevisionTaskForResultResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateRevisionTaskForResult, CreateRevisionTaskForResultInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceTaskID: sourceTaskID,
+		ResultID:     resultID,
+	}).Get(ctx, &result); err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	return result, nil
+}
+
 func isProjectAcceptanceReady(ctx workflow.Context, tenantID, projectID uuid.UUID) (bool, error) {
 	var ready bool
 	if err := workflow.ExecuteActivity(ctx, (*Activities).IsProjectAcceptanceReady, IsProjectAcceptanceReadyInput{
@@ -497,6 +581,22 @@ func requestProjectAcceptanceReview(ctx workflow.Context, tenantID, projectID uu
 	if err := workflow.ExecuteActivity(ctx, (*Activities).RequestProjectAcceptanceReview, RequestProjectAcceptanceReviewInput{
 		TenantID:  tenantID,
 		ProjectID: projectID,
+	}).Get(ctx, &decision); err != nil {
+		return DecisionRequestResult{}, err
+	}
+	return decision, nil
+}
+
+func requestProjectTaskIterationExhaustedReview(ctx workflow.Context, tenantID, projectID, projectTaskID, resultID, completedEventID uuid.UUID) (DecisionRequestResult, error) {
+	var decision DecisionRequestResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).RequestProjectTaskIterationExhaustedReview, RequestProjectTaskIterationExhaustedReviewInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  projectTaskID,
+		ResultID:       resultID,
+		Reason:         "iteration_exhausted",
+		Summary:        "同一失败重复出现，需要人类判断是否继续",
+		CreatedEventID: completedEventID,
 	}).Get(ctx, &decision); err != nil {
 		return DecisionRequestResult{}, err
 	}

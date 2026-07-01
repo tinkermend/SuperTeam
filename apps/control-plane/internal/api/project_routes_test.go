@@ -46,6 +46,77 @@ func TestGeneratedTaskResultSchemasExposeOnlyPlannedPublicFields(t *testing.T) {
 	})
 }
 
+func TestGeneratedProjectTaskAttestationSchemasExposeWritebackFields(t *testing.T) {
+	requireGeneratedFields := func(model any, expected []string) {
+		t.Helper()
+		typ := reflect.TypeOf(model)
+		fields := make([]string, 0, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			fields = append(fields, typ.Field(i).Name)
+		}
+		if !reflect.DeepEqual(fields, expected) {
+			t.Fatalf("expected generated fields %v, got %v", expected, fields)
+		}
+	}
+
+	requireGeneratedFields(gen.CreateProjectTaskAttestationRequest{}, []string{
+		"ArtifactHashes",
+		"ArtifactRefs",
+		"AttemptId",
+		"AttestationType",
+		"CapabilityManifestVersion",
+		"CommandArgv",
+		"DigitalEmployeeId",
+		"DurationMs",
+		"ExitCode",
+		"GitBaseRef",
+		"GitBranch",
+		"GitDiffSha256",
+		"GitHeadSha",
+		"IdempotencyKey",
+		"LogRef",
+		"Metadata",
+		"ProjectId",
+		"ProjectTaskId",
+		"ProviderAuthMode",
+		"ProviderSessionId",
+		"RuntimeNodeId",
+		"Status",
+		"StderrSha256",
+		"StdoutSha256",
+	})
+	requireGeneratedFields(gen.ProjectTaskAttestation{}, []string{
+		"ArtifactHashes",
+		"ArtifactRefs",
+		"AttemptId",
+		"AttestationType",
+		"CapabilityManifestVersion",
+		"CommandArgv",
+		"CreatedAt",
+		"DigitalEmployeeId",
+		"DurationMs",
+		"ExitCode",
+		"GitBaseRef",
+		"GitBranch",
+		"GitDiffSha256",
+		"GitHeadSha",
+		"Id",
+		"IdempotencyKey",
+		"LogRef",
+		"Metadata",
+		"ProjectId",
+		"ProjectTaskId",
+		"ProviderAuthMode",
+		"ProviderSessionId",
+		"RuntimeNodeId",
+		"Status",
+		"StderrSha256",
+		"StdoutSha256",
+		"TenantId",
+		"UpdatedAt",
+	})
+}
+
 func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -771,6 +842,113 @@ func TestRuntimeRoutesProjectTaskAttemptResultUseRuntimeSessionAuth(t *testing.T
 	}
 }
 
+func TestRuntimeRoutesProjectTaskAttestationUsesRuntimeSessionAuth(t *testing.T) {
+	runtimeAuth := &routeRuntimeSessionAuth{
+		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		runtimeNodeID: uuid.New(),
+		sessionID:     uuid.New(),
+		nodeID:        "runtime-node-1",
+		token:         "runtime-session-token",
+	}
+	service := &routeProjectService{}
+	server := NewServerWithAuthzAndRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		nil,
+		nil,
+		runtimeAuth,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	projectID := uuid.New()
+	projectTaskID := uuid.New()
+	attemptID := uuid.New()
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attestations", strings.NewReader(`{
+		"project_id":"`+projectID.String()+`",
+		"project_task_id":"`+projectTaskID.String()+`",
+		"attempt_id":"`+attemptID.String()+`",
+		"runtime_node_id":"`+runtimeAuth.runtimeNodeID.String()+`",
+		"digital_employee_id":"`+employeeID.String()+`",
+		"attestation_type":"provider_start",
+		"status":"succeeded",
+		"command_argv":["codex","exec"],
+		"idempotency_key":"attestation-route-test"
+	}`))
+	req.Header.Set("Authorization", "Bearer runtime-session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected project task attestation to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.createProjectTaskAttestationReq.TenantID != runtimeAuth.tenantID ||
+		service.createProjectTaskAttestationReq.RuntimeNodeID != runtimeAuth.runtimeNodeID ||
+		service.createProjectTaskAttestationReq.ProjectID != projectID ||
+		service.createProjectTaskAttestationReq.ProjectTaskID != projectTaskID ||
+		service.createProjectTaskAttestationReq.AttemptID != attemptID ||
+		service.createProjectTaskAttestationReq.DigitalEmployeeID != employeeID ||
+		service.createProjectTaskAttestationReq.ProviderAuthMode != project.ProjectTaskAttestationProviderAuthModeHost ||
+		service.createProjectTaskAttestationReq.IdempotencyKey != "attestation-route-test" {
+		t.Fatalf("expected runtime context/body in attestation request, got %#v", service.createProjectTaskAttestationReq)
+	}
+}
+
+func TestRuntimeRoutesProjectTaskBudgetHeartbeatUsesRuntimeSessionAuth(t *testing.T) {
+	runtimeAuth := &routeRuntimeSessionAuth{
+		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		runtimeNodeID: uuid.New(),
+		sessionID:     uuid.New(),
+		nodeID:        "runtime-node-1",
+		token:         "runtime-session-token",
+	}
+	service := &routeProjectService{budgetHeartbeatResult: &project.ProjectTaskAttemptBudgetHeartbeatResult{Tripped: true, TripReason: "wall_clock_exceeded"}}
+	server := NewServerWithAuthzAndRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		nil,
+		nil,
+		runtimeAuth,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	projectID := uuid.New()
+	projectTaskID := uuid.New()
+	attemptID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/budget-heartbeat", strings.NewReader(`{
+		"project_id":"`+projectID.String()+`",
+		"project_task_id":"`+projectTaskID.String()+`",
+		"consumed_wall_clock_sec":11,
+		"consumed_tokens":123
+	}`))
+	req.Header.Set("Authorization", "Bearer runtime-session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected project task budget heartbeat to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.budgetHeartbeatReq.TenantID != runtimeAuth.tenantID ||
+		service.budgetHeartbeatReq.ProjectID != projectID ||
+		service.budgetHeartbeatReq.ProjectTaskID != projectTaskID ||
+		service.budgetHeartbeatReq.AttemptID != attemptID ||
+		service.budgetHeartbeatReq.ConsumedWallClockSec != 11 ||
+		service.budgetHeartbeatReq.ConsumedTokens != 123 {
+		t.Fatalf("expected runtime context/body in budget heartbeat request, got %#v", service.budgetHeartbeatReq)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode heartbeat response: %v", err)
+	}
+	if body["tripped"] != true || body["trip_reason"] != "wall_clock_exceeded" {
+		t.Fatalf("expected tripped heartbeat response, got %#v", body)
+	}
+}
+
 func TestProjectWorkflowSignalRetryRouteUsesConsoleAuth(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -878,6 +1056,9 @@ type routeProjectService struct {
 	retryWorkflowSignalReq            project.RetryWorkflowSignalRequest
 	completeAttemptReq                project.CompleteProjectTaskAttemptRequest
 	submitProjectTaskAttemptResultReq project.SubmitProjectTaskAttemptResultRequest
+	createProjectTaskAttestationReq   project.CreateProjectTaskAttestationRequest
+	budgetHeartbeatReq                project.RecordProjectTaskAttemptBudgetHeartbeatRequest
+	budgetHeartbeatResult             *project.ProjectTaskAttemptBudgetHeartbeatResult
 	createEvidenceReq                 project.CreateEvidenceRefServiceRequest
 	patchEvidenceReq                  project.PatchEvidenceRequest
 	budgetSummaryTenantID             uuid.UUID
@@ -1158,6 +1339,35 @@ func (s *routeProjectService) CompleteProjectTaskAttempt(ctx context.Context, re
 func (s *routeProjectService) SubmitProjectTaskAttemptResult(ctx context.Context, req project.SubmitProjectTaskAttemptResultRequest) (*project.ExecutionSummary, error) {
 	s.submitProjectTaskAttemptResultReq = req
 	return &project.ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, Conclusion: req.ResultContract.Summary}, nil
+}
+
+func (s *routeProjectService) CreateProjectTaskAttestation(ctx context.Context, req project.CreateProjectTaskAttestationRequest) (*project.ProjectTaskAttestation, error) {
+	s.createProjectTaskAttestationReq = req
+	return &project.ProjectTaskAttestation{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		ProjectTaskID:             req.ProjectTaskID,
+		AttemptID:                 req.AttemptID,
+		RuntimeNodeID:             req.RuntimeNodeID,
+		DigitalEmployeeID:         req.DigitalEmployeeID,
+		CapabilityManifestVersion: req.CapabilityManifestVersion,
+		ProviderAuthMode:          req.ProviderAuthMode,
+		AttestationType:           req.AttestationType,
+		Status:                    req.Status,
+		CommandArgv:               req.CommandArgv,
+		IdempotencyKey:            req.IdempotencyKey,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	}, nil
+}
+
+func (s *routeProjectService) RecordProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req project.RecordProjectTaskAttemptBudgetHeartbeatRequest) (*project.ProjectTaskAttemptBudgetHeartbeatResult, error) {
+	s.budgetHeartbeatReq = req
+	if s.budgetHeartbeatResult != nil {
+		return s.budgetHeartbeatResult, nil
+	}
+	return &project.ProjectTaskAttemptBudgetHeartbeatResult{}, nil
 }
 
 func (s *routeProjectService) FailProjectTaskAttempt(ctx context.Context, req project.FailProjectTaskAttemptRequest) (*project.ProjectTask, error) {

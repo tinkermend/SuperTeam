@@ -551,12 +551,12 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	tenantID, _, task, attempt, _ := seedProjectTaskAttemptForAffinityTest(t, db, q, "budget-heartbeat")
 
 	first, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
-		TenantID:                 tenantID,
-		ProjectTaskID:            task.ID,
-		AttemptID:                attempt.ID,
-		ConsumedWallClockSec:     120,
-		ConsumedTokens:           1000,
-		TripReason:               pgtype.Text{String: "wall_clock_exceeded", Valid: true},
+		TenantID:             tenantID,
+		ProjectTaskID:        task.ID,
+		AttemptID:            attempt.ID,
+		ConsumedWallClockSec: 120,
+		ConsumedTokens:       1000,
+		TripReason:           pgtype.Text{String: "wall_clock_exceeded", Valid: true},
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(120), first.BudgetConsumedWallClockSec)
@@ -566,12 +566,12 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.True(t, first.BudgetTrippedAt.Valid)
 
 	second, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
-		TenantID:                 tenantID,
-		ProjectTaskID:            task.ID,
-		AttemptID:                attempt.ID,
-		ConsumedWallClockSec:     60,
-		ConsumedTokens:           10,
-		TripReason:               pgtype.Text{String: "token_limit_exceeded", Valid: true},
+		TenantID:             tenantID,
+		ProjectTaskID:        task.ID,
+		AttemptID:            attempt.ID,
+		ConsumedWallClockSec: 60,
+		ConsumedTokens:       10,
+		TripReason:           pgtype.Text{String: "token_limit_exceeded", Valid: true},
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(120), second.BudgetConsumedWallClockSec)
@@ -590,11 +590,11 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.NoError(t, err)
 
 	third, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
-		TenantID:                 tenantID,
-		ProjectTaskID:            task.ID,
-		AttemptID:                attempt.ID,
-		ConsumedWallClockSec:     121,
-		ConsumedTokens:           1001,
+		TenantID:             tenantID,
+		ProjectTaskID:        task.ID,
+		AttemptID:            attempt.ID,
+		ConsumedWallClockSec: 121,
+		ConsumedTokens:       1001,
 	})
 	require.NoError(t, err)
 	require.True(t, third.BudgetLastHeartbeatAt.Valid)
@@ -621,12 +621,12 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	time.Sleep(25 * time.Millisecond)
 
 	delayed, err := txQueries.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
-		TenantID:                 tenantID,
-		ProjectTaskID:            task.ID,
-		AttemptID:                attempt.ID,
-		ConsumedWallClockSec:     1,
-		ConsumedTokens:           1,
-		TripReason:               pgtype.Text{String: "statement_time_trip", Valid: true},
+		TenantID:             tenantID,
+		ProjectTaskID:        task.ID,
+		AttemptID:            attempt.ID,
+		ConsumedWallClockSec: 1,
+		ConsumedTokens:       1,
+		TripReason:           pgtype.Text{String: "statement_time_trip", Valid: true},
 	})
 	require.NoError(t, err)
 	require.True(t, delayed.BudgetLastHeartbeatAt.Valid)
@@ -638,11 +638,11 @@ func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
 	require.NoError(t, tx.Commit(ctx))
 
 	_, err = q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
-		TenantID:                 tenantID,
-		ProjectTaskID:            task.ID,
-		AttemptID:                attempt.ID,
-		ConsumedWallClockSec:     -1,
-		ConsumedTokens:           1001,
+		TenantID:             tenantID,
+		ProjectTaskID:        task.ID,
+		AttemptID:            attempt.ID,
+		ConsumedWallClockSec: -1,
+		ConsumedTokens:       1001,
 	})
 	require.Error(t, err)
 }
@@ -652,29 +652,33 @@ func TestCreateProjectTaskAttestationRejectsDivergentIdempotencyReplay(t *testin
 	ctx := context.Background()
 	q := queries.New(db)
 	tenantID, projectID, task, attempt, node := seedProjectTaskAttemptForAffinityTest(t, db, q, "attestation-idempotency")
+	digitalEmployeeID := uuid.New()
 
 	params := queries.CreateProjectTaskAttestationParams{
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		ProjectTaskID:   task.ID,
-		AttemptID:       attempt.ID,
-		RuntimeNodeID:   node.ID,
-		AttestationType: "command",
-		Status:          "succeeded",
-		CommandArgv:     []byte(`["go","test","./..."]`),
-		ExitCode:        pgtype.Int4{Int32: 0, Valid: true},
-		DurationMs:      pgtype.Int8{Int64: 1500, Valid: true},
-		LogRef:          pgtype.Text{String: "logs/attempt.log", Valid: true},
-		StdoutSha256:    pgtype.Text{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
-		StderrSha256:    pgtype.Text{String: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Valid: true},
-		ArtifactRefs:    []byte(`["artifact://result"]`),
-		ArtifactHashes:  []byte(`{"artifact://result":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`),
-		GitBranch:       pgtype.Text{String: "codex/project-workspace-autonomous-outer-loop", Valid: true},
-		GitBaseRef:      pgtype.Text{String: "main", Valid: true},
-		GitHeadSha:      pgtype.Text{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
-		GitDiffSha256:   pgtype.Text{String: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", Valid: true},
-		Metadata:        []byte(`{"source":"test"}`),
-		IdempotencyKey:  "attempt:" + attempt.ID.String() + ":command",
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		ProjectTaskID:             task.ID,
+		AttemptID:                 attempt.ID,
+		RuntimeNodeID:             node.ID,
+		DigitalEmployeeID:         digitalEmployeeID,
+		CapabilityManifestVersion: pgtype.Text{String: "cap-manifest:v3", Valid: true},
+		ProviderAuthMode:          pgtype.Text{String: "host", Valid: true},
+		AttestationType:           "command",
+		Status:                    "succeeded",
+		CommandArgv:               []byte(`["go","test","./..."]`),
+		ExitCode:                  pgtype.Int4{Int32: 0, Valid: true},
+		DurationMs:                pgtype.Int8{Int64: 1500, Valid: true},
+		LogRef:                    pgtype.Text{String: "logs/attempt.log", Valid: true},
+		StdoutSha256:              pgtype.Text{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
+		StderrSha256:              pgtype.Text{String: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Valid: true},
+		ArtifactRefs:              []byte(`["artifact://result"]`),
+		ArtifactHashes:            []byte(`{"artifact://result":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`),
+		GitBranch:                 pgtype.Text{String: "codex/project-workspace-autonomous-outer-loop", Valid: true},
+		GitBaseRef:                pgtype.Text{String: "main", Valid: true},
+		GitHeadSha:                pgtype.Text{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
+		GitDiffSha256:             pgtype.Text{String: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", Valid: true},
+		Metadata:                  []byte(`{"source":"test"}`),
+		IdempotencyKey:            "attempt:" + attempt.ID.String() + ":command",
 	}
 
 	created, err := q.CreateProjectTaskAttestation(ctx, params)

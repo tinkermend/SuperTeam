@@ -225,3 +225,7 @@ provider_auth_mode = host | employee | explicit_credential
 - 缓存命中时不访问对象存储；版本不一致时只更新变化的 item。
 - Attestation 能回答“本 attempt 使用了哪个员工、哪个能力 manifest、哪个 workspace commit/ref、跑了哪些命令”。
 - 外环和未来内环都不需要知道 Provider auth 文件位于哪里。
+
+## 13. 实施同步记录
+
+- 2026-06-30：`docs/superpowers/plans/2026-06-30-project-workspace-autonomous-outer-loop.md` 对本 spec 的员工能力缓存与 Provider 认证边界约束进行实现同步。本 worktree/plan 已实现或正在实现的约束包括：项目工作区与员工能力缓存/Provider auth 分离、Provider host auth 默认、项目 repo binding、Runtime attestation、budget heartbeat。真实链路验证尚未完成，当前记录只能作为实现同步说明，不能声明功能可用。

@@ -56,6 +56,54 @@ fn parses_valid_start_session_payload() {
 }
 
 #[test]
+fn project_workspace_accessor_exposes_capability_auth_attestation_and_budget_metadata() {
+    let mut payload = valid_payload();
+    payload["metadata"] = json!({
+        "workspace_mode": "branch",
+        "base_ref": "main",
+        "project_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "project_task_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "project_task_attempt_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "capability_manifest_version": "cap-manifest:v3",
+        "provider_auth_mode": "employee",
+        "attestation_policy": {
+            "requires_runtime_attestation": true,
+            "min_successful_attestations": 1
+        },
+        "budget": {
+            "wall_clock_limit_sec": 120,
+            "token_limit": 4096,
+            "heartbeat_interval_sec": 5
+        }
+    });
+
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid");
+    let project_workspace = parsed.project_workspace();
+
+    assert_eq!(
+        project_workspace.capability_manifest_version.as_deref(),
+        Some("cap-manifest:v3")
+    );
+    assert_eq!(project_workspace.provider_auth_mode, "employee");
+    assert_eq!(
+        project_workspace.attestation_policy.as_ref().unwrap()["requires_runtime_attestation"],
+        true
+    );
+    assert_eq!(
+        project_workspace.budget.as_ref().unwrap()["wall_clock_limit_sec"],
+        120
+    );
+}
+
+#[test]
+fn project_workspace_provider_auth_mode_defaults_to_host() {
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(valid_payload()))
+        .expect("valid command payload");
+
+    assert_eq!(parsed.project_workspace().provider_auth_mode, "host");
+}
+
+#[test]
 fn parses_environment_variables_for_session_payload() {
     let mut payload = valid_payload();
     payload["environment"] = json!([

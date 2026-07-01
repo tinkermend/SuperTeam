@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod attestation;
 pub mod commands;
 pub mod config;
 pub mod controlplane;
@@ -8,6 +9,7 @@ pub mod executor;
 pub mod health;
 pub mod instances;
 pub mod mcp_config;
+pub mod project_workspace;
 pub mod providers;
 pub mod runs;
 pub mod runtime_auth;

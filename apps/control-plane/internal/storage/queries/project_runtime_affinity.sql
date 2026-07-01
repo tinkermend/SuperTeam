@@ -48,6 +48,9 @@ WITH input AS (
         sqlc.arg('project_task_id')::uuid AS project_task_id,
         sqlc.arg('attempt_id')::uuid AS attempt_id,
         sqlc.arg('runtime_node_id')::uuid AS runtime_node_id,
+        sqlc.arg('digital_employee_id')::uuid AS digital_employee_id,
+        sqlc.narg('capability_manifest_version')::varchar AS capability_manifest_version,
+        COALESCE(sqlc.narg('provider_auth_mode')::varchar, 'host') AS provider_auth_mode,
         sqlc.narg('provider_session_id')::varchar AS provider_session_id,
         sqlc.arg('attestation_type')::varchar AS attestation_type,
         sqlc.arg('status')::varchar AS status,
@@ -73,6 +76,9 @@ inserted AS (
         project_task_id,
         attempt_id,
         runtime_node_id,
+        digital_employee_id,
+        capability_manifest_version,
+        provider_auth_mode,
         provider_session_id,
         attestation_type,
         status,
@@ -97,6 +103,9 @@ inserted AS (
         project_task_id,
         attempt_id,
         runtime_node_id,
+        digital_employee_id,
+        capability_manifest_version,
+        provider_auth_mode,
         provider_session_id,
         attestation_type,
         status,
@@ -131,6 +140,9 @@ WHERE NOT EXISTS (SELECT 1 FROM inserted)
   AND existing.project_id = input.project_id
   AND existing.project_task_id = input.project_task_id
   AND existing.runtime_node_id = input.runtime_node_id
+  AND existing.digital_employee_id = input.digital_employee_id
+  AND existing.capability_manifest_version IS NOT DISTINCT FROM input.capability_manifest_version
+  AND existing.provider_auth_mode = input.provider_auth_mode
   AND existing.provider_session_id IS NOT DISTINCT FROM input.provider_session_id
   AND existing.attestation_type = input.attestation_type
   AND existing.status = input.status

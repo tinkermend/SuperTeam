@@ -61,7 +61,7 @@ pub fn create_run_workspace(
 pub fn cleanup_run_workspace(workspace: &RunWorkspace, config: &RuntimeConfig) -> Result<()> {
     match config.workspace.cleanup_policy.as_str() {
         "on_success" | "on_completion" => {
-            remove_run_workspace(workspace)?;
+            remove_run_workspace(workspace, config)?;
         }
         "never" => {
             println!(
@@ -74,14 +74,22 @@ pub fn cleanup_run_workspace(workspace: &RunWorkspace, config: &RuntimeConfig) -
                 "Unknown cleanup policy: {}, defaulting to 'on_completion'",
                 policy
             );
-            remove_run_workspace(workspace)?;
+            remove_run_workspace(workspace, config)?;
         }
     }
     cleanup_old_instances(config)?;
     Ok(())
 }
 
-fn remove_run_workspace(workspace: &RunWorkspace) -> Result<()> {
+fn remove_run_workspace(workspace: &RunWorkspace, config: &RuntimeConfig) -> Result<()> {
+    if !is_legacy_run_workspace(workspace, config) {
+        println!(
+            "Project task workspace retained at: {:?}",
+            workspace.workspace_path
+        );
+        return Ok(());
+    }
+
     if let Some(run_dir) = workspace.workspace_path.parent() {
         if run_dir.exists() {
             std::fs::remove_dir_all(run_dir).context("Failed to remove run workspace")?;
@@ -89,6 +97,18 @@ fn remove_run_workspace(workspace: &RunWorkspace) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_legacy_run_workspace(workspace: &RunWorkspace, config: &RuntimeConfig) -> bool {
+    workspace.workspace_path
+        == config
+            .workspace
+            .base_dir
+            .join("instances")
+            .join(&workspace.execution_instance_id)
+            .join("runs")
+            .join(&workspace.run_id)
+            .join("workspace")
 }
 
 fn cleanup_old_instances(config: &RuntimeConfig) -> Result<()> {
@@ -149,5 +169,33 @@ mod tests {
         assert_ne!(ws1.workspace_path, ws2.workspace_path);
         assert!(ws1.workspace_path.exists());
         assert!(ws2.workspace_path.exists());
+    }
+
+    #[test]
+    fn test_cleanup_retains_project_task_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut config = RuntimeConfig::default();
+        config.workspace.base_dir = temp_dir.path().to_path_buf();
+
+        let workspace_path = config
+            .workspace
+            .base_dir
+            .join("workspaces")
+            .join("project-1")
+            .join("task-1")
+            .join("attempt-1");
+        std::fs::create_dir_all(&workspace_path).unwrap();
+        let workspace = RunWorkspace {
+            workspace_path: workspace_path.clone(),
+            logs_path: workspace_path.join("logs"),
+            artifacts_path: workspace_path.join("artifacts"),
+            execution_instance_id: "project-1".to_string(),
+            run_id: "attempt-1".to_string(),
+            created_at: Instant::now(),
+        };
+
+        cleanup_run_workspace(&workspace, &config).unwrap();
+
+        assert!(workspace_path.exists());
     }
 }

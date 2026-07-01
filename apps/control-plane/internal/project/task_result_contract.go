@@ -196,7 +196,7 @@ func ValidateTaskResultContract(task ProjectTask, result TaskResultContract) Tas
 	}
 	validation.Errors = append(validation.Errors, taskResultRefBlankErrors("evidence_ref_blank", result.EvidenceRefs)...)
 	validation.Errors = append(validation.Errors, taskResultRefBlankErrors("artifact_ref_blank", result.ArtifactRefs)...)
-	validation.Errors = append(validation.Errors, validateTaskResultVerifications(result.Status, result.Verification)...)
+	validation.Errors = append(validation.Errors, validateTaskResultVerifications(task, result.Status, result.Verification)...)
 
 	switch result.Status {
 	case TaskResultStatusCompleted:
@@ -357,8 +357,9 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 	return errors
 }
 
-func validateTaskResultVerifications(status TaskResultStatus, verifications []TaskResultVerification) []string {
+func validateTaskResultVerifications(task ProjectTask, status TaskResultStatus, verifications []TaskResultVerification) []string {
 	var errors []string
+	requiresRuntimeAttestation := boolFromTaskContract(task.HandoffContract, "requires_runtime_attestation")
 	for _, verification := range verifications {
 		switch verification.Status {
 		case TaskResultVerificationStatusPassed, TaskResultVerificationStatusSkipped:
@@ -369,8 +370,37 @@ func validateTaskResultVerifications(status TaskResultStatus, verifications []Ta
 		default:
 			errors = append(errors, "verification_status_invalid:"+string(verification.Status))
 		}
+		if status == TaskResultStatusCompleted && verification.Status == TaskResultVerificationStatusPassed && requiresRuntimeAttestation && !verificationHasAttestationRef(verification) {
+			errors = append(errors, "verification_attestation_ref_required")
+		}
 	}
 	return errors
+}
+
+func verificationHasAttestationRef(verification TaskResultVerification) bool {
+	for _, ref := range verification.EvidenceRefs {
+		if strings.EqualFold(strings.TrimSpace(ref.Kind), "attestation") ||
+			strings.EqualFold(strings.TrimSpace(ref.Type), "attestation") ||
+			strings.HasPrefix(strings.TrimSpace(ref.Ref), "attestation:") {
+			return usableTaskResultRef(ref)
+		}
+	}
+	return false
+}
+
+func boolFromTaskContract(contract map[string]any, key string) bool {
+	value, ok := contract[key]
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
+	}
 }
 
 func validateCompletedAcceptanceResult(criterion string, result TaskResultAcceptanceResult) []string {

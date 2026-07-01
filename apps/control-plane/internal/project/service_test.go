@@ -1589,6 +1589,77 @@ func TestSubmitProjectTaskAttemptResultUsesRealServiceAndStoresContract(t *testi
 	require.Equal(t, contract, results[0].Contract)
 }
 
+func TestSubmitProjectTaskAttemptResultCompletedRejectsUnknownRuntimeAttestationRef(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].HandoffContract = map[string]any{"requires_runtime_attestation": true}
+	contract := completedContractWithRuntimeAttestationRef("attestation:missing")
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-missing-attestation"),
+		ResultContract:                   contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+	require.Equal(t, "rejected", result.ValidationStatus)
+	require.Contains(t, result.ValidationErrors, "verification_attestation_ref_not_found")
+}
+
+func TestSubmitProjectTaskAttemptResultCompletedRejectsOtherAttemptRuntimeAttestationRef(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].HandoffContract = map[string]any{"requires_runtime_attestation": true}
+	otherAttemptID := uuid.New()
+	attestationRef := "attestation:project-task-attempt:" + otherAttemptID.String() + ":attestation:provider_terminal:cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, otherAttemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-wrong-attestation"),
+		ResultContract:                   completedContractWithRuntimeAttestationRef(attestationRef),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+	require.Equal(t, "rejected", result.ValidationStatus)
+	require.Contains(t, result.ValidationErrors, "verification_attestation_ref_wrong_attempt")
+}
+
+func TestSubmitProjectTaskAttemptResultCompletedAcceptsOwnedRuntimeAttestationRef(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].HandoffContract = map[string]any{"requires_runtime_attestation": true}
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":attestation:provider_terminal:cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-owned-attestation"),
+		ResultContract:                   completedContractWithRuntimeAttestationRef(attestationRef),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+	require.Equal(t, "accepted", result.ValidationStatus)
+}
+
 func TestSubmitProjectTaskAttemptResultRevisionNeededWaitsForHumanAndKeepsLatestResult(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -1929,6 +2000,40 @@ func validCompletedTaskResultContract() TaskResultContract {
 		EvidenceRefs: []TaskResultRef{{Type: "report", Ref: "artifact:report"}},
 		ArtifactRefs: []TaskResultRef{{Type: "markdown", Ref: "artifact:analysis-report"}},
 		Verification: []TaskResultVerification{{Type: "command", Status: TaskResultVerificationStatusPassed, Summary: "命令通过"}},
+	}
+}
+
+func completedContractWithRuntimeAttestationRef(attestationRef string) TaskResultContract {
+	contract := validCompletedTaskResultContract()
+	contract.Verification = []TaskResultVerification{{
+		Type:    "command",
+		Status:  TaskResultVerificationStatusPassed,
+		Summary: "命令通过",
+		EvidenceRefs: []TaskResultRef{{
+			Kind: "attestation",
+			Type: "runtime_command",
+			Ref:  attestationRef,
+		}},
+	}}
+	return contract
+}
+
+func projectTaskAttestationForFixture(fixture projectTaskAttemptServiceFixture, attemptID uuid.UUID, attestationRef string, digitalEmployeeID uuid.UUID) ProjectTaskAttestation {
+	now := time.Now().UTC()
+	idempotencyKey := strings.TrimPrefix(attestationRef, "attestation:")
+	return ProjectTaskAttestation{
+		ID:                uuid.New(),
+		TenantID:          fixture.tenantID,
+		ProjectID:         fixture.projectID,
+		ProjectTaskID:     fixture.taskID,
+		AttemptID:         attemptID,
+		RuntimeNodeID:     fixture.nodeID,
+		DigitalEmployeeID: digitalEmployeeID,
+		AttestationType:   "provider_terminal",
+		Status:            ProjectTaskAttestationStatusSucceeded,
+		IdempotencyKey:    idempotencyKey,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 
@@ -6450,6 +6555,197 @@ func TestUpdateProjectConfigPreservesAndClearsRepoBinding(t *testing.T) {
 	require.Empty(t, cleared.RepoBinding.Scope)
 }
 
+func TestCreateProjectTaskAttestationDefaultsProviderAuthModeAndPersistsRuntimeMetadata(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	projectTaskID := uuid.New()
+	attemptID := uuid.New()
+	runtimeNodeID := uuid.New()
+	digitalEmployeeID := uuid.New()
+
+	attestation, err := service.CreateProjectTaskAttestation(context.Background(), CreateProjectTaskAttestationRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		ProjectTaskID:             projectTaskID,
+		AttemptID:                 attemptID,
+		RuntimeNodeID:             runtimeNodeID,
+		DigitalEmployeeID:         digitalEmployeeID,
+		CapabilityManifestVersion: "cap-manifest:v3",
+		AttestationType:           "provider_start",
+		Status:                    ProjectTaskAttestationStatusSucceeded,
+		CommandArgv:               []any{"codex", "exec"},
+		ExitCode:                  serviceTestInt32Ptr(0),
+		DurationMs:                serviceTestInt64Ptr(1234),
+		StdoutSha256:              serviceTestStringPtr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		StderrSha256:              serviceTestStringPtr("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		ArtifactRefs:              []any{map[string]any{"type": "log", "ref": "artifact:stdout"}},
+		ArtifactHashes:            map[string]any{"artifact:stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		Metadata:                  map[string]any{"workspace_mode": "branch"},
+		IdempotencyKey:            "attestation-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, attestation)
+	require.Equal(t, tenantID, attestation.TenantID)
+	require.Equal(t, digitalEmployeeID, attestation.DigitalEmployeeID)
+	require.Equal(t, "cap-manifest:v3", attestation.CapabilityManifestVersion)
+	require.Equal(t, ProjectTaskAttestationProviderAuthModeHost, attestation.ProviderAuthMode)
+	require.Equal(t, "attestation-1", attestation.IdempotencyKey)
+	require.Len(t, repo.projectTaskAttestations, 1)
+	require.Equal(t, ProjectTaskAttestationProviderAuthModeHost, repo.projectTaskAttestations[0].ProviderAuthMode)
+}
+
+func TestCreateProjectTaskAttestationRedactsRuntimeLocalPathMetadata(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	attestation, err := service.CreateProjectTaskAttestation(context.Background(), CreateProjectTaskAttestationRequest{
+		TenantID:          uuid.New(),
+		ProjectID:         uuid.New(),
+		ProjectTaskID:     uuid.New(),
+		AttemptID:         uuid.New(),
+		RuntimeNodeID:     uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		AttestationType:   "provider_start",
+		Status:            ProjectTaskAttestationStatusSucceeded,
+		Metadata: map[string]any{
+			"workspace_ref":  "project-workspace:project/task/attempt",
+			"agent_home_dir": "/srv/runtime/employees/emp-1",
+			"nested": map[string]any{
+				"workspace_path": "/srv/runtime/workspaces/project",
+				"keep":           "value",
+			},
+			"items": []any{
+				map[string]any{
+					"mcp_config_path": "/srv/runtime/workspaces/project/.superteam/mcp.json",
+					"keep":            "list-value",
+				},
+			},
+		},
+		IdempotencyKey: "attestation-redaction",
+	})
+	require.NoError(t, err)
+
+	require.NotContains(t, attestation.Metadata, "agent_home_dir")
+	require.Equal(t, "project-workspace:project/task/attempt", attestation.Metadata["workspace_ref"])
+	nested := attestation.Metadata["nested"].(map[string]any)
+	require.NotContains(t, nested, "workspace_path")
+	require.Equal(t, "value", nested["keep"])
+	items := attestation.Metadata["items"].([]any)
+	item := items[0].(map[string]any)
+	require.NotContains(t, item, "mcp_config_path")
+	require.Equal(t, "list-value", item["keep"])
+	require.NotContains(t, repo.projectTaskAttestations[0].Metadata, "agent_home_dir")
+}
+
+func serviceTestStringPtr(value string) *string {
+	return &value
+}
+
+func serviceTestInt32Ptr(value int32) *int32 {
+	return &value
+}
+
+func serviceTestInt64Ptr(value int64) *int64 {
+	return &value
+}
+
+func TestCreateProjectTaskAttestationRejectsMissingRequiredMetadata(t *testing.T) {
+	service, err := NewService(newMemoryRepository())
+	require.NoError(t, err)
+	base := CreateProjectTaskAttestationRequest{
+		TenantID:                  uuid.New(),
+		ProjectID:                 uuid.New(),
+		ProjectTaskID:             uuid.New(),
+		AttemptID:                 uuid.New(),
+		RuntimeNodeID:             uuid.New(),
+		DigitalEmployeeID:         uuid.New(),
+		CapabilityManifestVersion: "cap-manifest:v3",
+		AttestationType:           "provider_start",
+		Status:                    ProjectTaskAttestationStatusSucceeded,
+		IdempotencyKey:            "attestation-1",
+	}
+
+	for _, tc := range []struct {
+		name string
+		mut  func(*CreateProjectTaskAttestationRequest)
+	}{
+		{name: "digital employee", mut: func(req *CreateProjectTaskAttestationRequest) { req.DigitalEmployeeID = uuid.Nil }},
+		{name: "provider auth mode", mut: func(req *CreateProjectTaskAttestationRequest) { req.ProviderAuthMode = "unknown" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := base
+			tc.mut(&req)
+			_, err := service.CreateProjectTaskAttestation(context.Background(), req)
+			require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+		})
+	}
+}
+
+func TestCreateProjectTaskAttestationAcceptsOptionalCapabilityManifestAndExplicitAuthModes(t *testing.T) {
+	for _, mode := range []ProjectTaskAttestationProviderAuthMode{
+		ProjectTaskAttestationProviderAuthModeEmployee,
+		ProjectTaskAttestationProviderAuthModeExplicitCredential,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			require.NoError(t, err)
+
+			attestation, err := service.CreateProjectTaskAttestation(context.Background(), CreateProjectTaskAttestationRequest{
+				TenantID:          uuid.New(),
+				ProjectID:         uuid.New(),
+				ProjectTaskID:     uuid.New(),
+				AttemptID:         uuid.New(),
+				RuntimeNodeID:     uuid.New(),
+				DigitalEmployeeID: uuid.New(),
+				ProviderAuthMode:  mode,
+				AttestationType:   "provider_start",
+				Status:            ProjectTaskAttestationStatusSucceeded,
+				IdempotencyKey:    "attestation-" + string(mode),
+			})
+
+			require.NoError(t, err)
+			require.Empty(t, attestation.CapabilityManifestVersion)
+			require.Equal(t, mode, attestation.ProviderAuthMode)
+		})
+	}
+}
+
+func TestProjectTaskAttemptBudgetHeartbeatTripsWallClock(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Status: ProjectTaskStatusRunning})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID: attemptID, TenantID: tenantID, ProjectTaskID: taskID, Status: ProjectTaskAttemptStatusRunning,
+		BudgetWallClockLimitSec: serviceTestInt32Ptr(10),
+	})
+
+	result, err := service.RecordProjectTaskAttemptBudgetHeartbeat(context.Background(), RecordProjectTaskAttemptBudgetHeartbeatRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        taskID,
+		AttemptID:            attemptID,
+		ConsumedWallClockSec: 11,
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.Tripped)
+	require.Equal(t, "wall_clock_exceeded", result.TripReason)
+	require.Equal(t, int32(11), result.Attempt.BudgetConsumedWallClockSec)
+	require.NotNil(t, result.Attempt.BudgetTrippedAt)
+	require.NotNil(t, result.Attempt.BudgetTripReason)
+	require.Equal(t, "wall_clock_exceeded", *result.Attempt.BudgetTripReason)
+}
+
 func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{policySignalErr: errors.New("temporal unavailable")}
@@ -6706,6 +7002,7 @@ type memoryRepository struct {
 	executionSummaries               []ExecutionSummary
 	executionLedgerEvents            []ExecutionLedgerEvent
 	projectTaskResults               []ProjectTaskResult
+	projectTaskAttestations          []ProjectTaskAttestation
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
 	contextUpdates                   []ProjectTaskAttemptContextUpdate
@@ -7792,6 +8089,28 @@ func (r *memoryRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, 
 	return ProjectTaskAttempt{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, req RecordProjectTaskAttemptBudgetHeartbeatRequest, tripReason string) (ProjectTaskAttempt, error) {
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			now := time.Now().UTC()
+			attempt.BudgetLastHeartbeatAt = &now
+			if req.ConsumedWallClockSec > attempt.BudgetConsumedWallClockSec {
+				attempt.BudgetConsumedWallClockSec = req.ConsumedWallClockSec
+			}
+			if req.ConsumedTokens > attempt.BudgetConsumedTokens {
+				attempt.BudgetConsumedTokens = req.ConsumedTokens
+			}
+			if tripReason != "" && attempt.BudgetTrippedAt == nil {
+				attempt.BudgetTrippedAt = &now
+				attempt.BudgetTripReason = &tripReason
+			}
+			r.projectTaskAttempts[index] = attempt
+			return attempt, nil
+		}
+	}
+	return ProjectTaskAttempt{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTaskAttempt, error) {
 	task, err := r.GetProjectTask(ctx, tenantID, projectTaskID)
 	if err != nil {
@@ -8384,6 +8703,52 @@ func (r *projectTaskResultMemoryRepository) LinkProjectTaskResultDecisionRequest
 		return result, nil
 	}
 	return ProjectTaskResult{}, ErrProjectConflict
+}
+
+func (r *memoryRepository) CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (ProjectTaskAttestation, error) {
+	now := time.Now().UTC()
+	attestation := ProjectTaskAttestation{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		ProjectTaskID:             req.ProjectTaskID,
+		AttemptID:                 req.AttemptID,
+		RuntimeNodeID:             req.RuntimeNodeID,
+		DigitalEmployeeID:         req.DigitalEmployeeID,
+		CapabilityManifestVersion: req.CapabilityManifestVersion,
+		ProviderAuthMode:          req.ProviderAuthMode,
+		ProviderSessionID:         req.ProviderSessionID,
+		AttestationType:           req.AttestationType,
+		Status:                    req.Status,
+		CommandArgv:               append([]any(nil), req.CommandArgv...),
+		ExitCode:                  req.ExitCode,
+		DurationMs:                req.DurationMs,
+		LogRef:                    req.LogRef,
+		StdoutSha256:              req.StdoutSha256,
+		StderrSha256:              req.StderrSha256,
+		ArtifactRefs:              append([]any(nil), req.ArtifactRefs...),
+		ArtifactHashes:            req.ArtifactHashes,
+		GitBranch:                 req.GitBranch,
+		GitBaseRef:                req.GitBaseRef,
+		GitHeadSha:                req.GitHeadSha,
+		GitDiffSha256:             req.GitDiffSha256,
+		Metadata:                  req.Metadata,
+		IdempotencyKey:            req.IdempotencyKey,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+	r.projectTaskAttestations = append(r.projectTaskAttestations, attestation)
+	return attestation, nil
+}
+
+func (r *memoryRepository) ListProjectTaskAttestations(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID, limit, offset int32) ([]ProjectTaskAttestation, error) {
+	filtered := make([]ProjectTaskAttestation, 0)
+	for _, item := range r.projectTaskAttestations {
+		if item.TenantID == tenantID && item.ProjectID == projectID && item.ProjectTaskID == projectTaskID {
+			filtered = append(filtered, item)
+		}
+	}
+	return paginateTestSlice(filtered, limit, offset), nil
 }
 
 func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {

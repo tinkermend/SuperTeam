@@ -13,8 +13,8 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/capability"
-	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/cost"
+	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -480,9 +480,11 @@ func (s *Server) registerRoutes() {
 					r.Post("/commands/{commandId}/timed-out", s.runtimeCommandWritebackHandler.TimedOut)
 				}
 				if s.projectHandler != nil {
+					r.Post("/project-task-attestations", s.projectHandler.CreateProjectTaskAttestation)
 					r.Route("/project-task-attempts/{attemptId}", func(r chi.Router) {
 						r.Post("/started", s.projectHandler.StartProjectTaskAttempt)
 						r.Post("/lease", s.projectHandler.RenewProjectTaskAttemptLease)
+						r.Post("/budget-heartbeat", s.projectHandler.RecordProjectTaskAttemptBudgetHeartbeat)
 						r.Post("/complete", s.projectHandler.CompleteProjectTaskAttempt)
 						r.Post("/result", s.projectHandler.SubmitProjectTaskAttemptResult)
 						r.Post("/fail", s.projectHandler.FailProjectTaskAttempt)

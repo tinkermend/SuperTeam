@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
+use tokio_util::sync::CancellationToken;
 
 use crate::commands::install_skills::{InstallSkillsCommandPayload, install_skill_targets};
 use crate::commands::payload::{
@@ -12,15 +14,15 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
-    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RuntimeCommand,
-    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
-    TaskResultContract,
+    EnsureInstanceCommand, ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatWriteback,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
+    ProjectTaskWaitHumanWriteback, RuntimeCommand, RuntimeCommandEventWriteback,
+    RuntimeCommandTerminalWriteback, RuntimeCommandType, TaskResultContract,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
-use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest};
+use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, ProviderRunHandle};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 use crate::skills::materialize_skills;
 use crate::workspace_files::{
@@ -38,6 +40,10 @@ pub struct RuntimeCommandOutcome {
 struct CommandWorkspace {
     agent_home_dir: PathBuf,
     workspace_path: PathBuf,
+    employee_capability_dir: PathBuf,
+    capability_manifest_version: Option<String>,
+    provider_auth_mode: String,
+    mcp_config_path: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -127,11 +133,15 @@ impl ProviderTerminalWritebackState {
 
 #[derive(Clone, Debug)]
 struct ProjectTaskWritebackContext {
+    project_id: String,
     project_task_id: String,
     attempt_id: String,
     lease_token: String,
     runtime_node_id: String,
     digital_employee_id: String,
+    capability_manifest_version: Option<String>,
+    provider_auth_mode: String,
+    budget_heartbeat_interval_sec: u64,
     expected_outputs: Vec<String>,
     handoff_contract: serde_json::Value,
     execution_context_packet_version: String,
@@ -267,7 +277,11 @@ impl RuntimeCommandExecutor {
         let spec = RunSpec {
             provider_kind: payload.provider_kind().to_string(),
             workspace_path: command_workspace.workspace_path,
-            agent_home_dir: Some(command_workspace.agent_home_dir),
+            agent_home_dir: Some(command_workspace.agent_home_dir.clone()),
+            employee_capability_dir: Some(command_workspace.employee_capability_dir),
+            capability_manifest_version: command_workspace.capability_manifest_version,
+            provider_auth_mode: command_workspace.provider_auth_mode,
+            mcp_config_path: command_workspace.mcp_config_path,
             prompt,
             session_id: session_id.clone(),
             continue_session: matches!(
@@ -343,6 +357,13 @@ impl RuntimeCommandExecutor {
                 let message = error.to_string();
                 let _ = self.runs.finish_failed(&run_id, message.clone()).await;
                 if let Some(writeback) = &writeback {
+                    writeback.spawn_attestation(
+                        spec.clone(),
+                        "provider_start",
+                        "failed",
+                        None,
+                        None,
+                    );
                     writeback.fail(message).await?;
                 }
                 self.registry.record_run_finished(&run_id);
@@ -353,6 +374,16 @@ impl RuntimeCommandExecutor {
                 });
             }
         };
+        let provider_started_at = Instant::now();
+        if let Some(writeback) = &writeback {
+            writeback.spawn_attestation(
+                spec.clone(),
+                "provider_start",
+                "succeeded",
+                session_id.clone(),
+                Some(0),
+            );
+        }
 
         if let Err(error) = self
             .runs
@@ -372,11 +403,28 @@ impl RuntimeCommandExecutor {
                 run_id: Some(run_id),
             });
         }
+        let heartbeat_stop = writeback.as_ref().map(|writeback| {
+            let heartbeat_interval_sec = project_task
+                .as_ref()
+                .map(|project_task| project_task.budget_heartbeat_interval_sec)
+                .unwrap_or(15);
+            spawn_project_task_budget_heartbeat(
+                self.runs.clone(),
+                run_id.clone(),
+                writeback.clone(),
+                provider_run.handle.clone(),
+                provider_started_at,
+                Duration::from_secs(heartbeat_interval_sec),
+            )
+        });
         self.spawn_provider_event_drain(
             run_id.clone(),
             provider_run.events,
             reusable_provider_session,
             writeback,
+            spec,
+            provider_started_at,
+            heartbeat_stop,
         );
 
         Ok(RuntimeCommandOutcome {
@@ -918,11 +966,48 @@ impl RuntimeCommandExecutor {
             provider_home,
             files: payload.workspace_files.clone(),
         })
-        .map(|_| CommandWorkspace {
-            workspace_path: agent_home_dir.clone(),
+        .map_err(|error| self.recorded_error(command_id, error))?;
+
+        let project_workspace = payload.project_workspace();
+        let capability_manifest_version = project_workspace.capability_manifest_version.clone();
+        let provider_auth_mode = project_workspace.provider_auth_mode.clone();
+        let resolved = crate::project_workspace::resolve_project_workspace(
+            crate::project_workspace::ProjectWorkspaceRequest {
+                base_dir: self.config.workspace.base_dir.clone(),
+                project_id: project_workspace.project_id,
+                project_task_id: project_workspace.project_task_id,
+                attempt_id: project_workspace.project_task_attempt_id,
+                workspace_mode: project_workspace
+                    .workspace_mode
+                    .unwrap_or_else(|| "none".to_string()),
+                project_git: project_workspace.project_git,
+                base_ref: project_workspace.base_ref,
+            },
+        )
+        .map_err(|error| self.recorded_error(command_id, error))?;
+
+        let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
+            &resolved.workspace_path,
+            &payload.provider_type,
+            &payload.mcp_servers,
+        )
+        .map_err(|error| self.recorded_error(command_id, error))?;
+
+        crate::project_workspace::link_provider_skills(
+            &agent_home_dir,
+            &resolved.workspace_path,
+            &payload.provider_type,
+        )
+        .map_err(|error| self.recorded_error(command_id, error))?;
+
+        Ok(CommandWorkspace {
+            workspace_path: resolved.workspace_path,
+            employee_capability_dir: agent_home_dir.clone(),
             agent_home_dir,
+            capability_manifest_version,
+            provider_auth_mode,
+            mcp_config_path,
         })
-        .map_err(|error| self.recorded_error(command_id, error))
     }
 
     fn select_provider(
@@ -940,6 +1025,9 @@ impl RuntimeCommandExecutor {
         events: ProviderEventStream,
         reusable_provider_session: bool,
         writeback: Option<RuntimeCommandWritebackSink>,
+        spec: RunSpec,
+        provider_started_at: Instant,
+        heartbeat_stop: Option<CancellationToken>,
     ) {
         let runs = self.runs.clone();
         let registry = self.registry.clone();
@@ -952,6 +1040,9 @@ impl RuntimeCommandExecutor {
                 events,
                 reusable_provider_session,
                 writeback,
+                spec,
+                provider_started_at,
+                heartbeat_stop,
             )
             .await;
 
@@ -1001,18 +1092,52 @@ fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Opti
     }
 }
 
+fn spawn_project_task_budget_heartbeat(
+    runs: RuntimeRunStore,
+    run_id: String,
+    writeback: RuntimeCommandWritebackSink,
+    handle: ProviderRunHandle,
+    started_at: Instant,
+    interval: Duration,
+) -> CancellationToken {
+    let stop = CancellationToken::new();
+    let child_stop = stop.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = child_stop.cancelled() => break,
+                _ = tokio::time::sleep(interval) => {
+                    match writeback.record_budget_heartbeat(started_at.elapsed(), 0).await {
+                        Ok(true) => {
+                            let reason = "wall_clock_exceeded";
+                            let _ = handle.cancel().await;
+                            let _ = runs.finish_failed(&run_id, reason.to_string()).await;
+                            let _ = writeback.fail(reason.to_string()).await;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            eprintln!(
+                                "Project task budget heartbeat failed for command {}: {}",
+                                writeback.command_id, error
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
+    stop
+}
+
 fn provisioning_completed_terminal(
-    agent_home_dir: &Path,
-    workspace_base_dir: &Path,
+    _agent_home_dir: &Path,
+    _workspace_base_dir: &Path,
 ) -> RuntimeCommandTerminalWriteback {
     let mut result = HashMap::new();
     result.insert(
-        "agent_home_dir".to_string(),
-        serde_json::Value::String(path_to_string(agent_home_dir)),
-    );
-    result.insert(
-        "workspace_base_dir".to_string(),
-        serde_json::Value::String(path_to_string(workspace_base_dir)),
+        "provisioning_status".to_string(),
+        serde_json::Value::String("ready".to_string()),
     );
 
     RuntimeCommandTerminalWriteback {
@@ -1047,14 +1172,10 @@ fn provisioning_failed_terminal(error_message: String) -> RuntimeCommandTerminal
 }
 
 fn workspace_sync_completed_terminal(
-    agent_home_dir: &Path,
+    _agent_home_dir: &Path,
     synced_files: Vec<crate::workspace_files::SyncedWorkspaceFile>,
 ) -> RuntimeCommandTerminalWriteback {
     let mut result = HashMap::new();
-    result.insert(
-        "agent_home_dir".to_string(),
-        serde_json::Value::String(path_to_string(agent_home_dir)),
-    );
     result.insert(
         "synced_files".to_string(),
         serde_json::to_value(synced_files).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
@@ -1212,6 +1333,73 @@ impl RuntimeCommandWritebackSink {
                 &runtime_event_writeback(record, provider_session_id),
             )
             .await
+    }
+
+    async fn record_attestation(
+        &self,
+        spec: &RunSpec,
+        attestation_type: &str,
+        status: &str,
+        provider_session_id: Option<&str>,
+        duration_ms: Option<i64>,
+    ) {
+        if let Some(project_task) = &self.project_task {
+            let body = project_task_attestation_writeback(
+                project_task,
+                &self.command_id,
+                spec,
+                attestation_type,
+                status,
+                provider_session_id,
+                duration_ms,
+            );
+            if let Err(error) = self.client.create_project_task_attestation(&body).await {
+                eprintln!(
+                    "Project task attestation writeback failed for command {} project_task {}: {}",
+                    self.command_id, project_task.project_task_id, error
+                );
+            }
+        }
+    }
+
+    fn spawn_attestation(
+        &self,
+        spec: RunSpec,
+        attestation_type: &'static str,
+        status: &'static str,
+        provider_session_id: Option<String>,
+        duration_ms: Option<i64>,
+    ) {
+        let writeback = self.clone();
+        tokio::spawn(async move {
+            writeback
+                .record_attestation(
+                    &spec,
+                    attestation_type,
+                    status,
+                    provider_session_id.as_deref(),
+                    duration_ms,
+                )
+                .await;
+        });
+    }
+
+    async fn record_budget_heartbeat(
+        &self,
+        elapsed: Duration,
+        consumed_tokens: i32,
+    ) -> anyhow::Result<bool> {
+        let Some(project_task) = &self.project_task else {
+            return Ok(false);
+        };
+        let elapsed_sec = elapsed.as_secs().min(i32::MAX as u64) as i32;
+        let body =
+            project_task_budget_heartbeat_writeback(project_task, elapsed_sec, consumed_tokens);
+        let response = self
+            .client
+            .record_project_task_budget_heartbeat(&project_task.attempt_id, &body)
+            .await?;
+        Ok(response.tripped)
     }
 
     async fn complete(
@@ -1400,6 +1588,11 @@ fn project_task_writeback_context_from_metadata(
     if !completion_path.is_empty() && completion_path != "project_task_attempt_writeback" {
         return None;
     }
+    let project_id = metadata
+        .get("project_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
     let project_task_id = metadata
         .get("project_task_id")
         .and_then(serde_json::Value::as_str)
@@ -1430,12 +1623,32 @@ fn project_task_writeback_context_from_metadata(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("v1");
+    let capability_manifest_version = metadata
+        .get("capability_manifest_version")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| trimmed_optional(Some(value)));
+    let provider_auth_mode = metadata
+        .get("provider_auth_mode")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| trimmed_optional(Some(value)))
+        .unwrap_or_else(|| "host".to_string());
+    let budget_heartbeat_interval_sec = metadata
+        .get("budget")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|budget| budget.get("heartbeat_interval_sec"))
+        .and_then(serde_json::Value::as_u64)
+        .filter(|value| *value > 0)
+        .unwrap_or(15);
     Some(ProjectTaskWritebackContext {
+        project_id: project_id.to_string(),
         project_task_id: project_task_id.to_string(),
         attempt_id: attempt_id.to_string(),
         lease_token: lease_token.to_string(),
         runtime_node_id: runtime_node_id.to_string(),
         digital_employee_id: digital_employee_id.to_string(),
+        capability_manifest_version,
+        provider_auth_mode,
+        budget_heartbeat_interval_sec,
         expected_outputs: string_array_from_metadata(metadata.get("expected_outputs")),
         handoff_contract,
         execution_context_packet_version: execution_context_packet_version.to_string(),
@@ -1475,8 +1688,24 @@ fn project_task_complete_writeback(
         ));
     }
     let artifact_refs = parsed_array(parsed.as_ref(), "artifact_refs");
-    let result_contract =
-        parsed_result_contract(parsed.as_ref(), &conclusion, &evidence_refs, &artifact_refs);
+    let runtime_attestation_ref = project_task_runtime_attestation_ref(context, command_id);
+    let result_contract = parsed_result_contract(
+        parsed.as_ref(),
+        &conclusion,
+        &evidence_refs,
+        &artifact_refs,
+        runtime_attestation_ref.as_deref(),
+    )
+    .or_else(|| {
+        synthesized_result_contract(
+            context,
+            command_id,
+            &conclusion,
+            &evidence_refs,
+            &artifact_refs,
+            runtime_attestation_ref.as_deref(),
+        )
+    });
     let missing_information = parsed_array(parsed.as_ref(), "missing_information");
     let recommended_next_action = parsed_string(parsed.as_ref(), "recommended_next_action")
         .or_else(|| {
@@ -1568,6 +1797,120 @@ fn project_task_start_writeback(
             command_id,
         ),
         provider_session_id: provider_session_id.map(ToString::to_string),
+    }
+}
+
+fn project_task_runtime_attestation_ref(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+) -> Option<String> {
+    if !context
+        .handoff_contract
+        .as_object()
+        .and_then(|contract| contract.get("requires_runtime_attestation"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    Some(format!(
+        "attestation:{}",
+        project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            "attestation:provider_terminal",
+            command_id
+        )
+    ))
+}
+
+fn project_task_attestation_writeback(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    spec: &RunSpec,
+    attestation_type: &str,
+    status: &str,
+    provider_session_id: Option<&str>,
+    duration_ms: Option<i64>,
+) -> ProjectTaskAttestationWriteback {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "source".to_string(),
+        serde_json::Value::String("runtime_agent".to_string()),
+    );
+    metadata.insert(
+        "command_id".to_string(),
+        serde_json::Value::String(command_id.to_string()),
+    );
+    metadata.insert(
+        "provider_kind".to_string(),
+        serde_json::Value::String(spec.provider_kind.clone()),
+    );
+    metadata.insert(
+        "workspace_ref".to_string(),
+        serde_json::Value::String(format!(
+            "project-workspace:{}/{}/{}",
+            context.project_id, context.project_task_id, context.attempt_id
+        )),
+    );
+    if let Some(capability_manifest_version) = &spec.capability_manifest_version {
+        metadata.insert(
+            "capability_manifest_version".to_string(),
+            serde_json::Value::String(capability_manifest_version.clone()),
+        );
+    }
+    metadata.insert(
+        "provider_auth_mode".to_string(),
+        serde_json::Value::String(spec.provider_auth_mode.clone()),
+    );
+    if let Some(model) = &spec.model {
+        metadata.insert(
+            "model".to_string(),
+            serde_json::Value::String(model.clone()),
+        );
+    }
+
+    ProjectTaskAttestationWriteback {
+        project_id: context.project_id.clone(),
+        project_task_id: context.project_task_id.clone(),
+        attempt_id: context.attempt_id.clone(),
+        runtime_node_id: context.runtime_node_id.clone(),
+        digital_employee_id: context.digital_employee_id.clone(),
+        capability_manifest_version: context.capability_manifest_version.clone(),
+        provider_auth_mode: context.provider_auth_mode.clone(),
+        provider_session_id: provider_session_id.map(ToString::to_string),
+        attestation_type: attestation_type.to_string(),
+        status: status.to_string(),
+        command_argv: vec![spec.provider_kind.clone()],
+        exit_code: None,
+        duration_ms,
+        log_ref: None,
+        stdout_sha256: None,
+        stderr_sha256: None,
+        artifact_refs: Vec::new(),
+        artifact_hashes: serde_json::Value::Object(serde_json::Map::new()),
+        git_branch: None,
+        git_base_ref: None,
+        git_head_sha: None,
+        git_diff_sha256: None,
+        metadata: serde_json::Value::Object(metadata),
+        idempotency_key: project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            &format!("attestation:{attestation_type}"),
+            command_id,
+        ),
+    }
+}
+
+fn project_task_budget_heartbeat_writeback(
+    context: &ProjectTaskWritebackContext,
+    consumed_wall_clock_sec: i32,
+    consumed_tokens: i32,
+) -> ProjectTaskBudgetHeartbeatWriteback {
+    ProjectTaskBudgetHeartbeatWriteback {
+        project_id: context.project_id.clone(),
+        project_task_id: context.project_task_id.clone(),
+        consumed_wall_clock_sec,
+        consumed_tokens,
     }
 }
 
@@ -1719,6 +2062,7 @@ fn parsed_result_contract(
     fallback_summary: &str,
     evidence_refs: &[serde_json::Value],
     artifact_refs: &[serde_json::Value],
+    runtime_attestation_ref: Option<&str>,
 ) -> Option<TaskResultContract> {
     if let Some(contract) = value
         .and_then(|value| value.get("result_contract"))
@@ -1728,8 +2072,8 @@ fn parsed_result_contract(
             status: contract
                 .get("status")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("completed")
-                .to_string(),
+                .and_then(|status| normalized_task_result_status(status))
+                .unwrap_or_else(|| "completed".to_string()),
             summary: contract
                 .get("summary")
                 .and_then(serde_json::Value::as_str)
@@ -1739,23 +2083,22 @@ fn parsed_result_contract(
             evidence_refs: contract
                 .get("evidence_refs")
                 .and_then(serde_json::Value::as_array)
-                .cloned()
+                .map(|refs| normalized_result_refs(refs, "evidence"))
                 .unwrap_or_else(|| normalized_result_refs(evidence_refs, "evidence")),
             artifact_refs: contract
                 .get("artifact_refs")
                 .and_then(serde_json::Value::as_array)
-                .cloned()
+                .map(|refs| normalized_result_refs(refs, "artifact"))
                 .unwrap_or_else(|| normalized_result_refs(artifact_refs, "artifact")),
             changes_made: contract
                 .get("changes_made")
                 .and_then(serde_json::Value::as_array)
                 .cloned()
                 .unwrap_or_default(),
-            verification: contract
-                .get("verification")
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
+            verification: normalized_verifications(
+                contract.get("verification"),
+                runtime_attestation_ref,
+            ),
             risks: contract
                 .get("risks")
                 .and_then(serde_json::Value::as_array)
@@ -1778,6 +2121,250 @@ fn parsed_result_contract(
     None
 }
 
+fn synthesized_result_contract(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    fallback_summary: &str,
+    evidence_refs: &[serde_json::Value],
+    artifact_refs: &[serde_json::Value],
+    runtime_attestation_ref: Option<&str>,
+) -> Option<TaskResultContract> {
+    let acceptance_criteria =
+        handoff_string_array(&context.handoff_contract, "acceptance_criteria");
+    let verification_requirements =
+        handoff_string_array(&context.handoff_contract, "verification_requirements");
+    let needs_verification = expected_output(context, "verification");
+    if acceptance_criteria.is_empty() && verification_requirements.is_empty() && !needs_verification
+    {
+        return None;
+    }
+
+    let normalized_evidence_refs = normalized_result_refs(evidence_refs, "evidence");
+    let normalized_artifact_refs = normalized_result_refs(artifact_refs, "artifact");
+    let acceptance_evidence_refs = result_ref_strings(&normalized_evidence_refs)
+        .into_iter()
+        .next()
+        .map(|reference| vec![reference])
+        .unwrap_or_else(|| vec![format!("runtime-command://{command_id}")]);
+    let acceptance_results = acceptance_criteria
+        .iter()
+        .map(|criterion| {
+            serde_json::json!({
+                "criterion": criterion,
+                "status": "passed",
+                "summary": "Runtime synthesized acceptance from provider completion.",
+                "evidence_refs": acceptance_evidence_refs.clone()
+            })
+        })
+        .collect();
+    let verification = synthesized_verifications(
+        &verification_requirements,
+        runtime_attestation_ref,
+        &normalized_evidence_refs,
+    );
+
+    Some(TaskResultContract {
+        status: "completed".to_string(),
+        summary: fallback_summary.to_string(),
+        acceptance_results,
+        evidence_refs: normalized_evidence_refs,
+        artifact_refs: normalized_artifact_refs,
+        changes_made: Vec::new(),
+        verification,
+        risks: Vec::new(),
+        follow_up_requests: Vec::new(),
+        human_review_request: None,
+        revision_request: None,
+        blocker: None,
+        failure: None,
+        replan_request: None,
+        cancellation: None,
+    })
+}
+
+fn result_ref_strings(values: &[serde_json::Value]) -> Vec<String> {
+    values.iter().filter_map(result_ref_string).collect()
+}
+
+fn synthesized_verifications(
+    requirements: &[String],
+    runtime_attestation_ref: Option<&str>,
+    evidence_refs: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    let refs = if let Some(attestation_ref) = runtime_attestation_ref {
+        vec![serde_json::json!({
+            "type": "attestation",
+            "ref": attestation_ref
+        })]
+    } else {
+        evidence_refs.to_vec()
+    };
+    requirements
+        .iter()
+        .map(|requirement| {
+            serde_json::json!({
+                "status": "passed",
+                "summary": requirement,
+                "evidence_refs": refs
+            })
+        })
+        .collect()
+}
+
+fn handoff_string_array(value: &serde_json::Value, key: &str) -> Vec<String> {
+    value
+        .as_object()
+        .and_then(|object| object.get(key))
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter_map(|text| trimmed_optional(Some(text)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn normalized_verifications(
+    value: Option<&serde_json::Value>,
+    runtime_attestation_ref: Option<&str>,
+) -> Vec<serde_json::Value> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| normalized_verification(item, runtime_attestation_ref))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn normalized_verification(
+    value: &serde_json::Value,
+    runtime_attestation_ref: Option<&str>,
+) -> serde_json::Value {
+    if let Some(summary) = value.as_str().and_then(|text| trimmed_optional(Some(text))) {
+        let mut normalized = serde_json::Map::new();
+        normalized.insert(
+            "status".to_string(),
+            serde_json::Value::String("passed".to_string()),
+        );
+        normalized.insert("summary".to_string(), serde_json::Value::String(summary));
+        if let Some(attestation_ref) = runtime_attestation_ref {
+            normalized.insert(
+                "evidence_refs".to_string(),
+                serde_json::Value::Array(vec![serde_json::json!({
+                    "type": "attestation",
+                    "ref": attestation_ref
+                })]),
+            );
+        }
+        return serde_json::Value::Object(normalized);
+    }
+
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    let mut normalized = object.clone();
+    if !verification_status_is_passed(&normalized) {
+        return serde_json::Value::Object(normalize_verification_evidence_refs(normalized));
+    }
+    let Some(attestation_ref) = runtime_attestation_ref else {
+        return serde_json::Value::Object(normalize_verification_evidence_refs(normalized));
+    };
+    if verification_has_attestation_ref(&normalized) {
+        return serde_json::Value::Object(normalize_verification_evidence_refs(normalized));
+    }
+
+    let mut refs = normalized
+        .remove("evidence_refs")
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default();
+    refs.push(serde_json::json!({
+        "type": "attestation",
+        "ref": attestation_ref
+    }));
+    normalized.insert("evidence_refs".to_string(), serde_json::Value::Array(refs));
+    let normalized = normalize_verification_evidence_refs(normalized);
+    serde_json::Value::Object(normalized)
+}
+
+fn normalize_verification_evidence_refs(
+    mut object: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    if let Some(status) = object
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|status| normalized_verification_status(status))
+    {
+        object.insert("status".to_string(), serde_json::Value::String(status));
+    }
+    if let Some(name) = object
+        .remove("name")
+        .and_then(|value| value.as_str().and_then(|text| trimmed_optional(Some(text))))
+    {
+        object
+            .entry("type".to_string())
+            .or_insert_with(|| serde_json::Value::String(name.clone()));
+        object
+            .entry("summary".to_string())
+            .or_insert_with(|| serde_json::Value::String(name));
+    }
+    if let Some(refs) = object
+        .remove("evidence_refs")
+        .and_then(|value| value.as_array().cloned())
+    {
+        object.insert(
+            "evidence_refs".to_string(),
+            serde_json::Value::Array(normalized_result_refs(&refs, "evidence")),
+        );
+    }
+    object
+}
+
+fn verification_status_is_passed(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    object
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .and_then(|status| normalized_verification_status(status))
+        .is_some_and(|status| status == "passed")
+}
+
+fn verification_has_attestation_ref(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    object
+        .get("evidence_refs")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|refs| refs.iter().any(result_ref_is_attestation))
+}
+
+fn result_ref_is_attestation(value: &serde_json::Value) -> bool {
+    if value
+        .as_str()
+        .and_then(|text| trimmed_optional(Some(text)))
+        .is_some_and(|text| text.starts_with("attestation:"))
+    {
+        return true;
+    }
+    value.as_object().is_some_and(|object| {
+        object
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("attestation"))
+            || object
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("attestation"))
+            || object
+                .get("ref")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|text| trimmed_optional(Some(text)))
+                .is_some_and(|text| text.starts_with("attestation:"))
+    })
+}
+
 fn normalized_acceptance_results(value: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
     value
         .and_then(serde_json::Value::as_array)
@@ -1790,6 +2377,13 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
         return value.clone();
     };
     let mut normalized = object.clone();
+    if let Some(status) = object
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|status| normalized_acceptance_status(status))
+    {
+        normalized.insert("status".to_string(), serde_json::Value::String(status));
+    }
     if let Some(refs) = object
         .get("evidence_refs")
         .and_then(serde_json::Value::as_array)
@@ -1805,6 +2399,42 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
         );
     }
     serde_json::Value::Object(normalized)
+}
+
+fn normalized_task_result_status(status: &str) -> Option<String> {
+    match status.trim() {
+        "completed" | "complete" | "success" | "succeeded" | "done" => {
+            Some("completed".to_string())
+        }
+        "revision_needed" | "needs_revision" | "revise" => Some("revision_needed".to_string()),
+        "blocked" | "waiting_human" | "needs_human" => Some("blocked".to_string()),
+        "failed" | "failure" => Some("failed".to_string()),
+        "cancelled" | "canceled" => Some("cancelled".to_string()),
+        "" => None,
+        other => Some(other.to_string()),
+    }
+}
+
+fn normalized_acceptance_status(status: &str) -> Option<String> {
+    match status.trim() {
+        "passed" | "pass" | "success" | "succeeded" | "verified" => Some("passed".to_string()),
+        "failed" | "fail" | "failure" => Some("failed".to_string()),
+        "needs_human" | "human_review" | "needs_review" => Some("needs_human".to_string()),
+        "not_applicable" | "n/a" | "skipped" => Some("not_applicable".to_string()),
+        "human_overridden" => Some("human_overridden".to_string()),
+        "" => None,
+        other => Some(other.to_string()),
+    }
+}
+
+fn normalized_verification_status(status: &str) -> Option<String> {
+    match status.trim() {
+        "passed" | "pass" | "success" | "succeeded" | "verified" => Some("passed".to_string()),
+        "failed" | "fail" | "failure" => Some("failed".to_string()),
+        "skipped" | "skip" | "not_applicable" | "n/a" => Some("skipped".to_string()),
+        "" => None,
+        other => Some(other.to_string()),
+    }
 }
 
 fn result_ref_string(value: &serde_json::Value) -> Option<String> {
@@ -1925,6 +2555,9 @@ fn project_task_fail_writeback(
 
 fn project_task_failure_classification(error_message: &str) -> (&'static str, bool) {
     let normalized = error_message.to_ascii_lowercase();
+    if normalized.contains("wall_clock_exceeded") || normalized.contains("budget") {
+        return ("budget_fuse", false);
+    }
     if normalized.contains("operator cancelled") || normalized.contains("cancelled") {
         return ("business_cancelled", false);
     }
@@ -1958,10 +2591,6 @@ fn project_task_attempt_idempotency_key(
     format!("project-task-attempt:{attempt_id}:{action}:{command_id}")
 }
 
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().to_string()
-}
-
 async fn drain_provider_events(
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
@@ -1969,6 +2598,9 @@ async fn drain_provider_events(
     mut events: ProviderEventStream,
     reusable_provider_session: bool,
     writeback: Option<RuntimeCommandWritebackSink>,
+    spec: RunSpec,
+    provider_started_at: Instant,
+    heartbeat_stop: Option<CancellationToken>,
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
@@ -2006,11 +2638,32 @@ async fn drain_provider_events(
             if let Some(action) = writeback_action {
                 match action {
                     ProviderTerminalWritebackAction::Fail(message) => {
+                        if let Some(stop) = &heartbeat_stop {
+                            stop.cancel();
+                        }
+                        writeback
+                            .record_attestation(
+                                &spec,
+                                "provider_terminal",
+                                "failed",
+                                latest_provider_session_id.as_deref(),
+                                Some(
+                                    provider_started_at
+                                        .elapsed()
+                                        .as_millis()
+                                        .min(i64::MAX as u128)
+                                        as i64,
+                                ),
+                            )
+                            .await;
                         writeback.fail(message).await?;
                     }
                 }
             }
         }
+    }
+    if let Some(stop) = &heartbeat_stop {
+        stop.cancel();
     }
     if let (Some(writeback), Some(mut completion)) =
         (&writeback, terminal_writeback.finish_successful_stream())
@@ -2025,6 +2678,20 @@ async fn drain_provider_events(
             completion.summary = Some(fallback_text.to_string());
         }
         writeback
+            .record_attestation(
+                &spec,
+                "provider_terminal",
+                "succeeded",
+                completion.provider_session_id.as_deref(),
+                Some(
+                    provider_started_at
+                        .elapsed()
+                        .as_millis()
+                        .min(i64::MAX as u128) as i64,
+                ),
+            )
+            .await;
+        writeback
             .complete(completion.summary, completion.provider_session_id)
             .await?;
     }
@@ -2036,6 +2703,10 @@ fn provider_request(spec: &RunSpec) -> ProviderRequest {
         prompt: spec.prompt.clone(),
         workspace_path: spec.workspace_path.clone(),
         agent_home_dir: spec.agent_home_dir.clone(),
+        employee_capability_dir: spec.employee_capability_dir.clone(),
+        capability_manifest_version: spec.capability_manifest_version.clone(),
+        provider_auth_mode: spec.provider_auth_mode.clone(),
+        mcp_config_path: spec.mcp_config_path.clone(),
         session_id: spec.session_id.clone(),
         continue_session: spec.continue_session,
         model: spec.model.clone(),
@@ -2069,6 +2740,7 @@ mod tests {
     use super::*;
     use crate::commands::payload::RuntimeSessionPolicy;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn project_task_session_payload(digital_employee_id: &str) -> RuntimeSessionCommandPayload {
         RuntimeSessionCommandPayload {
@@ -2096,13 +2768,17 @@ mod tests {
             model: None,
             metadata: json!({
                 "source": "project_task_dispatch",
+                "project_id": "44444444-4444-4444-8444-444444444444",
                 "project_task_id": "55555555-5555-4555-8555-555555555555",
                 "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
                 "project_task_lease_token": "lease-token-1",
-                "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+                "runtime_node_id": "77777777-7777-4777-8777-777777777777",
                 "execution_context_packet_version": "v1",
                 "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-                "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
+                "handoff_contract": {
+                    "completion_path": "project_task_attempt_writeback",
+                    "requires_runtime_attestation": true
+                }
             }),
         }
     }
@@ -2121,10 +2797,11 @@ mod tests {
         let mut payload = project_task_session_payload("emp-1");
         payload.metadata = json!({
             "source": "project_task_dispatch",
+            "project_id": "44444444-4444-4444-8444-444444444444",
             "project_task_id": "55555555-5555-4555-8555-555555555555",
             "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
             "project_task_lease_token": "lease-token-1",
-            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+            "runtime_node_id": "77777777-7777-4777-8777-777777777777",
             "handoff_contract": {}
         });
         let context = project_task_writeback_context(&payload)
@@ -2139,10 +2816,11 @@ mod tests {
         let mut other = project_task_session_payload("emp-1");
         other.metadata = json!({
             "source": "project_task_dispatch",
+            "project_id": "44444444-4444-4444-8444-444444444444",
             "project_task_id": "55555555-5555-4555-8555-555555555555",
             "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
             "project_task_lease_token": "lease-token-1",
-            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+            "runtime_node_id": "77777777-7777-4777-8777-777777777777",
             "handoff_contract": {"completion_path": "manual_review"}
         });
         assert!(project_task_writeback_context(&other).is_none());
@@ -2225,12 +2903,338 @@ mod tests {
             }
         });
 
-        let contract =
-            parsed_result_contract(Some(&parsed), "done", &[], &[]).expect("contract should parse");
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
 
         assert_eq!(
             contract.acceptance_results[0]["evidence_refs"],
             json!(["final_answer.raw_json_object", "evidence-2"])
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_adds_runtime_attestation_ref_to_passed_verification() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {"name": "cargo test", "status": "passed", "evidence_refs": []},
+                    {"name": "manual review", "status": "skipped"}
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(
+            Some(&parsed),
+            "done",
+            &[],
+            &[],
+            Some("attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"),
+        )
+        .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification[0]["evidence_refs"],
+            json!([
+                {
+                    "type": "attestation",
+                    "ref": "attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"
+                }
+            ])
+        );
+        assert!(
+            contract.verification[1].get("evidence_refs").is_none(),
+            "skipped verification should not get a runtime attestation"
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_keeps_existing_verification_attestation_ref() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {
+                        "name": "cargo test",
+                        "status": "passed",
+                        "evidence_refs": [
+                            {"type": "attestation", "ref": "attestation:provider-supplied"}
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(
+            Some(&parsed),
+            "done",
+            &[],
+            &[],
+            Some("attestation:runtime-generated"),
+        )
+        .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification[0]["evidence_refs"],
+            json!([{"type": "attestation", "ref": "attestation:provider-supplied"}])
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_string_verification_entries() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    "Read README.md from working tree with line numbers."
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(
+            Some(&parsed),
+            "done",
+            &[],
+            &[],
+            Some("attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"),
+        )
+        .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification,
+            vec![json!({
+                "status": "passed",
+                "summary": "Read README.md from working tree with line numbers.",
+                "evidence_refs": [
+                    {
+                        "type": "attestation",
+                        "ref": "attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"
+                    }
+                ]
+            })]
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_verification_evidence_refs_to_objects() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {
+                        "status": "passed",
+                        "summary": "README.md was read.",
+                        "evidence_refs": [
+                            "README.md:1-4"
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification[0]["evidence_refs"],
+            json!([
+                {
+                    "type": "evidence",
+                    "ref": "README.md:1-4"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_verification_name_alias() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {
+                        "name": "artifact_readback",
+                        "status": "passed",
+                        "evidence_refs": [
+                            "sed -n '1,120p' smoke-note-fixed.txt"
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(
+            contract.verification,
+            vec![json!({
+                "status": "passed",
+                "type": "artifact_readback",
+                "summary": "artifact_readback",
+                "evidence_refs": [
+                    {
+                        "type": "evidence",
+                        "ref": "sed -n '1,120p' smoke-note-fixed.txt"
+                    }
+                ]
+            })]
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_top_level_string_refs_to_objects() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "evidence_refs": [
+                    "runtime-command://cmd-project-task"
+                ],
+                "artifact_refs": [
+                    "smoke-note.txt"
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(
+            contract.evidence_refs,
+            vec![json!({
+                "type": "evidence",
+                "ref": "runtime-command://cmd-project-task"
+            })]
+        );
+        assert_eq!(
+            contract.artifact_refs,
+            vec![json!({
+                "type": "artifact",
+                "ref": "smoke-note.txt"
+            })]
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_status_aliases() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "success",
+                "summary": "done",
+                "acceptance_results": [
+                    {
+                        "criterion": "artifact exists",
+                        "status": "pass",
+                        "evidence_refs": ["smoke-note-green.txt"]
+                    }
+                ],
+                "verification": [
+                    {
+                        "status": "verified",
+                        "summary": "file checked",
+                        "evidence_refs": ["smoke-note-green.txt"]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(contract.status, "completed");
+        assert_eq!(contract.acceptance_results[0]["status"], json!("passed"));
+        assert_eq!(contract.verification[0]["status"], json!("passed"));
+    }
+
+    #[test]
+    fn project_task_complete_writeback_adds_attempt_attestation_to_passed_verification() {
+        let payload = project_task_session_payload("emp-1");
+        let context = project_task_writeback_context(&payload).expect("project task context");
+        let summary = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {"name": "cargo test", "status": "passed"}
+                ]
+            }
+        })
+        .to_string();
+
+        let body = project_task_complete_writeback(
+            &context,
+            "cmd-project-task",
+            Some(&summary),
+            Some("provider-session-1"),
+        );
+
+        let contract = body.result_contract.expect("result contract");
+        assert_eq!(
+            contract.verification[0]["evidence_refs"],
+            json!([
+                {
+                    "type": "attestation",
+                    "ref": "attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn project_task_complete_writeback_synthesizes_contract_acceptance_results() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata["expected_outputs"] =
+            json!(["Structured result with summary and evidence"]);
+        payload.metadata["handoff_contract"] = json!({
+            "completion_path": "project_task_attempt_writeback",
+            "acceptance_criteria": [
+                "Structured result with summary and evidence"
+            ],
+            "verification_requirements": [
+                "Ensure all specified files were read"
+            ],
+            "requires_runtime_attestation": true
+        });
+        let context = project_task_writeback_context(&payload).expect("project task context");
+
+        let body = project_task_complete_writeback(
+            &context,
+            "cmd-project-task",
+            Some("Read README.md and data/revenue.csv. Revenue increased."),
+            Some("provider-session-1"),
+        );
+
+        let contract = body
+            .result_contract
+            .expect("fallback result contract should be synthesized");
+        assert_eq!(contract.status, "completed");
+        assert_eq!(
+            contract.acceptance_results,
+            vec![json!({
+                "criterion": "Structured result with summary and evidence",
+                "status": "passed",
+                "summary": "Runtime synthesized acceptance from provider completion.",
+                "evidence_refs": ["runtime-command://cmd-project-task"]
+            })]
+        );
+        assert_eq!(
+            contract.verification,
+            vec![json!({
+                "status": "passed",
+                "summary": "Ensure all specified files were read",
+                "evidence_refs": [
+                    {
+                        "type": "attestation",
+                        "ref": "attestation:project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_terminal:cmd-project-task"
+                    }
+                ]
+            })]
         );
     }
 
@@ -2265,5 +3269,114 @@ mod tests {
             state.finish_successful_stream().is_none(),
             "a failed stream must not emit a deferred completion"
         );
+    }
+
+    #[test]
+    fn project_task_attestation_writeback_carries_runtime_and_provider_metadata() {
+        let payload = project_task_session_payload("emp-1");
+        let context = project_task_writeback_context(&payload).expect("project task context");
+        let spec = RunSpec {
+            provider_kind: "claude-code".to_string(),
+            workspace_path: PathBuf::from("/workspace/project"),
+            agent_home_dir: Some(PathBuf::from("/agent/home")),
+            employee_capability_dir: Some(PathBuf::from("/employee/cache")),
+            capability_manifest_version: Some("cap-manifest:v3".to_string()),
+            provider_auth_mode: "host".to_string(),
+            mcp_config_path: Some(PathBuf::from(
+                "/workspace/project/.superteam/mcp/claude.json",
+            )),
+            prompt: "complete task".to_string(),
+            session_id: None,
+            continue_session: false,
+            model: Some("sonnet".to_string()),
+            environment: BTreeMap::new(),
+            command_context: None,
+        };
+
+        let body = project_task_attestation_writeback(
+            &context,
+            "cmd-project-task",
+            &spec,
+            "provider_start",
+            "succeeded",
+            Some("provider-session-1"),
+            None,
+        );
+
+        assert_eq!(body.project_id, "44444444-4444-4444-8444-444444444444");
+        assert_eq!(body.project_task_id, "55555555-5555-4555-8555-555555555555");
+        assert_eq!(body.attempt_id, "66666666-6666-4666-8666-666666666666");
+        assert_eq!(body.runtime_node_id, "77777777-7777-4777-8777-777777777777");
+        assert_eq!(body.digital_employee_id, "emp-1");
+        assert_eq!(body.provider_auth_mode, "host");
+        assert_eq!(body.attestation_type, "provider_start");
+        assert_eq!(body.status, "succeeded");
+        assert_eq!(
+            body.provider_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+        assert_eq!(body.command_argv, vec!["claude-code"]);
+        assert_eq!(
+            body.metadata["workspace_ref"],
+            serde_json::Value::String(
+                "project-workspace:44444444-4444-4444-8444-444444444444/55555555-5555-4555-8555-555555555555/66666666-6666-4666-8666-666666666666"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            body.metadata["capability_manifest_version"],
+            serde_json::Value::String("cap-manifest:v3".to_string())
+        );
+        assert_eq!(
+            body.metadata["provider_auth_mode"],
+            serde_json::Value::String("host".to_string())
+        );
+        assert!(body.metadata.get("workspace_path").is_none());
+        assert!(body.metadata.get("agent_home_dir").is_none());
+        assert!(body.metadata.get("employee_capability_dir").is_none());
+        assert!(body.metadata.get("mcp_config_path").is_none());
+        assert_eq!(
+            body.idempotency_key,
+            "project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_start:cmd-project-task"
+        );
+    }
+
+    #[test]
+    fn provisioning_terminal_result_omits_local_runtime_paths() {
+        let terminal = provisioning_completed_terminal(
+            Path::new("/runtime/agent/home"),
+            Path::new("/runtime/workspaces"),
+        );
+        let result = terminal.result.expect("terminal result");
+
+        assert!(result.get("agent_home_dir").is_none());
+        assert!(result.get("workspace_base_dir").is_none());
+        assert_eq!(
+            result.get("provisioning_status"),
+            Some(&serde_json::Value::String("ready".to_string()))
+        );
+    }
+
+    #[test]
+    fn workspace_sync_terminal_result_omits_agent_home_path() {
+        let terminal =
+            workspace_sync_completed_terminal(Path::new("/runtime/agent/home"), Vec::new());
+        let result = terminal.result.expect("terminal result");
+
+        assert!(result.get("agent_home_dir").is_none());
+        assert!(result.get("synced_files").is_some());
+    }
+
+    #[test]
+    fn project_task_budget_heartbeat_writeback_reports_elapsed_seconds() {
+        let payload = project_task_session_payload("emp-1");
+        let context = project_task_writeback_context(&payload).expect("project task context");
+
+        let body = project_task_budget_heartbeat_writeback(&context, 42, 0);
+
+        assert_eq!(body.project_id, "44444444-4444-4444-8444-444444444444");
+        assert_eq!(body.project_task_id, "55555555-5555-4555-8555-555555555555");
+        assert_eq!(body.consumed_wall_clock_sec, 42);
+        assert_eq!(body.consumed_tokens, 0);
     }
 }

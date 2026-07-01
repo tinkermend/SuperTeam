@@ -1037,7 +1037,7 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 }
 
 func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord) map[string]any {
-	return redactRuntimeEventPayload(map[string]any{
+	return redactRuntimeEventSecrets(map[string]any{
 		"command_id":                  commandID,
 		"digital_employee_id":         employee.ID.String(),
 		"execution_instance_id":       instance.ID.String(),

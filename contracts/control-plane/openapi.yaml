@@ -169,6 +169,26 @@ paths:
       responses:
         "202":
           description: Events accepted
+  /api/v1/runtime/tasks/{taskId}/status:
+    put:
+      operationId: updateRuntimeTaskStatus
+      summary: Update a Runtime Agent task status
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskStatusRequest"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
   /api/v1/runtime/tasks/{taskId}/complete:
     post:
       operationId: completeRuntimeTask
@@ -319,6 +339,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/project-task-attestations:
+    post:
+      operationId: createProjectTaskAttestation
+      summary: Record a Runtime attestation for a ProjectTask attempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectTaskAttestationRequest"
+      responses:
+        "201":
+          description: ProjectTask attestation recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTaskAttestation"
   /api/v1/runtime/project-task-attempts/{attemptId}/started:
     post:
       operationId: startProjectTaskAttempt
@@ -399,6 +436,30 @@ paths:
       responses:
         "202":
           description: Result accepted for processing
+  /api/v1/runtime/project-task-attempts/{attemptId}/budget-heartbeat:
+    post:
+      operationId: recordProjectTaskAttemptBudgetHeartbeat
+      summary: Record ProjectTask attempt budget heartbeat and return fuse status
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordProjectTaskAttemptBudgetHeartbeatRequest"
+      responses:
+        "200":
+          description: Budget heartbeat recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTaskAttemptBudgetHeartbeatResponse"
   /api/v1/runtime/project-task-attempts/{attemptId}/fail:
     post:
       operationId: failProjectTaskAttempt
@@ -6968,6 +7029,120 @@ components:
           type: string
         provider_session_id:
           type: string
+    ProjectTaskAttestationStatus:
+      type: string
+      enum:
+        - succeeded
+        - failed
+        - cancelled
+        - timed_out
+    ProjectTaskAttestationProviderAuthMode:
+      type: string
+      enum:
+        - host
+        - employee
+        - explicit_credential
+    CreateProjectTaskAttestationRequest:
+      type: object
+      required:
+        - project_id
+        - project_task_id
+        - attempt_id
+        - runtime_node_id
+        - digital_employee_id
+        - attestation_type
+        - status
+        - idempotency_key
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        capability_manifest_version:
+          type: string
+          minLength: 1
+        provider_auth_mode:
+          $ref: "#/components/schemas/ProjectTaskAttestationProviderAuthMode"
+        provider_session_id:
+          type: string
+        attestation_type:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/ProjectTaskAttestationStatus"
+        command_argv:
+          type: array
+          items: {}
+        exit_code:
+          type: integer
+          format: int32
+        duration_ms:
+          type: integer
+          format: int64
+        log_ref:
+          type: string
+        stdout_sha256:
+          type: string
+        stderr_sha256:
+          type: string
+        artifact_refs:
+          type: array
+          items: {}
+        artifact_hashes:
+          type: object
+          additionalProperties: true
+        git_branch:
+          type: string
+        git_base_ref:
+          type: string
+        git_head_sha:
+          type: string
+        git_diff_sha256:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        idempotency_key:
+          type: string
+          minLength: 1
+    ProjectTaskAttestation:
+      allOf:
+        - $ref: "#/components/schemas/CreateProjectTaskAttestationRequest"
+        - type: object
+          required:
+            - id
+            - tenant_id
+            - provider_auth_mode
+            - command_argv
+            - artifact_refs
+            - artifact_hashes
+            - metadata
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: string
+              format: uuid
+            tenant_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
     StartProjectTaskAttemptRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
@@ -6979,6 +7154,36 @@ components:
             lease_expires_at:
               type: string
               format: date-time
+    RecordProjectTaskAttemptBudgetHeartbeatRequest:
+      type: object
+      required:
+        - project_id
+        - project_task_id
+        - consumed_wall_clock_sec
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        consumed_wall_clock_sec:
+          type: integer
+          format: int32
+          minimum: 0
+        consumed_tokens:
+          type: integer
+          format: int32
+          minimum: 0
+    ProjectTaskAttemptBudgetHeartbeatResponse:
+      type: object
+      required:
+        - tripped
+      properties:
+        tripped:
+          type: boolean
+        trip_reason:
+          type: string
     TaskResultStatus:
       type: string
       enum:
