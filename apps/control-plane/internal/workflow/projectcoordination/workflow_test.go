@@ -229,6 +229,7 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 					PlanFingerprint:   "fingerprint",
 					Payload:           PlanRevisionPayload{Summary: "approved plan"},
 					RouteEventID:      routeEventID,
+					PlanEventID:       planEventID,
 				},
 			},
 		},
@@ -452,15 +453,19 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 				"require_human_review_for_new_demands": true,
 			},
 		},
-		jobID:             uuid.New(),
-		routeID:           uuid.New(),
-		routeEventID:      initialRouteEventID,
-		planRevisionID:    planRevisionID,
-		taskID:            uuid.New(),
-		decisionRequestID: decisionRequestID,
-		planRevisionIDs:   []uuid.UUID{planRevisionID, secondPlanRevisionID},
-		routeEventIDs:     []uuid.UUID{initialRouteEventID, replanRouteEventID},
-		planEventIDs:      []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		jobID:                        uuid.New(),
+		routeID:                      uuid.New(),
+		routeEventID:                 initialRouteEventID,
+		planRevisionID:               planRevisionID,
+		taskID:                       uuid.New(),
+		decisionRequestID:            decisionRequestID,
+		planRevisionIDs:              []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		planRevisionIDsForRoute:      []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		routeEventIDs:                []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDs:                 []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		routeEventIDsForRoute:        []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDsForRoute:         []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		planResolvedEventIDsForRoute: []uuid.UUID{requestChangesEventID},
 		dispatchableTaskIDBatches: [][]uuid.UUID{
 			{readyTaskID},
 		},
@@ -502,13 +507,7 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 				PlanFingerprint:   "fingerprint",
 				Payload:           PlanRevisionPayload{Summary: "replanned plan"},
 				RouteEventID:      replanRouteEventID,
-				OutputEventIDs: []uuid.UUID{
-					initialRouteEventID,
-					initialPlanEventID,
-					requestChangesEventID,
-					replanRouteEventID,
-					replanPlanEventID,
-				},
+				PlanEventID:       replanPlanEventID,
 			},
 		},
 	}
@@ -1111,23 +1110,27 @@ func TestActivitiesDispatchProjectTaskKeepsRetryLaterGateRetryable(t *testing.T)
 }
 
 type recordingActivityStore struct {
-	calls                     []string
-	snapshot                  CoordinationSnapshot
-	jobID                     uuid.UUID
-	routeID                   uuid.UUID
-	routeEventID              uuid.UUID
-	routeEventIDs             []uuid.UUID
-	planRevisionID            uuid.UUID
-	planRevisionIDs           []uuid.UUID
-	planEventIDs              []uuid.UUID
-	planFingerprint           string
-	planRevisionStatus        string
-	taskID                    uuid.UUID
-	taskIDs                   []uuid.UUID
-	decisionRequestID         uuid.UUID
-	failureRecoveryDecisionID uuid.UUID
-	dispatchEvent             uuid.UUID
-	dispatchErr               error
+	calls                        []string
+	snapshot                     CoordinationSnapshot
+	jobID                        uuid.UUID
+	routeID                      uuid.UUID
+	routeEventID                 uuid.UUID
+	routeEventIDs                []uuid.UUID
+	planRevisionID               uuid.UUID
+	planRevisionIDs              []uuid.UUID
+	planRevisionIDsForRoute      []uuid.UUID
+	planEventIDs                 []uuid.UUID
+	routeEventIDsForRoute        []uuid.UUID
+	planEventIDsForRoute         []uuid.UUID
+	planResolvedEventIDsForRoute []uuid.UUID
+	planFingerprint              string
+	planRevisionStatus           string
+	taskID                       uuid.UUID
+	taskIDs                      []uuid.UUID
+	decisionRequestID            uuid.UUID
+	failureRecoveryDecisionID    uuid.UUID
+	dispatchEvent                uuid.UUID
+	dispatchErr                  error
 
 	dispatchableTaskIDs          []uuid.UUID
 	dispatchableTaskIDBatches    [][]uuid.UUID
@@ -1242,12 +1245,50 @@ func (s *recordingActivityStore) ResolvePlanRevisionReview(ctx context.Context, 
 func (s *recordingActivityStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
 	s.calls = append(s.calls, "LoadHumanDecisionRoute")
 	if route, ok := s.humanDecisionRoutes[input.DecisionRequestID]; ok {
+		if route.PlanReview != nil && len(route.PlanReview.OutputEventIDs) == 0 {
+			route.PlanReview.OutputEventIDs = s.planReviewOutputEventIDs(route.Decision.ID, *route.PlanReview)
+		}
 		return route, nil
 	}
 	if s.unknownHumanDecisionRouteIDs[input.DecisionRequestID] {
 		return HumanDecisionRouteResult{}, nil
 	}
 	return HumanDecisionRouteResult{}, project.ErrInvalidProject
+}
+
+func (s *recordingActivityStore) planReviewOutputEventIDs(decisionRequestID uuid.UUID, route PlanReviewRoute) []uuid.UUID {
+	if route.PlanRevisionID == uuid.Nil {
+		return nil
+	}
+	outputEventIDs := []uuid.UUID{}
+	planIndex := -1
+	for index, planRevisionID := range s.planRevisionIDsForRoute {
+		if planRevisionID == route.PlanRevisionID {
+			planIndex = index
+			break
+		}
+	}
+	if planIndex < 0 {
+		outputEventIDs = appendUniqueUUID(outputEventIDs, route.RouteEventID)
+		outputEventIDs = appendUniqueUUID(outputEventIDs, route.PlanEventID)
+		return outputEventIDs
+	}
+	for index := 0; index <= planIndex; index++ {
+		if index < len(s.routeEventIDsForRoute) {
+			outputEventIDs = appendUniqueUUID(outputEventIDs, s.routeEventIDsForRoute[index])
+		}
+		if index < len(s.planEventIDsForRoute) {
+			outputEventIDs = appendUniqueUUID(outputEventIDs, s.planEventIDsForRoute[index])
+		}
+		if index == planIndex {
+			break
+		}
+		if index < len(s.planResolvedEventIDsForRoute) {
+			outputEventIDs = appendUniqueUUID(outputEventIDs, s.planResolvedEventIDsForRoute[index])
+		}
+	}
+	_ = decisionRequestID
+	return outputEventIDs
 }
 
 func (s *recordingActivityStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {

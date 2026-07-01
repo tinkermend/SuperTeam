@@ -7392,6 +7392,10 @@ func (r *memoryRepository) ListPlanRevisions(ctx context.Context, req ListPlanRe
 	return []PlanRevision{}, nil
 }
 
+func (r *memoryRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
+	return []PlanRevision{}, nil
+}
+
 func (r *memoryRepository) AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error) {
 	return PlanRevision{}, ErrProjectNotFound
 }
@@ -8941,6 +8945,19 @@ func (r *memoryRepository) CreateDecisionRequest(ctx context.Context, req Create
 func (r *memoryRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
 	for _, decision := range r.decisionRequests {
 		if decision.ID == decisionRequestID && decision.TenantID == tenantID && decision.ProjectID == projectID {
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID &&
+			decision.ProjectID == projectID &&
+			decision.PlanRevisionID != nil &&
+			*decision.PlanRevisionID == planRevisionID &&
+			decision.DecisionType == "plan_review" {
 			return decision, nil
 		}
 	}

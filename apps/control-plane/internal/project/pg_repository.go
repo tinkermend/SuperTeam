@@ -861,6 +861,7 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 			ValidationWarnings: validationWarnings,
 			ReviewRequired:     req.ReviewRequired,
 			ReviewReason:       textPtr(req.ReviewReason),
+			CreatedEventID:     nullUUID(req.CreatedEventID),
 		})
 		if err != nil {
 			if isPGUniqueConstraint(err, "uq_project_plan_revisions_fingerprint") {
@@ -914,6 +915,18 @@ func (r *PgRepository) ListPlanRevisions(ctx context.Context, req ListPlanRevisi
 		DemandID:  nullUUID(req.DemandID),
 		Offset:    req.Offset,
 		Limit:     req.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return planRevisionsFromRecords(rows)
+}
+
+func (r *PgRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
+	rows, err := r.q.ListProjectPlanRevisionsForDemand(ctx, queries.ListProjectPlanRevisionsForDemandParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
 	})
 	if err != nil {
 		return nil, err
@@ -2428,6 +2441,17 @@ func (r *PgRepository) GetCoordinationJobByTrigger(ctx context.Context, tenantID
 		return CoordinationJob{}, projectRepositoryError(err)
 	}
 	return coordinationJobFromRecord(row)
+}
+
+func (r *PgRepository) GetRouteDecision(ctx context.Context, tenantID, routeDecisionID uuid.UUID) (RouteDecision, error) {
+	row, err := r.q.GetProjectRouteDecision(ctx, queries.GetProjectRouteDecisionParams{
+		TenantID: tenantID,
+		ID:       routeDecisionID,
+	})
+	if err != nil {
+		return RouteDecision{}, projectRepositoryError(err)
+	}
+	return routeDecisionFromRecord(row)
 }
 
 func (r *PgRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error) {
@@ -4067,6 +4091,21 @@ func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, 
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequestByPlanRevision(ctx, queries.GetProjectDecisionRequestByPlanRevisionParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
 func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
 	row, err := r.q.ResolveProjectDecisionRequest(ctx, queries.ResolveProjectDecisionRequestParams{
 		TenantID:        req.TenantID,
@@ -5095,6 +5134,7 @@ func planRevisionFromRecord(row queries.ProjectPlanRevision) (PlanRevision, erro
 		SupersededByRevisionID: ptrUUID(row.SupersededByRevisionID),
 		DecompositionClaimID:   ptrUUID(row.DecompositionClaimID),
 		CreatedTaskIDs:         append([]uuid.UUID(nil), row.CreatedTaskIds...),
+		CreatedEventID:         ptrUUID(row.CreatedEventID),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil

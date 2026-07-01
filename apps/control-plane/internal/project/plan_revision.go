@@ -61,6 +61,7 @@ type PlanRevision struct {
 	SupersededByRevisionID *uuid.UUID
 	DecompositionClaimID   *uuid.UUID
 	CreatedTaskIDs         []uuid.UUID
+	CreatedEventID         *uuid.UUID
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

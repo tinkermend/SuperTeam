@@ -437,6 +437,7 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		ReviewReason:           stringPtr(strings.Join(reviewReasons, "; ")),
 		SupersedeOpenRevisions: input.SupersedeOpen,
 		SupersedeReason:        input.SupersedeReason,
+		CreatedEventID:         &event.ID,
 	})
 	if err != nil {
 		return PlanRevisionResult{}, err
@@ -796,9 +797,9 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 		PlanRevisionID:    revision.ID,
 		PlanFingerprint:   revision.PlanFingerprint,
 		Payload:           payload,
-		PlanEventID:       uuidValue(decision.CreatedEventID),
+		PlanEventID:       uuidValue(revision.CreatedEventID),
 	}
-	routeDecision, err := s.repository.GetRouteDecisionByCoordinationJob(ctx, input.TenantID, *revision.CoordinationJobID)
+	routeDecision, err := s.repository.GetRouteDecision(ctx, input.TenantID, *revision.RouteDecisionID)
 	if err != nil {
 		return HumanDecisionRouteResult{}, err
 	}
@@ -806,7 +807,7 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 		return HumanDecisionRouteResult{}, project.ErrInvalidProject
 	}
 	result.PlanReview.RouteEventID = uuidValue(routeDecision.CreatedEventID)
-	outputEventIDs, err := s.planReviewRouteOutputEventIDs(ctx, input.TenantID, input.ProjectID, revision.DemandID, decision.ID)
+	outputEventIDs, err := s.planReviewRouteOutputEventIDs(ctx, input.TenantID, input.ProjectID, revision)
 	if err != nil {
 		return HumanDecisionRouteResult{}, err
 	}
@@ -814,28 +815,21 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 	return result, nil
 }
 
-func (s *ProjectStore) planReviewRouteOutputEventIDs(ctx context.Context, tenantID, projectID, demandID, currentDecisionID uuid.UUID) ([]uuid.UUID, error) {
-	decisions, err := s.repository.ListDecisionRequests(ctx, tenantID, projectID, 200, 0)
+func (s *ProjectStore) planReviewRouteOutputEventIDs(ctx context.Context, tenantID, projectID uuid.UUID, currentRevision project.PlanRevision) ([]uuid.UUID, error) {
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, projectID, currentRevision.DemandID)
 	if err != nil {
 		return nil, err
 	}
 	outputEventIDs := []uuid.UUID{}
-	for _, decision := range decisions {
-		if decision.ID == uuid.Nil || decision.DecisionType != "plan_review" || decision.PlanRevisionID == nil || *decision.PlanRevisionID == uuid.Nil {
-			continue
-		}
-		revision, err := s.repository.GetPlanRevision(ctx, tenantID, projectID, *decision.PlanRevisionID)
-		if err != nil {
-			return nil, err
-		}
-		if revision.DemandID != demandID {
+	for _, revision := range revisions {
+		if revision.DemandID != currentRevision.DemandID || revision.RevisionNumber > currentRevision.RevisionNumber {
 			continue
 		}
 		if revision.CoordinationJobID == nil || *revision.CoordinationJobID == uuid.Nil ||
 			revision.RouteDecisionID == nil || *revision.RouteDecisionID == uuid.Nil {
 			return nil, project.ErrInvalidProject
 		}
-		routeDecision, err := s.repository.GetRouteDecisionByCoordinationJob(ctx, tenantID, *revision.CoordinationJobID)
+		routeDecision, err := s.repository.GetRouteDecision(ctx, tenantID, *revision.RouteDecisionID)
 		if err != nil {
 			return nil, err
 		}
@@ -843,13 +837,28 @@ func (s *ProjectStore) planReviewRouteOutputEventIDs(ctx context.Context, tenant
 			return nil, project.ErrInvalidProject
 		}
 		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(routeDecision.CreatedEventID))
-		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(decision.CreatedEventID))
-		if decision.ID == currentDecisionID {
+		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(revision.CreatedEventID))
+		if revision.ID == currentRevision.ID {
 			return outputEventIDs, nil
+		}
+		decision, err := s.planReviewDecisionForRevision(ctx, tenantID, projectID, revision.ID)
+		if err != nil {
+			return nil, err
 		}
 		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(decision.ResolvedEventID))
 	}
 	return outputEventIDs, nil
+}
+
+func (s *ProjectStore) planReviewDecisionForRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (project.DecisionRequest, error) {
+	decision, err := s.repository.GetDecisionRequestByPlanRevision(ctx, tenantID, projectID, revisionID)
+	if err != nil {
+		if errors.Is(err, project.ErrProjectNotFound) {
+			return project.DecisionRequest{}, nil
+		}
+		return project.DecisionRequest{}, err
+	}
+	return decision, nil
 }
 
 func appendUniqueUUID(values []uuid.UUID, value uuid.UUID) []uuid.UUID {

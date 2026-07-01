@@ -1270,7 +1270,8 @@ type ProjectPlanRevision struct {
 	// 分解该版本的幂等 claim ID。
 	DecompositionClaimID uuid.NullUUID `json:"decomposition_claim_id"`
 	// 该计划版本分解后创建或重放的 ProjectTask ID。
-	CreatedTaskIds []uuid.UUID `json:"created_task_ids"`
+	CreatedTaskIds []uuid.UUID   `json:"created_task_ids"`
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 计划版本创建时间。
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 计划版本最近更新时间。

@@ -3579,6 +3579,10 @@ func (r *memoryRepository) GetRouteDecisionByCoordinationJob(ctx context.Context
 	return RouteDecision{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) GetRouteDecision(ctx context.Context, tenantID, routeDecisionID uuid.UUID) (RouteDecision, error) {
+	return RouteDecision{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
 	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
 }

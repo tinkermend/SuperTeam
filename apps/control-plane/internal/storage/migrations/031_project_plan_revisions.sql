@@ -25,6 +25,7 @@ CREATE TABLE project_plan_revisions (
     superseded_by_revision_id UUID,
     decomposition_claim_id UUID,
     created_task_ids UUID[] NOT NULL DEFAULT '{}',
+    created_event_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_project_plan_revisions_status CHECK (
