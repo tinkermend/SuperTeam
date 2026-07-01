@@ -21,19 +21,19 @@ const (
 
 // Defines values for LoginLogRecordEventType.
 const (
-	LoginFailed     LoginLogRecordEventType = "login_failed"
-	LoginSucceeded  LoginLogRecordEventType = "login_succeeded"
-	LogoutSucceeded LoginLogRecordEventType = "logout_succeeded"
+	LoginLogRecordEventTypeLoginFailed     LoginLogRecordEventType = "login_failed"
+	LoginLogRecordEventTypeLoginSucceeded  LoginLogRecordEventType = "login_succeeded"
+	LoginLogRecordEventTypeLogoutSucceeded LoginLogRecordEventType = "logout_succeeded"
 )
 
 // Valid indicates whether the value is a known member of the LoginLogRecordEventType enum.
 func (e LoginLogRecordEventType) Valid() bool {
 	switch e {
-	case LoginFailed:
+	case LoginLogRecordEventTypeLoginFailed:
 		return true
-	case LoginSucceeded:
+	case LoginLogRecordEventTypeLoginSucceeded:
 		return true
-	case LogoutSucceeded:
+	case LoginLogRecordEventTypeLogoutSucceeded:
 		return true
 	default:
 		return false
@@ -42,16 +42,34 @@ func (e LoginLogRecordEventType) Valid() bool {
 
 // Defines values for LoginLogRecordResult.
 const (
-	Failed    LoginLogRecordResult = "failed"
-	Succeeded LoginLogRecordResult = "succeeded"
+	LoginLogRecordResultFailed    LoginLogRecordResult = "failed"
+	LoginLogRecordResultSucceeded LoginLogRecordResult = "succeeded"
 )
 
 // Valid indicates whether the value is a known member of the LoginLogRecordResult enum.
 func (e LoginLogRecordResult) Valid() bool {
 	switch e {
-	case Failed:
+	case LoginLogRecordResultFailed:
 		return true
-	case Succeeded:
+	case LoginLogRecordResultSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationLogRecordResult.
+const (
+	OperationLogRecordResultFailed    OperationLogRecordResult = "failed"
+	OperationLogRecordResultSucceeded OperationLogRecordResult = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the OperationLogRecordResult enum.
+func (e OperationLogRecordResult) Valid() bool {
+	switch e {
+	case OperationLogRecordResultFailed:
+		return true
+	case OperationLogRecordResultSucceeded:
 		return true
 	default:
 		return false
@@ -124,6 +142,63 @@ func (e UserSummaryStatus) Valid() bool {
 	}
 }
 
+// Defines values for ListLoginLogsParamsEventType.
+const (
+	ListLoginLogsParamsEventTypeLoginFailed     ListLoginLogsParamsEventType = "login_failed"
+	ListLoginLogsParamsEventTypeLoginSucceeded  ListLoginLogsParamsEventType = "login_succeeded"
+	ListLoginLogsParamsEventTypeLogoutSucceeded ListLoginLogsParamsEventType = "logout_succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ListLoginLogsParamsEventType enum.
+func (e ListLoginLogsParamsEventType) Valid() bool {
+	switch e {
+	case ListLoginLogsParamsEventTypeLoginFailed:
+		return true
+	case ListLoginLogsParamsEventTypeLoginSucceeded:
+		return true
+	case ListLoginLogsParamsEventTypeLogoutSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListLoginLogsParamsResult.
+const (
+	ListLoginLogsParamsResultFailed    ListLoginLogsParamsResult = "failed"
+	ListLoginLogsParamsResultSucceeded ListLoginLogsParamsResult = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ListLoginLogsParamsResult enum.
+func (e ListLoginLogsParamsResult) Valid() bool {
+	switch e {
+	case ListLoginLogsParamsResultFailed:
+		return true
+	case ListLoginLogsParamsResultSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListOperationLogsParamsResult.
+const (
+	ListOperationLogsParamsResultFailed    ListOperationLogsParamsResult = "failed"
+	ListOperationLogsParamsResultSucceeded ListOperationLogsParamsResult = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ListOperationLogsParamsResult enum.
+func (e ListOperationLogsParamsResult) Valid() bool {
+	switch e {
+	case ListOperationLogsParamsResultFailed:
+		return true
+	case ListOperationLogsParamsResultSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListUsersParamsStatus.
 const (
 	Active   ListUsersParamsStatus = "active"
@@ -165,11 +240,13 @@ type ChangeCurrentUserPasswordRequest struct {
 
 // CreateUserRequest defines model for CreateUserRequest.
 type CreateUserRequest struct {
-	Avatar            UserAvatar           `json:"avatar"`
-	DisplayName       string               `json:"display_name"`
-	Password          string               `json:"password"`
-	SelectableTeamIds []openapi_types.UUID `json:"selectable_team_ids"`
-	Username          string               `json:"username"`
+	Avatar      UserAvatar `json:"avatar"`
+	DisplayName string     `json:"display_name"`
+	Password    string     `json:"password"`
+
+	// SelectableTeamIds 可选。此用户可以管理的团队范围，创建后可在团队管理中修改。
+	SelectableTeamIds *[]openapi_types.UUID `json:"selectable_team_ids,omitempty"`
+	Username          string                `json:"username"`
 }
 
 // CurrentUserResponse defines model for CurrentUserResponse.
@@ -212,6 +289,30 @@ type LoginLogRecordResult string
 type LoginResponse struct {
 	User UserSummary `json:"user"`
 }
+
+// OperationLogListResponse defines model for OperationLogListResponse.
+type OperationLogListResponse struct {
+	Items []OperationLogRecord `json:"items"`
+}
+
+// OperationLogRecord defines model for OperationLogRecord.
+type OperationLogRecord struct {
+	Action       string                   `json:"action"`
+	ClientIp     *string                  `json:"client_ip,omitempty"`
+	CreatedAt    time.Time                `json:"created_at"`
+	Id           openapi_types.UUID       `json:"id"`
+	Module       string                   `json:"module"`
+	RequestId    *string                  `json:"request_id,omitempty"`
+	ResourceId   *string                  `json:"resource_id,omitempty"`
+	ResourceType *string                  `json:"resource_type,omitempty"`
+	Result       OperationLogRecordResult `json:"result"`
+	UserAgent    *string                  `json:"user_agent,omitempty"`
+	UserId       *openapi_types.UUID      `json:"user_id,omitempty"`
+	Username     *string                  `json:"username,omitempty"`
+}
+
+// OperationLogRecordResult defines model for OperationLogRecord.Result.
+type OperationLogRecordResult string
 
 // ReplaceUserProjectTeamScopesRequest defines model for ReplaceUserProjectTeamScopesRequest.
 type ReplaceUserProjectTeamScopesRequest struct {
@@ -354,9 +455,29 @@ type LoginJSONBody struct {
 
 // ListLoginLogsParams defines parameters for ListLoginLogs.
 type ListLoginLogsParams struct {
-	Limit  *int32 `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *int32 `form:"offset,omitempty" json:"offset,omitempty"`
+	Limit     *int32                        `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    *int32                        `form:"offset,omitempty" json:"offset,omitempty"`
+	EventType *ListLoginLogsParamsEventType `form:"event_type,omitempty" json:"event_type,omitempty"`
+	Result    *ListLoginLogsParamsResult    `form:"result,omitempty" json:"result,omitempty"`
 }
+
+// ListLoginLogsParamsEventType defines parameters for ListLoginLogs.
+type ListLoginLogsParamsEventType string
+
+// ListLoginLogsParamsResult defines parameters for ListLoginLogs.
+type ListLoginLogsParamsResult string
+
+// ListOperationLogsParams defines parameters for ListOperationLogs.
+type ListOperationLogsParams struct {
+	Limit  *int32                         `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int32                         `form:"offset,omitempty" json:"offset,omitempty"`
+	Module *string                        `form:"module,omitempty" json:"module,omitempty"`
+	Action *string                        `form:"action,omitempty" json:"action,omitempty"`
+	Result *ListOperationLogsParamsResult `form:"result,omitempty" json:"result,omitempty"`
+}
+
+// ListOperationLogsParamsResult defines parameters for ListOperationLogs.
+type ListOperationLogsParamsResult string
 
 // ListUsersParams defines parameters for ListUsers.
 type ListUsersParams struct {
@@ -417,6 +538,9 @@ type ServerInterface interface {
 	// 获取当前登录用户信息
 	// (GET /api/auth/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// 查询 Web 控制台操作日志
+	// (GET /api/auth/operation-logs)
+	ListOperationLogs(w http.ResponseWriter, r *http.Request, params ListOperationLogsParams)
 	// 查询平台用户列表
 	// (GET /api/auth/users)
 	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
@@ -486,6 +610,12 @@ func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 // 获取当前登录用户信息
 // (GET /api/auth/me)
 func (_ Unimplemented) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 查询 Web 控制台操作日志
+// (GET /api/auth/operation-logs)
+func (_ Unimplemented) ListOperationLogs(w http.ResponseWriter, r *http.Request, params ListOperationLogsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -695,6 +825,32 @@ func (siw *ServerInterfaceWrapper) ListLoginLogs(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// ------------- Optional query parameter "event_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "event_type", r.URL.Query(), &params.EventType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "event_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "result" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "result", r.URL.Query(), &params.Result, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "result"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "result", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListLoginLogs(w, r, params)
 	}))
@@ -737,6 +893,97 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOperationLogs operation middleware
+func (siw *ServerInterfaceWrapper) ListOperationLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOperationLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "module" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "module", r.URL.Query(), &params.Module, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "module"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "module", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "result" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "result", r.URL.Query(), &params.Result, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "result"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "result", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOperationLogs(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1108,6 +1355,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/me", wrapper.GetCurrentUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/auth/operation-logs", wrapper.ListOperationLogs)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/users", wrapper.ListUsers)

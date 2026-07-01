@@ -138,6 +138,37 @@ export type LoginLogListResponse = {
 export type ListLoginLogsOptions = ApiClientOptions & {
   limit?: number;
   offset?: number;
+  event_type?: LoginLogEventType;
+  result?: LoginLogResult;
+};
+
+export type OperationLogResult = "succeeded" | "failed";
+
+export type OperationLogRecord = {
+  action: string;
+  client_ip?: string;
+  created_at: string;
+  id: string;
+  module: string;
+  request_id?: string;
+  resource_id?: string;
+  resource_type?: string;
+  result: OperationLogResult;
+  user_agent?: string;
+  user_id?: string;
+  username?: string;
+};
+
+export type OperationLogListResponse = {
+  items: OperationLogRecord[];
+};
+
+export type ListOperationLogsOptions = ApiClientOptions & {
+  limit?: number;
+  offset?: number;
+  module?: string;
+  action?: string;
+  result?: OperationLogResult;
 };
 
 export type UpdateCurrentUserProfileRequest = {
@@ -214,6 +245,12 @@ export async function listLoginLogs(options: ListLoginLogsOptions): Promise<Logi
   if (options.offset !== undefined) {
     params.set("offset", String(options.offset));
   }
+  if (options.event_type) {
+    params.set("event_type", options.event_type);
+  }
+  if (options.result) {
+    params.set("result", options.result);
+  }
   const query = params.toString();
   const path = query ? `/api/auth/login-logs?${query}` : "/api/auth/login-logs";
   const response = await fetcher(buildApiUrl(options.baseUrl, path), {
@@ -247,6 +284,37 @@ export async function listCurrentUserLoginLogs(options: ListLoginLogsOptions): P
   });
 
   return parseJson<LoginLogListResponse>(response, "auth current user login logs");
+}
+
+export async function listOperationLogs(options: ListOperationLogsOptions): Promise<OperationLogListResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+  if (options.module) {
+    params.set("module", options.module);
+  }
+  if (options.action) {
+    params.set("action", options.action);
+  }
+  if (options.result) {
+    params.set("result", options.result);
+  }
+  const query = params.toString();
+  const path = query ? `/api/auth/operation-logs?${query}` : "/api/auth/operation-logs";
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<OperationLogListResponse>(response, "auth operation logs");
 }
 
 export async function listUsers(options: ListUsersOptions): Promise<UserListResponse> {

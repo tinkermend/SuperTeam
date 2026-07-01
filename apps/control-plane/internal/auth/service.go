@@ -40,6 +40,7 @@ type Repository interface {
 	CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error
 	ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error)
 	CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error
+	ListOperationLogs(ctx context.Context, filter ListOperationLogsFilter) ([]OperationLog, error)
 	CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error)
 	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (*CaptchaChallengeRecord, error)
 	ConsumeCaptchaChallenge(ctx context.Context, id uuid.UUID, usedAt time.Time) error
@@ -558,6 +559,16 @@ func (s *Service) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter)
 		filter.Offset = 0
 	}
 	return s.repo.ListLoginLogs(ctx, filter)
+}
+
+func (s *Service) ListOperationLogs(ctx context.Context, filter ListOperationLogsFilter) ([]OperationLog, error) {
+	if filter.Limit <= 0 || filter.Limit > 100 {
+		filter.Limit = 20
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	return s.repo.ListOperationLogs(ctx, filter)
 }
 
 func (s *Service) ListCurrentUserLoginLogs(ctx context.Context, actor Actor, filter ListLoginLogsFilter) ([]LoginLog, error) {

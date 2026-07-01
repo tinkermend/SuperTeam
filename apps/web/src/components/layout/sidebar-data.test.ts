@@ -99,6 +99,7 @@ describe('sidebarData', () => {
       '权限中心',
       '成本管理',
       '用户管理',
+      '审计中心',
       '日志管理',
     ])
     expect(platformItems?.[1]).toMatchObject({
@@ -106,5 +107,24 @@ describe('sidebarData', () => {
       url: '/costs',
       iconTone: 'neutral',
     })
+  })
+
+  it('nests platform log pages under the 日志管理 collapsible menu', () => {
+    const platformItems = sidebarData.navGroups.find(
+      (group) => group.title === '平台管理'
+    )?.items
+
+    const logMenu = platformItems?.find((item) => item.title === '日志管理')
+    expect(logMenu?.url).toBeUndefined()
+    expect(logMenu?.items?.map((item) => item.title)).toEqual([
+      '登录日志',
+      '操作日志',
+      '平台事件',
+    ])
+    expect(logMenu?.items?.map((item) => item.url)).toEqual([
+      '/logs/login',
+      '/logs/operation',
+      '/logs/runtime',
+    ])
   })
 })

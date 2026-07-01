@@ -212,7 +212,35 @@ type CreateLoginLogParams struct {
 
 // ListLoginLogsFilter 登录日志列表过滤参数。
 type ListLoginLogsFilter struct {
+	UserID    *uuid.UUID
+	EventType string
+	Result    string
+	Limit     int32
+	Offset    int32
+}
+
+// OperationLog Web 控制台操作日志领域对象。
+type OperationLog struct {
+	ID           uuid.UUID
+	UserID       *uuid.UUID
+	Username     string
+	Module       string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Result       string
+	RequestID    string
+	ClientIP     string
+	UserAgent    string
+	CreatedAt    time.Time
+}
+
+// ListOperationLogsFilter Web 控制台操作日志查询过滤条件。
+type ListOperationLogsFilter struct {
 	UserID *uuid.UUID
+	Module string
+	Action string
+	Result string
 	Limit  int32
 	Offset int32
 }

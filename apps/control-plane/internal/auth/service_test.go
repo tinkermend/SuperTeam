@@ -284,6 +284,36 @@ func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperatio
 	return nil
 }
 
+func (m *mockRepo) ListOperationLogs(ctx context.Context, filter ListOperationLogsFilter) ([]OperationLog, error) {
+	logs := make([]OperationLog, 0, len(m.operationLogs))
+	for _, log := range m.operationLogs {
+		if filter.UserID != nil {
+			if log.UserID == nil || *log.UserID != *filter.UserID {
+				continue
+			}
+		}
+		if filter.Module != "" && log.Module != filter.Module {
+			continue
+		}
+		if filter.Action != "" && log.Action != filter.Action {
+			continue
+		}
+		if filter.Result != "" && log.Result != filter.Result {
+			continue
+		}
+		logs = append(logs, OperationLog{
+			UserID:       log.UserID,
+			Username:     log.Username,
+			Module:       log.Module,
+			ResourceType: log.ResourceType,
+			ResourceID:   log.ResourceID,
+			Action:       log.Action,
+			Result:       log.Result,
+		})
+	}
+	return logs, nil
+}
+
 func (m *mockRepo) CreateCaptchaChallenge(ctx context.Context, params CreateCaptchaChallengeParams) (*CaptchaChallengeRecord, error) {
 	record := &CaptchaChallengeRecord{
 		ID:         params.ID,

@@ -404,9 +404,11 @@ func toDomainCaptchaChallenge(row queries.AuthCaptchaChallenge) *CaptchaChalleng
 
 func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error) {
 	rows, err := r.q.ListWebLoginLogs(ctx, queries.ListWebLoginLogsParams{
-		UserID: nullUUID(filter.UserID),
-		Offset: filter.Offset,
-		Limit:  filter.Limit,
+		UserID:    nullUUID(filter.UserID),
+		EventType: pgtype.Text{String: filter.EventType, Valid: filter.EventType != ""},
+		Result:    pgtype.Text{String: filter.Result, Valid: filter.Result != ""},
+		Offset:    filter.Offset,
+		Limit:     filter.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -446,6 +448,25 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 		},
 	})
 	return err
+}
+
+func (r *PgRepository) ListOperationLogs(ctx context.Context, filter ListOperationLogsFilter) ([]OperationLog, error) {
+	rows, err := r.q.ListWebOperationLogs(ctx, queries.ListWebOperationLogsParams{
+		UserID: nullUUID(filter.UserID),
+		Module: pgtype.Text{String: filter.Module, Valid: filter.Module != ""},
+		Action: pgtype.Text{String: filter.Action, Valid: filter.Action != ""},
+		Result: pgtype.Text{String: filter.Result, Valid: filter.Result != ""},
+		Offset: filter.Offset,
+		Limit:  filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]OperationLog, 0, len(rows))
+	for _, row := range rows {
+		logs = append(logs, toDomainOperationLog(row))
+	}
+	return logs, nil
 }
 
 func (r *PgRepository) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
@@ -654,5 +675,27 @@ func toDomainLoginLog(log queries.WebLoginLog) LoginLog {
 		Result:        log.Result,
 		FailureReason: log.FailureReason.String,
 		CreatedAt:     log.CreatedAt.Time,
+	}
+}
+
+func toDomainOperationLog(log queries.WebOperationLog) OperationLog {
+	var userID *uuid.UUID
+	if log.UserID.Valid {
+		id := log.UserID.UUID
+		userID = &id
+	}
+	return OperationLog{
+		ID:           log.ID,
+		UserID:       userID,
+		Username:     log.Username.String,
+		Module:       log.Module,
+		ResourceType: log.ResourceType.String,
+		ResourceID:   log.ResourceID.String,
+		Action:       log.Action,
+		Result:       log.Result,
+		RequestID:    log.RequestID.String,
+		ClientIP:     log.ClientIp.String,
+		UserAgent:    log.UserAgent.String,
+		CreatedAt:    log.CreatedAt.Time,
 	}
 }

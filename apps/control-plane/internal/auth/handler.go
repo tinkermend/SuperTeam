@@ -119,10 +119,17 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 		return
 	}
 
-	logs, err := h.service.ListLoginLogs(r.Context(), ListLoginLogsFilter{
+	filter := ListLoginLogsFilter{
 		Limit:  valueOrDefault(params.Limit, 20),
 		Offset: valueOrDefault(params.Offset, 0),
-	})
+	}
+	if params.EventType != nil {
+		filter.EventType = string(*params.EventType)
+	}
+	if params.Result != nil {
+		filter.Result = string(*params.Result)
+	}
+	logs, err := h.service.ListLoginLogs(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -133,6 +140,39 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 		items = append(items, toGeneratedLoginLogRecord(log))
 	}
 	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
+}
+
+func (h *HTTPHandler) ListOperationLogs(w http.ResponseWriter, r *http.Request, params ListOperationLogsParams) {
+	if _, _, err := h.currentSessionUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	filter := ListOperationLogsFilter{
+		Limit:  valueOrDefault(params.Limit, 20),
+		Offset: valueOrDefault(params.Offset, 0),
+	}
+	if params.Module != nil {
+		filter.Module = *params.Module
+	}
+	if params.Action != nil {
+		filter.Action = *params.Action
+	}
+	if params.Result != nil {
+		filter.Result = string(*params.Result)
+	}
+
+	logs, err := h.service.ListOperationLogs(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	items := make([]OperationLogRecord, 0, len(logs))
+	for _, log := range logs {
+		items = append(items, toGeneratedOperationLogRecord(log))
+	}
+	writeJSON(w, http.StatusOK, OperationLogListResponse{Items: items})
 }
 
 func captchaInput(body LoginJSONRequestBody) (uuid.UUID, string, bool) {
@@ -268,13 +308,17 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	var selectableTeamIDs []openapi_types.UUID
+	if body.SelectableTeamIds != nil {
+		selectableTeamIDs = *body.SelectableTeamIds
+	}
 	user, err := h.service.CreateManagedUser(r.Context(), toActor(actorUser), CreateManagedUserInput{
 		TenantID:          uuid.MustParse(DefaultTenantID),
 		Username:          body.Username,
 		DisplayName:       body.DisplayName,
 		Password:          body.Password,
 		Avatar:            userAvatarFromGenerated(&body.Avatar),
-		SelectableTeamIDs: uuidSliceFromOpenAPI(body.SelectableTeamIds),
+		SelectableTeamIDs: uuidSliceFromOpenAPI(selectableTeamIDs),
 	})
 	if err != nil {
 		h.writeManagedUserError(w, err)
@@ -461,6 +505,23 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 		UserAgent:     optionalString(log.UserAgent),
 		UserId:        optionalOpenAPIUUID(log.UserID),
 		Username:      log.Username,
+	}
+}
+
+func toGeneratedOperationLogRecord(log OperationLog) OperationLogRecord {
+	return OperationLogRecord{
+		Action:       log.Action,
+		ClientIp:     optionalString(log.ClientIP),
+		CreatedAt:    log.CreatedAt,
+		Id:           openapiUUID(log.ID),
+		Module:       log.Module,
+		RequestId:    optionalString(log.RequestID),
+		ResourceId:   optionalString(log.ResourceID),
+		ResourceType: optionalString(log.ResourceType),
+		Result:       OperationLogRecordResult(log.Result),
+		UserAgent:    optionalString(log.UserAgent),
+		UserId:       optionalOpenAPIUUID(log.UserID),
+		Username:     optionalString(log.Username),
 	}
 }
 

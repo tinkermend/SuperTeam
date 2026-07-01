@@ -74,6 +74,8 @@ localstack/
 # Logs
 *.log
 logs/
+!apps/web/src/routes/**/_authenticated/logs/
+!apps/web/src/routes/_authenticated/logs/
 .superteam/
 .scratch/dev-services/
 
