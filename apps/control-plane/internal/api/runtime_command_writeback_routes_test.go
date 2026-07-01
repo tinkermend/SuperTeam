@@ -11,7 +11,6 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/platform"
-	"github.com/superteam/control-plane/internal/runtime"
 )
 
 func TestRuntimeCommandWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {

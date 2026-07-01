@@ -2069,6 +2069,44 @@ func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.Crea
 	return nil
 }
 
+func (r *routeAuthRepo) ListOperationLogs(ctx context.Context, filter auth.ListOperationLogsFilter) ([]auth.OperationLog, error) {
+	logs := make([]auth.OperationLog, 0, len(r.operationLogs))
+	for _, params := range r.operationLogs {
+		if filter.UserID != nil && (params.UserID == nil || *params.UserID != *filter.UserID) {
+			continue
+		}
+		if filter.Module != "" && params.Module != filter.Module {
+			continue
+		}
+		if filter.Action != "" && params.Action != filter.Action {
+			continue
+		}
+		if filter.Result != "" && params.Result != filter.Result {
+			continue
+		}
+		logs = append(logs, auth.OperationLog{
+			UserID:       params.UserID,
+			Username:     params.Username,
+			Module:       params.Module,
+			ResourceType: params.ResourceType,
+			ResourceID:   params.ResourceID,
+			Action:       params.Action,
+			Result:       params.Result,
+			ClientIP:     params.ClientIP,
+			UserAgent:    params.UserAgent,
+		})
+	}
+	start := int(filter.Offset)
+	if start >= len(logs) {
+		return []auth.OperationLog{}, nil
+	}
+	end := start + int(filter.Limit)
+	if filter.Limit <= 0 || end > len(logs) {
+		end = len(logs)
+	}
+	return append([]auth.OperationLog{}, logs[start:end]...), nil
+}
+
 func (r *routeAuthRepo) CreateCaptchaChallenge(ctx context.Context, params auth.CreateCaptchaChallengeParams) (*auth.CaptchaChallengeRecord, error) {
 	now := time.Now().UTC()
 	record := &auth.CaptchaChallengeRecord{
