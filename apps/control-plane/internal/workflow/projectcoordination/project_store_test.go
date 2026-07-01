@@ -1218,7 +1218,16 @@ func TestProjectStoreLoadHumanDecisionRouteForPlanReview(t *testing.T) {
 	coordinationJobID := uuid.New()
 	demandID := uuid.New()
 	routeDecisionID := uuid.New()
+	routeEventID := uuid.New()
+	planEventID := uuid.New()
 	repo := &projectStoreMemoryRepository{
+		routeDecisions: []project.RouteDecision{{
+			ID:                routeDecisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: coordinationJobID,
+			CreatedEventID:    &routeEventID,
+		}},
 		decisionRequests: []project.DecisionRequest{{
 			ID:                decisionID,
 			TenantID:          tenantID,
@@ -1227,6 +1236,7 @@ func TestProjectStoreLoadHumanDecisionRouteForPlanReview(t *testing.T) {
 			PlanRevisionID:    &planRevisionID,
 			DecisionType:      "plan_review",
 			StatusSnapshot:    "resolved",
+			CreatedEventID:    &planEventID,
 		}},
 		planRevisions: []project.PlanRevision{{
 			ID:                planRevisionID,
@@ -1258,6 +1268,7 @@ func TestProjectStoreLoadHumanDecisionRouteForPlanReview(t *testing.T) {
 	require.Equal(t, demandID, route.PlanReview.DemandID)
 	require.Equal(t, coordinationJobID, route.PlanReview.CoordinationJobID)
 	require.Equal(t, routeDecisionID, route.PlanReview.RouteDecisionID)
+	require.Equal(t, []uuid.UUID{routeEventID, planEventID}, route.PlanReview.OutputEventIDs)
 }
 
 func TestProjectStoreLoadHumanDecisionRouteMissingDecisionReturnsZeroRoute(t *testing.T) {
@@ -4114,6 +4125,16 @@ func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, t
 		}
 	}
 	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
+	results := []project.DecisionRequest{}
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			results = append(results, decision)
+		}
+	}
+	return results, nil
 }
 
 type projectStoreApprovalCreator struct {

@@ -157,6 +157,7 @@ type ProjectDecisionSnapshot struct {
 	ProjectTaskID        uuid.UUID
 	PlanRevisionID       uuid.UUID
 	DispatchGateResultID uuid.UUID
+	CreatedEventID       uuid.UUID
 }
 
 type PlanReviewRoute struct {
@@ -167,6 +168,9 @@ type PlanReviewRoute struct {
 	PlanRevisionID    uuid.UUID
 	PlanFingerprint   string
 	Payload           PlanRevisionPayload
+	RouteEventID      uuid.UUID
+	PlanEventID       uuid.UUID
+	OutputEventIDs    []uuid.UUID
 }
 
 type DecomposeAcceptedPlanRevisionInput struct {

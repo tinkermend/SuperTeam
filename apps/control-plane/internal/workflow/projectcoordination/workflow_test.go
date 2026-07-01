@@ -203,6 +203,9 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 	coordinationJobID := uuid.New()
 	routeDecisionID := uuid.New()
 	planRevisionID := uuid.New()
+	routeEventID := uuid.New()
+	planEventID := uuid.New()
+	resolvedEventID := uuid.New()
 	demandID := uuid.New()
 	readyTaskID := uuid.New()
 	store := &recordingActivityStore{
@@ -215,6 +218,7 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 					ProjectID:      projectID,
 					DecisionType:   "plan_review",
 					StatusSnapshot: "resolved",
+					CreatedEventID: planEventID,
 				},
 				PlanReview: &PlanReviewRoute{
 					ProjectID:         projectID,
@@ -224,6 +228,7 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 					PlanRevisionID:    planRevisionID,
 					PlanFingerprint:   "fingerprint",
 					Payload:           PlanRevisionPayload{Summary: "approved plan"},
+					RouteEventID:      routeEventID,
 				},
 			},
 		},
@@ -234,7 +239,7 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
 			DecisionRequestID: decisionRequestID,
 			Decision:          project.PlanReviewDecisionAccept,
-			ResolvedEventID:   uuid.New(),
+			ResolvedEventID:   resolvedEventID,
 		})
 	}, time.Millisecond)
 	env.RegisterDelayedCallback(func() {
@@ -262,6 +267,50 @@ func TestProjectCoordinatorRoutesPlanReviewFromStoreWithoutPendingMap(t *testing
 	require.Len(t, store.dispatchInputs, 1)
 	require.Equal(t, readyTaskID, store.dispatchInputs[0].TaskID)
 	require.Equal(t, project.DispatchReasonHumanResolved, store.dispatchInputs[0].DispatchReason)
+	require.Len(t, store.finishJobInputs, 1)
+	require.Equal(t, []uuid.UUID{routeEventID, planEventID, resolvedEventID}, store.finishJobInputs[0].OutputEventIDs)
+}
+
+func TestProjectCoordinatorRejectsPlanReviewRouteWithoutPlanReview(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{ProjectID: projectID},
+		humanDecisionRoutes: map[uuid.UUID]HumanDecisionRouteResult{
+			decisionRequestID: {
+				Decision: ProjectDecisionSnapshot{
+					ID:             decisionRequestID,
+					ProjectID:      projectID,
+					DecisionType:   "plan_review",
+					StatusSnapshot: "resolved",
+				},
+			},
+		},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			DecisionRequestID: decisionRequestID,
+			Decision:          project.PlanReviewDecisionAccept,
+			ResolvedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	var appErr *temporal.ApplicationError
+	require.ErrorAs(t, err, &appErr)
+	require.EqualError(t, appErr.Unwrap(), project.ErrInvalidProject.Error())
 }
 
 func TestProjectCoordinatorDispatchesHumanResolvedTaskThroughGate(t *testing.T) {
@@ -270,6 +319,7 @@ func TestProjectCoordinatorDispatchesHumanResolvedTaskThroughGate(t *testing.T) 
 	executorID := uuid.New()
 	decisionRequestID := uuid.New()
 	planRevisionID := uuid.New()
+	planEventID := uuid.New()
 	readyAfterApprovalID := uuid.New()
 	staleReadyID := uuid.New()
 	blockedTaskID := uuid.New()
@@ -304,6 +354,7 @@ func TestProjectCoordinatorDispatchesHumanResolvedTaskThroughGate(t *testing.T) 
 				ProjectID:      store.snapshot.ProjectID,
 				DecisionType:   "plan_review",
 				StatusSnapshot: "resolved",
+				CreatedEventID: planEventID,
 			},
 			PlanReview: &PlanReviewRoute{
 				ProjectID:         store.snapshot.ProjectID,
@@ -376,7 +427,16 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	executorID := uuid.New()
 	decisionRequestID := uuid.New()
+	secondDecisionRequestID := uuid.New()
 	planRevisionID := uuid.New()
+	secondPlanRevisionID := uuid.New()
+	initialRouteEventID := uuid.New()
+	initialPlanEventID := uuid.New()
+	requestChangesEventID := uuid.New()
+	replanRouteEventID := uuid.New()
+	replanPlanEventID := uuid.New()
+	finalResolvedEventID := uuid.New()
+	readyTaskID := uuid.New()
 	store := &recordingActivityStore{
 		snapshot: CoordinationSnapshot{
 			ProjectID: uuid.New(),
@@ -394,11 +454,17 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 		},
 		jobID:             uuid.New(),
 		routeID:           uuid.New(),
-		routeEventID:      uuid.New(),
+		routeEventID:      initialRouteEventID,
 		planRevisionID:    planRevisionID,
 		taskID:            uuid.New(),
 		decisionRequestID: decisionRequestID,
-		dispatchEvent:     uuid.New(),
+		planRevisionIDs:   []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		routeEventIDs:     []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDs:      []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		dispatchableTaskIDBatches: [][]uuid.UUID{
+			{readyTaskID},
+		},
+		dispatchEvent: uuid.New(),
 	}
 	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
 		decisionRequestID: {
@@ -416,6 +482,33 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 				PlanRevisionID:    planRevisionID,
 				PlanFingerprint:   "fingerprint",
 				Payload:           PlanRevisionPayload{Summary: "original plan"},
+				RouteEventID:      initialRouteEventID,
+			},
+		},
+		secondDecisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             secondDecisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+				CreatedEventID: replanPlanEventID,
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    secondPlanRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "replanned plan"},
+				RouteEventID:      replanRouteEventID,
+				OutputEventIDs: []uuid.UUID{
+					initialRouteEventID,
+					initialPlanEventID,
+					requestChangesEventID,
+					replanRouteEventID,
+					replanPlanEventID,
+				},
 			},
 		},
 	}
@@ -435,12 +528,20 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 			DecisionRequestID: decisionRequestID,
 			Decision:          project.PlanReviewDecisionRequestChanges,
 			Payload:           map[string]any{"comment": "缩小上线范围"},
-			ResolvedEventID:   uuid.New(),
+			ResolvedEventID:   requestChangesEventID,
 		})
 	}, 5*time.Millisecond)
 	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: secondDecisionRequestID,
+			Decision:          project.PlanReviewDecisionAccept,
+			ResolvedEventID:   finalResolvedEventID,
+		})
+	}, 8*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
-	}, 10*time.Millisecond)
+	}, 15*time.Millisecond)
 
 	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
 		TenantID:   uuid.New(),
@@ -463,6 +564,12 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 		"PersistRouteDecision",
 		"PersistPlanRevision",
 		"RequestPlanRevisionReview",
+		"LoadHumanDecisionRoute",
+		"ResolvePlanRevisionReview",
+		"DecomposeAcceptedPlanRevision",
+		"ListDispatchableTasks",
+		"DispatchProjectTask",
+		"FinishCoordinationJob",
 	}, store.calls)
 	require.Len(t, store.persistPlanRevisionInputs, 2)
 	require.False(t, store.persistPlanRevisionInputs[0].SupersedeOpen)
@@ -470,7 +577,20 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 	require.NotNil(t, store.persistPlanRevisionInputs[1].SupersedeReason)
 	require.Equal(t, "缩小上线范围", *store.persistPlanRevisionInputs[1].SupersedeReason)
 	require.Len(t, store.requestPlanReviewInputs, 2)
-	require.Empty(t, store.dispatchInputs)
+	require.Len(t, store.resolvePlanReviewInputs, 2)
+	require.Equal(t, planRevisionID, store.resolvePlanReviewInputs[0].PlanRevisionID)
+	require.Equal(t, secondPlanRevisionID, store.resolvePlanReviewInputs[1].PlanRevisionID)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, readyTaskID, store.dispatchInputs[0].TaskID)
+	require.Len(t, store.finishJobInputs, 1)
+	require.Equal(t, []uuid.UUID{
+		initialRouteEventID,
+		initialPlanEventID,
+		requestChangesEventID,
+		replanRouteEventID,
+		replanPlanEventID,
+		finalResolvedEventID,
+	}, store.finishJobInputs[0].OutputEventIDs)
 }
 
 func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *testing.T) {
@@ -613,6 +733,9 @@ func TestProjectCoordinatorKeepsNonGateDecisionObservedOnly(t *testing.T) {
 	store := &recordingActivityStore{
 		snapshot:      CoordinationSnapshot{ProjectID: projectID},
 		dispatchEvent: uuid.New(),
+		unknownHumanDecisionRouteIDs: map[uuid.UUID]bool{
+			decisionRequestID: true,
+		},
 	}
 	activities := newRawDispatchWorkflowActivities(store)
 	env.RegisterActivity(activities)
@@ -993,7 +1116,10 @@ type recordingActivityStore struct {
 	jobID                     uuid.UUID
 	routeID                   uuid.UUID
 	routeEventID              uuid.UUID
+	routeEventIDs             []uuid.UUID
 	planRevisionID            uuid.UUID
+	planRevisionIDs           []uuid.UUID
+	planEventIDs              []uuid.UUID
 	planFingerprint           string
 	planRevisionStatus        string
 	taskID                    uuid.UUID
@@ -1003,27 +1129,29 @@ type recordingActivityStore struct {
 	dispatchEvent             uuid.UUID
 	dispatchErr               error
 
-	dispatchableTaskIDs         []uuid.UUID
-	dispatchableTaskIDBatches   [][]uuid.UUID
-	readyDownstreamIDs          []uuid.UUID
-	failureRecoveryResult       ApplyFailureRecoveryDecisionResult
-	listDispatchableInputs      []ListDispatchableTasksInput
-	resolveReadyInputs          []ResolveReadyDownstreamInput
-	acceptanceReady             bool
-	acceptanceDecisionRequestID uuid.UUID
-	acceptanceReviewInputs      []RequestProjectAcceptanceReviewInput
-	applyAcceptanceInputs       []ApplyProjectAcceptanceDecisionInput
-	applyAcceptanceErr          error
-	holdFailureInputs           []HoldDownstreamForFailureInput
-	applyFailureRecoveryInputs  []ApplyFailureRecoveryDecisionInput
-	applyPreDispatchGateInputs  []ApplyPreDispatchGateDecisionInput
-	dispatchInputs              []DispatchProjectTaskInput
-	gateDecisionTaskID          *uuid.UUID
-	humanDecisionRoutes         map[uuid.UUID]HumanDecisionRouteResult
-	persistPlanRevisionInputs   []PersistPlanRevisionInput
-	requestPlanReviewInputs     []RequestPlanRevisionReviewInput
-	resolvePlanReviewInputs     []ResolvePlanRevisionReviewInput
-	decomposePlanInputs         []DecomposeAcceptedPlanRevisionInput
+	dispatchableTaskIDs          []uuid.UUID
+	dispatchableTaskIDBatches    [][]uuid.UUID
+	readyDownstreamIDs           []uuid.UUID
+	failureRecoveryResult        ApplyFailureRecoveryDecisionResult
+	listDispatchableInputs       []ListDispatchableTasksInput
+	resolveReadyInputs           []ResolveReadyDownstreamInput
+	acceptanceReady              bool
+	acceptanceDecisionRequestID  uuid.UUID
+	acceptanceReviewInputs       []RequestProjectAcceptanceReviewInput
+	applyAcceptanceInputs        []ApplyProjectAcceptanceDecisionInput
+	applyAcceptanceErr           error
+	holdFailureInputs            []HoldDownstreamForFailureInput
+	applyFailureRecoveryInputs   []ApplyFailureRecoveryDecisionInput
+	applyPreDispatchGateInputs   []ApplyPreDispatchGateDecisionInput
+	dispatchInputs               []DispatchProjectTaskInput
+	gateDecisionTaskID           *uuid.UUID
+	humanDecisionRoutes          map[uuid.UUID]HumanDecisionRouteResult
+	unknownHumanDecisionRouteIDs map[uuid.UUID]bool
+	persistPlanRevisionInputs    []PersistPlanRevisionInput
+	requestPlanReviewInputs      []RequestPlanRevisionReviewInput
+	resolvePlanReviewInputs      []ResolvePlanRevisionReviewInput
+	decomposePlanInputs          []DecomposeAcceptedPlanRevisionInput
+	finishJobInputs              []FinishCoordinationJobInput
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -1061,7 +1189,12 @@ func (s *recordingActivityStore) CreateCoordinationJob(ctx context.Context, inpu
 
 func (s *recordingActivityStore) PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error) {
 	s.calls = append(s.calls, "PersistRouteDecision")
-	return RouteDecisionResult{ID: s.routeID, CreatedEventID: s.routeEventID}, nil
+	createdEventID := s.routeEventID
+	if len(s.routeEventIDs) > 0 {
+		createdEventID = s.routeEventIDs[0]
+		s.routeEventIDs = s.routeEventIDs[1:]
+	}
+	return RouteDecisionResult{ID: s.routeID, CreatedEventID: createdEventID}, nil
 }
 
 func (s *recordingActivityStore) PersistPlanRevision(ctx context.Context, input PersistPlanRevisionInput) (PlanRevisionResult, error) {
@@ -1075,14 +1208,23 @@ func (s *recordingActivityStore) PersistPlanRevision(ctx context.Context, input 
 		}
 	}
 	planRevisionID := s.planRevisionID
+	if len(s.planRevisionIDs) > 0 {
+		planRevisionID = s.planRevisionIDs[0]
+		s.planRevisionIDs = s.planRevisionIDs[1:]
+	}
 	if planRevisionID == uuid.Nil {
 		planRevisionID = uuid.New()
+	}
+	createdEventID := s.routeEventID
+	if len(s.planEventIDs) > 0 {
+		createdEventID = s.planEventIDs[0]
+		s.planEventIDs = s.planEventIDs[1:]
 	}
 	fingerprint := s.planFingerprint
 	if fingerprint == "" {
 		fingerprint = "fingerprint"
 	}
-	return PlanRevisionResult{ID: planRevisionID, Status: status, RevisionNumber: 1, PlanFingerprint: fingerprint, Payload: BuildPlanRevisionPayload(input.Decision), ReviewRequired: status == "pending_review", CreatedEventID: s.routeEventID}, nil
+	return PlanRevisionResult{ID: planRevisionID, Status: status, RevisionNumber: 1, PlanFingerprint: fingerprint, Payload: BuildPlanRevisionPayload(input.Decision), ReviewRequired: status == "pending_review", CreatedEventID: createdEventID}, nil
 }
 
 func (s *recordingActivityStore) RequestPlanRevisionReview(ctx context.Context, input RequestPlanRevisionReviewInput) (DecisionRequestResult, error) {
@@ -1099,7 +1241,13 @@ func (s *recordingActivityStore) ResolvePlanRevisionReview(ctx context.Context, 
 
 func (s *recordingActivityStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
 	s.calls = append(s.calls, "LoadHumanDecisionRoute")
-	return s.humanDecisionRoutes[input.DecisionRequestID], nil
+	if route, ok := s.humanDecisionRoutes[input.DecisionRequestID]; ok {
+		return route, nil
+	}
+	if s.unknownHumanDecisionRouteIDs[input.DecisionRequestID] {
+		return HumanDecisionRouteResult{}, nil
+	}
+	return HumanDecisionRouteResult{}, project.ErrInvalidProject
 }
 
 func (s *recordingActivityStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {
@@ -1184,5 +1332,6 @@ func (s *recordingActivityStore) DispatchProjectTask(ctx context.Context, input 
 
 func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
 	s.calls = append(s.calls, "FinishCoordinationJob")
+	s.finishJobInputs = append(s.finishJobInputs, input)
 	return nil
 }

@@ -289,8 +289,9 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 	switch route.Decision.DecisionType {
 	case "plan_review":
 		if route.PlanReview == nil {
-			return temporal.NewNonRetryableApplicationError("human decision route missing plan review", "HumanDecisionRouteMissingPlanReview", nil)
+			return temporal.NewNonRetryableApplicationError("human decision route missing plan review", "HumanDecisionRouteMissingPlanReview", project.ErrInvalidProject)
 		}
+		outputEventIDs := planReviewRouteOutputEventIDs(*route.PlanReview, route.Decision.CreatedEventID)
 		pending := pendingPlanRevisionReview{
 			DecisionRequestID: route.Decision.ID,
 			ProjectID:         route.PlanReview.ProjectID,
@@ -300,6 +301,7 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 			PlanRevisionID:    route.PlanReview.PlanRevisionID,
 			PlanFingerprint:   route.PlanReview.PlanFingerprint,
 			Payload:           route.PlanReview.Payload,
+			OutputEventIDs:    outputEventIDs,
 		}
 		_, err := handlePlanReviewDecision(ctx, input, signal, pending)
 		return err
@@ -330,6 +332,24 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "human decision submitted")
 	}
+}
+
+func planReviewRouteOutputEventIDs(route PlanReviewRoute, decisionCreatedEventID uuid.UUID) []uuid.UUID {
+	if len(route.OutputEventIDs) > 0 {
+		return append([]uuid.UUID{}, route.OutputEventIDs...)
+	}
+	outputEventIDs := make([]uuid.UUID, 0, 2)
+	if route.RouteEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, route.RouteEventID)
+	}
+	planEventID := route.PlanEventID
+	if planEventID == uuid.Nil {
+		planEventID = decisionCreatedEventID
+	}
+	if planEventID != uuid.Nil && planEventID != route.RouteEventID {
+		outputEventIDs = append(outputEventIDs, planEventID)
+	}
+	return outputEventIDs
 }
 
 func handlePlanReviewDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pending pendingPlanRevisionReview) (*pendingPlanRevisionReview, error) {
