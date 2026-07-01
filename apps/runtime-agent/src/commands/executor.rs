@@ -2377,6 +2377,12 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
         return value.clone();
     };
     let mut normalized = object.clone();
+    if !normalized.contains_key("criterion") {
+        if let Some(criteria) = object.get("criteria") {
+            normalized.insert("criterion".to_string(), criteria.clone());
+            normalized.remove("criteria");
+        }
+    }
     if let Some(status) = object
         .get("status")
         .and_then(serde_json::Value::as_str)
@@ -2910,6 +2916,32 @@ mod tests {
             contract.acceptance_results[0]["evidence_refs"],
             json!(["final_answer.raw_json_object", "evidence-2"])
         );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_acceptance_criteria_alias_to_criterion() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "acceptance_results": [
+                    {
+                        "criteria": "return structured result",
+                        "status": "passed",
+                        "evidence_refs": ["runtime-command://cmd-smoke"]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(
+            contract.acceptance_results[0]["criterion"],
+            json!("return structured result")
+        );
+        assert!(contract.acceptance_results[0].get("criteria").is_none());
     }
 
     #[test]
