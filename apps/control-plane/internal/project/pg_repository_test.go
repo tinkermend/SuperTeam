@@ -1650,6 +1650,14 @@ func TestLinkPreDispatchGateDecisionRequestRejectsWrongTask(t *testing.T) {
 	require.Nil(t, unchangedDecision.DispatchGateResultID)
 }
 
+func TestGetDecisionRequestReturnsErrProjectNotFoundWhenMissing(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+
+	_, err := repo.GetDecisionRequest(context.Background(), tenantID, uuid.New(), uuid.New())
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+
 func TestStartProjectTaskAttemptAdvancesTaskAndAttempt(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	writebacks := repo.(ProjectTaskAttemptWritebackRepository)

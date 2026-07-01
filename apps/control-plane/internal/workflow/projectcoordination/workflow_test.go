@@ -871,6 +871,7 @@ type recordingActivityStore struct {
 	applyPreDispatchGateInputs  []ApplyPreDispatchGateDecisionInput
 	dispatchInputs              []DispatchProjectTaskInput
 	gateDecisionTaskID          *uuid.UUID
+	humanDecisionRoutes         map[uuid.UUID]HumanDecisionRouteResult
 	persistPlanRevisionInputs   []PersistPlanRevisionInput
 	requestPlanReviewInputs     []RequestPlanRevisionReviewInput
 	resolvePlanReviewInputs     []ResolvePlanRevisionReviewInput
@@ -946,6 +947,11 @@ func (s *recordingActivityStore) ResolvePlanRevisionReview(ctx context.Context, 
 	s.calls = append(s.calls, "ResolvePlanRevisionReview")
 	s.resolvePlanReviewInputs = append(s.resolvePlanReviewInputs, input)
 	return PlanRevisionResult{ID: input.PlanRevisionID, Status: "accepted", PlanFingerprint: "fingerprint"}, nil
+}
+
+func (s *recordingActivityStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
+	s.calls = append(s.calls, "LoadHumanDecisionRoute")
+	return s.humanDecisionRoutes[input.DecisionRequestID], nil
 }
 
 func (s *recordingActivityStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {

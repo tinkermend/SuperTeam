@@ -746,6 +746,59 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	}
 }
 
+func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
+	if s.repository == nil {
+		return HumanDecisionRouteResult{}, ErrActivityStoreRequired
+	}
+	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
+	if err != nil {
+		if errors.Is(err, project.ErrProjectNotFound) {
+			return HumanDecisionRouteResult{}, nil
+		}
+		return HumanDecisionRouteResult{}, err
+	}
+	result := HumanDecisionRouteResult{
+		Decision: ProjectDecisionSnapshot{
+			ID:                   decision.ID,
+			ProjectID:            decision.ProjectID,
+			DecisionType:         decision.DecisionType,
+			StatusSnapshot:       decision.StatusSnapshot,
+			CoordinationJobID:    uuidValue(decision.CoordinationJobID),
+			ProjectTaskID:        uuidValue(decision.ProjectTaskID),
+			PlanRevisionID:       uuidValue(decision.PlanRevisionID),
+			DispatchGateResultID: uuidValue(decision.DispatchGateResultID),
+		},
+	}
+	if decision.DecisionType != "plan_review" {
+		return result, nil
+	}
+	if decision.PlanRevisionID == nil || *decision.PlanRevisionID == uuid.Nil {
+		return HumanDecisionRouteResult{}, project.ErrInvalidProject
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *decision.PlanRevisionID)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	if revision.CoordinationJobID == nil || *revision.CoordinationJobID == uuid.Nil ||
+		revision.RouteDecisionID == nil || *revision.RouteDecisionID == uuid.Nil {
+		return HumanDecisionRouteResult{}, project.ErrInvalidProject
+	}
+	payload, err := planRevisionPayloadFromMap(revision.Payload)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	result.PlanReview = &PlanReviewRoute{
+		ProjectID:         revision.ProjectID,
+		DemandID:          revision.DemandID,
+		CoordinationJobID: *revision.CoordinationJobID,
+		RouteDecisionID:   *revision.RouteDecisionID,
+		PlanRevisionID:    revision.ID,
+		PlanFingerprint:   revision.PlanFingerprint,
+		Payload:           payload,
+	}
+	return result, nil
+}
+
 func parseFailureRecoveryAction(decision string, payload map[string]any) (FailureRecoveryAction, error) {
 	switch decision {
 	case "needs_more_evidence":
@@ -2308,6 +2361,18 @@ func planRevisionPayloadMap(payload PlanRevisionPayload) (map[string]any, error)
 	return value, nil
 }
 
+func planRevisionPayloadFromMap(value map[string]any) (PlanRevisionPayload, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return PlanRevisionPayload{}, err
+	}
+	var payload PlanRevisionPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return PlanRevisionPayload{}, err
+	}
+	return payload, nil
+}
+
 func planRevisionResultFromDomain(revision project.PlanRevision) PlanRevisionResult {
 	return PlanRevisionResult{
 		ID:              revision.ID,
@@ -2323,6 +2388,13 @@ func uuidPtrOrNil(value uuid.UUID) *uuid.UUID {
 		return nil
 	}
 	return &value
+}
+
+func uuidValue(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
 }
 
 func stringPtr(value string) *string {

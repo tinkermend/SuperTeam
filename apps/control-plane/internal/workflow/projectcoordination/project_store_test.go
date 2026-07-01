@@ -1210,6 +1210,56 @@ func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenDecisionRe
 	require.Empty(t, repo.decisionRequests)
 }
 
+func TestProjectStoreLoadHumanDecisionRouteForPlanReview(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	planRevisionID := uuid.New()
+	coordinationJobID := uuid.New()
+	demandID := uuid.New()
+	routeDecisionID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		decisionRequests: []project.DecisionRequest{{
+			ID:                decisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: &coordinationJobID,
+			PlanRevisionID:    &planRevisionID,
+			DecisionType:      "plan_review",
+			StatusSnapshot:    "resolved",
+		}},
+		planRevisions: []project.PlanRevision{{
+			ID:                planRevisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			DemandID:          demandID,
+			CoordinationJobID: &coordinationJobID,
+			RouteDecisionID:   &routeDecisionID,
+			Status:            project.PlanRevisionStatusPendingReview,
+			PlanFingerprint:   "fingerprint",
+			Payload: map[string]any{
+				"summary": "review me",
+				"tasks":   []any{},
+			},
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "plan_review", route.Decision.DecisionType)
+	require.NotNil(t, route.PlanReview)
+	require.Equal(t, planRevisionID, route.PlanReview.PlanRevisionID)
+	require.Equal(t, demandID, route.PlanReview.DemandID)
+	require.Equal(t, coordinationJobID, route.PlanReview.CoordinationJobID)
+	require.Equal(t, routeDecisionID, route.PlanReview.RouteDecisionID)
+}
+
 func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
