@@ -5975,6 +5975,28 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestMemoryRepositoryDecisionRequestCarriesPlanRevisionID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	planRevisionID := uuid.New()
+	repo := &memoryRepository{}
+
+	decision, err := repo.CreateDecisionRequest(context.Background(), CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, decision.PlanRevisionID)
+	require.Equal(t, planRevisionID, *decision.PlanRevisionID)
+}
+
 func TestResolveDecisionSkipsApprovalResolverForProjectOnlyDecision(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -8901,6 +8923,7 @@ func (r *memoryRepository) CreateDecisionRequest(ctx context.Context, req Create
 		ApprovalRequestID: req.ApprovalRequestID,
 		CoordinationJobID: req.CoordinationJobID,
 		ProjectTaskID:     req.ProjectTaskID,
+		PlanRevisionID:    req.PlanRevisionID,
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
 		TitleSnapshot:     req.TitleSnapshot,

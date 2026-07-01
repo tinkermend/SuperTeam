@@ -779,6 +779,7 @@ type DecisionRequest struct {
 	ApprovalRequestID    uuid.UUID
 	CoordinationJobID    *uuid.UUID
 	ProjectTaskID        *uuid.UUID
+	PlanRevisionID       *uuid.UUID
 	TargetUserID         uuid.UUID
 	DecisionType         string
 	TitleSnapshot        string
