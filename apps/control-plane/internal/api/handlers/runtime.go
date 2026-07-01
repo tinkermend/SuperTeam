@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -18,8 +17,6 @@ import (
 	"github.com/superteam/control-plane/internal/task"
 	"nhooyr.io/websocket"
 )
-
-const runtimeCommandDrivenProviderRunProtocol = "provider-run/v1"
 
 type RuntimeService interface {
 	RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error)
@@ -505,144 +502,7 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timeoutStr := r.URL.Query().Get("timeout")
-	timeout := 30
-	if timeoutStr != "" {
-		if t, err := strconv.Atoi(timeoutStr); err == nil {
-			timeout = t
-		}
-	}
-	if timeout > 60 {
-		timeout = 60
-	}
-
-	node, err := h.runtimeService.GetNode(r.Context(), nodeID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	pendingStatus := task.TaskStatusPending
-	var candidate *task.Task
-	for _, provider := range node.SupportedProviders {
-		provider := provider
-		tasks, err := h.taskService.ListTasks(ctx, task.ListTasksFilter{
-			Status:       &pendingStatus,
-			ProviderType: &provider,
-			Limit:        10,
-		})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		for _, t := range tasks {
-			if isRuntimeCommandDrivenTask(t) {
-				continue
-			}
-			allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if !allowed {
-				continue
-			}
-			if bestClaimCandidate(candidate, t) == t {
-				candidate = t
-			}
-		}
-	}
-	if candidate != nil {
-		h.assignTask(ctx, w, candidate, nodeID)
-		return
-	}
-
-	t, err := h.poller.WaitForTask(ctx, nodeID)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if !node.SupportsProvider(t.ProviderType) {
-		// The poller should only wake compatible nodes; reject stale or mismatched wakeups defensively.
-		http.Error(w, "polled task provider is not supported by node", http.StatusInternalServerError)
-		return
-	}
-
-	if isRuntimeCommandDrivenTask(t) {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !allowed {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	h.assignTask(ctx, w, t, nodeID)
-}
-
-func isRuntimeCommandDrivenTask(t *task.Task) bool {
-	if t == nil || len(t.Params) == 0 {
-		return false
-	}
-	var params map[string]any
-	if err := json.Unmarshal(t.Params, &params); err != nil {
-		return false
-	}
-	protocol, ok := params["provider_run_protocol"].(string)
-	return ok && protocol == runtimeCommandDrivenProviderRunProtocol
-}
-
-func (h *RuntimeHandler) runtimeCanClaim(ctx context.Context, nodeID string, t *task.Task) (bool, error) {
-	if h.authorizer == nil {
-		return true, nil
-	}
-	decision, err := h.authorizer.Check(ctx, authz.CheckRequest{
-		Actor: authz.ActorRef{
-			Type: authz.ActorRuntimeNode,
-			ID:   nodeID,
-		},
-		Action: authz.ActionTaskClaim,
-		Resource: authz.ResourceRef{
-			Type: authz.ResourceTask,
-			ID:   t.ID.String(),
-		},
-		TenantID:    t.TenantID,
-		TeamID:      t.TeamID,
-		AuditReason: "runtime task claim",
-	})
-	if err != nil {
-		return false, err
-	}
-	return decision.Allowed, nil
-}
-
-func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, t *task.Task, nodeID string) {
-	assignedTask, err := h.taskService.AssignTask(ctx, task.AssignTaskRequest{
-		TaskID:         t.ID,
-		AssignedNodeID: nodeID,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newTaskResponse(assignedTask))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
@@ -1020,25 +880,6 @@ func capabilityInputsFromRequest(w http.ResponseWriter, r *http.Request) ([]runt
 		return nil, false
 	}
 	return wrapped.Capabilities, true
-}
-
-func bestClaimCandidate(current *task.Task, candidate *task.Task) *task.Task {
-	if current == nil {
-		return candidate
-	}
-	if candidate == nil {
-		return current
-	}
-	if candidate.Priority > current.Priority {
-		return candidate
-	}
-	if candidate.Priority < current.Priority {
-		return current
-	}
-	if candidate.CreatedAt.After(current.CreatedAt) {
-		return candidate
-	}
-	return current
 }
 
 func (h *RuntimeHandler) GetNodeByID(w http.ResponseWriter, r *http.Request) {

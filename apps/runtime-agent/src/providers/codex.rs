@@ -41,7 +41,7 @@ impl CodexProvider {
             command.arg("--skip-git-repo-check");
         } else {
             command.arg("--json");
-            command.arg("--cd").arg(&request.workspace_path);
+            command.arg("--cd").arg(codex_cd_arg(&request.workspace_path));
             command.arg("--dangerously-bypass-approvals-and-sandbox");
             command.arg("--skip-git-repo-check");
         }
@@ -50,6 +50,14 @@ impl CodexProvider {
         }
         command.arg(&request.prompt);
         command
+    }
+}
+
+fn codex_cd_arg(workspace_path: &std::path::Path) -> PathBuf {
+    if workspace_path.is_absolute() {
+        workspace_path.to_path_buf()
+    } else {
+        PathBuf::from(".")
     }
 }
 

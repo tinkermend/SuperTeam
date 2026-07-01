@@ -48,13 +48,12 @@ func TestFakeRuntimeTaskLifecycle(t *testing.T) {
 	}
 	assertRuntimeNodeResponseShape(t, listedNodes[0])
 
-	claimed := mustRequestJSONMap(t, server, http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
-	assertTaskResponseShape(t, claimed)
-	if stringFromJSON(t, claimed["id"]) != stringFromJSON(t, created["id"]) {
-		t.Fatalf("expected claimed task ID %v, got %v", created["id"], claimed["id"])
+	taskID := stringFromJSON(t, created["id"])
+	mustRequestStatus(t, server, http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil, http.StatusNoContent)
+	if server.tasks.assignedTaskID != uuid.Nil {
+		t.Fatalf("expected deprecated runtime claim not to assign task, got %s", server.tasks.assignedTaskID)
 	}
 
-	taskID := stringFromJSON(t, created["id"])
 	mustRequestStatus(t, server, http.MethodPost, "/api/v1/runtime/tasks/"+taskID+"/events", map[string]any{
 		"events": []map[string]any{{"type": "text_delta", "text": "hello"}},
 	}, http.StatusAccepted)
@@ -234,8 +233,9 @@ func stringFromJSON(t *testing.T, value any) string {
 }
 
 type fakeTaskService struct {
-	tasks  map[uuid.UUID]*task.Task
-	events map[uuid.UUID][]task.TaskEvent
+	tasks          map[uuid.UUID]*task.Task
+	events         map[uuid.UUID][]task.TaskEvent
+	assignedTaskID uuid.UUID
 }
 
 func (s *fakeTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
@@ -311,6 +311,7 @@ func (s *fakeTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, canc
 }
 
 func (s *fakeTaskService) AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error) {
+	s.assignedTaskID = req.TaskID
 	t, ok := s.tasks[req.TaskID]
 	if !ok {
 		return nil, errors.New("task not found")

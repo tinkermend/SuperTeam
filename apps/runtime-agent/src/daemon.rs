@@ -12,7 +12,6 @@ use crate::controlplane::models::{
     EnrollHelloRequest, EnrollmentStatus, HeartbeatRequest, NodeStatus, RuntimeCapabilityInput,
 };
 use crate::controlplane::ws::run_command_loop;
-use crate::executor::TaskExecutor;
 use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
 use crate::providers::catalog;
 use crate::runtime_auth::{RuntimeAuthState, RuntimeAuthStatus, is_runtime_auth_expired};
@@ -85,9 +84,8 @@ impl RuntimeDaemon {
             heartbeat_loop(heartbeat_client, heartbeat_config).await;
         });
 
-        let executor = TaskExecutor::new(self.config, control_plane);
-        executor.run().await?;
-
+        std::future::pending::<()>().await;
+        #[allow(unreachable_code)]
         Ok(())
     }
 }

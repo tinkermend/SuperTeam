@@ -900,6 +900,143 @@ fi
 }
 
 #[tokio::test]
+async fn daemon_default_does_not_start_legacy_task_claim_loop() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(16);
+
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            let request_line = request.lines().next().unwrap_or_default().to_string();
+            if request_tx.send(request_line.clone()).await.is_err() {
+                break;
+            }
+
+            if request_line == "POST /api/v1/runtime/enrollments/hello HTTP/1.1" {
+                write_json_response(
+                    &mut socket,
+                    serde_json::json!({
+                        "enrollment": {
+                            "id": "11111111-1111-4111-8111-111111111111",
+                            "tenant_id": "22222222-2222-4222-8222-222222222222",
+                            "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                            "node_id": "node-1",
+                            "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                            "status": "approved",
+                            "created_at": "2026-06-02T00:00:00Z",
+                            "updated_at": "2026-06-02T00:00:00Z"
+                        },
+                        "session": {
+                            "id": "55555555-5555-4555-8555-555555555555",
+                            "tenant_id": "22222222-2222-4222-8222-222222222222",
+                            "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                            "node_id": "node-1",
+                            "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                            "expires_at": "2999-06-02T00:00:00Z",
+                            "last_seen_at": "2026-06-02T00:00:00Z",
+                            "created_at": "2026-06-02T00:00:00Z",
+                            "updated_at": "2026-06-02T00:00:00Z"
+                        },
+                        "session_token": "session-token"
+                    }),
+                )
+                .await;
+            } else if request_line == "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1" {
+                write_json_response(&mut socket, serde_json::json!([])).await;
+            } else if request_line == "POST /api/v1/runtime/heartbeat HTTP/1.1" {
+                write_json_response(
+                    &mut socket,
+                    serde_json::json!({
+                        "node_id": "node-1",
+                        "name": "runtime-node-1",
+                        "supported_providers": [],
+                        "required_tools": [],
+                        "max_slots": 1,
+                        "current_load": 0,
+                        "status": "online",
+                        "metadata": null,
+                        "last_heartbeat_at": "2026-06-02T00:00:00Z",
+                        "created_at": "2026-06-02T00:00:00Z",
+                        "updated_at": "2026-06-02T00:00:00Z"
+                    }),
+                )
+                .await;
+            } else if request_line.starts_with("POST /api/v1/runtime/tasks/claim") {
+                socket
+                    .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                    .await
+                    .unwrap();
+            } else {
+                write_status_response(
+                    &mut socket,
+                    "404 Not Found",
+                    serde_json::json!({"error":"not found"}),
+                )
+                .await;
+            }
+        }
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    config.runtime.heartbeat_interval = 60;
+    config.runtime.max_concurrent_tasks = 1;
+    config.providers.claude_code.enabled = false;
+    config.providers.opencode.enabled = false;
+    config.providers.codex.enabled = false;
+
+    let daemon = RuntimeDaemon::new(config);
+    let handle = tokio::spawn(async move { daemon.run().await });
+    let mut observed = Vec::new();
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let request_line = request_rx.recv().await.expect("server request");
+            assert!(
+                !request_line.starts_with("POST /api/v1/runtime/tasks/claim"),
+                "legacy claim loop started; observed requests: {observed:?}"
+            );
+            let saw_capabilities =
+                request_line == "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1";
+            observed.push(request_line);
+            if saw_capabilities {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("daemon should enroll and report capabilities");
+
+    let quiet_window = tokio::time::sleep(std::time::Duration::from_millis(750));
+    tokio::pin!(quiet_window);
+    loop {
+        tokio::select! {
+            request_line = request_rx.recv() => {
+                let request_line = request_line.expect("server request");
+                assert!(
+                    !request_line.starts_with("POST /api/v1/runtime/tasks/claim"),
+                    "legacy claim loop started; observed requests: {observed:?}"
+                );
+                observed.push(request_line);
+            }
+            _ = &mut quiet_window => break,
+        }
+    }
+
+    handle.abort();
+    server.abort();
+    assert!(
+        !observed
+            .iter()
+            .any(|request| request.starts_with("POST /api/v1/runtime/tasks/claim")),
+        "legacy claim loop started; observed requests: {observed:?}"
+    );
+}
+
+#[tokio::test]
 async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_upsert_fails() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

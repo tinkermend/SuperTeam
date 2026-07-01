@@ -813,21 +813,8 @@ func TestServerWithAuthzGatesRuntimeClaim(t *testing.T) {
 	if taskService.assignedTaskID != uuid.Nil {
 		t.Fatalf("expected denied runtime claim not to assign task, got %s", taskService.assignedTaskID)
 	}
-	if len(authorizer.checks) != 1 {
-		t.Fatalf("expected one runtime authz check, got %#v", authorizer.checks)
-	}
-	check := authorizer.checks[0]
-	if check.Actor.Type != authz.ActorRuntimeNode || check.Actor.ID != "node-1" {
-		t.Fatalf("expected runtime node actor, got %#v", check.Actor)
-	}
-	if check.Action != authz.ActionTaskClaim {
-		t.Fatalf("expected task claim action, got %q", check.Action)
-	}
-	if check.Resource.Type != authz.ResourceTask || check.Resource.ID != taskID.String() {
-		t.Fatalf("expected task resource %s, got %#v", taskID, check.Resource)
-	}
-	if check.TenantID != tenantID {
-		t.Fatalf("expected tenant %s, got %s", tenantID, check.TenantID)
+	if len(authorizer.checks) != 0 {
+		t.Fatalf("expected default no-op runtime claim to skip task authz checks, got %#v", authorizer.checks)
 	}
 }
 

@@ -6179,19 +6179,19 @@ type ServerInterface interface {
 	// Revoke a short-lived Runtime Agent session
 	// (POST /api/v1/runtime/sessions/{sessionId}/revoke)
 	RevokeRuntimeSession(w http.ResponseWriter, r *http.Request, sessionId RuntimeSessionId)
-	// Claim the next executable task for a Runtime Agent
+	// Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/claim)
 	ClaimRuntimeTask(w http.ResponseWriter, r *http.Request, params ClaimRuntimeTaskParams)
-	// Complete a Runtime Agent task
+	// Deprecated legacy Runtime task completion; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/{taskId}/complete)
 	CompleteRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params CompleteRuntimeTaskParams)
-	// Push Runtime Agent task events
+	// Deprecated legacy Runtime task events; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/{taskId}/events)
 	PushRuntimeTaskEvents(w http.ResponseWriter, r *http.Request, taskId TaskId, params PushRuntimeTaskEventsParams)
-	// Report Runtime Agent task failure
+	// Deprecated legacy Runtime task failure; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/{taskId}/fail)
 	FailRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params FailRuntimeTaskParams)
-	// Acknowledge a Runtime Agent task lease heartbeat
+	// Deprecated legacy Runtime task lease; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/{taskId}/lease)
 	RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams)
 	// Update a Runtime Agent task status
@@ -7076,31 +7076,31 @@ func (_ Unimplemented) RevokeRuntimeSession(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Claim the next executable task for a Runtime Agent
+// Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 // (POST /api/v1/runtime/tasks/claim)
 func (_ Unimplemented) ClaimRuntimeTask(w http.ResponseWriter, r *http.Request, params ClaimRuntimeTaskParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Complete a Runtime Agent task
+// Deprecated legacy Runtime task completion; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 // (POST /api/v1/runtime/tasks/{taskId}/complete)
 func (_ Unimplemented) CompleteRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params CompleteRuntimeTaskParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Push Runtime Agent task events
+// Deprecated legacy Runtime task events; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 // (POST /api/v1/runtime/tasks/{taskId}/events)
 func (_ Unimplemented) PushRuntimeTaskEvents(w http.ResponseWriter, r *http.Request, taskId TaskId, params PushRuntimeTaskEventsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Report Runtime Agent task failure
+// Deprecated legacy Runtime task failure; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 // (POST /api/v1/runtime/tasks/{taskId}/fail)
 func (_ Unimplemented) FailRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params FailRuntimeTaskParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Acknowledge a Runtime Agent task lease heartbeat
+// Deprecated legacy Runtime task lease; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 // (POST /api/v1/runtime/tasks/{taskId}/lease)
 func (_ Unimplemented) RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams) {
 	w.WriteHeader(http.StatusNotImplemented)
