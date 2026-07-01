@@ -696,6 +696,35 @@ func TestProjectTaskAttemptContextUpdatesMigration(t *testing.T) {
 	}
 }
 
+func TestProjectRepoBindingAndAttestationMigration(t *testing.T) {
+	sql := readMigration(t, "040_project_repo_binding_and_attestation.sql")
+
+	for _, want := range []string{
+		"ALTER TABLE projects",
+		"ADD COLUMN repo_url TEXT",
+		"ADD COLUMN repo_default_branch VARCHAR(255)",
+		"ADD COLUMN repo_git_credential_ref VARCHAR(255)",
+		"ADD COLUMN repo_scope JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"ADD COLUMN repo_binding_status VARCHAR(32) NOT NULL DEFAULT 'unbound'",
+		"CREATE UNIQUE INDEX uq_projects_tenant_id",
+		"ON projects(tenant_id, id)",
+		"CREATE TABLE project_placements",
+		"CREATE TABLE project_task_attestations",
+		"ALTER TABLE project_task_attempts",
+		"ADD COLUMN budget_wall_clock_limit_sec INTEGER",
+		"ADD COLUMN budget_last_heartbeat_at TIMESTAMPTZ",
+		"ADD COLUMN budget_consumed_wall_clock_sec INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN budget_consumed_tokens INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN budget_tripped_at TIMESTAMPTZ",
+		"ADD COLUMN budget_trip_reason VARCHAR(100)",
+		"chk_projects_repo_binding_status",
+		"chk_project_task_attestations_status",
+		"uq_project_task_attestations_idempotency",
+	} {
+		assertMigrationContains(t, sql, want)
+	}
+}
+
 func TestProjectTasksDurableClosureColumns(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{

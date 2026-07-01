@@ -65,15 +65,15 @@
 - Modify `apps/control-plane/internal/employee/run_service.go`: include repo/workspace metadata in `start_session` payload and idempotency fingerprint.
 - Modify `apps/control-plane/internal/employee/run_service_test.go`: payload/fingerprint tests.
 - Modify `apps/runtime-agent/src/commands/payload.rs`: add a typed `project_workspace()` accessor over the existing `metadata` value for `workspace_mode`, optional `project_git`, optional `attestation_policy`, and budget fields. Note: `agent_home_dir` is already a required top-level payload field (see `payload.rs`, validated in `validate`); do not re-add it.
-- Modify `apps/runtime-agent/src/commands/executor.rs`: separate agent home from task workspace, materialize git worktree or empty workspace, symlink provider skills, capture command attestation, and heartbeat budget usage.
+- Modify `apps/runtime-agent/src/commands/executor.rs`: carry `agent_home_dir` separately from the provider workspace path. Actual git worktree materialization, provider skill symlinks, attestation capture, and heartbeat cancellation are Task 5+ work.
 - Create `apps/runtime-agent/src/project_workspace.rs`: git repo/worktree materialization, sparse checkout, workspace-mode derivation support, cleanup policy.
 - Create `apps/runtime-agent/src/attestation.rs`: command/runtime attestation structs, log hashing, artifact hashing, git evidence collection.
 - Modify `apps/runtime-agent/src/controlplane/models.rs`: control-plane writeback structs for attestations and budget heartbeats.
 - Modify `apps/runtime-agent/src/controlplane/client.rs`: attestation and budget heartbeat calls.
-- Modify `apps/runtime-agent/src/providers/mod.rs`: `ProviderRequest` gains `agent_home_dir`, `attestation_dir`, and env/config support.
+- Modify `apps/runtime-agent/src/providers/mod.rs`: `ProviderRequest` gains `agent_home_dir` and env/config support.
 - Modify `apps/runtime-agent/src/providers/claude.rs`: `cwd` is worktree; `--mcp-config` points to agent home; skills symlink is already in cwd.
-- Modify `apps/runtime-agent/src/providers/codex.rs`: `cwd`/`--cd` is worktree; `CODEX_HOME` points to `agent_home/.codex`.
-- Modify `apps/runtime-agent/src/providers/opencode.rs`: `cwd`/`--dir` is worktree; `OPENCODE_CONFIG_DIR` points to agent home provider dir.
+- Modify `apps/runtime-agent/src/providers/codex.rs`: `cwd`/`--cd` is worktree; do not default `CODEX_HOME` from `agent_home_dir`, so host-level Codex auth remains the default.
+- Modify `apps/runtime-agent/src/providers/opencode.rs`: `cwd`/`--dir` is worktree; do not default `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` from `agent_home_dir`, so host-level OpenCode auth remains the default.
 - Modify `apps/runtime-agent/src/executor/workspace.rs`: retain project task workspaces across iteration/human wait; only cleanup terminal task workspaces.
 - Modify `contracts/runtime/openapi.yaml`: start-session project workspace and attestation fields if runtime contract is externally exposed.
 - Modify the two source specs after code lands: append one dated "implemented by" note with the merged plan path and verification summary.
@@ -1074,17 +1074,14 @@ if let Some(agent_home) = &request.agent_home_dir {
 
 ```rust
 // codex.rs
-if let Some(agent_home) = &request.agent_home_dir {
-    command.env("CODEX_HOME", agent_home.join(".codex"));
-}
+// Do not derive CODEX_HOME from agent_home_dir by default.
+// Explicit request.environment values are still passed through by apply_environment.
 ```
 
 ```rust
 // opencode.rs
-if let Some(agent_home) = &request.agent_home_dir {
-    command.env("OPENCODE_CONFIG_DIR", agent_home.join(".opencode"));
-    command.env("OPENCODE_CONFIG", agent_home.join(".opencode").join("opencode.json"));
-}
+// Do not derive OPENCODE_CONFIG_DIR / OPENCODE_CONFIG from agent_home_dir by default.
+// Explicit request.environment values are still passed through by apply_environment.
 command.arg("--dir").arg(&request.workspace_path);
 ```
 

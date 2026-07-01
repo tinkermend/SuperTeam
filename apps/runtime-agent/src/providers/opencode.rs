@@ -26,6 +26,7 @@ impl OpenCodeProvider {
         command.current_dir(&request.workspace_path);
         apply_environment(&mut command, request);
         command.arg("run").arg("--format").arg("json");
+        command.arg("--dir").arg(&request.workspace_path);
         if let Some(model) = &request.model {
             command.arg("--model").arg(model);
         }

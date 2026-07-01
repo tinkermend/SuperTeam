@@ -25,6 +25,8 @@ pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>
 pub struct ProviderRequest {
     pub prompt: String,
     pub workspace_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_home_dir: Option<PathBuf>,
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,

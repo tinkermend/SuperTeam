@@ -4880,6 +4880,7 @@ components:
         - coordination_policy
         - approval_policy
         - evidence_policy
+        - repo_binding
       properties:
         id:
           type: string
@@ -4920,6 +4921,8 @@ components:
         evidence_policy:
           type: object
           additionalProperties: true
+        repo_binding:
+          $ref: "#/components/schemas/ProjectRepoBinding"
         archived_at:
           type: string
           format: date-time
@@ -4929,6 +4932,24 @@ components:
         updated_at:
           type: string
           format: date-time
+    ProjectRepoBinding:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - unbound
+            - bound
+        url:
+          type: string
+        default_branch:
+          type: string
+        git_credential_ref:
+          type: string
+        scope:
+          type: array
+          items:
+            type: string
     ProjectMember:
       type: object
       required:
@@ -6683,6 +6704,8 @@ components:
         evidence_policy:
           type: object
           additionalProperties: true
+        repo_binding:
+          $ref: "#/components/schemas/ProjectRepoBinding"
     CreateProjectResponse:
       type: object
       required:
@@ -6727,6 +6750,8 @@ components:
         evidence_policy:
           type: object
           additionalProperties: true
+        repo_binding:
+          $ref: "#/components/schemas/ProjectRepoBinding"
     ReplaceProjectMembersRequest:
       type: object
       required:

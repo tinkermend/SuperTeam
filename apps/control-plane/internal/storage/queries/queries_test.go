@@ -474,6 +474,224 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 	return revision
 }
 
+func seedProjectTaskAttemptForAffinityTest(t *testing.T, db *pgxpool.Pool, q *queries.Queries, idempotencyPrefix string) (uuid.UUID, uuid.UUID, queries.ProjectTask, queries.ProjectTaskAttempt, queries.RuntimeNode) {
+	t.Helper()
+	ctx := context.Background()
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, idempotencyPrefix+"-team", "Runtime affinity team")
+	ownerID := seedTestAuthUser(t, db, idempotencyPrefix+"-owner")
+
+	project, err := q.CreateProject(ctx, queries.CreateProjectParams{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             idempotencyPrefix + " project",
+		Description:      pgtype.Text{String: "runtime affinity query test", Valid: true},
+		Goal:             pgtype.Text{String: "verify runtime affinity storage semantics", Valid: true},
+		Status:           "active",
+		HumanOwnerUserID: ownerID,
+		ApprovalPolicy:   []byte(`{}`),
+		EvidencePolicy:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	task, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 idempotencyPrefix + " task",
+		Summary:               pgtype.Text{String: "runtime affinity task", Valid: true},
+		Status:                "queued",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RiskLevel:             pgtype.Text{String: "medium", Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	node, err := q.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             idempotencyPrefix + "-node",
+		Name:               idempotencyPrefix + " node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           1,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id = $2`, tenantID, node.ID)
+	require.NoError(t, err)
+
+	attempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 task.ID,
+		AttemptNo:                     1,
+		Status:                        "running",
+		DigitalEmployeeRunID:          task.DigitalEmployeeRunID,
+		RuntimeNodeID:                 uuid.NullUUID{UUID: node.ID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    idempotencyPrefix + "-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:" + idempotencyPrefix,
+	})
+	require.NoError(t, err)
+
+	return tenantID, project.ID, task, attempt, node
+}
+
+func TestUpdateProjectTaskAttemptBudgetHeartbeatIsMonotonic(t *testing.T) {
+	db := newQueriesTestDB(t)
+	ctx := context.Background()
+	q := queries.New(db)
+	tenantID, _, task, attempt, _ := seedProjectTaskAttemptForAffinityTest(t, db, q, "budget-heartbeat")
+
+	first, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     120,
+		ConsumedTokens:           1000,
+		TripReason:               pgtype.Text{String: "wall_clock_exceeded", Valid: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(120), first.BudgetConsumedWallClockSec)
+	require.Equal(t, int32(1000), first.BudgetConsumedTokens)
+	require.Equal(t, "wall_clock_exceeded", first.BudgetTripReason.String)
+	require.True(t, first.BudgetLastHeartbeatAt.Valid)
+	require.True(t, first.BudgetTrippedAt.Valid)
+
+	second, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     60,
+		ConsumedTokens:           10,
+		TripReason:               pgtype.Text{String: "token_limit_exceeded", Valid: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(120), second.BudgetConsumedWallClockSec)
+	require.Equal(t, int32(1000), second.BudgetConsumedTokens)
+	require.True(t, second.BudgetLastHeartbeatAt.Valid)
+	require.False(t, second.BudgetLastHeartbeatAt.Time.Before(first.BudgetLastHeartbeatAt.Time))
+	require.Equal(t, first.BudgetTrippedAt.Time, second.BudgetTrippedAt.Time)
+	require.Equal(t, "wall_clock_exceeded", second.BudgetTripReason.String)
+
+	futureHeartbeat := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET budget_last_heartbeat_at = $1
+		WHERE tenant_id = $2 AND project_task_id = $3 AND id = $4
+	`, futureHeartbeat, tenantID, task.ID, attempt.ID)
+	require.NoError(t, err)
+
+	third, err := q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     121,
+		ConsumedTokens:           1001,
+	})
+	require.NoError(t, err)
+	require.True(t, third.BudgetLastHeartbeatAt.Valid)
+	require.True(t, third.BudgetLastHeartbeatAt.Time.Equal(futureHeartbeat))
+	require.False(t, third.BudgetLastHeartbeatAt.Time.Before(second.BudgetLastHeartbeatAt.Time))
+
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET budget_last_heartbeat_at = NULL,
+		    budget_tripped_at = NULL,
+		    budget_trip_reason = NULL
+		WHERE tenant_id = $1 AND project_task_id = $2 AND id = $3
+	`, tenantID, task.ID, attempt.ID)
+	require.NoError(t, err)
+
+	tx, err := db.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	txQueries := q.WithTx(tx)
+
+	var transactionStartedAt time.Time
+	err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&transactionStartedAt)
+	require.NoError(t, err)
+	time.Sleep(25 * time.Millisecond)
+
+	delayed, err := txQueries.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     1,
+		ConsumedTokens:           1,
+		TripReason:               pgtype.Text{String: "statement_time_trip", Valid: true},
+	})
+	require.NoError(t, err)
+	require.True(t, delayed.BudgetLastHeartbeatAt.Valid)
+	require.True(t, delayed.BudgetTrippedAt.Valid)
+	require.True(t, delayed.BudgetLastHeartbeatAt.Time.After(transactionStartedAt))
+	require.True(t, delayed.BudgetTrippedAt.Time.After(transactionStartedAt))
+	require.False(t, delayed.BudgetTrippedAt.Time.Before(delayed.BudgetLastHeartbeatAt.Time))
+	require.Equal(t, "statement_time_trip", delayed.BudgetTripReason.String)
+	require.NoError(t, tx.Commit(ctx))
+
+	_, err = q.UpdateProjectTaskAttemptBudgetHeartbeat(ctx, queries.UpdateProjectTaskAttemptBudgetHeartbeatParams{
+		TenantID:                 tenantID,
+		ProjectTaskID:            task.ID,
+		AttemptID:                attempt.ID,
+		ConsumedWallClockSec:     -1,
+		ConsumedTokens:           1001,
+	})
+	require.Error(t, err)
+}
+
+func TestCreateProjectTaskAttestationRejectsDivergentIdempotencyReplay(t *testing.T) {
+	db := newQueriesTestDB(t)
+	ctx := context.Background()
+	q := queries.New(db)
+	tenantID, projectID, task, attempt, node := seedProjectTaskAttemptForAffinityTest(t, db, q, "attestation-idempotency")
+
+	params := queries.CreateProjectTaskAttestationParams{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ProjectTaskID:   task.ID,
+		AttemptID:       attempt.ID,
+		RuntimeNodeID:   node.ID,
+		AttestationType: "command",
+		Status:          "succeeded",
+		CommandArgv:     []byte(`["go","test","./..."]`),
+		ExitCode:        pgtype.Int4{Int32: 0, Valid: true},
+		DurationMs:      pgtype.Int8{Int64: 1500, Valid: true},
+		LogRef:          pgtype.Text{String: "logs/attempt.log", Valid: true},
+		StdoutSha256:    pgtype.Text{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
+		StderrSha256:    pgtype.Text{String: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Valid: true},
+		ArtifactRefs:    []byte(`["artifact://result"]`),
+		ArtifactHashes:  []byte(`{"artifact://result":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`),
+		GitBranch:       pgtype.Text{String: "codex/project-workspace-autonomous-outer-loop", Valid: true},
+		GitBaseRef:      pgtype.Text{String: "main", Valid: true},
+		GitHeadSha:      pgtype.Text{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
+		GitDiffSha256:   pgtype.Text{String: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", Valid: true},
+		Metadata:        []byte(`{"source":"test"}`),
+		IdempotencyKey:  "attempt:" + attempt.ID.String() + ":command",
+	}
+
+	created, err := q.CreateProjectTaskAttestation(ctx, params)
+	require.NoError(t, err)
+
+	time.Sleep(20 * time.Millisecond)
+	replayed, err := q.CreateProjectTaskAttestation(ctx, params)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, replayed.ID)
+	require.Equal(t, created.CreatedAt, replayed.CreatedAt)
+	require.Equal(t, created.UpdatedAt, replayed.UpdatedAt)
+
+	params.StdoutSha256 = pgtype.Text{String: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", Valid: true}
+	_, err = q.CreateProjectTaskAttestation(ctx, params)
+	require.Error(t, err)
+}
+
 func TestExecutionLedgerEventQueries(t *testing.T) {
 	db := newQueriesTestDB(t)
 	ctx := context.Background()

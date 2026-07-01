@@ -36,6 +36,7 @@ impl CodexProvider {
                 command.arg("--last");
             }
             command.arg("--json");
+            command.arg("--cd").arg(&request.workspace_path);
             command.arg("--dangerously-bypass-approvals-and-sandbox");
             command.arg("--skip-git-repo-check");
         } else {

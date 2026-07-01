@@ -275,9 +275,32 @@ type Project struct {
 	CoordinationPolicy     map[string]any
 	ApprovalPolicy         map[string]any
 	EvidencePolicy         map[string]any
+	RepoBinding            ProjectRepoBinding
 	ArchivedAt             *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+}
+
+type ProjectRepoBindingStatus string
+
+const (
+	ProjectRepoBindingStatusUnbound ProjectRepoBindingStatus = "unbound"
+	ProjectRepoBindingStatusBound   ProjectRepoBindingStatus = "bound"
+)
+
+type ProjectRepoBinding struct {
+	Status           ProjectRepoBindingStatus
+	URL              string
+	DefaultBranch    string
+	GitCredentialRef *string
+	Scope            []string
+}
+
+type ProjectRepoBindingInput struct {
+	URL              string   `json:"url"`
+	DefaultBranch    string   `json:"default_branch"`
+	GitCredentialRef *string  `json:"git_credential_ref"`
+	Scope            []string `json:"scope"`
 }
 
 type ProjectMember struct {
@@ -990,6 +1013,7 @@ type CreateProjectRequest struct {
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any
 	EvidencePolicy     map[string]any
+	RepoBinding        *ProjectRepoBindingInput
 }
 
 type CreateProjectResult struct {
@@ -1011,6 +1035,7 @@ type UpdateProjectConfigRequest struct {
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any
 	EvidencePolicy     map[string]any
+	RepoBinding        *ProjectRepoBindingInput
 }
 
 type SubmitProjectDemandRequest struct {

@@ -1002,6 +1002,24 @@ func (e ProjectPrincipalType) Valid() bool {
 	}
 }
 
+// Defines values for ProjectRepoBindingStatus.
+const (
+	Bound   ProjectRepoBindingStatus = "bound"
+	Unbound ProjectRepoBindingStatus = "unbound"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRepoBindingStatus enum.
+func (e ProjectRepoBindingStatus) Valid() bool {
+	switch e {
+	case Bound:
+		return true
+	case Unbound:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectRole.
 const (
 	ProjectRoleAcceptance ProjectRole = "acceptance"
@@ -2007,6 +2025,7 @@ type CreateProjectRequest struct {
 	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
 	Name               string                  `json:"name"`
+	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
 	TeamId             *openapi_types.UUID     `json:"team_id,omitempty"`
 }
 
@@ -2968,6 +2987,7 @@ type Project struct {
 	Id                     openapi_types.UUID     `json:"id"`
 	LeaderUserId           *openapi_types.UUID    `json:"leader_user_id,omitempty"`
 	Name                   string                 `json:"name"`
+	RepoBinding            ProjectRepoBinding     `json:"repo_binding"`
 	Status                 ProjectStatus          `json:"status"`
 	TeamId                 *openapi_types.UUID    `json:"team_id,omitempty"`
 	TenantId               openapi_types.UUID     `json:"tenant_id"`
@@ -3352,6 +3372,18 @@ type ProjectPlanRevision struct {
 
 // ProjectPrincipalType defines model for ProjectPrincipalType.
 type ProjectPrincipalType string
+
+// ProjectRepoBinding defines model for ProjectRepoBinding.
+type ProjectRepoBinding struct {
+	DefaultBranch    *string                   `json:"default_branch,omitempty"`
+	GitCredentialRef *string                   `json:"git_credential_ref,omitempty"`
+	Scope            *[]string                 `json:"scope,omitempty"`
+	Status           *ProjectRepoBindingStatus `json:"status,omitempty"`
+	Url              *string                   `json:"url,omitempty"`
+}
+
+// ProjectRepoBindingStatus defines model for ProjectRepoBinding.Status.
+type ProjectRepoBindingStatus string
 
 // ProjectReportRef defines model for ProjectReportRef.
 type ProjectReportRef struct {
@@ -4336,8 +4368,9 @@ type UpdateProjectConfigRequest struct {
 	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 
 	// Members When present, replaces the project member set; when omitted, members are preserved.
-	Members *[]ProjectMemberInput `json:"members,omitempty"`
-	Name    *string               `json:"name,omitempty"`
+	Members     *[]ProjectMemberInput `json:"members,omitempty"`
+	Name        *string               `json:"name,omitempty"`
+	RepoBinding *ProjectRepoBinding   `json:"repo_binding,omitempty"`
 }
 
 // UpdateTaskStatusRequest defines model for UpdateTaskStatusRequest.

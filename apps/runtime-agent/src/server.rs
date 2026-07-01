@@ -120,6 +120,8 @@ async fn providers(State(state): State<RuntimeHttpState>) -> Json<Vec<ProviderHe
 struct CreateRunRequest {
     provider_kind: String,
     workspace_path: PathBuf,
+    #[serde(default)]
+    agent_home_dir: Option<PathBuf>,
     prompt: String,
     session_id: Option<String>,
     #[serde(default)]
@@ -136,6 +138,7 @@ async fn create_run(
     let spec = RunSpec {
         provider_kind: request.provider_kind.trim().to_string(),
         workspace_path: request.workspace_path,
+        agent_home_dir: request.agent_home_dir,
         prompt: request.prompt,
         session_id: request.session_id,
         continue_session: request.continue_session,
@@ -278,6 +281,7 @@ async fn run_provider_stream(
         .start(ProviderRequest {
             prompt: spec.prompt,
             workspace_path: spec.workspace_path,
+            agent_home_dir: spec.agent_home_dir,
             session_id: spec.session_id,
             continue_session: spec.continue_session,
             model: spec.model,

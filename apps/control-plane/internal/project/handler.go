@@ -258,6 +258,7 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		CoordinationPolicy: req.CoordinationPolicy,
 		ApprovalPolicy:     req.ApprovalPolicy,
 		EvidencePolicy:     req.EvidencePolicy,
+		RepoBinding:        req.RepoBinding,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1239,6 +1240,7 @@ func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request
 		CoordinationPolicy: req.CoordinationPolicy,
 		ApprovalPolicy:     req.ApprovalPolicy,
 		EvidencePolicy:     req.EvidencePolicy,
+		RepoBinding:        req.RepoBinding,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1428,35 +1430,37 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 type createProjectBody struct {
-	TenantID           uuid.UUID            `json:"tenant_id,omitempty"`
-	ActorUserID        uuid.UUID            `json:"actor_user_id,omitempty"`
-	TeamID             *uuid.UUID           `json:"team_id"`
-	Name               string               `json:"name"`
-	Description        string               `json:"description"`
-	Goal               string               `json:"goal"`
-	HumanOwnerUserID   uuid.UUID            `json:"human_owner_user_id"`
-	LeaderUserID       *uuid.UUID           `json:"leader_user_id"`
-	AcceptanceUserID   *uuid.UUID           `json:"acceptance_user_id"`
-	Members            []ProjectMemberInput `json:"members"`
-	CoordinationPolicy map[string]any       `json:"coordination_policy"`
-	ApprovalPolicy     map[string]any       `json:"approval_policy"`
-	EvidencePolicy     map[string]any       `json:"evidence_policy"`
+	TenantID           uuid.UUID                `json:"tenant_id,omitempty"`
+	ActorUserID        uuid.UUID                `json:"actor_user_id,omitempty"`
+	TeamID             *uuid.UUID               `json:"team_id"`
+	Name               string                   `json:"name"`
+	Description        string                   `json:"description"`
+	Goal               string                   `json:"goal"`
+	HumanOwnerUserID   uuid.UUID                `json:"human_owner_user_id"`
+	LeaderUserID       *uuid.UUID               `json:"leader_user_id"`
+	AcceptanceUserID   *uuid.UUID               `json:"acceptance_user_id"`
+	Members            []ProjectMemberInput     `json:"members"`
+	CoordinationPolicy map[string]any           `json:"coordination_policy"`
+	ApprovalPolicy     map[string]any           `json:"approval_policy"`
+	EvidencePolicy     map[string]any           `json:"evidence_policy"`
+	RepoBinding        *ProjectRepoBindingInput `json:"repo_binding"`
 }
 
 type updateProjectBody struct {
-	TenantID           uuid.UUID             `json:"tenant_id,omitempty"`
-	ActorUserID        uuid.UUID             `json:"actor_user_id,omitempty"`
-	ProjectID          uuid.UUID             `json:"project_id,omitempty"`
-	Name               string                `json:"name"`
-	Description        string                `json:"description"`
-	Goal               string                `json:"goal"`
-	HumanOwnerUserID   uuid.UUID             `json:"human_owner_user_id"`
-	LeaderUserID       *uuid.UUID            `json:"leader_user_id"`
-	AcceptanceUserID   *uuid.UUID            `json:"acceptance_user_id"`
-	Members            *[]ProjectMemberInput `json:"members"`
-	CoordinationPolicy map[string]any        `json:"coordination_policy"`
-	ApprovalPolicy     map[string]any        `json:"approval_policy"`
-	EvidencePolicy     map[string]any        `json:"evidence_policy"`
+	TenantID           uuid.UUID                `json:"tenant_id,omitempty"`
+	ActorUserID        uuid.UUID                `json:"actor_user_id,omitempty"`
+	ProjectID          uuid.UUID                `json:"project_id,omitempty"`
+	Name               string                   `json:"name"`
+	Description        string                   `json:"description"`
+	Goal               string                   `json:"goal"`
+	HumanOwnerUserID   uuid.UUID                `json:"human_owner_user_id"`
+	LeaderUserID       *uuid.UUID               `json:"leader_user_id"`
+	AcceptanceUserID   *uuid.UUID               `json:"acceptance_user_id"`
+	Members            *[]ProjectMemberInput    `json:"members"`
+	CoordinationPolicy map[string]any           `json:"coordination_policy"`
+	ApprovalPolicy     map[string]any           `json:"approval_policy"`
+	EvidencePolicy     map[string]any           `json:"evidence_policy"`
+	RepoBinding        *ProjectRepoBindingInput `json:"repo_binding"`
 }
 
 type submitDemandBody struct {
@@ -1581,24 +1585,33 @@ type createArchiveSnapshotBody struct {
 }
 
 type projectResponse struct {
-	ID                     string         `json:"id"`
-	TenantID               string         `json:"tenant_id"`
-	TeamID                 *string        `json:"team_id,omitempty"`
-	Name                   string         `json:"name"`
-	Description            *string        `json:"description,omitempty"`
-	Goal                   string         `json:"goal"`
-	Status                 ProjectStatus  `json:"status"`
-	HumanOwnerUserID       string         `json:"human_owner_user_id"`
-	LeaderUserID           *string        `json:"leader_user_id,omitempty"`
-	AcceptanceUserID       *string        `json:"acceptance_user_id,omitempty"`
-	CoordinationWorkflowID string         `json:"coordination_workflow_id"`
-	CoordinationStatus     string         `json:"coordination_status"`
-	CoordinationPolicy     map[string]any `json:"coordination_policy"`
-	ApprovalPolicy         map[string]any `json:"approval_policy"`
-	EvidencePolicy         map[string]any `json:"evidence_policy"`
-	ArchivedAt             *string        `json:"archived_at,omitempty"`
-	CreatedAt              string         `json:"created_at,omitempty"`
-	UpdatedAt              string         `json:"updated_at,omitempty"`
+	ID                     string                     `json:"id"`
+	TenantID               string                     `json:"tenant_id"`
+	TeamID                 *string                    `json:"team_id,omitempty"`
+	Name                   string                     `json:"name"`
+	Description            *string                    `json:"description,omitempty"`
+	Goal                   string                     `json:"goal"`
+	Status                 ProjectStatus              `json:"status"`
+	HumanOwnerUserID       string                     `json:"human_owner_user_id"`
+	LeaderUserID           *string                    `json:"leader_user_id,omitempty"`
+	AcceptanceUserID       *string                    `json:"acceptance_user_id,omitempty"`
+	CoordinationWorkflowID string                     `json:"coordination_workflow_id"`
+	CoordinationStatus     string                     `json:"coordination_status"`
+	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
+	ApprovalPolicy         map[string]any             `json:"approval_policy"`
+	EvidencePolicy         map[string]any             `json:"evidence_policy"`
+	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
+	ArchivedAt             *string                    `json:"archived_at,omitempty"`
+	CreatedAt              string                     `json:"created_at,omitempty"`
+	UpdatedAt              string                     `json:"updated_at,omitempty"`
+}
+
+type projectRepoBindingResponse struct {
+	Status           ProjectRepoBindingStatus `json:"status"`
+	URL              string                   `json:"url,omitempty"`
+	DefaultBranch    string                   `json:"default_branch,omitempty"`
+	GitCredentialRef *string                  `json:"git_credential_ref,omitempty"`
+	Scope            []string                 `json:"scope"`
 }
 
 type createProjectResponse struct {
@@ -2252,9 +2265,23 @@ func projectResponseFromDomain(project Project) projectResponse {
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),
 		ApprovalPolicy:         mapOrEmpty(project.ApprovalPolicy),
 		EvidencePolicy:         mapOrEmpty(project.EvidencePolicy),
+		RepoBinding:            projectRepoBindingResponseFromDomain(project.RepoBinding),
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),
+	}
+}
+
+func projectRepoBindingResponseFromDomain(binding ProjectRepoBinding) projectRepoBindingResponse {
+	if binding.Status != ProjectRepoBindingStatusBound {
+		return projectRepoBindingResponse{Status: ProjectRepoBindingStatusUnbound, Scope: []string{}}
+	}
+	return projectRepoBindingResponse{
+		Status:           binding.Status,
+		URL:              binding.URL,
+		DefaultBranch:    binding.DefaultBranch,
+		GitCredentialRef: binding.GitCredentialRef,
+		Scope:            append([]string(nil), binding.Scope...),
 	}
 }
 

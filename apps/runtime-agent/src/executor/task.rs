@@ -29,6 +29,7 @@ pub async fn execute_task(
     let request = ProviderRequest {
         prompt: extract_prompt(&task.params)?,
         workspace_path: workspace.workspace_path.clone(),
+        agent_home_dir: None,
         session_id: None,
         continue_session: false,
         model: extract_model(&task.params),

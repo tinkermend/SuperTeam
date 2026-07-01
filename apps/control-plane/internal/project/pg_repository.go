@@ -76,6 +76,10 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 	if err != nil {
 		return Project{}, err
 	}
+	repoParams, err := createProjectRepoBindingParams(req.RepoBinding)
+	if err != nil {
+		return Project{}, err
+	}
 	row, err := r.q.CreateProject(ctx, queries.CreateProjectParams{
 		ID:                     projectID,
 		TenantID:               req.TenantID,
@@ -92,6 +96,11 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		CoordinationPolicy:     coordinationPolicy,
 		ApprovalPolicy:         approvalPolicy,
 		EvidencePolicy:         evidencePolicy,
+		RepoUrl:                repoParams.url,
+		RepoDefaultBranch:      repoParams.defaultBranch,
+		RepoGitCredentialRef:   repoParams.gitCredentialRef,
+		RepoScope:              repoParams.scope,
+		RepoBindingStatus:      repoParams.status,
 	})
 	if err != nil {
 		return Project{}, err
@@ -257,18 +266,27 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 	if err != nil {
 		return Project{}, err
 	}
+	repoParams, err := updateProjectRepoBindingParams(req.RepoBinding)
+	if err != nil {
+		return Project{}, err
+	}
 	row, err := r.q.UpdateProject(ctx, queries.UpdateProjectParams{
-		TenantID:           req.TenantID,
-		ID:                 req.ProjectID,
-		Name:               textOrNull(req.Name),
-		Description:        textOrNull(req.Description),
-		Goal:               textOrNull(req.Goal),
-		HumanOwnerUserID:   nullUUIDIfNotNil(req.HumanOwnerUserID),
-		LeaderUserID:       nullUUID(req.LeaderUserID),
-		AcceptanceUserID:   nullUUID(req.AcceptanceUserID),
-		CoordinationPolicy: coordinationPolicy,
-		ApprovalPolicy:     approvalPolicy,
-		EvidencePolicy:     evidencePolicy,
+		TenantID:             req.TenantID,
+		ID:                   req.ProjectID,
+		Name:                 textOrNull(req.Name),
+		Description:          textOrNull(req.Description),
+		Goal:                 textOrNull(req.Goal),
+		HumanOwnerUserID:     nullUUIDIfNotNil(req.HumanOwnerUserID),
+		LeaderUserID:         nullUUID(req.LeaderUserID),
+		AcceptanceUserID:     nullUUID(req.AcceptanceUserID),
+		CoordinationPolicy:   coordinationPolicy,
+		ApprovalPolicy:       approvalPolicy,
+		EvidencePolicy:       evidencePolicy,
+		RepoUrl:              repoParams.url,
+		RepoDefaultBranch:    repoParams.defaultBranch,
+		RepoGitCredentialRef: repoParams.gitCredentialRef,
+		RepoScope:            repoParams.scope,
+		RepoBindingStatus:    repoParams.status,
 	})
 	if err != nil {
 		return Project{}, err
@@ -4523,6 +4541,10 @@ func projectFromRecord(row queries.Project) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("evidence_policy: %w", err)
 	}
+	repoBinding, err := projectRepoBindingFromRecord(row)
+	if err != nil {
+		return Project{}, err
+	}
 	return Project{
 		ID:                     row.ID,
 		TenantID:               row.TenantID,
@@ -4539,9 +4561,31 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		CoordinationPolicy:     coordinationPolicy,
 		ApprovalPolicy:         approvalPolicy,
 		EvidencePolicy:         evidencePolicy,
+		RepoBinding:            repoBinding,
 		ArchivedAt:             ptrTime(row.ArchivedAt),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
+	}, nil
+}
+
+func projectRepoBindingFromRecord(row queries.Project) (ProjectRepoBinding, error) {
+	status := ProjectRepoBindingStatus(row.RepoBindingStatus)
+	if status == "" {
+		status = ProjectRepoBindingStatusUnbound
+	}
+	if status == ProjectRepoBindingStatusUnbound {
+		return unboundProjectRepoBinding(), nil
+	}
+	scope, err := stringSliceFromJSON(row.RepoScope)
+	if err != nil {
+		return ProjectRepoBinding{}, fmt.Errorf("repo_scope: %w", err)
+	}
+	return ProjectRepoBinding{
+		Status:           status,
+		URL:              textValue(row.RepoUrl),
+		DefaultBranch:    textValue(row.RepoDefaultBranch),
+		GitCredentialRef: ptrText(row.RepoGitCredentialRef),
+		Scope:            scope,
 	}, nil
 }
 
@@ -5651,6 +5695,55 @@ func ptrText(value pgtype.Text) *string {
 	}
 	text := value.String
 	return &text
+}
+
+type repoBindingQueryParams struct {
+	url              pgtype.Text
+	defaultBranch    pgtype.Text
+	gitCredentialRef pgtype.Text
+	scope            []byte
+	status           pgtype.Text
+}
+
+func createProjectRepoBindingParams(input *ProjectRepoBindingInput) (repoBindingQueryParams, error) {
+	params, err := updateProjectRepoBindingParams(input)
+	if err != nil {
+		return repoBindingQueryParams{}, err
+	}
+	if !params.status.Valid {
+		params.status = textOrNull(string(ProjectRepoBindingStatusUnbound))
+	}
+	if params.scope == nil {
+		params.scope = []byte("[]")
+	}
+	return params, nil
+}
+
+func updateProjectRepoBindingParams(input *ProjectRepoBindingInput) (repoBindingQueryParams, error) {
+	if input == nil {
+		return repoBindingQueryParams{}, nil
+	}
+	binding, err := normalizeProjectRepoBindingInput(input)
+	if err != nil {
+		return repoBindingQueryParams{}, err
+	}
+	scope, err := jsonbStringSlice(binding.Scope, "repo_scope")
+	if err != nil {
+		return repoBindingQueryParams{}, err
+	}
+	if binding.Status != ProjectRepoBindingStatusBound {
+		return repoBindingQueryParams{
+			scope:  scope,
+			status: textOrNull(string(ProjectRepoBindingStatusUnbound)),
+		}, nil
+	}
+	return repoBindingQueryParams{
+		url:              textOrNull(binding.URL),
+		defaultBranch:    textOrNull(binding.DefaultBranch),
+		gitCredentialRef: textPtr(binding.GitCredentialRef),
+		scope:            scope,
+		status:           textOrNull(string(ProjectRepoBindingStatusBound)),
+	}, nil
 }
 
 func nullUUID(value *uuid.UUID) uuid.NullUUID {

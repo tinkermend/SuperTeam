@@ -80,7 +80,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
 type ArchiveProjectParams struct {
@@ -110,6 +110,11 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
 	)
 	return i, err
 }
@@ -398,7 +403,12 @@ INSERT INTO projects (
     coordination_status,
     coordination_policy,
     approval_policy,
-    evidence_policy
+    evidence_policy,
+    repo_url,
+    repo_default_branch,
+    repo_git_credential_ref,
+    repo_scope,
+    repo_binding_status
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -414,8 +424,13 @@ INSERT INTO projects (
     $12::varchar,
     COALESCE($13::jsonb, '{}'::jsonb),
     COALESCE($14::jsonb, '{}'::jsonb),
-    COALESCE($15::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at
+    COALESCE($15::jsonb, '{}'::jsonb),
+    $16::text,
+    $17::varchar,
+    $18::varchar,
+    COALESCE($19::jsonb, '[]'::jsonb),
+    COALESCE($20::varchar, 'unbound')
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
 type CreateProjectParams struct {
@@ -434,6 +449,11 @@ type CreateProjectParams struct {
 	CoordinationPolicy     []byte        `json:"coordination_policy"`
 	ApprovalPolicy         []byte        `json:"approval_policy"`
 	EvidencePolicy         []byte        `json:"evidence_policy"`
+	RepoUrl                pgtype.Text   `json:"repo_url"`
+	RepoDefaultBranch      pgtype.Text   `json:"repo_default_branch"`
+	RepoGitCredentialRef   pgtype.Text   `json:"repo_git_credential_ref"`
+	RepoScope              []byte        `json:"repo_scope"`
+	RepoBindingStatus      pgtype.Text   `json:"repo_binding_status"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -453,6 +473,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.CoordinationPolicy,
 		arg.ApprovalPolicy,
 		arg.EvidencePolicy,
+		arg.RepoUrl,
+		arg.RepoDefaultBranch,
+		arg.RepoGitCredentialRef,
+		arg.RepoScope,
+		arg.RepoBindingStatus,
 	)
 	var i Project
 	err := row.Scan(
@@ -474,6 +499,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
 	)
 	return i, err
 }
@@ -1480,7 +1510,7 @@ INSERT INTO project_task_attempts (
     $13::varchar,
     $14::uuid,
     $15::uuid
-) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 
 type CreateProjectTaskAttemptParams struct {
@@ -1548,6 +1578,12 @@ func (q *Queries) CreateProjectTaskAttempt(ctx context.Context, arg CreateProjec
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -2051,7 +2087,7 @@ WHERE tenant_id = $7::uuid
   AND id = $8::uuid
   AND lease_token = $9::varchar
   AND status IN ('queued', 'running')
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 
 type FinishProjectTaskAttemptParams struct {
@@ -2107,12 +2143,18 @@ func (q *Queries) FinishProjectTaskAttempt(ctx context.Context, arg FinishProjec
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
 
 const GetCurrentProjectTaskAttempt = `-- name: GetCurrentProjectTaskAttempt :one
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason
 FROM project_task_attempts pta
 JOIN project_tasks pt ON pt.current_attempt_id = pta.id
 WHERE pt.tenant_id = $1::uuid
@@ -2155,6 +2197,12 @@ func (q *Queries) GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurre
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -2268,7 +2316,7 @@ func (q *Queries) GetLatestProjectEventSequence(ctx context.Context, arg GetLate
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -2300,6 +2348,11 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
 	)
 	return i, err
 }
@@ -2740,7 +2793,7 @@ func (q *Queries) GetProjectTask(ctx context.Context, arg GetProjectTaskParams) 
 }
 
 const GetProjectTaskAttempt = `-- name: GetProjectTaskAttempt :one
-SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id FROM project_task_attempts
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason FROM project_task_attempts
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -2781,12 +2834,18 @@ func (q *Queries) GetProjectTaskAttempt(ctx context.Context, arg GetProjectTaskA
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
 
 const GetProjectTaskAttemptByIdempotencyKey = `-- name: GetProjectTaskAttemptByIdempotencyKey :one
-SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id FROM project_task_attempts
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason FROM project_task_attempts
 WHERE tenant_id = $1::uuid
   AND idempotency_key = $2::varchar
 `
@@ -2827,6 +2886,12 @@ func (q *Queries) GetProjectTaskAttemptByIdempotencyKey(ctx context.Context, arg
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -4941,7 +5006,7 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status FROM projects
 WHERE tenant_id = $1::uuid
   AND ($2::varchar IS NULL OR status = $2::varchar)
   AND (
@@ -4995,6 +5060,11 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepoUrl,
+			&i.RepoDefaultBranch,
+			&i.RepoGitCredentialRef,
+			&i.RepoScope,
+			&i.RepoBindingStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -6168,7 +6238,7 @@ WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND lease_token = $4::varchar
   AND status IN ('queued', 'running')
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 
 type RenewProjectTaskAttemptLeaseParams struct {
@@ -6214,6 +6284,12 @@ func (q *Queries) RenewProjectTaskAttemptLease(ctx context.Context, arg RenewPro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -6530,7 +6606,7 @@ WHERE tenant_id = $2::uuid
       project_task_attempts.dispatch_gate_result_id IS NULL
       OR project_task_attempts.dispatch_gate_result_id = $1::uuid
   )
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 
 type SetProjectTaskAttemptDispatchGateParams struct {
@@ -6578,6 +6654,12 @@ func (q *Queries) SetProjectTaskAttemptDispatchGate(ctx context.Context, arg Set
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -6594,7 +6676,7 @@ WHERE tenant_id = $3::uuid
   AND id = $4::uuid
   AND lease_token = $5::varchar
   AND status = 'queued'
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason
 `
 
 type StartProjectTaskAttemptParams struct {
@@ -6642,6 +6724,12 @@ func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectT
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DispatchGateResultID,
+		&i.BudgetWallClockLimitSec,
+		&i.BudgetLastHeartbeatAt,
+		&i.BudgetConsumedWallClockSec,
+		&i.BudgetConsumedTokens,
+		&i.BudgetTrippedAt,
+		&i.BudgetTripReason,
 	)
 	return i, err
 }
@@ -6685,7 +6773,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
 type TransitionProjectStatusParams struct {
@@ -6725,6 +6813,11 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
 	)
 	return i, err
 }
@@ -6742,26 +6835,52 @@ SET
     coordination_policy = COALESCE($8::jsonb, coordination_policy),
     approval_policy = COALESCE($9::jsonb, approval_policy),
     evidence_policy = COALESCE($10::jsonb, evidence_policy),
+    repo_url = CASE
+        WHEN $11::varchar IS NULL THEN repo_url
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $12::text
+    END,
+    repo_default_branch = CASE
+        WHEN $11::varchar IS NULL THEN repo_default_branch
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $13::varchar
+    END,
+    repo_git_credential_ref = CASE
+        WHEN $11::varchar IS NULL THEN repo_git_credential_ref
+        WHEN $11::varchar = 'unbound' THEN NULL
+        ELSE $14::varchar
+    END,
+    repo_scope = CASE
+        WHEN $11::varchar IS NULL THEN repo_scope
+        WHEN $11::varchar = 'unbound' THEN '[]'::jsonb
+        ELSE COALESCE($15::jsonb, '[]'::jsonb)
+    END,
+    repo_binding_status = COALESCE($11::varchar, repo_binding_status),
     updated_at = NOW()
-WHERE tenant_id = $11::uuid
-  AND id = $12::uuid
+WHERE tenant_id = $16::uuid
+  AND id = $17::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
 `
 
 type UpdateProjectParams struct {
-	Name               pgtype.Text   `json:"name"`
-	Description        pgtype.Text   `json:"description"`
-	Goal               pgtype.Text   `json:"goal"`
-	Status             pgtype.Text   `json:"status"`
-	HumanOwnerUserID   uuid.NullUUID `json:"human_owner_user_id"`
-	LeaderUserID       uuid.NullUUID `json:"leader_user_id"`
-	AcceptanceUserID   uuid.NullUUID `json:"acceptance_user_id"`
-	CoordinationPolicy []byte        `json:"coordination_policy"`
-	ApprovalPolicy     []byte        `json:"approval_policy"`
-	EvidencePolicy     []byte        `json:"evidence_policy"`
-	TenantID           uuid.UUID     `json:"tenant_id"`
-	ID                 uuid.UUID     `json:"id"`
+	Name                 pgtype.Text   `json:"name"`
+	Description          pgtype.Text   `json:"description"`
+	Goal                 pgtype.Text   `json:"goal"`
+	Status               pgtype.Text   `json:"status"`
+	HumanOwnerUserID     uuid.NullUUID `json:"human_owner_user_id"`
+	LeaderUserID         uuid.NullUUID `json:"leader_user_id"`
+	AcceptanceUserID     uuid.NullUUID `json:"acceptance_user_id"`
+	CoordinationPolicy   []byte        `json:"coordination_policy"`
+	ApprovalPolicy       []byte        `json:"approval_policy"`
+	EvidencePolicy       []byte        `json:"evidence_policy"`
+	RepoBindingStatus    pgtype.Text   `json:"repo_binding_status"`
+	RepoUrl              pgtype.Text   `json:"repo_url"`
+	RepoDefaultBranch    pgtype.Text   `json:"repo_default_branch"`
+	RepoGitCredentialRef pgtype.Text   `json:"repo_git_credential_ref"`
+	RepoScope            []byte        `json:"repo_scope"`
+	TenantID             uuid.UUID     `json:"tenant_id"`
+	ID                   uuid.UUID     `json:"id"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
@@ -6776,6 +6895,11 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.CoordinationPolicy,
 		arg.ApprovalPolicy,
 		arg.EvidencePolicy,
+		arg.RepoBindingStatus,
+		arg.RepoUrl,
+		arg.RepoDefaultBranch,
+		arg.RepoGitCredentialRef,
+		arg.RepoScope,
 		arg.TenantID,
 		arg.ID,
 	)
@@ -6799,6 +6923,11 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
 	)
 	return i, err
 }

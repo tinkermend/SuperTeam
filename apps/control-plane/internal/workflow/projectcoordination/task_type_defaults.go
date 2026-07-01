@@ -30,19 +30,74 @@ var taskTypeCapabilityDefaults = map[string][]string{
 // canonical key in taskTypeCapabilityDefaults. Keeping this separate from the
 // defaults map lets us evolve aliases without duplicating capability lists.
 var taskKindAliases = map[string]string{
-	"db_analysis":             "database_analysis",
-	"database_analytics":      "database_analysis",
-	"data_analysis":           "database_analysis",
-	"database_query":          "database_analysis",
-	"incident_investigation":  "incident_triage",
-	"incident_diagnosis":      "incident_triage",
-	"system_diagnostics":      "incident_triage",
-	"system_incident":         "incident_triage",
-	"incident_response":       "incident_triage",
-	"feature_implementation":  "feature_development",
-	"feature_dev":             "feature_development",
-	"software_development":    "feature_development",
-	"code_implementation":     "feature_development",
+	"db_analysis":            "database_analysis",
+	"database_analytics":     "database_analysis",
+	"data_analysis":          "database_analysis",
+	"database_query":         "database_analysis",
+	"incident_investigation": "incident_triage",
+	"incident_diagnosis":     "incident_triage",
+	"system_diagnostics":     "incident_triage",
+	"system_incident":        "incident_triage",
+	"incident_response":      "incident_triage",
+	"feature_implementation": "feature_development",
+	"feature_dev":            "feature_development",
+	"software_development":   "feature_development",
+	"code_implementation":    "feature_development",
+}
+
+const (
+	WorkspaceModeNone        = "none"
+	WorkspaceModeReadonly    = "readonly"
+	WorkspaceModeDiff        = "diff"
+	WorkspaceModeDetachedRun = "detached_run"
+	WorkspaceModeBranch      = "branch"
+)
+
+var taskKindWorkspaceModes = map[string]string{
+	"feature_development":    WorkspaceModeBranch,
+	"feature_implementation": WorkspaceModeBranch,
+	"feature_dev":            WorkspaceModeBranch,
+	"software_development":   WorkspaceModeBranch,
+	"code_implementation":    WorkspaceModeBranch,
+	"feature":                WorkspaceModeBranch,
+	"software":               WorkspaceModeBranch,
+	"code":                   WorkspaceModeBranch,
+	"implementation":         WorkspaceModeBranch,
+	"bug_fix":                WorkspaceModeBranch,
+	"bugfix":                 WorkspaceModeBranch,
+	"code_change":            WorkspaceModeBranch,
+	"code_review":            WorkspaceModeDiff,
+	"review":                 WorkspaceModeDiff,
+	"pull_request_review":    WorkspaceModeDiff,
+	"diff_review":            WorkspaceModeDiff,
+	"test_verification":      WorkspaceModeDetachedRun,
+	"testing_verification":   WorkspaceModeDetachedRun,
+	"build_verification":     WorkspaceModeDetachedRun,
+	"test":                   WorkspaceModeDetachedRun,
+	"testing":                WorkspaceModeDetachedRun,
+	"build":                  WorkspaceModeDetachedRun,
+	"verification":           WorkspaceModeDetachedRun,
+	"qa":                     WorkspaceModeDetachedRun,
+	"database_analysis":      WorkspaceModeReadonly,
+	"database analysis":      WorkspaceModeReadonly,
+	"db_analysis":            WorkspaceModeReadonly,
+	"database_analytics":     WorkspaceModeReadonly,
+	"data_analysis":          WorkspaceModeReadonly,
+	"database_query":         WorkspaceModeReadonly,
+	"incident_triage":        WorkspaceModeReadonly,
+	"incident":               WorkspaceModeReadonly,
+	"incident_investigation": WorkspaceModeReadonly,
+	"incident_diagnosis":     WorkspaceModeReadonly,
+	"system_diagnostics":     WorkspaceModeReadonly,
+	"system_incident":        WorkspaceModeReadonly,
+	"incident_response":      WorkspaceModeReadonly,
+	"analysis":               WorkspaceModeReadonly,
+	"status_report":          WorkspaceModeNone,
+	"status":                 WorkspaceModeNone,
+	"human_approval":         WorkspaceModeNone,
+	"human":                  WorkspaceModeNone,
+	"acceptance_summary":     WorkspaceModeNone,
+	"acceptance":             WorkspaceModeNone,
 }
 
 // canonicalTaskKind normalizes a planner-emitted task kind into the canonical key
@@ -59,6 +114,20 @@ func canonicalTaskKind(kind string) string {
 		return normalized
 	}
 	return ""
+}
+
+func WorkspaceModeForTaskKind(kind string) string {
+	normalized := normalizePlanningString(kind)
+	if normalized == "" {
+		return WorkspaceModeNone
+	}
+	if canonical := canonicalTaskKind(normalized); canonical != "" {
+		normalized = canonical
+	}
+	if mode, ok := taskKindWorkspaceModes[normalized]; ok {
+		return mode
+	}
+	return WorkspaceModeNone
 }
 
 // DefaultRequiredCapabilities returns the platform-default required capabilities

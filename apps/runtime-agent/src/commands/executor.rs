@@ -34,6 +34,12 @@ pub struct RuntimeCommandOutcome {
     pub run_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandWorkspace {
+    agent_home_dir: PathBuf,
+    workspace_path: PathBuf,
+}
+
 #[derive(Clone)]
 struct RuntimeCommandWritebackSink {
     client: ControlPlaneClient,
@@ -246,8 +252,8 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
-        let workspace_path = match self.ensure_command_instance(&command.id, &payload) {
-            Ok(workspace_path) => workspace_path,
+        let command_workspace = match self.ensure_command_instance(&command.id, &payload) {
+            Ok(command_workspace) => command_workspace,
             Err(error) => {
                 self.write_session_workspace_sync_failure(
                     &payload.command_id,
@@ -260,7 +266,8 @@ impl RuntimeCommandExecutor {
         };
         let spec = RunSpec {
             provider_kind: payload.provider_kind().to_string(),
-            workspace_path,
+            workspace_path: command_workspace.workspace_path,
+            agent_home_dir: Some(command_workspace.agent_home_dir),
             prompt,
             session_id: session_id.clone(),
             continue_session: matches!(
@@ -884,7 +891,7 @@ impl RuntimeCommandExecutor {
         &self,
         command_id: &str,
         payload: &RuntimeSessionCommandPayload,
-    ) -> anyhow::Result<PathBuf> {
+    ) -> anyhow::Result<CommandWorkspace> {
         let agent_home_dir_text = payload
             .agent_home_dir
             .as_deref()
@@ -911,7 +918,10 @@ impl RuntimeCommandExecutor {
             provider_home,
             files: payload.workspace_files.clone(),
         })
-        .map(|_| agent_home_dir)
+        .map(|_| CommandWorkspace {
+            workspace_path: agent_home_dir.clone(),
+            agent_home_dir,
+        })
         .map_err(|error| self.recorded_error(command_id, error))
     }
 
@@ -2025,6 +2035,7 @@ fn provider_request(spec: &RunSpec) -> ProviderRequest {
     ProviderRequest {
         prompt: spec.prompt.clone(),
         workspace_path: spec.workspace_path.clone(),
+        agent_home_dir: spec.agent_home_dir.clone(),
         session_id: spec.session_id.clone(),
         continue_session: spec.continue_session,
         model: spec.model.clone(),
