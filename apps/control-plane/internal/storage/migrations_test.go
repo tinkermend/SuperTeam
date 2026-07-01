@@ -637,6 +637,20 @@ func TestProjectDecisionRequestsPlanRevisionResumeMigration(t *testing.T) {
 	}
 }
 
+func TestProjectPlanRevisionCreatedEventMigration(t *testing.T) {
+	legacy := readMigration(t, "031_project_plan_revisions.sql")
+	require.NotContains(t, legacy, "created_event_id UUID")
+
+	sql := readMigration(t, "042_project_plan_revision_created_event.sql")
+	for _, expected := range []string{
+		"ALTER TABLE project_plan_revisions",
+		"ADD COLUMN created_event_id UUID",
+		"COMMENT ON COLUMN project_plan_revisions.created_event_id IS",
+	} {
+		require.Contains(t, sql, expected)
+	}
+}
+
 func TestProjectTasksMigrationAddsGraphContractColumns(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{
