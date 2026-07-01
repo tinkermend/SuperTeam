@@ -1062,6 +1062,38 @@ func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
 	require.Contains(t, store.calls, "FinishCoordinationJob")
 }
 
+func TestProjectCoordinatorContinuesAsNewWhenSuggestedAfterSignal(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.SetContinueAsNewSuggested(true)
+	projectID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:      CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent: uuid.New(),
+	}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalProjectPolicyChanged, ProjectPolicyChanged{
+			ProjectID:        projectID,
+			ConfigRevisionID: uuid.New(),
+			ChangedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+		Generation: 3,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	require.Contains(t, env.GetWorkflowError().Error(), "continue as new")
+	require.Equal(t, []string{"AppendProjectEvent"}, store.calls)
+}
+
 func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testing.T) {
 	store := &recordingActivityStore{dispatchErr: &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject}}
 	activities := NewActivities(store, HeuristicRoutePlanner{})

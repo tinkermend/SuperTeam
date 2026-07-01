@@ -98,6 +98,14 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		if shouldStop {
 			return nil
 		}
+		if shouldContinueAsNew(ctx) {
+			return workflow.NewContinueAsNewError(ctx, ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+				TenantID:   input.TenantID,
+				ProjectID:  input.ProjectID,
+				WorkflowID: input.WorkflowID,
+				Generation: input.Generation + 1,
+			})
+		}
 	}
 }
 
@@ -667,6 +675,10 @@ func appendSignalObservedEvent(ctx workflow.Context, input ProjectCoordinatorInp
 		EventType: "workflow.signaled",
 		Summary:   summary,
 	}).Get(ctx, &event)
+}
+
+func shouldContinueAsNew(ctx workflow.Context) bool {
+	return workflow.GetInfo(ctx).GetContinueAsNewSuggested()
 }
 
 func defaultRetryPolicy() *temporal.RetryPolicy {

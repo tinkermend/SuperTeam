@@ -22,6 +22,7 @@ type ProjectCoordinatorInput struct {
 	TenantID   uuid.UUID
 	ProjectID  uuid.UUID
 	WorkflowID string
+	Generation int
 }
 
 type DemandSubmitted struct {
