@@ -14,6 +14,12 @@ STOP_TIMEOUT_SECONDS="${SUPERTEAM_DEV_STOP_TIMEOUT_SECONDS:-10}"
 
 CONTROL_PLANE_CMD="${SUPERTEAM_DEV_CONTROL_PLANE_CMD:-pnpm run dev:control-plane}"
 CONTROL_PLANE_WAIT_URL="${SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL-http://127.0.0.1:8081/health}"
+CONTROL_PLANE_DIR="${SUPERTEAM_DEV_CONTROL_PLANE_DIR:-$PROJECT_ROOT/apps/control-plane}"
+CONTROL_PLANE_MIGRATIONS_DIR="${SUPERTEAM_DEV_CONTROL_PLANE_MIGRATIONS_DIR:-internal/storage/migrations}"
+CONTROL_PLANE_CONFIG="${SUPERTEAM_DEV_CONTROL_PLANE_CONFIG:-$PROJECT_ROOT/apps/control-plane/config/config.yaml}"
+# 迁移在 control-plane 启动前自动执行；置 1 可跳过（例如 CI 已单独迁移）。
+SKIP_MIGRATIONS="${SUPERTEAM_DEV_SKIP_MIGRATIONS:-0}"
+ATLAS_CMD="${SUPERTEAM_DEV_ATLAS_CMD:-atlas}"
 
 TEMPORAL_CMD="${SUPERTEAM_DEV_TEMPORAL_CMD:-temporal server start-dev}"
 TEMPORAL_WAIT_URL="${SUPERTEAM_DEV_TEMPORAL_WAIT_URL-http://127.0.0.1:8233/}"
@@ -310,6 +316,69 @@ launch_service_process() {
     printf '%s\n' "$!"
 }
 
+# 解析 control-plane 实际连接的数据库 URL。
+# 优先级：SUPERTEAM_DEV_DATABASE_URL > DATABASE_URL > config.yaml 的 postgres.url。
+resolve_control_plane_db_url() {
+    if [ -n "${SUPERTEAM_DEV_DATABASE_URL:-}" ]; then
+        printf '%s\n' "$SUPERTEAM_DEV_DATABASE_URL"
+        return 0
+    fi
+    if [ -n "${DATABASE_URL:-}" ]; then
+        printf '%s\n' "$DATABASE_URL"
+        return 0
+    fi
+    if [ -f "$CONTROL_PLANE_CONFIG" ]; then
+        awk '
+            /^[A-Za-z]/ { section=$1 }
+            section=="postgres:" && $1=="url:" {
+                line=$0; sub(/^[^"]*"/,"",line); sub(/".*$/,"",line); print line; exit
+            }
+        ' "$CONTROL_PLANE_CONFIG"
+        return 0
+    fi
+    return 0
+}
+
+# 在启动 control-plane 前执行数据库迁移，避免 schema 漂移。
+run_control_plane_migrations() {
+    if [ "$SKIP_MIGRATIONS" = "1" ]; then
+        log_warn "SUPERTEAM_DEV_SKIP_MIGRATIONS=1，跳过 control-plane 数据库迁移"
+        return 0
+    fi
+
+    if ! command -v "$ATLAS_CMD" >/dev/null 2>&1; then
+        log_error "未找到 atlas（$ATLAS_CMD），无法执行迁移；安装 atlas 或设 SUPERTEAM_DEV_SKIP_MIGRATIONS=1 跳过"
+        return 1
+    fi
+
+    local db_url
+    db_url="$(resolve_control_plane_db_url)"
+    if [ -z "$db_url" ]; then
+        log_error "无法解析数据库 URL（检查 DATABASE_URL 或 $CONTROL_PLANE_CONFIG 的 postgres.url）"
+        return 1
+    fi
+
+    local log
+    log="$(log_file "control-plane")"
+    {
+        echo ""
+        echo "===== $(date '+%Y-%m-%d %H:%M:%S') migrate control-plane ====="
+        echo "dir: $CONTROL_PLANE_MIGRATIONS_DIR"
+    } >>"$log"
+
+    log_info "applying control-plane migrations (atlas migrate apply)"
+    if ! (cd "$CONTROL_PLANE_DIR" && "$ATLAS_CMD" migrate apply \
+            --dir "file://$CONTROL_PLANE_MIGRATIONS_DIR" \
+            --url "$db_url" \
+            --revisions-schema atlas_schema_revisions >>"$log" 2>&1); then
+        log_error "control-plane 迁移失败，查看日志: $log"
+        tail_service_log "control-plane"
+        return 1
+    fi
+    log_success "control-plane migrations up to date"
+    return 0
+}
+
 start_service() {
     local service="$1"
     ensure_dirs
@@ -338,6 +407,12 @@ start_service() {
     if http_ok "$url"; then
         log_warn "$service already responds at $url but is not managed by this script; skipping start"
         return 0
+    fi
+
+    if [ "$service" = "control-plane" ]; then
+        if ! run_control_plane_migrations; then
+            return 1
+        fi
     fi
 
     local cmd

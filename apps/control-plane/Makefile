@@ -1,4 +1,8 @@
-.PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status
+.PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status migrate-validate
+
+# Throwaway dev DB used by migrate-validate to replay migrations. Standard CI has a docker
+# daemon; override for local podman etc: make migrate-validate DEV_URL=postgres://...:5432/dev?sslmode=disable
+DEV_URL ?= docker://postgres/16/dev
 
 # Generate code from sqlc and OpenAPI specs
 generate: generate-sqlc generate-openapi
@@ -54,3 +58,9 @@ migrate-down:
 migrate-status:
 	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
 	atlas migrate status --dir file://internal/storage/migrations --url "$(DATABASE_URL)" --revisions-schema atlas_schema_revisions
+
+# Verify atlas.sum integrity and that every migration replays cleanly on a throwaway dev DB.
+# Touches no real DB; safe to run in CI as a schema-drift/checksum gate.
+# (atlas migrate lint is intentionally not wired in: v0.38+ gates it behind Atlas Pro login.)
+migrate-validate:
+	atlas migrate validate --dir file://internal/storage/migrations --dev-url "$(DEV_URL)"
