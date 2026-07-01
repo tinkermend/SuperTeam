@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-01 23:01：修复项目管理首页首开风险数据逐项刷新导致的半成品计数和排序抖动：当前页任务、决策、证据信号未全部返回前，风险摘要与队列统一显示“风险识别中”，待当前页信号稳定后再一次性展示真实风险计数、行级标签和排序；后台 refetch 已有稳定结果时不再清空页面。验证：`corepack pnpm --filter ./apps/web run test -- src/features/projects/index.test.tsx`、`corepack pnpm --filter ./apps/web run typecheck`、`git diff --check` 通过；重启真实 Web 后用 Chrome 打开 `/projects?finalSmoke=1`，页面加载真实 Control Plane 数据，项目管理标题、风险摘要、项目队列均可见且浏览器 error/warning 日志为空。
+
 - 2026-07-01 17:52：修复 Runtime Agent 项目任务完成写回对 Provider `result_contract.verification[].evidence` 别名不兼容的问题：写回前将非后端契约字段 `evidence` 归一到 `summary` 并移除原字段，避免 Control Plane 严格解码返回 `json: unknown field "evidence"`，导致 `task_runs` 已 completed 但 `project_tasks/project_task_attempts` 仍停在 running。验证：`cargo test --manifest-path apps/runtime-agent/Cargo.toml`、`git diff --check` 通过；真实链路在合并后的 main 临时 worktree 上用 Control Plane(:8081)+Temporal+Runtime Agent+Codex Provider 新建项目 `0a90c33e-a1b6-4094-837b-45aca03b62bc` 和需求 `7c60646a-55fa-4d35-bb10-f9de0f5a5820`，Provider 输出刻意包含 `verification[].evidence`，最终 `/api/v1/runtime/project-task-attempts/97c65b42-fd90-5716-a130-718e99beb20f/complete` 返回 202，ProjectTask `c1a7bb58-8f00-41c3-a430-7b7ea1a34a74` completed、attempt succeeded、`project_task_results` 为 `completed/accepted/complete_accepted`。
 
 - 2026-07-01 15:43：Web 侧栏菜单补强字体渲染与深色模式对比度：全局开启字体平滑，侧栏菜单字号提升至 15px，并为深色模式下未激活菜单文字和图标增加可读性覆盖；同步补充侧栏菜单浏览器测试。验证：`corepack pnpm --filter ./apps/web run test -- src/components/layout/sidebar-menu-sizing.test.tsx src/components/layout/sidebar-collapsed-alignment.test.tsx src/styles/v3-shell-background.test.tsx`、`git diff --check` 通过。

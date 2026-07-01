@@ -72,8 +72,10 @@ export type ProjectSelectedContextPanelProps = {
 };
 
 export function ProjectHomeRiskSummaryBar({
+  isLoading,
   riskSummaries,
 }: {
+  isLoading?: boolean;
   riskSummaries: ProjectRiskSummaryMap;
 }) {
   const counts = buildRiskCounts(Object.values(riskSummaries));
@@ -120,6 +122,28 @@ export function ProjectHomeRiskSummaryBar({
     tone: V3Tone;
     value: number;
   }>;
+
+  if (isLoading) {
+    return (
+      <section
+        aria-label="项目风险汇总（当前页）"
+        className="grid gap-3 rounded-v3-card border border-v3-line bg-v3-card p-4 shadow-v3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
+      >
+        <IconTile tone="info" size="sm">
+          <ShieldAlert />
+        </IconTile>
+        <div className="min-w-0">
+          <StatusPill tone="info">风险识别中</StatusPill>
+          <p className="mt-2 text-sm font-semibold leading-6 text-v3-ink">
+            正在读取当前页项目的任务、决策和证据信号
+          </p>
+          <p className="mt-1 text-[12px] leading-5 text-v3-ink-3">
+            摘要将在当前页风险信号稳定后一次性展示，避免首开半成品计数跳动。
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section

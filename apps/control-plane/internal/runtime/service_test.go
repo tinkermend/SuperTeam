@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -484,7 +485,7 @@ func TestRuntimeServiceCreatesEventBestEffortPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	err = service.CreateRuntimeEvent(context.Background(), CreateRuntimeEventRequest{
-		TenantID:      DefaultTenantID,
+		TenantID:      platform.DefaultTenantID,
 		NodeID:        "node-1",
 		EventType:     RuntimeEventEnrollmentApproved,
 		Severity:      RuntimeEventSeveritySuccess,
@@ -513,14 +514,14 @@ func TestRuntimeEnrollmentDecisionsCreateEvents(t *testing.T) {
 	rejectedEnrollment := repo.seedRuntimeOverviewPendingEnrollment(t, "runtime-reject")
 
 	_, err = service.ApproveEnrollment(context.Background(), ApproveEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: approvedEnrollment.ID,
 		ApprovedBy:   runtimeTestUUID(901),
 	})
 	require.NoError(t, err)
 
 	_, err = service.RejectEnrollment(context.Background(), RejectEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: rejectedEnrollment.ID,
 		RejectedBy:   runtimeTestUUID(902),
 		Reason:       "missing runtime owner",
@@ -558,7 +559,7 @@ func TestRuntimeServiceBuildsOverview(t *testing.T) {
 	repo.nodes = []NodeRecord{
 		{
 			ID:                 uuid.MustParse("00000000-0000-0000-0000-000000000701"),
-			TenantID:           DefaultTenantID,
+			TenantID:           platform.DefaultTenantID,
 			NodeID:             "prod-runtime-shanghai-01",
 			Name:               "prod-runtime-shanghai-01",
 			SupportedProviders: []byte(`["claude-code"]`),
@@ -583,7 +584,7 @@ func TestRuntimeServiceBuildsOverview(t *testing.T) {
 	for i := 0; i < 7; i++ {
 		repo.enrollments = append(repo.enrollments, RuntimeEnrollmentRecord{
 			ID:        runtimeTestUUID(702 + i),
-			TenantID:  DefaultTenantID,
+			TenantID:  platform.DefaultTenantID,
 			NodeID:    fmt.Sprintf("customer-vm-east-%02d", i+1),
 			Status:    RuntimeEnrollmentStatusPending,
 			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
@@ -597,7 +598,7 @@ func TestRuntimeServiceBuildsOverview(t *testing.T) {
 	}}
 	repo.runtimeEvents = []RuntimeEvent{{
 		ID:        uuid.MustParse("00000000-0000-0000-0000-000000000703"),
-		TenantID:  DefaultTenantID,
+		TenantID:  platform.DefaultTenantID,
 		NodeID:    "prod-runtime-shanghai-01",
 		EventType: RuntimeEventCommandCompleted,
 		Severity:  RuntimeEventSeveritySuccess,
@@ -606,7 +607,7 @@ func TestRuntimeServiceBuildsOverview(t *testing.T) {
 		CreatedAt: time.Now(),
 	}}
 
-	overview, err := service.GetOverview(context.Background(), RuntimeOverviewFilter{TenantID: DefaultTenantID})
+	overview, err := service.GetOverview(context.Background(), RuntimeOverviewFilter{TenantID: platform.DefaultTenantID})
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), overview.Summary.OnlineNodes)
 	assert.Equal(t, int64(8), overview.Summary.TotalNodes)
@@ -615,7 +616,7 @@ func TestRuntimeServiceBuildsOverview(t *testing.T) {
 	assert.Equal(t, int64(7), overview.Summary.PendingEnrollments)
 	require.Len(t, overview.PendingEnrollments, 5)
 	require.Len(t, overview.Nodes, 1)
-	assert.Equal(t, DefaultTenantID, repo.lastListNodesForTenantParams.TenantID)
+	assert.Equal(t, platform.DefaultTenantID, repo.lastListNodesForTenantParams.TenantID)
 	assert.Equal(t, int32(50), repo.lastListNodesForTenantParams.Limit)
 	assert.Equal(t, "prod-runtime-shanghai-01", overview.Nodes[0].NodeID)
 	require.Len(t, overview.ProviderCapabilities, 1)
@@ -646,7 +647,7 @@ func TestRuntimeServiceRedactsSensitiveEventPayloadWithoutRedactingTokenMetrics(
 	}
 
 	err = service.CreateRuntimeEvent(context.Background(), CreateRuntimeEventRequest{
-		TenantID:  DefaultTenantID,
+		TenantID:  platform.DefaultTenantID,
 		EventType: RuntimeEventCommandCompleted,
 		Severity:  RuntimeEventSeveritySuccess,
 		Source:    RuntimeEventSourceRuntimeCommand,
@@ -683,7 +684,7 @@ func TestRuntimeCapabilityFromQueryPreservesPayloadFields(t *testing.T) {
 
 	capability := runtimeCapabilityFromQuery(queries.RuntimeCapability{
 		ID:               uuid.MustParse("00000000-0000-0000-0000-000000000801"),
-		TenantID:         DefaultTenantID,
+		TenantID:         platform.DefaultTenantID,
 		RuntimeNodeID:    uuid.MustParse("00000000-0000-0000-0000-000000000802"),
 		CapabilityType:   "provider",
 		CapabilityKey:    "claude-code:default",
@@ -813,7 +814,7 @@ func (r *runtimeOverviewFakeRepository) seedRuntimeOverviewPendingEnrollment(t *
 	require.NoError(t, err)
 	record := RuntimeEnrollmentRecord{
 		ID:             runtimeTestUUID(len(r.enrollmentsByID) + 950),
-		TenantID:       DefaultTenantID,
+		TenantID:       platform.DefaultTenantID,
 		RuntimeNodeID:  uuid.Nil,
 		NodeID:         nodeID,
 		BootstrapKeyID: runtimeTestUUID(len(r.enrollmentsByID) + 970),

@@ -81,7 +81,11 @@ import {
   ProjectSelectedContextPanel,
 } from "./components/project-risk-home";
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
-import type { ProjectRiskFilter } from "./project-risk";
+import {
+  emptyProjectRiskSummary,
+  type ProjectRiskFilter,
+  type ProjectRiskSummaryMap,
+} from "./project-risk";
 
 type ProjectsPageProps = {
   fetcher?: typeof fetch;
@@ -268,6 +272,25 @@ export function ProjectsView({
     apiOptions,
     projects: pagedProjects,
   });
+  const isCurrentPageRiskSettling = pagedProjects.some(
+    (project) => currentPageRiskSignals.summaries[project.id]?.state === "pending",
+  );
+  const displayedRiskSummaries = useMemo<ProjectRiskSummaryMap>(() => {
+    if (!isCurrentPageRiskSettling) {
+      return currentPageRiskSignals.summaries;
+    }
+
+    return Object.fromEntries(
+      pagedProjects.map((project) => [
+        project.id,
+        emptyProjectRiskSummary(project, { state: "pending" }),
+      ]),
+    );
+  }, [
+    currentPageRiskSignals.summaries,
+    isCurrentPageRiskSettling,
+    pagedProjects,
+  ]);
 
   useEffect(() => {
     setProjectListPage(1);
@@ -749,7 +772,8 @@ export function ProjectsView({
           ) : (
             <>
               <ProjectHomeRiskSummaryBar
-                riskSummaries={currentPageRiskSignals.summaries}
+                isLoading={isCurrentPageRiskSettling}
+                riskSummaries={displayedRiskSummaries}
               />
 
               <div
@@ -763,7 +787,7 @@ export function ProjectsView({
                 <ProjectRiskQueue
                   activePage={activeProjectListPage}
                   filters={filters}
-                  isFetching={projectsQuery.isFetching || currentPageRiskSignals.isFetching}
+                  isFetching={projectsQuery.isFetching || isCurrentPageRiskSettling}
                   onFiltersChange={setFilters}
                   onPageChange={setProjectListPage}
                   onPageSizeChange={(size) => {
@@ -774,7 +798,7 @@ export function ProjectsView({
                   pageCount={projectListPageCount}
                   pageSize={projectListPageSize}
                   projects={pagedProjects}
-                  riskSummaries={currentPageRiskSignals.summaries}
+                  riskSummaries={displayedRiskSummaries}
                   selectedProjectId={effectiveProjectId}
                   total={projects.length}
                 />
@@ -849,7 +873,7 @@ export function ProjectsView({
                     recentEvents={projectEvents}
                     riskSummary={
                       effectiveProjectId
-                        ? currentPageRiskSignals.summaries[effectiveProjectId]
+                        ? displayedRiskSummaries[effectiveProjectId]
                         : undefined
                     }
                   />

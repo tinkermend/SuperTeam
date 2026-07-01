@@ -15,8 +15,6 @@ const (
 	NodeStatusOffline NodeStatus = "offline"
 )
 
-var DefaultTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-
 // RuntimeEnrollmentStatus represents the human approval state for runtime enrollment.
 type RuntimeEnrollmentStatus string
 

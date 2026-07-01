@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 type mockRepo struct {
@@ -585,7 +587,7 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 		Password:          "secret",
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:operator"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
-		TenantID:          uuid.MustParse(DefaultTenantID),
+		TenantID:          platform.DefaultTenantID,
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
@@ -624,7 +626,7 @@ func TestCreateManagedUserPersistsDisplayNameHumanAvatarAndScopes(t *testing.T) 
 		Password:          "secret",
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:zhoumin"},
 		SelectableTeamIDs: []uuid.UUID{teamA, teamB},
-		TenantID:          uuid.MustParse(DefaultTenantID),
+		TenantID:          platform.DefaultTenantID,
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
@@ -652,7 +654,7 @@ func TestCreateManagedUserRollsBackCreatedUserWhenScopeReplacementFails(t *testi
 		Password:          "secret",
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:rollback-user"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
-		TenantID:          uuid.MustParse(DefaultTenantID),
+		TenantID:          platform.DefaultTenantID,
 	})
 	if err == nil {
 		t.Fatal("expected create managed user to fail")
@@ -675,7 +677,7 @@ func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
 		DisplayName: "空范围",
 		Password:    "secret",
 		Avatar:      UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:empty-scope"},
-		TenantID:    uuid.MustParse(DefaultTenantID),
+		TenantID:    platform.DefaultTenantID,
 	})
 	if !errors.Is(err, ErrInvalidManagedUserInput) {
 		t.Fatalf("expected invalid managed user input, got %v", err)
@@ -693,7 +695,7 @@ func TestReplaceUserProjectTeamScopesRejectsNilOrInvalidTeamIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create target: %v", err)
 	}
-	tenantID := uuid.MustParse(DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	invalidTeamID := uuid.New()
 	repo.invalidTeamIDs[invalidTeamID] = true
 
@@ -729,7 +731,7 @@ func TestReplaceUserProjectTeamScopesSyncsOpenFGATuplesBestEffort(t *testing.T) 
 	if err != nil {
 		t.Fatalf("create target: %v", err)
 	}
-	tenantID := uuid.MustParse(DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	oldTeamID := uuid.New()
 	keptTeamID := uuid.New()
 	newTeamID := uuid.New()
@@ -762,7 +764,7 @@ func TestCreateManagedUserRejectsDigitalEmployeeAvatarAssetOnly(t *testing.T) {
 		Password:          "secret",
 		AvatarAssetID:     " ENGINEER-F-01 ",
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
-		TenantID:          uuid.MustParse(DefaultTenantID),
+		TenantID:          platform.DefaultTenantID,
 	})
 	if !errors.Is(err, ErrInvalidManagedUserInput) {
 		t.Fatalf("expected invalid managed user input for digital employee avatar asset, got %v", err)
@@ -1001,7 +1003,7 @@ func TestValidateAndConsumeCaptchaIsCaseInsensitiveAndOneTime(t *testing.T) {
 	captchaID := uuid.New()
 	record := &CaptchaChallengeRecord{
 		ID:         captchaID,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
 		ExpiresAt:  now.Add(time.Minute),
 	}
@@ -1034,7 +1036,7 @@ func TestValidateAndConsumeCaptchaConsumesExpiredAndWrongAnswers(t *testing.T) {
 	expiredID := uuid.New()
 	repo.captchaChallenges[expiredID] = &CaptchaChallengeRecord{
 		ID:         expiredID,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(expiredID.String(), "A7K2"),
 		ExpiresAt:  now.Add(-time.Second),
 	}
@@ -1049,7 +1051,7 @@ func TestValidateAndConsumeCaptchaConsumesExpiredAndWrongAnswers(t *testing.T) {
 	wrongID := uuid.New()
 	repo.captchaChallenges[wrongID] = &CaptchaChallengeRecord{
 		ID:         wrongID,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(wrongID.String(), "B7K2"),
 		ExpiresAt:  now.Add(time.Minute),
 	}
@@ -1091,7 +1093,7 @@ func TestValidateAndConsumeCaptchaPropagatesInfrastructureErrors(t *testing.T) {
 	captchaID := uuid.New()
 	repo.captchaChallenges[captchaID] = &CaptchaChallengeRecord{
 		ID:         captchaID,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
 		ExpiresAt:  now.Add(time.Minute),
 	}
@@ -1135,7 +1137,7 @@ func TestValidateAndConsumeCaptchaLogsUsedFailureAfterTransaction(t *testing.T) 
 	usedAt := now.Add(-time.Second)
 	repo.captchaChallenges[captchaID] = &CaptchaChallengeRecord{
 		ID:         captchaID,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(captchaID.String(), "A7K2"),
 		ExpiresAt:  now.Add(time.Minute),
 		UsedAt:     &usedAt,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
@@ -59,7 +60,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if optionsResp.Code != http.StatusOK {
 		t.Fatalf("expected create options to succeed, got %d: %s", optionsResp.Code, optionsResp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.createOptionsReq.TenantID != expectedTenantID || service.createOptionsReq.TeamID == nil || *service.createOptionsReq.TeamID != teamID {
 		t.Fatalf("expected create options tenant/team %s/%s, got %#v", expectedTenantID, teamID, service.createOptionsReq)
 	}
@@ -340,8 +341,8 @@ func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	employeeID := uuid.New()
 	bindingID := uuid.New()
 	service := &routeCapabilityService{
@@ -615,8 +616,8 @@ func TestEmployeeRoutesWorkspaceFilesUseConsoleTenantAndActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	employeeID := uuid.New()
 	authorizer := newRecordingAuthorizer()
 	service := &routeEmployeeService{}
@@ -706,7 +707,7 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	teamID := uuid.New()
 	service := &routeEmployeeService{
 		createOptions: &employee.CreateOptions{
@@ -848,8 +849,8 @@ type routeConsoleSessionUser struct {
 
 func routeConsoleUser(t *testing.T, authService *auth.Service, tenantID uuid.UUID) routeConsoleSessionUser {
 	t.Helper()
-	if tenantID != uuid.MustParse(auth.DefaultTenantID) {
-		t.Fatalf("route auth service only supports default tenant %s, got %s", auth.DefaultTenantID, tenantID)
+	if tenantID != platform.DefaultTenantID {
+		t.Fatalf("route auth service only supports default tenant %s, got %s", platform.DefaultTenantID.String(), tenantID)
 	}
 	user, err := authService.CreateUser(context.Background(), "admin", "admin")
 	if err != nil {
@@ -946,7 +947,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	handler.SetRunService(runService)
 	server.SetEmployeeHandler(handler)
 	cookie := routeLogin(t, server, "admin", "admin")
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	employeeID := uuid.New()
 
 	createBody := `{
@@ -1245,7 +1246,7 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 	if len(authorizer.checks) != len(tests) {
 		t.Fatalf("expected one authorization check per request, got %#v", authorizer.checks)
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	for idx, check := range authorizer.checks {
 		expected := tests[idx]
 		if check.Action != expected.action {

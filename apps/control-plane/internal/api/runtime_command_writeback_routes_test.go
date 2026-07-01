@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/runtime"
@@ -38,7 +39,7 @@ func TestRuntimeCommandWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 		t.Fatalf("expected one writeback service call, got %#v", writebackService.calls)
 	}
 	call := writebackService.calls[0]
-	if call.method != "event" || call.identity.TenantID != runtime.DefaultTenantID || call.identity.RuntimeNodeID != routeRuntimeSessionRuntimeNodeID || call.identity.NodeID != "node-session" || call.commandID != "cmd-1" {
+	if call.method != "event" || call.identity.TenantID != platform.DefaultTenantID || call.identity.RuntimeNodeID != routeRuntimeSessionRuntimeNodeID || call.identity.NodeID != "node-session" || call.commandID != "cmd-1" {
 		t.Fatalf("expected tenant/command from runtime session route, got %#v", call)
 	}
 }

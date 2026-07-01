@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 var (
@@ -992,7 +994,7 @@ func (s *Service) recordToRuntimeSession(record RuntimeSessionRecord) *RuntimeSe
 
 func tenantOrDefault(tenantID uuid.UUID) uuid.UUID {
 	if tenantID == uuid.Nil {
-		return DefaultTenantID
+		return platform.DefaultTenantID
 	}
 	return tenantID
 }

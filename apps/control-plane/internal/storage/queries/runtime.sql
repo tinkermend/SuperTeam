@@ -86,6 +86,25 @@ WHERE node_id = $1
   AND archived_at IS NULL
 RETURNING *;
 
+-- TryAcquireRuntimeNodeSlot atomically reserves one execution slot on a node.
+-- The capacity guard (current_load < max_slots) and liveness guards
+-- (status = 'online', fresh heartbeat) live inside the same UPDATE statement,
+-- so concurrent acquires serialize on the row lock and PostgreSQL re-evaluates
+-- the WHERE clause against the latest row version. Returns no rows when the
+-- node is full, offline, stale, or archived; callers must treat pgx.ErrNoRows
+-- as "slot unavailable" and try the next candidate.
+-- name: TryAcquireRuntimeNodeSlot :one
+UPDATE runtime_nodes
+SET current_load = current_load + 1,
+    updated_at = NOW()
+WHERE node_id = $1
+  AND archived_at IS NULL
+  AND disabled_at IS NULL
+  AND status = 'online'
+  AND last_heartbeat_at > $2
+  AND current_load < max_slots
+RETURNING *;
+
 -- name: UpdateRuntimeNodeStatus :one
 UPDATE runtime_nodes
 SET status = $2,

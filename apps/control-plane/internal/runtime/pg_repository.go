@@ -222,6 +222,30 @@ func (r *PgRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams) 
 	}, nil
 }
 
+func (r *PgRepository) TryAcquireNodeSlot(ctx context.Context, nodeID string, heartbeatThreshold pgtype.Timestamptz) (NodeRecord, error) {
+	node, err := r.q.TryAcquireRuntimeNodeSlot(ctx, queries.TryAcquireRuntimeNodeSlotParams{
+		NodeID:          nodeID,
+		LastHeartbeatAt: heartbeatThreshold,
+	})
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	return NodeRecord{
+		ID:                 node.ID,
+		TenantID:           node.TenantID,
+		NodeID:             node.NodeID,
+		Name:               node.Name,
+		SupportedProviders: node.SupportedProviders,
+		MaxSlots:           node.MaxSlots,
+		CurrentLoad:        node.CurrentLoad,
+		Status:             node.Status,
+		Metadata:           node.Metadata,
+		LastHeartbeatAt:    node.LastHeartbeatAt,
+		CreatedAt:          node.CreatedAt,
+		UpdatedAt:          node.UpdatedAt,
+	}, nil
+}
+
 func (r *PgRepository) UpdateStatus(ctx context.Context, params UpdateStatusParams) (NodeRecord, error) {
 	node, err := r.q.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
 		NodeID: params.NodeID,

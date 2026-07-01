@@ -401,6 +401,14 @@ type Querier interface {
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the
 	// caller can treat it as an idempotent no-op via ErrNoRows.
 	TransitionProjectStatus(ctx context.Context, arg TransitionProjectStatusParams) (Project, error)
+	// TryAcquireRuntimeNodeSlot atomically reserves one execution slot on a node.
+	// The capacity guard (current_load < max_slots) and liveness guards
+	// (status = 'online', fresh heartbeat) live inside the same UPDATE statement,
+	// so concurrent acquires serialize on the row lock and PostgreSQL re-evaluates
+	// the WHERE clause against the latest row version. Returns no rows when the
+	// node is full, offline, stale, or archived; callers must treat pgx.ErrNoRows
+	// as "slot unavailable" and try the next candidate.
+	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)

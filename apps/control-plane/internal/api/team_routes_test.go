@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
@@ -39,7 +40,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	)
 	server.SetTenantHandler(tenant.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	ownerID := uuid.New()
 	memberID := uuid.New()
 	viewerID := uuid.New()
@@ -320,8 +321,8 @@ func TestTeamMCPRoutesUseConsoleAuthAndCapabilityManage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	teamID := uuid.New()
 	serverID := uuid.New()
 	service := &routeCapabilityService{
@@ -633,7 +634,7 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 	if len(authorizer.checks) != len(tests) {
 		t.Fatalf("expected one authorization check per request, got %#v", authorizer.checks)
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	for i, check := range authorizer.checks {
 		expected := tests[i]
 		expectedResourceID := expected.resourceID
@@ -684,7 +685,7 @@ func TestTeamMemberRoutesUseConsoleTenant(t *testing.T) {
 	)
 	server.SetTenantHandler(tenant.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	teamID := uuid.New()
 	targetUserID := uuid.New()
 
@@ -865,7 +866,7 @@ func TestTeamAuditRouteUsesTeamAuditRead(t *testing.T) {
 	if check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
 		t.Fatalf("expected team resource %s, got %#v", teamID, check)
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.auditTenantID != expectedTenantID || service.auditTeamID != teamID {
 		t.Fatalf("expected service tenant/team %s/%s, got %s/%s", expectedTenantID, teamID, service.auditTenantID, service.auditTeamID)
 	}

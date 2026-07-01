@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
@@ -38,7 +39,7 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	)
 	server.SetSkillHandler(skill.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil)
 	listReq.AddCookie(cookie)

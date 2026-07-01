@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
@@ -342,7 +343,7 @@ func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
 	}
 	zeroNodeEvent := runtime.RuntimeEvent{
 		ID:            uuid.MustParse("77777777-7777-7777-7777-777777777777"),
-		TenantID:      runtime.DefaultTenantID,
+		TenantID:      platform.DefaultTenantID,
 		EventType:     runtime.RuntimeEventCommandEvent,
 		Severity:      runtime.RuntimeEventSeverityInfo,
 		Source:        runtime.RuntimeEventSourceRuntimeCommand,
@@ -353,7 +354,7 @@ func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
 	}
 	nodeEvent := runtime.RuntimeEvent{
 		ID:            uuid.MustParse("88888888-8888-8888-8888-888888888888"),
-		TenantID:      runtime.DefaultTenantID,
+		TenantID:      platform.DefaultTenantID,
 		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
 		NodeID:        "node-1",
 		EventType:     runtime.RuntimeEventCapabilityReported,
@@ -590,8 +591,8 @@ func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
 		if check.Action != authz.ActionRuntimeScopeManage {
 			t.Fatalf("expected runtime scope manage action, got %#v", check)
 		}
-		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != auth.DefaultTenantID {
-			t.Fatalf("expected tenant resource %s, got %#v", auth.DefaultTenantID, check)
+		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != platform.DefaultTenantID.String() {
+			t.Fatalf("expected tenant resource %s, got %#v", platform.DefaultTenantID.String(), check)
 		}
 	}
 }
@@ -624,8 +625,8 @@ func TestRuntimeEnrollmentManagementRoutesPassTenantAndActorToRuntimeService(t *
 	if listResp.Code != http.StatusOK {
 		t.Fatalf("expected list enrollment to succeed, got %d: %s", listResp.Code, listResp.Body.String())
 	}
-	if service.listEnrollmentsTenantID.String() != auth.DefaultTenantID {
-		t.Fatalf("expected list tenant %s, got %s", auth.DefaultTenantID, service.listEnrollmentsTenantID)
+	if service.listEnrollmentsTenantID.String() != platform.DefaultTenantID.String() {
+		t.Fatalf("expected list tenant %s, got %s", platform.DefaultTenantID.String(), service.listEnrollmentsTenantID)
 	}
 
 	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/approve", nil)
@@ -635,8 +636,8 @@ func TestRuntimeEnrollmentManagementRoutesPassTenantAndActorToRuntimeService(t *
 	if approveResp.Code != http.StatusOK {
 		t.Fatalf("expected approve enrollment to succeed, got %d: %s", approveResp.Code, approveResp.Body.String())
 	}
-	if service.approveTenantID.String() != auth.DefaultTenantID || service.approvedBy != user.ID {
-		t.Fatalf("expected approve tenant/user %s/%s, got %s/%s", auth.DefaultTenantID, user.ID, service.approveTenantID, service.approvedBy)
+	if service.approveTenantID.String() != platform.DefaultTenantID.String() || service.approvedBy != user.ID {
+		t.Fatalf("expected approve tenant/user %s/%s, got %s/%s", platform.DefaultTenantID.String(), user.ID, service.approveTenantID, service.approvedBy)
 	}
 	if len(authorizer.checks) < 2 {
 		t.Fatalf("expected authz checks, got %#v", authorizer.checks)
@@ -767,8 +768,8 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 	if check.Actor.ID != user.ID.String() {
 		t.Fatalf("expected actor ID %q, got %q", user.ID.String(), check.Actor.ID)
 	}
-	if check.TenantID.String() != auth.DefaultTenantID {
-		t.Fatalf("expected default tenant ID %q, got %q", auth.DefaultTenantID, check.TenantID.String())
+	if check.TenantID.String() != platform.DefaultTenantID.String() {
+		t.Fatalf("expected default tenant ID %q, got %q", platform.DefaultTenantID.String(), check.TenantID.String())
 	}
 	if check.TeamID != nil {
 		t.Fatalf("expected nil team ID, got %v", check.TeamID)
@@ -783,7 +784,7 @@ func TestServerWithAuthzGatesRuntimeClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	taskID := uuid.MustParse(routeTaskID)
 	taskService := &routeTaskService{
 		tasks: []*task.Task{{
@@ -1026,7 +1027,7 @@ func TestAuthzCenterOverviewAllowsAuthenticatedAdmin(t *testing.T) {
 	if body.Engine.Engine != "db" {
 		t.Fatalf("expected db engine, got %#v", body.Engine)
 	}
-	if repo.lastTenantID != uuid.MustParse(auth.DefaultTenantID) {
+	if repo.lastTenantID != platform.DefaultTenantID {
 		t.Fatalf("expected overview repository calls to use default tenant, got %s", repo.lastTenantID)
 	}
 }
@@ -1088,7 +1089,7 @@ func TestAuthzCenterRuntimeScopeCreateRecordsCheckAndOperationLog(t *testing.T) 
 		authzcenter.NewHandler(service, authService),
 	)
 	cookie := routeLogin(t, server, "admin", "admin")
-	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/authz/runtime-scopes", strings.NewReader(`{
@@ -1680,7 +1681,7 @@ func (s *routeRuntimeService) EnrollHello(ctx context.Context, req runtime.Enrol
 	return &runtime.EnrollHelloResponse{
 		Enrollment: runtime.RuntimeEnrollment{
 			ID:             uuid.MustParse(routeTaskID),
-			TenantID:       runtime.DefaultTenantID,
+			TenantID:       platform.DefaultTenantID,
 			NodeID:         req.NodeID,
 			BootstrapKeyID: uuid.MustParse("22222222-2222-2222-2222-222222222222"),
 			Status:         runtime.RuntimeEnrollmentStatusPending,
@@ -1728,7 +1729,7 @@ func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime
 	s.approvedEnrollmentID = req.EnrollmentID
 	s.approveTenantID = req.TenantID
 	s.approvedBy = req.ApprovedBy
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
 }
 
 func (s *routeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
@@ -1736,7 +1737,7 @@ func (s *routeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.
 	s.rejectedReason = req.Reason
 	s.rejectTenantID = req.TenantID
 	s.rejectedBy = req.RejectedBy
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected, RejectReason: &req.Reason}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected, RejectReason: &req.Reason}, nil
 }
 
 func (s *routeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
@@ -1744,7 +1745,7 @@ func (s *routeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.
 	s.revokedReason = req.Reason
 	s.revokeTenantID = req.TenantID
 	s.revokedBy = req.RevokedBy
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked, RevokeReason: &req.Reason}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked, RevokeReason: &req.Reason}, nil
 }
 
 func (s *routeRuntimeService) ValidateRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSessionValidation, error) {
@@ -1754,7 +1755,7 @@ func (s *routeRuntimeService) ValidateRuntimeSession(ctx context.Context, token 
 	}
 	return &runtime.RuntimeSessionValidation{
 		SessionID:     uuid.MustParse("33333333-3333-3333-3333-333333333333"),
-		TenantID:      runtime.DefaultTenantID,
+		TenantID:      platform.DefaultTenantID,
 		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
 		NodeID:        "node-session",
 		ExpiresAt:     time.Now().Add(time.Hour),
@@ -1765,7 +1766,7 @@ func (s *routeRuntimeService) RenewRuntimeSession(ctx context.Context, token str
 	s.renewedSessionToken = token
 	return &runtime.RuntimeSession{
 		ID:            uuid.MustParse("33333333-3333-3333-3333-333333333333"),
-		TenantID:      runtime.DefaultTenantID,
+		TenantID:      platform.DefaultTenantID,
 		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
 		NodeID:        "node-session",
 		ExpiresAt:     time.Now().Add(time.Hour),
@@ -1779,7 +1780,7 @@ func (s *routeRuntimeService) UpsertCapabilities(ctx context.Context, token stri
 	s.upsertedCapabilities = capabilities
 	return []runtime.RuntimeCapability{{
 		ID:             uuid.MustParse("66666666-6666-6666-6666-666666666666"),
-		TenantID:       runtime.DefaultTenantID,
+		TenantID:       platform.DefaultTenantID,
 		RuntimeNodeID:  uuid.MustParse("44444444-4444-4444-4444-444444444444"),
 		CapabilityType: capabilities[0].CapabilityType,
 		CapabilityKey:  capabilities[0].CapabilityKey,

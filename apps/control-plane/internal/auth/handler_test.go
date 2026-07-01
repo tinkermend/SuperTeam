@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -306,7 +307,7 @@ func TestHTTPHandlerDeniedCreateUserWithSelectableTeamsDoesNotCreateUserOrScopes
 		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
 	}
 	check := authorizer.checks[0]
-	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != platform.DefaultTenantID.String() {
 		t.Fatalf("unexpected authz check: %#v", check)
 	}
 }
@@ -363,7 +364,7 @@ func TestHTTPHandlerDeniedListUserProjectTeamScopesDoesNotReadScopes(t *testing.
 		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
 	}
 	check := authorizer.checks[0]
-	if check.Action != authz.ActionUserProjectTeamScopeRead || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+	if check.Action != authz.ActionUserProjectTeamScopeRead || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != platform.DefaultTenantID.String() {
 		t.Fatalf("unexpected authz check: %#v", check)
 	}
 }
@@ -428,7 +429,7 @@ func TestHTTPHandlerDeniedReplaceUserProjectTeamScopesDoesNotMutateScopes(t *tes
 		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
 	}
 	check := authorizer.checks[0]
-	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != platform.DefaultTenantID.String() {
 		t.Fatalf("unexpected authz check: %#v", check)
 	}
 }
@@ -600,7 +601,7 @@ func createCaptchaForHandlerTest(t *testing.T, svc *Service, code string) *Captc
 	now := svc.now().UTC()
 	record, err := svc.repo.CreateCaptchaChallenge(t.Context(), CreateCaptchaChallengeParams{
 		ID:         id,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: svc.hashCaptchaAnswer(id.String(), code),
 		ExpiresAt:  now.Add(svc.captchaTTL),
 	})

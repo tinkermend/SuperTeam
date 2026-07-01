@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/audit"
@@ -137,7 +138,7 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	server.SetProjectHandler(project.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
 
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	spoofedTenantID := uuid.New()
 	spoofedActorID := uuid.New()
 	ownerID := uuid.New()
@@ -478,7 +479,7 @@ func TestProjectTaskLivenessRouteUsesConsoleAuth(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected task liveness to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.taskLivenessTenantID != expectedTenantID || service.taskLivenessProjectID != projectID {
 		t.Fatalf("expected liveness tenant/project %s/%s, got %s/%s", expectedTenantID, projectID, service.taskLivenessTenantID, service.taskLivenessProjectID)
 	}
@@ -499,7 +500,7 @@ func TestProjectTaskDispatchGateRouteUsesConsoleAuth(t *testing.T) {
 		projectID: projectID,
 		dispatchGates: []project.PreDispatchGateResult{{
 			ID:                 gateID,
-			TenantID:           uuid.MustParse(auth.DefaultTenantID),
+			TenantID:           platform.DefaultTenantID,
 			ProjectID:          projectID,
 			ProjectTaskID:      taskID,
 			SelectedEmployeeID: uuid.New(),
@@ -529,7 +530,7 @@ func TestProjectTaskDispatchGateRouteUsesConsoleAuth(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected dispatch gate route to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.dispatchGateListReq.TenantID != expectedTenantID ||
 		service.dispatchGateListReq.ProjectID != projectID ||
 		service.dispatchGateListReq.ProjectTaskID != taskID ||
@@ -579,7 +580,7 @@ func TestProjectExecutionTraceRouteUsesConsoleAuth(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected execution trace route to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.executionTraceReq.TenantID != expectedTenantID || service.executionTraceReq.ProjectID != projectID || service.executionTraceReq.Limit != 4 || service.executionTraceReq.Offset != 2 {
 		t.Fatalf("expected execution trace tenant/project/page, got %#v", service.executionTraceReq)
 	}
@@ -648,7 +649,7 @@ func TestProjectDemandLaunchDetailRouteUsesDemandID(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected launch detail to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.launchDetailTenantID != uuid.MustParse(auth.DefaultTenantID) || service.launchDetailDemandID != demandID {
+	if service.launchDetailTenantID != platform.DefaultTenantID || service.launchDetailDemandID != demandID {
 		t.Fatalf("expected service to receive tenant/demand from route, got tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
 	}
 }
@@ -682,7 +683,7 @@ func TestAuditEventsRouteUsesConsoleTenantAndProjectResource(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected audit events route to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.tenantID != expectedTenantID || service.projectID != projectID || service.limit != 25 || service.offset != 5 {
 		t.Fatalf("expected console tenant/project/page, got tenant=%s project=%s limit=%d offset=%d", service.tenantID, service.projectID, service.limit, service.offset)
 	}
@@ -738,7 +739,7 @@ func TestAuditEventsRouteRejectsInvalidResourceFilters(t *testing.T) {
 
 func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	runtimeAuth := &routeRuntimeSessionAuth{
-		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		tenantID:      platform.DefaultTenantID,
 		runtimeNodeID: uuid.New(),
 		sessionID:     uuid.New(),
 		nodeID:        "runtime-node-1",
@@ -787,7 +788,7 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 
 func TestRuntimeRoutesProjectTaskAttemptResultUseRuntimeSessionAuth(t *testing.T) {
 	runtimeAuth := &routeRuntimeSessionAuth{
-		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		tenantID:      platform.DefaultTenantID,
 		runtimeNodeID: uuid.New(),
 		sessionID:     uuid.New(),
 		nodeID:        "runtime-node-1",
@@ -844,7 +845,7 @@ func TestRuntimeRoutesProjectTaskAttemptResultUseRuntimeSessionAuth(t *testing.T
 
 func TestRuntimeRoutesProjectTaskAttestationUsesRuntimeSessionAuth(t *testing.T) {
 	runtimeAuth := &routeRuntimeSessionAuth{
-		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		tenantID:      platform.DefaultTenantID,
 		runtimeNodeID: uuid.New(),
 		sessionID:     uuid.New(),
 		nodeID:        "runtime-node-1",
@@ -898,7 +899,7 @@ func TestRuntimeRoutesProjectTaskAttestationUsesRuntimeSessionAuth(t *testing.T)
 
 func TestRuntimeRoutesProjectTaskBudgetHeartbeatUsesRuntimeSessionAuth(t *testing.T) {
 	runtimeAuth := &routeRuntimeSessionAuth{
-		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		tenantID:      platform.DefaultTenantID,
 		runtimeNodeID: uuid.New(),
 		sessionID:     uuid.New(),
 		nodeID:        "runtime-node-1",
@@ -959,7 +960,7 @@ func TestProjectWorkflowSignalRetryRouteUsesConsoleAuth(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	service := &routeProjectService{projectID: uuid.New()}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	server := NewServerWithAuthz(
 		handlers.NewTaskHandler(&routeTaskService{}),
 		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),

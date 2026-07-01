@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 const SessionCookieName = "session_token"
@@ -313,7 +314,7 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		selectableTeamIDs = *body.SelectableTeamIds
 	}
 	user, err := h.service.CreateManagedUser(r.Context(), toActor(actorUser), CreateManagedUserInput{
-		TenantID:          uuid.MustParse(DefaultTenantID),
+		TenantID:          platform.DefaultTenantID,
 		Username:          body.Username,
 		DisplayName:       body.DisplayName,
 		Password:          body.Password,
@@ -337,7 +338,7 @@ func (h *HTTPHandler) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	scopes, err := h.service.ListUserProjectTeamScopes(r.Context(), uuid.MustParse(DefaultTenantID), uuid.UUID(id))
+	scopes, err := h.service.ListUserProjectTeamScopes(r.Context(), platform.DefaultTenantID, uuid.UUID(id))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -360,7 +361,7 @@ func (h *HTTPHandler) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	scopes, err := h.service.ReplaceUserProjectTeamScopes(r.Context(), toActor(actorUser), uuid.MustParse(DefaultTenantID), uuid.UUID(id), uuidSliceFromOpenAPI(body.TeamIds))
+	scopes, err := h.service.ReplaceUserProjectTeamScopes(r.Context(), toActor(actorUser), platform.DefaultTenantID, uuid.UUID(id), uuidSliceFromOpenAPI(body.TeamIds))
 	if err != nil {
 		h.writeManagedUserError(w, err)
 		return
@@ -372,7 +373,7 @@ func (h *HTTPHandler) authorizeUserProjectTeamScope(w http.ResponseWriter, r *ht
 	if h.authorizer == nil {
 		return true
 	}
-	tenantID := uuid.MustParse(DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
 		Actor: authz.ActorRef{
 			Type: authz.ActorUser,

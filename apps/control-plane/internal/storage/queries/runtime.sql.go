@@ -380,6 +380,53 @@ func (q *Queries) ListRuntimeNodesForTenant(ctx context.Context, arg ListRuntime
 	return items, nil
 }
 
+const TryAcquireRuntimeNodeSlot = `-- name: TryAcquireRuntimeNodeSlot :one
+UPDATE runtime_nodes
+SET current_load = current_load + 1,
+    updated_at = NOW()
+WHERE node_id = $1
+  AND archived_at IS NULL
+  AND disabled_at IS NULL
+  AND status = 'online'
+  AND last_heartbeat_at > $2
+  AND current_load < max_slots
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+`
+
+type TryAcquireRuntimeNodeSlotParams struct {
+	NodeID          string             `json:"node_id"`
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+// TryAcquireRuntimeNodeSlot atomically reserves one execution slot on a node.
+// The capacity guard (current_load < max_slots) and liveness guards
+// (status = 'online', fresh heartbeat) live inside the same UPDATE statement,
+// so concurrent acquires serialize on the row lock and PostgreSQL re-evaluates
+// the WHERE clause against the latest row version. Returns no rows when the
+// node is full, offline, stale, or archived; callers must treat pgx.ErrNoRows
+// as "slot unavailable" and try the next candidate.
+func (q *Queries) TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error) {
+	row := q.db.QueryRow(ctx, TryAcquireRuntimeNodeSlot, arg.NodeID, arg.LastHeartbeatAt)
+	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const UpdateRuntimeNodeHeartbeat = `-- name: UpdateRuntimeNodeHeartbeat :one
 UPDATE runtime_nodes
 SET last_heartbeat_at = $2,

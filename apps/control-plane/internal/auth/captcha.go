@@ -21,6 +21,8 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 const (
@@ -50,7 +52,7 @@ func (s *Service) CreateCaptcha(ctx context.Context, clientIP, userAgent string)
 	expiresAt := now.Add(s.captchaTTL)
 	record, err := s.repo.CreateCaptchaChallenge(ctx, CreateCaptchaChallengeParams{
 		ID:         id,
-		TenantID:   uuid.MustParse(DefaultTenantID),
+		TenantID:   platform.DefaultTenantID,
 		AnswerHash: s.hashCaptchaAnswer(id.String(), code),
 		ExpiresAt:  expiresAt,
 		ClientIP:   strings.TrimSpace(clientIP),

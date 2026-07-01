@@ -17,6 +17,10 @@ type Repository interface {
 	ListOnlineNodes(ctx context.Context, heartbeatThreshold pgtype.Timestamptz) ([]NodeRecord, error)
 	UpdateHeartbeat(ctx context.Context, params UpdateHeartbeatParams) (NodeRecord, error)
 	UpdateLoad(ctx context.Context, params UpdateLoadParams) (NodeRecord, error)
+	// TryAcquireNodeSlot atomically reserves one execution slot on a node.
+	// Returns pgx.ErrNoRows (wrap with errors.Is(err, pgx.ErrNoRows)) when the
+	// node is full, offline, stale, or archived.
+	TryAcquireNodeSlot(ctx context.Context, nodeID string, heartbeatThreshold pgtype.Timestamptz) (NodeRecord, error)
 	UpdateStatus(ctx context.Context, params UpdateStatusParams) (NodeRecord, error)
 	DeleteNode(ctx context.Context, nodeID string) error
 }

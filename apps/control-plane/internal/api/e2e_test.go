@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
@@ -378,7 +379,7 @@ func (s *fakeRuntimeService) EnrollHello(ctx context.Context, req runtime.Enroll
 	return &runtime.EnrollHelloResponse{
 		Enrollment: runtime.RuntimeEnrollment{
 			ID:             uuid.New(),
-			TenantID:       runtime.DefaultTenantID,
+			TenantID:       platform.DefaultTenantID,
 			NodeID:         req.NodeID,
 			BootstrapKeyID: uuid.New(),
 			Status:         runtime.RuntimeEnrollmentStatusPending,
@@ -394,15 +395,15 @@ func (s *fakeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter 
 }
 
 func (s *fakeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
 }
 
 func (s *fakeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected}, nil
 }
 
 func (s *fakeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
-	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked}, nil
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: platform.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked}, nil
 }
 
 func (s *fakeRuntimeService) ValidateRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSessionValidation, error) {

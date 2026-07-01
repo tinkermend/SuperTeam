@@ -1,0 +1,1427 @@
+<!doctype html>
+<html lang="zh-CN" data-density="comfortable">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>炬枢平台 · Control Plane v4 Prototype</title>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <style>
+      :root {
+        --bg: #f5f6f8;
+        --panel: #ffffff;
+        --panel-2: #f9fafb;
+        --panel-3: #eef1f5;
+        --ink: #101318;
+        --ink-2: #596273;
+        --ink-3: #8b94a3;
+        --line: #e2e6ec;
+        --line-2: #cfd6df;
+        --brand: #2f5fff;
+        --brand-deep: #2449d8;
+        --brand-soft: #edf2ff;
+        --ok: #13795b;
+        --ok-soft: #e6f4ee;
+        --warn: #a86107;
+        --warn-soft: #fff3dc;
+        --danger: #c9363f;
+        --danger-soft: #fff0f1;
+        --info: #2761d8;
+        --info-soft: #eaf1ff;
+        --mute-soft: #eef1f5;
+        --focus: 0 0 0 3px rgba(47, 95, 255, .18);
+        --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 18px rgba(16, 24, 40, .04);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --row-py: 12px;
+        --row-fs: 13px;
+      }
+
+      [data-density="compact"] {
+        --row-py: 7px;
+        --row-fs: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        color: var(--ink);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 280px),
+          var(--bg);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .app {
+        display: grid;
+        min-height: 100vh;
+        grid-template-columns: 252px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        border-right: 1px solid var(--line);
+        background: #fbfcfe;
+        padding: 18px 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 56px;
+        padding: 0 10px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border: 1px solid #b7c5ff;
+        border-radius: 10px;
+        background: linear-gradient(180deg, #fff, #edf2ff);
+        color: var(--brand);
+      }
+
+      .brand-name {
+        font-size: 17px;
+        font-weight: 760;
+        letter-spacing: -.02em;
+      }
+
+      .brand-sub {
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .nav-group {
+        padding: 18px 0 4px;
+      }
+
+      .nav-title {
+        margin: 0 10px 8px;
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 740;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 38px;
+        margin: 2px 0;
+        padding: 0 10px;
+        border-radius: 8px;
+        color: var(--ink-2);
+        font-weight: 650;
+      }
+
+      .nav-item svg {
+        width: 17px;
+        height: 17px;
+      }
+
+      .nav-item.active {
+        border: 1px solid #cbd7ff;
+        background: #f1f5ff;
+        color: var(--brand-deep);
+        box-shadow: inset 3px 0 0 var(--brand);
+      }
+
+      .nav-item:hover {
+        background: var(--panel-3);
+        color: var(--ink);
+      }
+
+      .nav-count {
+        margin-left: auto;
+        border-radius: 7px;
+        background: #fff;
+        color: var(--brand-deep);
+        font-size: 11px;
+        font-weight: 760;
+        line-height: 1;
+        padding: 4px 7px;
+      }
+
+      .main {
+        min-width: 0;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 64px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(245, 246, 248, .94);
+        backdrop-filter: blur(12px);
+        padding: 0 28px;
+      }
+
+      .command {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: min(560px, 52vw);
+        height: 38px;
+        border: 1px solid var(--line-2);
+        border-radius: 9px;
+        background: #fff;
+        padding: 0 11px;
+        box-shadow: 0 1px 1px rgba(16,24,40,.03);
+      }
+
+      .command svg {
+        width: 17px;
+        height: 17px;
+        color: var(--ink-3);
+      }
+
+      .command input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        color: var(--ink);
+        background: transparent;
+      }
+
+      .keycap {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel-2);
+        color: var(--ink-3);
+        font-size: 11px;
+        padding: 2px 6px;
+        white-space: nowrap;
+      }
+
+      .top-spacer {
+        flex: 1;
+      }
+
+      .top-btn,
+      .primary-btn,
+      .ghost-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 36px;
+        border-radius: 8px;
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .top-btn,
+      .ghost-btn {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink-2);
+        padding: 0 12px;
+      }
+
+      .top-btn.icon-only {
+        width: 36px;
+        padding: 0;
+      }
+
+      .primary-btn {
+        border: 1px solid var(--brand-deep);
+        background: var(--brand);
+        color: #fff;
+        padding: 0 14px;
+      }
+
+      .top-btn:hover,
+      .ghost-btn:hover {
+        border-color: var(--line-2);
+        color: var(--ink);
+      }
+
+      .primary-btn:hover {
+        background: var(--brand-deep);
+      }
+
+      .avatar {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid #cbd7ff;
+        border-radius: 9px;
+        background: #fff;
+        color: var(--brand-deep);
+        font-weight: 800;
+      }
+
+      .page {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 26px 28px 42px;
+      }
+
+      .page-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--brand-deep);
+        font-size: 12px;
+        font-weight: 780;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 720px;
+        font-size: 32px;
+        line-height: 1.16;
+        letter-spacing: -.035em;
+      }
+
+      .page-desc {
+        max-width: 760px;
+        margin: 9px 0 0;
+        color: var(--ink-2);
+      }
+
+      .system-strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px 12px;
+        box-shadow: var(--shadow);
+      }
+
+      .system-strip .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ok);
+      }
+
+      .system-strip strong {
+        font-size: 13px;
+      }
+
+      .system-strip span {
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        padding: 14px 15px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, .035);
+      }
+
+      .metric.emphasis {
+        border-color: #f3d39a;
+        background: linear-gradient(180deg, #fff9ee, #fff);
+        box-shadow: inset 3px 0 0 var(--warn);
+      }
+
+      .metric.danger {
+        border-color: #f2b8bd;
+        background: linear-gradient(180deg, #fff5f6, #fff);
+        box-shadow: inset 3px 0 0 var(--danger);
+      }
+
+      .metric-label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 720;
+      }
+
+      .metric-value {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin-top: 8px;
+        font-variant-numeric: tabular-nums;
+        font-size: 30px;
+        font-weight: 820;
+        letter-spacing: -.035em;
+      }
+
+      .metric-value small {
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 680;
+        letter-spacing: 0;
+      }
+
+      .metric-note {
+        margin-top: 4px;
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(360px, .82fr);
+        gap: 16px;
+      }
+
+      .panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 58px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        padding: 14px 16px;
+      }
+
+      .panel-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 780;
+        letter-spacing: -.015em;
+      }
+
+      .panel-note {
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .head-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+
+      .segmented {
+        display: inline-flex;
+        gap: 2px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        padding: 2px;
+      }
+
+      .segmented button {
+        height: 28px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 720;
+        padding: 0 9px;
+      }
+
+      .segmented button.active {
+        background: #fff;
+        color: var(--ink);
+        box-shadow: 0 1px 2px rgba(16, 24, 40, .08);
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-2);
+        padding: 10px 12px;
+      }
+
+      .filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 720;
+        padding: 0 10px;
+      }
+
+      .filter.active {
+        border-color: #cbd7ff;
+        background: var(--brand-soft);
+        color: var(--brand-deep);
+      }
+
+      .table-wrap {
+        overflow: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: var(--row-fs);
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        height: 34px;
+        border-bottom: 1px solid var(--line-2);
+        background: var(--panel-2);
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 780;
+        letter-spacing: .045em;
+        text-align: left;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      th,
+      td {
+        padding: var(--row-py) 13px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+
+      tbody tr:hover td {
+        background: #fbfcff;
+      }
+
+      tbody tr.selected td {
+        background: #f6f8ff;
+      }
+
+      tbody tr.blocked td:first-child {
+        box-shadow: inset 3px 0 0 var(--danger);
+      }
+
+      tbody tr.warning td:first-child {
+        box-shadow: inset 3px 0 0 var(--warn);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .primary-text {
+        color: var(--ink);
+        font-weight: 760;
+      }
+
+      .sub-text {
+        margin-top: 3px;
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .mono {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        height: 24px;
+        border-radius: 7px;
+        font-size: 11px;
+        font-weight: 760;
+        padding: 0 8px;
+        white-space: nowrap;
+      }
+
+      .pill::before {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        content: "";
+      }
+
+      .pill.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .pill.warn {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      .pill.ok {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+
+      .pill.info {
+        background: var(--info-soft);
+        color: var(--info);
+      }
+
+      .pill.mute {
+        background: var(--mute-soft);
+        color: var(--ink-2);
+      }
+
+      .row-actions {
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .row-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 760;
+        padding: 0 9px;
+      }
+
+      .row-btn.primary {
+        border-color: var(--brand-deep);
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .row-btn.danger {
+        border-color: #efbdc1;
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .row-btn.warn {
+        border-color: #efd3a4;
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      .side-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .context-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .context-body {
+        padding: 16px;
+      }
+
+      .context-title {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .status-mark {
+        display: grid;
+        flex: 0 0 auto;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 9px;
+      }
+
+      .status-mark.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .status-mark.info {
+        background: var(--info-soft);
+        color: var(--info);
+      }
+
+      .context-title h2 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.25;
+        letter-spacing: -.02em;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 8px 10px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 12px 0;
+      }
+
+      .meta-label {
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .meta-value {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 680;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .evidence {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .evidence-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel-2);
+        padding: 9px 10px;
+      }
+
+      .evidence-row svg {
+        width: 16px;
+        height: 16px;
+        color: var(--ink-3);
+      }
+
+      .evidence-name {
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 720;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .evidence-meta {
+        color: var(--ink-3);
+        font-size: 11px;
+      }
+
+      .audit-stream {
+        max-height: 350px;
+        overflow: auto;
+        padding: 6px 16px 16px;
+      }
+
+      .audit-event {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .audit-rail {
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        padding-top: 11px;
+      }
+
+      .audit-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ink-3);
+      }
+
+      .audit-line {
+        width: 1px;
+        flex: 1;
+        margin-top: 4px;
+        background: var(--line-2);
+      }
+
+      .audit-event:last-child .audit-line {
+        display: none;
+      }
+
+      .audit-content {
+        min-width: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 9px 0 11px;
+      }
+
+      .audit-event:last-child .audit-content {
+        border-bottom: 0;
+      }
+
+      .audit-title {
+        font-size: 13px;
+        font-weight: 740;
+      }
+
+      .audit-meta {
+        margin-top: 3px;
+        color: var(--ink-3);
+        font-size: 12px;
+      }
+
+      .action-bar {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .action-bar button {
+        min-width: 0;
+      }
+
+      .lane {
+        display: grid;
+        grid-template-columns: 1fr 36px 1fr 36px 1fr;
+        gap: 8px;
+        align-items: stretch;
+        margin: 14px 16px 16px;
+      }
+
+      .lane-card {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel-2);
+        padding: 12px;
+      }
+
+      .lane-card.active {
+        border-color: #cbd7ff;
+        background: #f6f8ff;
+      }
+
+      .lane-label {
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+
+      .lane-title {
+        margin-top: 7px;
+        font-size: 13px;
+        font-weight: 780;
+      }
+
+      .lane-meta {
+        margin-top: 4px;
+        color: var(--ink-2);
+        font-size: 12px;
+      }
+
+      .lane-arrow {
+        display: grid;
+        place-items: center;
+        color: var(--ink-3);
+      }
+
+      .lane-arrow svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .decision-panel {
+        display: none;
+        border-top: 1px solid var(--line);
+        background: #fffdf8;
+        padding: 14px 16px;
+      }
+
+      .decision-panel.open {
+        display: block;
+      }
+
+      .decision-panel h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+
+      .decision-panel textarea {
+        width: 100%;
+        min-height: 78px;
+        resize: vertical;
+        border: 1px solid var(--line-2);
+        border-radius: 9px;
+        outline: 0;
+        padding: 10px;
+      }
+
+      .decision-panel textarea:focus {
+        border-color: var(--brand);
+        box-shadow: var(--focus);
+      }
+
+      .decision-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      @media (max-width: 1180px) {
+        .app {
+          grid-template-columns: 84px minmax(0, 1fr);
+        }
+
+        .brand {
+          justify-content: center;
+          padding-left: 0;
+          padding-right: 0;
+        }
+
+        .brand-text,
+        .nav-title,
+        .nav-item span.label,
+        .nav-count {
+          display: none;
+        }
+
+        .nav-item {
+          justify-content: center;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 880px) {
+        .app {
+          display: block;
+        }
+
+        .sidebar {
+          position: relative;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .nav-group {
+          display: flex;
+          gap: 8px;
+          overflow: auto;
+          padding: 10px 0 0;
+        }
+
+        .nav-item span.label {
+          display: inline;
+        }
+
+        .topbar {
+          position: relative;
+          padding: 0 16px;
+        }
+
+        .command {
+          width: 100%;
+        }
+
+        .page {
+          padding: 20px 16px 32px;
+        }
+
+        .page-head,
+        .metrics,
+        .lane {
+          grid-template-columns: 1fr;
+        }
+
+        .system-strip,
+        .top-btn:not(.icon-only),
+        .keycap {
+          display: none;
+        }
+
+        .lane-arrow {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark"><i data-lucide="circuit-board"></i></div>
+          <div class="brand-text">
+            <div class="brand-name">炬枢平台</div>
+            <div class="brand-sub">Execution Control Plane</div>
+          </div>
+        </div>
+
+        <nav class="nav-group" aria-label="主导航">
+          <div class="nav-title">控制平面</div>
+          <a class="nav-item active" href="#">
+            <i data-lucide="radar"></i>
+            <span class="label">控制总览</span>
+            <span class="nav-count">5</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="folder-kanban"></i>
+            <span class="label">项目闭环</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="inbox"></i>
+            <span class="label">待办审批</span>
+            <span class="nav-count">4</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="route"></i>
+            <span class="label">流程调度</span>
+          </a>
+        </nav>
+
+        <nav class="nav-group" aria-label="资源导航">
+          <div class="nav-title">执行资源</div>
+          <a class="nav-item" href="#">
+            <i data-lucide="bot"></i>
+            <span class="label">数字员工</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="server"></i>
+            <span class="label">Runtime 节点</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="plug-zap"></i>
+            <span class="label">外部能力</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="archive"></i>
+            <span class="label">工件证据</span>
+          </a>
+        </nav>
+
+        <nav class="nav-group" aria-label="治理导航">
+          <div class="nav-title">治理</div>
+          <a class="nav-item" href="#">
+            <i data-lucide="shield-check"></i>
+            <span class="label">权限策略</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="scroll-text"></i>
+            <span class="label">审计中心</span>
+          </a>
+          <a class="nav-item" href="#">
+            <i data-lucide="wallet-cards"></i>
+            <span class="label">成本预算</span>
+          </a>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <label class="command" aria-label="命令搜索">
+            <i data-lucide="search"></i>
+            <input placeholder="搜索项目、审批、Runtime、证据或命令" />
+            <span class="keycap">⌘ K</span>
+          </label>
+          <div class="top-spacer"></div>
+          <button class="top-btn" type="button"><i data-lucide="bell"></i>通知</button>
+          <button class="top-btn icon-only" type="button" id="densityToggle" aria-label="切换密度"><i data-lucide="rows-3"></i></button>
+          <button class="primary-btn" type="button"><i data-lucide="plus"></i>发起任务</button>
+          <div class="avatar">林</div>
+        </header>
+
+        <section class="page">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow"><i data-lucide="activity"></i> Control Plane v4</div>
+              <h1>先看阻塞、责任和证据，再谈漂亮。</h1>
+              <p class="page-desc">这个方向把 SuperTeam 的正式感建立在真实状态、可处置队列、审计轨迹和人类决策上。视觉保持干净，但每一块都服务执行闭环。</p>
+            </div>
+            <div class="system-strip" aria-label="系统状态">
+              <span class="dot"></span>
+              <div>
+                <strong>实时链路正常</strong><br />
+                <span>Web · Control Plane · Runtime · DB 已同步 18:57:32</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="metrics">
+            <article class="metric danger">
+              <div class="metric-label"><i data-lucide="octagon-alert"></i>阻塞事项</div>
+              <div class="metric-value">5 <small>件</small></div>
+              <div class="metric-note">2 个高风险，最长等待 38 分钟</div>
+            </article>
+            <article class="metric emphasis">
+              <div class="metric-label"><i data-lucide="user-check"></i>待人类判断</div>
+              <div class="metric-value">4 <small>件</small></div>
+              <div class="metric-note">生产发布、PII 权限、验收结论</div>
+            </article>
+            <article class="metric">
+              <div class="metric-label"><i data-lucide="server-cog"></i>Runtime 容量</div>
+              <div class="metric-value">62% <small>占用</small></div>
+              <div class="metric-note">4 / 5 节点在线，1 个命令通道异常</div>
+            </article>
+            <article class="metric">
+              <div class="metric-label"><i data-lucide="badge-dollar-sign"></i>本周预算</div>
+              <div class="metric-value">$1.28k <small>/ $2k</small></div>
+              <div class="metric-note">异常重试消耗 11.4%，需观察</div>
+            </article>
+          </div>
+
+          <div class="layout">
+            <section class="panel" aria-labelledby="queueTitle">
+              <div class="panel-head">
+                <div>
+                  <h2 class="panel-title" id="queueTitle">需要处置的执行队列</h2>
+                  <div class="panel-note">队列表达平台真实工作面：阻塞原因、负责人、证据、下一步动作在同一行闭合。</div>
+                </div>
+                <div class="head-actions">
+                  <div class="segmented" aria-label="视图密度">
+                    <button type="button" class="active" data-density-value="comfortable">舒适</button>
+                    <button type="button" data-density-value="compact">紧凑</button>
+                  </div>
+                  <button class="ghost-btn" type="button"><i data-lucide="sliders-horizontal"></i>筛选</button>
+                </div>
+              </div>
+
+              <div class="toolbar">
+                <button class="filter active" type="button">全部阻塞 5</button>
+                <button class="filter" type="button">待我处理 3</button>
+                <button class="filter" type="button">高风险 2</button>
+                <button class="filter" type="button">Runtime 异常 1</button>
+                <button class="filter" type="button">补证等待 1</button>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>事项</th>
+                      <th>风险来源</th>
+                      <th>责任人</th>
+                      <th>证据</th>
+                      <th>等待</th>
+                      <th>下一步</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="blocked selected">
+                      <td>
+                        <div class="primary-text">生产发布审批</div>
+                        <div class="sub-text">支付网关迁移 · 协调线程已暂停</div>
+                      </td>
+                      <td><span class="pill danger">不可逆动作</span></td>
+                      <td>林 Anna</td>
+                      <td class="mono">release_pkg_82af</td>
+                      <td class="mono">02m</td>
+                      <td>human_owner 二次确认</td>
+                      <td><span class="row-actions"><button class="row-btn primary" type="button" id="openDecision">审批</button><button class="row-btn" type="button">详情</button></span></td>
+                    </tr>
+                    <tr class="blocked">
+                      <td>
+                        <div class="primary-text">PII 数据读取申请</div>
+                        <div class="sub-text">客户数据治理 · 导出任务未分派</div>
+                      </td>
+                      <td><span class="pill danger">权限提升</span></td>
+                      <td>周 Ming</td>
+                      <td class="mono">scope_req_19c0</td>
+                      <td class="mono">38m</td>
+                      <td>补充授权范围</td>
+                      <td><span class="row-actions"><button class="row-btn warn" type="button">补证</button><button class="row-btn" type="button">详情</button></span></td>
+                    </tr>
+                    <tr class="warning">
+                      <td>
+                        <div class="primary-text">回归测试失败</div>
+                        <div class="sub-text">对账系统重构 · 3 项断言失败</div>
+                      </td>
+                      <td><span class="pill warn">验收阻塞</span></td>
+                      <td>许 Kai</td>
+                      <td class="mono">evidence_0fb2</td>
+                      <td class="mono">06m</td>
+                      <td>判断重跑或驳回</td>
+                      <td><span class="row-actions"><button class="row-btn danger" type="button">处理</button><button class="row-btn" type="button">详情</button></span></td>
+                    </tr>
+                    <tr class="warning">
+                      <td>
+                        <div class="primary-text">Runtime 命令通道异常</div>
+                        <div class="sub-text">runtime-edge-03 · 心跳正常但不可下发</div>
+                      </td>
+                      <td><span class="pill warn">执行面异常</span></td>
+                      <td>平台值班</td>
+                      <td class="mono">runtime_log_7d41</td>
+                      <td class="mono">11m</td>
+                      <td>重新登记或隔离节点</td>
+                      <td><span class="row-actions"><button class="row-btn warn" type="button">隔离</button><button class="row-btn" type="button">日志</button></span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <div class="primary-text">项目验收等待</div>
+                        <div class="sub-text">智能客服上线 · 证据已齐</div>
+                      </td>
+                      <td><span class="pill info">待验收</span></td>
+                      <td>林 Anna</td>
+                      <td class="mono">report_4c9a</td>
+                      <td class="mono">12m</td>
+                      <td>给出验收结论</td>
+                      <td><span class="row-actions"><button class="row-btn primary" type="button">验收</button><button class="row-btn" type="button">详情</button></span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="lane" aria-label="选中事项执行链路">
+                <div class="lane-card">
+                  <div class="lane-label">触发</div>
+                  <div class="lane-title">deploy-bot 请求发布</div>
+                  <div class="lane-meta mono">task_run: 6b19</div>
+                </div>
+                <div class="lane-arrow"><i data-lucide="arrow-right"></i></div>
+                <div class="lane-card active">
+                  <div class="lane-label">暂停</div>
+                  <div class="lane-title">等待人类确认</div>
+                  <div class="lane-meta">不可逆动作，已锁定后续分派</div>
+                </div>
+                <div class="lane-arrow"><i data-lucide="arrow-right"></i></div>
+                <div class="lane-card">
+                  <div class="lane-label">恢复</div>
+                  <div class="lane-title">通过后进入 Runtime</div>
+                  <div class="lane-meta">目标节点 local-dev-node</div>
+                </div>
+              </div>
+
+              <div class="decision-panel" id="decisionPanel">
+                <h3>审批前必须留下判断依据</h3>
+                <textarea placeholder="写下审批、驳回或要求补证的理由。该内容会进入项目审计记录。"></textarea>
+                <div class="decision-actions">
+                  <button class="ghost-btn" type="button">驳回</button>
+                  <button class="ghost-btn" type="button">要求补证</button>
+                  <button class="primary-btn" type="button">确认审批</button>
+                </div>
+              </div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="context-card" aria-labelledby="contextTitle">
+                <div class="panel-head">
+                  <div>
+                    <h2 class="panel-title" id="contextTitle">选中事项上下文</h2>
+                    <div class="panel-note">正式平台不隐藏复杂性，只把它压进可判断的结构。</div>
+                  </div>
+                </div>
+                <div class="context-body">
+                  <div class="context-title">
+                    <div class="status-mark danger"><i data-lucide="shield-alert"></i></div>
+                    <div>
+                      <h2>支付网关迁移 · 生产发布审批</h2>
+                      <div class="sub-text">状态：协调线程暂停 · 高风险动作待确认</div>
+                    </div>
+                  </div>
+
+                  <div class="meta-grid">
+                    <div class="meta-label">项目</div>
+                    <div class="meta-value">支付网关迁移</div>
+                    <div class="meta-label">负责人</div>
+                    <div class="meta-value">林 Anna · human_owner</div>
+                    <div class="meta-label">协调线程</div>
+                    <div class="meta-value mono">project-coordinator:a91f7d2c</div>
+                    <div class="meta-label">Runtime</div>
+                    <div class="meta-value">local-dev-node · command channel ready</div>
+                    <div class="meta-label">策略</div>
+                    <div class="meta-value">高风险写入必须二次确认</div>
+                  </div>
+
+                  <div class="evidence" aria-label="证据列表">
+                    <div class="evidence-row">
+                      <i data-lucide="package-check"></i>
+                      <div>
+                        <div class="evidence-name">发布包 release_pkg_82af</div>
+                        <div class="evidence-meta">构建通过 · 12 项检查 · sha256: 7e2c...</div>
+                      </div>
+                      <span class="pill ok">有效</span>
+                    </div>
+                    <div class="evidence-row">
+                      <i data-lucide="file-check-2"></i>
+                      <div>
+                        <div class="evidence-name">回归报告 report_4c9a</div>
+                        <div class="evidence-meta">失败 0 · 警告 2 · 由 test-runner 写回</div>
+                      </div>
+                      <span class="pill warn">有警告</span>
+                    </div>
+                    <div class="evidence-row">
+                      <i data-lucide="history"></i>
+                      <div>
+                        <div class="evidence-name">审批历史 audit_19bb</div>
+                        <div class="evidence-meta">上次同类发布由 human_owner 驳回</div>
+                      </div>
+                      <span class="pill mute">参考</span>
+                    </div>
+                  </div>
+
+                  <div class="action-bar">
+                    <button class="primary-btn" type="button">审批</button>
+                    <button class="ghost-btn" type="button">补证</button>
+                    <button class="ghost-btn" type="button">打开项目</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="context-card" aria-labelledby="auditTitle">
+                <div class="panel-head">
+                  <div>
+                    <h2 class="panel-title" id="auditTitle">最近审计轨迹</h2>
+                    <div class="panel-note">视觉重心放在可追溯事实，而不是装饰。</div>
+                  </div>
+                </div>
+                <div class="audit-stream">
+                  <div class="audit-event">
+                    <div class="audit-rail">
+                      <span class="audit-dot" style="background: var(--danger)"></span>
+                      <span class="audit-line"></span>
+                    </div>
+                    <div class="audit-content">
+                      <div class="audit-title">协调线程暂停后续分派</div>
+                      <div class="audit-meta">18:57:12 · 高风险发布动作进入人工确认</div>
+                    </div>
+                  </div>
+                  <div class="audit-event">
+                    <div class="audit-rail">
+                      <span class="audit-dot" style="background: var(--info)"></span>
+                      <span class="audit-line"></span>
+                    </div>
+                    <div class="audit-content">
+                      <div class="audit-title">deploy-bot 写回发布包证据</div>
+                      <div class="audit-meta">18:56:44 · release_pkg_82af · 12 项检查通过</div>
+                    </div>
+                  </div>
+                  <div class="audit-event">
+                    <div class="audit-rail">
+                      <span class="audit-dot" style="background: var(--ok)"></span>
+                      <span class="audit-line"></span>
+                    </div>
+                    <div class="audit-content">
+                      <div class="audit-title">test-runner 完成回归验证</div>
+                      <div class="audit-meta">18:54:03 · report_4c9a · 2 个非阻断警告</div>
+                    </div>
+                  </div>
+                  <div class="audit-event">
+                    <div class="audit-rail">
+                      <span class="audit-dot"></span>
+                      <span class="audit-line"></span>
+                    </div>
+                    <div class="audit-content">
+                      <div class="audit-title">human_owner 更新发布策略</div>
+                      <div class="audit-meta">17:22:10 · 支付网关迁移 · 高风险写入需二次确认</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const root = document.documentElement;
+      const densityToggle = document.getElementById("densityToggle");
+      const densityButtons = document.querySelectorAll("[data-density-value]");
+      const openDecision = document.getElementById("openDecision");
+      const decisionPanel = document.getElementById("decisionPanel");
+
+      function setDensity(value) {
+        root.dataset.density = value;
+        densityButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.densityValue === value);
+        });
+      }
+
+      densityButtons.forEach((button) => {
+        button.addEventListener("click", () => setDensity(button.dataset.densityValue));
+      });
+
+      densityToggle.addEventListener("click", () => {
+        setDensity(root.dataset.density === "compact" ? "comfortable" : "compact");
+      });
+
+      openDecision.addEventListener("click", () => {
+        decisionPanel.classList.toggle("open");
+      });
+
+      lucide.createIcons({ attrs: { "stroke-width": 2 } });
+    </script>
+  </body>
+</html>

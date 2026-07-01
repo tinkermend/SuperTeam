@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-)
 
-const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+	"github.com/superteam/control-plane/internal/platform"
+)
 
 type CreateUserRecordInput struct {
 	Username      string
@@ -207,7 +207,7 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.AvatarAssetID = strings.ToLower(strings.TrimSpace(input.AvatarAssetID))
 	if input.TenantID == uuid.Nil {
-		input.TenantID = uuid.MustParse(DefaultTenantID)
+		input.TenantID = platform.DefaultTenantID
 	}
 	if input.Username == "" ||
 		input.DisplayName == "" ||
@@ -308,14 +308,14 @@ func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, use
 
 func (s *Service) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
 	if tenantID == uuid.Nil {
-		tenantID = uuid.MustParse(DefaultTenantID)
+		tenantID = platform.DefaultTenantID
 	}
 	return s.repo.ListUserProjectTeamScopes(ctx, tenantID, userID)
 }
 
 func (s *Service) ReplaceUserProjectTeamScopes(ctx context.Context, actor Actor, tenantID, userID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
 	if tenantID == uuid.Nil {
-		tenantID = uuid.MustParse(DefaultTenantID)
+		tenantID = platform.DefaultTenantID
 	}
 	if userID == uuid.Nil {
 		return nil, ErrManagedUserNotFound
@@ -344,7 +344,7 @@ func (s *Service) ReplaceUserProjectTeamScopes(ctx context.Context, actor Actor,
 
 func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
 	if tenantID == uuid.Nil {
-		tenantID = uuid.MustParse(DefaultTenantID)
+		tenantID = platform.DefaultTenantID
 	}
 	return s.repo.CanUseTeamForProject(ctx, tenantID, userID, teamID)
 }
@@ -513,7 +513,7 @@ func (s *Service) GetCurrentUserContext(ctx context.Context, token string) (*Cur
 	if err != nil {
 		return nil, err
 	}
-	tenantID := uuid.MustParse(DefaultTenantID)
+	tenantID := platform.DefaultTenantID
 	return &CurrentUserContext{
 		User:     user,
 		TenantID: tenantID,

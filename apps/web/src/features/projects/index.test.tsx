@@ -311,6 +311,7 @@ function createProjectFetcher(
     projectTeamScopesDeferred?: ReturnType<typeof makeDeferred<Response>>;
     projectTeamScopesStatus?: "default" | "empty" | "error" | "loading";
     project2OverviewGate?: Promise<void>;
+    project2RiskSignalGate?: Promise<void>;
     riskSignalFailureProjectId?: string;
     slowFilteredList?: boolean;
   } = {},
@@ -523,6 +524,9 @@ function createProjectFetcher(
     }
 
     if (url.pathname === "/api/v1/projects/project-2/tasks" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
       return jsonResponse([
         {
           id: "task-project-2-failed",
@@ -535,9 +539,15 @@ function createProjectFetcher(
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-2/decisions" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
       return jsonResponse([]);
     }
     if (url.pathname === "/api/v1/projects/project-2/evidence" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
       return jsonResponse([]);
     }
     if (url.pathname === "/api/v1/projects/project-2/events" && method === "GET") {
@@ -1901,6 +1911,36 @@ describe("ProjectsView", () => {
     expect(queueText).toContain("生产巡检整改");
     expect(queueText).toContain("客户接入验收");
     expect(queueText).toContain("执行失败");
+  });
+
+  it("keeps the homepage risk summary in a loading state until current-page risk signals settle", async () => {
+    const project2RiskGate = makeDeferred<void>();
+    const fetcher = createProjectFetcher({
+      project2RiskSignalGate: project2RiskGate.promise,
+    });
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByText("风险识别中")).toBeVisible();
+
+    const summary = screen.getByLabelText("项目风险汇总（当前页）").element();
+    expect(summary.textContent).toContain("正在读取当前页项目的任务、决策和证据信号");
+    expect(summary.textContent).not.toContain("阻塞项目");
+    expect(summary.textContent).not.toContain("人工决策");
+    const pendingQueue = screen.getByTestId("project-risk-queue").element();
+    const pendingQueueText = pendingQueue.textContent ?? "";
+    const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
+    expect(pendingQueueText).toContain("正在识别风险");
+    expect(pendingRowsText).not.toContain("等待人工决策");
+    expect(pendingRowsText).not.toContain("执行失败");
+
+    project2RiskGate.resolve();
+
+    await vi.waitFor(() => {
+      expect(summary.textContent).toContain("阻塞项目");
+      expect(summary.textContent).toContain("人工决策");
+      expect(summary.textContent).not.toContain("风险识别中");
+    });
   });
 
   it("filters the queue by risk category without changing the base project list request", async () => {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/inbox"
@@ -63,7 +64,7 @@ func TestInboxRoutesAreRegisteredWhenHandlerIsSet(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected inbox badge route to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	expectedTenantID := platform.DefaultTenantID
 	if service.badgeTenantID != expectedTenantID || service.badgeActorUserID != user.ID || !service.badgeIncludeTeam {
 		t.Fatalf("expected badge route to pass console identity, got tenant=%s user=%s includeTeam=%v", service.badgeTenantID, service.badgeActorUserID, service.badgeIncludeTeam)
 	}

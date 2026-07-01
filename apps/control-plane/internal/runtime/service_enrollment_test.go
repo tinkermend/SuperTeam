@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 func TestEnrollHelloCreatesPendingWithoutSession(t *testing.T) {
@@ -23,7 +25,7 @@ func TestEnrollHelloCreatesPendingWithoutSession(t *testing.T) {
 	require.NoError(t, err)
 	repo.bootstrapKeys = append(repo.bootstrapKeys, RuntimeBootstrapKeyRecord{
 		ID:       runtimeTestUUID(10),
-		TenantID: DefaultTenantID,
+		TenantID: platform.DefaultTenantID,
 		KeyHash:  bootstrapHash,
 		Status:   "active",
 	})
@@ -55,8 +57,8 @@ func TestEnrollHelloApprovedIssuesSession(t *testing.T) {
 	bootstrapSecret := "boot_test_approved"
 	bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 	require.NoError(t, err)
-	node := repo.seedNode(DefaultTenantID, "runtime-approved", "Runtime Approved", []string{"codex"})
-	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-approved", RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(20), bootstrapHash)
+	node := repo.seedNode(platform.DefaultTenantID, "runtime-approved", "Runtime Approved", []string{"codex"})
+	enrollment := repo.seedEnrollment(platform.DefaultTenantID, "runtime-approved", RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(20), bootstrapHash)
 
 	issuedAt := time.Now()
 	resp, err := service.EnrollHello(ctx, EnrollHelloRequest{
@@ -107,7 +109,7 @@ func TestEnrollHelloRejectsInvalidBootstrapSecret(t *testing.T) {
 	require.NoError(t, err)
 	repo.bootstrapKeys = append(repo.bootstrapKeys, RuntimeBootstrapKeyRecord{
 		ID:       runtimeTestUUID(30),
-		TenantID: DefaultTenantID,
+		TenantID: platform.DefaultTenantID,
 		KeyHash:  bootstrapHash,
 		Status:   "active",
 	})
@@ -134,7 +136,7 @@ func TestEnrollHelloRejectedOrRevokedDoesNotIssueSession(t *testing.T) {
 			bootstrapSecret := "boot_test_terminal"
 			bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 			require.NoError(t, err)
-			repo.seedEnrollment(DefaultTenantID, "runtime-terminal", status, uuid.Nil, runtimeTestUUID(40), bootstrapHash)
+			repo.seedEnrollment(platform.DefaultTenantID, "runtime-terminal", status, uuid.Nil, runtimeTestUUID(40), bootstrapHash)
 
 			resp, err := service.EnrollHello(ctx, EnrollHelloRequest{
 				NodeID:       "runtime-terminal",
@@ -159,29 +161,29 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 
 	bootstrapHash, err := HashRuntimeSecret("boot_approve")
 	require.NoError(t, err)
-	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(50), bootstrapHash)
+	enrollment := repo.seedEnrollment(platform.DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(50), bootstrapHash)
 	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-approve", "Runtime Approve", []string{"codex"}, 4, map[string]interface{}{"region": "local"})
 	repo.enrollmentsByID[enrollment.ID] = enrollment
-	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-approve")] = enrollment
+	repo.enrollmentsByNode[repo.enrollmentKey(platform.DefaultTenantID, "runtime-approve")] = enrollment
 
 	approved, err := service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: enrollment.ID,
 		ApprovedBy:   runtimeTestUUID(51),
 	})
 	require.NoError(t, err)
 	require.Equal(t, RuntimeEnrollmentStatusApproved, approved.Status)
 	require.NotEqual(t, uuid.Nil, approved.RuntimeNodeID)
-	require.Contains(t, repo.nodes, repo.nodeKey(DefaultTenantID, "runtime-approve"))
+	require.Contains(t, repo.nodes, repo.nodeKey(platform.DefaultTenantID, "runtime-approve"))
 
 	// Re-approving another pending enrollment with the same tenant/node should reuse the same runtime node.
 	firstNodeID := approved.RuntimeNodeID
-	second := repo.seedEnrollment(DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(52), bootstrapHash)
+	second := repo.seedEnrollment(platform.DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(52), bootstrapHash)
 	second.RequestPayload = mustRuntimePayload(t, "runtime-approve", "Runtime Approve Reused", []string{"codex"}, 2, nil)
 	repo.enrollmentsByID[second.ID] = second
-	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-approve")] = second
+	repo.enrollmentsByNode[repo.enrollmentKey(platform.DefaultTenantID, "runtime-approve")] = second
 	approvedAgain, err := service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: second.ID,
 		ApprovedBy:   runtimeTestUUID(53),
 	})
@@ -198,7 +200,7 @@ func TestApproveEnrollmentDoesNotTakeOverCrossTenantNodeID(t *testing.T) {
 
 	bootstrapHash, err := HashRuntimeSecret("boot_cross_tenant")
 	require.NoError(t, err)
-	repo.seedNode(DefaultTenantID, "runtime-shared", "Default Tenant Runtime", []string{"codex"})
+	repo.seedNode(platform.DefaultTenantID, "runtime-shared", "Default Tenant Runtime", []string{"codex"})
 	enrollment := repo.seedEnrollment(otherTenantID, "runtime-shared", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(911), bootstrapHash)
 	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-shared", "Other Tenant Runtime", []string{"codex"}, 2, nil)
 	repo.enrollmentsByID[enrollment.ID] = enrollment
@@ -212,7 +214,7 @@ func TestApproveEnrollmentDoesNotTakeOverCrossTenantNodeID(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, RuntimeEnrollmentStatusPending, repo.enrollmentsByID[enrollment.ID].Status)
 	require.Equal(t, 1, len(repo.nodes))
-	require.Equal(t, DefaultTenantID, repo.nodes["runtime-shared"].TenantID)
+	require.Equal(t, platform.DefaultTenantID, repo.nodes["runtime-shared"].TenantID)
 }
 
 func TestApproveEnrollmentFailureDoesNotCreateRuntimeNode(t *testing.T) {
@@ -223,14 +225,14 @@ func TestApproveEnrollmentFailureDoesNotCreateRuntimeNode(t *testing.T) {
 
 	bootstrapHash, err := HashRuntimeSecret("boot_rejected_after_read")
 	require.NoError(t, err)
-	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-rejected-after-read", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(913), bootstrapHash)
+	enrollment := repo.seedEnrollment(platform.DefaultTenantID, "runtime-rejected-after-read", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(913), bootstrapHash)
 	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-rejected-after-read", "Runtime Rejected After Read", []string{"codex"}, 2, nil)
 	repo.enrollmentsByID[enrollment.ID] = enrollment
-	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-rejected-after-read")] = enrollment
+	repo.enrollmentsByNode[repo.enrollmentKey(platform.DefaultTenantID, "runtime-rejected-after-read")] = enrollment
 	repo.failApproveEnrollmentIDs[enrollment.ID] = true
 
 	_, err = service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: enrollment.ID,
 		ApprovedBy:   runtimeTestUUID(914),
 	})
@@ -340,7 +342,7 @@ func TestValidateRuntimeSession(t *testing.T) {
 	require.Equal(t, "runtime-validate", validation.NodeID)
 	require.NotEqual(t, uuid.Nil, validation.RuntimeNodeID)
 	require.NotEqual(t, uuid.Nil, validation.SessionID)
-	require.Equal(t, DefaultTenantID, validation.TenantID)
+	require.Equal(t, platform.DefaultTenantID, validation.TenantID)
 	require.True(t, validation.ExpiresAt.After(time.Now()))
 }
 
@@ -351,10 +353,10 @@ func TestRevokeEnrollmentInvalidatesSessions(t *testing.T) {
 	require.NoError(t, err)
 
 	token := repo.seedApprovedSession(t, "runtime-revoke", "boot_revoke", time.Now().Add(10*time.Minute))
-	enrollment := repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-revoke")]
+	enrollment := repo.enrollmentsByNode[repo.enrollmentKey(platform.DefaultTenantID, "runtime-revoke")]
 
 	revoked, err := service.RevokeEnrollment(ctx, RevokeEnrollmentRequest{
-		TenantID:     DefaultTenantID,
+		TenantID:     platform.DefaultTenantID,
 		EnrollmentID: enrollment.ID,
 		RevokedBy:    runtimeTestUUID(60),
 		Reason:       "rotation",
@@ -465,15 +467,15 @@ func (f *enrollmentFake) seedApprovedSession(t *testing.T, nodeID, bootstrapSecr
 	t.Helper()
 	bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 	require.NoError(t, err)
-	node := f.seedNode(DefaultTenantID, nodeID, nodeID, []string{"codex"})
-	enrollment := f.seedEnrollment(DefaultTenantID, nodeID, RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(len(f.bootstrapKeys)+300), bootstrapHash)
+	node := f.seedNode(platform.DefaultTenantID, nodeID, nodeID, []string{"codex"})
+	enrollment := f.seedEnrollment(platform.DefaultTenantID, nodeID, RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(len(f.bootstrapKeys)+300), bootstrapHash)
 	token, err := GenerateRuntimeSessionToken()
 	require.NoError(t, err)
 	secretHash, err := HashRuntimeSecret(token)
 	require.NoError(t, err)
 	session := RuntimeSessionRecord{
 		ID:              runtimeTestUUID(len(f.sessionsByLookup) + 400),
-		TenantID:        DefaultTenantID,
+		TenantID:        platform.DefaultTenantID,
 		RuntimeNodeID:   node.ID,
 		NodeID:          nodeID,
 		EnrollmentID:    uuid.NullUUID{UUID: enrollment.ID, Valid: true},
@@ -490,7 +492,7 @@ func (f *enrollmentFake) seedApprovedSession(t *testing.T, nodeID, bootstrapSecr
 func (f *enrollmentFake) CreateNode(_ context.Context, params CreateNodeParams) (NodeRecord, error) {
 	record := NodeRecord{
 		ID:                 runtimeTestUUID(len(f.nodes) + 100),
-		TenantID:           DefaultTenantID,
+		TenantID:           platform.DefaultTenantID,
 		NodeID:             params.NodeID,
 		Name:               params.Name,
 		SupportedProviders: params.SupportedProviders,
@@ -502,12 +504,12 @@ func (f *enrollmentFake) CreateNode(_ context.Context, params CreateNodeParams) 
 		CreatedAt:          timestamptzFromTime(time.Now()),
 		UpdatedAt:          timestamptzFromTime(time.Now()),
 	}
-	f.nodes[f.nodeKey(DefaultTenantID, params.NodeID)] = record
+	f.nodes[f.nodeKey(platform.DefaultTenantID, params.NodeID)] = record
 	return record, nil
 }
 
 func (f *enrollmentFake) GetNode(_ context.Context, nodeID string) (NodeRecord, error) {
-	record, ok := f.nodes[f.nodeKey(DefaultTenantID, nodeID)]
+	record, ok := f.nodes[f.nodeKey(platform.DefaultTenantID, nodeID)]
 	if !ok {
 		return NodeRecord{}, errors.New("not found")
 	}
@@ -523,7 +525,7 @@ func (f *enrollmentFake) ListOnlineNodes(context.Context, pgtype.Timestamptz) ([
 }
 
 func (f *enrollmentFake) UpdateHeartbeat(_ context.Context, params UpdateHeartbeatParams) (NodeRecord, error) {
-	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
 	record, ok := f.nodes[key]
 	if !ok {
 		return NodeRecord{}, errors.New("not found")
@@ -534,7 +536,7 @@ func (f *enrollmentFake) UpdateHeartbeat(_ context.Context, params UpdateHeartbe
 }
 
 func (f *enrollmentFake) UpdateLoad(_ context.Context, params UpdateLoadParams) (NodeRecord, error) {
-	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
 	record := f.nodes[key]
 	record.CurrentLoad = params.CurrentLoad
 	f.nodes[key] = record
@@ -542,7 +544,7 @@ func (f *enrollmentFake) UpdateLoad(_ context.Context, params UpdateLoadParams) 
 }
 
 func (f *enrollmentFake) UpdateStatus(_ context.Context, params UpdateStatusParams) (NodeRecord, error) {
-	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
 	record := f.nodes[key]
 	record.Status = params.Status
 	f.nodes[key] = record

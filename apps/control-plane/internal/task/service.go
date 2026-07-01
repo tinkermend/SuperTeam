@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 var (
@@ -15,8 +17,6 @@ var (
 	ErrInvalidTransition   = errors.New("invalid state transition")
 	ErrTaskAlreadyAssigned = errors.New("task already assigned")
 )
-
-var defaultTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 type Service struct {
 	repository   Repository
@@ -318,7 +318,7 @@ func (s *Service) recordToTaskEvent(record TaskEventRecord) *TaskEvent {
 
 func normalizeTenantID(value uuid.UUID) uuid.UUID {
 	if value == uuid.Nil {
-		return defaultTenantID
+		return platform.DefaultTenantID
 	}
 	return value
 }
