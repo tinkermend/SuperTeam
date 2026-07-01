@@ -41,13 +41,13 @@
     radial-gradient(circle at 88% 12%, rgba(21, 160, 107, 0.10), transparent 30%),
     linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
   --v3-shell-grid: rgba(47, 95, 255, 0.045);
-  --v3-shell-glass: rgba(255, 255, 255, 0.72);
-  --v3-shell-glass-strong: rgba(255, 255, 255, 0.88);
-  --v3-shell-glass-border: rgba(255, 255, 255, 0.72);
-  --v3-shell-control: rgba(255, 255, 255, 0.52);
-  --v3-shell-control-hover: rgba(255, 255, 255, 0.72);
-  --v3-shell-control-active: rgba(233, 239, 255, 0.68);
-  --v3-shell-control-border: rgba(255, 255, 255, 0.78);
+  --v3-shell-glass: rgba(249, 251, 255, 0.90);
+  --v3-shell-glass-strong: rgba(255, 255, 255, 0.96);
+  --v3-shell-glass-border: rgba(126, 143, 172, 0.22);
+  --v3-shell-control: rgba(255, 255, 255, 0.68);
+  --v3-shell-control-hover: rgba(248, 250, 252, 0.92);
+  --v3-shell-control-active: rgba(225, 234, 255, 0.88);
+  --v3-shell-control-border: rgba(126, 143, 172, 0.20);
   --v3-shell-search: rgba(255, 255, 255, 0.82);
   --v3-shell-search-border: rgba(47, 95, 255, 0.14);
   --v3-shell-search-shadow: 0 14px 34px rgba(39, 54, 75, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.86);

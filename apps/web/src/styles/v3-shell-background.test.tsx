@@ -170,7 +170,7 @@ describe('authenticated v3 shell background styles', () => {
     )
   })
 
-  it('keeps the sidebar panel acrylic with one soft divider and no heavy shadow', async () => {
+  it('keeps the sidebar panel distinct from the shell with one soft divider', async () => {
     await render(
       <aside data-testid='sidebar-container' data-slot='sidebar-container'>
         <div
@@ -196,12 +196,14 @@ describe('authenticated v3 shell background styles', () => {
     const innerStyle = getComputedStyle(sidebarInner as HTMLElement)
 
     expect(containerStyle.borderInlineEndWidth).toBe('1px')
-    expect(containerStyle.borderInlineEndColor).toBe('rgba(255, 255, 255, 0.72)')
+    expect(containerStyle.borderInlineEndColor).toBe(
+      'rgba(126, 143, 172, 0.22)'
+    )
     expect(containerStyle.boxShadow).toBe('none')
     expect(innerStyle.borderInlineEndWidth).toBe('0px')
     expect(innerStyle.boxShadow).toBe('none')
-    expect(innerStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.72)')
-    expect(innerStyle.backgroundImage).toBe('none')
+    expect(innerStyle.backgroundColor).toBe('rgba(249, 251, 255, 0.9)')
+    expect(innerStyle.backgroundImage).toContain('linear-gradient')
     expect(innerStyle.backdropFilter).toContain('blur')
   })
 
@@ -237,9 +239,11 @@ describe('authenticated v3 shell background styles', () => {
     expect(innerStyle.borderTopLeftRadius).toBe('26px')
     expect(innerStyle.borderTopRightRadius).toBe('26px')
     expect(innerStyle.borderTopWidth).toBe('1px')
+    expect(innerStyle.borderTopColor).toBe('rgba(126, 143, 172, 0.22)')
+    expect(innerStyle.backgroundColor).toBe('rgba(255, 255, 255, 0.96)')
     expect(innerStyle.backgroundImage).toContain('radial-gradient')
     expect(innerStyle.backgroundImage).toContain('linear-gradient')
-    expect(innerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.08)')
+    expect(innerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.09)')
     expect(innerStyle.backdropFilter).toContain('blur')
   })
 
@@ -270,9 +274,9 @@ describe('authenticated v3 shell background styles', () => {
 
     const buttonStyle = getComputedStyle(menuButton as HTMLElement)
 
-    expect(buttonStyle.backgroundColor).toBe('rgba(233, 239, 255, 0.72)')
+    expect(buttonStyle.backgroundColor).toBe('rgba(225, 234, 255, 0.88)')
     expect(buttonStyle.backgroundImage).toBe('none')
-    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.14)')
+    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.22)')
     expect(buttonStyle.boxShadow).toBe('none')
   })
 })
