@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -26,68 +28,82 @@ func NewScheduler(repository Repository) (*Scheduler, error) {
 	}, nil
 }
 
-// SelectNode selects the best available node for a given provider type
-// It follows these rules:
-// 1. Query nodes that support the provider and are online
-// 2. Filter out nodes with full load (current_load >= max_slots)
-// 3. Select the node with the lowest load
-// 4. Update the node's current_load
+// SelectNode selects the best available node for a given provider type.
+//
+// Concurrency model: the candidate list is read without a lock and is only used
+// to decide the order in which nodes are tried (lowest current_load first).
+// The actual slot reservation happens atomically inside TryAcquireNodeSlot,
+// whose SQL UPDATE inlines the capacity guard (current_load < max_slots) and
+// liveness guards (status = 'online', fresh heartbeat, not archived/disabled).
+// PostgreSQL serializes concurrent UPDATEs on the same row and re-evaluates the
+// WHERE clause against the latest committed version, so two concurrent
+// SelectNode calls cannot both reserve the last slot on the same node: the
+// second one receives pgx.ErrNoRows and falls through to the next candidate.
 func (s *Scheduler) SelectNode(ctx context.Context, providerType string) (*Node, error) {
 	if providerType == "" {
 		return nil, errors.New("provider_type is required")
 	}
 
-	// Get all online nodes
+	// Get all online nodes (used only to order candidates; no lock taken here)
 	threshold := time.Now().Add(-HeartbeatTimeout)
-	nodes, err := s.repository.ListOnlineNodes(ctx, timestamptzFromTime(threshold))
+	thresholdTs := timestamptzFromTime(threshold)
+	nodes, err := s.repository.ListOnlineNodes(ctx, thresholdTs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list online nodes: %w", err)
 	}
 
-	// Filter nodes that support the provider and have capacity
+	// Filter nodes that support the provider; capacity is enforced atomically
+	// at acquire time, so we don't pre-filter by HasCapacity here.
 	var candidates []*Node
 	for _, record := range nodes {
 		node, err := s.recordToNode(record)
 		if err != nil {
 			continue
 		}
-
-		// Check if node supports the provider
 		if !node.SupportsProvider(providerType) {
 			continue
 		}
-
-		// Check if node has capacity
-		if !node.HasCapacity() {
-			continue
-		}
-
 		candidates = append(candidates, node)
 	}
 
-	// No available nodes
 	if len(candidates) == 0 {
 		return nil, ErrNoAvailableNode
 	}
 
-	// Select node with lowest load
-	selectedNode := candidates[0]
-	for _, node := range candidates[1:] {
-		if node.CurrentLoad < selectedNode.CurrentLoad {
-			selectedNode = node
+	// Order candidates by current load (ascending) so the least-loaded viable
+	// node is tried first. Ties keep the stable DB ordering (already by
+	// current_load ASC, created_at ASC).
+	sortCandidatesByLoad(candidates)
+
+	// Try each candidate atomically. The first success wins; a pgx.ErrNoRows
+	// result means the node was full (or went offline/stale) between the read
+	// and the acquire, so move on to the next candidate.
+	for _, node := range candidates {
+		record, err := s.repository.TryAcquireNodeSlot(ctx, node.NodeID, thresholdTs)
+		if err == nil {
+			return s.recordToNode(record)
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		return nil, fmt.Errorf("failed to acquire node slot: %w", err)
+	}
+
+	return nil, ErrNoAvailableNode
+}
+
+// sortCandidatesByLoad orders nodes by current load ascending, preserving the
+// input order for ties (which already comes from the DB ordered by
+// current_load ASC, created_at ASC).
+func sortCandidatesByLoad(candidates []*Node) {
+	// Simple insertion sort: candidate lists are small (number of online
+	// runtime nodes per provider) and stability is required to keep the DB's
+	// tiebreaker ordering.
+	for i := 1; i < len(candidates); i++ {
+		for j := i; j > 0 && candidates[j].CurrentLoad < candidates[j-1].CurrentLoad; j-- {
+			candidates[j], candidates[j-1] = candidates[j-1], candidates[j]
 		}
 	}
-
-	// Update node load
-	record, err := s.repository.UpdateLoad(ctx, UpdateLoadParams{
-		NodeID:      selectedNode.NodeID,
-		CurrentLoad: selectedNode.CurrentLoad + 1,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update node load: %w", err)
-	}
-
-	return s.recordToNode(record)
 }
 
 // Helper method to convert record to node
