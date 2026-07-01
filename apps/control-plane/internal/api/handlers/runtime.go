@@ -718,6 +718,39 @@ func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
 }
 
+func (h *RuntimeHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	newStatus := task.TaskStatus(req.Status)
+	if !newStatus.IsValid() {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+
+	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
+		TaskID:    taskID,
+		NewStatus: newStatus,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
+}
+
 func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
 	taskID, ok := taskIDFromRequest(w, r)
 	if !ok {

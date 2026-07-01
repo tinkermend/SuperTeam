@@ -789,7 +789,7 @@ impl ControlPlaneClient {
     }
 
     fn task_status_url(&self, task_id: i64) -> String {
-        format!("{}/api/v1/tasks/{}/status", self.base_url, task_id)
+        format!("{}/api/v1/runtime/tasks/{}/status", self.base_url, task_id)
     }
 
     fn task_complete_url(&self, task_id: i64) -> String {
@@ -909,7 +909,7 @@ mod tests {
         );
         assert_eq!(
             client.task_status_url(1),
-            "http://localhost:8080/api/v1/tasks/1/status"
+            "http://localhost:8080/api/v1/runtime/tasks/1/status"
         );
         assert_eq!(
             client.task_complete_url(1),

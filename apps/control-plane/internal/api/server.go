@@ -498,6 +498,7 @@ func (s *Server) registerRoutes() {
 				}
 				r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
 				r.Post("/tasks/claim", s.runtimeHandler.ClaimTask)
+				r.Put("/tasks/{id}/status", s.runtimeHandler.UpdateTaskStatus)
 				r.Post("/tasks/{id}/events", s.runtimeHandler.PushEvents)
 				r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
 				r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
