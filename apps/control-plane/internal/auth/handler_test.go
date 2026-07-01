@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 func TestHTTPHandlerCreatesCaptchaChallenge(t *testing.T) {

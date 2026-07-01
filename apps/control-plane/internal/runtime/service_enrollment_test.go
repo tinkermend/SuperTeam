@@ -543,6 +543,26 @@ func (f *enrollmentFake) UpdateLoad(_ context.Context, params UpdateLoadParams) 
 	return record, nil
 }
 
+func (f *enrollmentFake) TryAcquireNodeSlot(_ context.Context, nodeID string, threshold pgtype.Timestamptz) (NodeRecord, error) {
+	key := f.nodeKey(platform.DefaultTenantID, nodeID)
+	record, ok := f.nodes[key]
+	if !ok {
+		return NodeRecord{}, ErrNodeNotFound
+	}
+	if record.Status != string(NodeStatusOnline) {
+		return NodeRecord{}, errors.New("node not online")
+	}
+	if record.LastHeartbeatAt.Valid && threshold.Valid && record.LastHeartbeatAt.Time.Before(threshold.Time) {
+		return NodeRecord{}, errors.New("node heartbeat stale")
+	}
+	if record.CurrentLoad >= record.MaxSlots {
+		return NodeRecord{}, errors.New("node at capacity")
+	}
+	record.CurrentLoad++
+	f.nodes[key] = record
+	return record, nil
+}
+
 func (f *enrollmentFake) UpdateStatus(_ context.Context, params UpdateStatusParams) (NodeRecord, error) {
 	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
 	record := f.nodes[key]

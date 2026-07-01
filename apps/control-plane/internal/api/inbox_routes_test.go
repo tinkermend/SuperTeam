@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 func TestInboxRoutesRequireConsoleAuth(t *testing.T) {

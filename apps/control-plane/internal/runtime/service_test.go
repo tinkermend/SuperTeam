@@ -71,6 +71,11 @@ func (m *MockRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams
 	return args.Get(0).(NodeRecord), args.Error(1)
 }
 
+func (m *MockRepository) TryAcquireNodeSlot(ctx context.Context, nodeID string, heartbeatThreshold pgtype.Timestamptz) (NodeRecord, error) {
+	args := m.Called(ctx, nodeID, heartbeatThreshold)
+	return args.Get(0).(NodeRecord), args.Error(1)
+}
+
 func (m *MockRepository) UpdateStatus(ctx context.Context, params UpdateStatusParams) (NodeRecord, error) {
 	args := m.Called(ctx, params)
 	return args.Get(0).(NodeRecord), args.Error(1)
