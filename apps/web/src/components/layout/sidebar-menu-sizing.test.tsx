@@ -12,7 +12,7 @@ import {
 import '@/styles/index.css'
 
 describe('sidebar menu sizing', () => {
-  it('uses compact 14px labels and a 40px menu row for expanded navigation', async () => {
+  it('uses readable 15px labels and a 40px menu row for expanded navigation', async () => {
     await render(
       <SidebarProvider>
         <SidebarMenu>
@@ -44,10 +44,10 @@ describe('sidebar menu sizing', () => {
 
     expect(menuStyle.gap).toBe('2px')
     expect(buttonStyle.height).toBe('40px')
-    expect(buttonStyle.fontSize).toBe('14px')
+    expect(buttonStyle.fontSize).toBe('15px')
     expect(buttonStyle.color).toBe('rgb(31, 41, 55)')
     expect(buttonStyle.fontWeight).toBe('500')
-    expect(labelStyle.fontSize).toBe('14px')
+    expect(labelStyle.fontSize).toBe('15px')
   })
 
   it('keeps group labels quiet and close to their menu group', async () => {
@@ -171,7 +171,7 @@ describe('sidebar menu sizing', () => {
     const badgeStyle = getComputedStyle(badge as HTMLElement)
 
     expect(buttonStyle.height).toBe('40px')
-    expect(labelStyle.fontSize).toBe('14px')
+    expect(labelStyle.fontSize).toBe('15px')
     expect(badgeStyle.minWidth).toBe('20px')
     expect(badgeStyle.height).toBe('20px')
     expect(badgeStyle.backgroundColor).toBe('rgb(233, 239, 255)')
@@ -205,5 +205,42 @@ describe('sidebar menu sizing', () => {
     expect(iconStyle.color).toBe('rgb(91, 102, 122)')
     expect(iconStyle.width).toBe('20px')
     expect(iconStyle.height).toBe('20px')
+  })
+
+  it('keeps inactive navigation items readable in dark mode', async () => {
+    document.documentElement.classList.add('dark')
+
+    try {
+      await render(
+        <SidebarProvider>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton data-testid='dark-sidebar-menu-button'>
+                <Activity />
+                <span>审计日志</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarProvider>
+      )
+
+      const button = document.querySelector(
+        '[data-testid="dark-sidebar-menu-button"]'
+      )
+      const icon = document.querySelector(
+        '[data-testid="dark-sidebar-menu-button"] svg'
+      )
+
+      expect(button).toBeInstanceOf(HTMLElement)
+      expect(icon).toBeInstanceOf(SVGElement)
+
+      const buttonStyle = getComputedStyle(button as HTMLElement)
+      const iconStyle = getComputedStyle(icon as SVGElement)
+
+      expect(buttonStyle.color).toBe('rgb(243, 245, 248)')
+      expect(iconStyle.color).toBe('rgb(154, 166, 180)')
+    } finally {
+      document.documentElement.classList.remove('dark')
+    }
   })
 })
