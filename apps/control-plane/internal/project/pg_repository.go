@@ -4031,9 +4031,6 @@ func (r *PgRepository) createDecisionRequestWithQueries(ctx context.Context, q *
 		CreatedEventID:    nullUUID(req.CreatedEventID),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return DecisionRequest{}, ErrProjectNotFound
-		}
 		return DecisionRequest{}, err
 	}
 	return decisionRequestFromRecord(row)
@@ -4046,6 +4043,9 @@ func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, project
 		ID:        decisionRequestID,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
 		return DecisionRequest{}, err
 	}
 	return decisionRequestFromRecord(row)

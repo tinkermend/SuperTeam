@@ -3509,6 +3509,14 @@ func TestPgRepositoryMapsGovernanceNoRowsToDomainNotFound(t *testing.T) {
 	}
 }
 
+func TestGetDecisionRequestWrapsNoRowsAsErrProjectNotFound(t *testing.T) {
+	repo := NewPgRepository(queries.New(noRowsDB{}))
+
+	_, err := repo.GetDecisionRequest(context.Background(), uuid.New(), uuid.New(), uuid.New())
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+
 type noRowsDB struct{}
 
 func (noRowsDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
