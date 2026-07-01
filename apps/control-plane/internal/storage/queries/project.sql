@@ -880,6 +880,11 @@ SELECT * FROM project_route_decisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND coordination_job_id = sqlc.arg('coordination_job_id')::uuid;
 
+-- name: GetProjectRouteDecision :one
+SELECT * FROM project_route_decisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: CreateProjectTaskDependency :one
 INSERT INTO project_task_dependencies (
     tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id
@@ -1017,7 +1022,8 @@ INSERT INTO project_plan_revisions (
     validation_errors,
     validation_warnings,
     review_required,
-    review_reason
+    review_reason,
+    created_event_id
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.narg('team_id')::uuid,
@@ -1035,7 +1041,8 @@ INSERT INTO project_plan_revisions (
     COALESCE(sqlc.narg('validation_errors')::jsonb, '[]'::jsonb),
     COALESCE(sqlc.narg('validation_warnings')::jsonb, '[]'::jsonb),
     sqlc.arg('review_required')::boolean,
-    sqlc.narg('review_reason')::text
+    sqlc.narg('review_reason')::text,
+    sqlc.narg('created_event_id')::uuid
 ) RETURNING *;
 
 -- name: GetProjectPlanRevision :one
@@ -1056,8 +1063,15 @@ SELECT * FROM project_plan_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND (sqlc.narg('demand_id')::uuid IS NULL OR demand_id = sqlc.narg('demand_id')::uuid)
-ORDER BY demand_id ASC, revision_number DESC
+ORDER BY demand_id ASC, revision_number ASC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListProjectPlanRevisionsForDemand :many
+SELECT * FROM project_plan_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+ORDER BY revision_number ASC;
 
 -- name: NextProjectPlanRevisionNumber :one
 SELECT COALESCE(MAX(revision_number), 0)::integer + 1 AS revision_number
@@ -1484,6 +1498,7 @@ INSERT INTO project_decision_requests (
     approval_request_id,
     coordination_job_id,
     project_task_id,
+    plan_revision_id,
     target_user_id,
     decision_type,
     title_snapshot,
@@ -1497,6 +1512,7 @@ INSERT INTO project_decision_requests (
     sqlc.arg('approval_request_id')::uuid,
     sqlc.narg('coordination_job_id')::uuid,
     sqlc.narg('project_task_id')::uuid,
+    sqlc.narg('plan_revision_id')::uuid,
     sqlc.arg('target_user_id')::uuid,
     sqlc.arg('decision_type')::varchar,
     sqlc.arg('title_snapshot')::varchar,
@@ -1518,6 +1534,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND approval_request_id = sqlc.arg('approval_request_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: GetProjectDecisionRequestByPlanRevision :one
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND plan_revision_id = sqlc.arg('plan_revision_id')::uuid
+  AND decision_type = 'plan_review'
 ORDER BY created_at DESC
 LIMIT 1;
 

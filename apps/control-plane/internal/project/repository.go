@@ -39,6 +39,7 @@ type Repository interface {
 	CreatePlanRevision(ctx context.Context, req CreatePlanRevisionRequest) (PlanRevision, error)
 	GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error)
 	ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error)
+	ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error)
 	AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error)
 	RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error)
 	CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error)
@@ -49,6 +50,7 @@ type Repository interface {
 	ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error)
 	GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error)
 	GetCoordinationJobByTrigger(ctx context.Context, tenantID uuid.UUID, workflowID string, triggerEventID uuid.UUID, jobType string) (CoordinationJob, error)
+	GetRouteDecision(ctx context.Context, tenantID, routeDecisionID uuid.UUID) (RouteDecision, error)
 	GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error)
@@ -88,6 +90,7 @@ type Repository interface {
 	ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error)
 	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)
 	GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error)
+	GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error)
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error)
@@ -223,6 +226,7 @@ type CreatePlanRevisionRequest struct {
 	ReviewReason           *string
 	SupersedeOpenRevisions bool
 	SupersedeReason        *string
+	CreatedEventID         *uuid.UUID
 }
 
 type ListPlanRevisionsRequest struct {
@@ -519,6 +523,7 @@ type CreateDecisionRequestRequest struct {
 	ApprovalRequestID uuid.UUID
 	CoordinationJobID *uuid.UUID
 	ProjectTaskID     *uuid.UUID
+	PlanRevisionID    *uuid.UUID
 	TargetUserID      uuid.UUID
 	DecisionType      string
 	TitleSnapshot     string

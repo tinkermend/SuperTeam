@@ -439,6 +439,7 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		ReviewReason:           stringPtr(strings.Join(reviewReasons, "; ")),
 		SupersedeOpenRevisions: input.SupersedeOpen,
 		SupersedeReason:        input.SupersedeReason,
+		CreatedEventID:         &event.ID,
 	})
 	if err != nil {
 		return PlanRevisionResult{}, err
@@ -922,6 +923,132 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	}
 }
 
+func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
+	if s.repository == nil {
+		return HumanDecisionRouteResult{}, ErrActivityStoreRequired
+	}
+	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
+	if err != nil {
+		if errors.Is(err, project.ErrProjectNotFound) {
+			return HumanDecisionRouteResult{}, nil
+		}
+		return HumanDecisionRouteResult{}, err
+	}
+	result := HumanDecisionRouteResult{
+		Decision: ProjectDecisionSnapshot{
+			ID:                   decision.ID,
+			ProjectID:            decision.ProjectID,
+			DecisionType:         decision.DecisionType,
+			StatusSnapshot:       decision.StatusSnapshot,
+			CoordinationJobID:    uuidValue(decision.CoordinationJobID),
+			ProjectTaskID:        uuidValue(decision.ProjectTaskID),
+			PlanRevisionID:       uuidValue(decision.PlanRevisionID),
+			DispatchGateResultID: uuidValue(decision.DispatchGateResultID),
+			CreatedEventID:       uuidValue(decision.CreatedEventID),
+		},
+	}
+	if decision.DecisionType != "plan_review" {
+		return result, nil
+	}
+	if decision.PlanRevisionID == nil || *decision.PlanRevisionID == uuid.Nil {
+		return HumanDecisionRouteResult{}, project.ErrInvalidProject
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *decision.PlanRevisionID)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	if revision.CoordinationJobID == nil || *revision.CoordinationJobID == uuid.Nil ||
+		revision.RouteDecisionID == nil || *revision.RouteDecisionID == uuid.Nil {
+		return HumanDecisionRouteResult{}, project.ErrInvalidProject
+	}
+	payload, err := planRevisionPayloadFromMap(revision.Payload)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	result.PlanReview = &PlanReviewRoute{
+		ProjectID:         revision.ProjectID,
+		DemandID:          revision.DemandID,
+		CoordinationJobID: *revision.CoordinationJobID,
+		RouteDecisionID:   *revision.RouteDecisionID,
+		PlanRevisionID:    revision.ID,
+		PlanFingerprint:   revision.PlanFingerprint,
+		Payload:           payload,
+		PlanEventID:       uuidValue(revision.CreatedEventID),
+	}
+	routeDecision, err := s.repository.GetRouteDecision(ctx, input.TenantID, *revision.RouteDecisionID)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	if routeDecision.ID != *revision.RouteDecisionID {
+		return HumanDecisionRouteResult{}, project.ErrInvalidProject
+	}
+	result.PlanReview.RouteEventID = uuidValue(routeDecision.CreatedEventID)
+	outputEventIDs, err := s.planReviewRouteOutputEventIDs(ctx, input.TenantID, input.ProjectID, revision)
+	if err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	result.PlanReview.OutputEventIDs = outputEventIDs
+	return result, nil
+}
+
+func (s *ProjectStore) planReviewRouteOutputEventIDs(ctx context.Context, tenantID, projectID uuid.UUID, currentRevision project.PlanRevision) ([]uuid.UUID, error) {
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, projectID, currentRevision.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	outputEventIDs := []uuid.UUID{}
+	for _, revision := range revisions {
+		if revision.DemandID != currentRevision.DemandID || revision.RevisionNumber > currentRevision.RevisionNumber {
+			continue
+		}
+		if revision.CoordinationJobID == nil || *revision.CoordinationJobID == uuid.Nil ||
+			revision.RouteDecisionID == nil || *revision.RouteDecisionID == uuid.Nil {
+			return nil, project.ErrInvalidProject
+		}
+		routeDecision, err := s.repository.GetRouteDecision(ctx, tenantID, *revision.RouteDecisionID)
+		if err != nil {
+			return nil, err
+		}
+		if routeDecision.ID != *revision.RouteDecisionID {
+			return nil, project.ErrInvalidProject
+		}
+		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(routeDecision.CreatedEventID))
+		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(revision.CreatedEventID))
+		if revision.ID == currentRevision.ID {
+			return outputEventIDs, nil
+		}
+		decision, err := s.planReviewDecisionForRevision(ctx, tenantID, projectID, revision.ID)
+		if err != nil {
+			return nil, err
+		}
+		outputEventIDs = appendUniqueUUID(outputEventIDs, uuidValue(decision.ResolvedEventID))
+	}
+	return outputEventIDs, nil
+}
+
+func (s *ProjectStore) planReviewDecisionForRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (project.DecisionRequest, error) {
+	decision, err := s.repository.GetDecisionRequestByPlanRevision(ctx, tenantID, projectID, revisionID)
+	if err != nil {
+		if errors.Is(err, project.ErrProjectNotFound) {
+			return project.DecisionRequest{}, nil
+		}
+		return project.DecisionRequest{}, err
+	}
+	return decision, nil
+}
+
+func appendUniqueUUID(values []uuid.UUID, value uuid.UUID) []uuid.UUID {
+	if value == uuid.Nil {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
 func parseFailureRecoveryAction(decision string, payload map[string]any) (FailureRecoveryAction, error) {
 	switch decision {
 	case "needs_more_evidence":
@@ -1307,11 +1434,13 @@ func (s *ProjectStore) RequestPlanRevisionReview(ctx context.Context, input Requ
 		return DecisionRequestResult{}, err
 	}
 	coordinationJobID := input.CoordinationJobID
+	planRevisionID := input.PlanRevisionID
 	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
 		TenantID:          input.TenantID,
 		ProjectID:         input.ProjectID,
 		ApprovalRequestID: approvalRequest.ID,
 		CoordinationJobID: &coordinationJobID,
+		PlanRevisionID:    &planRevisionID,
 		TargetUserID:      targetUserID,
 		DecisionType:      "plan_review",
 		TitleSnapshot:     "确认项目计划版本",
@@ -2489,6 +2618,18 @@ func planRevisionPayloadMap(payload PlanRevisionPayload) (map[string]any, error)
 	return value, nil
 }
 
+func planRevisionPayloadFromMap(value map[string]any) (PlanRevisionPayload, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return PlanRevisionPayload{}, err
+	}
+	var payload PlanRevisionPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return PlanRevisionPayload{}, err
+	}
+	return payload, nil
+}
+
 func planRevisionResultFromDomain(revision project.PlanRevision) PlanRevisionResult {
 	return PlanRevisionResult{
 		ID:              revision.ID,
@@ -2504,6 +2645,13 @@ func uuidPtrOrNil(value uuid.UUID) *uuid.UUID {
 		return nil
 	}
 	return &value
+}
+
+func uuidValue(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
 }
 
 func stringPtr(value string) *string {

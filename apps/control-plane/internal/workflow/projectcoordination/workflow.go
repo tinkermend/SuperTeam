@@ -83,7 +83,11 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(humanCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal HumanDecisionSubmitted
 			c.Receive(ctx, &signal)
-			workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries, pendingAcceptance)
+			if workflow.GetVersion(ctx, "route-human-decision-from-store", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+				workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries, pendingAcceptance)
+				return
+			}
+			workflowErr = handleHumanDecisionSubmittedFromStore(ctx, input, signal)
 		})
 		selector.AddReceive(shutdownCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal ShutdownSignal
@@ -97,6 +101,14 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		}
 		if shouldStop {
 			return nil
+		}
+		if shouldContinueAsNew(ctx) {
+			return workflow.NewContinueAsNewError(ctx, ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+				TenantID:   input.TenantID,
+				ProjectID:  input.ProjectID,
+				WorkflowID: input.WorkflowID,
+				Generation: input.Generation + 1,
+			})
 		}
 	}
 }
@@ -279,6 +291,84 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
 
+func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted) error {
+	route, err := loadHumanDecisionRoute(ctx, input.TenantID, input.ProjectID, signal.DecisionRequestID)
+	if err != nil {
+		return err
+	}
+	if route.Decision.ID == uuid.Nil {
+		return appendSignalObservedEvent(ctx, input, "human decision submitted for unknown request")
+	}
+	projectID := route.Decision.ProjectID
+	if projectID == uuid.Nil {
+		projectID = input.ProjectID
+	}
+	switch route.Decision.DecisionType {
+	case "plan_review":
+		if route.PlanReview == nil {
+			return temporal.NewNonRetryableApplicationError("human decision route missing plan review", "HumanDecisionRouteMissingPlanReview", project.ErrInvalidProject)
+		}
+		outputEventIDs := planReviewRouteOutputEventIDs(*route.PlanReview, route.Decision.CreatedEventID)
+		pending := pendingPlanRevisionReview{
+			DecisionRequestID: route.Decision.ID,
+			ProjectID:         route.PlanReview.ProjectID,
+			DemandID:          route.PlanReview.DemandID,
+			CoordinationJobID: route.PlanReview.CoordinationJobID,
+			RouteDecisionID:   route.PlanReview.RouteDecisionID,
+			PlanRevisionID:    route.PlanReview.PlanRevisionID,
+			PlanFingerprint:   route.PlanReview.PlanFingerprint,
+			Payload:           route.PlanReview.Payload,
+			OutputEventIDs:    outputEventIDs,
+		}
+		_, err := handlePlanReviewDecision(ctx, input, signal, pending)
+		return err
+	case "task_failure_recovery":
+		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, projectID, signal)
+		if err != nil {
+			return err
+		}
+		return dispatchProjectTasks(ctx, input.TenantID, projectID, readyTaskIDs, project.DispatchReasonRetry)
+	case "project_acceptance":
+		return applyProjectAcceptanceDecision(ctx, input.TenantID, projectID, signal)
+	case "project_task_approval":
+		readyTaskIDs, err := applyPreDispatchGateDecision(ctx, input.TenantID, projectID, signal)
+		if err != nil {
+			return err
+		}
+		if len(readyTaskIDs) > 0 {
+			return dispatchProjectTasks(ctx, input.TenantID, projectID, readyTaskIDs, project.DispatchReasonHumanResolved)
+		}
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "human decision submitted")
+	default:
+		readyTaskIDs, err := applyPreDispatchGateDecision(ctx, input.TenantID, projectID, signal)
+		if err != nil {
+			return err
+		}
+		if len(readyTaskIDs) > 0 {
+			return dispatchProjectTasks(ctx, input.TenantID, projectID, readyTaskIDs, project.DispatchReasonHumanResolved)
+		}
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "human decision submitted")
+	}
+}
+
+func planReviewRouteOutputEventIDs(route PlanReviewRoute, decisionCreatedEventID uuid.UUID) []uuid.UUID {
+	if len(route.OutputEventIDs) > 0 {
+		return append([]uuid.UUID{}, route.OutputEventIDs...)
+	}
+	outputEventIDs := make([]uuid.UUID, 0, 2)
+	if route.RouteEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, route.RouteEventID)
+	}
+	planEventID := route.PlanEventID
+	if planEventID == uuid.Nil {
+		planEventID = decisionCreatedEventID
+	}
+	if planEventID != uuid.Nil && planEventID != route.RouteEventID {
+		outputEventIDs = append(outputEventIDs, planEventID)
+	}
+	return outputEventIDs
+}
+
 func handlePlanReviewDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pending pendingPlanRevisionReview) (*pendingPlanRevisionReview, error) {
 	outputEventIDs := append([]uuid.UUID{}, pending.OutputEventIDs...)
 	if signal.ResolvedEventID != uuid.Nil {
@@ -407,6 +497,9 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	if err := appendSignalObservedEvent(ctx, input, "employee task completed"); err != nil {
 		return taskCompletionPending{}, err
 	}
+	if workflow.GetVersion(ctx, "employee-task-result-decision", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return handleEmployeeTaskCompletedLegacy(ctx, input, signal)
+	}
 	decision, err := inspectTaskResultDecision(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
 	if err != nil {
 		return taskCompletionPending{}, err
@@ -442,6 +535,37 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	}
 	// No further downstream to dispatch from this completion; if the whole project is
 	// now terminal, open a human acceptance review. Idempotent on the store side.
+	if len(readyTaskIDs) == 0 {
+		ready, err := isProjectAcceptanceReady(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return taskCompletionPending{}, err
+		}
+		if !ready {
+			return taskCompletionPending{}, nil
+		}
+		decision, err := requestProjectAcceptanceReview(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return taskCompletionPending{}, err
+		}
+		if decision.ID == uuid.Nil {
+			return taskCompletionPending{}, nil
+		}
+		return taskCompletionPending{Acceptance: &pendingProjectAcceptance{
+			DecisionRequestID: decision.ID,
+			ProjectID:         input.ProjectID,
+		}}, nil
+	}
+	return taskCompletionPending{}, nil
+}
+
+func handleEmployeeTaskCompletedLegacy(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (taskCompletionPending, error) {
+	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
+	if err != nil {
+		return taskCompletionPending{}, err
+	}
+	if err := dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs, project.DispatchReasonDependencyUnlocked); err != nil {
+		return taskCompletionPending{}, err
+	}
 	if len(readyTaskIDs) == 0 {
 		ready, err := isProjectAcceptanceReady(ctx, input.TenantID, input.ProjectID)
 		if err != nil {
@@ -524,6 +648,18 @@ func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid
 		return nil, err
 	}
 	return result.ReadyTaskIDs, nil
+}
+
+func loadHumanDecisionRoute(ctx workflow.Context, tenantID, projectID, decisionRequestID uuid.UUID) (HumanDecisionRouteResult, error) {
+	var result HumanDecisionRouteResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).LoadHumanDecisionRoute, LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionRequestID,
+	}).Get(ctx, &result); err != nil {
+		return HumanDecisionRouteResult{}, err
+	}
+	return result, nil
 }
 
 func applyPreDispatchGateDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
@@ -673,6 +809,10 @@ func appendSignalObservedEvent(ctx workflow.Context, input ProjectCoordinatorInp
 		EventType: "workflow.signaled",
 		Summary:   summary,
 	}).Get(ctx, &event)
+}
+
+func shouldContinueAsNew(ctx workflow.Context) bool {
+	return workflow.GetInfo(ctx).GetContinueAsNewSuggested()
 }
 
 func defaultRetryPolicy() *temporal.RetryPolicy {

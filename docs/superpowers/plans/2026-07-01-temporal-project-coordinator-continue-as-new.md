@@ -6,13 +6,15 @@
 
 **Architecture:** Add the minimum durable association needed for `plan_review` decisions (`project_decision_requests.plan_revision_id`), expose it through sqlc/domain/repository/store types, then route `HumanDecisionSubmitted` from `project_decision_requests` instead of in-memory pending maps. Keep Provider/Codex/Claude Code session recovery outside Temporal; Continue-As-New carries only coordinator identity and generation.
 
+**Replay-safety constraint (verified against local dev Temporal on 2026-07-01):** `temporal workflow list --query "WorkflowType='ProjectCoordinatorWorkflow' AND ExecutionStatus='Running'"` currently shows 12 open (non-terminated) coordinator executions, and at least one already has 4 processed `HumanDecisionSubmitted` signals recorded in its history under the current pending-map routing (no `LoadHumanDecisionRoute` activity in that history). Replacing `handleHumanDecisionSubmitted` outright — as an earlier draft of this plan did — would make the SDK schedule a `LoadHumanDecisionRoute` activity that does not match those already-recorded histories, causing `NonDeterministicWorkflowError` and stuck workflows the next time any of those 12 executions needs a new workflow task. Task 5 therefore keeps the existing pending maps and legacy handler fully intact and gates the new store-routed handler behind `workflow.GetVersion`, mirroring the existing `"predispatch-gate-decision-rerun"` marker already in `workflow.go`. Do not delete the pending maps or the legacy handler in this plan.
+
 **Tech Stack:** Go Control Plane, Temporal Go SDK v1.44.1, PostgreSQL migrations managed by Atlas, sqlc generated queries, existing projectcoordination workflow tests.
 
 ---
 
 ## File Structure
 
-- Modify `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`: forward migration adding `project_decision_requests.plan_revision_id`.
+- Modify `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`: forward migration adding `project_decision_requests.plan_revision_id`.
 - Modify `apps/control-plane/internal/storage/migrations/atlas.sum`: generated Atlas checksum.
 - Modify `apps/control-plane/internal/storage/migrations_test.go`: schema contract test for the new column/index.
 - Modify `apps/control-plane/internal/storage/queries/project.sql`: include `plan_revision_id` in decision request insert/select/returning paths.
@@ -23,8 +25,9 @@
 - Modify `apps/control-plane/internal/project/service_test.go`: update memory repository decision request fixture mapping.
 - Modify `apps/control-plane/internal/workflow/projectcoordination/types.go`: add coordinator generation and human decision route DTOs.
 - Modify `apps/control-plane/internal/workflow/projectcoordination/activities.go`: extend `ActivityStore` and activity wrapper for durable human-decision routing.
+- Modify `apps/control-plane/internal/project/pg_repository.go`: wrap `pgx.ErrNoRows` as `project.ErrProjectNotFound` in `GetDecisionRequest` so `LoadHumanDecisionRoute`'s not-found branch behaves the same against Postgres as it does against the test fake.
 - Modify `apps/control-plane/internal/workflow/projectcoordination/project_store.go`: write `plan_revision_id` when requesting plan review and add route lookup logic.
-- Modify `apps/control-plane/internal/workflow/projectcoordination/workflow.go`: remove long-lived pending maps, route decisions from store, add Continue-As-New.
+- Modify `apps/control-plane/internal/workflow/projectcoordination/workflow.go`: gate store-routed human decision handling behind `workflow.GetVersion` (keep the existing pending maps and legacy handler intact for in-flight workflow replay safety — see Task 5), add Continue-As-New.
 - Modify `apps/control-plane/internal/workflow/projectcoordination/workflow_test.go`: red/green tests for store-routed decisions and Continue-As-New.
 - Modify `apps/control-plane/internal/workflow/projectcoordination/project_store_test.go`: store-level coverage for `plan_revision_id` persistence and route resolution.
 - Optional create `scripts/dev/clear-project-coordination-data.sql`: guarded development cleanup script if live DB cleanup is needed during execution.
@@ -32,7 +35,7 @@
 ## Task 1: Persist Plan Revision Link on Decision Requests
 
 **Files:**
-- Create: `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`
+- Create: `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`
 - Modify: `apps/control-plane/internal/storage/migrations_test.go`
 - Modify: `apps/control-plane/internal/storage/queries/project.sql`
 - Modify generated: `apps/control-plane/internal/storage/queries/models.go`
@@ -46,7 +49,7 @@ Append this test to `apps/control-plane/internal/storage/migrations_test.go` nea
 
 ```go
 func TestProjectDecisionRequestsPlanRevisionResumeMigration(t *testing.T) {
-	body, err := os.ReadFile("migrations/041_project_decision_plan_revision_resume.sql")
+	body, err := os.ReadFile("migrations/043_project_decision_plan_revision_resume.sql")
 	require.NoError(t, err)
 	sql := string(body)
 
@@ -71,11 +74,11 @@ Run:
 go test ./apps/control-plane/internal/storage -run TestProjectDecisionRequestsPlanRevisionResumeMigration -count=1
 ```
 
-Expected: FAIL because `migrations/041_project_decision_plan_revision_resume.sql` does not exist.
+Expected: FAIL because `migrations/043_project_decision_plan_revision_resume.sql` does not exist.
 
 - [ ] **Step 3: Add migration**
 
-Create `apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql`:
+Create `apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql`:
 
 ```sql
 ALTER TABLE project_decision_requests
@@ -139,7 +142,7 @@ cd apps/control-plane && atlas migrate hash --dir file://internal/storage/migrat
 Expected:
 - `apps/control-plane/internal/storage/queries/models.go` includes `PlanRevisionID uuid.NullUUID` on `ProjectDecisionRequest`.
 - `apps/control-plane/internal/storage/queries/project.sql.go` includes `PlanRevisionID` in `CreateProjectDecisionRequestParams` and scans.
-- `apps/control-plane/internal/storage/migrations/atlas.sum` includes `041_project_decision_plan_revision_resume.sql`.
+- `apps/control-plane/internal/storage/migrations/atlas.sum` includes `043_project_decision_plan_revision_resume.sql`.
 
 - [ ] **Step 6: Run tests**
 
@@ -154,7 +157,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/control-plane/internal/storage/migrations/041_project_decision_plan_revision_resume.sql \
+git add apps/control-plane/internal/storage/migrations/043_project_decision_plan_revision_resume.sql \
   apps/control-plane/internal/storage/migrations/atlas.sum \
   apps/control-plane/internal/storage/migrations_test.go \
   apps/control-plane/internal/storage/queries/project.sql \
@@ -496,6 +499,66 @@ git commit -m "feat: link plan review decisions"
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/activities.go`
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/project_store.go`
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/project_store_test.go`
+- Modify: `apps/control-plane/internal/project/pg_repository.go`
+- Modify: `apps/control-plane/internal/project/pg_repository_test.go`
+
+- [ ] **Step 0: Fix `GetDecisionRequest` not-found error wrapping (prerequisite for the not-found branch below)**
+
+`apps/control-plane/internal/project/pg_repository.go:4038` currently does not wrap `pgx.ErrNoRows`:
+
+```go
+func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequest(ctx, queries.GetProjectDecisionRequestParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        decisionRequestID,
+	})
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+```
+
+This diverges from `GetDecisionRequestByApprovalAndTask` in the same file, which does wrap `pgx.ErrNoRows` into `ErrProjectNotFound`. Every test for `LoadHumanDecisionRoute` in this task uses `projectStoreMemoryRepository.GetDecisionRequest`, which already returns `project.ErrProjectNotFound` on a miss — so the not-found branch added below would pass all unit tests while silently never firing against the real Postgres path (it would instead propagate a raw `pgx.ErrNoRows`/`no rows in result set` error out of the activity). Fix it to match:
+
+```go
+func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequest(ctx, queries.GetProjectDecisionRequestParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        decisionRequestID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+```
+
+Add a regression test to `apps/control-plane/internal/project/pg_repository_test.go` using the existing `newProjectRepositoryTestStore(t)` integration helper (skips automatically without `TEST_DATABASE_URL`, consistent with other integration tests in this file):
+
+```go
+func TestGetDecisionRequestReturnsErrProjectNotFoundWhenMissing(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+
+	_, err := repo.GetDecisionRequest(context.Background(), tenantID, uuid.New(), uuid.New())
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+```
+
+Run:
+
+```bash
+go build ./apps/control-plane/...
+TEST_DATABASE_URL="$DATABASE_URL" go test ./apps/control-plane/internal/project -run TestGetDecisionRequestReturnsErrProjectNotFoundWhenMissing -count=1
+```
+
+If `TEST_DATABASE_URL` cannot be set in this environment, at minimum confirm `go build ./apps/control-plane/...` passes and note in the final report that this specific regression test was not run against a live database.
 
 - [ ] **Step 1: Add failing route resolution test**
 
@@ -736,7 +799,9 @@ git add apps/control-plane/internal/workflow/projectcoordination/types.go \
   apps/control-plane/internal/workflow/projectcoordination/activities.go \
   apps/control-plane/internal/workflow/projectcoordination/project_store.go \
   apps/control-plane/internal/workflow/projectcoordination/project_store_test.go \
-  apps/control-plane/internal/workflow/projectcoordination/workflow_test.go
+  apps/control-plane/internal/workflow/projectcoordination/workflow_test.go \
+  apps/control-plane/internal/project/pg_repository.go \
+  apps/control-plane/internal/project/pg_repository_test.go
 git commit -m "feat: load coordinator decision routes"
 ```
 
@@ -831,34 +896,34 @@ go test ./apps/control-plane/internal/workflow/projectcoordination -run TestProj
 
 Expected: FAIL because current workflow only knows plan review through `pendingReviews`.
 
-- [ ] **Step 3: Replace long-lived pending maps for human decision routing**
+- [ ] **Step 3: Gate store-routed human decision handling behind `workflow.GetVersion`**
 
-In `apps/control-plane/internal/workflow/projectcoordination/workflow.go`, remove these long-lived maps:
+**Do not delete `pendingReviews`, `pendingFailureRecoveries`, `pendingAcceptance`, or the existing `handleHumanDecisionSubmitted` function.** Verified against the local dev Temporal on 2026-07-01: 12 `ProjectCoordinatorWorkflow` executions are currently open, and at least one has already processed 4 `HumanDecisionSubmitted` signals whose recorded history has no `LoadHumanDecisionRoute` activity call. If the routing logic is replaced outright (no version gate), replaying those histories against the new code schedules a `LoadHumanDecisionRoute` activity where none was recorded, producing `NonDeterministicWorkflowError` and stuck workflows for every currently open coordinator the next time it takes a workflow task. The existing `workflow.GetVersion(ctx, "predispatch-gate-decision-rerun", ...)` call already in this file exists for exactly this reason — this task must follow the same pattern, not remove it.
 
-```go
-pendingReviews := map[string]pendingPlanRevisionReview{}
-pendingFailureRecoveries := map[string]pendingTaskFailureRecovery{}
-pendingAcceptance := map[string]pendingProjectAcceptance{}
-```
+Leave the map declarations, the `handleDemandSubmitted`/`handleEmployeeTaskCompleted`/`handleEmployeeTaskFailed` callbacks, and their pending-map population exactly as they are today. They keep working unchanged for every workflow execution regardless of version (the maps being populated but unused by new-path executions is harmless dead computation, not a correctness issue).
 
-Keep return values from `handleDemandSubmitted`, `handleEmployeeTaskCompleted`, and `handleEmployeeTaskFailed` only as activity outcomes, not as long-term routing state. The returned pending structs can be removed once all callers are updated.
-
-Change the human signal handler to:
+Change only the human signal handler to branch on version:
 
 ```go
 selector.AddReceive(humanCh, func(c workflow.ReceiveChannel, more bool) {
 	var signal HumanDecisionSubmitted
 	c.Receive(ctx, &signal)
-	workflowErr = handleHumanDecisionSubmitted(ctx, input, signal)
+	if workflow.GetVersion(ctx, "route-human-decision-from-store", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries, pendingAcceptance)
+		return
+	}
+	workflowErr = handleHumanDecisionSubmittedFromStore(ctx, input, signal)
 })
 ```
 
-- [ ] **Step 4: Implement store-routed human decision handler**
+`workflow.GetVersion` records this marker in history the first time a given workflow execution reaches this point. Any execution whose history predates this change reaches it for the first time on the *new* binary too (no marker recorded yet, since the marker did not exist under the old code) — but that only matters if that execution's *prior* history already contains an unmatched activity sequence from an earlier `HumanDecisionSubmitted`. For the 12 currently open coordinators, at least one has already recorded such history under the old code, and `GetVersion` will correctly return `DefaultVersion` for that specific execution because the SDK reconstructs the marker deterministically from when the decision point was first reached — do not skip the reasoning here to convince yourself this is safe for a specific execution; the point of the gate is that it is safe for all of them without needing to check case by case.
 
-Replace `handleHumanDecisionSubmitted` with:
+- [ ] **Step 4: Implement store-routed human decision handler as a new function (do not replace the existing one)**
+
+Add a new function alongside the existing `handleHumanDecisionSubmitted` — do not rename or replace it:
 
 ```go
-func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted) error {
+func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted) error {
 	route, err := loadHumanDecisionRoute(ctx, input.TenantID, input.ProjectID, signal.DecisionRequestID)
 	if err != nil {
 		return err
@@ -925,7 +990,7 @@ func loadHumanDecisionRoute(ctx workflow.Context, tenantID, projectID, decisionR
 }
 ```
 
-Keep `pendingPlanRevisionReview` as a local route DTO for `handlePlanReviewDecision` until a later cleanup. Remove `pendingFailureRecoveries` and `pendingAcceptance` arguments and map logic.
+`pendingPlanRevisionReview` stays as the shared route DTO consumed by `handlePlanReviewDecision` from both the legacy path and this new path — no change needed there. The old `handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries, pendingAcceptance)` function body stays completely untouched; both functions coexist permanently (or until a future plan explicitly retires the version-0 branch after confirming no open workflow can still be replaying it).
 
 - [ ] **Step 5: Update existing workflow tests' expected calls**
 
@@ -975,6 +1040,8 @@ humanDecisionRoutes: map[uuid.UUID]HumanDecisionRouteResult{
 ```
 
 For `TestProjectCoordinatorRequestsAcceptanceReviewAndAppliesDecision`, populate route for `acceptanceID` with `DecisionType: "project_acceptance"`.
+
+Note: `TestWorkflowEnvironment` has no prior recorded history, so `workflow.GetVersion` always returns the max supported version (`1`) in every test in this file — every test above exercises `handleHumanDecisionSubmittedFromStore`, never the legacy `handleHumanDecisionSubmitted` path. That legacy path is exactly what the 12 currently open dev workflows will replay, and it cannot be exercised by `TestWorkflowEnvironment`; it can only be verified with a real captured history replay, which is Task 8's new replay-verification step.
 
 - [ ] **Step 6: Run workflow tests**
 
@@ -1244,7 +1311,50 @@ go test ./apps/control-plane/internal/project ./apps/control-plane/internal/work
 
 Expected: PASS.
 
-- [ ] **Step 3: Check migration status against confirmed development DB**
+- [ ] **Step 3: Replay-verify currently open coordinator workflows against the new worker code**
+
+This step exists because Task 5's `handleHumanDecisionSubmitted` legacy path (`workflow.GetVersion` == `DefaultVersion`) cannot be exercised by `TestWorkflowEnvironment` (see the note at the end of Task 5 Step 5) and is exactly the path that protects the currently open dev workflows. Verify it against real history before merging, not just by code inspection.
+
+List currently open coordinator executions and pick at least one with prior `HumanDecisionSubmitted` history (as of 2026-07-01 there were 12 open; `project-coordinator:d08bff8d-97bb-4ad8-8c64-c76bdc328868` had already processed 4 — re-list, since the set will have changed):
+
+```bash
+temporal workflow list --address 127.0.0.1:7233 --query "WorkflowType='ProjectCoordinatorWorkflow' AND ExecutionStatus='Running'"
+temporal workflow show --workflow-id "<a workflow id from above>" --address 127.0.0.1:7233 -o json > /private/tmp/claude-501/coordinator-replay-history.json
+grep -c '"signalName": "HumanDecisionSubmitted"' /private/tmp/claude-501/coordinator-replay-history.json
+```
+
+Prefer a workflow ID whose grep count above is greater than 0. Write a throwaway replay test (do not commit it) using the Temporal SDK's `worker.WorkflowReplayer`, which replays a captured history against the registered workflow function and fails on any determinism mismatch:
+
+```go
+package projectcoordination
+
+import (
+	"testing"
+
+	"go.temporal.io/sdk/worker"
+)
+
+func TestReplayOpenDevCoordinatorHistory(t *testing.T) {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ProjectCoordinatorWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(nil, "/private/tmp/claude-501/coordinator-replay-history.json")
+	if err != nil {
+		t.Fatalf("replay failed against real open-workflow history: %v", err)
+	}
+}
+```
+
+Run:
+
+```bash
+go test ./apps/control-plane/internal/workflow/projectcoordination -run TestReplayOpenDevCoordinatorHistory -count=1 -v
+```
+
+Expected: PASS. If it fails with a non-determinism error, the `workflow.GetVersion` gate in Task 5 Step 3 is missing or incorrect — do not proceed to Step 4 below until this passes. Delete the throwaway test file after this step; it must not be committed since it depends on a local capture file and a specific dev workflow ID.
+
+If `temporal` CLI or the local Temporal server is unavailable, stop and report this step blocked; do not claim replay safety without running it, since Task 5's central risk is exactly what this step is designed to catch.
+
+- [ ] **Step 4: Check migration status against confirmed development DB**
 
 Only run after confirming `DATABASE_URL` points at the intended development database:
 
@@ -1256,11 +1366,11 @@ make -C apps/control-plane migrate-up
 make -C apps/control-plane migrate-status
 ```
 
-Expected: migration 041 applies. If `atlas` or DB connectivity is missing, stop and report blocked; do not claim DB migration verified.
+Expected: migrations 043 and 044 apply. If `atlas` or DB connectivity is missing, stop and report blocked; do not claim DB migration verified.
 
-- [ ] **Step 4: Optionally clear old development project data**
+- [ ] **Step 5: Optionally clear old development project data**
 
-Only if the user still wants old project data removed and `DATABASE_URL` is confirmed as development:
+Only if the user still wants old project data removed and `DATABASE_URL` is confirmed as development. Note this script only clears Postgres project tables — it does not terminate any open Temporal workflow execution. If Step 3 passed, leaving the 12 (or however many) open coordinators running is safe; do not use this script as a substitute for Step 3.
 
 ```bash
 psql "$DATABASE_URL" -f scripts/dev/clear-project-coordination-data.sql
@@ -1268,7 +1378,7 @@ psql "$DATABASE_URL" -f scripts/dev/clear-project-coordination-data.sql
 
 Expected: script prints counts, clears project coordination data, and preserves auth counts.
 
-- [ ] **Step 5: Restart affected services**
+- [ ] **Step 6: Restart affected services**
 
 Run:
 
@@ -1281,7 +1391,15 @@ scripts/dev-services.sh status
 
 Expected: Temporal, Control Plane, Web, and Runtime Agent are running. If a service is down and cannot start, real-chain smoke is blocked.
 
-- [ ] **Step 6: Run real coordinator smoke**
+After this restart, the new worker binary is live and will pick up workflow tasks for the still-open coordinator executions. Immediately check none entered a failed/stuck state:
+
+```bash
+temporal workflow list --address 127.0.0.1:7233 --query "WorkflowType='ProjectCoordinatorWorkflow' AND ExecutionStatus!='Running'"
+```
+
+Expected: no unexpected `Failed`/`Terminated` executions among the coordinators that were `Running` before this restart. If any newly failed, treat this as a Step 3 replay-verification miss, not a smoke-test-only issue — stop and investigate before continuing.
+
+- [ ] **Step 7: Run real coordinator smoke**
 
 Use the current repo's real project creation and demand APIs or existing smoke helper. The smoke must prove:
 
@@ -1293,7 +1411,7 @@ Use the current repo's real project creation and demand APIs or existing smoke h
 
 If no existing smoke script covers this, use curl against the running Control Plane with real auth and record the exact endpoints and IDs in the final report. Do not invent a success state.
 
-- [ ] **Step 7: Run hygiene checks**
+- [ ] **Step 8: Run hygiene checks**
 
 Run:
 
@@ -1304,7 +1422,7 @@ git status --short
 
 Expected: no whitespace errors. Only intended files changed.
 
-- [ ] **Step 8: Confirm verification did not create unexpected edits**
+- [ ] **Step 9: Confirm verification did not create unexpected edits**
 
 Run:
 
@@ -1320,3 +1438,4 @@ Expected: no new source edits from Task 8. If generated files, migrations, tests
 - No Provider session state is added to Temporal. Runtime/Provider recovery remains outside the coordinator.
 - The plan accounts for the current `ResolveDecision` flow marking `project_decision_requests` resolved before signaling workflow, so workflow routing must not treat non-pending as automatic no-op.
 - No placeholders are intentionally left; commands and expected results are explicit.
+- **Replay safety for in-flight workflows (added after review on 2026-07-01):** the local dev Temporal has 12 open `ProjectCoordinatorWorkflow` executions, at least one with `HumanDecisionSubmitted` already recorded in history under the current pending-map routing. Task 5 therefore keeps the legacy pending-map handler and gates the new store-routed handler behind `workflow.GetVersion("route-human-decision-from-store", ...)`, mirroring the pattern already used by `"predispatch-gate-decision-rerun"`. Task 8 Step 3 adds a mandatory real-history replay check (`worker.WorkflowReplayer`) against a captured open-workflow history, since `TestWorkflowEnvironment` unit tests cannot exercise the legacy branch (no prior history to trigger `DefaultVersion`). Task 4 additionally fixes `PgRepository.GetDecisionRequest` to wrap `pgx.ErrNoRows` as `project.ErrProjectNotFound`, since the not-found branch in `LoadHumanDecisionRoute` only worked against the test fake and would have propagated a raw Postgres error in production.

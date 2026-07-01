@@ -989,6 +989,8 @@ type ProjectDecisionRequest struct {
 	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
 	// 该人类决策由哪个结构化任务结果触发。
 	ProjectTaskResultID uuid.NullUUID `json:"project_task_result_id"`
+	// 该人类决策关联的计划版本ID，用于 ProjectCoordinator Continue-As-New 后恢复 plan_review 路由。
+	PlanRevisionID uuid.NullUUID `json:"plan_revision_id"`
 }
 
 // 用户或外部系统提交到项目的需求
@@ -1273,6 +1275,8 @@ type ProjectPlanRevision struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 计划版本最近更新时间。
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 创建该计划版本时产生的项目事件ID，用于 ProjectCoordinator Continue-As-New 后恢复协调作业输出事件链。
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 }
 
 // 项目报告引用表，保存阶段汇报、验收报告和归档报告的对象引用

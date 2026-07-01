@@ -1,4 +1,4 @@
-h1:YArAXVATYJWvV9E0HBd7+gxf1CrQNp+fAvLg0xAOvhg=
+h1:KQLAf17M7t4+VwOFOIs4+ID6dwtbTr+Lq74pFBmWE3s=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -40,3 +40,5 @@ h1:YArAXVATYJWvV9E0HBd7+gxf1CrQNp+fAvLg0xAOvhg=
 039_auth_captcha_challenges.sql h1:0srRmvFLKXaPHlBucG/ln/OJBg1V9hy41qNYeNxqQn8=
 040_project_repo_binding_and_attestation.sql h1:XYKWtR1TsD2bEpcNiSd+H2PYYUVHV6Nmwf3roLzi9wc=
 041_project_task_attestation_runtime_context.sql h1:i9iKQLgD2bfOul0C/LLjIQ43Avk+SzKLPMQjxaWKb0Q=
+043_project_decision_plan_revision_resume.sql h1:3vkwUNTJA6tesnqXlY2SbWP5vFvMNu0ZyLkyXQVXpa0=
+044_project_plan_revision_created_event.sql h1:OotXt0izPbiulukGjcmVKZEQrdTb1uA6Rd0dooELVeY=

@@ -620,6 +620,37 @@ func TestEmployeeOperationalStatusIndexesMigration(t *testing.T) {
 	}
 }
 
+func TestProjectDecisionRequestsPlanRevisionResumeMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/043_project_decision_plan_revision_resume.sql")
+	require.NoError(t, err)
+	sql := string(body)
+
+	for _, expected := range []string{
+		"ALTER TABLE project_decision_requests",
+		"ADD COLUMN plan_revision_id UUID",
+		"idx_project_decision_requests_plan_revision",
+		"ON project_decision_requests(tenant_id, project_id, plan_revision_id)",
+		"WHERE plan_revision_id IS NOT NULL",
+		"COMMENT ON COLUMN project_decision_requests.plan_revision_id IS",
+	} {
+		require.Contains(t, sql, expected)
+	}
+}
+
+func TestProjectPlanRevisionCreatedEventMigration(t *testing.T) {
+	legacy := readMigration(t, "031_project_plan_revisions.sql")
+	require.NotContains(t, legacy, "created_event_id UUID")
+
+	sql := readMigration(t, "044_project_plan_revision_created_event.sql")
+	for _, expected := range []string{
+		"ALTER TABLE project_plan_revisions",
+		"ADD COLUMN created_event_id UUID",
+		"COMMENT ON COLUMN project_plan_revisions.created_event_id IS",
+	} {
+		require.Contains(t, sql, expected)
+	}
+}
+
 func TestProjectTasksMigrationAddsGraphContractColumns(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{

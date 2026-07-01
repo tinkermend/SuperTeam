@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -577,6 +578,55 @@ func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 1)
 	require.Equal(t, revisionID, repo.decomposeAcceptedPlanRevisionRequests[0].AcceptedPlanRevisionID)
 	require.Equal(t, "fingerprint", repo.decomposeAcceptedPlanRevisionRequests[0].PlanFingerprint)
+}
+
+func TestProjectStoreRequestPlanRevisionReviewStoresPlanRevisionID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	planRevisionID := uuid.New()
+	targetUserID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: targetUserID,
+		},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+		},
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: uuid.New()}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	decision, err := store.RequestPlanRevisionReview(context.Background(), RequestPlanRevisionReviewInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: coordinationJobID,
+		DemandID:          demandID,
+		PlanRevisionID:    planRevisionID,
+		PlanFingerprint:   "fingerprint",
+		Payload: PlanRevisionPayload{
+			Summary: "需要审核",
+			RiskAssessment: PlanRevisionRiskAssessment{
+				HighestRiskLevel: "high",
+			},
+		},
+		CreatedEventID: uuid.New(),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, decision.ID)
+	require.Len(t, repo.decisionRequests, 1)
+	require.NotNil(t, repo.decisionRequests[0].PlanRevisionID)
+	require.Equal(t, planRevisionID, *repo.decisionRequests[0].PlanRevisionID)
+	require.NotNil(t, repo.decisionRequests[0].SummarySnapshot)
+	require.Equal(t, "需要审核", *repo.decisionRequests[0].SummarySnapshot)
+	require.NotNil(t, repo.decisionRequests[0].RiskLevelSnapshot)
+	require.Equal(t, "high", *repo.decisionRequests[0].RiskLevelSnapshot)
 }
 
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
@@ -1460,6 +1510,357 @@ func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenDecisionRe
 	require.Equal(t, project.ProjectStatusRunning, repo.projectRecord.Status)
 	require.Len(t, repo.events, 1)
 	require.Empty(t, repo.decisionRequests)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForPlanReview(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	planRevisionID := uuid.New()
+	coordinationJobID := uuid.New()
+	demandID := uuid.New()
+	routeDecisionID := uuid.New()
+	routeEventID := uuid.New()
+	planEventID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		routeDecisions: []project.RouteDecision{{
+			ID:                routeDecisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: coordinationJobID,
+			CreatedEventID:    &routeEventID,
+		}},
+		decisionRequests: []project.DecisionRequest{{
+			ID:                decisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: &coordinationJobID,
+			PlanRevisionID:    &planRevisionID,
+			DecisionType:      "plan_review",
+			StatusSnapshot:    "resolved",
+			CreatedEventID:    &planEventID,
+		}},
+		planRevisions: []project.PlanRevision{{
+			ID:                planRevisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			DemandID:          demandID,
+			CoordinationJobID: &coordinationJobID,
+			RouteDecisionID:   &routeDecisionID,
+			Status:            project.PlanRevisionStatusPendingReview,
+			PlanFingerprint:   "fingerprint",
+			CreatedEventID:    &planEventID,
+			Payload: map[string]any{
+				"summary": "review me",
+				"tasks":   []any{},
+			},
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "plan_review", route.Decision.DecisionType)
+	require.NotNil(t, route.PlanReview)
+	require.Equal(t, planRevisionID, route.PlanReview.PlanRevisionID)
+	require.Equal(t, demandID, route.PlanReview.DemandID)
+	require.Equal(t, coordinationJobID, route.PlanReview.CoordinationJobID)
+	require.Equal(t, routeDecisionID, route.PlanReview.RouteDecisionID)
+	require.Equal(t, planEventID, route.PlanReview.PlanEventID)
+	require.Equal(t, []uuid.UUID{routeEventID, planEventID}, route.PlanReview.OutputEventIDs)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForReplanAcceptUsesRevisionOrderAndEvents(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	firstDecisionID := uuid.New()
+	secondDecisionID := uuid.New()
+	firstPlanRevisionID := uuid.New()
+	secondPlanRevisionID := uuid.New()
+	firstRouteDecisionID := uuid.New()
+	secondRouteDecisionID := uuid.New()
+	firstRouteEventID := uuid.New()
+	firstPlanEventID := uuid.New()
+	firstResolvedEventID := uuid.New()
+	secondRouteEventID := uuid.New()
+	secondPlanEventID := uuid.New()
+	secondDecisionCreatedEventID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		routeDecisions: []project.RouteDecision{
+			{ID: firstRouteDecisionID, TenantID: tenantID, ProjectID: projectID, CoordinationJobID: coordinationJobID, CreatedEventID: &firstRouteEventID},
+			{ID: secondRouteDecisionID, TenantID: tenantID, ProjectID: projectID, CoordinationJobID: coordinationJobID, CreatedEventID: &secondRouteEventID},
+		},
+		decisionRequests: []project.DecisionRequest{
+			{
+				ID:                secondDecisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				CoordinationJobID: &coordinationJobID,
+				PlanRevisionID:    &secondPlanRevisionID,
+				DecisionType:      "plan_review",
+				StatusSnapshot:    "resolved",
+				CreatedEventID:    &secondDecisionCreatedEventID,
+			},
+			{
+				ID:                firstDecisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				CoordinationJobID: &coordinationJobID,
+				PlanRevisionID:    &firstPlanRevisionID,
+				DecisionType:      "plan_review",
+				StatusSnapshot:    "request_changes",
+				ResolvedEventID:   &firstResolvedEventID,
+			},
+		},
+		planRevisions: []project.PlanRevision{
+			{
+				ID:                secondPlanRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          demandID,
+				CoordinationJobID: &coordinationJobID,
+				RouteDecisionID:   &secondRouteDecisionID,
+				RevisionNumber:    2,
+				Status:            project.PlanRevisionStatusPendingReview,
+				PlanFingerprint:   "second-fingerprint",
+				CreatedEventID:    &secondPlanEventID,
+				Payload:           map[string]any{"summary": "second", "tasks": []any{}},
+			},
+			{
+				ID:                firstPlanRevisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          demandID,
+				CoordinationJobID: &coordinationJobID,
+				RouteDecisionID:   &firstRouteDecisionID,
+				RevisionNumber:    1,
+				Status:            project.PlanRevisionStatusSuperseded,
+				PlanFingerprint:   "first-fingerprint",
+				CreatedEventID:    &firstPlanEventID,
+				Payload:           map[string]any{"summary": "first", "tasks": []any{}},
+			},
+		},
+	}
+	store := NewProjectStore(repo)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: secondDecisionID,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, route.PlanReview)
+	require.Equal(t, secondPlanEventID, route.PlanReview.PlanEventID)
+	require.Equal(t, []uuid.UUID{
+		firstRouteEventID,
+		firstPlanEventID,
+		firstResolvedEventID,
+		secondRouteEventID,
+		secondPlanEventID,
+	}, route.PlanReview.OutputEventIDs)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteMissingDecisionReturnsZeroRoute(t *testing.T) {
+	store := NewProjectStore(&projectStoreMemoryRepository{})
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          uuid.New(),
+		ProjectID:         uuid.New(),
+		DecisionRequestID: uuid.New(),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, route.Decision.ID)
+	require.Nil(t, route.PlanReview)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForNonPlanReviewReturnsDecisionOnly(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	projectTaskID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &projectTaskID,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, decisionID, route.Decision.ID)
+	require.Equal(t, projectID, route.Decision.ProjectID)
+	require.Equal(t, "task_failure_recovery", route.Decision.DecisionType)
+	require.Equal(t, "pending", route.Decision.StatusSnapshot)
+	require.Equal(t, projectTaskID, route.Decision.ProjectTaskID)
+	require.Nil(t, route.PlanReview)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForPlanReviewRequiresPlanRevisionID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			DecisionType:   "plan_review",
+			StatusSnapshot: "resolved",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.ErrorIs(t, err, project.ErrInvalidProject)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForPlanReviewMissingRevisionReturnsNotFound(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	planRevisionID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			PlanRevisionID: &planRevisionID,
+			DecisionType:   "plan_review",
+			StatusSnapshot: "resolved",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.ErrorIs(t, err, project.ErrProjectNotFound)
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForPlanReviewRequiresRevisionRouteIDs(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	planRevisionID := uuid.New()
+	coordinationJobID := uuid.New()
+	routeDecisionID := uuid.New()
+	demandID := uuid.New()
+
+	tests := []struct {
+		name              string
+		coordinationJobID *uuid.UUID
+		routeDecisionID   *uuid.UUID
+	}{
+		{name: "missing coordination job", coordinationJobID: nil, routeDecisionID: &routeDecisionID},
+		{name: "missing route decision", coordinationJobID: &coordinationJobID, routeDecisionID: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &projectStoreMemoryRepository{
+				decisionRequests: []project.DecisionRequest{{
+					ID:             decisionID,
+					TenantID:       tenantID,
+					ProjectID:      projectID,
+					PlanRevisionID: &planRevisionID,
+					DecisionType:   "plan_review",
+					StatusSnapshot: "resolved",
+				}},
+				planRevisions: []project.PlanRevision{{
+					ID:                planRevisionID,
+					TenantID:          tenantID,
+					ProjectID:         projectID,
+					DemandID:          demandID,
+					CoordinationJobID: tt.coordinationJobID,
+					RouteDecisionID:   tt.routeDecisionID,
+					Status:            project.PlanRevisionStatusPendingReview,
+					PlanFingerprint:   "fingerprint",
+					Payload: map[string]any{
+						"summary": "review me",
+						"tasks":   []any{},
+					},
+				}},
+			}
+			store := NewProjectStore(repo)
+
+			_, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DecisionRequestID: decisionID,
+			})
+
+			require.ErrorIs(t, err, project.ErrInvalidProject)
+		})
+	}
+}
+
+func TestProjectStoreLoadHumanDecisionRouteForPlanReviewInvalidPayloadReturnsError(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	planRevisionID := uuid.New()
+	coordinationJobID := uuid.New()
+	routeDecisionID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			PlanRevisionID: &planRevisionID,
+			DecisionType:   "plan_review",
+			StatusSnapshot: "resolved",
+		}},
+		planRevisions: []project.PlanRevision{{
+			ID:                planRevisionID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			DemandID:          demandID,
+			CoordinationJobID: &coordinationJobID,
+			RouteDecisionID:   &routeDecisionID,
+			Status:            project.PlanRevisionStatusPendingReview,
+			PlanFingerprint:   "fingerprint",
+			Payload: map[string]any{
+				"bad": func() {},
+			},
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+	})
+
+	require.Error(t, err)
 }
 
 func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t *testing.T) {
@@ -3319,6 +3720,15 @@ func (r *projectStoreMemoryRepository) GetRouteDecisionByCoordinationJob(ctx con
 	return project.RouteDecision{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) GetRouteDecision(ctx context.Context, tenantID, routeDecisionID uuid.UUID) (project.RouteDecision, error) {
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.ID == routeDecisionID {
+			return decision, nil
+		}
+	}
+	return project.RouteDecision{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) CreatePlanRevision(ctx context.Context, req project.CreatePlanRevisionRequest) (project.PlanRevision, error) {
 	revisionNumber := int32(1)
 	for _, revision := range r.planRevisions {
@@ -3345,6 +3755,7 @@ func (r *projectStoreMemoryRepository) CreatePlanRevision(ctx context.Context, r
 		ValidationWarnings: append([]string(nil), req.ValidationWarnings...),
 		ReviewRequired:     req.ReviewRequired,
 		ReviewReason:       req.ReviewReason,
+		CreatedEventID:     req.CreatedEventID,
 		CreatedAt:          time.Now().UTC(),
 		UpdatedAt:          time.Now().UTC(),
 	}
@@ -3385,7 +3796,21 @@ func (r *projectStoreMemoryRepository) ListPlanRevisions(ctx context.Context, re
 		}
 		revisions = append(revisions, revision)
 	}
+	sort.SliceStable(revisions, func(i, j int) bool {
+		if revisions[i].DemandID == revisions[j].DemandID {
+			return revisions[i].RevisionNumber < revisions[j].RevisionNumber
+		}
+		return revisions[i].DemandID.String() < revisions[j].DemandID.String()
+	})
 	return revisions, nil
+}
+
+func (r *projectStoreMemoryRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]project.PlanRevision, error) {
+	return r.ListPlanRevisions(ctx, project.ListPlanRevisionsRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  &demandID,
+	})
 }
 
 func (r *projectStoreMemoryRepository) AcceptPlanRevision(ctx context.Context, req project.AcceptPlanRevisionRequest) (project.PlanRevision, error) {
@@ -4219,12 +4644,13 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 		ProjectID:         req.ProjectID,
 		ApprovalRequestID: req.ApprovalRequestID,
 		CoordinationJobID: req.CoordinationJobID,
+		PlanRevisionID:    req.PlanRevisionID,
 		ProjectTaskID:     req.ProjectTaskID,
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
 		TitleSnapshot:     req.TitleSnapshot,
 		SummarySnapshot:   strPtr(req.SummarySnapshot),
-		RiskLevelSnapshot: &req.RiskLevelSnapshot,
+		RiskLevelSnapshot: strPtr(req.RiskLevelSnapshot),
 		StatusSnapshot:    req.StatusSnapshot,
 		CreatedEventID:    req.CreatedEventID,
 		CreatedAt:         time.Now().UTC(),
@@ -4241,6 +4667,26 @@ func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, t
 		}
 	}
 	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (project.DecisionRequest, error) {
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID &&
+			decision.DecisionType == "plan_review" && decision.PlanRevisionID != nil && *decision.PlanRevisionID == planRevisionID {
+			return decision, nil
+		}
+	}
+	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
+	results := []project.DecisionRequest{}
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			results = append(results, decision)
+		}
+	}
+	return results, nil
 }
 
 type projectStoreApprovalCreator struct {

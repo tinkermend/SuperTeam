@@ -22,6 +22,7 @@ type ProjectCoordinatorInput struct {
 	TenantID   uuid.UUID
 	ProjectID  uuid.UUID
 	WorkflowID string
+	Generation int
 }
 
 type DemandSubmitted struct {
@@ -135,6 +136,42 @@ type ResolvePlanRevisionReviewInput struct {
 	Decision          string
 	Payload           map[string]any
 	ActorUserID       uuid.UUID
+}
+
+type LoadHumanDecisionRouteInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+}
+
+type HumanDecisionRouteResult struct {
+	Decision   ProjectDecisionSnapshot
+	PlanReview *PlanReviewRoute
+}
+
+type ProjectDecisionSnapshot struct {
+	ID                   uuid.UUID
+	ProjectID            uuid.UUID
+	DecisionType         string
+	StatusSnapshot       string
+	CoordinationJobID    uuid.UUID
+	ProjectTaskID        uuid.UUID
+	PlanRevisionID       uuid.UUID
+	DispatchGateResultID uuid.UUID
+	CreatedEventID       uuid.UUID
+}
+
+type PlanReviewRoute struct {
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	RouteDecisionID   uuid.UUID
+	PlanRevisionID    uuid.UUID
+	PlanFingerprint   string
+	Payload           PlanRevisionPayload
+	RouteEventID      uuid.UUID
+	PlanEventID       uuid.UUID
+	OutputEventIDs    []uuid.UUID
 }
 
 type DecomposeAcceptedPlanRevisionInput struct {

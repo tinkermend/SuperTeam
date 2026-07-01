@@ -24,6 +24,7 @@ type ActivityStore interface {
 	PersistPlanRevision(ctx context.Context, input PersistPlanRevisionInput) (PlanRevisionResult, error)
 	RequestPlanRevisionReview(ctx context.Context, input RequestPlanRevisionReviewInput) (DecisionRequestResult, error)
 	ResolvePlanRevisionReview(ctx context.Context, input ResolvePlanRevisionReviewInput) (PlanRevisionResult, error)
+	LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error)
 	DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error)
 	ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error)
 	ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error)
@@ -94,6 +95,13 @@ func (a *Activities) ResolvePlanRevisionReview(ctx context.Context, input Resolv
 		return PlanRevisionResult{}, ErrActivityStoreRequired
 	}
 	return a.store.ResolvePlanRevisionReview(ctx, input)
+}
+
+func (a *Activities) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
+	if a.store == nil {
+		return HumanDecisionRouteResult{}, ErrActivityStoreRequired
+	}
+	return a.store.LoadHumanDecisionRoute(ctx, input)
 }
 
 func (a *Activities) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {

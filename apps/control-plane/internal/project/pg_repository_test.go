@@ -1650,6 +1650,14 @@ func TestLinkPreDispatchGateDecisionRequestRejectsWrongTask(t *testing.T) {
 	require.Nil(t, unchangedDecision.DispatchGateResultID)
 }
 
+func TestGetDecisionRequestReturnsErrProjectNotFoundWhenMissing(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+
+	_, err := repo.GetDecisionRequest(context.Background(), tenantID, uuid.New(), uuid.New())
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+
 func TestStartProjectTaskAttemptAdvancesTaskAndAttempt(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	writebacks := repo.(ProjectTaskAttemptWritebackRepository)
@@ -3501,6 +3509,14 @@ func TestPgRepositoryMapsGovernanceNoRowsToDomainNotFound(t *testing.T) {
 	}
 }
 
+func TestGetDecisionRequestWrapsNoRowsAsErrProjectNotFound(t *testing.T) {
+	repo := NewPgRepository(queries.New(noRowsDB{}))
+
+	_, err := repo.GetDecisionRequest(context.Background(), uuid.New(), uuid.New(), uuid.New())
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+}
+
 type noRowsDB struct{}
 
 func (noRowsDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
@@ -3560,6 +3576,10 @@ func (r *memoryRepository) GetCoordinationJobByTrigger(ctx context.Context, tena
 }
 
 func (r *memoryRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error) {
+	return RouteDecision{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetRouteDecision(ctx context.Context, tenantID, routeDecisionID uuid.UUID) (RouteDecision, error) {
 	return RouteDecision{}, ErrProjectNotFound
 }
 
