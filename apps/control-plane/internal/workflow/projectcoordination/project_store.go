@@ -1131,11 +1131,13 @@ func (s *ProjectStore) RequestPlanRevisionReview(ctx context.Context, input Requ
 		return DecisionRequestResult{}, err
 	}
 	coordinationJobID := input.CoordinationJobID
+	planRevisionID := input.PlanRevisionID
 	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
 		TenantID:          input.TenantID,
 		ProjectID:         input.ProjectID,
 		ApprovalRequestID: approvalRequest.ID,
 		CoordinationJobID: &coordinationJobID,
+		PlanRevisionID:    &planRevisionID,
 		TargetUserID:      targetUserID,
 		DecisionType:      "plan_review",
 		TitleSnapshot:     "确认项目计划版本",

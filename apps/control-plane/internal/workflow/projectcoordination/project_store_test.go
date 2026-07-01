@@ -579,6 +579,51 @@ func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	require.Equal(t, "fingerprint", repo.decomposeAcceptedPlanRevisionRequests[0].PlanFingerprint)
 }
 
+func TestProjectStoreRequestPlanRevisionReviewStoresPlanRevisionID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	planRevisionID := uuid.New()
+	targetUserID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: targetUserID,
+		},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+		},
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: uuid.New()}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	decision, err := store.RequestPlanRevisionReview(context.Background(), RequestPlanRevisionReviewInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: coordinationJobID,
+		DemandID:          demandID,
+		PlanRevisionID:    planRevisionID,
+		PlanFingerprint:   "fingerprint",
+		Payload: PlanRevisionPayload{
+			Summary: "需要审核",
+			RiskAssessment: PlanRevisionRiskAssessment{
+				HighestRiskLevel: "high",
+			},
+		},
+		CreatedEventID: uuid.New(),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, decision.ID)
+	require.Len(t, repo.decisionRequests, 1)
+	require.NotNil(t, repo.decisionRequests[0].PlanRevisionID)
+	require.Equal(t, planRevisionID, *repo.decisionRequests[0].PlanRevisionID)
+}
+
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -3797,6 +3842,7 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 		ProjectID:         req.ProjectID,
 		ApprovalRequestID: req.ApprovalRequestID,
 		CoordinationJobID: req.CoordinationJobID,
+		PlanRevisionID:    req.PlanRevisionID,
 		ProjectTaskID:     req.ProjectTaskID,
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
