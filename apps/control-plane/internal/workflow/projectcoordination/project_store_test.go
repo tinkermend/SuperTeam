@@ -622,6 +622,10 @@ func TestProjectStoreRequestPlanRevisionReviewStoresPlanRevisionID(t *testing.T)
 	require.Len(t, repo.decisionRequests, 1)
 	require.NotNil(t, repo.decisionRequests[0].PlanRevisionID)
 	require.Equal(t, planRevisionID, *repo.decisionRequests[0].PlanRevisionID)
+	require.NotNil(t, repo.decisionRequests[0].SummarySnapshot)
+	require.Equal(t, "需要审核", *repo.decisionRequests[0].SummarySnapshot)
+	require.NotNil(t, repo.decisionRequests[0].RiskLevelSnapshot)
+	require.Equal(t, "high", *repo.decisionRequests[0].RiskLevelSnapshot)
 }
 
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
@@ -3847,6 +3851,8 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
 		TitleSnapshot:     req.TitleSnapshot,
+		SummarySnapshot:   strPtr(req.SummarySnapshot),
+		RiskLevelSnapshot: strPtr(req.RiskLevelSnapshot),
 		StatusSnapshot:    req.StatusSnapshot,
 		CreatedEventID:    req.CreatedEventID,
 		CreatedAt:         time.Now().UTC(),
