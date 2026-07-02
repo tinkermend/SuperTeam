@@ -1109,7 +1109,7 @@ func overviewOperationalStatusCountsFromStates(states []DigitalEmployeeOperation
 }
 
 func avatarAssetFromOverviewMetadata(metadata []byte) *DigitalEmployeeAvatarAsset {
-	return avatarAssetFromEmployeeMetadata(jsonMapFromBytes(metadata))
+	return AvatarAssetFromMetadata(jsonMapFromBytes(metadata))
 }
 
 func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow) DigitalEmployeeOverviewFilters {

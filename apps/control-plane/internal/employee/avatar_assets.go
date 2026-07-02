@@ -36,7 +36,7 @@ func DigitalEmployeeAvatarAssetByID(id string) (DigitalEmployeeAvatarAsset, bool
 	return digitalEmployeeAvatarAssetFromShared(asset), true
 }
 
-func avatarAssetFromEmployeeMetadata(metadata map[string]any) *DigitalEmployeeAvatarAsset {
+func AvatarAssetFromMetadata(metadata map[string]any) *DigitalEmployeeAvatarAsset {
 	if metadata == nil {
 		return nil
 	}
