@@ -955,7 +955,14 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 				DigitalEmployeeID: employeeID,
 				DisplayName:       "执行员工",
 				ProjectRole:       ProjectRoleExecutor,
-				Status:            "active",
+				EmployeeRole:      "代码审查员",
+				AvatarAsset: &ProjectTaskGraphEmployeeAvatarAsset{
+					ID:           "avatar-1",
+					Label:        "Adventurer 1",
+					ImageURL:     "https://example.com/avatar-1.png",
+					ThumbnailURL: "https://example.com/avatar-1-thumb.png",
+				},
+				Status: "active",
 			}},
 			Runs: []ProjectTaskGraphRun{{
 				ProjectTaskID:        taskID,
@@ -1048,6 +1055,14 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	}
 	if len(body["employees"].([]any)) != 1 || len(body["runs"].([]any)) != 1 || len(body["execution_summaries"].([]any)) != 1 || len(body["recent_events"].([]any)) != 1 {
 		t.Fatalf("expected graph sidecars in response, got %#v", body)
+	}
+	employeeBody := body["employees"].([]any)[0].(map[string]any)
+	if employeeBody["employee_role"] != "代码审查员" {
+		t.Fatalf("expected employee_role in response, got %#v", employeeBody)
+	}
+	avatarBody, ok := employeeBody["avatar_asset"].(map[string]any)
+	if !ok || avatarBody["id"] != "avatar-1" || avatarBody["thumbnail_url"] != "https://example.com/avatar-1-thumb.png" {
+		t.Fatalf("expected avatar_asset in response, got %#v", employeeBody)
 	}
 }
 

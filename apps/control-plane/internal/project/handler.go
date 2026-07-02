@@ -1921,10 +1921,19 @@ type projectTaskGraphEdgeResponse struct {
 }
 
 type projectTaskGraphEmployeeResponse struct {
-	DigitalEmployeeID string      `json:"digital_employee_id"`
-	DisplayName       string      `json:"display_name"`
-	ProjectRole       ProjectRole `json:"project_role"`
-	Status            string      `json:"status"`
+	DigitalEmployeeID string                                       `json:"digital_employee_id"`
+	DisplayName       string                                       `json:"display_name"`
+	ProjectRole       ProjectRole                                  `json:"project_role"`
+	EmployeeRole      string                                       `json:"employee_role,omitempty"`
+	AvatarAsset       *projectTaskGraphEmployeeAvatarAssetResponse `json:"avatar_asset,omitempty"`
+	Status            string                                       `json:"status"`
+}
+
+type projectTaskGraphEmployeeAvatarAssetResponse struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	ImageURL     string `json:"image_url"`
+	ThumbnailURL string `json:"thumbnail_url"`
 }
 
 type projectTaskGraphRunResponse struct {
@@ -2712,10 +2721,24 @@ func taskGraphEmployeeResponses(employees []ProjectTaskGraphEmployee) []projectT
 			DigitalEmployeeID: employee.DigitalEmployeeID.String(),
 			DisplayName:       employee.DisplayName,
 			ProjectRole:       employee.ProjectRole,
+			EmployeeRole:      employee.EmployeeRole,
+			AvatarAsset:       taskGraphEmployeeAvatarAssetResponse(employee.AvatarAsset),
 			Status:            employee.Status,
 		})
 	}
 	return responses
+}
+
+func taskGraphEmployeeAvatarAssetResponse(asset *ProjectTaskGraphEmployeeAvatarAsset) *projectTaskGraphEmployeeAvatarAssetResponse {
+	if asset == nil {
+		return nil
+	}
+	return &projectTaskGraphEmployeeAvatarAssetResponse{
+		ID:           asset.ID,
+		Label:        asset.Label,
+		ImageURL:     asset.ImageURL,
+		ThumbnailURL: asset.ThumbnailURL,
+	}
 }
 
 func taskGraphRunResponses(runs []ProjectTaskGraphRun) []projectTaskGraphRunResponse {
