@@ -1879,6 +1879,120 @@ func TestFailProjectTaskAttemptWritebackPersistsTerminalFacts(t *testing.T) {
 	require.Equal(t, failed.Event.ID, *persistedTask.TerminalEventID)
 }
 
+func TestPgRepositoryRecoverDispatchFailureSchedulesRetryWithoutAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	recoveryRepo := repo.(ProjectTaskDispatchRecoveryRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "dispatch retry",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	failureEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDispatchFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败",
+		Payload: map[string]any{
+			"project_task_id": task.ID.String(),
+			"retryable":       true,
+			"error":           "runtime node is not connected",
+		},
+	})
+	require.NoError(t, err)
+	retryAt := time.Now().UTC().Add(2 * time.Minute)
+
+	result, err := recoveryRepo.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureWritebackRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  task.ID,
+		FailureEventID: failureEvent.ID,
+		Action: ProjectTaskRecoveryAction{
+			Action:         ProjectTaskRecoveryActionRetryScheduled,
+			FailureFamily:  FailureFamilyTransientRuntime,
+			Retryable:      true,
+			RetryNotBefore: &retryAt,
+			WaitingReason:  HumanWaitReasonRuntimeRecovery,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusPlanned, result.Task.Status)
+	require.NotNil(t, result.Task.RetryNotBefore)
+	require.Equal(t, ProjectEventTaskRetryScheduled, result.Event.EventType)
+	require.Equal(t, task.ID.String(), result.Event.Payload["project_task_id"])
+	require.Equal(t, failureEvent.ID.String(), result.Event.Payload["dispatch_failed_event_id"])
+	require.Equal(t, FailureFamilyTransientRuntime, result.Event.Payload["failure_family"])
+	require.Nil(t, result.Task.CurrentAttemptID)
+
+	count, err := recoveryRepo.CountProjectTaskDispatchFailureEvents(context.Background(), tenantID, projectID, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count)
+
+	latest, err := recoveryRepo.GetProjectTaskLatestDispatchFailureEvent(context.Background(), tenantID, projectID, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, failureEvent.ID, latest.ID)
+}
+
+func TestPgRepositoryRecoverDispatchFailureMovesToWaitingHuman(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	recoveryRepo := repo.(ProjectTaskDispatchRecoveryRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "dispatch wait human",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	failureEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDispatchFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败",
+		Payload: map[string]any{
+			"project_task_id": task.ID.String(),
+			"retryable":       false,
+			"error":           "invalid run input",
+		},
+	})
+	require.NoError(t, err)
+
+	result, err := recoveryRepo.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureWritebackRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  task.ID,
+		FailureEventID: failureEvent.ID,
+		Action: ProjectTaskRecoveryAction{
+			Action:        ProjectTaskRecoveryActionWaitingHuman,
+			FailureFamily: FailureFamilyInvalidContract,
+			Retryable:     false,
+			WaitingReason: HumanWaitReasonPlanInvalid,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, result.Task.Status)
+	require.Equal(t, HumanWaitReasonPlanInvalid, *result.Task.WaitingReason)
+	require.NotNil(t, result.Task.WaitingRequestID)
+	require.Equal(t, ProjectEventTaskRecoveryRequested, result.Event.EventType)
+	require.Equal(t, "project_task_recovery", result.Decision.DecisionType)
+}
+
 func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

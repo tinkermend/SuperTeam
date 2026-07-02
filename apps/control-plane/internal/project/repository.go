@@ -468,6 +468,24 @@ type WaitHumanProjectTaskAttemptWritebackRequest struct {
 	Decision CreateDecisionRequestRequest
 }
 
+// ProjectTaskDispatchRecoveryRepository is the narrow transaction boundary for
+// recovering dispatch failures that happen before any attempt exists.
+type ProjectTaskDispatchRecoveryRepository interface {
+	GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectEvent, error)
+	CountProjectTaskDispatchFailureEvents(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (int64, error)
+	RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error)
+	ListStaleQueuedProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, startedBefore time.Time, limit int32) ([]ProjectTaskAttempt, error)
+	ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error)
+}
+
+type RecoverProjectTaskDispatchFailureWritebackRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	ProjectTaskID  uuid.UUID
+	FailureEventID uuid.UUID
+	Action         ProjectTaskRecoveryAction
+}
+
 type CompleteProjectTaskAttemptAcceptanceWritebackRequest struct {
 	Task     ProjectTask
 	Attempt  ProjectTaskAttempt

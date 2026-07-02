@@ -51,6 +51,7 @@ type Querier interface {
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
 	// can decide whether the whole project is ready for human acceptance.
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
+	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	CountRuntimeEnrollmentsForTenant(ctx context.Context, arg CountRuntimeEnrollmentsForTenantParams) (int64, error)
 	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
@@ -212,6 +213,7 @@ type Querier interface {
 	GetProjectTaskCompletionContract(ctx context.Context, arg GetProjectTaskCompletionContractParams) (GetProjectTaskCompletionContractRow, error)
 	GetProjectTaskDispatchGateResult(ctx context.Context, arg GetProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskDispatchGateResultByKey(ctx context.Context, arg GetProjectTaskDispatchGateResultByKeyParams) (ProjectTaskDispatchGateResult, error)
+	GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, arg GetProjectTaskLatestDispatchFailureEventParams) (ProjectEvent, error)
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error)
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
@@ -283,6 +285,7 @@ type Querier interface {
 	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
 	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
 	ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error)
+	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
@@ -337,6 +340,7 @@ type Querier interface {
 	// Team-less variant: no team governance, all providers/runtime nodes allowed.
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
+	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
 	ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error)
@@ -368,6 +372,7 @@ type Querier interface {
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
 	MovePlannedProjectTaskToWaitingHumanForGate(ctx context.Context, arg MovePlannedProjectTaskToWaitingHumanForGateParams) (ProjectTask, error)
+	MoveProjectTaskDispatchFailureToWaitingHuman(ctx context.Context, arg MoveProjectTaskDispatchFailureToWaitingHumanParams) (ProjectTask, error)
 	MoveProjectTaskToWaitingHuman(ctx context.Context, arg MoveProjectTaskToWaitingHumanParams) (ProjectTask, error)
 	NextProjectPlanRevisionNumber(ctx context.Context, arg NextProjectPlanRevisionNumberParams) (int32, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
@@ -389,6 +394,7 @@ type Querier interface {
 	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
+	ScheduleProjectTaskDispatchRetry(ctx context.Context, arg ScheduleProjectTaskDispatchRetryParams) (ProjectTask, error)
 	ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error)
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)

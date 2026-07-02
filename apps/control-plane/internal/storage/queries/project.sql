@@ -1313,6 +1313,79 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status IN ('queued', 'running')
 RETURNING *;
 
+-- name: GetProjectTaskLatestDispatchFailureEvent :one
+SELECT *
+FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND event_type = 'project_task.dispatch_failed'
+  AND actor_id = sqlc.arg('project_task_id')::uuid::text
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: CountProjectTaskDispatchFailureEvents :one
+SELECT COUNT(*)
+FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND event_type = 'project_task.dispatch_failed'
+  AND actor_id = sqlc.arg('project_task_id')::uuid::text;
+
+-- name: ScheduleProjectTaskDispatchRetry :one
+UPDATE project_tasks
+SET status = 'planned',
+    retry_not_before = sqlc.arg('retry_not_before')::timestamptz,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('planned', 'waiting_human')
+  AND current_attempt_id IS NULL
+RETURNING *;
+
+-- name: MoveProjectTaskDispatchFailureToWaitingHuman :one
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = sqlc.arg('waiting_reason')::varchar,
+    waiting_request_id = sqlc.narg('waiting_request_id')::uuid,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('planned', 'waiting_human')
+  AND current_attempt_id IS NULL
+RETURNING *;
+
+-- name: ListStaleQueuedProjectTaskAttempts :many
+SELECT pta.*
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
+WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pta.status = 'queued'
+  AND pt.status = 'queued'
+  AND pta.started_at IS NULL
+  AND pta.created_at < sqlc.arg('started_before')::timestamptz
+ORDER BY pta.created_at ASC
+LIMIT sqlc.arg('limit')::integer;
+
+-- name: ListExpiredRunningProjectTaskAttempts :many
+SELECT pta.*
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
+WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pta.status = 'running'
+  AND pt.status = 'running'
+  AND pta.lease_expires_at IS NOT NULL
+  AND pta.lease_expires_at < sqlc.arg('now')::timestamptz
+ORDER BY pta.lease_expires_at ASC
+LIMIT sqlc.arg('limit')::integer;
+
 -- name: StartProjectTaskAttempt :one
 UPDATE project_task_attempts
 SET status = 'running',

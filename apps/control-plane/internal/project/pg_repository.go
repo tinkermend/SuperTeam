@@ -3787,6 +3787,231 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 	})
 }
 
+func (r *PgRepository) GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectEvent, error) {
+	row, err := r.q.GetProjectTaskLatestDispatchFailureEvent(ctx, queries.GetProjectTaskLatestDispatchFailureEventParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+	})
+	if err != nil {
+		return ProjectEvent{}, projectRepositoryError(err)
+	}
+	return eventFromRecord(row)
+}
+
+func (r *PgRepository) CountProjectTaskDispatchFailureEvents(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (int64, error) {
+	count, err := r.q.CountProjectTaskDispatchFailureEvents(ctx, queries.CountProjectTaskDispatchFailureEventsParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+	})
+	if err != nil {
+		return 0, projectRepositoryError(err)
+	}
+	return count, nil
+}
+
+func (r *PgRepository) ListStaleQueuedProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, startedBefore time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+	rows, err := r.q.ListStaleQueuedProjectTaskAttempts(ctx, queries.ListStaleQueuedProjectTaskAttemptsParams{
+		TenantID:      tenantID,
+		StartedBefore: pgtype.Timestamptz{Time: startedBefore, Valid: true},
+		Limit:         limit,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	attempts := make([]ProjectTaskAttempt, 0, len(rows))
+	for _, row := range rows {
+		attempt, err := projectTaskAttemptFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, nil
+}
+
+func (r *PgRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+	rows, err := r.q.ListExpiredRunningProjectTaskAttempts(ctx, queries.ListExpiredRunningProjectTaskAttemptsParams{
+		TenantID: tenantID,
+		Now:      pgtype.Timestamptz{Time: now, Valid: true},
+		Limit:    limit,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	attempts := make([]ProjectTaskAttempt, 0, len(rows))
+	for _, row := range rows {
+		attempt, err := projectTaskAttemptFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, nil
+}
+
+func (r *PgRepository) RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task dispatch recovery", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		task, err := q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: req.TenantID, ID: req.ProjectTaskID})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+		}
+		projectTask, err := taskFromRecord(task)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if projectTask.ProjectID != req.ProjectID {
+			return ProjectTaskWritebackResult{}, ErrProjectNotFound
+		}
+
+		switch req.Action.Action {
+		case ProjectTaskRecoveryActionRetryScheduled:
+			return r.recoverDispatchFailureRetryWithQueries(ctx, q, projectTask, req)
+		case ProjectTaskRecoveryActionWaitingHuman:
+			return r.recoverDispatchFailureWaitingHumanWithQueries(ctx, q, projectTask, req)
+		case ProjectTaskRecoveryActionFailed:
+			return r.recoverDispatchFailureFailedWithQueries(ctx, q, projectTask, req)
+		default:
+			return ProjectTaskWritebackResult{Task: projectTask}, nil
+		}
+	})
+}
+
+func (r *PgRepository) recoverDispatchFailureRetryWithQueries(ctx context.Context, q *queries.Queries, task ProjectTask, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	if req.Action.RetryNotBefore == nil {
+		return ProjectTaskWritebackResult{}, ErrInvalidProject
+	}
+	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventTaskRetryScheduled,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务已安排重新分派",
+		Payload: map[string]any{
+			"project_task_id":          task.ID.String(),
+			"dispatch_failed_event_id": req.FailureEventID.String(),
+			"failure_family":           req.Action.FailureFamily,
+			"retryable":                req.Action.Retryable,
+			"retry_not_before":         req.Action.RetryNotBefore.Format(time.RFC3339Nano),
+		},
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	row, err := q.ScheduleProjectTaskDispatchRetry(ctx, queries.ScheduleProjectTaskDispatchRetryParams{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		ID:             task.ID,
+		RetryNotBefore: pgtype.Timestamptz{Time: *req.Action.RetryNotBefore, Valid: true},
+		LatestEventID:  nullUUID(&event.ID),
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+	}
+	updated, err := taskFromRecord(row)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: updated, Event: event}, nil
+}
+
+func (r *PgRepository) recoverDispatchFailureWaitingHumanWithQueries(ctx context.Context, q *queries.Queries, task ProjectTask, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	projectRow, err := q.GetProject(ctx, queries.GetProjectParams{TenantID: req.TenantID, ID: req.ProjectID})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+	}
+	projectRecord, err := projectFromRecord(projectRow)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventTaskRecoveryRequested,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败，需要人工恢复决策",
+		Payload: map[string]any{
+			"project_task_id":          task.ID.String(),
+			"dispatch_failed_event_id": req.FailureEventID.String(),
+			"failure_family":           req.Action.FailureFamily,
+			"retryable":                req.Action.Retryable,
+			"waiting_reason":           req.Action.WaitingReason,
+		},
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	decision, err := r.createDecisionRequestWithQueries(ctx, q, CreateDecisionRequestRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ProjectTaskID:     &task.ID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      "project_task_recovery",
+		TitleSnapshot:     task.Title,
+		SummarySnapshot:   "项目任务分派失败，需要人工恢复决策",
+		RiskLevelSnapshot: stringValue(task.RiskLevel),
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	row, err := q.MoveProjectTaskDispatchFailureToWaitingHuman(ctx, queries.MoveProjectTaskDispatchFailureToWaitingHumanParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		ID:               task.ID,
+		WaitingReason:    req.Action.WaitingReason,
+		WaitingRequestID: nullUUID(&decision.ID),
+		LatestEventID:    nullUUID(&event.ID),
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+	}
+	updated, err := taskFromRecord(row)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: updated, Event: event, Decision: decision}, nil
+}
+
+func (r *PgRepository) recoverDispatchFailureFailedWithQueries(ctx context.Context, q *queries.Queries, task ProjectTask, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	reason := strings.TrimSpace(req.Action.TerminalReason)
+	if reason == "" {
+		reason = "dispatch recovery marked the project task failed"
+	}
+	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventTaskFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      reason,
+		Payload: map[string]any{
+			"project_task_id":          task.ID.String(),
+			"dispatch_failed_event_id": req.FailureEventID.String(),
+			"failure_family":           req.Action.FailureFamily,
+			"terminal_reason":          reason,
+		},
+	})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	updated, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, task.ID, ProjectTaskStatusFailed, &event.ID, []string{ProjectTaskStatusPlanned, ProjectTaskStatusWaitingHuman})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: updated, Event: event}, nil
+}
+
 func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
 	retryAttemptID := req.RetryAttemptID
 	if retryAttemptID == uuid.Nil {
