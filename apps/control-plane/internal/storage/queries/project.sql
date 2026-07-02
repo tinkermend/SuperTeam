@@ -1297,7 +1297,7 @@ SET status = 'queued',
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
-  AND status IN ('running', 'waiting_human')
+  AND status IN ('queued', 'running', 'waiting_human')
 RETURNING *;
 
 -- name: MoveProjectTaskToWaitingHuman :one

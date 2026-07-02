@@ -3566,6 +3566,195 @@ func (s *Service) RecoverProjectTaskDispatchFailure(ctx context.Context, req Rec
 	}, nil
 }
 
+func (s *Service) RecoverStaleQueuedProjectTaskAttempt(ctx context.Context, req RecoverProjectTaskAttemptRequest) (*ProjectTask, error) {
+	if req.FailureFamily == "" {
+		req.FailureFamily = FailureFamilyRuntimeStartTimeout
+	}
+	return s.recoverProjectTaskAttempt(ctx, req, ProjectTaskAttemptStatusLost)
+}
+
+func (s *Service) RecoverLostProjectTaskAttempt(ctx context.Context, req RecoverProjectTaskAttemptRequest) (*ProjectTask, error) {
+	if req.FailureFamily == "" {
+		req.FailureFamily = FailureFamilyRuntimeLeaseLost
+	}
+	return s.recoverProjectTaskAttempt(ctx, req, ProjectTaskAttemptStatusLost)
+}
+
+func (s *Service) SweepStaleQueuedProjectTaskAttempts(ctx context.Context, req SweepProjectTaskAttemptRecoveryRequest) (SweepProjectTaskAttemptRecoveryResult, error) {
+	if req.TenantID == uuid.Nil {
+		return SweepProjectTaskAttemptRecoveryResult{}, ErrInvalidProject
+	}
+	now := req.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	limit := req.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	repository, ok := s.repository.(ProjectTaskDispatchRecoveryRepository)
+	if !ok {
+		return SweepProjectTaskAttemptRecoveryResult{}, ErrInvalidProject
+	}
+	startedBefore := now.Add(-5 * time.Minute)
+	attempts, err := repository.ListStaleQueuedProjectTaskAttempts(ctx, req.TenantID, startedBefore, limit)
+	if err != nil {
+		return SweepProjectTaskAttemptRecoveryResult{}, err
+	}
+	return s.recoverAttemptCandidates(ctx, attempts, FailureFamilyRuntimeStartTimeout, "Runtime did not acknowledge project task attempt start before deadline", now)
+}
+
+func (s *Service) SweepExpiredRunningProjectTaskAttempts(ctx context.Context, req SweepProjectTaskAttemptRecoveryRequest) (SweepProjectTaskAttemptRecoveryResult, error) {
+	if req.TenantID == uuid.Nil {
+		return SweepProjectTaskAttemptRecoveryResult{}, ErrInvalidProject
+	}
+	now := req.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	limit := req.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	repository, ok := s.repository.(ProjectTaskDispatchRecoveryRepository)
+	if !ok {
+		return SweepProjectTaskAttemptRecoveryResult{}, ErrInvalidProject
+	}
+	attempts, err := repository.ListExpiredRunningProjectTaskAttempts(ctx, req.TenantID, now, limit)
+	if err != nil {
+		return SweepProjectTaskAttemptRecoveryResult{}, err
+	}
+	return s.recoverAttemptCandidates(ctx, attempts, FailureFamilyRuntimeLeaseLost, "Runtime lease expired before terminal writeback", now)
+}
+
+func (s *Service) recoverAttemptCandidates(ctx context.Context, attempts []ProjectTaskAttempt, failureFamily, summary string, now time.Time) (SweepProjectTaskAttemptRecoveryResult, error) {
+	result := SweepProjectTaskAttemptRecoveryResult{
+		RecoveredAttemptIDs: []uuid.UUID{},
+		RecoveredTaskIDs:    []uuid.UUID{},
+	}
+	for _, attempt := range attempts {
+		task, err := s.repository.GetProjectTask(ctx, attempt.TenantID, attempt.ProjectTaskID)
+		if err != nil {
+			return result, err
+		}
+		recovered, err := s.recoverProjectTaskAttempt(ctx, RecoverProjectTaskAttemptRequest{
+			TenantID:      attempt.TenantID,
+			ProjectID:     task.ProjectID,
+			ProjectTaskID: attempt.ProjectTaskID,
+			AttemptID:     attempt.ID,
+			FailureFamily: failureFamily,
+			Summary:       summary,
+			Now:           now,
+		}, ProjectTaskAttemptStatusLost)
+		if err != nil {
+			return result, err
+		}
+		result.RecoveredAttemptIDs = append(result.RecoveredAttemptIDs, attempt.ID)
+		result.RecoveredTaskIDs = append(result.RecoveredTaskIDs, recovered.ID)
+	}
+	return result, nil
+}
+
+func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProjectTaskAttemptRequest, attemptTerminalStatus string) (*ProjectTask, error) {
+	req.Summary = strings.TrimSpace(req.Summary)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.AttemptID == uuid.Nil || req.Summary == "" {
+		return nil, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.ProjectID != req.ProjectID {
+		return nil, ErrProjectNotFound
+	}
+	attempt, err := s.repository.GetProjectTaskAttempt(ctx, req.TenantID, req.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return nil, err
+	}
+	now := req.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	// The replacement attempt carries an explicit backoff so it does not
+	// immediately re-queue against a Runtime that may still be down. Retries
+	// stay bounded independently: ScheduleProjectTaskRetry increments
+	// attempt_count, so projectTaskFailureAction escalates to waiting-human
+	// once max_attempts is reached.
+	retryAt := now.Add(defaultDispatchRecoveryBackoff)
+	retryable := true
+	action := projectTaskFailureAction(task, recoveryFailureFamilyForAction(req.FailureFamily), &retryable)
+	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, RecoverProjectTaskAttemptFailureWritebackRequest{
+		Task:                  task,
+		Attempt:               attempt,
+		Failure:               FailProjectTaskAttemptRequest{ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{TenantID: req.TenantID, AttemptID: req.AttemptID, ProjectTaskID: req.ProjectTaskID, RuntimeNodeID: uuidValue(attempt.RuntimeNodeID), LeaseToken: attempt.LeaseToken, IdempotencyKey: "recovery-" + req.AttemptID.String()}, FailureSummary: req.Summary, FailureFamily: recoveryFailureFamilyForAction(req.FailureFamily), Retryable: &retryable},
+		AttemptTerminalStatus: attemptTerminalStatus,
+		TaskTargetStatus:      action,
+		WaitingReason:         HumanWaitReasonRuntimeRecovery,
+		RetryAttemptID:        uuid.New(),
+		RetryLeaseToken:       "retry-" + uuid.NewString(),
+		RetryIdempotencyKey:   projectTaskRetryIdempotencyKey(task, "recovery-"+req.AttemptID.String()),
+		RetryNotBefore:        &retryAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// The attempt-failure writeback does not create a decision request; a
+	// recovery that parks the task waiting-human still needs a durable human
+	// next action, so create and project one here.
+	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+		projectRecord, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		decision, err := s.repository.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+			TenantID:          req.TenantID,
+			ProjectID:         req.ProjectID,
+			ProjectTaskID:     &req.ProjectTaskID,
+			TargetUserID:      projectRecord.HumanOwnerUserID,
+			DecisionType:      "project_task_recovery",
+			TitleSnapshot:     task.Title,
+			SummarySnapshot:   req.Summary,
+			RiskLevelSnapshot: stringValue(task.RiskLevel),
+			StatusSnapshot:    "pending",
+			CreatedEventID:    &result.Event.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s.inbox != nil {
+			if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &result.Task, nil
+}
+
+func recoveryFailureFamilyForAction(failureFamily string) string {
+	switch failureFamily {
+	case FailureFamilyRuntimeStartTimeout, FailureFamilyRuntimeLeaseLost:
+		return FailureFamilyTransientRuntime
+	case FailureFamilyProviderStart:
+		return FailureFamilyTransientProvider
+	default:
+		if strings.TrimSpace(failureFamily) == "" {
+			return FailureFamilyTransientRuntime
+		}
+		return failureFamily
+	}
+}
+
+func uuidValue(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
+}
+
 func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64) ProjectTaskRecoveryAction {
 	retryable := boolPayload(event.Payload, "retryable", true)
 	failureFamily := dispatchRecoveryFailureFamily(event, retryable)

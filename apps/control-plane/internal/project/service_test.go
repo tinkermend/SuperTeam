@@ -2576,6 +2576,96 @@ func TestRecoverProjectTaskDispatchFailureExhaustsRetriesByFailureCount(t *testi
 	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
 }
 
+func TestRecoverStaleQueuedProjectTaskAttemptSchedulesRetry(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(3)
+
+	result, err := service.RecoverStaleQueuedProjectTaskAttempt(context.Background(), RecoverProjectTaskAttemptRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		AttemptID:     fixture.attemptID,
+		FailureFamily: FailureFamilyRuntimeStartTimeout,
+		Summary:       "Runtime did not acknowledge start before deadline",
+		Now:           time.Now().UTC(),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, result.Status)
+	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.projectTaskAttempts, 2)
+	require.Equal(t, ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
+}
+
+func TestRecoverLostProjectTaskAttemptMovesToWaitingHumanWhenRetryExhausted(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(1)
+
+	result, err := service.RecoverLostProjectTaskAttempt(context.Background(), RecoverProjectTaskAttemptRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		AttemptID:     fixture.attemptID,
+		FailureFamily: FailureFamilyRuntimeLeaseLost,
+		Summary:       "Runtime lease expired",
+		Now:           time.Now().UTC(),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, result.Status)
+	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Len(t, inbox.upserts, 1)
+}
+
+func TestSweepStaleQueuedProjectTaskAttemptsRecoversCandidates(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(3)
+	repo.projectTaskAttempts[0].CreatedAt = now.Add(-10 * time.Minute)
+
+	result, err := service.SweepStaleQueuedProjectTaskAttempts(context.Background(), SweepProjectTaskAttemptRecoveryRequest{
+		TenantID: fixture.tenantID,
+		Now:      now,
+		Limit:    10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{fixture.attemptID}, result.RecoveredAttemptIDs)
+	require.Equal(t, []uuid.UUID{fixture.taskID}, result.RecoveredTaskIDs)
+}
+
+func TestSweepExpiredRunningProjectTaskAttemptsRecoversCandidates(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(3)
+	expiresAt := now.Add(-time.Minute)
+	repo.projectTaskAttempts[0].LeaseExpiresAt = &expiresAt
+
+	result, err := service.SweepExpiredRunningProjectTaskAttempts(context.Background(), SweepProjectTaskAttemptRecoveryRequest{
+		TenantID: fixture.tenantID,
+		Now:      now,
+		Limit:    10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{fixture.attemptID}, result.RecoveredAttemptIDs)
+	require.Equal(t, []uuid.UUID{fixture.taskID}, result.RecoveredTaskIDs)
+}
+
 func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
 	repo := newMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
@@ -9532,7 +9622,7 @@ func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemp
 		if task.TenantID != req.Failure.TenantID || task.ID != req.Failure.ProjectTaskID {
 			continue
 		}
-		if task.Status != ProjectTaskStatusRunning && task.Status != ProjectTaskStatusWaitingHuman {
+		if task.Status != ProjectTaskStatusQueued && task.Status != ProjectTaskStatusRunning && task.Status != ProjectTaskStatusWaitingHuman {
 			return ProjectTask{}, ErrProjectConflict
 		}
 		attemptReq := QueueProjectTaskRequest{

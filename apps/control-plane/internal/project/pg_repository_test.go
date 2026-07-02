@@ -1942,6 +1942,51 @@ func TestPgRepositoryRecoverDispatchFailureSchedulesRetryWithoutAttempt(t *testi
 	require.Equal(t, failureEvent.ID, latest.ID)
 }
 
+func TestRecoverStaleQueuedAttemptReleasesActiveAttemptAndCreatesRetry(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskAttemptWritebackRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "stale queued",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	nodeID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: employeeID,
+		RuntimeNodeID:     &nodeID,
+		IdempotencyKey:    "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:        "lease-stale",
+	})
+	require.NoError(t, err)
+
+	result, err := writebacks.RecoverProjectTaskAttemptFailureWriteback(context.Background(), RecoverProjectTaskAttemptFailureWritebackRequest{
+		Task:                  queued.Task,
+		Attempt:               queued.Attempt,
+		Failure:               FailProjectTaskAttemptRequest{ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{TenantID: tenantID, AttemptID: queued.Attempt.ID, ProjectTaskID: task.ID, RuntimeNodeID: nodeID, LeaseToken: queued.Attempt.LeaseToken, IdempotencyKey: "stale-" + queued.Attempt.ID.String()}, FailureSummary: "Runtime did not start", FailureFamily: FailureFamilyRuntimeStartTimeout},
+		AttemptTerminalStatus: ProjectTaskAttemptStatusLost,
+		TaskTargetStatus:      ProjectTaskStatusQueued,
+		WaitingReason:         HumanWaitReasonRuntimeRecovery,
+		RetryAttemptID:        uuid.New(),
+		RetryLeaseToken:       "retry-lease-stale",
+		RetryIdempotencyKey:   "project-task:" + task.ID.String() + ":attempt:2:retry:stale",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, result.Task.Status)
+	oldAttempt, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, queued.Attempt.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusLost, oldAttempt.Status)
+	require.NotEqual(t, queued.Attempt.ID, *result.Task.CurrentAttemptID)
+}
+
 func TestPgRepositoryRecoverDispatchFailureMovesToWaitingHuman(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	recoveryRepo := repo.(ProjectTaskDispatchRecoveryRepository)
