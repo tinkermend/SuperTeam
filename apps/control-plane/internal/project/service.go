@@ -3500,6 +3500,111 @@ func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable 
 	}
 }
 
+const defaultDispatchRecoveryBackoff = 2 * time.Minute
+
+func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64) ProjectTaskRecoveryAction {
+	retryable := boolPayload(event.Payload, "retryable", true)
+	failureFamily := dispatchRecoveryFailureFamily(event, retryable)
+	waitingReason := humanWaitReasonForFailureFamily(failureFamily)
+	switch failureFamily {
+	case FailureFamilyDispatchTransient, FailureFamilyRuntimeStartTimeout, FailureFamilyRuntimeLeaseLost, FailureFamilyProviderStart, FailureFamilyTransientRuntime, FailureFamilyTransientProvider:
+		waitingReason = HumanWaitReasonRuntimeRecovery
+	}
+	if !retryable {
+		return ProjectTaskRecoveryAction{
+			Action:        ProjectTaskRecoveryActionWaitingHuman,
+			FailureFamily: failureFamily,
+			Retryable:     false,
+			WaitingReason: waitingReason,
+		}
+	}
+	if projectTaskDispatchRetryAvailable(task, dispatchFailureCount) {
+		retryAt := time.Now().UTC().Add(defaultDispatchRecoveryBackoff)
+		return ProjectTaskRecoveryAction{
+			Action:         ProjectTaskRecoveryActionRetryScheduled,
+			FailureFamily:  failureFamily,
+			Retryable:      true,
+			RetryNotBefore: &retryAt,
+			WaitingReason:  waitingReason,
+		}
+	}
+	return ProjectTaskRecoveryAction{
+		Action:        ProjectTaskRecoveryActionWaitingHuman,
+		FailureFamily: failureFamily,
+		Retryable:     true,
+		WaitingReason: waitingReason,
+	}
+}
+
+func boolPayload(payload map[string]any, key string, fallback bool) bool {
+	if payload == nil {
+		return fallback
+	}
+	value, ok := payload[key]
+	if !ok {
+		return fallback
+	}
+	if b, ok := value.(bool); ok {
+		return b
+	}
+	if s, ok := value.(string); ok {
+		return strings.EqualFold(strings.TrimSpace(s), "true")
+	}
+	return fallback
+}
+
+// dispatchRecoveryFailureFamily classifies a dispatch failure. Current
+// dispatch_failed events carry "error_family" fixed to "project_task_dispatch"
+// (see dispatchFailurePayload), so the "failure_family" passthrough only
+// applies to future writers; classification normally comes from error text.
+func dispatchRecoveryFailureFamily(event ProjectEvent, retryable bool) string {
+	if payloadFamily, ok := event.Payload["failure_family"].(string); ok {
+		payloadFamily = strings.TrimSpace(payloadFamily)
+		if payloadFamily != "" {
+			return payloadFamily
+		}
+	}
+	errorText := strings.ToLower(strings.TrimSpace(stringPayload(event.Payload, "error")))
+	switch {
+	case strings.Contains(errorText, "permission"), strings.Contains(errorText, "unauthorized"), strings.Contains(errorText, "forbidden"):
+		return FailureFamilyPermissionRequired
+	case strings.Contains(errorText, "invalid"), strings.Contains(errorText, "contract"):
+		return FailureFamilyInvalidContract
+	case strings.Contains(errorText, "provider"):
+		if retryable {
+			return FailureFamilyProviderStart
+		}
+		return FailureFamilyProviderConfig
+	default:
+		if retryable {
+			return FailureFamilyTransientRuntime
+		}
+		return FailureFamilyInvalidContract
+	}
+}
+
+func stringPayload(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	if value, ok := payload[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+// projectTaskDispatchRetryAvailable bounds dispatch retries by the number of
+// recorded dispatch_failed events. attempt_count cannot be used here: it only
+// increments when an attempt is queued, so it stays 0 for pure dispatch
+// failures and would allow unlimited dispatch retries.
+func projectTaskDispatchRetryAvailable(task ProjectTask, dispatchFailureCount int64) bool {
+	maxAttempts := int64(1)
+	if task.MaxAttempts != nil {
+		maxAttempts = int64(*task.MaxAttempts)
+	}
+	return dispatchFailureCount < maxAttempts
+}
+
 func projectTaskAttemptFailureStatus(failureFamily string) string {
 	switch failureFamily {
 	case FailureFamilyTimeout:

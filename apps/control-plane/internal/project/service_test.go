@@ -2345,6 +2345,74 @@ func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {
 	require.Equal(t, "output contract cannot be parsed", *repo.projectTaskAttempts[0].FailureMessage)
 }
 
+func TestProjectTaskDispatchRecoveryActionSchedulesRetryForRetryableFailure(t *testing.T) {
+	task := ProjectTask{
+		ID:          uuid.New(),
+		Status:      ProjectTaskStatusPlanned,
+		MaxAttempts: serviceTestInt32Ptr(3),
+	}
+	event := ProjectEvent{
+		ID:        uuid.New(),
+		EventType: ProjectEventTaskDispatchFailed,
+		Payload: map[string]any{
+			"retryable": true,
+			"error":     "runtime node is not connected",
+		},
+	}
+
+	action := projectTaskDispatchRecoveryAction(task, event, 1)
+
+	require.Equal(t, ProjectTaskRecoveryActionRetryScheduled, action.Action)
+	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
+	require.True(t, action.Retryable)
+	require.Equal(t, HumanWaitReasonRuntimeRecovery, action.WaitingReason)
+}
+
+func TestProjectTaskDispatchRecoveryActionMovesNonRetryableFailureToWaitingHuman(t *testing.T) {
+	task := ProjectTask{
+		ID:          uuid.New(),
+		Status:      ProjectTaskStatusPlanned,
+		MaxAttempts: serviceTestInt32Ptr(3),
+	}
+	event := ProjectEvent{
+		ID:        uuid.New(),
+		EventType: ProjectEventTaskDispatchFailed,
+		Payload: map[string]any{
+			"retryable": false,
+			"error":     "invalid run input",
+		},
+	}
+
+	action := projectTaskDispatchRecoveryAction(task, event, 1)
+
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
+	require.Equal(t, FailureFamilyInvalidContract, action.FailureFamily)
+	require.False(t, action.Retryable)
+	require.Equal(t, HumanWaitReasonPlanInvalid, action.WaitingReason)
+}
+
+func TestProjectTaskDispatchRecoveryActionMovesRetryExhaustionToWaitingHuman(t *testing.T) {
+	task := ProjectTask{
+		ID:          uuid.New(),
+		Status:      ProjectTaskStatusPlanned,
+		MaxAttempts: serviceTestInt32Ptr(3),
+	}
+	event := ProjectEvent{
+		ID:        uuid.New(),
+		EventType: ProjectEventTaskDispatchFailed,
+		Payload: map[string]any{
+			"retryable": true,
+			"error":     "runtime node is not connected",
+		},
+	}
+
+	action := projectTaskDispatchRecoveryAction(task, event, 3)
+
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
+	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
+	require.Equal(t, HumanWaitReasonRuntimeRecovery, action.WaitingReason)
+}
+
 func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
 	repo := newMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
