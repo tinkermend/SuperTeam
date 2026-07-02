@@ -92,6 +92,12 @@ func (s *Service) SetTeamScopeAuthorizer(authorizer ProjectTeamScopeAuthorizer) 
 	}
 }
 
+func (s *Service) SetDigitalEmployeeIdentityLookup(lookup DigitalEmployeeIdentityLookup) {
+	if s != nil {
+		s.digitalEmployeeIdentities = lookup
+	}
+}
+
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Goal = strings.TrimSpace(req.Goal)
@@ -1365,7 +1371,28 @@ func (s *Service) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGra
 		return nil, err
 	}
 	normalizeProjectTaskGraph(&graph)
+	if err := s.enrichProjectTaskGraphEmployeeIdentities(ctx, req.TenantID, &graph); err != nil {
+		return nil, err
+	}
 	return &graph, nil
+}
+
+func (s *Service) enrichProjectTaskGraphEmployeeIdentities(ctx context.Context, tenantID uuid.UUID, graph *ProjectTaskGraph) error {
+	if s.digitalEmployeeIdentities == nil {
+		return nil
+	}
+	for i := range graph.Employees {
+		identity, err := s.digitalEmployeeIdentities.GetDigitalEmployeeIdentity(ctx, tenantID, graph.Employees[i].DigitalEmployeeID)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			continue
+		}
+		graph.Employees[i].EmployeeRole = identity.Role
+		graph.Employees[i].AvatarAsset = identity.AvatarAsset
+	}
+	return nil
 }
 
 func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {

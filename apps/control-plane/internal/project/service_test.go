@@ -4026,6 +4026,150 @@ func TestGetProjectTaskGraphBuildsStageSummariesWhenRepositoryOmitsThem(t *testi
 	}
 }
 
+func TestGetProjectTaskGraphEnrichesEmployeeIdentityWhenLookupIsSet(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes:     []ProjectTaskGraphNode{},
+			Employees: []ProjectTaskGraphEmployee{{DigitalEmployeeID: digitalEmployeeID}},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	lookup := &fakeDigitalEmployeeIdentityLookup{
+		identities: map[uuid.UUID]DigitalEmployeeIdentity{
+			digitalEmployeeID: {
+				Role: "代码审查员",
+				AvatarAsset: &ProjectTaskGraphEmployeeAvatarAsset{
+					ID:           "avatar-1",
+					Label:        "Adventurer 1",
+					ThumbnailURL: "https://example.com/avatar-1-thumb.png",
+				},
+			},
+		},
+	}
+	service.SetDigitalEmployeeIdentityLookup(lookup)
+
+	graph, err := service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if err != nil {
+		t.Fatalf("get graph: %v", err)
+	}
+	if len(graph.Employees) != 1 {
+		t.Fatalf("expected one graph employee, got %#v", graph.Employees)
+	}
+	employee := graph.Employees[0]
+	if employee.EmployeeRole != "代码审查员" {
+		t.Fatalf("expected enriched employee role, got %q", employee.EmployeeRole)
+	}
+	if employee.AvatarAsset == nil || employee.AvatarAsset.ID != "avatar-1" || employee.AvatarAsset.Label != "Adventurer 1" || employee.AvatarAsset.ThumbnailURL != "https://example.com/avatar-1-thumb.png" {
+		t.Fatalf("expected enriched avatar asset, got %#v", employee.AvatarAsset)
+	}
+	if len(lookup.calls) != 1 || lookup.calls[0] != digitalEmployeeID {
+		t.Fatalf("expected lookup called once for employee, got %#v", lookup.calls)
+	}
+}
+
+func TestGetProjectTaskGraphSkipsEnrichmentWhenLookupIsUnset(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes:     []ProjectTaskGraphNode{},
+			Employees: []ProjectTaskGraphEmployee{{DigitalEmployeeID: digitalEmployeeID}},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	graph, err := service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if err != nil {
+		t.Fatalf("get graph: %v", err)
+	}
+	if len(graph.Employees) != 1 {
+		t.Fatalf("expected one graph employee, got %#v", graph.Employees)
+	}
+	if graph.Employees[0].EmployeeRole != "" || graph.Employees[0].AvatarAsset != nil {
+		t.Fatalf("expected no enrichment without lookup, got %#v", graph.Employees[0])
+	}
+}
+
+func TestGetProjectTaskGraphIgnoresEmployeeIdentityLookupErrors(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes:     []ProjectTaskGraphNode{},
+			Employees: []ProjectTaskGraphEmployee{{DigitalEmployeeID: digitalEmployeeID}},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	service.SetDigitalEmployeeIdentityLookup(&fakeDigitalEmployeeIdentityLookup{
+		err: map[uuid.UUID]error{digitalEmployeeID: errors.New("employee not found")},
+	})
+
+	graph, err := service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if err != nil {
+		t.Fatalf("get graph: %v", err)
+	}
+	if len(graph.Employees) != 1 {
+		t.Fatalf("expected one graph employee, got %#v", graph.Employees)
+	}
+	if graph.Employees[0].EmployeeRole != "" || graph.Employees[0].AvatarAsset != nil {
+		t.Fatalf("expected failed enrichment to leave employee unchanged, got %#v", graph.Employees[0])
+	}
+}
+
+func TestGetProjectTaskGraphPropagatesEmployeeIdentityContextCancellation(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes:     []ProjectTaskGraphNode{},
+			Employees: []ProjectTaskGraphEmployee{{DigitalEmployeeID: digitalEmployeeID}},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	service.SetDigitalEmployeeIdentityLookup(&fakeDigitalEmployeeIdentityLookup{
+		err: map[uuid.UUID]error{digitalEmployeeID: context.Canceled},
+	})
+
+	_, err = service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
 func TestListWorkflowInstancesNormalizesPaginationAndStatusPriority(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -7397,6 +7541,12 @@ type taskGraphLimitRepository struct {
 	graph   ProjectTaskGraph
 }
 
+type fakeDigitalEmployeeIdentityLookup struct {
+	identities map[uuid.UUID]DigitalEmployeeIdentity
+	err        map[uuid.UUID]error
+	calls      []uuid.UUID
+}
+
 type workflowInstanceServiceRepository struct {
 	*memoryRepository
 	calls   int
@@ -7478,6 +7628,14 @@ func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req 
 		DecisionRequests:   []DecisionRequest{},
 		StageSummaries:     []ProjectTaskGraphStageSummary{},
 	}, nil
+}
+
+func (f *fakeDigitalEmployeeIdentityLookup) GetDigitalEmployeeIdentity(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeIdentity, error) {
+	f.calls = append(f.calls, digitalEmployeeID)
+	if err, ok := f.err[digitalEmployeeID]; ok {
+		return DigitalEmployeeIdentity{}, err
+	}
+	return f.identities[digitalEmployeeID], nil
 }
 
 func (r *workflowInstanceServiceRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
