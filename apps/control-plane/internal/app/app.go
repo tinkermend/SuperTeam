@@ -493,6 +493,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
 	inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
 
