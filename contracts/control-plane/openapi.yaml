@@ -5363,9 +5363,29 @@ components:
           format: uuid
         display_name:
           type: string
+        employee_role:
+          type: string
+        avatar_asset:
+          $ref: "#/components/schemas/ProjectTaskGraphEmployeeAvatarAsset"
         project_role:
           $ref: "#/components/schemas/ProjectRole"
         status:
+          type: string
+    ProjectTaskGraphEmployeeAvatarAsset:
+      type: object
+      required:
+        - id
+        - label
+        - image_url
+        - thumbnail_url
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        image_url:
+          type: string
+        thumbnail_url:
           type: string
     ProjectTaskGraphRun:
       type: object

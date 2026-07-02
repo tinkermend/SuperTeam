@@ -219,9 +219,18 @@ export type ProjectTaskGraphEdge = {
   edge_status: string;
 };
 
+export type ProjectTaskGraphEmployeeAvatarAsset = {
+  id: string;
+  label: string;
+  image_url: string;
+  thumbnail_url: string;
+};
+
 export type ProjectTaskGraphEmployee = {
   digital_employee_id: string;
   display_name: string;
+  employee_role?: string;
+  avatar_asset?: ProjectTaskGraphEmployeeAvatarAsset;
   project_role: ProjectRole;
   status: string;
 };

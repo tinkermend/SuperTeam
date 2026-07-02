@@ -3602,10 +3602,20 @@ type ProjectTaskGraphEdge struct {
 
 // ProjectTaskGraphEmployee defines model for ProjectTaskGraphEmployee.
 type ProjectTaskGraphEmployee struct {
-	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
-	DisplayName       string             `json:"display_name"`
-	ProjectRole       ProjectRole        `json:"project_role"`
-	Status            string             `json:"status"`
+	AvatarAsset       *ProjectTaskGraphEmployeeAvatarAsset `json:"avatar_asset,omitempty"`
+	DigitalEmployeeId openapi_types.UUID                   `json:"digital_employee_id"`
+	DisplayName       string                               `json:"display_name"`
+	EmployeeRole      *string                              `json:"employee_role,omitempty"`
+	ProjectRole       ProjectRole                          `json:"project_role"`
+	Status            string                               `json:"status"`
+}
+
+// ProjectTaskGraphEmployeeAvatarAsset defines model for ProjectTaskGraphEmployeeAvatarAsset.
+type ProjectTaskGraphEmployeeAvatarAsset struct {
+	Id           string `json:"id"`
+	ImageUrl     string `json:"image_url"`
+	Label        string `json:"label"`
+	ThumbnailUrl string `json:"thumbnail_url"`
 }
 
 // ProjectTaskGraphNode defines model for ProjectTaskGraphNode.
