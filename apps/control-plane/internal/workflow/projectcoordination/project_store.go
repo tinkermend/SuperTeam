@@ -538,10 +538,14 @@ func (s *ProjectStore) ListDispatchableTasks(ctx context.Context, input ListDisp
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
 	candidates := make([]project.ProjectTask, 0, len(tasks))
 	candidateIDs := make([]uuid.UUID, 0, len(tasks))
 	for _, task := range tasks {
 		if !projectTaskDispatchAllowed(task.Status) {
+			continue
+		}
+		if task.RetryNotBefore != nil && task.RetryNotBefore.After(now) {
 			continue
 		}
 		candidates = append(candidates, task)
