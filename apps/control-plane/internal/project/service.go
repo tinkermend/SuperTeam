@@ -13,12 +13,13 @@ import (
 )
 
 type Service struct {
-	repository            Repository
-	coordinator           CoordinatorSignalClient
-	approvals             ApprovalResolver
-	inbox                 DecisionInboxProjector
-	archiveArtifactLocker ArchiveArtifactLocker
-	teamScopeAuthorizer   ProjectTeamScopeAuthorizer
+	repository                Repository
+	coordinator               CoordinatorSignalClient
+	approvals                 ApprovalResolver
+	digitalEmployeeIdentities DigitalEmployeeIdentityLookup
+	inbox                     DecisionInboxProjector
+	archiveArtifactLocker     ArchiveArtifactLocker
+	teamScopeAuthorizer       ProjectTeamScopeAuthorizer
 }
 
 const (
@@ -36,6 +37,15 @@ type ProjectTeamScopeAuthorizer interface {
 
 type ApprovalResolver interface {
 	ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error
+}
+
+type DigitalEmployeeIdentity struct {
+	Role        string
+	AvatarAsset *ProjectTaskGraphEmployeeAvatarAsset
+}
+
+type DigitalEmployeeIdentityLookup interface {
+	GetDigitalEmployeeIdentity(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeIdentity, error)
 }
 
 func NewService(repository Repository) (*Service, error) {

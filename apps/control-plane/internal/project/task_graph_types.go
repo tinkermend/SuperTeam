@@ -44,7 +44,16 @@ type ProjectTaskGraphEmployee struct {
 	DigitalEmployeeID uuid.UUID
 	DisplayName       string
 	ProjectRole       ProjectRole
+	EmployeeRole      string
+	AvatarAsset       *ProjectTaskGraphEmployeeAvatarAsset
 	Status            string
+}
+
+type ProjectTaskGraphEmployeeAvatarAsset struct {
+	ID           string
+	Label        string
+	ImageURL     string
+	ThumbnailURL string
 }
 
 type ProjectTaskGraphRun struct {
