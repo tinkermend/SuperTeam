@@ -37,6 +37,7 @@ type ActivityStore interface {
 	ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
+	RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error)
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
 }
 
@@ -191,6 +192,13 @@ func (a *Activities) DispatchProjectTask(ctx context.Context, input DispatchProj
 		return temporal.NewNonRetryableApplicationError("project task dispatch rejected", "ProjectTaskDispatchTerminal", err)
 	}
 	return err
+}
+
+func (a *Activities) RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error) {
+	if a.store == nil {
+		return RecoverTaskDispatchFailureResult{}, ErrActivityStoreRequired
+	}
+	return a.store.RecoverTaskDispatchFailure(ctx, input)
 }
 
 func (a *Activities) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {

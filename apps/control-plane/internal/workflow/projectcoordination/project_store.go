@@ -2282,6 +2282,28 @@ func (s *ProjectStore) advanceDispatchedTaskDemand(ctx context.Context, input Di
 	return s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, *task.DemandID, project.ProjectDemandStatusExecuting)
 }
 
+// RecoverTaskDispatchFailure builds a short-lived project service over the
+// store's repository and inbox so recovery reuses the service-level decision
+// logic without new worker wiring.
+func (s *ProjectStore) RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error) {
+	if s.repository == nil {
+		return RecoverTaskDispatchFailureResult{}, ErrActivityStoreRequired
+	}
+	service, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(s.repository, project.NoopCoordinatorSignalClient{}, nil, s.inbox, nil)
+	if err != nil {
+		return RecoverTaskDispatchFailureResult{}, err
+	}
+	result, err := service.RecoverProjectTaskDispatchFailure(ctx, project.RecoverProjectTaskDispatchFailureRequest{
+		TenantID:      input.TenantID,
+		ProjectID:     input.ProjectID,
+		ProjectTaskID: input.ProjectTaskID,
+	})
+	if err != nil {
+		return RecoverTaskDispatchFailureResult{}, err
+	}
+	return RecoverTaskDispatchFailureResult{Action: result.Action, RetryNotBefore: result.Task.RetryNotBefore}, nil
+}
+
 func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) error {
 	if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventTaskDispatchFailed, task.ID.String(), "项目任务分派失败", dispatchFailurePayload(task, dispatchErr, dispatchErrorRetryable(dispatchErr)))); err != nil {
 		return err

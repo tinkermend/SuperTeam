@@ -1250,7 +1250,62 @@ func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	require.Contains(t, store.calls, "RecoverTaskDispatchFailure")
 	require.Contains(t, store.calls, "FinishCoordinationJob")
+}
+
+func TestProjectCoordinatorRedispatchesAfterRetryBackoff(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	retryAt := time.Now().Add(2 * time.Minute)
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "验证 Runtime",
+				Content: "检查心跳",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:         uuid.New(),
+		routeID:       uuid.New(),
+		routeEventID:  uuid.New(),
+		taskID:        uuid.New(),
+		dispatchEvent: uuid.New(),
+		dispatchErr:   &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject},
+		recoverResults: []RecoverTaskDispatchFailureResult{
+			{Action: project.ProjectTaskRecoveryActionRetryScheduled, RetryNotBefore: &retryAt},
+			{Action: project.ProjectTaskRecoveryActionWaitingHuman},
+		},
+	}
+	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Minute)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, store.recoverInputs, 2)
 }
 
 func TestProjectCoordinatorContinuesAsNewWhenSuggestedAfterSignal(t *testing.T) {
@@ -1355,6 +1410,9 @@ type recordingActivityStore struct {
 	dispatchEvent                uuid.UUID
 	dispatchErr                  error
 	createJobErr                 error
+	recoverInputs                []RecoverTaskDispatchFailureInput
+	recoverResults               []RecoverTaskDispatchFailureResult
+	recoverErr                   error
 
 	dispatchableTaskIDs          []uuid.UUID
 	dispatchableTaskIDBatches    [][]uuid.UUID
@@ -1620,6 +1678,20 @@ func (s *recordingActivityStore) DispatchProjectTask(ctx context.Context, input 
 	s.calls = append(s.calls, "DispatchProjectTask")
 	s.dispatchInputs = append(s.dispatchInputs, input)
 	return s.dispatchErr
+}
+
+func (s *recordingActivityStore) RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error) {
+	s.calls = append(s.calls, "RecoverTaskDispatchFailure")
+	s.recoverInputs = append(s.recoverInputs, input)
+	if s.recoverErr != nil {
+		return RecoverTaskDispatchFailureResult{}, s.recoverErr
+	}
+	if len(s.recoverResults) > 0 {
+		result := s.recoverResults[0]
+		s.recoverResults = s.recoverResults[1:]
+		return result, nil
+	}
+	return RecoverTaskDispatchFailureResult{Action: project.ProjectTaskRecoveryActionWaitingHuman}, nil
 }
 
 func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
