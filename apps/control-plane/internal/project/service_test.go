@@ -2413,6 +2413,169 @@ func TestProjectTaskDispatchRecoveryActionMovesRetryExhaustionToWaitingHuman(t *
 	require.Equal(t, HumanWaitReasonRuntimeRecovery, action.WaitingReason)
 }
 
+type dispatchRecoveryFixture struct {
+	tenantID       uuid.UUID
+	projectID      uuid.UUID
+	taskID         uuid.UUID
+	failureEventID uuid.UUID
+}
+
+func newDispatchRecoveryFixture(repo *memoryRepository, taskStatus string, attemptCount, maxAttempts int32, retryable bool) dispatchRecoveryFixture {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	now := time.Now().UTC()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "Dispatch recovery",
+		Goal:             "Recover dispatch",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "dispatch recovery task",
+		Status:                    taskStatus,
+		AssignedDigitalEmployeeID: &employeeID,
+		AttemptCount:              attemptCount,
+		MaxAttempts:               &maxAttempts,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	})
+	eventID := uuid.New()
+	repo.events = append(repo.events, ProjectEvent{
+		ID:        eventID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventTaskDispatchFailed,
+		ActorType: "project_coordinator",
+		ActorID:   taskID.String(),
+		Payload: map[string]any{
+			"project_task_id": taskID.String(),
+			"retryable":       retryable,
+			"error":           map[bool]string{true: "runtime node is not connected", false: "invalid run input"}[retryable],
+		},
+		CreatedAt: now,
+	})
+	return dispatchRecoveryFixture{tenantID: tenantID, projectID: projectID, taskID: taskID, failureEventID: eventID}
+}
+
+func TestRecoverProjectTaskDispatchFailureSchedulesRetry(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
+
+	result, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:       fixture.tenantID,
+		ProjectID:      fixture.projectID,
+		ProjectTaskID:  fixture.taskID,
+		FailureEventID: fixture.failureEventID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionRetryScheduled, result.Action)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusPlanned, task.Status)
+	require.NotNil(t, task.RetryNotBefore)
+	require.Len(t, repo.events, 2)
+	require.Equal(t, ProjectEventTaskRetryScheduled, repo.events[1].EventType)
+}
+
+func TestRecoverProjectTaskDispatchFailureCreatesWaitingHumanDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, false)
+
+	result, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:       fixture.tenantID,
+		ProjectID:      fixture.projectID,
+		ProjectTaskID:  fixture.taskID,
+		FailureEventID: fixture.failureEventID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, result.Action)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.WaitingRequestID)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "project_task_recovery", inbox.upserts[0].DecisionType)
+}
+
+func TestRecoverProjectTaskDispatchFailureNoopsWhenDecisionPending(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, false)
+
+	first, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, first.Action)
+
+	second, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionNoop, second.Action)
+	require.Len(t, inbox.upserts, 1)
+	require.Len(t, repo.decisionRequests, 1)
+}
+
+func TestRecoverProjectTaskDispatchFailureExhaustsRetriesByFailureCount(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
+	for i := 0; i < 2; i++ {
+		repo.events = append(repo.events, ProjectEvent{
+			ID:        uuid.New(),
+			TenantID:  fixture.tenantID,
+			ProjectID: fixture.projectID,
+			EventType: ProjectEventTaskDispatchFailed,
+			ActorType: "project_coordinator",
+			ActorID:   fixture.taskID.String(),
+			Payload: map[string]any{
+				"project_task_id": fixture.taskID.String(),
+				"retryable":       true,
+				"error":           "runtime node is not connected",
+			},
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+
+	result, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, result.Action)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+}
+
 func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
 	repo := newMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
@@ -8978,6 +9141,143 @@ func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, 
 		return ProjectTaskWritebackResult{}, err
 	}
 	return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+}
+
+func (r *memoryRepository) GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectEvent, error) {
+	for i := len(r.events) - 1; i >= 0; i-- {
+		event := r.events[i]
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == ProjectEventTaskDispatchFailed && event.ActorID == projectTaskID.String() {
+			return event, nil
+		}
+	}
+	return ProjectEvent{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CountProjectTaskDispatchFailureEvents(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (int64, error) {
+	var count int64
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == ProjectEventTaskDispatchFailed && event.ActorID == projectTaskID.String() {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *memoryRepository) RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	task, err := r.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	switch req.Action.Action {
+	case ProjectTaskRecoveryActionRetryScheduled:
+		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			EventType: ProjectEventTaskRetryScheduled,
+			ActorType: "project_coordinator",
+			ActorID:   req.ProjectTaskID.String(),
+			Payload: map[string]any{
+				"project_task_id":          req.ProjectTaskID.String(),
+				"dispatch_failed_event_id": req.FailureEventID.String(),
+				"failure_family":           req.Action.FailureFamily,
+				"retryable":                req.Action.Retryable,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		for i := range r.tasks {
+			if r.tasks[i].TenantID == req.TenantID && r.tasks[i].ID == req.ProjectTaskID {
+				r.tasks[i].Status = ProjectTaskStatusPlanned
+				r.tasks[i].RetryNotBefore = req.Action.RetryNotBefore
+				r.tasks[i].WaitingReason = nil
+				r.tasks[i].WaitingRequestID = nil
+				return ProjectTaskWritebackResult{Task: r.tasks[i], Event: event}, nil
+			}
+		}
+	case ProjectTaskRecoveryActionWaitingHuman:
+		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			EventType: ProjectEventTaskRecoveryRequested,
+			ActorType: "project_coordinator",
+			ActorID:   req.ProjectTaskID.String(),
+			Payload: map[string]any{
+				"project_task_id":          req.ProjectTaskID.String(),
+				"dispatch_failed_event_id": req.FailureEventID.String(),
+				"failure_family":           req.Action.FailureFamily,
+				"retryable":                req.Action.Retryable,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		decision, err := r.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+			TenantID:          req.TenantID,
+			ProjectID:         req.ProjectID,
+			ProjectTaskID:     &req.ProjectTaskID,
+			TargetUserID:      r.projects[req.ProjectID].HumanOwnerUserID,
+			DecisionType:      "project_task_recovery",
+			TitleSnapshot:     task.Title,
+			SummarySnapshot:   "项目任务分派失败，需要人工恢复决策",
+			RiskLevelSnapshot: stringValue(task.RiskLevel),
+			StatusSnapshot:    "pending",
+			CreatedEventID:    &event.ID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		for i := range r.tasks {
+			if r.tasks[i].TenantID == req.TenantID && r.tasks[i].ID == req.ProjectTaskID {
+				r.tasks[i].Status = ProjectTaskStatusWaitingHuman
+				r.tasks[i].WaitingReason = &req.Action.WaitingReason
+				r.tasks[i].WaitingRequestID = &decision.ID
+				return ProjectTaskWritebackResult{Task: r.tasks[i], Event: event, Decision: decision}, nil
+			}
+		}
+	default:
+		return ProjectTaskWritebackResult{Task: task}, nil
+	}
+	return ProjectTaskWritebackResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListStaleQueuedProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, startedBefore time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+	result := []ProjectTaskAttempt{}
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != tenantID || attempt.Status != ProjectTaskAttemptStatusQueued || attempt.StartedAt != nil {
+			continue
+		}
+		if !attempt.CreatedAt.Before(startedBefore) {
+			continue
+		}
+		task, err := r.GetProjectTask(ctx, tenantID, attempt.ProjectTaskID)
+		if err != nil || task.Status != ProjectTaskStatusQueued {
+			continue
+		}
+		result = append(result, attempt)
+		if int32(len(result)) >= limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+func (r *memoryRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+	result := []ProjectTaskAttempt{}
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != tenantID || attempt.Status != ProjectTaskAttemptStatusRunning || attempt.LeaseExpiresAt == nil || !attempt.LeaseExpiresAt.Before(now) {
+			continue
+		}
+		task, err := r.GetProjectTask(ctx, tenantID, attempt.ProjectTaskID)
+		if err != nil || task.Status != ProjectTaskStatusRunning {
+			continue
+		}
+		result = append(result, attempt)
+		if int32(len(result)) >= limit {
+			break
+		}
+	}
+	return result, nil
 }
 
 func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error) {

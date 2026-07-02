@@ -3502,6 +3502,70 @@ func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable 
 
 const defaultDispatchRecoveryBackoff = 2 * time.Minute
 
+// RecoverProjectTaskDispatchFailure turns the latest recorded dispatch failure
+// of a task without an active attempt into a bounded retry schedule or a
+// waiting-human recovery decision. It is idempotent under Temporal activity
+// retries: a pending waiting-human decision is never duplicated and a
+// not-yet-due retry is never re-scheduled.
+func (s *Service) RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureRequest) (*RecoverProjectTaskDispatchFailureResult, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	repository, ok := s.repository.(ProjectTaskDispatchRecoveryRepository)
+	if !ok {
+		return nil, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.ProjectID != req.ProjectID {
+		return nil, ErrProjectNotFound
+	}
+	if task.CurrentAttemptID != nil {
+		return &RecoverProjectTaskDispatchFailureResult{Task: task, Action: ProjectTaskRecoveryActionNoop}, nil
+	}
+	if task.Status == ProjectTaskStatusWaitingHuman && task.WaitingRequestID != nil {
+		return &RecoverProjectTaskDispatchFailureResult{Task: task, Action: ProjectTaskRecoveryActionNoop}, nil
+	}
+	if task.RetryNotBefore != nil && task.RetryNotBefore.After(time.Now().UTC()) {
+		return &RecoverProjectTaskDispatchFailureResult{Task: task, Action: ProjectTaskRecoveryActionNoop}, nil
+	}
+	event, err := repository.GetProjectTaskLatestDispatchFailureEvent(ctx, req.TenantID, req.ProjectID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if req.FailureEventID != uuid.Nil && event.ID != req.FailureEventID {
+		return &RecoverProjectTaskDispatchFailureResult{Task: task, Event: event, Action: ProjectTaskRecoveryActionNoop}, nil
+	}
+	dispatchFailureCount, err := repository.CountProjectTaskDispatchFailureEvents(ctx, req.TenantID, req.ProjectID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	action := projectTaskDispatchRecoveryAction(task, event, dispatchFailureCount)
+	result, err := repository.RecoverProjectTaskDispatchFailure(ctx, RecoverProjectTaskDispatchFailureWritebackRequest{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		ProjectTaskID:  req.ProjectTaskID,
+		FailureEventID: event.ID,
+		Action:         action,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Decision.ID != uuid.Nil && s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
+			return nil, err
+		}
+	}
+	return &RecoverProjectTaskDispatchFailureResult{
+		Task:     result.Task,
+		Event:    result.Event,
+		Decision: result.Decision,
+		Action:   action.Action,
+	}, nil
+}
+
 func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64) ProjectTaskRecoveryAction {
 	retryable := boolPayload(event.Payload, "retryable", true)
 	failureFamily := dispatchRecoveryFailureFamily(event, retryable)

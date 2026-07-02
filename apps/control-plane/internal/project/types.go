@@ -550,6 +550,41 @@ type ProjectTaskRecoveryAction struct {
 	TerminalReason string
 }
 
+type RecoverProjectTaskDispatchFailureRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	ProjectTaskID  uuid.UUID
+	FailureEventID uuid.UUID
+}
+
+type RecoverProjectTaskDispatchFailureResult struct {
+	Task     ProjectTask
+	Event    ProjectEvent
+	Decision DecisionRequest
+	Action   string
+}
+
+type RecoverProjectTaskAttemptRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	AttemptID     uuid.UUID
+	FailureFamily string
+	Summary       string
+	Now           time.Time
+}
+
+type SweepProjectTaskAttemptRecoveryRequest struct {
+	TenantID uuid.UUID
+	Now      time.Time
+	Limit    int32
+}
+
+type SweepProjectTaskAttemptRecoveryResult struct {
+	RecoveredAttemptIDs []uuid.UUID
+	RecoveredTaskIDs    []uuid.UUID
+}
+
 const (
 	ProjectTaskAttemptStatusQueued       = "queued"
 	ProjectTaskAttemptStatusRunning      = "running"
