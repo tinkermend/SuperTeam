@@ -88,6 +88,9 @@ const (
 	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
 	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
 	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskRetryScheduled             ProjectEventType = "project_task.retry_scheduled"
+	ProjectEventTaskAttemptLost                ProjectEventType = "project_task.attempt_lost"
+	ProjectEventTaskRecoveryRequested          ProjectEventType = "project_task.recovery_requested"
 	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
 	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
 	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
@@ -532,6 +535,57 @@ const (
 )
 
 const (
+	ProjectTaskRecoveryActionNoop           = "no_op"
+	ProjectTaskRecoveryActionRetryScheduled = "retry_scheduled"
+	ProjectTaskRecoveryActionWaitingHuman   = "waiting_human"
+	ProjectTaskRecoveryActionFailed         = "failed"
+)
+
+type ProjectTaskRecoveryAction struct {
+	Action         string
+	FailureFamily  string
+	Retryable      bool
+	RetryNotBefore *time.Time
+	WaitingReason  string
+	TerminalReason string
+}
+
+type RecoverProjectTaskDispatchFailureRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	ProjectTaskID  uuid.UUID
+	FailureEventID uuid.UUID
+}
+
+type RecoverProjectTaskDispatchFailureResult struct {
+	Task     ProjectTask
+	Event    ProjectEvent
+	Decision DecisionRequest
+	Action   string
+}
+
+type RecoverProjectTaskAttemptRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	AttemptID     uuid.UUID
+	FailureFamily string
+	Summary       string
+	Now           time.Time
+}
+
+type SweepProjectTaskAttemptRecoveryRequest struct {
+	TenantID uuid.UUID
+	Now      time.Time
+	Limit    int32
+}
+
+type SweepProjectTaskAttemptRecoveryResult struct {
+	RecoveredAttemptIDs []uuid.UUID
+	RecoveredTaskIDs    []uuid.UUID
+}
+
+const (
 	ProjectTaskAttemptStatusQueued       = "queued"
 	ProjectTaskAttemptStatusRunning      = "running"
 	ProjectTaskAttemptStatusSucceeded    = "succeeded"
@@ -554,6 +608,11 @@ const (
 	FailureFamilyPlanInvalid           = "plan_invalid"
 	FailureFamilyRequirementChanged    = "requirement_changed"
 	FailureFamilyAcceptanceRequired    = "acceptance_required"
+	FailureFamilyDispatchTransient     = "dispatch_transient"
+	FailureFamilyRuntimeStartTimeout   = "runtime_start_timeout"
+	FailureFamilyRuntimeLeaseLost      = "runtime_lease_lost"
+	FailureFamilyProviderStart         = "transient_provider_start"
+	FailureFamilyProviderConfig        = "provider_configuration"
 )
 
 const (

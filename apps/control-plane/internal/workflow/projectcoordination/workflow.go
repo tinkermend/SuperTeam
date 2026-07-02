@@ -795,10 +795,41 @@ func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, t
 				return err
 			}
 			workflow.GetLogger(ctx).Warn("dispatch project task failed", "task_id", taskID.String(), "error", err.Error())
+			var recovery RecoverTaskDispatchFailureResult
+			if recoverErr := workflow.ExecuteActivity(ctx, (*Activities).RecoverTaskDispatchFailure, RecoverTaskDispatchFailureInput{
+				TenantID:      tenantID,
+				ProjectID:     projectID,
+				ProjectTaskID: taskID,
+			}).Get(ctx, &recovery); recoverErr != nil {
+				return recoverErr
+			}
+			if recovery.Action == project.ProjectTaskRecoveryActionRetryScheduled && recovery.RetryNotBefore != nil {
+				scheduleDispatchRetry(ctx, tenantID, projectID, taskID, *recovery.RetryNotBefore)
+			}
 			continue
 		}
 	}
 	return nil
+}
+
+// scheduleDispatchRetry re-dispatches one task after its retry backoff.
+// dispatchProjectTasks only runs from signal handlers, so without this timer a
+// retry-scheduled task would wait for an unrelated signal. The loop is bounded:
+// recovery stops returning retry_scheduled once dispatch failures reach
+// max_attempts and moves the task to waiting_human instead.
+func scheduleDispatchRetry(ctx workflow.Context, tenantID, projectID, taskID uuid.UUID, retryAt time.Time) {
+	delay := retryAt.Sub(workflow.Now(ctx))
+	if delay < 0 {
+		delay = 0
+	}
+	workflow.Go(ctx, func(gctx workflow.Context) {
+		if err := workflow.Sleep(gctx, delay); err != nil {
+			return
+		}
+		if err := dispatchProjectTasks(gctx, tenantID, projectID, []uuid.UUID{taskID}, project.DispatchReasonRetry); err != nil {
+			workflow.GetLogger(gctx).Error("retry dispatch failed", "task_id", taskID.String(), "error", err.Error())
+		}
+	})
 }
 
 func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, status string, outputEventIDs []uuid.UUID) error {

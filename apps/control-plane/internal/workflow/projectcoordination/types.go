@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/temporal"
@@ -298,6 +299,21 @@ type DispatchProjectTaskInput struct {
 	ProjectID      uuid.UUID
 	TaskID         uuid.UUID
 	DispatchReason string
+}
+
+// RecoverTaskDispatchFailureInput deliberately carries no failure event ID: a
+// *ProjectTaskDispatchError does not survive the Temporal activity boundary
+// (the workflow only sees a *temporal.ApplicationError), so the recovery
+// service resolves the latest dispatch_failed event itself.
+type RecoverTaskDispatchFailureInput struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+}
+
+type RecoverTaskDispatchFailureResult struct {
+	Action         string
+	RetryNotBefore *time.Time
 }
 
 type StartProjectTaskRunRequest struct {

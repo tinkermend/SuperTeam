@@ -671,6 +671,55 @@ func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlocke
 	require.Equal(t, []uuid.UUID{rootID, readyDependentID}, ids)
 }
 
+func TestProjectStoreListDispatchableTasksSkipsFutureRetry(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	taskID := uuid.New()
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{{
+			ID:                taskID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: &jobID,
+			Status:            project.ProjectTaskStatusPlanned,
+			RetryNotBefore:    &future,
+		}},
+	}
+	store := NewProjectStore(repo).WithClock(func() time.Time { return time.Now().UTC() })
+
+	ready, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{TenantID: tenantID, ProjectID: projectID, CoordinationJobID: jobID})
+
+	require.NoError(t, err)
+	require.Empty(t, ready)
+}
+
+func TestProjectStoreListDispatchableTasksIncludesDueRetry(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	taskID := uuid.New()
+	now := time.Now().UTC()
+	past := now.Add(-time.Minute)
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{{
+			ID:                taskID,
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: &jobID,
+			Status:            project.ProjectTaskStatusPlanned,
+			RetryNotBefore:    &past,
+		}},
+	}
+	store := NewProjectStore(repo).WithClock(func() time.Time { return now })
+
+	ready, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{TenantID: tenantID, ProjectID: projectID, CoordinationJobID: jobID})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{taskID}, ready)
+}
+
 func TestProjectStoreListDispatchableTasksRequiresAcceptedLatestBlockerResult(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
