@@ -214,6 +214,7 @@ type Querier interface {
 	GetProjectTaskDispatchGateResult(ctx context.Context, arg GetProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskDispatchGateResultByKey(ctx context.Context, arg GetProjectTaskDispatchGateResultByKeyParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, arg GetProjectTaskLatestDispatchFailureEventParams) (ProjectEvent, error)
+	GetProjectTaskRunPreflight(ctx context.Context, arg GetProjectTaskRunPreflightParams) (GetProjectTaskRunPreflightRow, error)
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error)
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)

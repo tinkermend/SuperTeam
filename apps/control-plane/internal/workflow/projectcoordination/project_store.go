@@ -2213,22 +2213,26 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	}
 	addDispatchGateMetadata(runMetadata, gate.Gate)
 	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		DemandID:          demand.ID,
-		ProjectTaskID:     task.ID,
-		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
-		DispatchUserID:    projectRecord.HumanOwnerUserID,
-		Objective:         task.Title,
-		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
-		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
-		Metadata:          runMetadata,
-		WorkspaceMode:     workspaceMode,
-		BaseRef:           baseRef,
-		ProjectGit:        projectGit,
+		TenantID:             input.TenantID,
+		ProjectID:            input.ProjectID,
+		DemandID:             demand.ID,
+		ProjectTaskID:        task.ID,
+		ProjectTaskAttemptID: attemptID,
+		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
+		DispatchUserID:       projectRecord.HumanOwnerUserID,
+		Objective:            task.Title,
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task),
+		IdempotencyKey:       projectTaskDispatchIdempotencyKey(task.ID),
+		Metadata:             runMetadata,
+		WorkspaceMode:        workspaceMode,
+		BaseRef:              baseRef,
+		ProjectGit:           projectGit,
 	})
 	if err != nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
+	}
+	if strings.TrimSpace(run.ProviderType) != "" {
+		runMetadata["provider_type"] = run.ProviderType
 	}
 	executionContextPacket := map[string]any{
 		"project_id":               input.ProjectID.String(),
@@ -2245,6 +2249,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		"runtime_task_id":          run.RuntimeTaskID.String(),
 		"runtime_node_id":          run.RuntimeNodeID.String(),
 		"node_id":                  run.NodeID,
+		"provider_type":            run.ProviderType,
 	}
 	addDispatchGateMetadata(executionContextPacket, gate.Gate)
 	queueResult, err := s.repository.QueueProjectTaskWithAttempt(ctx, project.QueueProjectTaskRequest{

@@ -19,8 +19,8 @@ import (
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/config"
-	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/cost"
+	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -164,14 +164,21 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 		return projectcoordination.StartProjectTaskRunResult{}, errors.New("digital employee run service is required")
 	}
 	idempotencyKey := req.IdempotencyKey
-	run, err := a.runService.CreateRun(ctx, employee.CreateDigitalEmployeeRunRequest{
-		TenantID:          req.TenantID,
-		UserID:            req.DispatchUserID,
-		DigitalEmployeeID: req.DigitalEmployeeID,
-		Objective:         req.Objective,
-		Prompt:            req.Prompt,
-		IdempotencyKey:    &idempotencyKey,
-		Metadata:          req.Metadata,
+	run, err := a.runService.StartProjectTaskRun(ctx, employee.StartProjectTaskRunRequest{
+		TenantID:             req.TenantID,
+		ProjectID:            req.ProjectID,
+		DemandID:             req.DemandID,
+		ProjectTaskID:        req.ProjectTaskID,
+		ProjectTaskAttemptID: req.ProjectTaskAttemptID,
+		DigitalEmployeeID:    req.DigitalEmployeeID,
+		DispatchUserID:       req.DispatchUserID,
+		Objective:            req.Objective,
+		Prompt:               req.Prompt,
+		IdempotencyKey:       idempotencyKey,
+		Metadata:             req.Metadata,
+		WorkspaceMode:        req.WorkspaceMode,
+		BaseRef:              req.BaseRef,
+		ProjectGit:           req.ProjectGit,
 	})
 	if err != nil {
 		return projectcoordination.StartProjectTaskRunResult{}, &projectcoordination.ProjectTaskRunStartError{
@@ -180,10 +187,11 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 		}
 	}
 	return projectcoordination.StartProjectTaskRunResult{
-		RunID:         run.ID,
-		RuntimeTaskID: run.TaskID,
+		RunID:         run.RunID,
+		RuntimeTaskID: run.RuntimeTaskID,
 		RuntimeNodeID: run.RuntimeNodeID,
 		NodeID:        run.NodeID,
+		ProviderType:  run.ProviderType,
 	}, nil
 }
 

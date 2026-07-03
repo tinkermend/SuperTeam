@@ -34,6 +34,10 @@ type DigitalEmployeeRunRepository interface {
 	DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error
 }
 
+type ProjectTaskRunPreflightRepository interface {
+	GetProjectTaskRunPreflight(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error)
+}
+
 type RunPreflight struct {
 	TenantID                   uuid.UUID
 	TeamID                     uuid.UUID

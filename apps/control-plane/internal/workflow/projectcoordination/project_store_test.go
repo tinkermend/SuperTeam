@@ -2668,12 +2668,18 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 			HandoffContract:           map[string]any{"required_refs": []any{"test_report"}},
 		}},
 	}
-	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
-		RunID:         runID,
-		RuntimeTaskID: runtimeTaskID,
-		RuntimeNodeID: runtimeNodeID,
-		NodeID:        "node-1",
-	}}
+	starter := &projectTaskRunStarterFake{
+		result: StartProjectTaskRunResult{
+			RunID:         runID,
+			RuntimeTaskID: runtimeTaskID,
+			RuntimeNodeID: runtimeNodeID,
+			NodeID:        "node-1",
+			ProviderType:  "codex",
+		},
+		onStart: func(req StartProjectTaskRunRequest) {
+			require.NotContains(t, req.Metadata, "provider_type")
+		},
+	}
 	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
 
 	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
@@ -2689,6 +2695,10 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	if req.DispatchUserID != ownerID || req.DigitalEmployeeID != employeeID || req.IdempotencyKey != "project-task:"+taskID.String() {
 		t.Fatalf("unexpected run start request: %#v", req)
 	}
+	require.Equal(t, projectID, req.ProjectID)
+	require.Equal(t, demandID, req.DemandID)
+	require.Equal(t, taskID, req.ProjectTaskID)
+	require.Equal(t, attemptID, req.ProjectTaskAttemptID)
 	if !strings.Contains(req.Prompt, "需要确认测试报告") || !strings.Contains(req.Prompt, taskID.String()) {
 		t.Fatalf("expected prompt to include demand content and task id, got %q", req.Prompt)
 	}
@@ -2731,6 +2741,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, runtimeTaskID.String(), queueReq.ExecutionContextPacket["runtime_task_id"])
 	require.Equal(t, runtimeNodeID.String(), queueReq.ExecutionContextPacket["runtime_node_id"])
 	require.Equal(t, "node-1", queueReq.ExecutionContextPacket["node_id"])
+	require.Equal(t, "codex", queueReq.ExecutionContextPacket["provider_type"])
 	require.Equal(t, "queued", repo.tasks[0].Status)
 	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, int32(1), repo.tasks[0].AttemptCount)

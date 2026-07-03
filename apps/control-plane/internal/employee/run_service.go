@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -128,6 +129,84 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
+	return s.createAndDispatchRun(ctx, req, objective, prompt, preflight)
+}
+
+func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error) {
+	objective := strings.TrimSpace(req.Objective)
+	prompt := strings.TrimSpace(req.Prompt)
+	if req.TenantID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ProjectID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	if req.DemandID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: demand_id is required", ErrInvalidInput)
+	}
+	if req.ProjectTaskID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project_task_id is required", ErrInvalidInput)
+	}
+	if req.ProjectTaskAttemptID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project_task_attempt_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.DispatchUserID == uuid.Nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: dispatch_user_id is required", ErrInvalidInput)
+	}
+	if objective == "" {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: objective is required", ErrInvalidInput)
+	}
+
+	preflightRepo, ok := s.repository.(ProjectTaskRunPreflightRepository)
+	if !ok {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project task run preflight repository is required", ErrInvalidInput)
+	}
+	projectPreflight, err := preflightRepo.GetProjectTaskRunPreflight(ctx, req.TenantID, req.ProjectID, req.DigitalEmployeeID)
+	if err != nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("get project task run preflight: %w", err)
+	}
+	if err := validateProjectTaskRunPreflight(projectPreflight); err != nil {
+		return StartProjectTaskRunResult{}, err
+	}
+	if err := validateDailyTokenBudget(RunPreflight{BudgetPolicy: projectPreflight.BudgetPolicy, TodayTokenUsage: projectPreflight.TodayTokenUsage}); err != nil {
+		return StartProjectTaskRunResult{}, err
+	}
+	if !s.dispatcher.IsConnected(projectPreflight.NodeID) {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
+	}
+
+	compatExecutionInstanceID := projectTaskCompatibilityExecutionInstanceID(req)
+	agentHomeDir := projectTaskAgentHomeDir(projectPreflight.WorkspaceBaseDir, req.ProjectID, req.ProjectTaskID, req.ProjectTaskAttemptID, req.DigitalEmployeeID)
+	preflight := projectTaskRunPreflightToRunPreflight(projectPreflight, compatExecutionInstanceID, agentHomeDir)
+	createReq := CreateDigitalEmployeeRunRequest{
+		TenantID:          req.TenantID,
+		UserID:            req.DispatchUserID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		Objective:         objective,
+		Prompt:            prompt,
+		IdempotencyKey:    trimmedOptionalValue(&req.IdempotencyKey),
+		TimeoutSec:        req.TimeoutSec,
+		GraceSec:          req.GraceSec,
+		Metadata:          projectTaskRunMetadata(req, projectPreflight),
+	}
+
+	run, err := s.createAndDispatchRun(ctx, createReq, objective, prompt, preflight)
+	if err != nil {
+		return StartProjectTaskRunResult{}, err
+	}
+	return StartProjectTaskRunResult{
+		RunID:         run.ID,
+		RuntimeTaskID: run.TaskID,
+		RuntimeNodeID: run.RuntimeNodeID,
+		NodeID:        run.NodeID,
+		ProviderType:  run.ProviderType,
+	}, nil
+}
+
+func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight) (*DigitalEmployeeRun, error) {
 	idempotencyKey := trimmedOptionalValue(req.IdempotencyKey)
 	fingerprint, err := computeRunIdempotencyFingerprint(req, objective, prompt, preflight)
 	if err != nil {
@@ -751,6 +830,113 @@ func validateRunPreflight(preflight RunPreflight) error {
 		return fmt.Errorf("%w: provider capability must be healthy", ErrProviderUnavailable)
 	}
 	return nil
+}
+
+func validateProjectTaskRunPreflight(preflight StartProjectTaskRunPreflight) error {
+	if preflight.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: preflight tenant_id is required", ErrInvalidInput)
+	}
+	if preflight.DigitalEmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: preflight digital_employee_id is required", ErrInvalidInput)
+	}
+	if preflight.DigitalEmployeeStatus != DigitalEmployeeStatusReady && preflight.DigitalEmployeeStatus != DigitalEmployeeStatusActive {
+		return fmt.Errorf("%w: digital employee must be ready or active", ErrInvalidInput)
+	}
+	if !preflight.HasApprovedEffectiveConfig {
+		return fmt.Errorf("%w: approved effective config is required", ErrEffectiveConfigRequired)
+	}
+	if preflight.RuntimeNodeID == uuid.Nil {
+		return fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(preflight.NodeID) == "" {
+		return fmt.Errorf("%w: node_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(preflight.ProviderType) == "" {
+		return fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
+	}
+	if !preflight.RuntimeSessionActive {
+		return fmt.Errorf("%w: runtime session is not active", ErrRuntimeUnavailable)
+	}
+	if !preflight.ProviderHealthy {
+		return fmt.Errorf("%w: provider capability must be healthy", ErrProviderUnavailable)
+	}
+	if strings.TrimSpace(preflight.WorkspaceBaseDir) == "" {
+		return fmt.Errorf("%w: workspace_base_dir is required", ErrInvalidInput)
+	}
+	return nil
+}
+
+func projectTaskRunPreflightToRunPreflight(preflight StartProjectTaskRunPreflight, executionInstanceID uuid.UUID, agentHomeDir string) RunPreflight {
+	return RunPreflight{
+		TenantID:                   preflight.TenantID,
+		TeamID:                     preflight.TeamID,
+		DigitalEmployeeID:          preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus:      preflight.DigitalEmployeeStatus,
+		ExecutionInstanceID:        executionInstanceID,
+		ExecutionStatus:            ExecutionInstanceStatusReady,
+		RuntimeNodeID:              preflight.RuntimeNodeID,
+		NodeID:                     preflight.NodeID,
+		ProviderType:               preflight.ProviderType,
+		AgentHomeDir:               agentHomeDir,
+		RuntimeSelector:            map[string]any{"source": "project_placement", "node_id": preflight.NodeID},
+		SessionPolicy:              map[string]any{"resume": true},
+		WorkspacePolicy:            map[string]any{"workspace_base_dir": preflight.WorkspaceBaseDir},
+		BudgetPolicy:               cloneMap(preflight.BudgetPolicy),
+		TodayTokenUsage:            preflight.TodayTokenUsage,
+		BusinessTimezone:           preflight.BusinessTimezone,
+		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
+		ProviderHealthy:            preflight.ProviderHealthy,
+	}
+}
+
+func projectTaskAgentHomeDir(baseDir string, projectID, projectTaskID, attemptID, employeeID uuid.UUID) string {
+	return path.Join(
+		strings.TrimSpace(baseDir),
+		"project-tasks",
+		projectID.String(),
+		projectTaskID.String(),
+		attemptID.String(),
+		"employees",
+		employeeID.String(),
+	)
+}
+
+func projectTaskCompatibilityExecutionInstanceID(req StartProjectTaskRunRequest) uuid.UUID {
+	seed := strings.Join([]string{
+		req.TenantID.String(),
+		req.ProjectID.String(),
+		req.ProjectTaskID.String(),
+		req.ProjectTaskAttemptID.String(),
+		req.DigitalEmployeeID.String(),
+	}, ":")
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(seed))
+}
+
+func projectTaskRunMetadata(req StartProjectTaskRunRequest, preflight StartProjectTaskRunPreflight) map[string]any {
+	metadata := cloneMap(req.Metadata)
+	metadata["source"] = "project_task_dispatch"
+	metadata["project_id"] = req.ProjectID.String()
+	metadata["demand_id"] = req.DemandID.String()
+	metadata["project_task_id"] = req.ProjectTaskID.String()
+	metadata["project_task_attempt_id"] = req.ProjectTaskAttemptID.String()
+	metadata["digital_employee_id"] = req.DigitalEmployeeID.String()
+	metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
+	metadata["node_id"] = preflight.NodeID
+	metadata["provider_type"] = preflight.ProviderType
+	if strings.TrimSpace(req.WorkspaceMode) != "" {
+		metadata["workspace_mode"] = strings.TrimSpace(req.WorkspaceMode)
+	}
+	if strings.TrimSpace(req.BaseRef) != "" {
+		metadata["base_ref"] = strings.TrimSpace(req.BaseRef)
+	}
+	if req.ProjectGit != nil {
+		metadata["project_git"] = cloneMap(req.ProjectGit)
+	}
+	version, _ := metadata["execution_context_packet_version"].(string)
+	if strings.TrimSpace(version) == "" {
+		metadata["execution_context_packet_version"] = "v1"
+	}
+	return metadata
 }
 
 func validateDailyTokenBudget(preflight RunPreflight) error {
