@@ -12,6 +12,7 @@ import {
   type V3Tone,
 } from "@/components/superteam";
 import type { ProjectArtifactRef, ProjectReportRef } from "@/lib/api/projects";
+import { statusLabel } from "@/lib/status-labels";
 
 type ProjectArtifactReportPanelProps = {
   artifacts?: ProjectArtifactRef[];
@@ -54,7 +55,7 @@ export function ProjectArtifactReportPanel({
             <tr>
               <V3Th className="min-w-[180px]">标题</V3Th>
               <V3Th>类型</V3Th>
-              <V3Th>Retention Status</V3Th>
+              <V3Th>保留状态</V3Th>
               <V3Th className="min-w-[220px]">Object Ref</V3Th>
             </tr>
           </thead>
@@ -76,7 +77,7 @@ export function ProjectArtifactReportPanel({
                   <V3Td className="text-v3-ink-2">{artifact.artifact_type}</V3Td>
                   <V3Td>
                     <StatusPill tone={retentionTone(artifact.retention_status)}>
-                      {artifact.retention_status}
+                      {statusLabel(artifact.retention_status)}
                     </StatusPill>
                   </V3Td>
                   <V3Td className="max-w-[280px]">

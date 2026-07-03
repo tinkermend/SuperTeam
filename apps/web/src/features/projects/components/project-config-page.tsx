@@ -48,6 +48,7 @@ import {
   type ProjectTask,
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
+import { statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
@@ -845,7 +846,7 @@ function MembersPanel({
                   {member.principal_type}
                 </V3Td>
                 <V3Td>
-                  <StatusPill tone="mute">{member.status}</StatusPill>
+                  <StatusPill tone="mute">{genericStatusLabel(member.status)}</StatusPill>
                 </V3Td>
               </V3Tr>
             ))
@@ -891,7 +892,7 @@ function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
                   </p>
                 </V3Td>
                 <V3Td>
-                  <StatusPill tone="info">{task.status}</StatusPill>
+                  <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
                 </V3Td>
                 <V3Td className="min-w-[320px] whitespace-normal text-v3-ink-2">
                   <p className="line-clamp-2">{task.summary || "暂无摘要"}</p>

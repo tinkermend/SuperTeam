@@ -20,6 +20,7 @@ import type {
   ProjectArchivePreview,
   ProjectArchiveSnapshot,
 } from "@/lib/api/projects";
+import { statusLabel } from "@/lib/status-labels";
 
 type ProjectArchivePanelProps = {
   archivePreview?: ProjectArchivePreview;
@@ -212,7 +213,7 @@ export function ProjectArchivePanel({
                   <V3Td className="text-v3-ink-2">{snapshot.snapshot_type}</V3Td>
                   <V3Td>
                     <StatusPill tone={snapshot.status === "completed" ? "ok" : "warn"}>
-                      {snapshot.status}
+                      {statusLabel(snapshot.status)}
                     </StatusPill>
                   </V3Td>
                   <V3Td className="max-w-[280px]">

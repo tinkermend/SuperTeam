@@ -563,7 +563,7 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
     await expect.element(screen.getByText("巡检报告")).toBeVisible();
-    await expect.element(screen.getByText("queued · codex · runtime-b")).toBeVisible();
+    await expect.element(screen.getByText("排队中 · codex · runtime-b")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看巡检任务 Runtime" })).toBeVisible();
 
     // 通过弹窗关闭按钮收起弹窗

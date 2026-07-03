@@ -59,9 +59,15 @@ import type {
   ProjectTaskGraph,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
+import {
+  decisionStatusLabel,
+  dispatchGateStatusLabel,
+  statusLabel,
+  taskStatusLabel,
+} from "@/lib/status-labels";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
-import { PlanTaskGraph } from "./plan-task-graph";
+import { PlanGraphCanvas } from "./plan-graph-canvas";
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -244,6 +250,19 @@ export function ProjectOperationalDetail({
         </div>
       </SoftCard>
 
+      {taskGraph && taskGraph.nodes.length > 0 ? (
+        <section className="grid gap-2" data-testid="project-plan-graph-section">
+          <div className="flex items-center gap-2 px-1">
+            <ClipboardList className="size-4 text-v3-ink-2" />
+            <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
+            <StatusPill tone="mute">
+              {planTaskGraphSummaryLabel(taskGraph)}
+            </StatusPill>
+          </div>
+          <PlanGraphCanvas graph={taskGraph} />
+        </section>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="grid min-w-0 gap-4">
           <SoftCard className="overflow-hidden">
@@ -280,7 +299,7 @@ export function ProjectOperationalDetail({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
-                        {latestPlanRevision.status}
+                        {statusLabel(latestPlanRevision.status)}
                       </StatusPill>
                       {latestPlanRevision.review_required ? (
                         <StatusPill tone="warn">需人工复核</StatusPill>
@@ -385,21 +404,7 @@ export function ProjectOperationalDetail({
             )}
           </SoftCard>
 
-          {taskGraph && taskGraph.nodes.length > 0 ? (
-            <div className="grid gap-2">
-              <div className="flex items-center gap-2 px-1">
-                <ClipboardList className="size-4 text-v3-ink-2" />
-                <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
-                <StatusPill tone="mute">{`${taskGraph.nodes.length} 项`}</StatusPill>
-              </div>
-              <PlanTaskGraph
-                nodes={taskGraph.nodes}
-                edges={taskGraph.edges}
-                employees={taskGraph.employees}
-                stageSummaries={taskGraph.stage_summaries}
-              />
-            </div>
-          ) : (
+          {taskGraph && taskGraph.nodes.length > 0 ? null : (
             <SoftCard className="overflow-hidden">
               <PanelHeader
                 icon={<ClipboardList />}
@@ -416,7 +421,7 @@ export function ProjectOperationalDetail({
                         <p className="min-w-0 truncate text-sm font-medium">
                           {task.title}
                         </p>
-                        <StatusPill tone="info">{task.status}</StatusPill>
+                        <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
                       </div>
                       <p className="line-clamp-2 text-xs text-v3-ink-2">
                         {task.summary || "等待系统分派数字员工执行。"}
@@ -476,7 +481,7 @@ export function ProjectOperationalDetail({
                         </p>
                       </div>
                       <StatusPill tone={decisionTone(decision.status_snapshot)}>
-                        {decision.status_snapshot}
+                        {decisionStatusLabel(decision.status_snapshot)}
                       </StatusPill>
                     </div>
                     <DecisionRequestActions
@@ -651,14 +656,6 @@ function DispatchGateSummary({
   if (!latest) {
     return null;
   }
-  const statusLabel: Record<DispatchGateStatus, string> = {
-    blocked: "Blocked",
-    passed: "Passed",
-    replan_required: "Replan required",
-    retry_later: "Retry later",
-    waiting_human: "Waiting human",
-  };
-
   return (
     <SoftCard className="p-4">
       <div className="flex items-center justify-between gap-3">
@@ -669,7 +666,7 @@ function DispatchGateSummary({
           ) : null}
         </div>
         <StatusPill tone={dispatchGateTone(latest.status)}>
-          {statusLabel[latest.status]}
+          {dispatchGateStatusLabel(latest.status)}
         </StatusPill>
       </div>
       {latest.blockers.length > 0 ? (
@@ -683,7 +680,7 @@ function DispatchGateSummary({
                 {blocker.key}
               </span>
               <span className="text-xs">
-                {blocker.retryable ? "retryable" : blocker.severity}
+                {blocker.retryable ? "可重试" : statusLabel(blocker.severity)}
               </span>
             </li>
           ))}
@@ -691,7 +688,7 @@ function DispatchGateSummary({
       ) : null}
       {latest.retry_after ? (
         <p className="mt-2 text-xs text-v3-ink-2">
-          Retry after {formatDateTime(latest.retry_after)}
+          {`下次重试 ${formatDateTime(latest.retry_after)}`}
         </p>
       ) : null}
     </SoftCard>
@@ -764,7 +761,7 @@ function AdvancedCoordinationJobs({
                 <p className="min-w-0 truncate text-sm font-medium">
                   {job.job_type}
                 </p>
-                <StatusPill tone={jobTone(job.status)}>{job.status}</StatusPill>
+                <StatusPill tone={jobTone(job.status)}>{statusLabel(job.status)}</StatusPill>
               </div>
               <p className="truncate text-xs text-v3-ink-2">
                 {job.workflow_id}
@@ -845,7 +842,7 @@ function AdvancedTransferRequests({
                   {request.reason}
                 </p>
                 <StatusPill tone={requestTone(request.status)}>
-                  {request.status}
+                  {statusLabel(request.status)}
                 </StatusPill>
               </div>
               <RuntimeMeta
@@ -1384,6 +1381,31 @@ function stringArrayField(record: Record<string, unknown>, key: string) {
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter((value) => value.trim() !== "")));
+}
+
+function planTaskGraphSummaryLabel(graph: ProjectTaskGraph): string {
+  const stageCount = new Set(graph.nodes.map((node) => node.stage_index ?? -1)).size;
+  const assignedEmployeeIds = new Set(
+    graph.nodes.flatMap((node) =>
+      node.assigned_digital_employee_id ? [node.assigned_digital_employee_id] : [],
+    ),
+  );
+  const employeeCount = assignedEmployeeIds.size;
+  const tasksByStage = new Map<number, string[]>();
+
+  for (const node of graph.nodes) {
+    const stage = node.stage_index ?? -1;
+    const list = tasksByStage.get(stage) ?? [];
+    list.push(node.assigned_digital_employee_id ?? "");
+    tasksByStage.set(stage, list);
+  }
+
+  const maxParallel = Math.max(
+    0,
+    ...[...tasksByStage.values()].map((ids) => new Set(ids.filter(Boolean)).size),
+  );
+
+  return `${employeeCount} 位同事 · 分 ${stageCount} 个阶段协作 · 最多 ${maxParallel} 人同时进行`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

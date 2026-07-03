@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
+import { decisionStatusLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 
 type WorkflowNodeInspectorProps = {
   graph: ProjectTaskGraph;
@@ -34,7 +35,7 @@ export function WorkflowNodeInspector({
           {selectedTask.title}
         </h3>
         <StatusPill className="shrink-0" tone={taskStatusTone(selectedTask.status)}>
-          {selectedTask.status}
+          {taskStatusLabel(selectedTask.status)}
         </StatusPill>
       </div>
 
@@ -61,7 +62,7 @@ export function WorkflowNodeInspector({
           label="Run"
           value={
             run
-              ? [run.status, run.provider_type, run.runtime_node_summary]
+              ? [runStatusLabel(run.status), run.provider_type, run.runtime_node_summary]
                   .filter(Boolean)
                   .join(" · ")
               : "暂无运行记录"
@@ -85,7 +86,9 @@ export function WorkflowNodeInspector({
           label="人工决策"
           value={
             decisions.length > 0
-              ? decisions.map((decision) => decision.status_snapshot).join(" · ")
+              ? decisions
+                  .map((decision) => decisionStatusLabel(decision.status_snapshot))
+                  .join(" · ")
               : "暂无人工决策"
           }
         />

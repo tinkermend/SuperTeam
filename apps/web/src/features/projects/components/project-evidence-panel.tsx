@@ -21,6 +21,7 @@ import type {
   ProjectEvidenceRef,
   ProjectEvidenceVerificationStatus,
 } from "@/lib/api/projects";
+import { evidenceStatusLabel } from "@/lib/status-labels";
 
 type ProjectEvidencePanelProps = {
   evidence?: ProjectEvidenceRef[];
@@ -164,7 +165,7 @@ export function ProjectEvidencePanel({
                   </V3Td>
                   <V3Td>
                     <StatusPill tone={evidenceStatusTone(item.verification_status)}>
-                      {item.verification_status}
+                      {evidenceStatusLabel(item.verification_status)}
                     </StatusPill>
                   </V3Td>
                   <V3Td className="text-right">

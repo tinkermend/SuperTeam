@@ -11,6 +11,7 @@ import type {
   ProjectTaskGraphEmployee,
   ProjectTaskGraphStageSummary,
 } from "@/lib/api/projects";
+import { taskStatusLabel } from "@/lib/status-labels";
 
 /**
  * PlanTaskGraph renders a coordination plan as a stage-grouped task list with
@@ -103,7 +104,7 @@ export function PlanTaskGraph({
                     <div className="flex items-start justify-between gap-3">
                       <p className="line-clamp-2 text-sm font-medium text-v3-ink">{node.title}</p>
                       <StatusPill tone={taskStatusTone(node.status)}>
-                        {node.status}
+                        {taskStatusLabel(node.status)}
                       </StatusPill>
                     </div>
                     {node.summary ? (

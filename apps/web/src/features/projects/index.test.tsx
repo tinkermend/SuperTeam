@@ -1248,6 +1248,20 @@ describe("ProjectsView", () => {
     expect(layout.className).not.toContain("2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]");
   });
 
+  it("keeps the project detail route full-width for the plan graph", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeInTheDocument();
+
+    const layout = screen.getByTestId("projects-risk-home-layout").element();
+    expect(layout.className).not.toContain("grid-cols");
+    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="plan-graph-canvas"]')).toBeTruthy();
+  });
+
   it("keeps project filtering and v3 pagination controls working", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
@@ -1293,7 +1307,9 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
 
     await expect.element(screen.getByText("Dispatch gate 技术详情")).toBeInTheDocument();
-    await expect.element(screen.getByText("Retry later")).toBeInTheDocument();
+    await expect
+      .element(screen.getByText("稍后重试", { exact: true }))
+      .toBeInTheDocument();
     await expect.element(screen.getByText("runtime.node_offline")).toBeInTheDocument();
 
     await vi.waitFor(() => {

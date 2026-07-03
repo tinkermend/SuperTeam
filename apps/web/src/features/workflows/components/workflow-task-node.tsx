@@ -1,24 +1,40 @@
 import type { Node, NodeProps } from "@xyflow/react";
 import { Handle, Position } from "@xyflow/react";
-import { Bot, ShieldCheck } from "lucide-react";
+import { Bot, GitBranch, ShieldCheck } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SoftCard, StatusPill } from "@/components/superteam";
+import { runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import type {
   WorkflowAttachmentNodeData,
+  WorkflowStageLabelNodeData,
   WorkflowTaskNodeData,
 } from "../workflow-graph-adapter";
 import { taskStatusTone } from "./workflow-node-inspector";
+
+const EMPLOYEE_ROLE_LABELS: Record<string, string> = {
+  backend_engineer: "后端开发",
+  database_admin: "数据库管理",
+  devops_engineer: "DevOps 运维",
+  frontend_engineer: "前端开发",
+  fullstack_engineer: "全栈开发",
+  general_engineer: "通用工程执行",
+  implementation_engineer: "实施工程师",
+  qa_engineer: "测试工程",
+  security_engineer: "安全工程",
+};
 
 export function WorkflowTaskNode({
   data,
   selected,
 }: NodeProps<Node<WorkflowTaskNodeData, "workflowTask">>) {
   const showHumanApproval = data.requiresHumanApproval || data.hasPendingDecision;
+  const employeeRole = employeeRoleLabel(data.employeeRole);
 
   return (
     <SoftCard
       className={cn(
-        "relative w-[300px] border border-v3-line p-3",
+        "relative w-[360px] border border-v3-line p-4 shadow-v3-soft",
         selected && "border-v3-brand ring-2 ring-v3-brand/20",
       )}
     >
@@ -28,25 +44,38 @@ export function WorkflowTaskNode({
         position={Position.Top}
         type="target"
       />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="line-clamp-2 text-sm font-bold tracking-normal text-v3-ink">
-            {data.title}
+      <div className="flex items-start gap-3.5">
+        <Avatar className="size-14 shrink-0 border-2 border-white shadow-v3-soft ring-1 ring-v3-line">
+          {data.avatarAsset ? (
+            <AvatarImage src={data.avatarAsset.thumbnailUrl} alt={data.employeeName || "数字员工"} />
+          ) : null}
+          <AvatarFallback className="bg-v3-brand-soft text-v3-brand">
+            <Bot className="size-6" />
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-v3-ink">
+            {data.employeeName || "未分配"}
           </p>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-v3-ink-2">
-            {data.summary || "暂无任务摘要"}
-          </p>
+          {employeeRole ? (
+            <p className="mt-1 truncate text-xs text-v3-ink-3">{employeeRole}</p>
+          ) : null}
         </div>
         <StatusPill className="shrink-0" tone={taskStatusTone(data.status)}>
-          {data.status}
+          {taskStatusLabel(data.status)}
         </StatusPill>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <StatusPill className="max-w-full" showDot={false} tone="mute">
-          <Bot className="size-3.5 shrink-0" />
-          <span className="truncate">{data.employeeName || "未分配"}</span>
-        </StatusPill>
+      <div className="mt-3">
+        <p className="line-clamp-2 text-[15px] font-bold leading-6 tracking-normal text-v3-ink">
+          {data.title}
+        </p>
+        <p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-v3-ink-2">
+          {data.summary || "暂无任务摘要"}
+        </p>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
         {data.riskLevel ? (
           <StatusPill className="max-w-full" showDot={false} tone="danger">
             <ShieldCheck className="size-3.5 shrink-0" />
@@ -56,7 +85,7 @@ export function WorkflowTaskNode({
         {data.runStatus ? (
           <StatusPill className="max-w-full" showDot={false} tone="info">
             <Bot className="size-3.5 shrink-0" />
-            <span className="truncate">Run {data.runStatus}</span>
+            <span className="truncate">运行 {runStatusLabel(data.runStatus)}</span>
           </StatusPill>
         ) : null}
         {showHumanApproval ? (
@@ -76,6 +105,12 @@ export function WorkflowTaskNode({
       />
     </SoftCard>
   );
+}
+
+function employeeRoleLabel(role: string | undefined): string | undefined {
+  if (!role) return undefined;
+  const normalized = role.trim().toLowerCase();
+  return EMPLOYEE_ROLE_LABELS[normalized] ?? role;
 }
 
 export function WorkflowAttachmentNode({
@@ -100,7 +135,7 @@ export function WorkflowAttachmentNode({
         <div className="min-w-0">
           <p className="line-clamp-2 font-semibold text-v3-ink">{data.title}</p>
           <StatusPill className="mt-2" tone={taskStatusTone(data.status)}>
-            {data.status}
+            {taskStatusLabel(data.status)}
           </StatusPill>
         </div>
       </div>
@@ -110,6 +145,25 @@ export function WorkflowAttachmentNode({
         position={Position.Bottom}
         type="source"
       />
+    </SoftCard>
+  );
+}
+
+export function WorkflowStageLabelNode({
+  data,
+}: NodeProps<Node<WorkflowStageLabelNodeData, "workflowStageLabel">>) {
+  return (
+    <SoftCard
+      className="flex w-[168px] items-center justify-center rounded-full border border-v3-line bg-white/92 px-3 py-1.5 shadow-sm"
+      data-testid="workflow-stage-label"
+    >
+      <GitBranch className="mr-1.5 size-3.5 shrink-0 text-v3-artifact" />
+      <div className="min-w-0 text-center">
+        <p className="truncate text-[11px] font-bold leading-4 text-v3-ink">{data.title}</p>
+        <p className="truncate text-[10px] leading-3 text-v3-ink-3">
+          {`${data.taskCount} 任务 · ${data.employeeCount} 人`}
+        </p>
+      </div>
     </SoftCard>
   );
 }

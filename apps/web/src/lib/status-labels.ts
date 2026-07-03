@@ -1,0 +1,86 @@
+import type {
+  DispatchGateStatus,
+  ProjectAcceptanceStatus,
+  ProjectEvidenceVerificationStatus,
+} from "@/lib/api/projects";
+
+const STATUS_LABELS: Record<string, string> = {
+  accepted: "已接受",
+  active: "启用中",
+  assigned: "已分派",
+  blocked: "已阻塞",
+  cancelled: "已取消",
+  cancelling: "取消中",
+  completed: "已完成",
+  decomposed: "已分解",
+  decomposing: "分解中",
+  disabled: "已禁用",
+  dispatchable: "可分派",
+  dispatching: "分派中",
+  done: "已完成",
+  draft: "草稿",
+  failed: "失败",
+  in_progress: "进行中",
+  linked: "已关联",
+  needs_more_evidence: "需要补充证据",
+  open: "待处理",
+  partially_accepted: "部分接受",
+  passed: "已通过",
+  pending: "待处理",
+  pending_review: "待复核",
+  planned: "已计划",
+  planning: "规划中",
+  planning_pending: "待计划",
+  queued: "排队中",
+  ready: "就绪",
+  rejected: "已拒绝",
+  replan_required: "需要重新计划",
+  requested: "已请求",
+  resolved: "已解决",
+  retry_later: "稍后重试",
+  retained: "已保留",
+  retention_pending: "保留待处理",
+  running: "运行中",
+  started: "已开始",
+  submitted: "已提交",
+  succeeded: "已成功",
+  success: "已完成",
+  superseded: "已被替代",
+  timed_out: "已超时",
+  unknown: "未知",
+  verified: "已验证",
+  waiting: "等待中",
+  waiting_human: "等待人工",
+};
+
+export function statusLabel(status: string | undefined): string {
+  if (!status) {
+    return "未知";
+  }
+  const normalized = status.trim().toLowerCase();
+  return STATUS_LABELS[normalized] ?? status;
+}
+
+export function taskStatusLabel(status: string | undefined): string {
+  return statusLabel(status);
+}
+
+export function runStatusLabel(status: string | undefined): string {
+  return statusLabel(status);
+}
+
+export function decisionStatusLabel(status: string | undefined): string {
+  return statusLabel(status);
+}
+
+export function dispatchGateStatusLabel(status: DispatchGateStatus): string {
+  return statusLabel(status);
+}
+
+export function evidenceStatusLabel(status: ProjectEvidenceVerificationStatus): string {
+  return statusLabel(status);
+}
+
+export function acceptanceStatusLabel(status: ProjectAcceptanceStatus): string {
+  return statusLabel(status);
+}

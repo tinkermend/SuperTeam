@@ -14,6 +14,7 @@ import type {
   ProjectExecutionTrace,
   ProjectExecutionTraceAttempt,
 } from "@/lib/api/projects";
+import { statusLabel } from "@/lib/status-labels";
 
 type ProjectExecutionTracePanelProps = {
   errorMessage?: string;
@@ -130,7 +131,7 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold text-v3-ink">执行尝试 {attempt.attempt_no}</h4>
             <StatusPill tone={attemptStatusTone(attempt.status)}>
-              {attempt.status}
+              {statusLabel(attempt.status)}
             </StatusPill>
             {attempt.retryable !== undefined ? (
               <StatusPill tone={attempt.retryable ? "warn" : "mute"}>

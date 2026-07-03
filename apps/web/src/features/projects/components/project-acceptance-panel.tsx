@@ -14,6 +14,7 @@ import type {
   CreateProjectAcceptanceInput,
   ProjectAcceptanceRecord,
 } from "@/lib/api/projects";
+import { acceptanceStatusLabel } from "@/lib/status-labels";
 
 type ProjectAcceptancePanelProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -66,7 +67,7 @@ export function ProjectAcceptancePanel({
           </div>
           {acceptance ? (
             <StatusPill tone={acceptanceTone(acceptance.status)}>
-              {acceptance.status}
+              {acceptanceStatusLabel(acceptance.status)}
             </StatusPill>
           ) : (
             <StatusPill tone="mute">未提交</StatusPill>

@@ -51,6 +51,8 @@ describe("PlanTaskGraph", () => {
     await expect.element(screen.getByText("阶段 2")).toBeInTheDocument();
     await expect.element(screen.getByText("需求分析")).toBeInTheDocument();
     await expect.element(screen.getByText("方案实现")).toBeInTheDocument();
+    await expect.element(screen.getByText("待处理").first()).toBeInTheDocument();
+    expect(screen.container.textContent).not.toContain("pending");
     expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBe(2);
     expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
   });

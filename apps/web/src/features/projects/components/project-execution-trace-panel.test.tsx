@@ -130,7 +130,7 @@ describe("ProjectExecutionTracePanel", () => {
       .element(screen.getByLabelText("执行尝试 1"))
       .toBeInTheDocument();
     await expect
-      .element(screen.getByText("failed", { exact: true }))
+      .element(screen.getByText("失败", { exact: true }))
       .toBeInTheDocument();
     await expect.element(screen.getByText("读取任务上下文")).toBeInTheDocument();
     await expect.element(screen.getByText("生成失败诊断")).toBeInTheDocument();
