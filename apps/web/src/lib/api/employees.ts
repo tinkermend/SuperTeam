@@ -220,6 +220,47 @@ export type DigitalEmployeeRunEvent = {
   metadata?: Record<string, unknown>;
 };
 
+export type DigitalEmployeeRunStats = {
+  total_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  success_rate: number | null;
+  avg_duration_sec: number | null;
+  p90_duration_sec: number | null;
+  last_7d_count: number;
+  prev_7d_count: number;
+};
+
+export type DigitalEmployeeRunFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type DigitalEmployeeRunListItem = DigitalEmployeeRun & {
+  task_title: string;
+  project_id?: string;
+  project_name?: string;
+  work_product_count: number;
+  duration_sec?: number;
+};
+
+export type DigitalEmployeeRunListResult = {
+  items: DigitalEmployeeRunListItem[];
+  total_count: number;
+  filters: {
+    statuses: DigitalEmployeeRunFilterOption[];
+    projects: DigitalEmployeeRunFilterOption[];
+  };
+};
+
+export type ListDigitalEmployeeRunsFilter = RunPagination & {
+  status?: DigitalEmployeeRunStatus[];
+  project_id?: string;
+  from?: string;
+  to?: string;
+};
+
 export type DigitalEmployeeOverviewExecutionStatus =
   | "missing"
   | "provisioning"
@@ -886,14 +927,44 @@ export function createDigitalEmployeeRun(
 export function listDigitalEmployeeRuns(
   options: ApiClientOptions,
   employeeId: string,
-  pagination: RunPagination = {},
-): Promise<DigitalEmployeeRun[]> {
+  filter: ListDigitalEmployeeRunsFilter = {},
+): Promise<DigitalEmployeeRunListResult> {
   const encodedEmployeeId = encodePathSegment(employeeId);
+  const params = new URLSearchParams();
+  if (filter.limit !== undefined) params.set("limit", String(filter.limit));
+  if (filter.offset !== undefined) params.set("offset", String(filter.offset));
+  if (filter.status?.length) params.set("status", filter.status.join(","));
+  if (filter.project_id) params.set("project_id", filter.project_id);
+  if (filter.from) params.set("from", filter.from);
+  if (filter.to) params.set("to", filter.to);
+  const query = params.toString();
 
-  return getJson<DigitalEmployeeRun[]>(
+  return getJson<DigitalEmployeeRunListResult>(
     options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/runs${paginationQuery(pagination)}`,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs${query ? `?${query}` : ""}`,
     "digital employee runs",
+  );
+}
+
+export function getDigitalEmployeeRunStats(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployeeRunStats> {
+  return getJson<DigitalEmployeeRunStats>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/run-stats`,
+    "digital employee run stats",
+  );
+}
+
+export function getCurrentDigitalEmployeeEffectiveConfig(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployeeEffectiveConfig> {
+  return getJson<DigitalEmployeeEffectiveConfig>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/effective-config`,
+    "digital employee effective config",
   );
 }
 
