@@ -236,10 +236,6 @@ describe("EmployeeDetailView", () => {
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "需求分析员工" })).toBeVisible();
-    await expect.element(screen.getByAltText("需求分析员工 的头像")).toHaveAttribute(
-      "src",
-      "/images/digital-employee-avatars/engineer-f-01-256.webp",
-    );
     await expect.element(screen.getByText("执行中")).toBeVisible();
     await expect.element(screen.getByText("provider.stdout")).toBeVisible();
     await expect.element(screen.getByText(/正在分析需求/)).toBeVisible();

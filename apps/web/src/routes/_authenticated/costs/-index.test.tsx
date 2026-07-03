@@ -1,12 +1,10 @@
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import type { CostSummary } from "@/lib/api/costs";
 import { Route } from "./index";
 
-const projectId = "11111111-1111-4111-8111-111111111111";
-const routerState = vi.hoisted(() => ({
-  search: {} as Record<string, string>,
-}));
 type TestFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 vi.mock("@tanstack/react-router", async () => {
@@ -16,7 +14,24 @@ vi.mock("@tanstack/react-router", async () => {
 
   return {
     ...actual,
-    useSearch: () => routerState.search,
+    Link: ({
+      children,
+      params,
+      to,
+      ...props
+    }: {
+      children: ReactNode;
+      params?: Record<string, string>;
+      to: string;
+    }) => {
+      const href =
+        to === "/employees/$employeeId" ? `/employees/${params?.employeeId ?? "$employeeId"}` : to;
+      return (
+        <a {...props} href={href}>
+          {children}
+        </a>
+      );
+    },
   };
 });
 
@@ -43,35 +58,30 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function createCostsFetcher() {
-  const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+const summaryFixture: CostSummary = {
+  period_start: "2026-06-03",
+  period_end: "2026-07-03",
+  total_tokens: 1800,
+  total_runs: 5,
+  by_employee: [
+    {
+      employee_id: "11111111-1111-4111-8111-111111111111",
+      employee_name: "需求分析员工",
+      provider_type: "claude-code",
+      run_count: 5,
+      total_tokens: 1800,
+    },
+  ],
+  by_provider: { "claude-code": 1800 },
+  daily_trend: [],
+};
+
+function createCostsFetcher(summary: CostSummary = summaryFixture) {
+  return vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = new URL(String(input));
 
-    if (url.pathname === `/api/v1/projects/${projectId}/budget-ledger`) {
-      return jsonResponse([
-        {
-          actual_cost: "0.32",
-          actual_tokens: 1800,
-          cost_type: "inference",
-          estimated_cost: "0.40",
-          estimated_tokens: 2200,
-          id: "budget-ledger-1",
-          project_id: projectId,
-          reason: "route decision execution",
-          source: "runtime-agent",
-          tenant_id: "tenant-1",
-        },
-      ]);
-    }
-
-    if (url.pathname === `/api/v1/projects/${projectId}/budget-summary`) {
-      return jsonResponse({
-        actual_cost: "0.32",
-        actual_tokens: 1800,
-        estimated_cost: "0.40",
-        estimated_tokens: 2200,
-        ledger_count: 1,
-      });
+    if (url.pathname === "/api/v1/costs/summary") {
+      return jsonResponse(summary);
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
@@ -81,13 +91,9 @@ function createCostsFetcher() {
       status: 404,
     });
   });
-
-  return fetcher;
 }
 
-async function renderCostsRoute(
-  fetcher: TestFetcher = vi.fn(async () => new Response(null)),
-) {
+async function renderCostsRoute(fetcher: TestFetcher) {
   vi.stubGlobal("fetch", fetcher);
   const CostsComponent = Route.options.component!;
 
@@ -99,34 +105,34 @@ async function renderCostsRoute(
 }
 
 describe("CostsRoute", () => {
-  it("renders the no-project state with v3 surfaces only", async () => {
-    routerState.search = {};
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(null),
-    );
-    const screen = await renderCostsRoute(fetcher);
-
-    await expect.element(screen.getByRole("heading", { name: "成本中心" })).toBeVisible();
-    await expect.element(screen.getByText("请选择项目后查看成本")).toBeVisible();
-
-    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it("passes project_id through to the budget panel with v3 surfaces", async () => {
-    routerState.search = { project_id: projectId };
+  it("renders the token usage summary with v3 surfaces", async () => {
     const fetcher = createCostsFetcher();
     const screen = await renderCostsRoute(fetcher);
 
-    await expect.element(screen.getByText("预算流水")).toBeVisible();
-    await expect.element(screen.getByText("route decision execution")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "成本管理" })).toBeVisible();
+    await expect.element(screen.getByText("数字员工 Token 用量统计")).toBeVisible();
+    await expect.element(screen.getByText("需求分析员工")).toBeVisible();
 
     await vi.waitFor(() => {
       const requestedPaths = fetcher.mock.calls.map((call) => new URL(String(call[0])).pathname);
-      expect(requestedPaths).toContain(`/api/v1/projects/${projectId}/budget-ledger`);
-      expect(requestedPaths).toContain(`/api/v1/projects/${projectId}/budget-summary`);
+      expect(requestedPaths).toContain("/api/v1/costs/summary");
     });
+    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+  });
+
+  it("renders the empty state when there is no execution data", async () => {
+    const fetcher = createCostsFetcher({
+      ...summaryFixture,
+      total_tokens: 0,
+      total_runs: 0,
+      by_employee: [],
+      by_provider: {},
+    });
+    const screen = await renderCostsRoute(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "成本管理" })).toBeVisible();
+    await expect.element(screen.getByText("暂无执行数据")).toBeVisible();
+    expect(document.body.querySelector('[data-slot="v3-empty-state"]')).not.toBeNull();
   });
 });

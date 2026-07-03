@@ -645,7 +645,7 @@ describe("SkillsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
     await expect.element(screen.getByRole("dialog", { name: "安装技能" })).toBeVisible();
 
-    expect(countFetcherCalls(fetcher, "/api/v1/digital-employees")).toBe(1);
+    expect(countFetcherCalls(fetcher, "/api/v1/digital-employees/overview")).toBe(1);
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(0);
 
     await userEvent.click(screen.getByRole("radio", { name: /团队/ }));
@@ -707,7 +707,7 @@ describe("SkillsView", () => {
     await expect.element(blockedTarget.getByText("需求澄清 Agent")).toBeVisible();
     await expect.element(blockedTarget.getByText("runtime_not_connected")).toBeVisible();
     await expect.element(dialog.getByText("绑定的 Runtime 节点已失活，请先重新 provision 数字员工")).toBeVisible();
-    await expect.element(dialog.getByText("codex · node-a")).toBeVisible();
+    await expect.element(blockedTarget.getByText("codex · node-a")).toBeVisible();
   });
 
   it("shows the bound runtime node summary before submitting an employee install", async () => {
