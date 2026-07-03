@@ -640,6 +640,8 @@ type ProjectTaskAttempt struct {
 	ProjectTaskID                 uuid.UUID
 	AttemptNo                     int32
 	Status                        string
+	DigitalEmployeeID             *uuid.UUID
+	ProviderType                  *string
 	DigitalEmployeeRunID          *uuid.UUID
 	RuntimeTaskID                 *uuid.UUID
 	RuntimeNodeID                 *uuid.UUID
@@ -691,6 +693,7 @@ type QueueProjectTaskRequest struct {
 	ProjectTaskID                 uuid.UUID
 	ProjectTaskAttemptID          *uuid.UUID
 	DigitalEmployeeID             uuid.UUID
+	ProviderType                  string
 	DigitalEmployeeRunID          *uuid.UUID
 	RuntimeTaskID                 *uuid.UUID
 	RuntimeNodeID                 *uuid.UUID
@@ -706,6 +709,40 @@ type QueueProjectTaskResult struct {
 	Task    ProjectTask
 	Attempt ProjectTaskAttempt
 	Event   ProjectEvent
+}
+
+type BindProjectTaskAttemptRunRequest struct {
+	TenantID                      uuid.UUID
+	ProjectID                     uuid.UUID
+	ProjectTaskID                 uuid.UUID
+	AttemptID                     uuid.UUID
+	DigitalEmployeeRunID          uuid.UUID
+	RuntimeTaskID                 uuid.UUID
+	RuntimeNodeID                 uuid.UUID
+	ProviderType                  string
+	ExecutionContextPacket        map[string]any
+	ExecutionContextPacketVersion string
+}
+
+type ProjectTaskAttemptRunBindingResult struct {
+	Task    ProjectTask
+	Attempt ProjectTaskAttempt
+}
+
+type FailQueuedProjectTaskAttemptDispatchStartRequest struct {
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	ProjectTaskID          uuid.UUID
+	AttemptID              uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	LeaseToken             string
+	FailureSummary         string
+	FailureFamily          string
+	Retryable              bool
+	RetryNotBefore         *time.Time
+	RestoreTaskStatus      string
+	ClearCurrentAttempt    bool
+	DispatchFailureEventID *uuid.UUID
 }
 
 type HumanActionRequest map[string]any

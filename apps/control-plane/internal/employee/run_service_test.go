@@ -245,6 +245,171 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
+func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000901")
+	demandID := uuid.MustParse("00000000-0000-0000-0000-000000000902")
+	projectTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000903")
+	attemptID := uuid.MustParse("00000000-0000-0000-0000-000000000904")
+	dispatchUserID := uuid.MustParse("00000000-0000-0000-0000-000000000905")
+	idempotencyKey := "project-task:" + projectTaskID.String() + ":attempt:1:dispatch"
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	result, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            projectID,
+		DemandID:             demandID,
+		ProjectTaskID:        projectTaskID,
+		ProjectTaskAttemptID: attemptID,
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       dispatchUserID,
+		Objective:            "整理上线证据",
+		Prompt:               "请完成项目任务",
+		IdempotencyKey:       idempotencyKey,
+		Metadata:             map[string]any{"source": "project_task_dispatch"},
+		WorkspaceMode:        "branch",
+		BaseRef:              "main",
+		ProjectGit:           map[string]any{"url": "https://example.com/acme/app.git", "default_branch": "main"},
+	})
+
+	if err != nil {
+		t.Fatalf("start project task run: %v", err)
+	}
+	if result.RunID == uuid.Nil || result.RuntimeTaskID == uuid.Nil {
+		t.Fatalf("expected run ids in result, got %#v", result)
+	}
+	if result.RuntimeNodeID != repo.projectTaskPreflight.RuntimeNodeID || result.NodeID != repo.projectTaskPreflight.NodeID || result.ProviderType != "codex" {
+		t.Fatalf("expected placement/provider result from preflight, got %#v", result)
+	}
+	if repo.projectTaskPreflightProjectID != projectID || repo.projectTaskPreflightEmployeeID != runServiceEmployeeID {
+		t.Fatalf("expected project task preflight lookup by project/employee, got project=%s employee=%s", repo.projectTaskPreflightProjectID, repo.projectTaskPreflightEmployeeID)
+	}
+	if len(repo.createRunRequests) != 1 {
+		t.Fatalf("expected one created run, got %d", len(repo.createRunRequests))
+	}
+	createReq := repo.createRunRequests[0]
+	if createReq.IdempotencyKey == nil || *createReq.IdempotencyKey != idempotencyKey {
+		t.Fatalf("expected attempt-level idempotency key %q, got %#v", idempotencyKey, createReq.IdempotencyKey)
+	}
+	if createReq.ProviderType != "codex" || createReq.RuntimeNodeID != repo.projectTaskPreflight.RuntimeNodeID || createReq.NodeID != repo.projectTaskPreflight.NodeID {
+		t.Fatalf("expected create run to use project placement/provider, got %#v", createReq)
+	}
+	if createReq.ExecutionInstanceID == uuid.Nil {
+		t.Fatalf("expected compatibility execution_instance_id")
+	}
+	if createReq.ExecutionInstanceID == runServiceExecutionInstanceID {
+		t.Fatalf("project task run must not reuse legacy execution instance binding")
+	}
+	if createReq.ExecutionInstanceID != projectTaskCompatibilityExecutionInstanceID(StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        projectTaskID,
+		ProjectTaskAttemptID: attemptID,
+		DigitalEmployeeID:    runServiceEmployeeID,
+	}) {
+		t.Fatalf("expected deterministic compatibility execution_instance_id, got %s", createReq.ExecutionInstanceID)
+	}
+	if _, err := uuid.Parse(createReq.ExecutionInstanceID.String()); err != nil {
+		t.Fatalf("expected uuid-like execution_instance_id, got %s", createReq.ExecutionInstanceID)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	if payload["provider_type"] != "codex" || payload["runtime_node_id"] != repo.projectTaskPreflight.RuntimeNodeID.String() || payload["node_id"] != repo.projectTaskPreflight.NodeID {
+		t.Fatalf("expected start payload to use project placement/provider, got %#v", payload)
+	}
+	agentHome, _ := payload["agent_home_dir"].(string)
+	for _, want := range []string{
+		repo.projectTaskPreflight.WorkspaceBaseDir,
+		projectID.String(),
+		projectTaskID.String(),
+		attemptID.String(),
+		runServiceEmployeeID.String(),
+	} {
+		if !strings.Contains(agentHome, want) {
+			t.Fatalf("expected derived agent_home_dir %q to contain %q", agentHome, want)
+		}
+	}
+	if payload["execution_instance_id"] != createReq.ExecutionInstanceID.String() {
+		t.Fatalf("expected payload execution_instance_id to match created run, got %#v want %s", payload["execution_instance_id"], createReq.ExecutionInstanceID)
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["source"] != "project_task_dispatch" || metadata["project_task_attempt_id"] != attemptID.String() {
+		t.Fatalf("expected project task dispatch attempt metadata, got %#v", metadata)
+	}
+	if metadata["provider_type"] != "codex" {
+		t.Fatalf("expected provider_type metadata, got %#v", metadata)
+	}
+}
+
+func TestValidateProjectTaskRunPreflightRejectsMissingPlacementSessionProviderAndWorkspaceBase(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(*StartProjectTaskRunPreflight)
+		wantError error
+		contains  string
+	}{
+		{
+			name: "missing placement",
+			mutate: func(preflight *StartProjectTaskRunPreflight) {
+				preflight.RuntimeNodeID = uuid.Nil
+			},
+			wantError: ErrInvalidInput,
+			contains:  "runtime_node_id",
+		},
+		{
+			name: "missing session",
+			mutate: func(preflight *StartProjectTaskRunPreflight) {
+				preflight.RuntimeSessionActive = false
+			},
+			wantError: ErrRuntimeUnavailable,
+			contains:  "runtime session",
+		},
+		{
+			name: "missing provider",
+			mutate: func(preflight *StartProjectTaskRunPreflight) {
+				preflight.ProviderType = ""
+			},
+			wantError: ErrInvalidInput,
+			contains:  "provider_type",
+		},
+		{
+			name: "unhealthy provider",
+			mutate: func(preflight *StartProjectTaskRunPreflight) {
+				preflight.ProviderHealthy = false
+			},
+			wantError: ErrProviderUnavailable,
+			contains:  "provider capability",
+		},
+		{
+			name: "missing workspace base",
+			mutate: func(preflight *StartProjectTaskRunPreflight) {
+				preflight.WorkspaceBaseDir = ""
+			},
+			wantError: ErrInvalidInput,
+			contains:  "workspace_base_dir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preflight := validProjectTaskRunServicePreflight()
+			tt.mutate(&preflight)
+			err := validateProjectTaskRunPreflight(preflight)
+			if !errors.Is(err, tt.wantError) || !strings.Contains(err.Error(), tt.contains) {
+				t.Fatalf("expected %v containing %q, got %v", tt.wantError, tt.contains, err)
+			}
+		})
+	}
+}
+
 func TestRunServiceCreateRunRejectsSkillWithMissingToolDependency(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
@@ -1208,6 +1373,24 @@ func validRunServicePreflight() RunPreflight {
 	}
 }
 
+func validProjectTaskRunServicePreflight() StartProjectTaskRunPreflight {
+	return StartProjectTaskRunPreflight{
+		TenantID:                   runServiceTenantID,
+		TeamID:                     uuid.New(),
+		DigitalEmployeeID:          runServiceEmployeeID,
+		DigitalEmployeeStatus:      DigitalEmployeeStatusReady,
+		RuntimeNodeID:              runServiceRuntimeNodeID,
+		NodeID:                     "runtime-project-placement",
+		ProviderType:               "codex",
+		WorkspaceBaseDir:           "/var/lib/superteam/workspaces",
+		BudgetPolicy:               map[string]any{"daily_token_limit": float64(100000)},
+		BusinessTimezone:           "Asia/Shanghai",
+		HasApprovedEffectiveConfig: true,
+		RuntimeSessionActive:       true,
+		ProviderHealthy:            true,
+	}
+}
+
 func validRunServiceRun(status DigitalEmployeeRunStatus) *DigitalEmployeeRun {
 	timeoutSec := int32(120)
 	graceSec := int32(15)
@@ -1265,25 +1448,28 @@ var (
 )
 
 type fakeRunServiceRepository struct {
-	preflight             RunPreflight
-	activeRun             *DigitalEmployeeRun
-	run                   *DigitalEmployeeRun
-	runs                  []*DigitalEmployeeRun
-	createdRun            *DigitalEmployeeRun
-	createdRunCount       int
-	createRunRequests     []CreateRunRecordRequest
-	statusUpdates         []UpdateRunStatusRequest
-	events                []CreateRunEventRecordRequest
-	runEvents             []RuntimeCommandEventWriteback
-	workspaceFilesForSync []WorkspaceFileForSyncRecord
-	listRunEventsTaskID   uuid.UUID
-	listRunEventsRunID    uuid.UUID
-	commandReceipt        *RuntimeCommandReceipt
-	commandReceipts       []CreateRuntimeCommandReceiptRequest
-	receiptUpdates        []UpdateRuntimeCommandReceiptRequest
-	runtimeSkills         []skill.SkillRuntimeRecord
-	runtimeCapabilities   []cpruntime.RuntimeCapability
-	runtimeEnv            []RuntimeEnvironmentVariablePayload
+	preflight                      RunPreflight
+	projectTaskPreflight           StartProjectTaskRunPreflight
+	projectTaskPreflightProjectID  uuid.UUID
+	projectTaskPreflightEmployeeID uuid.UUID
+	activeRun                      *DigitalEmployeeRun
+	run                            *DigitalEmployeeRun
+	runs                           []*DigitalEmployeeRun
+	createdRun                     *DigitalEmployeeRun
+	createdRunCount                int
+	createRunRequests              []CreateRunRecordRequest
+	statusUpdates                  []UpdateRunStatusRequest
+	events                         []CreateRunEventRecordRequest
+	runEvents                      []RuntimeCommandEventWriteback
+	workspaceFilesForSync          []WorkspaceFileForSyncRecord
+	listRunEventsTaskID            uuid.UUID
+	listRunEventsRunID             uuid.UUID
+	commandReceipt                 *RuntimeCommandReceipt
+	commandReceipts                []CreateRuntimeCommandReceiptRequest
+	receiptUpdates                 []UpdateRuntimeCommandReceiptRequest
+	runtimeSkills                  []skill.SkillRuntimeRecord
+	runtimeCapabilities            []cpruntime.RuntimeCapability
+	runtimeEnv                     []RuntimeEnvironmentVariablePayload
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -1292,6 +1478,12 @@ func newFakeRunServiceRepository() *fakeRunServiceRepository {
 
 func (f *fakeRunServiceRepository) GetRunPreflight(context.Context, uuid.UUID, uuid.UUID) (RunPreflight, error) {
 	return f.preflight, nil
+}
+
+func (f *fakeRunServiceRepository) GetProjectTaskRunPreflight(_ context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
+	f.projectTaskPreflightProjectID = projectID
+	f.projectTaskPreflightEmployeeID = employeeID
+	return f.projectTaskPreflight, nil
 }
 
 func (f *fakeRunServiceRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {

@@ -37,7 +37,6 @@ import {
 import type {
   DigitalEmployeeAvatarAsset,
   DigitalEmployeeCreateOptions,
-  DigitalEmployeeRuntimeProviderOption,
   DigitalEmployeeTypeOption,
 } from "@/lib/api/employees";
 import {
@@ -62,7 +61,7 @@ import {
   templateSearchText,
 } from "./template-utils";
 
-const configSteps = ["身份", "能力", "治理", "运行"] as const;
+const configSteps = ["身份", "能力", "治理", "执行器"] as const;
 type StepName = (typeof configSteps)[number];
 type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
 
@@ -195,29 +194,27 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }, [avatarAssets.data, draft.avatar_asset_id]);
 
   useEffect(() => {
-    const runtimeOptions = createOptions.data?.runtime_provider_options ?? [];
-    const availableOptions = runtimeOptions.filter((option) => option.available);
+    const candidateProviders = providerCandidates(createOptions.data);
     setDraft((current) => {
-      if (availableOptions.length === 1) {
+      if (candidateProviders.length === 1 && current.provider_type !== candidateProviders[0]) {
         return {
           ...current,
-          runtime_binding: runtimeBinding(availableOptions[0]),
-          provider_type: availableOptions[0].provider_type,
-          runtime_node_id: availableOptions[0].runtime_node_id,
+          runtime_binding: "",
+          runtime_node_id: "",
+          provider_type: candidateProviders[0],
         };
       }
-      if (current.runtime_binding && !availableOptions.some((option) => runtimeBinding(option) === current.runtime_binding)) {
+      if (current.provider_type && !candidateProviders.includes(current.provider_type)) {
         return { ...current, provider_type: "", runtime_binding: "", runtime_node_id: "" };
       }
       return current;
     });
-  }, [createOptions.data?.runtime_provider_options]);
+  }, [createOptions.data]);
 
   const createEmployee = useMutation({
     mutationFn: () => {
-      const runtimeOption = findRuntimeOption(createOptions.data, draft.runtime_binding);
-      if (!runtimeOption) {
-        throw new Error("请选择 Runtime");
+      if (!draft.provider_type) {
+        throw new Error("请选择 Provider");
       }
 
       return createDigitalEmployee(
@@ -240,8 +237,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           approval_policy_override: draft.approval_policy_override,
           budget_policy: budgetPolicyFromDraft(draft),
           output_contract_addendum: {},
-          runtime_node_id: runtimeOption.runtime_node_id,
-          provider_type: runtimeOption.provider_type,
+          provider_type: draft.provider_type,
           session_policy: { mode: "reuse_latest" },
           workspace_policy: {},
           environment_variables: draft.environment_variables
@@ -281,12 +277,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setDraft((current) => applyTypeDefaults(current, nextType));
   }
 
-  function selectRuntime(runtimeBindingValue: string) {
-    const runtimeOption = findRuntimeOption(createOptions.data, runtimeBindingValue);
+  function selectProvider(providerType: string) {
     updateDraft({
-      provider_type: runtimeOption?.provider_type ?? "",
-      runtime_binding: runtimeBindingValue,
-      runtime_node_id: runtimeOption?.runtime_node_id ?? "",
+      provider_type: providerType,
+      runtime_binding: "",
+      runtime_node_id: "",
     });
     setErrors((current) => ({ ...current, runtime: undefined }));
   }
@@ -329,7 +324,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function enterConfirmCreation() {
-    const nextErrors = validateStep("运行", draft);
+    const nextErrors = validateStep("执行器", draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
       setFlowStep("confirm");
@@ -374,7 +369,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择模板，再分步完成预检、配置和确认。"
-          : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"
+          : "按模板默认值补齐职责画像、能力边界、治理策略和执行器。"
         }
         actions={
           <div className="flex flex-wrap gap-2">
@@ -468,7 +463,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 <div>
                   <h2 className="text-lg font-semibold">员工画像蓝图</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    按职责目标、可用能力、治理边界和运行绑定完成员工画像。
+                    按职责目标、可用能力、治理边界和执行器完成员工画像。
                   </p>
                 </div>
                 <StepTabs currentStep={currentStep} />
@@ -514,12 +509,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     onUpdate={updateDraft}
                   />
                 ) : null}
-                {!teams.isLoading && !createOptions.isLoading && currentStep === "运行" ? (
-                  <RuntimeStep
+                {!teams.isLoading && !createOptions.isLoading && currentStep === "执行器" ? (
+                  <ProviderStep
                     draft={draft}
                     error={errors.runtime}
                     options={createOptions.data}
-                    onSelectRuntime={selectRuntime}
+                    onSelectProvider={selectProvider}
                     onUpdate={updateDraft}
                   />
                 ) : null}
@@ -562,7 +557,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     avatarAssets.isLoading ||
                     avatarAssets.isError ||
                     !draft.avatar_asset_id ||
-                    !draft.runtime_binding
+                    !draft.provider_type
                   }
                   onClick={enterConfirmCreation}
                   type="button"
@@ -587,7 +582,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             createError={createEmployee.error}
             creating={createEmployee.isPending}
             draft={draft}
-            options={createOptions.data}
             selectedTeamName={selectedTeam?.name}
             selectedType={selectedType}
             onBack={() => setFlowStep("configure")}
@@ -602,7 +596,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
     { key: "template", title: "选择模板", description: "选择创建方式和专业模板" },
-    { key: "preflight", title: "配置预检", description: "检查治理策略和运行条件" },
+    { key: "preflight", title: "配置预检", description: "检查治理策略和执行器候选" },
     { key: "configure", title: "完成配置", description: "进入详细配置向导" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
@@ -668,7 +662,7 @@ function CreationPathPanel() {
     },
     {
       title: "空白自定义",
-      description: "从空白身份开始逐项配置职责、能力和运行绑定。",
+      description: "从空白身份开始逐项配置职责、能力和执行器。",
       icon: FileText,
       active: false,
       badge: "暂未开放",
@@ -749,7 +743,7 @@ function TemplateStepSummary({
         <div>
           <h2 className="text-base font-semibold">已选模板摘要</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            模板只生成配置草稿；运行绑定和最终创建会在后续步骤确认。
+            模板只生成配置草稿；Provider 和最终创建会在后续步骤确认。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
@@ -979,7 +973,7 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
   return (
     <section className="rounded-md border bg-card/95 p-4 shadow-xs">
       <h2 className="text-base font-semibold">预检项目</h2>
-      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与运行条件。</p>
+      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与执行器候选。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
           <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
@@ -1024,7 +1018,7 @@ function PreflightStep({
         <div className="border-b p-4">
           <h2 className="text-lg font-semibold">配置预检</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            先确认后端创建候选返回的治理策略、模板和运行条件，再进入详细配置。
+            先确认后端创建候选返回的治理策略、模板和执行器候选，再进入详细配置。
           </p>
         </div>
         <div className="grid gap-4 p-4">
@@ -1039,7 +1033,7 @@ function PreflightStep({
           ) : (
             <Alert>
               <AlertTitle>预检通过</AlertTitle>
-              <AlertDescription>可以继续补充员工身份、能力、治理和运行绑定。</AlertDescription>
+              <AlertDescription>可以继续补充员工身份、能力、治理和执行器。</AlertDescription>
             </Alert>
           )}
         </div>
@@ -1135,7 +1129,7 @@ function SelectedTemplateSummary({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">已选模板</p>
           <h2 className="mt-1 text-lg font-semibold">{selectedType?.label ?? (draft.employee_type || "未选择模板")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {selectedType?.description ?? "模板只作为初始草稿来源，运行绑定在最后一步选择。"}
+            {selectedType?.description ?? "模板只作为初始草稿来源，Provider 在最后一步选择。"}
           </p>
         </div>
         <Button onClick={onChangeTemplate} type="button" variant="outline">
@@ -1162,8 +1156,7 @@ function CreationPreflightPanel({
   selectedType?: DigitalEmployeeTypeOption;
 }) {
   const checks = options?.creation_checks ?? [];
-  const runtimeOptions = options?.runtime_provider_options ?? [];
-  const availableRuntimeCount = runtimeOptions.filter((option) => option.available).length;
+  const providers = providerCandidates(options);
 
   return (
     <aside className="grid content-start gap-4">
@@ -1217,7 +1210,7 @@ function CreationPreflightPanel({
             label="能力选择"
             value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
           />
-          <SummaryItem label="Runtime" value={draft.runtime_binding || `${availableRuntimeCount}/${runtimeOptions.length} 可用`} />
+          <SummaryItem label="Provider" value={draft.provider_type || `${providers.length} 个候选`} />
         </div>
       </section>
 
@@ -1228,7 +1221,7 @@ function CreationPreflightPanel({
         </div>
         <div className="grid gap-2">
           <div>1. 写入身份与初始配置修订</div>
-          <div>2. 绑定 Runtime 执行实例</div>
+          <div>2. 记录 Provider，后续项目任务按 Runtime placement 调度</div>
           <div>3. 进入 ready，等待任务调度</div>
         </div>
       </section>
@@ -1240,7 +1233,6 @@ function ConfirmCreationStep({
   createError,
   creating,
   draft,
-  options,
   selectedTeamName,
   selectedType,
   onBack,
@@ -1249,16 +1241,11 @@ function ConfirmCreationStep({
   createError: unknown;
   creating: boolean;
   draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
   selectedTeamName?: string;
   selectedType?: DigitalEmployeeTypeOption;
   onBack: () => void;
   onSubmit: () => void;
 }) {
-  const runtimeOption = findRuntimeOption(options, draft.runtime_binding);
-  const runtimeLabel = runtimeOption
-    ? `${runtimeOption.runtime_name} / ${runtimeOption.provider_type}`
-    : draft.runtime_binding || "未选择";
   const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
 
   return (
@@ -1282,13 +1269,13 @@ function ConfirmCreationStep({
         </section>
 
         <section className="rounded-md border bg-background p-4">
-          <h3 className="text-sm font-semibold">能力与运行</h3>
+          <h3 className="text-sm font-semibold">能力与执行器</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
             />
-            <InlineSummary label="Runtime" value={runtimeLabel} />
+            <InlineSummary label="Provider" value={draft.provider_type || "未选择"} />
             <InlineSummary
               label="每日预算"
               value={draft.daily_token_limit.trim() ? `${draft.daily_token_limit.trim()} Token` : "无预算上限"}
@@ -1612,22 +1599,20 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RuntimeStep({
+function ProviderStep({
   draft,
   error,
   options,
-  onSelectRuntime,
+  onSelectProvider,
   onUpdate,
 }: {
   draft: WizardDraft;
   error?: string;
   options?: DigitalEmployeeCreateOptions;
-  onSelectRuntime: (runtimeBindingValue: string) => void;
+  onSelectProvider: (providerType: string) => void;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
-  const runtimeOptions = options?.runtime_provider_options ?? [];
-  const availableRuntimeOptions = runtimeOptions.filter((option) => option.available);
-  const unavailableRuntimeOptions = runtimeOptions.filter((option) => !option.available);
+  const providers = providerCandidates(options);
   const updateEnvironmentRow = (rowId: string, patch: Partial<EnvironmentVariableDraftRow>) => {
     onUpdate({
       environment_variables: draft.environment_variables.map((row) =>
@@ -1642,26 +1627,26 @@ function RuntimeStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">运行</h2>
-        <p className="text-sm text-muted-foreground">绑定 Runtime 和 Provider。多个可用 Runtime 时必须显式选择。</p>
+        <h2 className="text-lg font-semibold">执行器</h2>
+        <p className="text-sm text-muted-foreground">选择 Provider；Runtime 在线状态只作为后续项目任务调度预览。</p>
       </div>
-      <RadioGroup onValueChange={onSelectRuntime} value={draft.runtime_binding}>
+      <RadioGroup onValueChange={onSelectProvider} value={draft.provider_type}>
         <div className="grid gap-3">
-          {availableRuntimeOptions.map((option) => (
-            <RuntimeOption
-              key={runtimeBinding(option)}
-              onSelectRuntime={onSelectRuntime}
-              option={option}
+          {providers.map((providerType) => (
+            <ProviderOption
+              key={providerType}
+              options={options}
+              providerType={providerType}
+              onSelectProvider={onSelectProvider}
             />
           ))}
         </div>
       </RadioGroup>
-      {availableRuntimeOptions.length === 0 ? (
+      {providers.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
-          当前团队没有可绑定的 Runtime Provider，请检查 Runtime 在线状态、Provider 健康状态或团队运行策略。
+          当前团队治理没有返回可选 Provider，请检查团队能力边界配置。
         </p>
       ) : null}
-      <UnavailableRuntimeList options={unavailableRuntimeOptions} />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <section className="rounded-md border bg-card/80 p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1732,56 +1717,35 @@ function RuntimeStep({
   );
 }
 
-function RuntimeOption({
-  onSelectRuntime,
-  option,
+function ProviderOption({
+  onSelectProvider,
+  options,
+  providerType,
 }: {
-  onSelectRuntime: (runtimeBindingValue: string) => void;
-  option: DigitalEmployeeRuntimeProviderOption;
+  onSelectProvider: (providerType: string) => void;
+  options?: DigitalEmployeeCreateOptions;
+  providerType: string;
 }) {
-  const label = `${option.runtime_name} / ${option.provider_type}`;
-  const binding = runtimeBinding(option);
+  const preview = providerDispatchPreview(options, providerType);
 
   return (
     <label
       className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm"
       onClick={(event) => {
         event.preventDefault();
-        onSelectRuntime(binding);
+        onSelectProvider(providerType);
       }}
     >
-      <RadioGroupItem value={binding} />
+      <RadioGroupItem value={providerType} />
       <span className="min-w-0 flex-1">
-        <span className="block font-medium">{label}</span>
+        <span className="block font-medium">{providerType}</span>
         <span className="mt-1 block text-muted-foreground">
-          {option.node_id} · {option.runtime_status} · {option.provider_status} · {option.current_load}/{option.max_slots}
+          {preview.availableCount > 0
+            ? `${preview.availableCount}/${preview.matchingCount} 个 Runtime 当前可调度`
+            : "当前没有在线 Runtime 支持该 Provider，创建后需要配置项目 Runtime placement"}
         </span>
       </span>
     </label>
-  );
-}
-
-function UnavailableRuntimeList({ options }: { options: DigitalEmployeeRuntimeProviderOption[] }) {
-  if (options.length === 0) return null;
-
-  return (
-    <section className="rounded-md border border-dashed bg-muted/20 p-3">
-      <h3 className="text-sm font-medium">暂不可绑定的 Runtime</h3>
-      <div className="mt-3 grid gap-2">
-        {options.map((option) => (
-          <div className="rounded-md border bg-background/80 p-3 text-sm" key={runtimeBinding(option)}>
-            <div className="font-medium">
-              {option.runtime_name} / {option.provider_type}
-            </div>
-            <div className="mt-1 text-muted-foreground">
-              {option.node_id} · Runtime: {option.runtime_status} · Node: {option.health_status} · Provider:{" "}
-              {option.provider_status}
-            </div>
-            {option.disabled_reason ? <div className="mt-1 text-destructive">{option.disabled_reason}</div> : null}
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -1855,8 +1819,8 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     }
     return errors;
   }
-  if (step === "运行" && !draft.runtime_binding) {
-    return { runtime: "请选择 Runtime" };
+  if (step === "执行器" && !draft.provider_type) {
+    return { runtime: "请选择 Provider" };
   }
   return {};
 }
@@ -1865,7 +1829,7 @@ function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
   return {
     ...validateStep("身份", draft),
     ...validateStep("治理", draft),
-    ...validateStep("运行", draft),
+    ...validateStep("执行器", draft),
   };
 }
 
@@ -1875,14 +1839,27 @@ function budgetPolicyFromDraft(draft: WizardDraft) {
   return { daily_token_limit: Number(trimmed) };
 }
 
-function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeBindingValue: string) {
-  return options?.runtime_provider_options.find(
-    (option) => option.available && runtimeBinding(option) === runtimeBindingValue,
-  );
+function providerCandidates(options: DigitalEmployeeCreateOptions | undefined) {
+  const governanceValues = [
+    ...(options?.team_config.allowed_provider_types ?? []),
+    ...(options?.capability_options.provider_types ?? []),
+  ].filter((value) => value.trim());
+  const governanceSet = new Set(governanceValues);
+  const runtimeValues = options?.runtime_provider_options
+    .map((option) => option.provider_type)
+    .filter((value) => value.trim() && (governanceSet.size === 0 || governanceSet.has(value))) ?? [];
+  const values = [...governanceValues, ...runtimeValues];
+  return Array.from(new Set(values.filter((value) => value.trim()))).sort((left, right) => left.localeCompare(right));
 }
 
-function runtimeBinding(option: DigitalEmployeeRuntimeProviderOption) {
-  return `${option.runtime_node_id}:${option.provider_type}`;
+function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefined, providerType: string) {
+  const matchingOptions = (options?.runtime_provider_options ?? []).filter(
+    (option) => option.provider_type === providerType,
+  );
+  return {
+    matchingCount: matchingOptions.length,
+    availableCount: matchingOptions.filter((option) => option.available).length,
+  };
 }
 
 function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {

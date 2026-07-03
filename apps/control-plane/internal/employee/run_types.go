@@ -101,6 +101,50 @@ type CreateDigitalEmployeeRunRequest struct {
 	Metadata          map[string]any
 }
 
+type StartProjectTaskRunPreflight struct {
+	TenantID                   uuid.UUID
+	TeamID                     uuid.UUID
+	DigitalEmployeeID          uuid.UUID
+	DigitalEmployeeStatus      DigitalEmployeeStatus
+	RuntimeNodeID              uuid.UUID
+	NodeID                     string
+	ProviderType               string
+	WorkspaceBaseDir           string
+	BudgetPolicy               map[string]any
+	TodayTokenUsage            int32
+	BusinessTimezone           string
+	HasApprovedEffectiveConfig bool
+	RuntimeSessionActive       bool
+	ProviderHealthy            bool
+}
+
+type StartProjectTaskRunRequest struct {
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	DemandID             uuid.UUID
+	ProjectTaskID        uuid.UUID
+	ProjectTaskAttemptID uuid.UUID
+	DigitalEmployeeID    uuid.UUID
+	DispatchUserID       uuid.UUID
+	Objective            string
+	Prompt               string
+	IdempotencyKey       string
+	Metadata             map[string]any
+	WorkspaceMode        string
+	BaseRef              string
+	ProjectGit           map[string]any
+	TimeoutSec           *int32
+	GraceSec             *int32
+}
+
+type StartProjectTaskRunResult struct {
+	RunID         uuid.UUID
+	RuntimeTaskID uuid.UUID
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+	ProviderType  string
+}
+
 type StopDigitalEmployeeRunRequest struct {
 	TenantID          uuid.UUID
 	UserID            uuid.UUID

@@ -282,7 +282,7 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		addCheck("employee.snapshot_identity", "failed", map[string]any{"snapshot_employee_id": snapshot.Employee.ID.String(), "selected_employee_id": input.SelectedEmployeeID.String()})
 		addBlocker("employee.snapshot_mismatch", PreDispatchGateStatusReplanRequired, "hard", false, nil)
 		setStatus(PreDispatchGateStatusReplanRequired)
-	} else if !snapshot.Employee.IsProjectExecutor || snapshot.Employee.Status != "active" || !snapshot.Employee.PolicyAllowed {
+	} else if !snapshot.Employee.IsProjectExecutor || !preDispatchEmployeeStatusDispatchable(snapshot.Employee.Status) || !snapshot.Employee.PolicyAllowed {
 		addCheck("employee.dispatchable", "failed", map[string]any{"status": snapshot.Employee.Status, "project_executor": snapshot.Employee.IsProjectExecutor, "policy_allowed": snapshot.Employee.PolicyAllowed})
 		addBlocker("employee.not_dispatchable", PreDispatchGateStatusReplanRequired, "hard", false, nil)
 		setStatus(PreDispatchGateStatusReplanRequired)
@@ -450,6 +450,10 @@ func normalizeDispatchReason(reason string) string {
 
 func activeAttemptStatus(status string) bool {
 	return status == ProjectTaskAttemptStatusQueued || status == ProjectTaskAttemptStatusRunning || status == ProjectTaskAttemptStatusWaitingHuman
+}
+
+func preDispatchEmployeeStatusDispatchable(status string) bool {
+	return status == "ready" || status == "active"
 }
 
 func preDispatchGateStatusPriority(status string) int {

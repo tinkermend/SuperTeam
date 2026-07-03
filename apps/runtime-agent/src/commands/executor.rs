@@ -949,15 +949,6 @@ impl RuntimeCommandExecutor {
                 self.recorded_error(command_id, anyhow::anyhow!("agent_home_dir is required"))
             })?;
         let agent_home_dir = PathBuf::from(agent_home_dir_text);
-        if !agent_home_dir.exists() {
-            return Err(self.recorded_error(
-                command_id,
-                anyhow::anyhow!(
-                    "agent_home_dir does not exist: {}",
-                    agent_home_dir.display()
-                ),
-            ));
-        }
 
         let provider_home = provider_home_kind(&payload.provider_type)
             .map_err(|error| self.recorded_error(command_id, error))?;

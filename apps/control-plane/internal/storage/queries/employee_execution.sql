@@ -4,6 +4,7 @@ INSERT INTO digital_employees (
     team_id,
     owner_user_id,
     employee_type,
+    provider_type,
     name,
     role,
     description,
@@ -18,6 +19,7 @@ INSERT INTO digital_employees (
     sqlc.narg('team_id')::uuid,
     sqlc.arg('owner_user_id')::uuid,
     sqlc.arg('employee_type')::varchar,
+    sqlc.arg('provider_type')::varchar,
     sqlc.arg('name')::varchar,
     sqlc.arg('role')::varchar,
     sqlc.narg('description')::text,
@@ -680,6 +682,132 @@ LEFT JOIN LATERAL (
       AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
       AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
 ) today_usage ON true
+WHERE de.id = sqlc.arg('digital_employee_id')::uuid
+  AND de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL;
+
+-- name: GetProjectTaskRunPreflight :one
+SELECT
+    de.tenant_id,
+    de.team_id,
+    de.id AS digital_employee_id,
+    de.status AS digital_employee_status,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    de.provider_type,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        provider_capability.details ->> 'workspace_base_dir',
+        provider_capability.metadata ->> 'workspace_base_dir',
+        workspace_capability.details ->> 'workspace_base_dir',
+        workspace_capability.metadata ->> 'workspace_base_dir',
+        ''
+    )::text AS workspace_base_dir,
+    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
+    'Asia/Shanghai'::text AS business_timezone,
+    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
+    (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
+FROM digital_employees de
+JOIN project_placements pp
+  ON pp.tenant_id = de.tenant_id
+ AND pp.project_id = sqlc.arg('project_id')::uuid
+ AND pp.placement_status = 'active'
+ AND pp.released_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = pp.runtime_node_id
+ AND rn.tenant_id = de.tenant_id
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
+ AND rn.archived_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'provider'
+      AND rc.provider_type = de.provider_type
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+    LIMIT 1
+) provider_capability ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'workspace'
+      AND rc.available = true
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY
+      CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
+      rc.last_seen_at DESC NULLS LAST,
+      rc.updated_at DESC
+    LIMIT 1
+) workspace_capability ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rs.id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = de.tenant_id
+      AND rs.runtime_node_id = rn.id
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+    ORDER BY rs.last_seen_at DESC, rs.updated_at DESC
+    LIMIT 1
+) runtime_session ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        dec.id AS effective_config_id,
+        dec.effective_config_snapshot
+    FROM digital_employee_effective_configs dec
+    WHERE dec.tenant_id = de.tenant_id
+      AND dec.digital_employee_id = de.id
+      AND dec.status = 'approved'
+      AND dec.revoked_at IS NULL
+    ORDER BY dec.created_at DESC, dec.updated_at DESC
+    LIMIT 1
+) ec ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        LEAST(
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') ~ '^[0-9]+$'
+                        THEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '')::bigint
+                        ELSE 0
+                    END
+                ),
+                0
+            ),
+            2147483647
+        )::integer AS usage_tokens_today
+    FROM task_runs tr
+    WHERE tr.tenant_id = de.tenant_id
+      AND tr.digital_employee_id = de.id
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+) today_usage ON TRUE
 WHERE de.id = sqlc.arg('digital_employee_id')::uuid
   AND de.tenant_id = sqlc.arg('tenant_id')::uuid
   AND de.deleted_at IS NULL

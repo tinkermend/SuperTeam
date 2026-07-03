@@ -663,6 +663,59 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestQueueProjectTaskCreatesAttemptWithEmployeeAndProviderAuditFacts(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "记录执行身份",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	})
+
+	result, err := service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 taskID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		ProviderType:                  "codex",
+		DigitalEmployeeRunID:          &runID,
+		RuntimeTaskID:                 &runtimeTaskID,
+		RuntimeNodeID:                 &runtimeNodeID,
+		IdempotencyKey:                "project-task:" + taskID.String() + ":attempt:1:audit",
+		LeaseToken:                    "lease-token-1",
+		ExecutionContextPacket:        map[string]any{"project_id": projectID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Attempt.DigitalEmployeeID)
+	require.Equal(t, employeeID, *result.Attempt.DigitalEmployeeID)
+	require.NotNil(t, result.Attempt.ProviderType)
+	require.Equal(t, "codex", *result.Attempt.ProviderType)
+
+	readBack, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, attemptID)
+	require.NoError(t, err)
+	require.NotNil(t, readBack.DigitalEmployeeID)
+	require.Equal(t, employeeID, *readBack.DigitalEmployeeID)
+	require.NotNil(t, readBack.ProviderType)
+	require.Equal(t, "codex", *readBack.ProviderType)
+}
+
 func TestStartProjectTaskAttemptAdvancesRunning(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -8219,6 +8272,7 @@ func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest,
 	if packet == nil {
 		packet = map[string]any{}
 	}
+	packet = cloneMap(packet)
 	attemptID := uuid.New()
 	if req.ProjectTaskAttemptID != nil {
 		attemptID = *req.ProjectTaskAttemptID
@@ -8229,6 +8283,8 @@ func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest,
 		ProjectTaskID:                 req.ProjectTaskID,
 		AttemptNo:                     attemptNo,
 		Status:                        ProjectTaskAttemptStatusQueued,
+		DigitalEmployeeID:             &req.DigitalEmployeeID,
+		ProviderType:                  strPtrOrNil(req.ProviderType),
 		DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
 		RuntimeTaskID:                 req.RuntimeTaskID,
 		RuntimeNodeID:                 req.RuntimeNodeID,
@@ -8698,6 +8754,101 @@ func (r *memoryRepository) BindProjectTaskRun(ctx context.Context, req BindProje
 		return task, nil
 	}
 	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) BindProjectTaskAttemptRun(ctx context.Context, req BindProjectTaskAttemptRunRequest) (ProjectTaskAttemptRunBindingResult, error) {
+	attemptIndex := -1
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			attemptIndex = index
+			break
+		}
+	}
+	if attemptIndex == -1 {
+		return ProjectTaskAttemptRunBindingResult{}, ErrProjectNotFound
+	}
+	attempt := r.projectTaskAttempts[attemptIndex]
+	if attempt.Status != ProjectTaskAttemptStatusQueued {
+		return ProjectTaskAttemptRunBindingResult{}, ErrProjectConflict
+	}
+	if attempt.DigitalEmployeeRunID != nil && *attempt.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+		return ProjectTaskAttemptRunBindingResult{}, ErrProjectConflict
+	}
+	if attempt.RuntimeTaskID != nil && *attempt.RuntimeTaskID != req.RuntimeTaskID {
+		return ProjectTaskAttemptRunBindingResult{}, ErrProjectConflict
+	}
+	if attempt.RuntimeNodeID != nil && *attempt.RuntimeNodeID != req.RuntimeNodeID {
+		return ProjectTaskAttemptRunBindingResult{}, ErrProjectConflict
+	}
+	attempt.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+	attempt.RuntimeTaskID = &req.RuntimeTaskID
+	attempt.RuntimeNodeID = &req.RuntimeNodeID
+	attempt.ProviderType = strPtrOrNil(req.ProviderType)
+	attempt.ExecutionContextPacket = cloneMap(req.ExecutionContextPacket)
+	attempt.ExecutionContextPacketVersion = nonEmptyString(req.ExecutionContextPacketVersion, "v1")
+	attempt.UpdatedAt = time.Now().UTC()
+	r.projectTaskAttempts[attemptIndex] = attempt
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusQueued || task.CurrentAttemptID == nil || *task.CurrentAttemptID != req.AttemptID {
+			return ProjectTaskAttemptRunBindingResult{}, ErrProjectConflict
+		}
+		task.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+		task.RuntimeTaskID = &req.RuntimeTaskID
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		return ProjectTaskAttemptRunBindingResult{Task: task, Attempt: attempt}, nil
+	}
+	return ProjectTaskAttemptRunBindingResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) FailQueuedProjectTaskAttemptDispatchStart(ctx context.Context, req FailQueuedProjectTaskAttemptDispatchStartRequest) (ProjectTaskWritebackResult, error) {
+	attemptIndex := -1
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			attemptIndex = index
+			break
+		}
+	}
+	if attemptIndex == -1 {
+		return ProjectTaskWritebackResult{}, ErrProjectNotFound
+	}
+	attempt := r.projectTaskAttempts[attemptIndex]
+	if attempt.Status != ProjectTaskAttemptStatusQueued || attempt.LeaseToken != req.LeaseToken {
+		return ProjectTaskWritebackResult{}, ErrProjectConflict
+	}
+	now := time.Now().UTC()
+	attempt.Status = ProjectTaskAttemptStatusLost
+	attempt.FinishedAt = &now
+	attempt.Retryable = &req.Retryable
+	attempt.FailureFamily = strPtrOrNil(req.FailureFamily)
+	attempt.FailureMessage = strPtrOrNil(req.FailureSummary)
+	attempt.TerminalEventID = req.DispatchFailureEventID
+	attempt.UpdatedAt = now
+	r.projectTaskAttempts[attemptIndex] = attempt
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusQueued || task.CurrentAttemptID == nil || *task.CurrentAttemptID != req.AttemptID {
+			return ProjectTaskWritebackResult{}, ErrProjectConflict
+		}
+		task.Status = nonEmptyString(req.RestoreTaskStatus, ProjectTaskStatusPlanned)
+		if req.ClearCurrentAttempt {
+			task.CurrentAttemptID = nil
+		}
+		task.RetryNotBefore = req.RetryNotBefore
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		var event ProjectEvent
+		if req.DispatchFailureEventID != nil {
+			event, _ = r.GetProjectEvent(ctx, req.TenantID, req.ProjectID, *req.DispatchFailureEventID)
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	}
+	return ProjectTaskWritebackResult{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (bool, error) {

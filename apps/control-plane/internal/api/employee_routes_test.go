@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -202,6 +203,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		TeamID           string         `json:"team_id"`
 		OwnerUserID      string         `json:"owner_user_id"`
 		EmployeeType     string         `json:"employee_type"`
+		ProviderType     string         `json:"provider_type"`
 		PermissionPolicy map[string]any `json:"permission_policy"`
 		ContextPolicy    map[string]any `json:"context_policy"`
 		ApprovalPolicy   map[string]any `json:"approval_policy"`
@@ -215,8 +217,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if created.TeamID != teamID.String() {
 		t.Fatalf("expected response team %s, got %s", teamID, created.TeamID)
 	}
-	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" {
-		t.Fatalf("expected response owner/type %s/database_admin, got %#v", user.ID, created)
+	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" || created.ProviderType != "codex" {
+		t.Fatalf("expected response owner/type/provider %s/database_admin/codex, got %#v", user.ID, created)
 	}
 	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
 		t.Fatalf("expected policy objects in response, got %#v", created)
@@ -270,11 +272,14 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	upsertReq.AddCookie(cookie)
 	upsertResp := httptest.NewRecorder()
 	server.ServeHTTP(upsertResp, upsertReq)
-	if upsertResp.Code != http.StatusOK {
-		t.Fatalf("expected upsert execution instance to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
+	if upsertResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected legacy execution instance bind to be rejected, got %d: %s", upsertResp.Code, upsertResp.Body.String())
 	}
 	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != bindRuntimeNodeID {
 		t.Fatalf("expected bind tenant/runtime %s/%s, got %s/%s", expectedTenantID, bindRuntimeNodeID, service.bindReq.TenantID, service.bindReq.RuntimeNodeID)
+	}
+	if !strings.Contains(upsertResp.Body.String(), "digital employees are not runtime-bound") {
+		t.Fatalf("expected runtime binding rejection body, got %s", upsertResp.Body.String())
 	}
 
 	spoofedConfigApproverID := uuid.New()
@@ -333,6 +338,48 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
 		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
+	}
+}
+
+func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(nil, nil, authService, nil, &routeAuthorizer{allowed: true})
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	teamID := uuid.New()
+	body := `{
+		"team_id":"` + teamID.String() + `",
+		"employee_type":"database_admin",
+		"name":"Database administrator",
+		"avatar_asset_id":"engineer-m-01",
+		"role":"database_admin",
+		"provider_type":"codex"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(req, user.SessionToken)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected create digital employee without runtime to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.createReq.RuntimeNodeID != uuid.Nil {
+		t.Fatalf("expected missing runtime_node_id to stay nil, got %s", service.createReq.RuntimeNodeID)
+	}
+	if service.createReq.ProviderType != "codex" {
+		t.Fatalf("expected provider_type codex, got %q", service.createReq.ProviderType)
+	}
+	if strings.Contains(resp.Body.String(), "runtime_node_id") {
+		t.Fatalf("expected create response not to expose employee runtime binding, got %s", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"provider_type":"codex"`) {
+		t.Fatalf("expected provider_type in create response, got %s", resp.Body.String())
 	}
 }
 
@@ -724,6 +771,21 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 				Description: "Manages database operations",
 				DefaultRole: "database_admin",
 			}},
+			RuntimeProviderOptions: []employee.RuntimeProviderOption{{
+				RuntimeNodeID:         uuid.New(),
+				NodeID:                "offline-runtime",
+				RuntimeName:           "离线执行机",
+				ProviderType:          "codex",
+				RuntimeStatus:         "offline",
+				ProviderStatus:        "unhealthy",
+				HealthStatus:          "unhealthy",
+				CurrentLoad:           0,
+				MaxSlots:              2,
+				AgentHomeDir:          "/srv/agents/codex",
+				AgentHomeDirAvailable: false,
+				Available:             false,
+				DisabledReason:        "runtime_session_inactive",
+			}},
 		},
 	}
 	server := NewServerWithAuthz(
@@ -763,8 +825,11 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			MCPServers           []string `json:"mcp_servers"`
 			ExternalCapabilities []string `json:"external_capabilities"`
 		} `json:"capability_options"`
-		RuntimeProviderOptions []struct{} `json:"runtime_provider_options"`
-		CreationChecks         []struct {
+		RuntimeProviderOptions []struct {
+			ProviderType string `json:"provider_type"`
+			Available    bool   `json:"available"`
+		} `json:"runtime_provider_options"`
+		CreationChecks []struct {
 			Key     string `json:"key"`
 			Label   string `json:"label"`
 			Status  string `json:"status"`
@@ -789,11 +854,16 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	assertNonNilEmptyStringSlice(t, "capability_options.skills", body.CapabilityOptions.Skills)
 	assertNonNilEmptyStringSlice(t, "capability_options.mcp_servers", body.CapabilityOptions.MCPServers)
 	assertNonNilEmptyStringSlice(t, "capability_options.external_capabilities", body.CapabilityOptions.ExternalCapabilities)
-	if body.RuntimeProviderOptions == nil || len(body.RuntimeProviderOptions) != 0 {
-		t.Fatalf("expected runtime_provider_options to decode as empty array, got %#v", body.RuntimeProviderOptions)
+	if len(body.RuntimeProviderOptions) != 1 || body.RuntimeProviderOptions[0].ProviderType != "codex" || body.RuntimeProviderOptions[0].Available {
+		t.Fatalf("expected runtime_provider_options dispatch preview to remain present and unavailable, got %#v", body.RuntimeProviderOptions)
 	}
 	assertCreateOptionCheck(t, body.CreationChecks, "employee_templates", "passed")
-	assertCreateOptionCheck(t, body.CreationChecks, "runtime_provider", "blocked")
+	if len(body.CreationChecks) <= 3 || body.CreationChecks[3].Key != "runtime_provider" {
+		t.Fatalf("expected runtime_provider check at index 3, got %#v", body.CreationChecks)
+	}
+	if body.CreationChecks[3].Status == "blocked" {
+		t.Fatalf("runtime_provider must be advisory, got %#v", body.CreationChecks[3])
+	}
 
 	service.createOptions.EmployeeTypes = nil
 	emptyTypesReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
@@ -1522,6 +1592,7 @@ func (s *routeEmployeeService) CreateDigitalEmployee(ctx context.Context, req em
 		TeamID:           req.TeamID,
 		OwnerUserID:      req.OwnerUserID,
 		EmployeeType:     req.EmployeeType,
+		ProviderType:     req.ProviderType,
 		Name:             req.Name,
 		Role:             req.Role,
 		Status:           employee.DigitalEmployeeStatusReady,
@@ -1724,24 +1795,7 @@ func (s *routeEmployeeService) GetExecutionInstance(ctx context.Context, tenantI
 func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req employee.BindExecutionInstanceRequest) (*employee.DigitalEmployeeExecutionInstance, error) {
 	s.bindCalled = true
 	s.bindReq = req
-	now := time.Now().UTC()
-	return &employee.DigitalEmployeeExecutionInstance{
-		ID:                   uuid.New(),
-		TenantID:             req.TenantID,
-		DigitalEmployeeID:    req.DigitalEmployeeID,
-		RuntimeNodeID:        req.RuntimeNodeID,
-		ProviderType:         req.ProviderType,
-		AgentHomeDir:         req.AgentHomeDir,
-		WorkspacePolicy:      map[string]any{},
-		SessionPolicy:        map[string]any{},
-		RuntimeSelector:      map[string]any{},
-		CapacityRequirements: map[string]any{},
-		FallbackPolicy:       map[string]any{},
-		Status:               employee.ExecutionInstanceStatusReady,
-		Metadata:             map[string]any{},
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}, nil
+	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", employee.ErrInvalidInput)
 }
 
 func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req employee.CreateDigitalEmployeeConfigRevisionRequest) (*employee.DigitalEmployeeConfigRevision, error) {

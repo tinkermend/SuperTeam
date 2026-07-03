@@ -81,11 +81,13 @@ function createOptionsFixture({
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
+  includePolicyExcludedProvider = false,
   includeFrontendTemplate = false,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
+  includePolicyExcludedProvider?: boolean;
   includeFrontendTemplate?: boolean;
 } = {}) {
   const firstRuntimeAvailable = runtimeAvailability === "all";
@@ -137,7 +139,7 @@ function createOptionsFixture({
   };
   const runtimeProviderOptions = [
     firstRuntimeOption,
-    ...(sameRuntimeNodeProviders ? [sameNodeProviderOption] : []),
+    ...(sameRuntimeNodeProviders || includePolicyExcludedProvider ? [sameNodeProviderOption] : []),
     ...(!sameRuntimeNodeProviders && runtimeCount === 2 ? [secondRuntimeOption] : []),
   ];
 
@@ -222,9 +224,9 @@ function createOptionsFixture({
       },
       {
         key: "runtime_provider",
-        label: "Runtime 可用",
-        status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "blocked",
-        message: `${runtimeProviderOptions.filter((option) => option.available).length} 个可用运行绑定`,
+        label: "Runtime 调度预览",
+        status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "warning",
+        message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度`,
       },
     ],
     policy_defaults: {
@@ -244,20 +246,24 @@ function createWizardFetcher({
   expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
+  expectedRuntimeNodeIdSubmitted = false,
   expectedTeamId,
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
+  includePolicyExcludedProvider = false,
   includeFrontendTemplate = false,
   teams = [team],
 }: {
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
   expectedRuntimeNodeId?: string;
+  expectedRuntimeNodeIdSubmitted?: boolean;
   expectedTeamId?: string | undefined;
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
+  includePolicyExcludedProvider?: boolean;
   includeFrontendTemplate?: boolean;
   teams?: Array<typeof team>;
 } = {}) {
@@ -274,7 +280,13 @@ function createWizardFetcher({
         expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
       }
       return jsonResponse(
-        createOptionsFixture({ includeFrontendTemplate, runtimeAvailability, runtimeCount, sameRuntimeNodeProviders }),
+        createOptionsFixture({
+          includeFrontendTemplate,
+          includePolicyExcludedProvider,
+          runtimeAvailability,
+          runtimeCount,
+          sameRuntimeNodeProviders,
+        }),
       );
     }
 
@@ -306,7 +318,7 @@ function createWizardFetcher({
         context_policy_override: { max_refs: 8 },
         approval_policy_override: { min_risk_for_human: "high" },
         output_contract_addendum: {},
-        runtime_node_id: expectedRuntimeNodeId,
+        ...(expectedRuntimeNodeIdSubmitted ? { runtime_node_id: expectedRuntimeNodeId } : {}),
         provider_type: expectedProviderType,
         session_policy: { mode: "reuse_latest" },
         workspace_policy: {},
@@ -385,15 +397,6 @@ function findTemplateSelectionTableText() {
 
 function findFirstTemplateCellText() {
   return document.body.querySelector('[data-testid="template-selection-table"] tbody td')?.textContent ?? "";
-}
-
-function findRadioByLabelText(labelText: string) {
-  // This vitest-browser-react version has no queryByRole; inspect native radio labels instead.
-  return (
-    Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')).find((radio) =>
-      Array.from(radio.labels ?? []).some((label) => label.textContent?.includes(labelText)),
-    ) ?? null
-  );
 }
 
 describe("CreateEmployeeView", () => {
@@ -600,11 +603,11 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("codex")).toBeChecked();
 
     await enterConfirmCreation(screen);
     await expect.element(screen.getByText("数据库管理员工")).toBeVisible();
-    await expect.element(screen.getByText("客户侧执行机 A / codex")).toBeVisible();
+    await expect.element(screen.getByText("codex")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
     expect(navigate).toHaveBeenCalledWith({
@@ -653,7 +656,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "12000");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("codex")).toBeChecked();
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -746,7 +749,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("button", { name: "工程师头像 M01" })).toHaveClass("size-20");
   });
 
-  it("requires explicit runtime selection when multiple runtimes are available", async () => {
+  it("auto-selects a provider even when multiple runtimes are available", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeCount: 2 }));
 
     await enterConfiguration(screen);
@@ -755,18 +758,14 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
-    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).not.toBeChecked();
-    await expect.element(screen.getByLabelText("客户侧执行机 B / codex")).not.toBeChecked();
-
-    await userEvent.click(screen.getByLabelText("客户侧执行机 A / codex"));
+    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    await expect.element(screen.getByText("2/2 个 Runtime 当前可调度")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
   });
 
-  it("selects available runtimes and surfaces unavailable ones with their reason", async () => {
+  it("shows provider dispatch preview when only some runtimes are available", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
-        expectedRuntimeNodeId: "44444444-4444-4444-8444-444444444444",
         runtimeAvailability: "first-unavailable",
         runtimeCount: 2,
       }),
@@ -778,25 +777,63 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    // Only the available runtime is a selectable radio and is auto-bound.
-    await expect.element(screen.getByRole("radio", { name: "客户侧执行机 B / codex" })).toBeChecked();
-    expect(findRadioByLabelText("客户侧执行机 A / codex")).toBeNull();
-    // The unavailable runtime is still surfaced (with its reason) for diagnosability.
-    await expect.element(screen.getByText("暂不可绑定的 Runtime")).toBeVisible();
-    await expect.element(screen.getByText("runtime_session_inactive")).toBeVisible();
+    await expect.element(screen.getByRole("radio", { name: "codex" })).toBeChecked();
+    await expect.element(screen.getByText("1/2 个 Runtime 当前可调度")).toBeVisible();
   });
 
-  it("blocks configuration preflight when there are no bindable runtime provider options", async () => {
+  it("does not block configuration preflight when there are no bindable runtime provider options", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeAvailability: "none" }));
 
     await expect.element(screen.getByRole("button", { name: "进入配置预检" })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
-    await expect.element(screen.getByText("Runtime 可用", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("Runtime 可用: 0 个可用运行绑定")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeDisabled();
-    expect(document.body.textContent).not.toContain("员工画像蓝图");
+    await expect.element(screen.getByText("Runtime 调度预览", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("0/1 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
+    await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+  });
+
+  it("does not expose runtime preview providers outside team policy as selectable providers", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        includePolicyExcludedProvider: true,
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    expect(document.body.textContent).not.toContain("claude_code");
+  });
+
+  it("submits provider-only creation when no runtime is currently available", async () => {
+    const fetcher = createWizardFetcher({
+      expectedRuntimeNodeIdSubmitted: false,
+      runtimeAvailability: "none",
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("codex"));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.provider_type).toBe("codex");
+    expect(body).not.toHaveProperty("runtime_node_id");
   });
 
   it("submits the selected provider when one runtime exposes multiple providers", async () => {
@@ -814,10 +851,10 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
-    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).not.toBeChecked();
-    await expect.element(screen.getByLabelText("客户侧执行机 A / claude_code")).not.toBeChecked();
+    await expect.element(screen.getByLabelText("codex")).not.toBeChecked();
+    await expect.element(screen.getByLabelText("claude_code")).not.toBeChecked();
 
-    await userEvent.click(screen.getByLabelText("客户侧执行机 A / claude_code"));
+    await userEvent.click(screen.getByLabelText("claude_code"));
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));

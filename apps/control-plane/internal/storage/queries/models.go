@@ -263,6 +263,8 @@ type DigitalEmployee struct {
 	OwnerUserID uuid.UUID `json:"owner_user_id"`
 	// 数字员工专业类型，由服务端注册表校验，不使用数据库枚举
 	EmployeeType string `json:"employee_type"`
+	// 数字员工主 Provider 类型，由服务端 Provider 注册表校验，不使用数据库枚举。
+	ProviderType string `json:"provider_type"`
 }
 
 // 数字员工个人治理配置版本表
@@ -1487,6 +1489,10 @@ type ProjectTaskAttempt struct {
 	BudgetTrippedAt            pgtype.Timestamptz `json:"budget_tripped_at"`
 	// 预算熔断原因，例如 wall_clock_exceeded、token_limit_exceeded。
 	BudgetTripReason pgtype.Text `json:"budget_trip_reason"`
+	// 执行尝试实际分派的数字员工 ID，历史记录可为空。
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	// 执行尝试使用的 Provider 类型，优先来自上下文包或数字员工主 Provider。
+	ProviderType pgtype.Text `json:"provider_type"`
 }
 
 type ProjectTaskAttemptContextUpdate struct {

@@ -773,6 +773,7 @@ type digitalEmployeeResponse struct {
 	TeamID           *string               `json:"team_id,omitempty"`
 	OwnerUserID      string                `json:"owner_user_id"`
 	EmployeeType     string                `json:"employee_type"`
+	ProviderType     string                `json:"provider_type"`
 	Name             string                `json:"name"`
 	Role             string                `json:"role"`
 	Description      *string               `json:"description,omitempty"`
@@ -1159,6 +1160,7 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		TeamID:           uuidStringPtr(employee.TeamID),
 		OwnerUserID:      employee.OwnerUserID.String(),
 		EmployeeType:     employee.EmployeeType,
+		ProviderType:     employee.ProviderType,
 		Name:             employee.Name,
 		Role:             employee.Role,
 		Description:      employee.Description,

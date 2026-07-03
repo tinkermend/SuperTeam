@@ -63,6 +63,18 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 	return runPreflightFromQuery(preflight)
 }
 
+func (r *PgRunRepository) GetProjectTaskRunPreflight(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
+	preflight, err := r.q.GetProjectTaskRunPreflight(ctx, queries.GetProjectTaskRunPreflightParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return StartProjectTaskRunPreflight{}, mapNoRows(err)
+	}
+	return projectTaskRunPreflightFromQuery(preflight)
+}
+
 func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
@@ -99,6 +111,29 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 		TodayTokenUsage:            preflight.TodayTokenUsage,
 		BusinessTimezone:           preflight.BusinessTimezone,
 		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
+		ProviderHealthy:            preflight.ProviderHealthy,
+	}, nil
+}
+
+func projectTaskRunPreflightFromQuery(preflight queries.GetProjectTaskRunPreflightRow) (StartProjectTaskRunPreflight, error) {
+	budgetPolicy, err := mapFromJSONB(preflight.BudgetPolicy, "budget_policy")
+	if err != nil {
+		return StartProjectTaskRunPreflight{}, err
+	}
+	return StartProjectTaskRunPreflight{
+		TenantID:                   preflight.TenantID,
+		TeamID:                     preflight.TeamID.UUID,
+		DigitalEmployeeID:          preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		RuntimeNodeID:              preflight.RuntimeNodeID,
+		NodeID:                     preflight.NodeID,
+		ProviderType:               preflight.ProviderType,
+		WorkspaceBaseDir:           preflight.WorkspaceBaseDir,
+		BudgetPolicy:               budgetPolicy,
+		TodayTokenUsage:            preflight.TodayTokenUsage,
+		BusinessTimezone:           preflight.BusinessTimezone,
+		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
+		RuntimeSessionActive:       preflight.RuntimeSessionActive,
 		ProviderHealthy:            preflight.ProviderHealthy,
 	}, nil
 }

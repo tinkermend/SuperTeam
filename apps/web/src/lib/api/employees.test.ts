@@ -502,7 +502,7 @@ describe("digital employee API", () => {
         } as Parameters<typeof createDigitalEmployee>[1],
       ),
     ).rejects.toThrow(
-      "digital employee ready creation requires employee_type, avatar_asset_id, runtime_node_id, and provider_type",
+      "digital employee ready creation requires employee_type, avatar_asset_id, and provider_type",
     );
 
     expect(fetcher).not.toHaveBeenCalled();

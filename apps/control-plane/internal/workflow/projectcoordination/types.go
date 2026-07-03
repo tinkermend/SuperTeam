@@ -317,19 +317,20 @@ type RecoverTaskDispatchFailureResult struct {
 }
 
 type StartProjectTaskRunRequest struct {
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	DemandID          uuid.UUID
-	ProjectTaskID     uuid.UUID
-	DigitalEmployeeID uuid.UUID
-	DispatchUserID    uuid.UUID
-	Objective         string
-	Prompt            string
-	IdempotencyKey    string
-	Metadata          map[string]any
-	WorkspaceMode     string
-	BaseRef           string
-	ProjectGit        map[string]any
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	DemandID             uuid.UUID
+	ProjectTaskID        uuid.UUID
+	ProjectTaskAttemptID uuid.UUID
+	DigitalEmployeeID    uuid.UUID
+	DispatchUserID       uuid.UUID
+	Objective            string
+	Prompt               string
+	IdempotencyKey       string
+	Metadata             map[string]any
+	WorkspaceMode        string
+	BaseRef              string
+	ProjectGit           map[string]any
 }
 
 type StartProjectTaskRunResult struct {
@@ -337,6 +338,7 @@ type StartProjectTaskRunResult struct {
 	RuntimeTaskID uuid.UUID
 	RuntimeNodeID uuid.UUID
 	NodeID        string
+	ProviderType  string
 }
 
 // ProjectTaskRunStartError lets the run starter adapter classify whether a failed

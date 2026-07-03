@@ -57,8 +57,9 @@ func (s *ProjectStore) WithPreDispatchGateReaders(employeeReader GateEmployeeRun
 	return s
 }
 
-// WithDigitalEmployeeReadiness attaches a runtime-readiness checker used to filter the
-// coordinator's executor pool to runtime-ready digital employees.
+// WithDigitalEmployeeReadiness attaches the legacy employee-scoped readiness checker.
+// ProjectTask planning prefers project-scoped Runtime placement when a gate reader is
+// available, so this checker is only a compatibility fallback.
 func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadinessChecker) *ProjectStore {
 	s.readiness = checker
 	return s
@@ -76,13 +77,10 @@ func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmploye
 	return s
 }
 
-// runtimeReadyEmployeeIDs returns the set of runtime-ready digital-employee principal IDs
-// among the given members. A nil/empty result means "do not filter" (no checker attached,
-// no digital-employee candidates, or a checker error) so behavior stays backward-compatible.
-func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uuid.UUID, members []project.ProjectMember) map[uuid.UUID]bool {
-	if s.readiness == nil {
-		return nil
-	}
+// runtimeReadyEmployeeIDs returns the set of project-runtime-ready digital-employee
+// principal IDs among the given members. A nil result means "do not filter" so
+// behavior stays backward-compatible when no readiness source is attached or lookup fails.
+func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID, projectID uuid.UUID, members []project.ProjectMember) map[uuid.UUID]bool {
 	ids := make([]uuid.UUID, 0, len(members))
 	for _, member := range members {
 		if member.PrincipalType == project.PrincipalTypeDigitalEmployee && member.PrincipalID != uuid.Nil {
@@ -90,6 +88,20 @@ func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uui
 		}
 	}
 	if len(ids) == 0 {
+		return nil
+	}
+	if s.employeeReader != nil && projectID != uuid.Nil {
+		ready := make(map[uuid.UUID]bool, len(ids))
+		for _, id := range ids {
+			employee, runtimeSnapshot, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, tenantID, projectID, id)
+			if err != nil {
+				return nil
+			}
+			ready[id] = employeeRuntimeSnapshotReady(employee, runtimeSnapshot)
+		}
+		return ready
+	}
+	if s.readiness == nil {
 		return nil
 	}
 	ready, err := s.readiness.AreRuntimeReady(ctx, tenantID, ids)
@@ -100,11 +112,20 @@ func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uui
 	return ready
 }
 
-func (s *ProjectStore) planningProfileRecords(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord {
+func employeeRuntimeSnapshotReady(employee project.PreDispatchEmployeeSnapshot, runtimeSnapshot project.PreDispatchRuntimeSnapshot) bool {
+	return employee.PolicyAllowed &&
+		runtimeSnapshot.NodeOnline &&
+		runtimeSnapshot.ProviderAvailable &&
+		runtimeSnapshot.WorkspaceReady &&
+		runtimeSnapshot.SlotAvailable &&
+		runtimeSnapshot.ContractVersionAccepted
+}
+
+func (s *ProjectStore) planningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord {
 	if s.profileSource == nil || len(employeeIDs) == 0 {
 		return nil
 	}
-	records, err := s.profileSource.PlanningProfileRecords(ctx, tenantID, employeeIDs)
+	records, err := s.profileSource.PlanningProfileRecords(ctx, tenantID, projectID, employeeIDs)
 	if err != nil {
 		// Fail open: profile facts enrich planning, but a source outage must not block it.
 		return nil
@@ -198,7 +219,7 @@ type DigitalEmployeeReadinessChecker interface {
 }
 
 type DigitalEmployeePlanningProfileSource interface {
-	PlanningProfileRecords(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
+	PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
 }
 
 // LendingGatekeeper enforces team-lending grants when the coordinator builds its executor
@@ -246,7 +267,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	if err != nil {
 		return CoordinationSnapshot{}, err
 	}
-	readyEmployees := s.runtimeReadyEmployeeIDs(ctx, input.TenantID, members)
+	readyEmployees := s.runtimeReadyEmployeeIDs(ctx, input.TenantID, input.ProjectID, members)
 	candidates := make([]project.ProjectMember, 0, len(members))
 	candidateIDs := make([]uuid.UUID, 0, len(members))
 	for _, member := range members {
@@ -275,7 +296,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		eligibleCandidates = append(eligibleCandidates, member)
 		eligibleCandidateIDs = append(eligibleCandidateIDs, member.PrincipalID)
 	}
-	profileRecords := s.planningProfileRecords(ctx, input.TenantID, eligibleCandidateIDs)
+	profileRecords := s.planningProfileRecords(ctx, input.TenantID, input.ProjectID, eligibleCandidateIDs)
 	pool := make([]ProjectMemberSnapshot, 0, len(eligibleCandidates))
 	for _, member := range eligibleCandidates {
 		displayName := ""
@@ -2132,6 +2153,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	if task.ProjectID != input.ProjectID {
 		return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrProjectNotFound)
 	}
+	if projectTaskQueuedWithoutRunBinding(task) {
+		return s.resumeQueuedProjectTaskRunStart(ctx, input, task)
+	}
 	if task.DigitalEmployeeRunID != nil {
 		if task.RuntimeTaskID == nil {
 			return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrInvalidProject)
@@ -2181,6 +2205,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	nextAttemptNo := task.AttemptCount + 1
 	attemptID := projectTaskDispatchAttemptID(task.ID, nextAttemptNo)
 	leaseToken := projectTaskAttemptLeaseToken(task.ID, nextAttemptNo)
+	attemptIdempotencyKey := projectTaskAttemptDispatchIdempotencyKey(task.ID, nextAttemptNo)
 	handoffContract := projectTaskDispatchHandoffContract(task.HandoffContract)
 	workspaceMode := WorkspaceModeForTaskKind(stringPtrValue(task.TaskKind))
 	projectGit := projectGitMetadata(projectRecord.RepoBinding)
@@ -2212,53 +2237,16 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		runMetadata["project_git"] = projectGit
 	}
 	addDispatchGateMetadata(runMetadata, gate.Gate)
-	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		DemandID:          demand.ID,
-		ProjectTaskID:     task.ID,
-		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
-		DispatchUserID:    projectRecord.HumanOwnerUserID,
-		Objective:         task.Title,
-		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
-		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
-		Metadata:          runMetadata,
-		WorkspaceMode:     workspaceMode,
-		BaseRef:           baseRef,
-		ProjectGit:        projectGit,
-	})
-	if err != nil {
-		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
-	}
-	executionContextPacket := map[string]any{
-		"project_id":               input.ProjectID.String(),
-		"demand_id":                demand.ID.String(),
-		"project_task_id":          task.ID.String(),
-		"project_task_attempt_id":  attemptID.String(),
-		"project_task_lease_token": leaseToken,
-		"digital_employee_id":      task.AssignedDigitalEmployeeID.String(),
-		"objective":                task.Title,
-		"expected_outputs":         append([]any(nil), task.ExpectedOutputs...),
-		"input_requirements":       cloneAnyMap(task.InputRequirements),
-		"handoff_contract":         handoffContract,
-		"digital_employee_run_id":  run.RunID.String(),
-		"runtime_task_id":          run.RuntimeTaskID.String(),
-		"runtime_node_id":          run.RuntimeNodeID.String(),
-		"node_id":                  run.NodeID,
-	}
-	addDispatchGateMetadata(executionContextPacket, gate.Gate)
+	executionContextPacket := projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attemptID, leaseToken, handoffContract, gate.Gate)
 	queueResult, err := s.repository.QueueProjectTaskWithAttempt(ctx, project.QueueProjectTaskRequest{
 		TenantID:                      input.TenantID,
 		ProjectID:                     input.ProjectID,
 		ProjectTaskID:                 input.TaskID,
 		ProjectTaskAttemptID:          &attemptID,
 		DigitalEmployeeID:             *task.AssignedDigitalEmployeeID,
-		DigitalEmployeeRunID:          &run.RunID,
-		RuntimeTaskID:                 &run.RuntimeTaskID,
-		RuntimeNodeID:                 &run.RuntimeNodeID,
-		IdempotencyKey:                projectTaskDispatchIdempotencyKey(task.ID),
+		IdempotencyKey:                attemptIdempotencyKey,
 		LeaseToken:                    leaseToken,
-		ExecutionContextPacket:        executionContextPacket,
+		ExecutionContextPacket:        cloneAnyMap(executionContextPacket),
 		ExecutionContextPacketVersion: "v1",
 		DispatchGateResultID:          &gate.Gate.ID,
 	})
@@ -2276,6 +2264,45 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 			return err
 		}
 	}
+	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
+		TenantID:             input.TenantID,
+		ProjectID:            input.ProjectID,
+		DemandID:             demand.ID,
+		ProjectTaskID:        task.ID,
+		ProjectTaskAttemptID: attemptID,
+		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
+		DispatchUserID:       projectRecord.HumanOwnerUserID,
+		Objective:            task.Title,
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task),
+		IdempotencyKey:       attemptIdempotencyKey,
+		Metadata:             runMetadata,
+		WorkspaceMode:        workspaceMode,
+		BaseRef:              baseRef,
+		ProjectGit:           projectGit,
+	})
+	if err != nil {
+		return s.recordQueuedAttemptDispatchStartFailure(ctx, input, queueResult.Task, queueResult.Attempt, err)
+	}
+	if strings.TrimSpace(run.ProviderType) != "" {
+		runMetadata["provider_type"] = run.ProviderType
+	}
+	boundExecutionContextPacket := cloneAnyMap(executionContextPacket)
+	projectTaskDispatchAttachRun(boundExecutionContextPacket, run)
+	_, err = s.repository.BindProjectTaskAttemptRun(ctx, project.BindProjectTaskAttemptRunRequest{
+		TenantID:                      input.TenantID,
+		ProjectID:                     input.ProjectID,
+		ProjectTaskID:                 input.TaskID,
+		AttemptID:                     queueResult.Attempt.ID,
+		DigitalEmployeeRunID:          run.RunID,
+		RuntimeTaskID:                 run.RuntimeTaskID,
+		RuntimeNodeID:                 run.RuntimeNodeID,
+		ProviderType:                  run.ProviderType,
+		ExecutionContextPacket:        boundExecutionContextPacket,
+		ExecutionContextPacketVersion: "v1",
+	})
+	if err != nil {
+		return err
+	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
 }
 
@@ -2284,6 +2311,128 @@ func (s *ProjectStore) advanceDispatchedTaskDemand(ctx context.Context, input Di
 		return nil
 	}
 	return s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, *task.DemandID, project.ProjectDemandStatusExecuting)
+}
+
+func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask) error {
+	if task.AssignedDigitalEmployeeID == nil || task.DemandID == nil || task.CurrentAttemptID == nil {
+		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, project.ErrInvalidProject)
+	}
+	attempt, err := s.repository.GetProjectTaskAttempt(ctx, input.TenantID, *task.CurrentAttemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.Status != project.ProjectTaskAttemptStatusQueued || attempt.ProjectTaskID != task.ID {
+		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, project.ErrInvalidProject)
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return err
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, input.TenantID, *task.DemandID)
+	if err != nil {
+		return err
+	}
+	workspaceMode := WorkspaceModeForTaskKind(stringPtrValue(task.TaskKind))
+	projectGit := projectGitMetadata(projectRecord.RepoBinding)
+	baseRef := ""
+	if projectRecord.RepoBinding.Status == project.ProjectRepoBindingStatusBound {
+		baseRef, _ = projectGit["default_branch"].(string)
+	} else {
+		workspaceMode = WorkspaceModeNone
+	}
+	handoffContract := projectTaskDispatchHandoffContract(task.HandoffContract)
+	if workspaceMode == WorkspaceModeBranch || workspaceMode == WorkspaceModeDetachedRun {
+		handoffContract["requires_runtime_attestation"] = true
+	}
+	runMetadata := map[string]any{
+		"source":                           "project_task_dispatch",
+		"actor_type":                       "project_coordinator",
+		"project_id":                       input.ProjectID.String(),
+		"demand_id":                        demand.ID.String(),
+		"project_task_id":                  task.ID.String(),
+		"project_task_attempt_id":          attempt.ID.String(),
+		"project_task_lease_token":         attempt.LeaseToken,
+		"execution_context_packet_version": nonEmptyString(attempt.ExecutionContextPacketVersion, "v1"),
+		"expected_outputs":                 append([]any(nil), task.ExpectedOutputs...),
+		"input_requirements":               cloneAnyMap(task.InputRequirements),
+		"handoff_contract":                 handoffContract,
+		"workspace_mode":                   workspaceMode,
+		"base_ref":                         baseRef,
+	}
+	if projectGit != nil {
+		runMetadata["project_git"] = projectGit
+	}
+	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
+		TenantID:             input.TenantID,
+		ProjectID:            input.ProjectID,
+		DemandID:             demand.ID,
+		ProjectTaskID:        task.ID,
+		ProjectTaskAttemptID: attempt.ID,
+		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
+		DispatchUserID:       projectRecord.HumanOwnerUserID,
+		Objective:            task.Title,
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task),
+		IdempotencyKey:       attempt.IdempotencyKey,
+		Metadata:             runMetadata,
+		WorkspaceMode:        workspaceMode,
+		BaseRef:              baseRef,
+		ProjectGit:           projectGit,
+	})
+	if err != nil {
+		return s.recordQueuedAttemptDispatchStartFailure(ctx, input, task, attempt, err)
+	}
+	boundExecutionContextPacket := cloneAnyMap(attempt.ExecutionContextPacket)
+	if len(boundExecutionContextPacket) == 0 {
+		boundExecutionContextPacket = projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attempt.ID, attempt.LeaseToken, handoffContract, project.PreDispatchGateResult{})
+	}
+	projectTaskDispatchAttachRun(boundExecutionContextPacket, run)
+	_, err = s.repository.BindProjectTaskAttemptRun(ctx, project.BindProjectTaskAttemptRunRequest{
+		TenantID:                      input.TenantID,
+		ProjectID:                     input.ProjectID,
+		ProjectTaskID:                 input.TaskID,
+		AttemptID:                     attempt.ID,
+		DigitalEmployeeRunID:          run.RunID,
+		RuntimeTaskID:                 run.RuntimeTaskID,
+		RuntimeNodeID:                 run.RuntimeNodeID,
+		ProviderType:                  run.ProviderType,
+		ExecutionContextPacket:        boundExecutionContextPacket,
+		ExecutionContextPacketVersion: nonEmptyString(attempt.ExecutionContextPacketVersion, "v1"),
+	})
+	if err != nil {
+		return err
+	}
+	return s.advanceDispatchedTaskDemand(ctx, input, task)
+}
+
+func (s *ProjectStore) recordQueuedAttemptDispatchStartFailure(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask, attempt project.ProjectTaskAttempt, dispatchErr error) error {
+	event, err := s.appendDispatchFailureEvent(ctx, input.TenantID, input.ProjectID, task, dispatchErr)
+	if err != nil {
+		return err
+	}
+	if attempt.ID != uuid.Nil {
+		failureFamily := project.FailureFamilyRuntimeStartTimeout
+		if dispatchErrorRetryable(dispatchErr) {
+			failureFamily = project.FailureFamilyDispatchTransient
+		}
+		_, releaseErr := s.repository.FailQueuedProjectTaskAttemptDispatchStart(ctx, project.FailQueuedProjectTaskAttemptDispatchStartRequest{
+			TenantID:               input.TenantID,
+			ProjectID:              input.ProjectID,
+			ProjectTaskID:          input.TaskID,
+			AttemptID:              attempt.ID,
+			DigitalEmployeeID:      selectedEmployeeID(task),
+			LeaseToken:             attempt.LeaseToken,
+			FailureSummary:         dispatchErr.Error(),
+			FailureFamily:          failureFamily,
+			Retryable:              dispatchErrorRetryable(dispatchErr),
+			RestoreTaskStatus:      project.ProjectTaskStatusPlanned,
+			ClearCurrentAttempt:    true,
+			DispatchFailureEventID: &event.ID,
+		})
+		if releaseErr != nil {
+			return releaseErr
+		}
+	}
+	return &ProjectTaskDispatchError{FailureRecorded: true, Err: dispatchErr}
 }
 
 // RecoverTaskDispatchFailure builds a short-lived project service over the
@@ -2309,18 +2458,30 @@ func (s *ProjectStore) RecoverTaskDispatchFailure(ctx context.Context, input Rec
 }
 
 func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) error {
-	if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventTaskDispatchFailed, task.ID.String(), "项目任务分派失败", dispatchFailurePayload(task, dispatchErr, dispatchErrorRetryable(dispatchErr)))); err != nil {
+	if _, err := s.appendDispatchFailureEvent(ctx, tenantID, projectID, task, dispatchErr); err != nil {
 		return err
 	}
 	return &ProjectTaskDispatchError{FailureRecorded: true, Err: dispatchErr}
+}
+
+func (s *ProjectStore) appendDispatchFailureEvent(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) (project.ProjectEvent, error) {
+	return s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventTaskDispatchFailed, task.ID.String(), "项目任务分派失败", dispatchFailurePayload(task, dispatchErr, dispatchErrorRetryable(dispatchErr))))
 }
 
 func projectTaskDispatchAllowed(status string) bool {
 	return status == project.ProjectTaskStatusPlanned || status == project.ProjectTaskStatusWaitingHuman
 }
 
+func projectTaskQueuedWithoutRunBinding(task project.ProjectTask) bool {
+	return task.Status == project.ProjectTaskStatusQueued && task.CurrentAttemptID != nil && task.DigitalEmployeeRunID == nil && task.RuntimeTaskID == nil
+}
+
 func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {
 	return "project-task:" + taskID.String()
+}
+
+func projectTaskAttemptDispatchIdempotencyKey(taskID uuid.UUID, attemptNo int32) string {
+	return "project-task:" + taskID.String() + ":attempt:" + strconv.FormatInt(int64(attemptNo), 10) + ":dispatch"
 }
 
 func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask) string {
@@ -2349,6 +2510,36 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"evidence_refs/verification 用于说明已读取或验证的证据。\n" +
 		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
+}
+
+func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, task project.ProjectTask, attemptID uuid.UUID, leaseToken string, handoffContract map[string]any, gate project.PreDispatchGateResult) map[string]any {
+	packet := map[string]any{
+		"project_id":               projectID.String(),
+		"demand_id":                demandID.String(),
+		"project_task_id":          task.ID.String(),
+		"project_task_attempt_id":  attemptID.String(),
+		"project_task_lease_token": leaseToken,
+		"objective":                task.Title,
+		"expected_outputs":         append([]any(nil), task.ExpectedOutputs...),
+		"input_requirements":       cloneAnyMap(task.InputRequirements),
+		"handoff_contract":         handoffContract,
+	}
+	if task.AssignedDigitalEmployeeID != nil {
+		packet["digital_employee_id"] = task.AssignedDigitalEmployeeID.String()
+	}
+	addDispatchGateMetadata(packet, gate)
+	return packet
+}
+
+func projectTaskDispatchAttachRun(packet map[string]any, run StartProjectTaskRunResult) {
+	if packet == nil {
+		return
+	}
+	packet["digital_employee_run_id"] = run.RunID.String()
+	packet["runtime_task_id"] = run.RuntimeTaskID.String()
+	packet["runtime_node_id"] = run.RuntimeNodeID.String()
+	packet["node_id"] = run.NodeID
+	packet["provider_type"] = run.ProviderType
 }
 
 func taskContractJSON(value any) string {

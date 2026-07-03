@@ -1139,7 +1139,38 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
         .await
         .expect("project task command accepted");
     let run_id = outcome.run_id.expect("run id");
-    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+    let command_context = snapshot.command_context.expect("command context");
+    assert_eq!(command_context.digital_employee_id, DIGITAL_EMPLOYEE_ID);
+    assert_eq!(command_context.provider_type, "claude-code");
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_task_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_TASK_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_task_attempt_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_TASK_ATTEMPT_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("runtime_node_id")
+            .and_then(Value::as_str),
+        Some(RUNTIME_NODE_ID)
+    );
 
     let command_complete = wait_for_writeback(capture.complete.clone()).await;
     assert_eq!(command_complete.command_id, "cmd-project-task");
@@ -2020,6 +2051,73 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         content
     );
     assert!(!run.workspace_path.join("AGENTS.md").exists());
+}
+
+#[tokio::test]
+async fn start_session_creates_missing_agent_home_for_project_task_dispatch() {
+    let temp = tempfile::tempdir().unwrap();
+    let cwd_file = temp.path().join("provider-cwd-missing-home.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-missing-home",
+        &format!(
+            r#"#!/usr/bin/env bash
+printf '%s\n' "$PWD" > {}
+printf '%s\n' '{{"type":"system","session_id":"session-from-missing-home-test"}}'
+printf '%s\n' '{{"type":"result","result":"done"}}'
+"#,
+            shell_quote(&cwd_file)
+        ),
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = temp
+        .path()
+        .join("workspaces")
+        .join("project-tasks")
+        .join(PROJECT_ID)
+        .join(PROJECT_TASK_ID)
+        .join(PROJECT_TASK_ATTEMPT_ID)
+        .join("employees")
+        .join(employee_id);
+    assert!(!home.exists(), "test requires missing derived agent home");
+
+    let content = "# Execution Contract\n";
+    let mut command = start_session_command_with_home(
+        "cmd-start-missing-home",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        content,
+    );
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "workspace_mode": "none",
+        "project_id": PROJECT_ID,
+        "project_task_id": PROJECT_TASK_ID,
+        "project_task_attempt_id": PROJECT_TASK_ATTEMPT_ID
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("start_session should create missing derived agent home");
+
+    let run_id = outcome.run_id.as_deref().unwrap();
+    wait_for_status(&executor.runs(), run_id, RunStatus::Completed).await;
+    let run = executor.runs().get_run(run_id).await.unwrap();
+    assert_eq!(run.agent_home_dir.as_deref(), Some(home.as_path()));
+    assert!(home.is_dir(), "derived agent home should be created");
+    assert_eq!(
+        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        content
+    );
+    assert_eq!(
+        std::fs::canonicalize(std::fs::read_to_string(cwd_file).unwrap().trim_end()).unwrap(),
+        std::fs::canonicalize(run.workspace_path).unwrap()
+    );
 }
 
 #[tokio::test]

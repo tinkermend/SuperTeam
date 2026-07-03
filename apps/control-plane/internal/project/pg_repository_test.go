@@ -930,6 +930,342 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestQueueProjectTaskWithAttemptPersistsEmployeeAndProviderAuditFacts(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证尝试审计事实",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	attemptID := uuid.New()
+
+	result, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		ProviderType:                  "codex",
+		DigitalEmployeeRunID:          &runID,
+		RuntimeTaskID:                 &runtimeTaskID,
+		RuntimeNodeID:                 &runtimeNodeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:audit",
+		LeaseToken:                    "lease-token-1",
+		ExecutionContextPacket:        map[string]any{"project_id": projectID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Attempt.DigitalEmployeeID)
+	require.Equal(t, employeeID, *result.Attempt.DigitalEmployeeID)
+	require.NotNil(t, result.Attempt.ProviderType)
+	require.Equal(t, "codex", *result.Attempt.ProviderType)
+
+	readBack, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, attemptID)
+	require.NoError(t, err)
+	require.NotNil(t, readBack.DigitalEmployeeID)
+	require.Equal(t, employeeID, *readBack.DigitalEmployeeID)
+	require.NotNil(t, readBack.ProviderType)
+	require.Equal(t, "codex", *readBack.ProviderType)
+}
+
+func TestBindProjectTaskAttemptRunPersistsRunAndProviderAfterQueue(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 attempt 后绑定",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	attemptID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:queue-before-run",
+		LeaseToken:                    "lease-token-bind",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Nil(t, queued.Task.DigitalEmployeeRunID)
+	require.Nil(t, queued.Task.RuntimeTaskID)
+	require.Nil(t, queued.Attempt.DigitalEmployeeRunID)
+	require.Nil(t, queued.Attempt.RuntimeTaskID)
+	require.Nil(t, queued.Attempt.RuntimeNodeID)
+
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	bound, err := repo.BindProjectTaskAttemptRun(context.Background(), BindProjectTaskAttemptRunRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		AttemptID:                     queued.Attempt.ID,
+		DigitalEmployeeRunID:          runID,
+		RuntimeTaskID:                 runtimeTaskID,
+		RuntimeNodeID:                 runtimeNodeID,
+		ProviderType:                  "codex",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String(), "digital_employee_run_id": runID.String(), "provider_type": "codex"},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, runID, *bound.Task.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *bound.Task.RuntimeTaskID)
+	require.Equal(t, runID, *bound.Attempt.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *bound.Attempt.RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *bound.Attempt.RuntimeNodeID)
+	require.Equal(t, "codex", *bound.Attempt.ProviderType)
+	require.Equal(t, runID.String(), bound.Attempt.ExecutionContextPacket["digital_employee_run_id"])
+
+	replayed, err := repo.BindProjectTaskAttemptRun(context.Background(), BindProjectTaskAttemptRunRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		AttemptID:                     queued.Attempt.ID,
+		DigitalEmployeeRunID:          runID,
+		RuntimeTaskID:                 runtimeTaskID,
+		RuntimeNodeID:                 runtimeNodeID,
+		ProviderType:                  "codex",
+		ExecutionContextPacket:        bound.Attempt.ExecutionContextPacket,
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, bound.Attempt.ID, replayed.Attempt.ID)
+}
+
+func TestBindProjectTaskAttemptRunReturnsConflictWhenAttemptIsNoLongerQueued(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 attempt 绑定冲突",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	attemptID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:conflict",
+		LeaseToken:                    "lease-token-conflict",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	failureEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDispatchFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败",
+		Payload:      map[string]any{"project_task_id": task.ID.String()},
+	})
+	require.NoError(t, err)
+	_, err = repo.FailQueuedProjectTaskAttemptDispatchStart(context.Background(), FailQueuedProjectTaskAttemptDispatchStartRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		ProjectTaskID:          task.ID,
+		AttemptID:              queued.Attempt.ID,
+		DigitalEmployeeID:      employeeID,
+		LeaseToken:             queued.Attempt.LeaseToken,
+		FailureSummary:         "runtime node is not connected",
+		FailureFamily:          FailureFamilyDispatchTransient,
+		Retryable:              true,
+		RestoreTaskStatus:      ProjectTaskStatusPlanned,
+		ClearCurrentAttempt:    true,
+		DispatchFailureEventID: &failureEvent.ID,
+	})
+	require.NoError(t, err)
+
+	_, err = repo.BindProjectTaskAttemptRun(context.Background(), BindProjectTaskAttemptRunRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		AttemptID:                     attemptID,
+		DigitalEmployeeRunID:          uuid.New(),
+		RuntimeTaskID:                 uuid.New(),
+		RuntimeNodeID:                 uuid.New(),
+		ProviderType:                  "codex",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.ErrorIs(t, err, ErrProjectConflict)
+}
+
+func TestFailQueuedProjectTaskAttemptDispatchStartReleasesAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证启动失败释放 attempt",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	attemptID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:start-failed",
+		LeaseToken:                    "lease-token-start-failed",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	failureEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDispatchFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败",
+		Payload:      map[string]any{"project_task_id": task.ID.String()},
+	})
+	require.NoError(t, err)
+
+	retryable := true
+	result, err := repo.FailQueuedProjectTaskAttemptDispatchStart(context.Background(), FailQueuedProjectTaskAttemptDispatchStartRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		ProjectTaskID:          task.ID,
+		AttemptID:              queued.Attempt.ID,
+		DigitalEmployeeID:      employeeID,
+		LeaseToken:             queued.Attempt.LeaseToken,
+		FailureSummary:         "runtime node is not connected",
+		FailureFamily:          FailureFamilyDispatchTransient,
+		Retryable:              retryable,
+		RestoreTaskStatus:      ProjectTaskStatusPlanned,
+		ClearCurrentAttempt:    true,
+		DispatchFailureEventID: &failureEvent.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusPlanned, result.Task.Status)
+	require.Nil(t, result.Task.CurrentAttemptID)
+	require.Equal(t, failureEvent.ID, result.Event.ID)
+
+	readBack, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, queued.Attempt.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusLost, readBack.Status)
+	require.NotNil(t, readBack.Retryable)
+	require.True(t, *readBack.Retryable)
+	require.NotNil(t, readBack.FailureFamily)
+	require.Equal(t, FailureFamilyDispatchTransient, *readBack.FailureFamily)
+	require.NotNil(t, readBack.TerminalEventID)
+	require.Equal(t, failureEvent.ID, *readBack.TerminalEventID)
+}
+
+func TestQueueProjectTaskWithAttemptCreatesNewAttemptAfterDispatchStartFailure(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证启动失败后重新分派",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	firstAttemptID := uuid.New()
+	first, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &firstAttemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:dispatch",
+		LeaseToken:                    "lease-token-start-failed",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	failureEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDispatchFailed,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务分派失败",
+		Payload:      map[string]any{"project_task_id": task.ID.String()},
+	})
+	require.NoError(t, err)
+	_, err = repo.FailQueuedProjectTaskAttemptDispatchStart(context.Background(), FailQueuedProjectTaskAttemptDispatchStartRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		ProjectTaskID:          task.ID,
+		AttemptID:              first.Attempt.ID,
+		DigitalEmployeeID:      employeeID,
+		LeaseToken:             first.Attempt.LeaseToken,
+		FailureSummary:         "runtime node is not connected",
+		FailureFamily:          FailureFamilyDispatchTransient,
+		Retryable:              true,
+		RestoreTaskStatus:      ProjectTaskStatusPlanned,
+		ClearCurrentAttempt:    true,
+		DispatchFailureEventID: &failureEvent.ID,
+	})
+	require.NoError(t, err)
+
+	secondAttemptID := uuid.New()
+	second, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &secondAttemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:2:dispatch",
+		LeaseToken:                    "lease-token-retry",
+		ExecutionContextPacket:        map[string]any{"project_task_id": task.ID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, second.Task.Status)
+	require.Equal(t, secondAttemptID, second.Attempt.ID)
+	require.Equal(t, int32(2), second.Attempt.AttemptNo)
+	require.Equal(t, int32(2), second.Task.AttemptCount)
+	require.Equal(t, secondAttemptID, *second.Task.CurrentAttemptID)
+
+	readFirst, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, firstAttemptID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusLost, readFirst.Status)
+	require.Equal(t, "project-task:"+task.ID.String()+":attempt:1:dispatch", readFirst.IdempotencyKey)
+	readSecond, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, secondAttemptID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusQueued, readSecond.Status)
+	require.Equal(t, "project-task:"+task.ID.String()+":attempt:2:dispatch", readSecond.IdempotencyKey)
+}
+
 func TestRecordPreDispatchGateResultIsIdempotent(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

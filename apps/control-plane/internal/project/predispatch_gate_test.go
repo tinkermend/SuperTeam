@@ -68,6 +68,28 @@ func TestEvaluatePreDispatchGatePassesReadyTask(t *testing.T) {
 	require.Contains(t, result.CheckKeys(), "runtime.ready")
 }
 
+func TestEvaluatePreDispatchGatePassesReadyEmployeeForProjectTask(t *testing.T) {
+	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	snapshot.Employee.Status = "ready"
+	snapshot.Employee.PolicyAllowed = true
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID:          projectID,
+		ProjectTaskID:      taskID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+	}, snapshot, now)
+
+	require.Equal(t, PreDispatchGateStatusPassed, result.Status)
+	require.Empty(t, result.Blockers)
+	require.True(t, result.CreateRun)
+}
+
 func TestEvaluatePreDispatchGateBlocksActiveAttempt(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 31, 0, 0, time.UTC)
 	projectID := uuid.New()

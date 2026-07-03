@@ -1,4 +1,4 @@
-h1:KQLAf17M7t4+VwOFOIs4+ID6dwtbTr+Lq74pFBmWE3s=
+h1:wRsaumCRmEx/pppb4g+k0O1uprCGeMMg6bZMZ9ss+Cc=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -42,3 +42,4 @@ h1:KQLAf17M7t4+VwOFOIs4+ID6dwtbTr+Lq74pFBmWE3s=
 041_project_task_attestation_runtime_context.sql h1:i9iKQLgD2bfOul0C/LLjIQ43Avk+SzKLPMQjxaWKb0Q=
 043_project_decision_plan_revision_resume.sql h1:3vkwUNTJA6tesnqXlY2SbWP5vFvMNu0ZyLkyXQVXpa0=
 044_project_plan_revision_created_event.sql h1:OotXt0izPbiulukGjcmVKZEQrdTb1uA6Rd0dooELVeY=
+045_digital_employee_provider_identity.sql h1:Hx6LUE+U9+LBQMwWRHsOCRz28jb2/G6A5RlsSDu0vTM=

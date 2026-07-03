@@ -64,6 +64,80 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "验证项目维度运行"},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	reader := projectStoreGateRuntimeReader{
+		employee: project.PreDispatchEmployeeSnapshot{
+			ID:                 employeeID,
+			Status:             "ready",
+			PolicyAllowed:      true,
+			AvailableLoadSlots: 1,
+			RequiredLoadSlots:  1,
+		},
+		runtime: project.PreDispatchRuntimeSnapshot{
+			NodeOnline:              true,
+			ProviderAvailable:       true,
+			WorkspaceReady:          true,
+			SlotAvailable:           true,
+			ContractVersionAccepted: true,
+		},
+	}
+	source := &fakePlanningProfileSource{records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+		employeeID: {
+			DigitalEmployeeID: employeeID,
+			EmployeeType:      "implementation",
+			EmployeeStatus:    "ready",
+			CapabilitySelection: map[string]any{
+				"enabled_external_capabilities": []any{"implementation"},
+				"enabled_provider_types":        []any{"codex"},
+			},
+			RuntimeNodeID:         runtimeNodeID,
+			ProviderType:          "codex",
+			ExecutionStatus:       "ready",
+			EffectiveConfigStatus: "approved",
+		},
+	}}
+	store := NewProjectStore(repo).
+		WithDigitalEmployeeReadiness(fakeLegacyReadiness{ready: map[uuid.UUID]bool{employeeID: false}}).
+		WithDigitalEmployeePlanningProfiles(source).
+		WithPreDispatchGateReaders(reader, nil)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, projectID, source.projectID)
+	require.Len(t, snapshot.DigitalEmployeePool, 1)
+	require.Equal(t, employeeID, snapshot.DigitalEmployeePool[0].PrincipalID)
+	require.NotNil(t, snapshot.DigitalEmployeePool[0].PlanningProfile)
+	profile := snapshot.DigitalEmployeePool[0].PlanningProfile
+	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
+	require.Equal(t, runtimeNodeID.String(), profile.RuntimeRequirements.RuntimeNodeID)
+	require.Equal(t, []string{"codex"}, profile.RuntimeRequirements.ProviderTypes)
+	score := ScorePlanningProfile(*profile, PlanningTaskRequirements{RequiredCapabilities: []string{"implementation"}})
+	require.Empty(t, score.HardFailures)
+}
+
 func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -89,7 +163,7 @@ func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 			DisplayNameSnapshot: strPtr("数据库员工"),
 		}},
 	}
-	source := fakePlanningProfileSource{
+	source := &fakePlanningProfileSource{
 		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
 			employeeID: {
 				DigitalEmployeeID: employeeID,
@@ -140,7 +214,7 @@ func TestProjectStoreSnapshotKeepsUnknownProfileWhenProfileSourceFails(t *testin
 		}},
 	}
 
-	snapshot, err := NewProjectStore(repo).WithDigitalEmployeePlanningProfiles(fakePlanningProfileSource{err: errors.New("source down")}).LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+	snapshot, err := NewProjectStore(repo).WithDigitalEmployeePlanningProfiles(&fakePlanningProfileSource{err: errors.New("source down")}).LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		DemandID:  demandID,
@@ -153,15 +227,33 @@ func TestProjectStoreSnapshotKeepsUnknownProfileWhenProfileSourceFails(t *testin
 	require.Contains(t, snapshot.DigitalEmployeePool[0].PlanningProfile.SelectionWarnings, "profile_source_missing")
 }
 
-type fakePlanningProfileSource struct {
-	records map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord
-	err     error
+type fakeLegacyReadiness struct {
+	ready map[uuid.UUID]bool
+	err   error
 }
 
-func (s fakePlanningProfileSource) PlanningProfileRecords(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error) {
+func (r fakeLegacyReadiness) AreRuntimeReady(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	result := make(map[uuid.UUID]bool, len(employeeIDs))
+	for _, id := range employeeIDs {
+		result[id] = r.ready[id]
+	}
+	return result, nil
+}
+
+type fakePlanningProfileSource struct {
+	records   map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord
+	projectID uuid.UUID
+	err       error
+}
+
+func (s *fakePlanningProfileSource) PlanningProfileRecords(_ context.Context, _ uuid.UUID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
+	s.projectID = projectID
 	out := map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{}
 	for _, id := range employeeIDs {
 		if record, ok := s.records[id]; ok {
@@ -2668,12 +2760,18 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 			HandoffContract:           map[string]any{"required_refs": []any{"test_report"}},
 		}},
 	}
-	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
-		RunID:         runID,
-		RuntimeTaskID: runtimeTaskID,
-		RuntimeNodeID: runtimeNodeID,
-		NodeID:        "node-1",
-	}}
+	starter := &projectTaskRunStarterFake{
+		result: StartProjectTaskRunResult{
+			RunID:         runID,
+			RuntimeTaskID: runtimeTaskID,
+			RuntimeNodeID: runtimeNodeID,
+			NodeID:        "node-1",
+			ProviderType:  "codex",
+		},
+		onStart: func(req StartProjectTaskRunRequest) {
+			require.NotContains(t, req.Metadata, "provider_type")
+		},
+	}
 	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
 
 	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
@@ -2686,9 +2784,14 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	req := starter.requests[0]
 	attemptID := projectTaskDispatchAttemptID(taskID, 1)
 	leaseToken := projectTaskAttemptLeaseToken(taskID, 1)
-	if req.DispatchUserID != ownerID || req.DigitalEmployeeID != employeeID || req.IdempotencyKey != "project-task:"+taskID.String() {
+	attemptIdempotencyKey := projectTaskAttemptDispatchIdempotencyKey(taskID, 1)
+	if req.DispatchUserID != ownerID || req.DigitalEmployeeID != employeeID || req.IdempotencyKey != attemptIdempotencyKey {
 		t.Fatalf("unexpected run start request: %#v", req)
 	}
+	require.Equal(t, projectID, req.ProjectID)
+	require.Equal(t, demandID, req.DemandID)
+	require.Equal(t, taskID, req.ProjectTaskID)
+	require.Equal(t, attemptID, req.ProjectTaskAttemptID)
 	if !strings.Contains(req.Prompt, "需要确认测试报告") || !strings.Contains(req.Prompt, taskID.String()) {
 		t.Fatalf("expected prompt to include demand content and task id, got %q", req.Prompt)
 	}
@@ -2710,13 +2813,14 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Empty(t, repo.bindRequests)
 	require.Len(t, repo.queueRequests, 1)
 	queueReq := repo.queueRequests[0]
-	require.Equal(t, projectTaskDispatchIdempotencyKey(taskID), queueReq.IdempotencyKey)
+	require.Equal(t, attemptIdempotencyKey, queueReq.IdempotencyKey)
 	require.NotNil(t, queueReq.ProjectTaskAttemptID)
 	require.Equal(t, attemptID, *queueReq.ProjectTaskAttemptID)
 	require.Equal(t, leaseToken, queueReq.LeaseToken)
-	require.Equal(t, runID, *queueReq.DigitalEmployeeRunID)
-	require.Equal(t, runtimeTaskID, *queueReq.RuntimeTaskID)
-	require.Equal(t, runtimeNodeID, *queueReq.RuntimeNodeID)
+	require.Nil(t, queueReq.DigitalEmployeeRunID)
+	require.Nil(t, queueReq.RuntimeTaskID)
+	require.Nil(t, queueReq.RuntimeNodeID)
+	require.Empty(t, queueReq.ProviderType)
 	require.Equal(t, projectID.String(), queueReq.ExecutionContextPacket["project_id"])
 	require.Equal(t, demandID.String(), queueReq.ExecutionContextPacket["demand_id"])
 	require.Equal(t, taskID.String(), queueReq.ExecutionContextPacket["project_task_id"])
@@ -2727,10 +2831,23 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, queueReq.ExecutionContextPacket["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, queueReq.ExecutionContextPacket["input_requirements"])
 	require.Equal(t, map[string]any{"completion_path": "project_task_attempt_writeback", "required_refs": []any{"test_report"}}, queueReq.ExecutionContextPacket["handoff_contract"])
-	require.Equal(t, runID.String(), queueReq.ExecutionContextPacket["digital_employee_run_id"])
-	require.Equal(t, runtimeTaskID.String(), queueReq.ExecutionContextPacket["runtime_task_id"])
-	require.Equal(t, runtimeNodeID.String(), queueReq.ExecutionContextPacket["runtime_node_id"])
-	require.Equal(t, "node-1", queueReq.ExecutionContextPacket["node_id"])
+	require.NotContains(t, queueReq.ExecutionContextPacket, "digital_employee_run_id")
+	require.NotContains(t, queueReq.ExecutionContextPacket, "runtime_task_id")
+	require.NotContains(t, queueReq.ExecutionContextPacket, "runtime_node_id")
+	require.NotContains(t, queueReq.ExecutionContextPacket, "node_id")
+	require.NotContains(t, queueReq.ExecutionContextPacket, "provider_type")
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	bindReq := repo.bindAttemptRunRequests[0]
+	require.Equal(t, attemptID, bindReq.AttemptID)
+	require.Equal(t, runID, bindReq.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, bindReq.RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, bindReq.RuntimeNodeID)
+	require.Equal(t, "codex", bindReq.ProviderType)
+	require.Equal(t, runID.String(), bindReq.ExecutionContextPacket["digital_employee_run_id"])
+	require.Equal(t, runtimeTaskID.String(), bindReq.ExecutionContextPacket["runtime_task_id"])
+	require.Equal(t, runtimeNodeID.String(), bindReq.ExecutionContextPacket["runtime_node_id"])
+	require.Equal(t, "node-1", bindReq.ExecutionContextPacket["node_id"])
+	require.Equal(t, "codex", bindReq.ExecutionContextPacket["provider_type"])
 	require.Equal(t, "queued", repo.tasks[0].Status)
 	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, int32(1), repo.tasks[0].AttemptCount)
@@ -2739,6 +2856,10 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Len(t, repo.projectTaskAttempts, 1)
 	require.Equal(t, attemptID, *repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, attemptID, repo.projectTaskAttempts[0].ID)
+	require.NotNil(t, repo.projectTaskAttempts[0].DigitalEmployeeID)
+	require.Equal(t, employeeID, *repo.projectTaskAttempts[0].DigitalEmployeeID)
+	require.NotNil(t, repo.projectTaskAttempts[0].ProviderType)
+	require.Equal(t, "codex", *repo.projectTaskAttempts[0].ProviderType)
 	dispatchedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatched)
 	if len(dispatchedEvents) != 1 {
 		t.Fatalf("expected dispatched event, got %#v", repo.events)
@@ -2748,11 +2869,12 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, taskID.String(), dispatchedEvent.ActorID)
 	if dispatchedEvent.Payload["project_task_attempt_id"] != repo.projectTaskAttempts[0].ID.String() ||
 		dispatchedEvent.Payload["project_task_status"] != "queued" ||
-		dispatchedEvent.Payload["digital_employee_run_id"] != runID.String() ||
-		dispatchedEvent.Payload["runtime_task_id"] != runtimeTaskID.String() ||
-		dispatchedEvent.Payload["runtime_node_id"] != runtimeNodeID.String() {
-		t.Fatalf("expected run binding payload, got %#v", dispatchedEvent.Payload)
+		dispatchedEvent.Payload["digital_employee_id"] != employeeID.String() {
+		t.Fatalf("expected queued attempt payload, got %#v", dispatchedEvent.Payload)
 	}
+	require.NotContains(t, dispatchedEvent.Payload, "digital_employee_run_id")
+	require.NotContains(t, dispatchedEvent.Payload, "runtime_task_id")
+	require.NotContains(t, dispatchedEvent.Payload, "runtime_node_id")
 }
 
 func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
@@ -2962,6 +3084,89 @@ func TestProjectStoreDispatchProjectTaskRunsGateBeforeRunStart(t *testing.T) {
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
 }
 
+func TestProjectStoreDispatchProjectTaskAllowsRuntimeLessReadyEmployeeWithRuntimeCapability(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, Status: project.ProjectStatusRunning, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			InputRequirements: map[string]any{
+				"required_capabilities": []any{"provider:codex"},
+			},
+			PlannerMetadata: map[string]any{
+				"employee_selection": map[string]any{
+					"matched_capabilities": []any{"provider:codex"},
+				},
+			},
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-runtime-capability",
+		ProviderType:  "codex",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter).
+		WithPreDispatchGateReaders(projectStoreGateRuntimeReader{
+			employee: project.PreDispatchEmployeeSnapshot{
+				ID:                 employeeID,
+				Status:             "ready",
+				PolicyAllowed:      true,
+				RequiredLoadSlots:  1,
+				AvailableLoadSlots: 1,
+			},
+			runtime: project.PreDispatchRuntimeSnapshot{
+				NodeOnline:              true,
+				ProviderAvailable:       true,
+				WorkspaceReady:          true,
+				SlotAvailable:           true,
+				ContractVersionAccepted: true,
+			},
+		}, nil)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonRootReady,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.dispatchGateResults, 1)
+	require.Equal(t, project.PreDispatchGateStatusPassed, repo.dispatchGateResults[0].Status)
+	require.Empty(t, repo.dispatchGateResults[0].Blockers)
+	require.Len(t, starter.requests, 1)
+	require.Equal(t, employeeID, starter.requests[0].DigitalEmployeeID)
+	require.Len(t, repo.queueRequests, 1)
+	require.Nil(t, repo.queueRequests[0].DigitalEmployeeRunID)
+	require.Nil(t, repo.queueRequests[0].RuntimeTaskID)
+	require.Nil(t, repo.queueRequests[0].RuntimeNodeID)
+	require.Empty(t, repo.queueRequests[0].ProviderType)
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	require.Equal(t, runID, repo.bindAttemptRunRequests[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, repo.bindAttemptRunRequests[0].RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, repo.bindAttemptRunRequests[0].RuntimeNodeID)
+	require.Equal(t, "codex", repo.bindAttemptRunRequests[0].ProviderType)
+	require.Equal(t, project.ProjectTaskStatusQueued, repo.tasks[0].Status)
+	require.Empty(t, repo.bindRequests)
+}
+
 func TestProjectStoreDispatchProjectTaskWaitingHumanGateDoesNotStartRun(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -3150,7 +3355,7 @@ func TestProjectStoreDispatchProjectTaskQueuedAttemptEventIsIdempotentOnRetry(t 
 		DigitalEmployeeRunID: &runID,
 		RuntimeTaskID:        &runtimeTaskID,
 		RuntimeNodeID:        &runtimeNodeID,
-		IdempotencyKey:       projectTaskDispatchIdempotencyKey(taskID),
+		IdempotencyKey:       projectTaskAttemptDispatchIdempotencyKey(taskID, 1),
 		LeaseToken:           "project-task-" + taskID.String() + "-attempt-1",
 	})
 	require.NoError(t, err)
@@ -3168,6 +3373,194 @@ func TestProjectStoreDispatchProjectTaskQueuedAttemptEventIsIdempotentOnRetry(t 
 	require.Len(t, repo.queueRequests, 1)
 	require.Len(t, repo.events, 1)
 	require.Equal(t, 1, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+}
+
+func TestProjectStoreDispatchProjectTaskRetriesQueuedAttemptWithoutRunBinding(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	attemptID := projectTaskDispatchAttemptID(taskID, 1)
+	_, err := repo.QueueProjectTaskWithAttempt(context.Background(), project.QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 taskID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                projectTaskAttemptDispatchIdempotencyKey(taskID, 1),
+		LeaseToken:                    projectTaskAttemptLeaseToken(taskID, 1),
+		ExecutionContextPacket:        map[string]any{"project_task_id": taskID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Nil(t, repo.tasks[0].DigitalEmployeeRunID)
+	require.Nil(t, repo.tasks[0].RuntimeTaskID)
+
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+		ProviderType:  "codex",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err = store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	require.Equal(t, attemptID, starter.requests[0].ProjectTaskAttemptID)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	require.Equal(t, attemptID, repo.bindAttemptRunRequests[0].AttemptID)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+}
+
+func TestProjectStoreDispatchProjectTaskRetriesAfterRunStartFailureWithNewAttempt(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	firstAttemptID := projectTaskDispatchAttemptID(taskID, 1)
+	secondAttemptID := projectTaskDispatchAttemptID(taskID, 2)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	startErr := errors.New("runtime start timeout")
+	starter := &projectTaskRunStarterFake{err: startErr}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.ErrorIs(t, err, startErr)
+	require.True(t, dispatchFailureRecorded(err))
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, firstAttemptID, repo.projectTaskAttempts[0].ID)
+	require.Equal(t, project.ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, project.ProjectTaskStatusPlanned, repo.tasks[0].Status)
+	require.Nil(t, repo.tasks[0].CurrentAttemptID)
+	require.Nil(t, repo.tasks[0].DigitalEmployeeRunID)
+	require.Nil(t, repo.tasks[0].RuntimeTaskID)
+
+	starter.err = nil
+	starter.result = StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+		ProviderType:  "codex",
+	}
+	err = store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 2)
+	require.Equal(t, secondAttemptID, starter.requests[1].ProjectTaskAttemptID)
+	require.Equal(t, projectTaskAttemptDispatchIdempotencyKey(taskID, 2), starter.requests[1].IdempotencyKey)
+	require.Len(t, repo.queueRequests, 2)
+	require.Len(t, repo.projectTaskAttempts, 2)
+	require.Equal(t, secondAttemptID, repo.projectTaskAttempts[1].ID)
+	require.Equal(t, project.ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
+	require.Equal(t, secondAttemptID, repo.bindAttemptRunRequests[0].AttemptID)
+	require.Equal(t, secondAttemptID, *repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+}
+
+func TestProjectStoreDispatchProjectTaskBindFailureRetriesWithoutDispatchRecovery(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	bindErr := errors.New("attempt run bind failed")
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		bindErr:       bindErr,
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         uuid.New(),
+		RuntimeTaskID: uuid.New(),
+		RuntimeNodeID: uuid.New(),
+		NodeID:        "node-1",
+		ProviderType:  "codex",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.ErrorIs(t, err, bindErr)
+	require.False(t, dispatchFailureRecorded(err))
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, project.ProjectTaskStatusQueued, repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
+	attemptID := *repo.tasks[0].CurrentAttemptID
+	require.Nil(t, repo.tasks[0].DigitalEmployeeRunID)
+	require.Nil(t, repo.tasks[0].RuntimeTaskID)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
+
+	repo.bindErr = nil
+	err = store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 2)
+	require.Equal(t, attemptID, starter.requests[1].ProjectTaskAttemptID)
+	require.Equal(t, projectTaskAttemptDispatchIdempotencyKey(taskID, 1), starter.requests[1].IdempotencyKey)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Len(t, repo.bindAttemptRunRequests, 2)
+	require.Equal(t, attemptID, repo.bindAttemptRunRequests[1].AttemptID)
+	require.NotNil(t, repo.tasks[0].DigitalEmployeeRunID)
+	require.NotNil(t, repo.tasks[0].RuntimeTaskID)
 	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
 }
 
@@ -3337,9 +3730,15 @@ func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testi
 	if err == nil {
 		t.Fatal("expected dispatch error")
 	}
-	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
-		t.Fatalf("expected planned unqueued task, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 1 {
+		t.Fatalf("expected planned task after released queued attempt, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
 	}
+	require.Nil(t, repo.tasks[0].CurrentAttemptID)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, project.ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.NotNil(t, repo.projectTaskAttempts[0].Retryable)
+	require.True(t, *repo.projectTaskAttempts[0].Retryable)
+	require.Len(t, repo.dispatchStartFailures, 1)
 	dispatchFailedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatchFailed)
 	if len(dispatchFailedEvents) != 1 {
 		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
@@ -3347,6 +3746,45 @@ func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testi
 	if dispatchFailedEvents[0].Payload["retryable"] != true {
 		t.Fatalf("expected retryable failure payload, got %#v", dispatchFailedEvents[0].Payload)
 	}
+}
+
+func TestProjectStoreDispatchProjectTaskQueueFailureDoesNotLeaveStartedRuntimeRun(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		queueErr:      errors.New("attempt queue failed"),
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         uuid.New(),
+		RuntimeTaskID: uuid.New(),
+		RuntimeNodeID: uuid.New(),
+		NodeID:        "node-1",
+		ProviderType:  "codex",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+
+	require.Error(t, err)
+	require.Empty(t, starter.requests, "dispatch must not leave a started runtime run when attempt queue fails")
+	require.Len(t, repo.queueRequests, 1)
+	require.Empty(t, repo.projectTaskAttempts)
+	require.Equal(t, project.ProjectTaskStatusPlanned, repo.tasks[0].Status)
 }
 
 func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable(t *testing.T) {
@@ -3380,9 +3818,15 @@ func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable
 	if len(dispatchFailedEvents) != 1 || dispatchFailedEvents[0].Payload["retryable"] != false {
 		t.Fatalf("expected non-retryable failure payload, got %#v", repo.events)
 	}
-	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
-		t.Fatalf("expected planned unqueued task, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 1 {
+		t.Fatalf("expected planned task after released queued attempt, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
 	}
+	require.Nil(t, repo.tasks[0].CurrentAttemptID)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, project.ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.NotNil(t, repo.projectTaskAttempts[0].Retryable)
+	require.False(t, *repo.projectTaskAttempts[0].Retryable)
+	require.Len(t, repo.dispatchStartFailures, 1)
 }
 
 func TestProjectStoreDispatchProjectTaskAlreadyBoundSameRunIsIdempotent(t *testing.T) {
@@ -3539,11 +3983,14 @@ type projectStoreMemoryRepository struct {
 	approvalID    uuid.UUID
 
 	bindRequests                          []project.BindProjectTaskRunRequest
+	bindAttemptRunRequests                []project.BindProjectTaskAttemptRunRequest
+	dispatchStartFailures                 []project.FailQueuedProjectTaskAttemptDispatchStartRequest
 	queueRequests                         []project.QueueProjectTaskRequest
 	dispatchGateResults                   []project.PreDispatchGateResult
 	linkGateAttemptRequests               []project.LinkPreDispatchGateAttemptRequest
 	projectTaskAttempts                   []project.ProjectTaskAttempt
 	bindErr                               error
+	queueErr                              error
 	advanceDemandErr                      error
 	advanceDemandCalls                    int
 	appendProjectEventErr                 error
@@ -4159,6 +4606,15 @@ func (r *projectStoreMemoryRepository) GetCurrentProjectTaskAttempt(ctx context.
 	return project.ProjectTaskAttempt{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, attemptID uuid.UUID) (project.ProjectTaskAttempt, error) {
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == tenantID && attempt.ID == attemptID {
+			return attempt, nil
+		}
+	}
+	return project.ProjectTaskAttempt{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, req project.BindProjectTaskRunRequest) (project.ProjectTask, error) {
 	r.bindRequests = append(r.bindRequests, req)
 	if r.bindErr != nil {
@@ -4182,6 +4638,116 @@ func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, r
 		return task, nil
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) BindProjectTaskAttemptRun(ctx context.Context, req project.BindProjectTaskAttemptRunRequest) (project.ProjectTaskAttemptRunBindingResult, error) {
+	r.bindAttemptRunRequests = append(r.bindAttemptRunRequests, req)
+	if r.bindErr != nil {
+		return project.ProjectTaskAttemptRunBindingResult{}, r.bindErr
+	}
+	attemptIndex := -1
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			attemptIndex = index
+			break
+		}
+	}
+	if attemptIndex == -1 {
+		return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectNotFound
+	}
+	attempt := r.projectTaskAttempts[attemptIndex]
+	if attempt.Status != project.ProjectTaskAttemptStatusQueued {
+		return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+	}
+	if attempt.DigitalEmployeeRunID != nil && *attempt.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+		return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+	}
+	if attempt.RuntimeTaskID != nil && *attempt.RuntimeTaskID != req.RuntimeTaskID {
+		return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+	}
+	if attempt.RuntimeNodeID != nil && *attempt.RuntimeNodeID != req.RuntimeNodeID {
+		return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+	}
+	attempt.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+	attempt.RuntimeTaskID = &req.RuntimeTaskID
+	attempt.RuntimeNodeID = &req.RuntimeNodeID
+	attempt.ProviderType = strPtrOrNil(req.ProviderType)
+	attempt.ExecutionContextPacket = cloneAnyMap(req.ExecutionContextPacket)
+	attempt.ExecutionContextPacketVersion = req.ExecutionContextPacketVersion
+	attempt.UpdatedAt = time.Now().UTC()
+	r.projectTaskAttempts[attemptIndex] = attempt
+
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.CurrentAttemptID == nil || *task.CurrentAttemptID != req.AttemptID || task.Status != project.ProjectTaskStatusQueued {
+			return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+		}
+		task.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+		task.RuntimeTaskID = &req.RuntimeTaskID
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		return project.ProjectTaskAttemptRunBindingResult{Task: task, Attempt: attempt}, nil
+	}
+	return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) FailQueuedProjectTaskAttemptDispatchStart(ctx context.Context, req project.FailQueuedProjectTaskAttemptDispatchStartRequest) (project.ProjectTaskWritebackResult, error) {
+	r.dispatchStartFailures = append(r.dispatchStartFailures, req)
+	attemptIndex := -1
+	for index, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == req.TenantID && attempt.ProjectTaskID == req.ProjectTaskID && attempt.ID == req.AttemptID {
+			attemptIndex = index
+			break
+		}
+	}
+	if attemptIndex == -1 {
+		return project.ProjectTaskWritebackResult{}, project.ErrProjectNotFound
+	}
+	attempt := r.projectTaskAttempts[attemptIndex]
+	if attempt.Status != project.ProjectTaskAttemptStatusQueued || attempt.LeaseToken != req.LeaseToken {
+		return project.ProjectTaskWritebackResult{}, project.ErrProjectConflict
+	}
+	now := time.Now().UTC()
+	attempt.Status = project.ProjectTaskAttemptStatusLost
+	attempt.FinishedAt = &now
+	attempt.Retryable = &req.Retryable
+	attempt.FailureFamily = strPtrOrNil(req.FailureFamily)
+	attempt.FailureMessage = strPtrOrNil(req.FailureSummary)
+	attempt.TerminalEventID = req.DispatchFailureEventID
+	attempt.UpdatedAt = now
+	r.projectTaskAttempts[attemptIndex] = attempt
+
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.CurrentAttemptID == nil || *task.CurrentAttemptID != req.AttemptID || task.Status != project.ProjectTaskStatusQueued {
+			return project.ProjectTaskWritebackResult{}, project.ErrProjectConflict
+		}
+		task.Status = req.RestoreTaskStatus
+		if task.Status == "" {
+			task.Status = project.ProjectTaskStatusPlanned
+		}
+		if req.ClearCurrentAttempt {
+			task.CurrentAttemptID = nil
+		}
+		task.RetryNotBefore = req.RetryNotBefore
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		var event project.ProjectEvent
+		if req.DispatchFailureEventID != nil {
+			for _, candidate := range r.events {
+				if candidate.TenantID == req.TenantID && candidate.ProjectID == req.ProjectID && candidate.ID == *req.DispatchFailureEventID {
+					event = candidate
+					break
+				}
+			}
+		}
+		return project.ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	}
+	return project.ProjectTaskWritebackResult{}, project.ErrProjectNotFound
 }
 
 func (r *projectStoreMemoryRepository) RecordPreDispatchGateResult(ctx context.Context, req project.RecordPreDispatchGateResultRequest) (project.PreDispatchGateResult, error) {
@@ -4349,6 +4915,9 @@ func (r *projectStoreMemoryRepository) MoveProjectTaskToWaitingHumanForPreDispat
 
 func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.Context, req project.QueueProjectTaskRequest) (project.QueueProjectTaskResult, error) {
 	r.queueRequests = append(r.queueRequests, req)
+	if r.queueErr != nil {
+		return project.QueueProjectTaskResult{}, r.queueErr
+	}
 	for _, attempt := range r.projectTaskAttempts {
 		if attempt.TenantID != req.TenantID || attempt.IdempotencyKey != req.IdempotencyKey {
 			continue
@@ -4414,6 +4983,8 @@ func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.C
 			ProjectTaskID:                 req.ProjectTaskID,
 			AttemptNo:                     attemptNo,
 			Status:                        project.ProjectTaskAttemptStatusQueued,
+			DigitalEmployeeID:             &req.DigitalEmployeeID,
+			ProviderType:                  strPtrOrNil(req.ProviderType),
 			DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
 			RuntimeTaskID:                 req.RuntimeTaskID,
 			RuntimeNodeID:                 req.RuntimeNodeID,
@@ -4463,6 +5034,9 @@ func projectStoreQueueTaskEventPayload(req project.QueueProjectTaskRequest, atte
 	}
 	if req.RuntimeNodeID != nil {
 		payload["runtime_node_id"] = req.RuntimeNodeID.String()
+	}
+	if strings.TrimSpace(req.ProviderType) != "" {
+		payload["provider_type"] = req.ProviderType
 	}
 	if req.DispatchGateResultID != nil {
 		payload["dispatch_gate_result_id"] = req.DispatchGateResultID.String()
@@ -5036,6 +5610,14 @@ func eventsByType(events []project.ProjectEvent, eventType project.ProjectEventT
 }
 
 func strPtr(value string) *string {
+	return &value
+}
+
+func strPtrOrNil(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
 	return &value
 }
 
