@@ -302,9 +302,9 @@ func createOptionChecks(
 		},
 		{
 			Key:     "runtime_provider",
-			Label:   "Runtime 可用",
-			Status:  checkStatus(availableRuntimeCount > 0, false),
-			Message: fmt.Sprintf("%d/%d 个运行绑定可用", availableRuntimeCount, len(runtimeOptions)),
+			Label:   "Runtime 调度预览",
+			Status:  checkStatus(availableRuntimeCount > 0, true),
+			Message: fmt.Sprintf("%d/%d 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度", availableRuntimeCount, len(runtimeOptions)),
 		},
 	}
 }
@@ -488,6 +488,9 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 	if err := validateEmployeeTypeAllowedByTeamConfig(normalized.EmployeeType, teamConfig); err != nil {
 		return nil, err
 	}
+	if err := validateProviderTypeAllowedByTeamConfig(normalized.ProviderType, teamConfig); err != nil {
+		return nil, err
+	}
 	if err := s.validateInitialEffectiveConfig(ctx, s.repository, normalized, definition, teamConfig, uuid.New()); err != nil {
 		return nil, err
 	}
@@ -589,6 +592,20 @@ func validateEmployeeTypeAllowedByTeamConfig(employeeType string, teamConfig Tea
 	}
 	if !stringSet(allowedTypes)[employeeType] {
 		return fmt.Errorf("%w: employee_type %q is outside team policy", ErrInvalidInput, employeeType)
+	}
+	return nil
+}
+
+func validateProviderTypeAllowedByTeamConfig(providerType string, teamConfig TeamConfigInput) error {
+	allowedProviderTypes := firstNonEmptyStringList(
+		optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
+		optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
+	)
+	if len(allowedProviderTypes) == 0 {
+		return nil
+	}
+	if !stringSet(allowedProviderTypes)[providerType] {
+		return fmt.Errorf("%w: provider_type %q is outside team policy", ErrInvalidInput, providerType)
 	}
 	return nil
 }

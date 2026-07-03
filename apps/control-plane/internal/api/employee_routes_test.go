@@ -767,6 +767,21 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 				Description: "Manages database operations",
 				DefaultRole: "database_admin",
 			}},
+			RuntimeProviderOptions: []employee.RuntimeProviderOption{{
+				RuntimeNodeID:         uuid.New(),
+				NodeID:                "offline-runtime",
+				RuntimeName:           "离线执行机",
+				ProviderType:          "codex",
+				RuntimeStatus:         "offline",
+				ProviderStatus:        "unhealthy",
+				HealthStatus:          "unhealthy",
+				CurrentLoad:           0,
+				MaxSlots:              2,
+				AgentHomeDir:          "/srv/agents/codex",
+				AgentHomeDirAvailable: false,
+				Available:             false,
+				DisabledReason:        "runtime_session_inactive",
+			}},
 		},
 	}
 	server := NewServerWithAuthz(
@@ -806,8 +821,11 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			MCPServers           []string `json:"mcp_servers"`
 			ExternalCapabilities []string `json:"external_capabilities"`
 		} `json:"capability_options"`
-		RuntimeProviderOptions []struct{} `json:"runtime_provider_options"`
-		CreationChecks         []struct {
+		RuntimeProviderOptions []struct {
+			ProviderType string `json:"provider_type"`
+			Available    bool   `json:"available"`
+		} `json:"runtime_provider_options"`
+		CreationChecks []struct {
 			Key     string `json:"key"`
 			Label   string `json:"label"`
 			Status  string `json:"status"`
@@ -832,11 +850,16 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	assertNonNilEmptyStringSlice(t, "capability_options.skills", body.CapabilityOptions.Skills)
 	assertNonNilEmptyStringSlice(t, "capability_options.mcp_servers", body.CapabilityOptions.MCPServers)
 	assertNonNilEmptyStringSlice(t, "capability_options.external_capabilities", body.CapabilityOptions.ExternalCapabilities)
-	if body.RuntimeProviderOptions == nil || len(body.RuntimeProviderOptions) != 0 {
-		t.Fatalf("expected runtime_provider_options to decode as empty array, got %#v", body.RuntimeProviderOptions)
+	if len(body.RuntimeProviderOptions) != 1 || body.RuntimeProviderOptions[0].ProviderType != "codex" || body.RuntimeProviderOptions[0].Available {
+		t.Fatalf("expected runtime_provider_options dispatch preview to remain present and unavailable, got %#v", body.RuntimeProviderOptions)
 	}
 	assertCreateOptionCheck(t, body.CreationChecks, "employee_templates", "passed")
-	assertCreateOptionCheck(t, body.CreationChecks, "runtime_provider", "blocked")
+	if len(body.CreationChecks) <= 3 || body.CreationChecks[3].Key != "runtime_provider" {
+		t.Fatalf("expected runtime_provider check at index 3, got %#v", body.CreationChecks)
+	}
+	if body.CreationChecks[3].Status == "blocked" {
+		t.Fatalf("runtime_provider must be advisory, got %#v", body.CreationChecks[3])
+	}
 
 	service.createOptions.EmployeeTypes = nil
 	emptyTypesReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)

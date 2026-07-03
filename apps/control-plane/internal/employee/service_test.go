@@ -900,6 +900,39 @@ func TestCreateDigitalEmployeeBlocksCapabilityOutsideTeamPolicyBeforeProvisionin
 	}
 }
 
+func TestCreateDigitalEmployeeRejectsProviderOutsideTeamPolicyBeforeCreatingFacts(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.ProviderType = "opencode"
+	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
+	teamConfig := repo.teamConfigs[teamConfigID]
+	teamConfig.CapabilityPolicy = map[string]any{
+		"allowed_employee_types":        []any{"database_admin"},
+		"allowed_provider_types":        []any{"codex"},
+		"allowed_skills":                []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
+		"allowed_mcp_servers":           []any{"postgres-readonly", "mysql-readonly"},
+		"allowed_external_capabilities": []any{"change-ticket"},
+	}
+	teamConfig.RuntimeScopePolicy = map[string]any{
+		"allowed_provider_types": []any{"codex"},
+	}
+	repo.teamConfigs[teamConfigID] = teamConfig
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for provider outside team policy, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "provider_type") {
+		t.Fatalf("expected provider_type policy error, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected provider validation not to dispatch command, got %#v", dispatcher.commands)
+	}
+	if len(repo.employees) != 0 || len(repo.commandReceipts) != 0 || repo.transactionCount != 0 {
+		t.Fatalf("expected provider validation before creation, employees=%#v receipts=%#v transactions=%d", repo.employees, repo.commandReceipts, repo.transactionCount)
+	}
+}
+
 func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {
 	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]

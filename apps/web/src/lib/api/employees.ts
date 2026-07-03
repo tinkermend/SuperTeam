@@ -74,7 +74,7 @@ export type DigitalEmployeeCapabilityOptions = {
 };
 
 export type DigitalEmployeeRuntimeProviderOption = {
-  runtime_node_id: string;
+  runtime_node_id?: string;
   node_id: string;
   runtime_name: string;
   provider_type: string;
@@ -136,7 +136,7 @@ export type DigitalEmployeeCreateOptions = {
 export type DigitalEmployeeExecutionInstance = {
   id: string;
   digital_employee_id: string;
-  runtime_node_id: string;
+  runtime_node_id?: string;
   provider_type: string;
   agent_home_dir?: string;
   workspace_policy?: Record<string, unknown>;
@@ -402,7 +402,7 @@ export type CreateDigitalEmployeeInput = {
   context_policy_override?: Record<string, unknown>;
   approval_policy_override?: Record<string, unknown>;
   output_contract_addendum?: Record<string, unknown>;
-  runtime_node_id: string;
+  runtime_node_id?: string;
   provider_type: string;
   session_policy?: Record<string, unknown>;
   workspace_policy?: Record<string, unknown>;
@@ -440,13 +440,11 @@ function assertReadyCreateInput(
     !input.employee_type ||
     !("avatar_asset_id" in input) ||
     !input.avatar_asset_id ||
-    !("runtime_node_id" in input) ||
-    !input.runtime_node_id ||
     !("provider_type" in input) ||
     !input.provider_type
   ) {
     throw new Error(
-      "digital employee ready creation requires employee_type, avatar_asset_id, runtime_node_id, and provider_type",
+      "digital employee ready creation requires employee_type, avatar_asset_id, and provider_type",
     );
   }
 }
