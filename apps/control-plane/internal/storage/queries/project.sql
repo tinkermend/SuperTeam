@@ -1262,6 +1262,25 @@ JOIN project_tasks pt ON pt.current_attempt_id = pta.id
 WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pt.id = sqlc.arg('project_task_id')::uuid;
 
+-- name: BindProjectTaskAttemptRun :one
+UPDATE project_task_attempts
+SET digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid,
+    runtime_task_id = sqlc.arg('runtime_task_id')::uuid,
+    runtime_node_id = sqlc.arg('runtime_node_id')::uuid,
+    provider_type = sqlc.arg('provider_type')::varchar,
+    execution_context_packet = sqlc.arg('execution_context_packet')::jsonb,
+    execution_context_packet_version = sqlc.arg('execution_context_packet_version')::varchar,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'queued'
+  AND (digital_employee_run_id IS NULL OR digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid)
+  AND (runtime_task_id IS NULL OR runtime_task_id = sqlc.arg('runtime_task_id')::uuid)
+  AND (runtime_node_id IS NULL OR runtime_node_id = sqlc.arg('runtime_node_id')::uuid)
+  AND (provider_type IS NULL OR provider_type = sqlc.arg('provider_type')::varchar)
+RETURNING *;
+
 -- name: LockProjectTaskForQueue :one
 SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -1286,6 +1305,54 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND status IN ('planned', 'waiting_human')
+RETURNING *;
+
+-- name: BindQueuedProjectTaskRun :one
+UPDATE project_tasks
+SET runtime_task_id = sqlc.arg('runtime_task_id')::uuid,
+    digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND current_attempt_id = sqlc.arg('current_attempt_id')::uuid
+  AND status = 'queued'
+  AND (runtime_task_id IS NULL OR runtime_task_id = sqlc.arg('runtime_task_id')::uuid)
+  AND (digital_employee_run_id IS NULL OR digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid)
+RETURNING *;
+
+-- name: MarkQueuedProjectTaskAttemptDispatchStartFailed :one
+UPDATE project_task_attempts
+SET status = sqlc.arg('status')::varchar,
+    finished_at = NOW(),
+    retryable = sqlc.arg('retryable')::boolean,
+    failure_family = sqlc.arg('failure_family')::varchar,
+    failure_message = sqlc.arg('failure_message')::text,
+    terminal_event_id = sqlc.narg('terminal_event_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND lease_token = sqlc.arg('lease_token')::varchar
+  AND status = 'queued'
+RETURNING *;
+
+-- name: RestoreProjectTaskAfterDispatchStartFailure :one
+UPDATE project_tasks
+SET status = sqlc.arg('status')::varchar,
+    current_attempt_id = CASE
+        WHEN sqlc.arg('clear_current_attempt')::boolean THEN NULL
+        ELSE current_attempt_id
+    END,
+    retry_not_before = sqlc.narg('retry_not_before')::timestamptz,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND current_attempt_id = sqlc.arg('current_attempt_id')::uuid
+  AND status = 'queued'
 RETURNING *;
 
 -- name: ScheduleProjectTaskRetry :one

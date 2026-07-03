@@ -474,10 +474,15 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
+		projectTaskPreflights, ok := runRepository.(gateProjectTaskRunPreflightReader)
+		if !ok {
+			return nil, errors.New("run repository does not support project task preflight")
+		}
 		gateAdapter := preDispatchGateAdapter{
-			employees:    employeeRepository,
-			runtimeNodes: runtimeRepository,
-			capabilities: capabilityRepository,
+			employees:       employeeRepository,
+			projectTaskRuns: projectTaskPreflights,
+			runtimeNodes:    runtimeRepository,
+			capabilities:    capabilityRepository,
 		}
 		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
 			projectRepository,
@@ -486,7 +491,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			projectTaskRunStarterAdapter{runService: runService},
 		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
 			WithLendingGatekeeper(lendingGatekeeperAdapter{employees: employeeRepository, lending: teamLendingRepository}).
-			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository}).
+			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)

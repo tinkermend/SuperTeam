@@ -640,9 +640,10 @@ func TestProjectHandlerMapsGovernanceNotFound(t *testing.T) {
 func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	projectID := uuid.New()
 	decisionID := uuid.New()
+	planRevisionID := uuid.New()
 	tenantID := uuid.New()
 	actorID := uuid.New()
-	service := &handlerTestService{}
+	service := &handlerTestService{resolveDecisionPlanRevisionID: planRevisionID}
 	handler := newTestHandler(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/route-decisions?limit=10&offset=2", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
@@ -674,6 +675,13 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 
 	if resolveResp.Code != http.StatusOK {
 		t.Fatalf("expected decision resolve 200, got %d: %s", resolveResp.Code, resolveResp.Body.String())
+	}
+	var resolved decisionRequestResponse
+	if err := json.Unmarshal(resolveResp.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("decode decision response: %v", err)
+	}
+	if resolved.PlanRevisionID == nil || *resolved.PlanRevisionID != planRevisionID.String() {
+		t.Fatalf("expected plan revision id %s, got %#v", planRevisionID, resolved.PlanRevisionID)
 	}
 	if service.resolveDecisionReq.TenantID != tenantID || service.resolveDecisionReq.ProjectID != projectID || service.resolveDecisionReq.DecisionRequestID != decisionID || service.resolveDecisionReq.DecidedByUserID != actorID || service.resolveDecisionReq.Decision != "approved" {
 		t.Fatalf("unexpected resolve request: %#v", service.resolveDecisionReq)
@@ -1721,6 +1729,7 @@ type handlerTestService struct {
 	budgetHeartbeatResult             *ProjectTaskAttemptBudgetHeartbeatResult
 	failAttemptReq                    FailProjectTaskAttemptRequest
 	waitAttemptReq                    WaitHumanProjectTaskAttemptRequest
+	resolveDecisionPlanRevisionID     uuid.UUID
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -1894,6 +1903,7 @@ func (s *handlerTestService) ListProjectTaskLiveness(ctx context.Context, tenant
 
 func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
 	s.resolveDecisionReq = req
+	planRevisionID := s.resolveDecisionPlanRevisionID
 	decision := DecisionRequest{
 		ID:                req.DecisionRequestID,
 		TenantID:          req.TenantID,
@@ -1903,6 +1913,9 @@ func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDec
 		DecisionType:      "route_review",
 		TitleSnapshot:     "需要负责人确认",
 		StatusSnapshot:    req.Decision,
+	}
+	if planRevisionID != uuid.Nil {
+		decision.PlanRevisionID = &planRevisionID
 	}
 	return &decision, nil
 }

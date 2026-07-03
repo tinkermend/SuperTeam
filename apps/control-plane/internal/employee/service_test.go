@@ -933,6 +933,44 @@ func TestCreateDigitalEmployeeRejectsProviderOutsideTeamPolicyBeforeCreatingFact
 	}
 }
 
+func TestCreateDigitalEmployeeProviderTypeMustBeSupportedEvenWithoutTeamAllowlist(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerType string
+		wantError    bool
+	}{
+		{name: "claude code allowed", providerType: "claude-code"},
+		{name: "opencode allowed", providerType: "opencode"},
+		{name: "codex allowed", providerType: "codex"},
+		{name: "unknown provider rejected", providerType: "foo", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+			req.ProviderType = tt.providerType
+			teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
+			teamConfig := repo.teamConfigs[teamConfigID]
+			delete(teamConfig.CapabilityPolicy, "allowed_provider_types")
+			teamConfig.RuntimeScopePolicy = map[string]any{}
+			repo.teamConfigs[teamConfigID] = teamConfig
+
+			_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+			if tt.wantError {
+				require.ErrorIs(t, err, ErrInvalidInput)
+				require.Contains(t, err.Error(), "provider_type")
+				require.Empty(t, dispatcher.commands)
+				require.Empty(t, repo.employees)
+				require.Empty(t, repo.commandReceipts)
+				require.Zero(t, repo.transactionCount)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {
 	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
@@ -1036,7 +1074,7 @@ func TestBuildDefaultAgentsContentQuotesEmployeeDisplayFields(t *testing.T) {
 	}
 }
 
-func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
+func TestBindExecutionInstanceRejectsEmployeeRuntimeBinding(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -1044,8 +1082,7 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	employeeID := uuid.New()
-	firstRuntimeID := uuid.New()
-	secondRuntimeID := uuid.New()
+	runtimeID := uuid.New()
 	repo.employees[employeeID] = DigitalEmployeeRecord{
 		ID:           employeeID,
 		TenantID:     tenantID,
@@ -1053,50 +1090,23 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 		ProviderType: "codex",
 	}
 
-	first, err := svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
+	_, err = svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
-		RuntimeNodeID:     firstRuntimeID,
+		RuntimeNodeID:     runtimeID,
 		ProviderType:      "codex",
 		AgentHomeDir:      "/srv/superteam/employees/finance",
 		SessionPolicy:     map[string]any{"max_turns": float64(5)},
 	})
-	if err != nil {
-		t.Fatalf("first bind: %v", err)
+	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "digital employees are not runtime-bound") {
+		t.Fatalf("expected runtime binding rejection, got %v", err)
 	}
-	second, err := svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		RuntimeNodeID:     secondRuntimeID,
-		ProviderType:      "codex",
-		AgentHomeDir:      "/srv/superteam/employees/finance-v2",
-		SessionPolicy:     map[string]any{"max_turns": float64(12)},
-	})
-	if err != nil {
-		t.Fatalf("second bind: %v", err)
-	}
-
-	if first.ID != second.ID {
-		t.Fatalf("expected bind to replace same execution instance row id, got %s then %s", first.ID, second.ID)
-	}
-	if second.RuntimeNodeID != secondRuntimeID {
-		t.Fatalf("expected updated runtime node id %s, got %s", secondRuntimeID, second.RuntimeNodeID)
-	}
-	if second.ProviderType != "codex" {
-		t.Fatalf("expected updated provider type, got %q", second.ProviderType)
-	}
-	if second.AgentHomeDir != "/srv/superteam/employees/finance-v2" {
-		t.Fatalf("expected updated agent home dir, got %q", second.AgentHomeDir)
-	}
-	if second.SessionPolicy["max_turns"] != float64(12) {
-		t.Fatalf("expected updated session policy, got %#v", second.SessionPolicy)
-	}
-	if second.Status != ExecutionInstanceStatusReady {
-		t.Fatalf("expected ready status, got %q", second.Status)
+	if len(repo.instances) != 0 {
+		t.Fatalf("expected no execution instance writes, got %#v", repo.instances)
 	}
 }
 
-func TestBindExecutionInstanceCannotChangeEmployeeProvider(t *testing.T) {
+func TestBindExecutionInstanceRejectsProviderChangeThroughLegacyBinding(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -1123,8 +1133,14 @@ func TestBindExecutionInstanceCannotChangeEmployeeProvider(t *testing.T) {
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
+	if !strings.Contains(err.Error(), "digital employees are not runtime-bound") {
+		t.Fatalf("expected runtime binding rejection, got %v", err)
+	}
 	if repo.employees[employeeID].ProviderType != "codex" {
 		t.Fatalf("expected employee provider to remain codex, got %q", repo.employees[employeeID].ProviderType)
+	}
+	if len(repo.instances) != 0 {
+		t.Fatalf("expected no execution instance writes, got %#v", repo.instances)
 	}
 }
 

@@ -36,6 +36,12 @@ const (
 	maxWorkspaceFileInlineBytes     = 10 * 1024 * 1024
 )
 
+var supportedDigitalEmployeeProviderTypes = map[string]struct{}{
+	"claude-code": {},
+	"opencode":    {},
+	"codex":       {},
+}
+
 func NewService(repository Repository) (*Service, error) {
 	return NewServiceWithProvisioning(repository, nil, nil)
 }
@@ -551,6 +557,9 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if providerType == "" {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
 	}
+	if !isSupportedDigitalEmployeeProviderType(providerType) {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: unsupported provider_type %q", ErrInvalidInput, providerType)
+	}
 	riskLevel := strings.TrimSpace(req.RiskLevel)
 	if riskLevel == "" {
 		riskLevel = defaultRiskLevelForEmployeeType(definition)
@@ -573,6 +582,11 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 
 func normalizeProviderType(value string) string {
 	return strings.TrimSpace(value)
+}
+
+func isSupportedDigitalEmployeeProviderType(providerType string) bool {
+	_, ok := supportedDigitalEmployeeProviderTypes[providerType]
+	return ok
 }
 
 func defaultRiskLevelForEmployeeType(definition EmployeeTypeDefinition) string {
@@ -1408,44 +1422,7 @@ func (s *Service) BindExecutionInstance(ctx context.Context, req BindExecutionIn
 	if req.DigitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
 	}
-	if req.RuntimeNodeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
-	}
-	providerType := strings.TrimSpace(req.ProviderType)
-	if providerType == "" {
-		return nil, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
-	}
-	agentHomeDir := strings.TrimSpace(req.AgentHomeDir)
-	if agentHomeDir == "" {
-		return nil, fmt.Errorf("%w: agent_home_dir is required", ErrInvalidInput)
-	}
-
-	employeeRecord, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("get digital employee: %w", err)
-	}
-	if existingProvider := strings.TrimSpace(employeeRecord.ProviderType); existingProvider != "" && existingProvider != providerType {
-		return nil, fmt.Errorf("%w: provider_type is fixed on digital employee", ErrInvalidInput)
-	}
-
-	record, err := s.repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
-		TenantID:             req.TenantID,
-		DigitalEmployeeID:    req.DigitalEmployeeID,
-		RuntimeNodeID:        req.RuntimeNodeID,
-		ProviderType:         providerType,
-		AgentHomeDir:         agentHomeDir,
-		WorkspacePolicy:      cloneMap(req.WorkspacePolicy),
-		SessionPolicy:        cloneMap(req.SessionPolicy),
-		RuntimeSelector:      cloneMap(req.RuntimeSelector),
-		CapacityRequirements: cloneMap(req.CapacityRequirements),
-		FallbackPolicy:       cloneMap(req.FallbackPolicy),
-		Status:               ExecutionInstanceStatusReady,
-		Metadata:             cloneMap(req.Metadata),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upsert digital employee execution instance: %w", err)
-	}
-	return executionInstanceFromRecord(record), nil
+	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", ErrInvalidInput)
 }
 
 func (s *Service) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error) {

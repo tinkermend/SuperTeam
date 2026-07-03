@@ -252,6 +252,7 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 	projectTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000903")
 	attemptID := uuid.MustParse("00000000-0000-0000-0000-000000000904")
 	dispatchUserID := uuid.MustParse("00000000-0000-0000-0000-000000000905")
+	idempotencyKey := "project-task:" + projectTaskID.String() + ":attempt:1:dispatch"
 	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
@@ -267,7 +268,7 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 		DispatchUserID:       dispatchUserID,
 		Objective:            "整理上线证据",
 		Prompt:               "请完成项目任务",
-		IdempotencyKey:       "project-task:" + projectTaskID.String(),
+		IdempotencyKey:       idempotencyKey,
 		Metadata:             map[string]any{"source": "project_task_dispatch"},
 		WorkspaceMode:        "branch",
 		BaseRef:              "main",
@@ -290,6 +291,9 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 		t.Fatalf("expected one created run, got %d", len(repo.createRunRequests))
 	}
 	createReq := repo.createRunRequests[0]
+	if createReq.IdempotencyKey == nil || *createReq.IdempotencyKey != idempotencyKey {
+		t.Fatalf("expected attempt-level idempotency key %q, got %#v", idempotencyKey, createReq.IdempotencyKey)
+	}
 	if createReq.ProviderType != "codex" || createReq.RuntimeNodeID != repo.projectTaskPreflight.RuntimeNodeID || createReq.NodeID != repo.projectTaskPreflight.NodeID {
 		t.Fatalf("expected create run to use project placement/provider, got %#v", createReq)
 	}

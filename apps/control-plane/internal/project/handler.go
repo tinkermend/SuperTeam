@@ -2150,6 +2150,7 @@ type decisionRequestResponse struct {
 	ApprovalRequestID string  `json:"approval_request_id"`
 	CoordinationJobID *string `json:"coordination_job_id,omitempty"`
 	ProjectTaskID     *string `json:"project_task_id,omitempty"`
+	PlanRevisionID    *string `json:"plan_revision_id,omitempty"`
 	TargetUserID      string  `json:"target_user_id"`
 	DecisionType      string  `json:"decision_type"`
 	TitleSnapshot     string  `json:"title_snapshot"`
@@ -3063,6 +3064,7 @@ func decisionRequestResponseFromDomain(decision DecisionRequest) decisionRequest
 		ApprovalRequestID: decision.ApprovalRequestID.String(),
 		CoordinationJobID: stringPtr(decision.CoordinationJobID),
 		ProjectTaskID:     stringPtr(decision.ProjectTaskID),
+		PlanRevisionID:    stringPtr(decision.PlanRevisionID),
 		TargetUserID:      decision.TargetUserID.String(),
 		DecisionType:      decision.DecisionType,
 		TitleSnapshot:     decision.TitleSnapshot,

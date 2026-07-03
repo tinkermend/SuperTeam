@@ -2897,6 +2897,151 @@ func (r *PgRepository) BindProjectTaskRun(ctx context.Context, req BindProjectTa
 	return taskFromRecord(row)
 }
 
+func (r *PgRepository) BindProjectTaskAttemptRun(ctx context.Context, req BindProjectTaskAttemptRunRequest) (ProjectTaskAttemptRunBindingResult, error) {
+	packet, err := jsonbObject(req.ExecutionContextPacket, "execution_context_packet")
+	if err != nil {
+		return ProjectTaskAttemptRunBindingResult{}, err
+	}
+	version := strings.TrimSpace(req.ExecutionContextPacketVersion)
+	if version == "" {
+		version = "v1"
+	}
+	return withProjectQueries(ctx, r, "project task attempt run binding", func(q *queries.Queries) (ProjectTaskAttemptRunBindingResult, error) {
+		attemptRow, err := q.BindProjectTaskAttemptRun(ctx, queries.BindProjectTaskAttemptRunParams{
+			DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
+			RuntimeTaskID:                 req.RuntimeTaskID,
+			RuntimeNodeID:                 req.RuntimeNodeID,
+			ProviderType:                  req.ProviderType,
+			ExecutionContextPacket:        packet,
+			ExecutionContextPacketVersion: version,
+			TenantID:                      req.TenantID,
+			ProjectTaskID:                 req.ProjectTaskID,
+			ID:                            req.AttemptID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskAttemptRunBindingResult{}, r.bindProjectTaskAttemptRunAttemptConflict(ctx, q, req)
+			}
+			return ProjectTaskAttemptRunBindingResult{}, err
+		}
+		taskRow, err := q.BindQueuedProjectTaskRun(ctx, queries.BindQueuedProjectTaskRunParams{
+			RuntimeTaskID:        req.RuntimeTaskID,
+			DigitalEmployeeRunID: req.DigitalEmployeeRunID,
+			TenantID:             req.TenantID,
+			ProjectID:            req.ProjectID,
+			ID:                   req.ProjectTaskID,
+			CurrentAttemptID:     req.AttemptID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskAttemptRunBindingResult{}, r.bindProjectTaskAttemptRunTaskConflict(ctx, q, req)
+			}
+			return ProjectTaskAttemptRunBindingResult{}, err
+		}
+		attempt, err := projectTaskAttemptFromRecord(attemptRow)
+		if err != nil {
+			return ProjectTaskAttemptRunBindingResult{}, err
+		}
+		task, err := taskFromRecord(taskRow)
+		if err != nil {
+			return ProjectTaskAttemptRunBindingResult{}, err
+		}
+		return ProjectTaskAttemptRunBindingResult{Task: task, Attempt: attempt}, nil
+	})
+}
+
+func (r *PgRepository) bindProjectTaskAttemptRunAttemptConflict(ctx context.Context, q *queries.Queries, req BindProjectTaskAttemptRunRequest) error {
+	attemptRow, err := q.GetProjectTaskAttempt(ctx, queries.GetProjectTaskAttemptParams{TenantID: req.TenantID, ID: req.AttemptID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrProjectNotFound
+		}
+		return err
+	}
+	attempt, err := projectTaskAttemptFromRecord(attemptRow)
+	if err != nil {
+		return err
+	}
+	if attempt.ProjectTaskID != req.ProjectTaskID {
+		return ErrProjectNotFound
+	}
+	return ErrProjectConflict
+}
+
+func (r *PgRepository) bindProjectTaskAttemptRunTaskConflict(ctx context.Context, q *queries.Queries, req BindProjectTaskAttemptRunRequest) error {
+	task, err := r.getProjectTaskWithQueries(ctx, q, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return err
+	}
+	if task.ProjectID != req.ProjectID {
+		return ErrProjectNotFound
+	}
+	return ErrProjectConflict
+}
+
+func (r *PgRepository) FailQueuedProjectTaskAttemptDispatchStart(ctx context.Context, req FailQueuedProjectTaskAttemptDispatchStartRequest) (ProjectTaskWritebackResult, error) {
+	status := strings.TrimSpace(req.RestoreTaskStatus)
+	if status == "" {
+		status = ProjectTaskStatusPlanned
+	}
+	failureFamily := strings.TrimSpace(req.FailureFamily)
+	if failureFamily == "" {
+		failureFamily = FailureFamilyRuntimeStartTimeout
+	}
+	failureSummary := strings.TrimSpace(req.FailureSummary)
+	if failureSummary == "" {
+		failureSummary = "runtime run did not start"
+	}
+	return withProjectQueries(ctx, r, "project task dispatch start failure", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		if _, err := q.MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx, queries.MarkQueuedProjectTaskAttemptDispatchStartFailedParams{
+			Status:          ProjectTaskAttemptStatusLost,
+			Retryable:       req.Retryable,
+			FailureFamily:   failureFamily,
+			FailureMessage:  failureSummary,
+			TerminalEventID: nullUUID(req.DispatchFailureEventID),
+			TenantID:        req.TenantID,
+			ProjectTaskID:   req.ProjectTaskID,
+			ID:              req.AttemptID,
+			LeaseToken:      req.LeaseToken,
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+		}
+		taskRow, err := q.RestoreProjectTaskAfterDispatchStartFailure(ctx, queries.RestoreProjectTaskAfterDispatchStartFailureParams{
+			Status:              status,
+			ClearCurrentAttempt: req.ClearCurrentAttempt,
+			RetryNotBefore:      timestamptzPtr(req.RetryNotBefore),
+			LatestEventID:       nullUUID(req.DispatchFailureEventID),
+			TenantID:            req.TenantID,
+			ProjectID:           req.ProjectID,
+			ID:                  req.ProjectTaskID,
+			CurrentAttemptID:    req.AttemptID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+		}
+		task, err := taskFromRecord(taskRow)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		var event ProjectEvent
+		if req.DispatchFailureEventID != nil {
+			eventRow, err := q.GetProjectEvent(ctx, queries.GetProjectEventParams{
+				TenantID:  req.TenantID,
+				ProjectID: req.ProjectID,
+				ID:        *req.DispatchFailureEventID,
+			})
+			if err != nil {
+				return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+			}
+			event, err = eventFromRecord(eventRow)
+			if err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	})
+}
+
 // bindProjectTaskRunConflict distinguishes a missing task from a real binding
 // conflict (task is bound to a different run, or is in a non-dispatchable state).
 func (r *PgRepository) bindProjectTaskRunConflict(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error) {

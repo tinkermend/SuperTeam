@@ -64,6 +64,8 @@ type Repository interface {
 	CreateProjectDemandSummary(ctx context.Context, req CreateProjectDemandSummaryRequest) (ProjectDemandSummary, error)
 	GetLatestProjectDemandSummary(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandSummary, error)
 	QueueProjectTaskWithAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error)
+	BindProjectTaskAttemptRun(ctx context.Context, req BindProjectTaskAttemptRunRequest) (ProjectTaskAttemptRunBindingResult, error)
+	FailQueuedProjectTaskAttemptDispatchStart(ctx context.Context, req FailQueuedProjectTaskAttemptDispatchStartRequest) (ProjectTaskWritebackResult, error)
 	RecordPreDispatchGateResult(ctx context.Context, req RecordPreDispatchGateResultRequest) (PreDispatchGateResult, error)
 	GetPreDispatchGateResult(ctx context.Context, tenantID, projectID, gateResultID uuid.UUID) (PreDispatchGateResult, error)
 	GetPreDispatchGateResultByKey(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID, idempotencyKey string) (PreDispatchGateResult, error)

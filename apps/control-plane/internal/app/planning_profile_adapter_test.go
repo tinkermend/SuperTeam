@@ -64,7 +64,7 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 		},
 	}
 
-	records, err := digitalEmployeePlanningProfileAdapter{reader: reader}.PlanningProfileRecords(context.Background(), tenantID, []uuid.UUID{employeeID})
+	records, err := digitalEmployeePlanningProfileAdapter{reader: reader}.PlanningProfileRecords(context.Background(), tenantID, uuid.Nil, []uuid.UUID{employeeID})
 
 	require.NoError(t, err)
 	record := records[employeeID]
@@ -87,6 +87,59 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 		"recent_failure_count":      int32(1),
 		"recent_human_reject_count": int32(0),
 	}, record.ReliabilitySignals)
+}
+
+func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExecutionInstance(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {
+				ID:           employeeID,
+				TenantID:     tenantID,
+				EmployeeType: "implementation",
+				Role:         "项目执行",
+				Status:       employee.DigitalEmployeeStatusReady,
+				ProviderType: "codex",
+			},
+		},
+		configs: map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord{
+			employeeID: {
+				DigitalEmployeeID: employeeID,
+				Status:            employee.EffectiveConfigStatusApproved,
+				EffectiveConfig: map[string]any{
+					"capability_selection": map[string]any{
+						"enabled_external_capabilities": []any{"implementation"},
+					},
+				},
+			},
+		},
+	}
+	preflightReader := fakeProjectTaskRunPreflightReader{
+		preflight: employee.StartProjectTaskRunPreflight{
+			TenantID:                   tenantID,
+			DigitalEmployeeID:          employeeID,
+			DigitalEmployeeStatus:      employee.DigitalEmployeeStatusReady,
+			RuntimeNodeID:              runtimeNodeID,
+			NodeID:                     "provider-runtime-smoke-node",
+			ProviderType:               "codex",
+			WorkspaceBaseDir:           "/var/superteam/projects",
+			HasApprovedEffectiveConfig: true,
+			RuntimeSessionActive:       true,
+			ProviderHealthy:            true,
+		},
+	}
+
+	records, err := digitalEmployeePlanningProfileAdapter{reader: reader, projectTaskRuns: preflightReader}.PlanningProfileRecords(context.Background(), tenantID, projectID, []uuid.UUID{employeeID})
+
+	require.NoError(t, err)
+	record := records[employeeID]
+	require.Equal(t, "codex", record.ProviderType)
+	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
+	require.Equal(t, "ready", record.ExecutionStatus)
+	require.Equal(t, "approved", record.EffectiveConfigStatus)
 }
 
 func TestPreDispatchGateAdapterMapsEmployeeRuntimeFacts(t *testing.T) {
@@ -148,6 +201,74 @@ func TestPreDispatchGateAdapterMapsEmployeeRuntimeFacts(t *testing.T) {
 	require.True(t, runtimeSnapshot.WorkspaceReady)
 	require.True(t, runtimeSnapshot.SlotAvailable)
 	require.True(t, runtimeSnapshot.ContractVersionAccepted)
+}
+
+func TestPreDispatchGateAdapterUsesProjectTaskPlacementForRuntimeLessReadyEmployee(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	nodeID := "runtime-project-placement-1"
+	now := time.Date(2026, 7, 3, 11, 0, 0, 0, time.UTC)
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {
+				ID:           employeeID,
+				TenantID:     tenantID,
+				Name:         "项目执行员工",
+				Status:       employee.DigitalEmployeeStatusReady,
+				ProviderType: "codex",
+			},
+		},
+	}
+	runtimeReader := &fakeGateRuntimeNodeReader{
+		nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
+			runtimeNodeID: {
+				ID:                 runtimeNodeID,
+				TenantID:           tenantID,
+				NodeID:             nodeID,
+				SupportedProviders: []byte(`["codex"]`),
+				MaxSlots:           4,
+				CurrentLoad:        1,
+				Status:             "online",
+				LastHeartbeatAt:    timestamptz(now.Add(-20 * time.Second)),
+			},
+		},
+	}
+	projectTaskPreflight := fakeProjectTaskRunPreflightReader{
+		preflight: employee.StartProjectTaskRunPreflight{
+			TenantID:                   tenantID,
+			DigitalEmployeeID:          employeeID,
+			DigitalEmployeeStatus:      employee.DigitalEmployeeStatusReady,
+			RuntimeNodeID:              runtimeNodeID,
+			NodeID:                     nodeID,
+			ProviderType:               "codex",
+			WorkspaceBaseDir:           "/var/superteam/projects",
+			HasApprovedEffectiveConfig: true,
+			RuntimeSessionActive:       true,
+			ProviderHealthy:            true,
+		},
+	}
+	adapter := preDispatchGateAdapter{
+		employees:       reader,
+		projectTaskRuns: projectTaskPreflight,
+		runtimeNodes:    runtimeReader,
+		now:             func() time.Time { return now },
+	}
+
+	employeeSnapshot, runtimeSnapshot, err := adapter.GetEmployeeRuntimeSnapshot(context.Background(), tenantID, projectID, employeeID)
+
+	require.NoError(t, err)
+	require.Equal(t, employeeID, employeeSnapshot.ID)
+	require.Equal(t, "ready", employeeSnapshot.Status)
+	require.True(t, employeeSnapshot.PolicyAllowed)
+	require.Equal(t, int32(3), employeeSnapshot.AvailableLoadSlots)
+	require.True(t, runtimeSnapshot.NodeOnline)
+	require.True(t, runtimeSnapshot.ProviderAvailable)
+	require.True(t, runtimeSnapshot.WorkspaceReady)
+	require.True(t, runtimeSnapshot.SlotAvailable)
+	require.Equal(t, 1, runtimeReader.getNodeByIDCalls)
+	require.Zero(t, runtimeReader.getNodeCalls)
 }
 
 func TestPreDispatchGateAdapterMapsRuntimeFactsWithoutRuntimeSelector(t *testing.T) {
@@ -383,6 +504,21 @@ func (r fakeGateCapabilityReader) ListEffectiveMCPServers(_ context.Context, req
 		return nil, errors.New("invalid request")
 	}
 	return append([]capability.MCPServer(nil), r.servers...), nil
+}
+
+type fakeProjectTaskRunPreflightReader struct {
+	preflight employee.StartProjectTaskRunPreflight
+	err       error
+}
+
+func (r fakeProjectTaskRunPreflightReader) GetProjectTaskRunPreflight(_ context.Context, tenantID, projectID, employeeID uuid.UUID) (employee.StartProjectTaskRunPreflight, error) {
+	if r.err != nil {
+		return employee.StartProjectTaskRunPreflight{}, r.err
+	}
+	if tenantID == uuid.Nil || projectID == uuid.Nil || employeeID == uuid.Nil {
+		return employee.StartProjectTaskRunPreflight{}, employee.ErrNotFound
+	}
+	return r.preflight, nil
 }
 
 func timestamptz(value time.Time) pgtype.Timestamptz {

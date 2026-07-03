@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,11 +272,14 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	upsertReq.AddCookie(cookie)
 	upsertResp := httptest.NewRecorder()
 	server.ServeHTTP(upsertResp, upsertReq)
-	if upsertResp.Code != http.StatusOK {
-		t.Fatalf("expected upsert execution instance to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
+	if upsertResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected legacy execution instance bind to be rejected, got %d: %s", upsertResp.Code, upsertResp.Body.String())
 	}
 	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != bindRuntimeNodeID {
 		t.Fatalf("expected bind tenant/runtime %s/%s, got %s/%s", expectedTenantID, bindRuntimeNodeID, service.bindReq.TenantID, service.bindReq.RuntimeNodeID)
+	}
+	if !strings.Contains(upsertResp.Body.String(), "digital employees are not runtime-bound") {
+		t.Fatalf("expected runtime binding rejection body, got %s", upsertResp.Body.String())
 	}
 
 	spoofedConfigApproverID := uuid.New()
@@ -1791,24 +1795,7 @@ func (s *routeEmployeeService) GetExecutionInstance(ctx context.Context, tenantI
 func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req employee.BindExecutionInstanceRequest) (*employee.DigitalEmployeeExecutionInstance, error) {
 	s.bindCalled = true
 	s.bindReq = req
-	now := time.Now().UTC()
-	return &employee.DigitalEmployeeExecutionInstance{
-		ID:                   uuid.New(),
-		TenantID:             req.TenantID,
-		DigitalEmployeeID:    req.DigitalEmployeeID,
-		RuntimeNodeID:        req.RuntimeNodeID,
-		ProviderType:         req.ProviderType,
-		AgentHomeDir:         req.AgentHomeDir,
-		WorkspacePolicy:      map[string]any{},
-		SessionPolicy:        map[string]any{},
-		RuntimeSelector:      map[string]any{},
-		CapacityRequirements: map[string]any{},
-		FallbackPolicy:       map[string]any{},
-		Status:               employee.ExecutionInstanceStatusReady,
-		Metadata:             map[string]any{},
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}, nil
+	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", employee.ErrInvalidInput)
 }
 
 func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req employee.CreateDigitalEmployeeConfigRevisionRequest) (*employee.DigitalEmployeeConfigRevision, error) {
