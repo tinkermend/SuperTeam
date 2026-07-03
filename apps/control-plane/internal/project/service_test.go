@@ -663,6 +663,59 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestQueueProjectTaskCreatesAttemptWithEmployeeAndProviderAuditFacts(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "记录执行身份",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	})
+
+	result, err := service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 taskID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		ProviderType:                  "codex",
+		DigitalEmployeeRunID:          &runID,
+		RuntimeTaskID:                 &runtimeTaskID,
+		RuntimeNodeID:                 &runtimeNodeID,
+		IdempotencyKey:                "project-task:" + taskID.String() + ":attempt:1:audit",
+		LeaseToken:                    "lease-token-1",
+		ExecutionContextPacket:        map[string]any{"project_id": projectID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Attempt.DigitalEmployeeID)
+	require.Equal(t, employeeID, *result.Attempt.DigitalEmployeeID)
+	require.NotNil(t, result.Attempt.ProviderType)
+	require.Equal(t, "codex", *result.Attempt.ProviderType)
+
+	readBack, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, attemptID)
+	require.NoError(t, err)
+	require.NotNil(t, readBack.DigitalEmployeeID)
+	require.Equal(t, employeeID, *readBack.DigitalEmployeeID)
+	require.NotNil(t, readBack.ProviderType)
+	require.Equal(t, "codex", *readBack.ProviderType)
+}
+
 func TestStartProjectTaskAttemptAdvancesRunning(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -8229,6 +8282,8 @@ func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest,
 		ProjectTaskID:                 req.ProjectTaskID,
 		AttemptNo:                     attemptNo,
 		Status:                        ProjectTaskAttemptStatusQueued,
+		DigitalEmployeeID:             &req.DigitalEmployeeID,
+		ProviderType:                  strPtrOrNil(req.ProviderType),
 		DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
 		RuntimeTaskID:                 req.RuntimeTaskID,
 		RuntimeNodeID:                 req.RuntimeNodeID,

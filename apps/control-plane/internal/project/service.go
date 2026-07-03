@@ -1738,6 +1738,7 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 			AttemptNo:         attempt.AttemptNo,
 			Status:            attempt.Status,
 			RuntimeNodeID:     attempt.RuntimeNodeID,
+			ProviderType:      attempt.ProviderType,
 			ProviderSessionID: attempt.ProviderSessionID,
 			StartedAt:         attempt.StartedAt,
 			FinishedAt:        attempt.FinishedAt,

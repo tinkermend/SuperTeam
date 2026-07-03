@@ -1366,6 +1366,9 @@ func queueProjectTaskEventPayload(req QueueProjectTaskRequest, attemptID uuid.UU
 	if req.RuntimeNodeID != nil {
 		payload["runtime_node_id"] = req.RuntimeNodeID.String()
 	}
+	if strings.TrimSpace(req.ProviderType) != "" {
+		payload["provider_type"] = req.ProviderType
+	}
 	return payload
 }
 

@@ -930,6 +930,52 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestQueueProjectTaskWithAttemptPersistsEmployeeAndProviderAuditFacts(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证尝试审计事实",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	attemptID := uuid.New()
+
+	result, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		ProjectTaskAttemptID:          &attemptID,
+		DigitalEmployeeID:             employeeID,
+		ProviderType:                  "codex",
+		DigitalEmployeeRunID:          &runID,
+		RuntimeTaskID:                 &runtimeTaskID,
+		RuntimeNodeID:                 &runtimeNodeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:audit",
+		LeaseToken:                    "lease-token-1",
+		ExecutionContextPacket:        map[string]any{"project_id": projectID.String()},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Attempt.DigitalEmployeeID)
+	require.Equal(t, employeeID, *result.Attempt.DigitalEmployeeID)
+	require.NotNil(t, result.Attempt.ProviderType)
+	require.Equal(t, "codex", *result.Attempt.ProviderType)
+
+	readBack, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, attemptID)
+	require.NoError(t, err)
+	require.NotNil(t, readBack.DigitalEmployeeID)
+	require.Equal(t, employeeID, *readBack.DigitalEmployeeID)
+	require.NotNil(t, readBack.ProviderType)
+	require.Equal(t, "codex", *readBack.ProviderType)
+}
+
 func TestRecordPreDispatchGateResultIsIdempotent(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

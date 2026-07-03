@@ -2258,6 +2258,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		ProjectTaskID:                 input.TaskID,
 		ProjectTaskAttemptID:          &attemptID,
 		DigitalEmployeeID:             *task.AssignedDigitalEmployeeID,
+		ProviderType:                  run.ProviderType,
 		DigitalEmployeeRunID:          &run.RunID,
 		RuntimeTaskID:                 &run.RuntimeTaskID,
 		RuntimeNodeID:                 &run.RuntimeNodeID,

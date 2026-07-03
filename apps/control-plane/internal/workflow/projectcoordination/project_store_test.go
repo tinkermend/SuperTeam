@@ -2727,6 +2727,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, runID, *queueReq.DigitalEmployeeRunID)
 	require.Equal(t, runtimeTaskID, *queueReq.RuntimeTaskID)
 	require.Equal(t, runtimeNodeID, *queueReq.RuntimeNodeID)
+	require.Equal(t, "codex", queueReq.ProviderType)
 	require.Equal(t, projectID.String(), queueReq.ExecutionContextPacket["project_id"])
 	require.Equal(t, demandID.String(), queueReq.ExecutionContextPacket["demand_id"])
 	require.Equal(t, taskID.String(), queueReq.ExecutionContextPacket["project_task_id"])
@@ -2750,6 +2751,10 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Len(t, repo.projectTaskAttempts, 1)
 	require.Equal(t, attemptID, *repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, attemptID, repo.projectTaskAttempts[0].ID)
+	require.NotNil(t, repo.projectTaskAttempts[0].DigitalEmployeeID)
+	require.Equal(t, employeeID, *repo.projectTaskAttempts[0].DigitalEmployeeID)
+	require.NotNil(t, repo.projectTaskAttempts[0].ProviderType)
+	require.Equal(t, "codex", *repo.projectTaskAttempts[0].ProviderType)
 	dispatchedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatched)
 	if len(dispatchedEvents) != 1 {
 		t.Fatalf("expected dispatched event, got %#v", repo.events)
@@ -4425,6 +4430,8 @@ func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.C
 			ProjectTaskID:                 req.ProjectTaskID,
 			AttemptNo:                     attemptNo,
 			Status:                        project.ProjectTaskAttemptStatusQueued,
+			DigitalEmployeeID:             &req.DigitalEmployeeID,
+			ProviderType:                  strPtrOrNil(req.ProviderType),
 			DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
 			RuntimeTaskID:                 req.RuntimeTaskID,
 			RuntimeNodeID:                 req.RuntimeNodeID,
@@ -4474,6 +4481,9 @@ func projectStoreQueueTaskEventPayload(req project.QueueProjectTaskRequest, atte
 	}
 	if req.RuntimeNodeID != nil {
 		payload["runtime_node_id"] = req.RuntimeNodeID.String()
+	}
+	if strings.TrimSpace(req.ProviderType) != "" {
+		payload["provider_type"] = req.ProviderType
 	}
 	if req.DispatchGateResultID != nil {
 		payload["dispatch_gate_result_id"] = req.DispatchGateResultID.String()
@@ -5047,6 +5057,14 @@ func eventsByType(events []project.ProjectEvent, eventType project.ProjectEventT
 }
 
 func strPtr(value string) *string {
+	return &value
+}
+
+func strPtrOrNil(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
 	return &value
 }
 
