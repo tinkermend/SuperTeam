@@ -966,6 +966,49 @@ func TestLoginLogsRejectUnauthenticatedRequests(t *testing.T) {
 	}
 }
 
+func TestLogRoutesRequireConsoleAuthorization(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "viewer", "viewer"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	authorizer := &routeAuthorizer{allowed: false}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	cookie := routeLogin(t, server, "viewer", "viewer")
+
+	for _, path := range []string{"/api/auth/login-logs", "/api/auth/operation-logs"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("expected %s to be forbidden, got %d: %s", path, resp.Code, resp.Body.String())
+		}
+	}
+
+	if len(authorizer.checks) < 2 {
+		t.Fatalf("expected console access authorization checks, got %#v", authorizer.checks)
+	}
+	for _, check := range authorizer.checks[len(authorizer.checks)-2:] {
+		if check.Action != authz.ActionConsoleAccess {
+			t.Fatalf("expected console access action, got %q", check.Action)
+		}
+		if check.Resource.Type != authz.ResourceConsole || check.Resource.ID != "web" {
+			t.Fatalf("expected console web resource, got %#v", check.Resource)
+		}
+	}
+}
+
 func TestAuthzCenterOverviewRejectsUnauthenticatedRequests(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {

@@ -22,12 +22,14 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 
 ## 项目启停
 
-- 当前整个项目启停已经封装到脚本 scripts/dev-services.sh 支持参数`start`,`status`,`restart`,`stop`
+- 当前整个项目启停已经封装到脚本 scripts/dev-services.sh 支持参数`start`,`status`,`restart`,`stop`；默认 `all` 包含 Temporal、Control Plane、Web、Runtime Agent，OpenFGA 需要用 `scripts/dev-services.sh start|status|stop openfga` 单独管理。
 - 本地联调前后先用 `scripts/dev-services.sh status` 确认 Temporal、Control Plane、Web、Runtime Agent 实际状态；代码变更后优先用 `scripts/dev-services.sh restart <service>` 做定向重启，脚本只管理它自己写入 pid 文件的进程。
+- `scripts/dev-services.sh start|restart control-plane` 会在启动 Control Plane 前自动执行 Atlas 迁移；只在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
 
 ## 数据库设计规则
 
 - 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循根目录 `DATABASE_DESIGN.md`。
+- Control Plane 生产迁移唯一目录是 `apps/control-plane/internal/storage/migrations/`；新增或修改迁移后必须更新 `atlas.sum`，并优先用 `make -C apps/control-plane migrate-validate` 做完整性与可重放校验（本地非 Docker dev 库可覆盖 `DEV_URL`）。
 
 ## 目录边界
 

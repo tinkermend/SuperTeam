@@ -144,22 +144,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
-  const [teamAutoSelected, setTeamAutoSelected] = useState(false);
   const [templateQueryHandled, setTemplateQueryHandled] = useState("");
 
   const teams = useQuery({
     queryKey: ["teams"],
     queryFn: () => listTeams({ baseUrl: apiBaseUrl, fetcher }),
   });
-
-  useEffect(() => {
-    if (teamAutoSelected) return;
-    const firstTeamId = teams.data?.find((team) => team.status === "active")?.id;
-    if (firstTeamId) {
-      setTeamAutoSelected(true);
-      setDraft((current) => (current.team_id ? current : { ...current, team_id: firstTeamId }));
-    }
-  }, [teamAutoSelected, teams.data]);
 
   const createOptions = useQuery({
     enabled: !teams.isLoading,

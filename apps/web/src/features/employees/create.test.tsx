@@ -244,7 +244,7 @@ function createWizardFetcher({
   expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
-  expectedTeamId = team.id,
+  expectedTeamId,
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
@@ -413,6 +413,21 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("即将创建");
   });
 
+  it("loads built-in templates without a team-scoped create-options request before team selection", async () => {
+    const fetcher = createWizardFetcher({ teams: [team, secondTeam] });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "已选择数据库管理员模板" })).toBeVisible();
+
+    const createOptionsCalls = (fetcher as unknown as { mock: { calls: FetchMockCall[] } }).mock.calls.filter(
+      ([input, init]) =>
+        String(input).includes("/api/v1/digital-employees/create-options") && (init?.method ?? "GET") === "GET",
+    );
+    expect(createOptionsCalls.length).toBeGreaterThan(0);
+    expect(createOptionsCalls.every(([input]) => !new URL(String(input)).searchParams.has("team_id"))).toBe(true);
+  });
+
   it("marks unavailable creation paths and blank custom entry points as disabled", async () => {
     const screen = await renderCreateEmployeeView();
 
@@ -544,6 +559,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
 
     await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
@@ -557,6 +573,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
 
     await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
@@ -566,12 +583,13 @@ describe("CreateEmployeeView", () => {
   });
 
   it("creates a ready digital employee through the four-step wizard", async () => {
-    const fetcher = createWizardFetcher();
+    const fetcher = createWizardFetcher({ expectedTeamId: team.id });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "创建数字员工" })).toBeVisible();
     await enterConfiguration(screen);
-    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("风险等级")).toHaveValue("high");
@@ -603,8 +621,6 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
-    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
-    await userEvent.selectOptions(screen.getByLabelText("归属团队"), "");
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");

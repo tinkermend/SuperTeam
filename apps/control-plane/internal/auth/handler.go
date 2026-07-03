@@ -81,42 +81,16 @@ func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	current, err := h.currentUserContext(r)
-	if err != nil {
-		h.writeAuthError(w, err)
+	current, ok := h.requireConsoleAccess(w, r, "current user console access")
+	if !ok {
 		return
-	}
-	if h.authorizer != nil {
-		decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
-			Actor: authz.ActorRef{
-				Type: authz.ActorUser,
-				ID:   current.User.ID.String(),
-			},
-			Action: authz.ActionConsoleAccess,
-			Resource: authz.ResourceRef{
-				Type: authz.ResourceConsole,
-				ID:   "web",
-			},
-			TenantID:    current.TenantID,
-			TeamID:      current.TeamID,
-			AuditReason: "current user console access",
-		})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		if !decision.Allowed {
-			writeError(w, http.StatusForbidden, "forbidden")
-			return
-		}
 	}
 
 	writeJSON(w, http.StatusOK, CurrentUserResponse{User: toGeneratedUserSummary(current.User)})
 }
 
 func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, params ListLoginLogsParams) {
-	if _, _, err := h.currentSessionUser(r); err != nil {
-		h.writeAuthError(w, err)
+	if _, ok := h.requireConsoleAccess(w, r, "login log read"); !ok {
 		return
 	}
 
@@ -144,8 +118,7 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 }
 
 func (h *HTTPHandler) ListOperationLogs(w http.ResponseWriter, r *http.Request, params ListOperationLogsParams) {
-	if _, _, err := h.currentSessionUser(r); err != nil {
-		h.writeAuthError(w, err)
+	if _, ok := h.requireConsoleAccess(w, r, "operation log read"); !ok {
 		return
 	}
 
@@ -460,6 +433,40 @@ func (h *HTTPHandler) currentUserContext(r *http.Request) (*CurrentUserContext, 
 		return nil, ErrUnauthorized
 	}
 	return h.service.GetCurrentUserContext(r.Context(), cookie.Value)
+}
+
+func (h *HTTPHandler) requireConsoleAccess(w http.ResponseWriter, r *http.Request, auditReason string) (*CurrentUserContext, bool) {
+	current, err := h.currentUserContext(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return nil, false
+	}
+	if h.authorizer == nil {
+		return current, true
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   current.User.ID.String(),
+		},
+		Action: authz.ActionConsoleAccess,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceConsole,
+			ID:   "web",
+		},
+		TenantID:    current.TenantID,
+		TeamID:      current.TeamID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return nil, false
+	}
+	if !decision.Allowed {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return nil, false
+	}
+	return current, true
 }
 
 func toActor(user *User) Actor {
