@@ -773,6 +773,13 @@ func (r *PgRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID,
 	}, nil
 }
 
+// ListRunsDetailed forwards to the run-scoped PgRunRepository so the broad Repository
+// interface also exposes the enriched run history list. This mirrors the
+// GetDigitalEmployeeRunStats forwarding above.
+func (r *PgRepository) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
+	return (&PgRunRepository{q: r.q}).ListRunsDetailed(ctx, tenantID, employeeID, filter)
+}
+
 func pgFloat8Ptr(value pgtype.Float8) *float64 {
 	if !value.Valid {
 		return nil

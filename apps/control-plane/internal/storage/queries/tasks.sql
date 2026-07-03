@@ -516,6 +516,56 @@ SELECT
 FROM counts
 LEFT JOIN durations ON true;
 
+-- name: ListDigitalEmployeeRunsDetailed :many
+SELECT
+    tr.id, tr.tenant_id, tr.task_id, tr.digital_employee_id, tr.execution_instance_id,
+    tr.runtime_node_id, tr.node_id, tr.command_id, tr.provider_type, tr.provider_session_id,
+    tr.provider_session_external_id, tr.status, tr.result, tr.diagnostic, tr.log_ref,
+    tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_message, tr.error_code,
+    tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.idempotency_key,
+    tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
+    tr.created_at, tr.updated_at,
+    t.title AS task_title,
+    p.id AS project_id,
+    p.name AS project_name,
+    jsonb_array_length(tr.work_products) AS work_product_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
+  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
+ORDER BY tr.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountDigitalEmployeeRunsDetailed :one
+SELECT COUNT(*)::bigint AS total_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
+  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz);
+
+-- name: ListDigitalEmployeeRunProjectOptions :many
+SELECT DISTINCT p.id, p.name
+FROM task_runs tr
+JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+ORDER BY p.name;
+
 -- name: UpdateDigitalEmployeeRunStatus :one
 UPDATE task_runs
 SET status = sqlc.arg('status')::varchar,

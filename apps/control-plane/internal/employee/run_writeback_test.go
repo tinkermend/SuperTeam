@@ -1139,7 +1139,7 @@ func (f *fakeRunWritebackRepository) GetRunByCommandID(_ context.Context, tenant
 	return cloneWritebackRun(run), nil
 }
 
-func (f *fakeRunWritebackRepository) ListRuns(context.Context, uuid.UUID, uuid.UUID, int32, int32) ([]*DigitalEmployeeRun, error) {
+func (f *fakeRunWritebackRepository) ListRunsDetailed(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
 	return nil, nil
 }
 

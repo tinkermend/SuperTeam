@@ -965,3 +965,123 @@ func TestPgRepositoryGetDigitalEmployeeRunStatsNullDurationsForNoFinishedRuns(t 
 		require.Nil(t, stats.P90DurationSec)
 	})
 }
+
+// TestPgRepositoryListRunsDetailedFiltersByStatusAndProject exercises the joined,
+// filtered, paginated run list: it verifies total_count matches the filtered (not
+// unfiltered) set, status/project/time-window filters apply symmetrically to list and
+// count, the task/project LEFT JOIN surfaces task_title and project_name, work-product
+// count is read, duration_sec is computed for finished runs AND stays nil for
+// in-progress runs (which have finished_at IS NULL — this guards against the pgx
+// NULL-into-float64 scan crash that a naive SQL EXTRACT column would trigger).
+func TestPgRepositoryListRunsDetailedFiltersByStatusAndProject(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_list_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	otherEmployeeID := uuid.New()
+	taskID := uuid.New()
+	projectID := uuid.New()
+	completedRunID := uuid.New()
+	failedRunID := uuid.New()
+	inProgressRunID := uuid.New()
+	humanOwnerID := uuid.New()
+	nodeID := "node-a"
+
+	// Fixture setup uses one Exec per statement: pgx's extended protocol rejects
+	// multi-statement strings that also bind parameters.
+	_, err = conn.Exec(ctx, `INSERT INTO tenants (id, slug, name, status) VALUES ($1, 'default', '默认租户', 'active') ON CONFLICT (id) DO NOTHING`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO tasks (id, tenant_id, title, provider_type, status) VALUES ($1, $2, '需求梳理任务', 'codex', 'completed')`, taskID, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, work_products, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'completed', NOW() - interval '30 minutes', NOW() - interval '10 minutes', '[{"type":"report","title":"r"}]'::jsonb, NOW() - interval '3 hours')
+	`, completedRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'failed', NOW() - interval '1 hour', NOW() - interval '50 minutes', NOW() - interval '2 hours')
+	`, failedRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	// In-progress run with NO finished_at: proves duration computation is NULL-safe.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'running', NOW() - interval '5 minutes', NOW() - interval '30 minutes')
+	`, inProgressRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	// Run for a different employee: must be excluded from every query below.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, 'completed', NOW() - interval '1 hour', NOW() - interval '40 minutes', NOW())
+	`, tenantID, taskID, otherEmployeeID, nodeID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, status, human_owner_user_id) VALUES ($1, $2, '试点项目 A', 'active', $3)`, projectID, tenantID, humanOwnerID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO project_tasks (id, tenant_id, project_id, digital_employee_run_id, title, status) VALUES (gen_random_uuid(), $1, $2, $3, '需求梳理任务', 'completed')`, tenantID, projectID, completedRunID)
+	require.NoError(t, err)
+
+	repo := NewPgRepository(queries.New(conn))
+
+	all, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), all.TotalCount)
+	require.Len(t, all.Projects, 1)
+	require.Equal(t, "试点项目 A", all.Projects[0].Name)
+	require.Equal(t, projectID, all.Projects[0].ID)
+	// Ordering is created_at DESC: completed(-3h) was inserted with created_at NOW()-3h...
+	// actually each row sets its own created_at. Verify the in-progress run (most recent,
+	// created NOW()-30min) is first and has nil DurationSec.
+	require.Len(t, all.Items, 3)
+	require.Nil(t, all.Items[0].DurationSec, "in-progress run must have nil duration_sec, not crash")
+
+	onlyCompleted, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		Statuses: []string{"completed"},
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), onlyCompleted.TotalCount)
+	require.Len(t, onlyCompleted.Items, 1)
+	require.Equal(t, "需求梳理任务", onlyCompleted.Items[0].TaskTitle)
+	require.NotNil(t, onlyCompleted.Items[0].ProjectName)
+	require.Equal(t, "试点项目 A", *onlyCompleted.Items[0].ProjectName)
+	require.NotNil(t, onlyCompleted.Items[0].ProjectID)
+	require.Equal(t, projectID, *onlyCompleted.Items[0].ProjectID)
+	require.Equal(t, int32(1), onlyCompleted.Items[0].WorkProductCount)
+	require.NotNil(t, onlyCompleted.Items[0].DurationSec)
+	require.InDelta(t, 1200, *onlyCompleted.Items[0].DurationSec, 1)
+
+	scopedToProject, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		ProjectID: &projectID,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), scopedToProject.TotalCount)
+	require.Equal(t, completedRunID, scopedToProject.Items[0].Run.ID)
+
+	// Time window: only the in-progress run (created NOW()-30min) falls inside the last hour.
+	from := time.Now().UTC().Add(-1 * time.Hour)
+	to := time.Now().UTC().Add(1 * time.Minute)
+	recent, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		From:  &from,
+		To:    &to,
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), recent.TotalCount)
+	require.Equal(t, inProgressRunID, recent.Items[0].Run.ID)
+}

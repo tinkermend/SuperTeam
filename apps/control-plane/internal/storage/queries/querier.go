@@ -45,6 +45,7 @@ type Querier interface {
 	// reflects recent behaviour rather than lifetime totals. Employees with no recent
 	// attempts do not produce a row; callers treat absence as zero.
 	CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error)
+	CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)
@@ -275,7 +276,9 @@ type Querier interface {
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
+	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]TaskRun, error)
+	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
 	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
 	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)

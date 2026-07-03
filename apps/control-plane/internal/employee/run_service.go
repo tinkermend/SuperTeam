@@ -574,27 +574,27 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 	return cancellingRun, nil
 }
 
-func (s *DigitalEmployeeRunService) ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error) {
+func (s *DigitalEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
 	if employeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	runs, err := s.repository.ListRuns(ctx, tenantID, employeeID, limit, offset)
+	result, err := s.repository.ListRunsDetailed(ctx, tenantID, employeeID, filter)
 	if err != nil {
 		return nil, err
 	}
-	for index, run := range runs {
-		reconciledRun, reconciled, err := s.reconcileTerminalReceipt(ctx, tenantID, run)
+	for index, item := range result.Items {
+		reconciledRun, reconciled, err := s.reconcileTerminalReceipt(ctx, tenantID, item.Run)
 		if err != nil {
 			return nil, err
 		}
 		if reconciled {
-			runs[index] = reconciledRun
+			result.Items[index].Run = reconciledRun
 		}
 	}
-	return runs, nil
+	return result, nil
 }
 
 func (s *DigitalEmployeeRunService) GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRunStats, error) {

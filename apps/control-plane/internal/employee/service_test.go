@@ -2820,6 +2820,10 @@ func (r *memoryRepository) GetDigitalEmployeeRunStats(_ context.Context, _, _ uu
 	return DigitalEmployeeRunStats{}, nil
 }
 
+func (r *memoryRepository) ListRunsDetailed(_ context.Context, _, _ uuid.UUID, _ DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
+	return &DigitalEmployeeRunListResult{}, nil
+}
+
 func (r *memoryRepository) GetRuntimeProvisioningPreflight(_ context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
 	if r.preflightErr != nil {
 		return RuntimeProvisioningPreflight{}, r.preflightErr

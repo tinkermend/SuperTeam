@@ -94,6 +94,47 @@ type DigitalEmployeeRunStats struct {
 	P90DurationSec *float64
 }
 
+// DigitalEmployeeRunListFilter captures the filterable, pagination, and time-window
+// parameters for the digital employee run history list endpoint. Statuses is a slice
+// of run-status strings; an empty slice (or nil) means "no status filter".
+type DigitalEmployeeRunListFilter struct {
+	Statuses  []string
+	ProjectID *uuid.UUID
+	From      *time.Time
+	To        *time.Time
+	Limit     int32
+	Offset    int32
+}
+
+// DigitalEmployeeRunListItem augments a run with the joined task title, optional
+// project association, work-product count, and finished-run duration. ProjectID and
+// ProjectName are non-nil only when the run is linked to a project via project_tasks.
+// DurationSec is non-nil only for runs that have reached a terminal finished_at.
+type DigitalEmployeeRunListItem struct {
+	Run              *DigitalEmployeeRun
+	TaskTitle        string
+	ProjectID        *uuid.UUID
+	ProjectName      *string
+	WorkProductCount int32
+	DurationSec      *float64
+}
+
+// RunProjectOption is a distinct project option surfaced in the run list response
+// filters, scoped to projects that currently have at least one run for the employee.
+type RunProjectOption struct {
+	ID   uuid.UUID
+	Name string
+}
+
+// DigitalEmployeeRunListResult is the aggregated payload returned by the run history
+// repository: the paginated items, the total count of runs matching the SAME filters
+// (ignoring pagination), and the project options for the filter dropdown.
+type DigitalEmployeeRunListResult struct {
+	Items      []DigitalEmployeeRunListItem
+	TotalCount int64
+	Projects   []RunProjectOption
+}
+
 type CreateDigitalEmployeeRunRequest struct {
 	TenantID          uuid.UUID
 	UserID            uuid.UUID

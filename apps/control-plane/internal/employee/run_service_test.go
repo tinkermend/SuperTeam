@@ -624,13 +624,13 @@ func TestRunServiceListRunsReconcilesTerminalReceiptForActiveRun(t *testing.T) {
 	}
 	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
 
-	runs, err := service.ListRuns(context.Background(), staleRun.TenantID, staleRun.DigitalEmployeeID, 10, 0)
+	result, err := service.ListRunsDetailed(context.Background(), staleRun.TenantID, staleRun.DigitalEmployeeID, DigitalEmployeeRunListFilter{Limit: 10})
 
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
-	if len(runs) != 1 || runs[0].Status != DigitalEmployeeRunStatusCancelled {
-		t.Fatalf("expected stale run returned as cancelled, got %#v", runs)
+	if len(result.Items) != 1 || result.Items[0].Run.Status != DigitalEmployeeRunStatusCancelled {
+		t.Fatalf("expected stale run returned as cancelled, got %#v", result.Items)
 	}
 	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusCancelled {
 		t.Fatalf("expected stale listed run reconciled to cancelled, got %#v", repo.statusUpdates)
@@ -1331,14 +1331,14 @@ func (f *fakeRunServiceRepository) GetRunByCommandID(context.Context, uuid.UUID,
 	return nil, ErrNotFound
 }
 
-func (f *fakeRunServiceRepository) ListRuns(_ context.Context, tenantID, employeeID uuid.UUID, _ int32, _ int32) ([]*DigitalEmployeeRun, error) {
-	out := make([]*DigitalEmployeeRun, 0, len(f.runs))
+func (f *fakeRunServiceRepository) ListRunsDetailed(_ context.Context, tenantID, employeeID uuid.UUID, _ DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
+	items := make([]DigitalEmployeeRunListItem, 0, len(f.runs))
 	for _, run := range f.runs {
 		if run.TenantID == tenantID && run.DigitalEmployeeID == employeeID {
-			out = append(out, cloneRun(run))
+			items = append(items, DigitalEmployeeRunListItem{Run: cloneRun(run)})
 		}
 	}
-	return out, nil
+	return &DigitalEmployeeRunListResult{Items: items, TotalCount: int64(len(items))}, nil
 }
 
 func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID, taskID, runID uuid.UUID, _ int32, _ int32) ([]RuntimeCommandEventWriteback, error) {
