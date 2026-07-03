@@ -4167,14 +4167,15 @@ components:
       required:
         - title
         - provider_type
-        - params
       properties:
         title:
           type: string
+          minLength: 1
         description:
           type: string
         provider_type:
           type: string
+          minLength: 1
         target_node_id:
           type: string
         workspace_path:
@@ -4185,6 +4186,8 @@ components:
         priority:
           type: integer
           format: int32
+          minimum: 1
+          maximum: 10
     UpdateTaskStatusRequest:
       type: object
       required:

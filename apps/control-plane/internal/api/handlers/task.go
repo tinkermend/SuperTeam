@@ -3,13 +3,20 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/task"
+)
+
+const (
+	taskPriorityMin = 1
+	taskPriorityMax = 10
 )
 
 type TaskService interface {
@@ -94,6 +101,11 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateCreateTaskRequest(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	paramsJSON, _ := json.Marshal(req.Params)
 
 	task, err := h.taskService.CreateTask(r.Context(), task.CreateTaskRequest{
@@ -107,7 +119,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Priority:      req.Priority,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeTaskError(w, err)
 		return
 	}
 
@@ -123,6 +135,42 @@ func optionalString(value string) *string {
 	return &value
 }
 
+func validateCreateTaskRequest(req *struct {
+	Title         string                 `json:"title"`
+	Description   string                 `json:"description"`
+	ProviderType  string                 `json:"provider_type"`
+	TargetNodeID  string                 `json:"target_node_id"`
+	WorkspacePath string                 `json:"workspace_path"`
+	Params        map[string]interface{} `json:"params"`
+	Priority      int32                  `json:"priority"`
+}) error {
+	if strings.TrimSpace(req.Title) == "" {
+		return errors.New("title is required")
+	}
+	if strings.TrimSpace(req.ProviderType) == "" {
+		return errors.New("provider_type is required")
+	}
+	if req.Priority != 0 && (req.Priority < taskPriorityMin || req.Priority > taskPriorityMax) {
+		return errors.New("priority must be between 1 and 10")
+	}
+	return nil
+}
+
+func writeTaskError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, task.ErrTaskNotFound):
+		http.Error(w, "task not found", http.StatusNotFound)
+	case errors.Is(err, task.ErrInvalidStatus):
+		http.Error(w, "invalid task status", http.StatusBadRequest)
+	case errors.Is(err, task.ErrInvalidTransition):
+		http.Error(w, "invalid state transition", http.StatusConflict)
+	case errors.Is(err, task.ErrTaskAlreadyAssigned):
+		http.Error(w, "task already assigned", http.StatusConflict)
+	default:
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeTaskAction(w, r, authz.ActionTaskRead) {
 		return
@@ -134,7 +182,7 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 
 	task, err := h.taskService.GetTask(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeTaskError(w, err)
 		return
 	}
 
@@ -155,7 +203,7 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		Offset:   int32(offset),
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeTaskError(w, err)
 		return
 	}
 
@@ -181,12 +229,18 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	newStatus := task.TaskStatus(strings.TrimSpace(req.Status))
+	if !newStatus.IsValid() {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+
 	t, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
 		TaskID:    id,
-		NewStatus: task.TaskStatus(req.Status),
+		NewStatus: newStatus,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeTaskError(w, err)
 		return
 	}
 
@@ -205,7 +259,7 @@ func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 
 	task, err := h.taskService.CancelTask(r.Context(), id, nil, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeTaskError(w, err)
 		return
 	}
 
