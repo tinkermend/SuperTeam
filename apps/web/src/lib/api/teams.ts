@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { deleteJson, getJson, patchJson, postJson, putJson } from "./client";
 
 export type TeamStatus = "active" | "disabled" | "archived";
 export type TeamConfigRevisionStatus =
@@ -241,89 +241,6 @@ export type DecideTeamMemberRoleRequestInput = {
   decision_reason?: string;
 };
 
-async function getJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function deleteResource(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<void> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    await parseJson<unknown>(response, resource);
-  }
-}
-
-async function postJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "POST",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function patchJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PATCH",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function putJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PUT",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
 function teamPath(teamId: string, suffix = ""): string {
   return `/api/v1/teams/${encodeURIComponent(teamId)}${suffix}`;
 }
@@ -446,7 +363,7 @@ export function deleteTeam(
   options: ApiClientOptions,
   teamId: string,
 ): Promise<void> {
-  return deleteResource(options, teamPath(teamId), "delete team");
+  return deleteJson(options, teamPath(teamId), "delete team");
 }
 
 export function createTeamConfigRevision(
@@ -597,7 +514,7 @@ export function removeTeamMember(
   teamId: string,
   memberId: string,
 ): Promise<void> {
-  return deleteResource(
+  return deleteJson(
     options,
     teamPath(teamId, `/members/${encodeURIComponent(memberId)}`),
     "remove team member",

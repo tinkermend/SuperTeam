@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { deleteJson, getJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
   | "draft"
@@ -575,55 +575,6 @@ export type UpsertWorkspaceFileInput = {
   change_note?: string;
 };
 
-async function postJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "POST",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function putJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PUT",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function getJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
 function encodePathSegment(value: string) {
   return encodeURIComponent(value);
 }
@@ -645,7 +596,6 @@ export async function listDigitalEmployees(
   options: ApiClientOptions,
   filters: ListDigitalEmployeesFilters = {},
 ): Promise<DigitalEmployee[]> {
-  const fetcher = options.fetcher ?? fetch;
   const searchParams = new URLSearchParams();
   if (filters.team_id) {
     searchParams.set("team_id", filters.team_id);
@@ -655,13 +605,8 @@ export async function listDigitalEmployees(
   }
   const query = searchParams.toString();
   const path = `/api/v1/digital-employees${query ? `?${query}` : ""}`;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
 
-  return parseJson<DigitalEmployee[]>(response, "digital employees");
+  return getJson<DigitalEmployee[]>(options, path, "digital employees");
 }
 
 export async function getDigitalEmployeeOverview(
@@ -780,20 +725,14 @@ export async function deleteEmployeeEnvironmentVariable(
   employeeId: string,
   name: string,
 ): Promise<void> {
-  const fetcher = options.fetcher ?? fetch;
   const encodedEmployeeId = encodePathSegment(employeeId);
   const envName = encodePathSegment(name);
-  const response = await fetcher(
-    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`),
-    {
-      credentials: "include",
-      method: "DELETE",
-    },
-  );
 
-  if (!response.ok) {
-    await parseJson<unknown>(response, "delete employee environment variable");
-  }
+  return deleteJson(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`,
+    "delete employee environment variable",
+  );
 }
 
 export function createDigitalEmployeeConfigRevision(

@@ -177,6 +177,7 @@ describe("capabilities API", () => {
       "http://control-plane.local/api/v1/teams/team%201%2Fops/mcp-servers/server%201%2Fops",
       {
         credentials: "include",
+        headers: { accept: "application/json" },
         method: "DELETE",
       },
     );
@@ -267,6 +268,7 @@ describe("capabilities API", () => {
       "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/mcp-bindings/binding%201%2Fprimary",
       {
         credentials: "include",
+        headers: { accept: "application/json" },
         method: "DELETE",
       },
     );

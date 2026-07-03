@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { getJson, postJson, postJsonWithoutBody } from "./client";
 
 export type RuntimeNodeStatus = "online" | "offline";
 export type RuntimeEnrollmentStatus = "pending" | "approved" | "rejected" | "revoked";
@@ -101,7 +101,7 @@ export type ListRuntimeEventsOptions = ApiClientOptions & {
   provider_type?: string;
 };
 
-function buildListRuntimeNodesUrl(options: ListRuntimeNodesOptions): string {
+function listRuntimeNodesPath(options: ListRuntimeNodesOptions): string {
   const params = new URLSearchParams();
 
   if (options.limit !== undefined) {
@@ -113,10 +113,10 @@ function buildListRuntimeNodesUrl(options: ListRuntimeNodesOptions): string {
   }
 
   const query = params.toString();
-  return buildApiUrl(options.baseUrl, `/api/v1/runtime/nodes${query ? `?${query}` : ""}`);
+  return `/api/v1/runtime/nodes${query ? `?${query}` : ""}`;
 }
 
-function buildListRuntimeEventsUrl(options: ListRuntimeEventsOptions): string {
+function listRuntimeEventsPath(options: ListRuntimeEventsOptions): string {
   const params = new URLSearchParams();
 
   if (options.limit !== undefined) {
@@ -144,114 +144,52 @@ function buildListRuntimeEventsUrl(options: ListRuntimeEventsOptions): string {
   }
 
   const query = params.toString();
-  return buildApiUrl(options.baseUrl, `/api/v1/runtime/events${query ? `?${query}` : ""}`);
+  return `/api/v1/runtime/events${query ? `?${query}` : ""}`;
 }
 
-export async function getRuntimeOverview(options: ApiClientOptions): Promise<RuntimeOverview> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/runtime/overview"), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<RuntimeOverview>(response, "runtime overview");
+export function getRuntimeOverview(options: ApiClientOptions): Promise<RuntimeOverview> {
+  return getJson<RuntimeOverview>(options, "/api/v1/runtime/overview", "runtime overview");
 }
 
-export async function listRuntimeEvents(options: ListRuntimeEventsOptions): Promise<RuntimeEventList> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildListRuntimeEventsUrl(options), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<RuntimeEventList>(response, "runtime events");
+export function listRuntimeEvents(options: ListRuntimeEventsOptions): Promise<RuntimeEventList> {
+  return getJson<RuntimeEventList>(options, listRuntimeEventsPath(options), "runtime events");
 }
 
-export async function listRuntimeNodes(options: ListRuntimeNodesOptions): Promise<RuntimeNodeResponse[]> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildListRuntimeNodesUrl(options), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<RuntimeNodeResponse[]>(response, "runtime nodes");
+export function listRuntimeNodes(options: ListRuntimeNodesOptions): Promise<RuntimeNodeResponse[]> {
+  return getJson<RuntimeNodeResponse[]>(options, listRuntimeNodesPath(options), "runtime nodes");
 }
 
-export async function getRuntimeNode(options: ApiClientOptions, nodeId: string): Promise<RuntimeNodeResponse> {
-  const fetcher = options.fetcher ?? fetch;
+export function getRuntimeNode(options: ApiClientOptions, nodeId: string): Promise<RuntimeNodeResponse> {
   const encodedNodeId = encodeURIComponent(nodeId);
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/runtime/nodes/${encodedNodeId}`), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<RuntimeNodeResponse>(response, "runtime nodes");
+  return getJson<RuntimeNodeResponse>(options, `/api/v1/runtime/nodes/${encodedNodeId}`, "runtime nodes");
 }
 
-export async function listRuntimeEnrollments(options: ApiClientOptions): Promise<RuntimeEnrollment[]> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/runtime/enrollments"), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<RuntimeEnrollment[]>(response, "runtime enrollments");
+export function listRuntimeEnrollments(options: ApiClientOptions): Promise<RuntimeEnrollment[]> {
+  return getJson<RuntimeEnrollment[]>(options, "/api/v1/runtime/enrollments", "runtime enrollments");
 }
 
-export async function approveRuntimeEnrollment(
+export function approveRuntimeEnrollment(
   options: ApiClientOptions,
   enrollmentId: string,
 ): Promise<RuntimeEnrollment> {
-  const fetcher = options.fetcher ?? fetch;
   const encodedEnrollmentId = encodeURIComponent(enrollmentId);
-  const response = await fetcher(
-    buildApiUrl(options.baseUrl, `/api/v1/runtime/enrollments/${encodedEnrollmentId}/approve`),
-    {
-      credentials: "include",
-      headers: {
-        accept: "application/json",
-      },
-      method: "POST",
-    },
+  return postJsonWithoutBody<RuntimeEnrollment>(
+    options,
+    `/api/v1/runtime/enrollments/${encodedEnrollmentId}/approve`,
+    "approve runtime enrollment",
   );
-
-  return parseJson<RuntimeEnrollment>(response, "approve runtime enrollment");
 }
 
-export async function rejectRuntimeEnrollment(
+export function rejectRuntimeEnrollment(
   options: ApiClientOptions,
   enrollmentId: string,
   reason: string,
 ): Promise<RuntimeEnrollment> {
-  const fetcher = options.fetcher ?? fetch;
   const encodedEnrollmentId = encodeURIComponent(enrollmentId);
-  const response = await fetcher(
-    buildApiUrl(options.baseUrl, `/api/v1/runtime/enrollments/${encodedEnrollmentId}/reject`),
-    {
-      body: JSON.stringify({ reason }),
-      credentials: "include",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      method: "POST",
-    },
+  return postJson<RuntimeEnrollment>(
+    options,
+    `/api/v1/runtime/enrollments/${encodedEnrollmentId}/reject`,
+    { reason },
+    "reject runtime enrollment",
   );
-
-  return parseJson<RuntimeEnrollment>(response, "reject runtime enrollment");
 }

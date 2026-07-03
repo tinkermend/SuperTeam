@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { getJson, postJson, postJsonWithoutBody, putJson } from "./client";
 
 export type TaskStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
 
@@ -41,7 +41,7 @@ export type ListTasksOptions = ApiClientOptions & {
   offset?: number;
 };
 
-function buildListTasksUrl(options: ListTasksOptions): string {
+function listTasksPath(options: ListTasksOptions): string {
   const params = new URLSearchParams();
 
   if (options.limit !== undefined) {
@@ -53,78 +53,29 @@ function buildListTasksUrl(options: ListTasksOptions): string {
   }
 
   const query = params.toString();
-  return buildApiUrl(options.baseUrl, `/api/v1/tasks${query ? `?${query}` : ""}`);
+  return `/api/v1/tasks${query ? `?${query}` : ""}`;
 }
 
-export async function listTasks(options: ListTasksOptions): Promise<TaskResponse[]> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildListTasksUrl(options), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<TaskResponse[]>(response, "tasks");
+export function listTasks(options: ListTasksOptions): Promise<TaskResponse[]> {
+  return getJson<TaskResponse[]>(options, listTasksPath(options), "tasks");
 }
 
-export async function createTask(options: ApiClientOptions, input: CreateTaskInput): Promise<TaskResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/tasks"), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  return parseJson<TaskResponse>(response, "tasks");
+export function createTask(options: ApiClientOptions, input: CreateTaskInput): Promise<TaskResponse> {
+  return postJson<TaskResponse>(options, "/api/v1/tasks", input, "tasks");
 }
 
-export async function getTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}`), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<TaskResponse>(response, "tasks");
+export function getTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
+  return getJson<TaskResponse>(options, `/api/v1/tasks/${taskId}`, "tasks");
 }
 
-export async function updateTaskStatus(
+export function updateTaskStatus(
   options: ApiClientOptions,
   taskId: string,
   input: UpdateTaskStatusInput,
 ): Promise<TaskResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/status`), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    method: "PUT",
-  });
-
-  return parseJson<TaskResponse>(response, "tasks");
+  return putJson<TaskResponse>(options, `/api/v1/tasks/${taskId}/status`, input, "tasks");
 }
 
-export async function cancelTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/cancel`), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "POST",
-  });
-
-  return parseJson<TaskResponse>(response, "tasks");
+export function cancelTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
+  return postJsonWithoutBody<TaskResponse>(options, `/api/v1/tasks/${taskId}/cancel`, "tasks");
 }

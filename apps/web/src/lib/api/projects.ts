@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { getJson, patchJson, postJson, postJsonWithoutBody, putJson } from "./client";
 
 export type ProjectStatus =
   | "draft"
@@ -825,87 +825,6 @@ export type ListProjectPlanRevisionsFilters = PaginationFilters & {
 export type ListProjectEvidenceFilters = PaginationFilters & {
   status?: ProjectEvidenceVerificationStatus;
 };
-
-async function getJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function postJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "POST",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function postJsonWithoutBody<T>(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "POST",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function patchJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PATCH",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function putJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PUT",
-  });
-
-  return parseJson<T>(response, resource);
-}
 
 function projectPath(projectId: string, suffix = ""): string {
   return `/api/v1/projects/${encodeURIComponent(projectId)}${suffix}`;

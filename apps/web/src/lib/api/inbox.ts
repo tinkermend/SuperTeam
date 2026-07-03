@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { getJson, postJson } from "./client";
 
 export type InboxViewMode = "mine" | "team";
 
@@ -96,7 +96,7 @@ export type ExecuteInboxActionResponse = {
   source_result: InboxSourceActionResult;
 };
 
-function buildInboxItemsUrl(baseUrl: string, filters: InboxListFilters): string {
+function inboxItemsPath(filters: InboxListFilters): string {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(filters)) {
@@ -106,57 +106,33 @@ function buildInboxItemsUrl(baseUrl: string, filters: InboxListFilters): string 
   }
 
   const query = params.toString();
-  return buildApiUrl(baseUrl, `/api/v1/inbox/items${query ? `?${query}` : ""}`);
+  return `/api/v1/inbox/items${query ? `?${query}` : ""}`;
 }
 
-export async function listInboxItems(
+export function listInboxItems(
   options: ApiClientOptions,
   filters: InboxListFilters = {},
 ): Promise<InboxListResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildInboxItemsUrl(options.baseUrl, filters), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<InboxListResponse>(response, "inbox items");
+  return getJson<InboxListResponse>(options, inboxItemsPath(filters), "inbox items");
 }
 
-export async function getInboxBadge(options: ApiClientOptions): Promise<InboxBadge> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/inbox/badge"), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<InboxBadge>(response, "inbox badge");
+export function getInboxBadge(options: ApiClientOptions): Promise<InboxBadge> {
+  return getJson<InboxBadge>(options, "/api/v1/inbox/badge", "inbox badge");
 }
 
-export async function executeInboxAction(
+export function executeInboxAction(
   options: ApiClientOptions,
   itemId: string,
   input: ExecuteInboxActionInput,
 ): Promise<ExecuteInboxActionResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/inbox/items/${itemId}/actions`), {
-    body: JSON.stringify({
+  return postJson<ExecuteInboxActionResponse>(
+    options,
+    `/api/v1/inbox/items/${itemId}/actions`,
+    {
       action: input.action,
       comment: input.comment ?? "",
       payload: input.payload ?? {},
-    }),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
     },
-    method: "POST",
-  });
-
-  return parseJson<ExecuteInboxActionResponse>(response, "inbox action");
+    "inbox action",
+  );
 }

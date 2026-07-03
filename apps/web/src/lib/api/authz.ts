@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { getJson, patchJson, postJson } from "./client";
 
 export type AuthzDecisionResult = "succeeded" | "failed";
 export type RuntimeScopeStatus = "active" | "disabled";
@@ -190,19 +190,6 @@ function buildQueryPath(path: string, params: Record<string, number | string | u
   return query ? `${path}?${query}` : path;
 }
 
-async function getJson<T>(options: ApiClientOptions, path: string, resource: string): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-    },
-    method: "GET",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
 export function getAuthzOverview(options: ApiClientOptions): Promise<AuthzOverviewResponse> {
   return getJson<AuthzOverviewResponse>(options, "/api/authz/overview", "authz overview");
 }
@@ -240,58 +227,35 @@ export function listAuthzMembers(options: ListAuthzMembersOptions): Promise<Auth
   );
 }
 
-export async function createRuntimeScope(
+export function createRuntimeScope(
   options: ApiClientOptions,
   input: CreateRuntimeScopeRequest,
 ): Promise<RuntimeScopeResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/authz/runtime-scopes"), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  return parseJson<RuntimeScopeResponse>(response, "create runtime scope");
+  return postJson<RuntimeScopeResponse>(
+    options,
+    "/api/authz/runtime-scopes",
+    input,
+    "create runtime scope",
+  );
 }
 
-export async function updateRuntimeScope(
+export function updateRuntimeScope(
   options: ApiClientOptions,
   scopeID: string,
   status: RuntimeScopeStatus,
 ): Promise<RuntimeScopeResponse> {
-  const fetcher = options.fetcher ?? fetch;
   const encodedScopeID = encodeURIComponent(scopeID);
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/authz/runtime-scopes/${encodedScopeID}`), {
-    body: JSON.stringify({ status }),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    method: "PATCH",
-  });
-
-  return parseJson<RuntimeScopeResponse>(response, "update runtime scope");
+  return patchJson<RuntimeScopeResponse>(
+    options,
+    `/api/authz/runtime-scopes/${encodedScopeID}`,
+    { status },
+    "update runtime scope",
+  );
 }
 
-export async function checkPermission(
+export function checkPermission(
   options: ApiClientOptions,
   input: CheckPermissionRequest,
 ): Promise<CheckPermissionResponse> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/authz/check"), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  return parseJson<CheckPermissionResponse>(response, "authz check");
+  return postJson<CheckPermissionResponse>(options, "/api/authz/check", input, "authz check");
 }

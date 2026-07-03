@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { deleteJson, getJson, postJson } from "./client";
 
 export type CredentialType = "mcp_token";
 
@@ -47,54 +47,6 @@ export type CreateMcpServerInput = {
   url: string;
   credential_id?: string;
 };
-
-async function getJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function postJson<T>(
-  options: ApiClientOptions,
-  path: string,
-  input: unknown,
-  resource: string,
-): Promise<T> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    body: JSON.stringify(input),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "POST",
-  });
-
-  return parseJson<T>(response, resource);
-}
-
-async function deleteJson(
-  options: ApiClientOptions,
-  path: string,
-  resource: string,
-): Promise<void> {
-  const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
-    credentials: "include",
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    await parseJson<unknown>(response, resource);
-  }
-}
 
 function encodePathSegment(value: string) {
   return encodeURIComponent(value);
