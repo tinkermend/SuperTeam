@@ -3,19 +3,20 @@ import { IconTile, SoftCard } from "@/components/superteam";
 
 type ContextInjectionChainProps = {
   roleLabel: string;
-  skillCount: number;
+  personalSkillCount: number;
+  inheritedSkillCount: number;
   mcpCount: number;
   envConfiguredCount: number;
   envTotalCount: number;
 };
 
-export function ContextInjectionChain({ roleLabel, skillCount, mcpCount, envConfiguredCount, envTotalCount }: ContextInjectionChainProps) {
+export function ContextInjectionChain({ roleLabel, personalSkillCount, inheritedSkillCount, mcpCount, envConfiguredCount, envTotalCount }: ContextInjectionChainProps) {
   const nodes = [
     { icon: <UserRound />, title: "角色说明", meta: roleLabel },
     { icon: <ScrollText />, title: "宪法", meta: "团队 + 个人补充" },
     { icon: <BookOpen />, title: "记忆", meta: "待接入" },
-    { icon: <Blocks />, title: "个人技能", meta: `${skillCount} 项` },
-    { icon: <Users />, title: "团队继承技能", meta: `${skillCount} 项` },
+    { icon: <Blocks />, title: "个人技能", meta: `${personalSkillCount} 项` },
+    { icon: <Users />, title: "团队继承技能", meta: `${inheritedSkillCount} 项` },
     { icon: <Network />, title: "MCP", meta: `${mcpCount} 项` },
     { icon: <KeyRound />, title: "环境变量", meta: `${envConfiguredCount} / ${envTotalCount}` },
     { icon: <FolderGit2 />, title: "工作目录", meta: "只读" },
