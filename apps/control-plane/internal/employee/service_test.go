@@ -1959,6 +1959,81 @@ func TestApproveEffectiveConfigRequiresReadyOrActiveExecutionInstance(t *testing
 	}
 }
 
+func TestGetCurrentEffectiveConfigReturnsApprovedConfig(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	approvedAt := time.Now().UTC()
+	existingID := uuid.New()
+	repo.effectiveConfigs[existingID] = DigitalEmployeeEffectiveConfigRecord{
+		ID:                       existingID,
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     &teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		EffectiveConfig:          map[string]any{"role_profile": map[string]any{"role": "incident_analyst"}},
+		ValidationResult:         map[string]any{"blocking_errors": []any{}},
+		Status:                   EffectiveConfigStatusApproved,
+		ApprovedBy:               &approvedBy,
+		ApprovedAt:               &approvedAt,
+	}
+
+	effectiveConfig, err := svc.GetCurrentEffectiveConfig(context.Background(), tenantID, employeeID)
+	if err != nil {
+		t.Fatalf("get current effective config: %v", err)
+	}
+	if effectiveConfig.ID != existingID {
+		t.Fatalf("expected effective config id %s, got %s", existingID, effectiveConfig.ID)
+	}
+	if effectiveConfig.Status != EffectiveConfigStatusApproved {
+		t.Fatalf("expected approved status, got %q", effectiveConfig.Status)
+	}
+	if effectiveConfig.ApprovedBy == nil || *effectiveConfig.ApprovedBy != approvedBy {
+		t.Fatalf("expected approved_by %s, got %#v", approvedBy, effectiveConfig.ApprovedBy)
+	}
+	if effectiveConfig.TeamConfigRevisionID == nil || *effectiveConfig.TeamConfigRevisionID != teamConfigRevisionID {
+		t.Fatalf("expected team config revision id %s, got %#v", teamConfigRevisionID, effectiveConfig.TeamConfigRevisionID)
+	}
+	if effectiveConfig.EmployeeConfigRevisionID != employeeConfigRevisionID {
+		t.Fatalf("expected employee config revision id %s, got %s", employeeConfigRevisionID, effectiveConfig.EmployeeConfigRevisionID)
+	}
+}
+
+func TestGetCurrentEffectiveConfigReturnsNotFoundWhenNoApprovedConfigExists(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.GetCurrentEffectiveConfig(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestGetCurrentEffectiveConfigRejectsMissingIdentifiers(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := svc.GetCurrentEffectiveConfig(context.Background(), uuid.Nil, uuid.New()); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for nil tenant_id, got %v", err)
+	}
+	if _, err := svc.GetCurrentEffectiveConfig(context.Background(), uuid.New(), uuid.Nil); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for nil digital_employee_id, got %v", err)
+	}
+}
+
 func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
 	_, err := jsonbFromMap(map[string]any{"bad": func() {}}, "metadata")
 	if err == nil {

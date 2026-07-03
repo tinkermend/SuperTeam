@@ -334,6 +334,28 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
 		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
 	}
+
+	getEffectiveConfigReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/effective-config", nil)
+	getEffectiveConfigReq.AddCookie(cookie)
+	getEffectiveConfigResp := httptest.NewRecorder()
+	server.ServeHTTP(getEffectiveConfigResp, getEffectiveConfigReq)
+	if getEffectiveConfigResp.Code != http.StatusOK {
+		t.Fatalf("expected get effective config to succeed, got %d: %s", getEffectiveConfigResp.Code, getEffectiveConfigResp.Body.String())
+	}
+	if !service.getEffectiveConfigCalled || service.getEffectiveConfigTenant != expectedTenantID {
+		t.Fatalf("unexpected get effective config request mapping: called=%v tenant=%s", service.getEffectiveConfigCalled, service.getEffectiveConfigTenant)
+	}
+	var effectiveConfigRead struct {
+		ID                uuid.UUID `json:"id"`
+		DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+		Status            string    `json:"status"`
+	}
+	if err := json.NewDecoder(getEffectiveConfigResp.Body).Decode(&effectiveConfigRead); err != nil {
+		t.Fatalf("decode get effective config response: %v", err)
+	}
+	if effectiveConfigRead.DigitalEmployeeID != employeeID || effectiveConfigRead.Status != string(employee.EffectiveConfigStatusApproved) {
+		t.Fatalf("unexpected get effective config response body: %#v", effectiveConfigRead)
+	}
 }
 
 func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
@@ -1226,6 +1248,7 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`, action: authz.ActionEmployeeConfigPreview, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`, action: authz.ActionEmployeeConfigApprove, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "get effective config", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/effective-config", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
 
 	for _, tt := range tests {
@@ -1454,6 +1477,8 @@ type routeEmployeeService struct {
 	configCalled              bool
 	previewCalled             bool
 	approveCalled             bool
+	getEffectiveConfigCalled  bool
+	getEffectiveConfigTenant  uuid.UUID
 	createdID                 uuid.UUID
 	listErr                   error
 	overviewErr               error
@@ -1797,6 +1822,26 @@ func (s *routeEmployeeService) ApproveEffectiveConfig(ctx context.Context, req e
 	}, nil
 }
 
+func (s *routeEmployeeService) GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeEffectiveConfig, error) {
+	s.getEffectiveConfigCalled = true
+	s.getEffectiveConfigTenant = tenantID
+	now := time.Now().UTC()
+	approvedBy := uuid.New()
+	return &employee.DigitalEmployeeEffectiveConfig{
+		ID:                       uuid.New(),
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		EmployeeConfigRevisionID: uuid.New(),
+		EffectiveConfig:          map[string]any{"approved": true},
+		ValidationResult:         map[string]any{"blocking_errors": []any{}},
+		Status:                   employee.EffectiveConfigStatusApproved,
+		ApprovedBy:               &approvedBy,
+		ApprovedAt:               &now,
+		CreatedAt:                now,
+		UpdatedAt:                now,
+	}, nil
+}
+
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
@@ -1808,7 +1853,8 @@ func (s *routeEmployeeService) called() bool {
 		s.bindCalled ||
 		s.configCalled ||
 		s.previewCalled ||
-		s.approveCalled
+		s.approveCalled ||
+		s.getEffectiveConfigCalled
 }
 
 var _ employee.HandlerService = (*routeEmployeeService)(nil)

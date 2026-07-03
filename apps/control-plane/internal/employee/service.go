@@ -1566,6 +1566,20 @@ func inheritedConfigMap(requested map[string]any, latest *EmployeeConfigInput, s
 	return cloneMap(selectLatest(*latest))
 }
 
+func (s *Service) GetCurrentEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (*DigitalEmployeeEffectiveConfig, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if digitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	record, err := s.repository.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	return effectiveConfigFromRecord(record), nil
+}
+
 func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffectiveConfigRequest) (*EffectiveConfigPreview, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

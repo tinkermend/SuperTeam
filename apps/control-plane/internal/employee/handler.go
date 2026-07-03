@@ -32,6 +32,7 @@ type HandlerService interface {
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req PreviewEffectiveConfigByRevisionIDsRequest) (*EffectiveConfigPreview, error)
 	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
+	GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeEffectiveConfig, error)
 }
 
 type HTTPHandler struct {
@@ -648,6 +649,27 @@ func (h *HTTPHandler) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWrite
 		return
 	}
 	writeJSON(w, http.StatusCreated, effectiveConfigResponseFromDomain(effectiveConfig))
+}
+
+func (h *HTTPHandler) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee effective config read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	effectiveConfig, err := service.GetCurrentEffectiveConfig(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, effectiveConfigResponseFromDomain(effectiveConfig))
 }
 
 const (
@@ -1585,7 +1607,7 @@ func effectiveConfigResponseFromDomain(effectiveConfig *DigitalEmployeeEffective
 		ID:                       effectiveConfig.ID.String(),
 		TenantID:                 effectiveConfig.TenantID.String(),
 		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID.String(),
-		TeamConfigRevisionID:     effectiveConfig.TeamConfigRevisionID.String(),
+		TeamConfigRevisionID:     optionalUUIDStringPtr(effectiveConfig.TeamConfigRevisionID),
 		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID.String(),
 		EffectiveConfig:          cloneMap(effectiveConfig.EffectiveConfig),
 		ValidationResult:         cloneMap(effectiveConfig.ValidationResult),
