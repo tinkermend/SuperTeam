@@ -202,6 +202,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		TeamID           string         `json:"team_id"`
 		OwnerUserID      string         `json:"owner_user_id"`
 		EmployeeType     string         `json:"employee_type"`
+		ProviderType     string         `json:"provider_type"`
 		PermissionPolicy map[string]any `json:"permission_policy"`
 		ContextPolicy    map[string]any `json:"context_policy"`
 		ApprovalPolicy   map[string]any `json:"approval_policy"`
@@ -215,8 +216,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if created.TeamID != teamID.String() {
 		t.Fatalf("expected response team %s, got %s", teamID, created.TeamID)
 	}
-	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" {
-		t.Fatalf("expected response owner/type %s/database_admin, got %#v", user.ID, created)
+	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" || created.ProviderType != "codex" {
+		t.Fatalf("expected response owner/type/provider %s/database_admin/codex, got %#v", user.ID, created)
 	}
 	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
 		t.Fatalf("expected policy objects in response, got %#v", created)
@@ -333,6 +334,48 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
 		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
+	}
+}
+
+func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(nil, nil, authService, nil, &routeAuthorizer{allowed: true})
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	teamID := uuid.New()
+	body := `{
+		"team_id":"` + teamID.String() + `",
+		"employee_type":"database_admin",
+		"name":"Database administrator",
+		"avatar_asset_id":"engineer-m-01",
+		"role":"database_admin",
+		"provider_type":"codex"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(req, user.SessionToken)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected create digital employee without runtime to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.createReq.RuntimeNodeID != uuid.Nil {
+		t.Fatalf("expected missing runtime_node_id to stay nil, got %s", service.createReq.RuntimeNodeID)
+	}
+	if service.createReq.ProviderType != "codex" {
+		t.Fatalf("expected provider_type codex, got %q", service.createReq.ProviderType)
+	}
+	if strings.Contains(resp.Body.String(), "runtime_node_id") {
+		t.Fatalf("expected create response not to expose employee runtime binding, got %s", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"provider_type":"codex"`) {
+		t.Fatalf("expected provider_type in create response, got %s", resp.Body.String())
 	}
 }
 
@@ -1522,6 +1565,7 @@ func (s *routeEmployeeService) CreateDigitalEmployee(ctx context.Context, req em
 		TeamID:           req.TeamID,
 		OwnerUserID:      req.OwnerUserID,
 		EmployeeType:     req.EmployeeType,
+		ProviderType:     req.ProviderType,
 		Name:             req.Name,
 		Role:             req.Role,
 		Status:           employee.DigitalEmployeeStatusReady,

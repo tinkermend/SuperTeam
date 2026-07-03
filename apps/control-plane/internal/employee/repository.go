@@ -162,6 +162,7 @@ type DigitalEmployeeRecord struct {
 	TeamID           *uuid.UUID
 	OwnerUserID      uuid.UUID
 	EmployeeType     string
+	ProviderType     string
 	Name             string
 	Role             string
 	Description      *string

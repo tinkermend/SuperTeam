@@ -492,74 +492,19 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		return nil, err
 	}
 
-	var preflight RuntimeProvisioningPreflight
-	if teamLess {
-		preflight, err = s.repository.GetRuntimeProvisioningPreflightTeamLess(ctx, normalized.TenantID, normalized.RuntimeNodeID, normalized.ProviderType)
-	} else {
-		preflight, err = s.repository.GetRuntimeProvisioningPreflight(ctx, normalized.TenantID, *normalized.TeamID, normalized.RuntimeNodeID, normalized.ProviderType)
-	}
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, fmt.Errorf("%w: runtime provisioning preflight unavailable", ErrRuntimeUnavailable)
-		}
-		return nil, fmt.Errorf("get runtime provisioning preflight: %w", err)
-	}
-	if err := validateRuntimeProvisioningPreflight(preflight); err != nil {
-		return nil, err
-	}
-	if s.dispatcher == nil {
-		return nil, fmt.Errorf("%w: runtime command dispatcher is required", ErrRuntimeUnavailable)
-	}
-	if !s.dispatcher.IsConnected(preflight.NodeID) {
-		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
-	}
-
 	var record DigitalEmployeeRecord
-	var instance DigitalEmployeeExecutionInstanceRecord
-	var commandID string
-	var payload map[string]any
 	if err := s.repository.WithTransaction(ctx, func(txRepo Repository) error {
-		createdRecord, createdInstance, createdCommandID, createdPayload, err := s.createLocalReadyEmployeeFacts(ctx, txRepo, normalized, definition, teamConfig, preflight)
+		createdRecord, err := s.createLocalReadyEmployeeFacts(ctx, txRepo, normalized, definition, teamConfig)
 		if err != nil {
 			return err
 		}
 		record = createdRecord
-		instance = createdInstance
-		commandID = createdCommandID
-		payload = createdPayload
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	if err := dispatchRuntimeProvisioningCommand(ctx, s.dispatcher, preflight.NodeID, commandID, payload); err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(err, abortErr)
-	}
-
-	receipt, err := s.waitForProvisioningCompletion(ctx, normalized.TenantID, commandID)
-	if err != nil {
-		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: wait for provisioning command completion: %w", ErrRuntimeUnavailable, err), abortErr)
-	}
-	if receipt == nil {
-		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command receipt missing", ErrRuntimeUnavailable), abortErr)
-	}
-	switch receipt.Status {
-	case string(DigitalEmployeeRunStatusCompleted):
-		readyRecord, err := s.repository.GetDigitalEmployee(ctx, normalized.TenantID, record.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get provisioned digital employee: %w", err)
-		}
-		return employeeFromRecord(readyRecord), nil
-	case string(DigitalEmployeeRunStatusFailed), string(DigitalEmployeeRunStatusTimedOut), string(DigitalEmployeeRunStatusCancelled):
-		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command %s", ErrRuntimeUnavailable, receipt.Status), abortErr)
-	default:
-		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command did not reach terminal status %q", ErrRuntimeUnavailable, receipt.Status), abortErr)
-	}
+	return employeeFromRecord(record), nil
 }
 
 func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (CreateDigitalEmployeeRequest, EmployeeTypeDefinition, error) {
@@ -599,10 +544,7 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if role == "" {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: role is required", ErrInvalidInput)
 	}
-	if req.RuntimeNodeID == uuid.Nil {
-		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
-	}
-	providerType := strings.TrimSpace(req.ProviderType)
+	providerType := normalizeProviderType(req.ProviderType)
 	if providerType == "" {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
 	}
@@ -624,6 +566,10 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	req.BudgetPolicy = budgetPolicy
 	req.Metadata = metadataWithAvatarAsset(req.Metadata, avatarAsset)
 	return req, definition, nil
+}
+
+func normalizeProviderType(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func defaultRiskLevelForEmployeeType(definition EmployeeTypeDefinition) string {
@@ -670,34 +616,36 @@ func (s *Service) previewEffectiveConfigWithRepository(ctx context.Context, repo
 	})
 }
 
-func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, preflight RuntimeProvisioningPreflight) (DigitalEmployeeRecord, DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
+func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) (DigitalEmployeeRecord, error) {
 	record, err := repository.CreateDigitalEmployee(ctx, createDigitalEmployeeParams(req))
 	if err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee: %w", err)
+		return DigitalEmployeeRecord{}, fmt.Errorf("create digital employee: %w", err)
 	}
 	if err := s.createInitialEnvironmentVariables(ctx, repository, record, req); err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+		return DigitalEmployeeRecord{}, err
 	}
 	configRevision, err := s.createInitialActiveConfigRevision(ctx, repository, record, req, definition, teamConfig)
 	if err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+		return DigitalEmployeeRecord{}, err
 	}
 	configInput := employeeConfigInputFromRecord(configRevision)
 	preview, err := s.previewEffectiveConfigWithRepository(ctx, repository, teamConfig, configInput)
 	if err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+		return DigitalEmployeeRecord{}, err
 	}
 	if len(preview.Validation.BlockingErrors) > 0 {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
+		return DigitalEmployeeRecord{}, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
 	}
 	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfigRevisionIDPtr(teamConfig), configRevision.ID, preview, req.OwnerUserID); err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+		return DigitalEmployeeRecord{}, err
 	}
-	instance, commandID, payload, err := createProvisioningInstanceAndReceipt(ctx, repository, s.skillLister, record, req, preflight, configInput, preview)
-	if err != nil {
-		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	record.Status = DigitalEmployeeStatusReady
+	if updated, err := repository.UpdateDigitalEmployeeStatus(ctx, req.TenantID, record.ID, DigitalEmployeeStatusReady); err == nil {
+		record = updated
+	} else if !errors.Is(err, ErrNotFound) {
+		return DigitalEmployeeRecord{}, fmt.Errorf("mark digital employee ready: %w", err)
 	}
-	return record, instance, commandID, payload, nil
+	return record, nil
 }
 
 func (s *Service) createInitialEnvironmentVariables(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest) error {
@@ -815,6 +763,9 @@ func createApprovedEffectiveConfig(ctx context.Context, repository Repository, r
 	return effectiveConfig, nil
 }
 
+// Legacy compatibility helper for explicit execution-instance provisioning.
+// CreateDigitalEmployee no longer calls this path; ProjectTask dispatch should
+// resolve Runtime through project placement instead of employee creation.
 func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, skillLister SkillLister, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
 	agentHomeDir := canonicalEmployeeHome(preflight.AgentHomeDir, preflight.TeamID, record.ID)
 	instance, err := repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
@@ -831,7 +782,7 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 		},
 		Status: ExecutionInstanceStatusProvisioning,
 		Metadata: map[string]any{
-			"provisioned_by": "digital_employee_create",
+			"provisioned_by": "legacy_execution_instance_provisioning",
 		},
 	})
 	if err != nil {
@@ -885,7 +836,7 @@ func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository
 		MimeType:          "text/markdown",
 		SyncPolicy:        "auto",
 		Status:            "active",
-		Metadata:          map[string]any{"created_by": "digital_employee_create"},
+		Metadata:          map[string]any{"created_by": "legacy_execution_instance_provisioning"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create default workspace file: %w", err)
@@ -910,6 +861,7 @@ func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository
 	return []WorkspaceFileForSyncRecord{workspaceFileForSyncFromDefault(agentsFile, agentsRevision)}, nil
 }
 
+// Legacy compatibility helper; do not use for digital employee identity creation.
 func dispatchRuntimeProvisioningCommand(ctx context.Context, dispatcher RuntimeCommandDispatcher, nodeID, commandID string, payload map[string]any) error {
 	command, err := runtimeCommand(commandID, "provision_instance", payload)
 	if err != nil {
@@ -921,6 +873,7 @@ func dispatchRuntimeProvisioningCommand(ctx context.Context, dispatcher RuntimeC
 	return nil
 }
 
+// Legacy compatibility helper; do not use for digital employee identity creation.
 func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
 	waitCtx, cancel := context.WithTimeout(ctx, s.provisioningTimeout)
 	defer cancel()
@@ -1037,6 +990,7 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	return nil
 }
 
+// Legacy compatibility payload for explicit execution-instance provisioning.
 func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord) map[string]any {
 	return redactRuntimeEventSecrets(map[string]any{
 		"command_id":                  commandID,
@@ -1715,6 +1669,7 @@ func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 		TeamID:           validUUIDPtr(record.TeamID),
 		OwnerUserID:      record.OwnerUserID,
 		EmployeeType:     record.EmployeeType,
+		ProviderType:     record.ProviderType,
 		Name:             record.Name,
 		Role:             record.Role,
 		Description:      trimOptionalString(record.Description),

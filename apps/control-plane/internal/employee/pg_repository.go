@@ -1642,6 +1642,7 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 		TeamID:           uuidPtrFromNull(employee.TeamID),
 		OwnerUserID:      employee.OwnerUserID,
 		EmployeeType:     employee.EmployeeType,
+		ProviderType:     employee.ProviderType,
 		Name:             employee.Name,
 		Role:             employee.Role,
 		Description:      stringPtrFromText(employee.Description),
