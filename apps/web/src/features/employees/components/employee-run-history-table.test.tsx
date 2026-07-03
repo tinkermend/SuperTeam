@@ -1,0 +1,78 @@
+import { describe, expect, it, vi } from "vitest";
+import { userEvent } from "vitest/browser";
+import { render } from "vitest-browser-react";
+import { EmployeeRunHistoryTable } from "./employee-run-history-table";
+import type { DigitalEmployeeRunListResult } from "@/lib/api/employees";
+
+const result: DigitalEmployeeRunListResult = {
+  items: [
+    {
+      id: "run-1",
+      tenant_id: "tenant-1",
+      task_id: "task-1",
+      digital_employee_id: "employee-1",
+      execution_instance_id: "instance-1",
+      runtime_node_id: "node-uuid-1",
+      node_id: "node-a",
+      command_id: "cmd-1",
+      provider_type: "claude_code",
+      status: "completed",
+      result: {},
+      diagnostic: {},
+      work_products: [],
+      session_state: {},
+      timed_out: false,
+      task_title: "数据库迁移脚本校验",
+      project_name: "数据库平台",
+      work_product_count: 2,
+      duration_sec: 1095,
+      created_at: "2026-05-20T10:32:00Z",
+    },
+  ],
+  total_count: 1,
+  filters: {
+    statuses: [{ value: "completed", label: "已完成" }],
+    projects: [{ value: "project-1", label: "数据库平台" }],
+  },
+};
+
+describe("EmployeeRunHistoryTable", () => {
+  it("renders run rows and triggers row click", async () => {
+    const onRowClick = vi.fn();
+    const screen = await render(
+      <EmployeeRunHistoryTable
+        onPageChange={vi.fn()}
+        onRetry={vi.fn()}
+        onRowClick={onRowClick}
+        onStatusFilterChange={vi.fn()}
+        page={1}
+        pageSize={10}
+        result={result}
+        statusFilter={undefined}
+      />,
+    );
+
+    await expect.element(screen.getByText("数据库迁移脚本校验")).toBeVisible();
+    await expect.element(screen.getByText("数据库平台")).toBeVisible();
+    await expect.element(screen.getByText("已完成")).toBeVisible();
+    await userEvent.click(screen.getByText("数据库迁移脚本校验"));
+    expect(onRowClick).toHaveBeenCalledWith(result.items[0]);
+  });
+
+  it("shows empty state when there are no runs", async () => {
+    const screen = await render(
+      <EmployeeRunHistoryTable
+        onPageChange={vi.fn()}
+        onRetry={vi.fn()}
+        onRowClick={vi.fn()}
+        onStatusFilterChange={vi.fn()}
+        page={1}
+        pageSize={10}
+        result={{ items: [], total_count: 0, filters: { statuses: [], projects: [] } }}
+        statusFilter={undefined}
+      />,
+    );
+
+    await expect.element(screen.getByText("暂无数据")).toBeVisible();
+  });
+});
