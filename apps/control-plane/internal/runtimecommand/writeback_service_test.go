@@ -238,3 +238,7 @@ func (f fakeRunRepository) DeleteExecutionInstance(context.Context, uuid.UUID, u
 func (f fakeRunRepository) DeleteDigitalEmployee(context.Context, uuid.UUID, uuid.UUID) error {
 	return employee.ErrInvalidInput
 }
+
+func (f fakeRunRepository) GetDigitalEmployeeRunStats(context.Context, uuid.UUID, uuid.UUID) (employee.DigitalEmployeeRunStats, error) {
+	return employee.DigitalEmployeeRunStats{}, employee.ErrInvalidInput
+}

@@ -200,6 +200,10 @@ func (r *PgRunRepository) UpsertWorkspaceFileSync(ctx context.Context, params Up
 	return (&PgRepository{q: r.q}).UpsertWorkspaceFileSync(ctx, params)
 }
 
+func (r *PgRunRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error) {
+	return (&PgRepository{q: r.q}).GetDigitalEmployeeRunStats(ctx, tenantID, digitalEmployeeID)
+}
+
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	params, err := jsonBytesFromMap(req.Params, "params")
 	if err != nil {

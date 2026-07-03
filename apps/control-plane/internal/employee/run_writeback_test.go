@@ -1102,6 +1102,10 @@ func (f *fakeRunWritebackRepository) GetRunPreflight(context.Context, uuid.UUID,
 	return RunPreflight{}, ErrNotFound
 }
 
+func (f *fakeRunWritebackRepository) GetDigitalEmployeeRunStats(context.Context, uuid.UUID, uuid.UUID) (DigitalEmployeeRunStats, error) {
+	return DigitalEmployeeRunStats{}, nil
+}
+
 func (f *fakeRunWritebackRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
 	f.transactionCount++
 	return fn(f)

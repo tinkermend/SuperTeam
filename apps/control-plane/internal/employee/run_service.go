@@ -597,6 +597,20 @@ func (s *DigitalEmployeeRunService) ListRuns(ctx context.Context, tenantID, empl
 	return runs, nil
 }
 
+func (s *DigitalEmployeeRunService) GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRunStats, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	stats, err := s.repository.GetDigitalEmployeeRunStats(ctx, tenantID, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
 func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

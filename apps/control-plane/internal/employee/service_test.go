@@ -2741,6 +2741,10 @@ func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Contex
 	return record, nil
 }
 
+func (r *memoryRepository) GetDigitalEmployeeRunStats(_ context.Context, _, _ uuid.UUID) (DigitalEmployeeRunStats, error) {
+	return DigitalEmployeeRunStats{}, nil
+}
+
 func (r *memoryRepository) GetRuntimeProvisioningPreflight(_ context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
 	if r.preflightErr != nil {
 		return RuntimeProvisioningPreflight{}, r.preflightErr

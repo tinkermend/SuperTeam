@@ -480,6 +480,42 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY tr.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: GetDigitalEmployeeRunStats :one
+WITH scoped AS (
+    SELECT status, started_at, finished_at, created_at
+    FROM task_runs
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+),
+counts AS (
+    SELECT
+        COUNT(*)::bigint AS total_count,
+        COUNT(*) FILTER (WHERE status = 'completed')::bigint AS succeeded_count,
+        COUNT(*) FILTER (WHERE status IN ('failed', 'timed_out'))::bigint AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::bigint AS cancelled_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::bigint AS last_7d_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::bigint AS prev_7d_count
+    FROM scoped
+),
+durations AS (
+    SELECT
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_duration_sec,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS p90_duration_sec
+    FROM scoped
+    WHERE finished_at IS NOT NULL
+)
+SELECT
+    counts.total_count,
+    counts.succeeded_count,
+    counts.failed_count,
+    counts.cancelled_count,
+    counts.last_7d_count,
+    counts.prev_7d_count,
+    durations.avg_duration_sec,
+    durations.p90_duration_sec
+FROM counts
+LEFT JOIN durations ON true;
+
 -- name: UpdateDigitalEmployeeRunStatus :one
 UPDATE task_runs
 SET status = sqlc.arg('status')::varchar,

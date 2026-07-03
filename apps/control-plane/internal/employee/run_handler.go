@@ -18,6 +18,7 @@ type RunHandlerService interface {
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	StopRun(ctx context.Context, req StopDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
+	GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRunStats, error)
 }
 
 const (
@@ -104,6 +105,58 @@ func (h *HTTPHandler) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, runResponses(runs))
+}
+
+func (h *HTTPHandler) GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee run stats read")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	stats, err := service.GetRunStats(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, runStatsResponseFromDomain(stats))
+}
+
+type digitalEmployeeRunStatsResponse struct {
+	TotalCount     int64    `json:"total_count"`
+	SucceededCount int64    `json:"succeeded_count"`
+	FailedCount    int64    `json:"failed_count"`
+	CancelledCount int64    `json:"cancelled_count"`
+	SuccessRate    *float64 `json:"success_rate"`
+	AvgDurationSec *float64 `json:"avg_duration_sec"`
+	P90DurationSec *float64 `json:"p90_duration_sec"`
+	Last7dCount    int64    `json:"last_7d_count"`
+	Prev7dCount    int64    `json:"prev_7d_count"`
+}
+
+func runStatsResponseFromDomain(stats *DigitalEmployeeRunStats) digitalEmployeeRunStatsResponse {
+	var successRate *float64
+	if stats.TotalCount > 0 {
+		rate := float64(stats.SucceededCount) / float64(stats.TotalCount)
+		successRate = &rate
+	}
+	return digitalEmployeeRunStatsResponse{
+		TotalCount:     stats.TotalCount,
+		SucceededCount: stats.SucceededCount,
+		FailedCount:    stats.FailedCount,
+		CancelledCount: stats.CancelledCount,
+		SuccessRate:    successRate,
+		AvgDurationSec: stats.AvgDurationSec,
+		P90DurationSec: stats.P90DurationSec,
+		Last7dCount:    stats.Last7dCount,
+		Prev7dCount:    stats.Prev7dCount,
+	}
 }
 
 func (h *HTTPHandler) GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Request) {

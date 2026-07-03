@@ -1829,6 +1829,10 @@ type routeEmployeeRunService struct {
 	eventsLimit      int32
 	eventsOffset     int32
 	createdRun       *employee.DigitalEmployeeRun
+	statsTenantID    uuid.UUID
+	statsEmployeeID  uuid.UUID
+	stats            *employee.DigitalEmployeeRunStats
+	statsErr         error
 }
 
 func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.CreateDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {
@@ -1870,6 +1874,18 @@ func (s *routeEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, e
 		Payload:        map[string]any{"text": "running"},
 		Metadata:       map[string]any{"source": "test"},
 	}}, nil
+}
+
+func (s *routeEmployeeRunService) GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeRunStats, error) {
+	s.statsTenantID = tenantID
+	s.statsEmployeeID = employeeID
+	if s.statsErr != nil {
+		return nil, s.statsErr
+	}
+	if s.stats != nil {
+		return s.stats, nil
+	}
+	return &employee.DigitalEmployeeRunStats{}, nil
 }
 
 func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.StopDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {

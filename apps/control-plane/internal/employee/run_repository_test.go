@@ -817,3 +817,72 @@ func runEmployeeRepositoryTestMigrations(ctx context.Context, conn *pgx.Conn) er
 	}
 	return nil
 }
+
+func TestPgRepositoryGetDigitalEmployeeRunStatsAggregatesByStatus(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_stats_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	otherEmployeeID := uuid.New()
+	taskID := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, provider_type, status)
+		VALUES ($1, $2, 'stats-fixture-task', 'codex', 'completed');
+	`, taskID, tenantID)
+	require.NoError(t, err)
+
+	insertRun := func(employee uuid.UUID, status string, startedAt, finishedAt *time.Time, createdAt time.Time) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+			VALUES ($1, $2, $3, $4, 'node-a', $5, $6, $7, $8)
+		`, uuid.New(), tenantID, taskID, employee, status, startedAt, finishedAt, createdAt)
+		require.NoError(t, err)
+	}
+
+	now := time.Now().UTC()
+	start1, finish1 := now.Add(-30*time.Minute), now.Add(-10*time.Minute)
+	start2, finish2 := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
+	insertRun(employeeID, "completed", &start1, &finish1, now.Add(-1*24*time.Hour))
+	insertRun(employeeID, "completed", &start2, &finish2, now.Add(-10*24*time.Hour))
+	insertRun(employeeID, "failed", &start1, &finish1, now.Add(-2*24*time.Hour))
+	insertRun(employeeID, "cancelled", &start1, &finish1, now.Add(-12*24*time.Hour))
+	insertRun(otherEmployeeID, "completed", &start1, &finish1, now)
+
+	repo := NewPgRepository(queries.New(conn))
+	stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeID)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(4), stats.TotalCount)
+	require.Equal(t, int64(2), stats.SucceededCount)
+	require.Equal(t, int64(1), stats.FailedCount)
+	require.Equal(t, int64(1), stats.CancelledCount)
+	require.Equal(t, int64(2), stats.Last7dCount)
+	// prev_7d window is [now-14d, now-7d): both the -10d and -12d fixture rows fall inside it.
+	require.Equal(t, int64(2), stats.Prev7dCount)
+	require.NotNil(t, stats.AvgDurationSec)
+	// durations across all 4 finished runs for employeeID: 1200s, 3600s, 1200s, 1200s -> avg 1800s.
+	require.InDelta(t, 1800, *stats.AvgDurationSec, 1)
+}

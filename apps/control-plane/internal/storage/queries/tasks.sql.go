@@ -918,6 +918,75 @@ func (q *Queries) GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetD
 	return i, err
 }
 
+const GetDigitalEmployeeRunStats = `-- name: GetDigitalEmployeeRunStats :one
+WITH scoped AS (
+    SELECT status, started_at, finished_at, created_at
+    FROM task_runs
+    WHERE tenant_id = $1::uuid
+      AND digital_employee_id = $2::uuid
+),
+counts AS (
+    SELECT
+        COUNT(*)::bigint AS total_count,
+        COUNT(*) FILTER (WHERE status = 'completed')::bigint AS succeeded_count,
+        COUNT(*) FILTER (WHERE status IN ('failed', 'timed_out'))::bigint AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::bigint AS cancelled_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::bigint AS last_7d_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::bigint AS prev_7d_count
+    FROM scoped
+),
+durations AS (
+    SELECT
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_duration_sec,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS p90_duration_sec
+    FROM scoped
+    WHERE finished_at IS NOT NULL
+)
+SELECT
+    counts.total_count,
+    counts.succeeded_count,
+    counts.failed_count,
+    counts.cancelled_count,
+    counts.last_7d_count,
+    counts.prev_7d_count,
+    durations.avg_duration_sec,
+    durations.p90_duration_sec
+FROM counts
+LEFT JOIN durations ON true
+`
+
+type GetDigitalEmployeeRunStatsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type GetDigitalEmployeeRunStatsRow struct {
+	TotalCount     int64         `json:"total_count"`
+	SucceededCount int64         `json:"succeeded_count"`
+	FailedCount    int64         `json:"failed_count"`
+	CancelledCount int64         `json:"cancelled_count"`
+	Last7dCount    int64         `json:"last_7d_count"`
+	Prev7dCount    int64         `json:"prev_7d_count"`
+	AvgDurationSec pgtype.Float8 `json:"avg_duration_sec"`
+	P90DurationSec pgtype.Float8 `json:"p90_duration_sec"`
+}
+
+func (q *Queries) GetDigitalEmployeeRunStats(ctx context.Context, arg GetDigitalEmployeeRunStatsParams) (GetDigitalEmployeeRunStatsRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeRunStats, arg.TenantID, arg.DigitalEmployeeID)
+	var i GetDigitalEmployeeRunStatsRow
+	err := row.Scan(
+		&i.TotalCount,
+		&i.SucceededCount,
+		&i.FailedCount,
+		&i.CancelledCount,
+		&i.Last7dCount,
+		&i.Prev7dCount,
+		&i.AvgDurationSec,
+		&i.P90DurationSec,
+	)
+	return i, err
+}
+
 const GetLatestTaskEventSequence = `-- name: GetLatestTaskEventSequence :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer as max_sequence
 FROM task_events

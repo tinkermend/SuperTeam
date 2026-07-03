@@ -1284,6 +1284,7 @@ type fakeRunServiceRepository struct {
 	runtimeSkills         []skill.SkillRuntimeRecord
 	runtimeCapabilities   []cpruntime.RuntimeCapability
 	runtimeEnv            []RuntimeEnvironmentVariablePayload
+	runStats              DigitalEmployeeRunStats
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -1300,6 +1301,10 @@ func (f *fakeRunServiceRepository) WithTransaction(ctx context.Context, fn func(
 
 func (f *fakeRunServiceRepository) GetActiveRun(context.Context, uuid.UUID, uuid.UUID) (*DigitalEmployeeRun, error) {
 	return f.activeRun, nil
+}
+
+func (f *fakeRunServiceRepository) GetDigitalEmployeeRunStats(context.Context, uuid.UUID, uuid.UUID) (DigitalEmployeeRunStats, error) {
+	return f.runStats, nil
 }
 
 func (f *fakeRunServiceRepository) GetRun(_ context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {

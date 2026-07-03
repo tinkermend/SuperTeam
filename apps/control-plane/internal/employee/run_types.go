@@ -83,6 +83,17 @@ type DigitalEmployeeRun struct {
 	UpdatedAt                 time.Time
 }
 
+type DigitalEmployeeRunStats struct {
+	TotalCount     int64
+	SucceededCount int64
+	FailedCount    int64
+	CancelledCount int64
+	Last7dCount    int64
+	Prev7dCount    int64
+	AvgDurationSec *float64
+	P90DurationSec *float64
+}
+
 type CreateDigitalEmployeeRunRequest struct {
 	TenantID          uuid.UUID
 	UserID            uuid.UUID
