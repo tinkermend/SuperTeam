@@ -82,6 +82,7 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 		TeamID:           nullUUIDFromPtr(params.TeamID),
 		OwnerUserID:      params.OwnerUserID,
 		EmployeeType:     params.EmployeeType,
+		ProviderType:     params.ProviderType,
 		Name:             params.Name,
 		Role:             params.Role,
 		Description:      textFromPtr(params.Description),

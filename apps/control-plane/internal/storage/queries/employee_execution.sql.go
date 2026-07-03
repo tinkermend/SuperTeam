@@ -239,6 +239,7 @@ INSERT INTO digital_employees (
     team_id,
     owner_user_id,
     employee_type,
+    provider_type,
     name,
     role,
     description,
@@ -255,14 +256,15 @@ INSERT INTO digital_employees (
     $4::varchar,
     $5::varchar,
     $6::varchar,
-    $7::text,
-    $8::varchar,
-    COALESCE($9::jsonb, '{}'::jsonb),
+    $7::varchar,
+    $8::text,
+    $9::varchar,
     COALESCE($10::jsonb, '{}'::jsonb),
     COALESCE($11::jsonb, '{}'::jsonb),
-    $12::varchar,
-    COALESCE($13::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
+    COALESCE($12::jsonb, '{}'::jsonb),
+    $13::varchar,
+    COALESCE($14::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 `
 
 type CreateDigitalEmployeeParams struct {
@@ -270,6 +272,7 @@ type CreateDigitalEmployeeParams struct {
 	TeamID           uuid.NullUUID `json:"team_id"`
 	OwnerUserID      uuid.UUID     `json:"owner_user_id"`
 	EmployeeType     string        `json:"employee_type"`
+	ProviderType     string        `json:"provider_type"`
 	Name             string        `json:"name"`
 	Role             string        `json:"role"`
 	Description      pgtype.Text   `json:"description"`
@@ -287,6 +290,7 @@ func (q *Queries) CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEm
 		arg.TeamID,
 		arg.OwnerUserID,
 		arg.EmployeeType,
+		arg.ProviderType,
 		arg.Name,
 		arg.Role,
 		arg.Description,
@@ -318,6 +322,7 @@ func (q *Queries) CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEm
 		&i.UpdatedAt,
 		&i.OwnerUserID,
 		&i.EmployeeType,
+		&i.ProviderType,
 	)
 	return i, err
 }
@@ -359,7 +364,7 @@ func (q *Queries) DeleteDigitalEmployeeExecutionInstance(ctx context.Context, ar
 }
 
 const GetDigitalEmployee = `-- name: GetDigitalEmployee :one
-SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
+SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 FROM digital_employees
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -394,6 +399,7 @@ func (q *Queries) GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployee
 		&i.UpdatedAt,
 		&i.OwnerUserID,
 		&i.EmployeeType,
+		&i.ProviderType,
 	)
 	return i, err
 }
@@ -2424,7 +2430,7 @@ func (q *Queries) ListDigitalEmployeeOverviewOperationalFacts(ctx context.Contex
 }
 
 const ListDigitalEmployees = `-- name: ListDigitalEmployees :many
-SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
+SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 FROM digital_employees
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
@@ -2480,6 +2486,7 @@ func (q *Queries) ListDigitalEmployees(ctx context.Context, arg ListDigitalEmplo
 			&i.UpdatedAt,
 			&i.OwnerUserID,
 			&i.EmployeeType,
+			&i.ProviderType,
 		); err != nil {
 			return nil, err
 		}
@@ -2873,7 +2880,7 @@ SET status = $1::varchar,
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
+RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 `
 
 type UpdateDigitalEmployeeStatusParams struct {
@@ -2905,6 +2912,7 @@ func (q *Queries) UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDig
 		&i.UpdatedAt,
 		&i.OwnerUserID,
 		&i.EmployeeType,
+		&i.ProviderType,
 	)
 	return i, err
 }

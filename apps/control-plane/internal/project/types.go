@@ -640,6 +640,8 @@ type ProjectTaskAttempt struct {
 	ProjectTaskID                 uuid.UUID
 	AttemptNo                     int32
 	Status                        string
+	DigitalEmployeeID             *uuid.UUID
+	ProviderType                  *string
 	DigitalEmployeeRunID          *uuid.UUID
 	RuntimeTaskID                 *uuid.UUID
 	RuntimeNodeID                 *uuid.UUID
@@ -691,6 +693,7 @@ type QueueProjectTaskRequest struct {
 	ProjectTaskID                 uuid.UUID
 	ProjectTaskAttemptID          *uuid.UUID
 	DigitalEmployeeID             uuid.UUID
+	ProviderType                  string
 	DigitalEmployeeRunID          *uuid.UUID
 	RuntimeTaskID                 *uuid.UUID
 	RuntimeNodeID                 *uuid.UUID

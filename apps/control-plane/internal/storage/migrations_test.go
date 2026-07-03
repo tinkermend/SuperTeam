@@ -337,6 +337,16 @@ func TestMCPHTTPCapabilityRegistryMigration(t *testing.T) {
 	assertMigrationContains(t, sql, "team_mcp_servers")
 }
 
+func TestDigitalEmployeeProviderIdentityMigrationObjects(t *testing.T) {
+	sql := readMigration(t, "045_digital_employee_provider_identity.sql")
+	require.Contains(t, sql, "ALTER TABLE digital_employees")
+	require.Contains(t, sql, "ADD COLUMN provider_type VARCHAR(100)")
+	require.Contains(t, sql, "UPDATE digital_employees de")
+	require.Contains(t, sql, "project_task_attempts")
+	require.Contains(t, sql, "digital_employee_id UUID")
+	require.Contains(t, sql, "provider_type VARCHAR(100)")
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {

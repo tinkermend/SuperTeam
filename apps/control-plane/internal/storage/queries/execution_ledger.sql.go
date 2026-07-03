@@ -367,7 +367,7 @@ func (q *Queries) ListProjectExecutionLedgerEvents(ctx context.Context, arg List
 }
 
 const ListProjectTaskAttemptsForExecutionTrace = `-- name: ListProjectTaskAttemptsForExecutionTrace :many
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type
 FROM project_task_attempts pta
 JOIN project_tasks pt
   ON pt.tenant_id = pta.tenant_id
@@ -425,6 +425,8 @@ func (q *Queries) ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, 
 			&i.BudgetConsumedTokens,
 			&i.BudgetTrippedAt,
 			&i.BudgetTripReason,
+			&i.DigitalEmployeeID,
+			&i.ProviderType,
 		); err != nil {
 			return nil, err
 		}

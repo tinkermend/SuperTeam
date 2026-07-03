@@ -730,6 +730,7 @@ func createDigitalEmployeeParams(req CreateDigitalEmployeeRequest) CreateDigital
 		TeamID:           validUUIDPtr(req.TeamID),
 		OwnerUserID:      req.OwnerUserID,
 		EmployeeType:     req.EmployeeType,
+		ProviderType:     req.ProviderType,
 		Name:             req.Name,
 		Role:             req.Role,
 		Description:      req.Description,
