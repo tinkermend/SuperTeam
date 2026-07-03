@@ -1139,7 +1139,38 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
         .await
         .expect("project task command accepted");
     let run_id = outcome.run_id.expect("run id");
-    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+    let command_context = snapshot.command_context.expect("command context");
+    assert_eq!(command_context.digital_employee_id, DIGITAL_EMPLOYEE_ID);
+    assert_eq!(command_context.provider_type, "claude-code");
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_task_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_TASK_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("project_task_attempt_id")
+            .and_then(Value::as_str),
+        Some(PROJECT_TASK_ATTEMPT_ID)
+    );
+    assert_eq!(
+        command_context
+            .metadata
+            .get("runtime_node_id")
+            .and_then(Value::as_str),
+        Some(RUNTIME_NODE_ID)
+    );
 
     let command_complete = wait_for_writeback(capture.complete.clone()).await;
     assert_eq!(command_complete.command_id, "cmd-project-task");
