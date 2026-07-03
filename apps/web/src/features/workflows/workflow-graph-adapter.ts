@@ -8,8 +8,6 @@ import type {
 } from "@/lib/api/projects";
 import { taskStatusLabel } from "@/lib/status-labels";
 
-const STAGE_X = 360;
-const ROW_Y = 170;
 const ATTACHMENT_OFFSET_Y = 116;
 
 const INITIAL_STATUS_PRIORITY = [
@@ -57,7 +55,7 @@ export type WorkflowAttachmentNodeData = {
 type WorkflowTaskNode = Node<WorkflowTaskNodeData, "workflowTask">;
 type WorkflowAttachmentNode = Node<WorkflowAttachmentNodeData, "workflowAttachment">;
 type WorkflowStageLabelNode = Node<WorkflowStageLabelNodeData, "workflowStageLabel">;
-type WorkflowGraphNode = WorkflowTaskNode | WorkflowAttachmentNode;
+type WorkflowGraphNode = WorkflowTaskNode | WorkflowAttachmentNode | WorkflowStageLabelNode;
 
 export type WorkflowGraphElements = {
   nodes: WorkflowGraphNode[];
@@ -118,44 +116,10 @@ export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGra
     (decision) => isPendingTaskDecision(decision) && taskIds.has(decision.project_task_id ?? ""),
   );
   const pendingDecisionsByTaskId = groupDecisionsByTaskId(pendingDecisions);
-  const stageRange = knownStageRange(graph.nodes);
-  const rowsByStage = new Map<number, number>();
-
-  const taskNodes: WorkflowTaskNode[] = graph.nodes.map((task) => {
-    const stage = finiteStage(task.stage_index) ?? stageRange.max;
-    const row = rowsByStage.get(stage) ?? 0;
-    rowsByStage.set(stage, row + 1);
-
-    return {
-      id: taskNodeId(task.id),
-      type: "workflowTask",
-      position: {
-        x: stageColumnX(stage, stageRange),
-        y: row * ROW_Y,
-      },
-      data: {
-        avatarAsset: toWorkflowTaskNodeAvatarAsset(
-          task.assigned_digital_employee_id
-            ? employeesById.get(task.assigned_digital_employee_id)?.avatar_asset
-            : undefined,
-        ),
-        employeeName: task.assigned_digital_employee_id
-          ? employeesById.get(task.assigned_digital_employee_id)?.display_name
-          : undefined,
-        employeeRole: task.assigned_digital_employee_id
-          ? employeesById.get(task.assigned_digital_employee_id)?.employee_role
-          : undefined,
-        expectedOutputs: task.expected_outputs,
-        hasPendingDecision: pendingDecisionsByTaskId.has(task.id),
-        requiresHumanApproval: task.requires_human_approval,
-        riskLevel: task.risk_level,
-        runStatus: runStatusByTaskId.get(task.id),
-        status: task.status,
-        summary: task.summary,
-        task,
-        title: task.title,
-      },
-    };
+  const layoutNodes = buildDynamicTaskLayoutNodes(graph, {
+    employeesById,
+    pendingDecisionsByTaskId,
+    runStatusByTaskId,
   });
 
   const attachmentCountsByTaskId = new Map<string, number>();
@@ -181,7 +145,7 @@ export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGra
   });
 
   return {
-    nodes: [...taskNodes, ...attachmentNodes],
+    nodes: [...layoutNodes, ...attachmentNodes],
     edges: buildTaskDependencyEdges(graph, taskIds, { includeLabel: true }),
   };
 }
@@ -215,6 +179,42 @@ export function buildPlanTaskGraphElements(graph: ProjectTaskGraph): PlanWorkflo
     (decision) => isPendingTaskDecision(decision) && taskIds.has(decision.project_task_id ?? ""),
   );
   const pendingDecisionsByTaskId = groupDecisionsByTaskId(pendingDecisions);
+  const nodes = buildDynamicTaskLayoutNodes(graph, {
+    employeesById,
+    pendingDecisionsByTaskId,
+    runStatusByTaskId,
+  });
+
+  return {
+    edges: buildTaskDependencyEdges(graph, taskIds, {
+      includeLabel: false,
+      markerEnd: {
+        color: "rgb(47 95 255 / 0.45)",
+        height: 18,
+        type: "arrowclosed",
+        width: 18,
+      },
+      style: {
+        stroke: "rgb(47 95 255 / 0.32)",
+        strokeWidth: 1.6,
+      },
+    }),
+    nodes,
+  };
+}
+
+function buildDynamicTaskLayoutNodes(
+  graph: ProjectTaskGraph,
+  {
+    employeesById,
+    pendingDecisionsByTaskId,
+    runStatusByTaskId,
+  }: {
+    employeesById: Map<string, ProjectTaskGraphEmployee>;
+    pendingDecisionsByTaskId: Map<string, ProjectDecisionRequest[]>;
+    runStatusByTaskId: Map<string, string>;
+  },
+): (WorkflowTaskNode | WorkflowStageLabelNode)[] {
   const stageTitleByIndex = new Map(
     (graph.stage_summaries ?? []).map((stage) => [stage.stage_index, stage.title]),
   );
@@ -298,22 +298,7 @@ export function buildPlanTaskGraphElements(graph: ProjectTaskGraph): PlanWorkflo
       Math.max(0, taskRows.length - 1) * PLAN_TASK_GRAPH_LAYOUT.taskRowHeight;
   });
 
-  return {
-    edges: buildTaskDependencyEdges(graph, taskIds, {
-      includeLabel: false,
-      markerEnd: {
-        color: "rgb(47 95 255 / 0.45)",
-        height: 18,
-        type: "arrowclosed",
-        width: 18,
-      },
-      style: {
-        stroke: "rgb(47 95 255 / 0.32)",
-        strokeWidth: 1.6,
-      },
-    }),
-    nodes,
-  };
+  return nodes;
 }
 
 function chunkTasks(
@@ -395,10 +380,6 @@ function knownStageRange(nodes: ProjectTaskGraphNode[]): { min: number; max: num
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 0, max: 0 };
 
   return { min, max };
-}
-
-function stageColumnX(stage: number, stageRange: { min: number; max: number }): number {
-  return Math.max(stage - stageRange.min, 0) * STAGE_X;
 }
 
 function finiteStage(stage: number | undefined): number | undefined {

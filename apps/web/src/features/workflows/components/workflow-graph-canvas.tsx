@@ -9,13 +9,23 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 import {
+  PLAN_TASK_GRAPH_LAYOUT,
   buildWorkflowGraphElements,
   type WorkflowGraphElements,
 } from "../workflow-graph-adapter";
-import { WorkflowAttachmentNode, WorkflowTaskNode } from "./workflow-task-node";
+import {
+  WorkflowAttachmentNode,
+  WorkflowStageLabelNode,
+  WorkflowTaskNode,
+} from "./workflow-task-node";
+
+const MIN_CANVAS_HEIGHT = 820;
+const CANVAS_TOP_PADDING = 36;
+const CANVAS_BOTTOM_PADDING = 96;
 
 const nodeTypes = {
   workflowAttachment: WorkflowAttachmentNode,
+  workflowStageLabel: WorkflowStageLabelNode,
   workflowTask: WorkflowTaskNode,
 } satisfies NodeTypes;
 
@@ -44,14 +54,23 @@ export function WorkflowGraphCanvas({
       })),
     [elements.nodes, selectedNodeId],
   );
+  const canvasHeight = Math.max(
+    MIN_CANVAS_HEIGHT,
+    CANVAS_TOP_PADDING +
+      measureGraphContentHeight(elements) +
+      CANVAS_BOTTOM_PADDING,
+  );
 
   return (
-    <div className="h-[620px] min-h-[420px] w-full min-w-0 overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]">
+    <div
+      className="min-h-[620px] w-full min-w-0 overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]"
+      style={{ height: canvasHeight }}
+    >
       <ReactFlow
+        defaultViewport={{ x: 700, y: 36, zoom: 1 }}
         edges={elements.edges}
-        fitView
         maxZoom={1.25}
-        minZoom={0.45}
+        minZoom={0.65}
         nodeTypes={nodeTypes}
         nodes={nodes}
         nodesConnectable={false}
@@ -70,4 +89,14 @@ export function WorkflowGraphCanvas({
       </ReactFlow>
     </div>
   );
+}
+
+function measureGraphContentHeight(elements: WorkflowGraphElements): number {
+  return elements.nodes.reduce((maxBottom, node) => {
+    const estimatedHeight =
+      node.type === "workflowStageLabel"
+        ? PLAN_TASK_GRAPH_LAYOUT.stageLabelHeight
+        : PLAN_TASK_GRAPH_LAYOUT.taskEstimatedHeight;
+    return Math.max(maxBottom, node.position.y + estimatedHeight);
+  }, 0);
 }

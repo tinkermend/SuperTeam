@@ -109,7 +109,9 @@ describe("workflow graph adapter", () => {
     const runTaskData = taskData(result, "task:task-run");
 
     expect(result.nodes.map((node) => node.id)).toEqual([
+      "stage-label:1",
       "task:task-root",
+      "stage-label:2",
       "task:task-run",
       "attachment:decision:decision-1",
     ]);
@@ -120,8 +122,14 @@ describe("workflow graph adapter", () => {
         target: "task:task-run",
       }),
     ]);
-    expect(result.nodes[0].position.x).toBe(0);
-    expect(result.nodes[1].position.x).toBeGreaterThan(result.nodes[0].position.x);
+    const rootTask = result.nodes.find((node) => node.id === "task:task-root");
+    const runTask = result.nodes.find((node) => node.id === "task:task-run");
+    const stageOneLabel = result.nodes.find((node) => node.id === stageLabelNodeId(1));
+    const stageTwoLabel = result.nodes.find((node) => node.id === stageLabelNodeId(2));
+
+    expect(rootTask?.position.y).toBeGreaterThan(stageOneLabel?.position.y ?? 0);
+    expect(runTask?.position.y).toBeGreaterThan(stageTwoLabel?.position.y ?? 0);
+    expect(runTask?.position.y).toBeGreaterThan(rootTask?.position.y ?? 0);
     expect(runTaskData.employeeName).toBe("应用运维工程师");
     expect(runTaskData.runStatus).toBe("assigned");
     expect(runTaskData.employeeRole).toBe("应用运维工程师·工程部");
@@ -144,8 +152,9 @@ describe("workflow graph adapter", () => {
     const stageOneNode = result.nodes.find((node) => node.id === "task:task-run");
     const unstagedNode = result.nodes.find((node) => node.id === "task:task-unstaged");
 
-    expect(unstagedNode?.position.x).toBe(stageThreeNode?.position.x);
-    expect(unstagedNode?.position.x).toBeGreaterThan(stageOneNode?.position.x ?? 0);
+    expect(unstagedNode?.position.y).toBe(stageThreeNode?.position.y);
+    expect(unstagedNode?.position.y).toBeGreaterThan(stageOneNode?.position.y ?? 0);
+    expect(unstagedNode?.position.x).not.toBe(stageThreeNode?.position.x);
   });
 
   it("keeps zero-based stages in separate columns and aligns unstaged tasks to max stage", () => {
@@ -164,12 +173,14 @@ describe("workflow graph adapter", () => {
     const stageOneNode = result.nodes.find((node) => node.id === "task:task-run");
     const unstagedNode = result.nodes.find((node) => node.id === "task:task-unstaged");
 
-    expect(stageZeroNode?.position.x).toBe(0);
-    expect(stageOneNode?.position.x).toBeGreaterThan(stageZeroNode?.position.x ?? 0);
-    expect(unstagedNode?.position.x).toBe(stageOneNode?.position.x);
+    expect(stageZeroNode?.position.x).toBe(-180);
+    expect(stageZeroNode?.position.y).toBeGreaterThan(0);
+    expect(stageOneNode?.position.y).toBeGreaterThan(stageZeroNode?.position.y ?? 0);
+    expect(unstagedNode?.position.y).toBe(stageOneNode?.position.y);
+    expect(unstagedNode?.position.x).not.toBe(stageOneNode?.position.x);
   });
 
-  it("groups same-stage tasks in the same x column and keeps stage 1 before stage 2", () => {
+  it("wraps same-stage tasks into columns and keeps stage 1 before stage 2", () => {
     const graph = makeGraph();
     graph.nodes = [
       makeTask("task-stage-2", "planned", { stage_index: 2 }),
@@ -189,10 +200,46 @@ describe("workflow graph adapter", () => {
     expect(stageTwoNode).toBeDefined();
     expect(stageOneFirstNode).toBeDefined();
     expect(stageOneSecondNode).toBeDefined();
-    expect(stageOneFirstNode?.position.x).toBe(stageOneSecondNode?.position.x);
-    expect(stageTwoNode?.position.x).toBeGreaterThan(
-      stageOneFirstNode?.position.x ?? 0,
+    expect(stageOneFirstNode?.position.y).toBe(stageOneSecondNode?.position.y);
+    expect(stageOneFirstNode?.position.x).not.toBe(stageOneSecondNode?.position.x);
+    expect(stageTwoNode?.position.y).toBeGreaterThan(
+      stageOneFirstNode?.position.y ?? 0,
     );
+  });
+
+  it("uses the shared dynamic desktop layout for workflow task nodes", () => {
+    const graph = makeGraph();
+    graph.nodes = Array.from({ length: 10 }, (_, index) =>
+      makeTask(`task-${index + 1}`, "planned", {
+        assigned_digital_employee_id: `employee-${index + 1}`,
+        planned_task_key: `task-${index + 1}`,
+        stage_index: 0,
+      }),
+    );
+    graph.edges = graph.nodes.slice(1).map((task, index) => ({
+      blocker_task_id: graph.nodes[index].id,
+      dependent_task_id: task.id,
+      edge_status: "planned",
+    }));
+    graph.employees = graph.nodes.map((task, index) => ({
+      digital_employee_id: task.assigned_digital_employee_id ?? `employee-${index + 1}`,
+      display_name: `数字员工 ${index + 1}`,
+      project_role: "executor",
+      status: "active",
+    }));
+
+    const result = buildWorkflowGraphElements(graph);
+    const taskNodes = result.nodes.filter((node) => node.type === "workflowTask");
+    const rowsByY = new Map<number, typeof taskNodes>();
+    for (const node of taskNodes) {
+      const row = rowsByY.get(node.position.y) ?? [];
+      row.push(node);
+      rowsByY.set(node.position.y, row);
+    }
+
+    expect(rowsByY.size).toBe(5);
+    expect([...rowsByY.values()].map((row) => row.length)).toEqual([2, 2, 2, 2, 2]);
+    expect(workflowTaskOverlapPairs(result)).toEqual([]);
   });
 
   it("skips decision attachments when the parent task is missing", () => {
@@ -638,6 +685,38 @@ function taskData(
 }
 
 function taskOverlapPairs(result: ReturnType<typeof buildPlanTaskGraphElements>): string[] {
+  const taskRects = result.nodes
+    .filter((node) => node.type === "workflowTask")
+    .map((node) => ({
+      bottom: node.position.y + PLAN_TASK_GRAPH_LAYOUT.taskEstimatedHeight,
+      id: node.id,
+      left: node.position.x,
+      right: node.position.x + PLAN_TASK_GRAPH_LAYOUT.taskNodeWidth,
+      top: node.position.y,
+    }));
+
+  const pairs: string[] = [];
+  for (let leftIndex = 0; leftIndex < taskRects.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < taskRects.length; rightIndex += 1) {
+      const left = taskRects[leftIndex];
+      const right = taskRects[rightIndex];
+      const overlapX =
+        Math.min(left.right, right.right) - Math.max(left.left, right.left);
+      const overlapY =
+        Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top);
+
+      if (overlapX > 0 && overlapY > 0) {
+        pairs.push(`${left.id}:${right.id}`);
+      }
+    }
+  }
+
+  return pairs;
+}
+
+function workflowTaskOverlapPairs(
+  result: ReturnType<typeof buildWorkflowGraphElements>,
+): string[] {
   const taskRects = result.nodes
     .filter((node) => node.type === "workflowTask")
     .map((node) => ({
