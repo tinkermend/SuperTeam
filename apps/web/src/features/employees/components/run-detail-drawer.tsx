@@ -41,11 +41,15 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
     },
   });
 
-  // After a successful stop, the parent refreshes its list cache and passes the updated run back
-  // via the `run` prop. Until it does (or in tests where the parent is a no-op), prefer the
-  // mutation result so the pill and Stop button reflect the new status immediately. This mirrors
-  // the original detail.tsx behavior where the stop result was written into the runs query cache.
-  const displayedRun = stopRun.data && run && stopRun.data.id === run.id ? stopRun.data : run;
+  // After a successful stop, prefer the mutation result so the pill and Stop button reflect the
+  // new status immediately — BUT only while the `run` prop hasn't caught up. Once the parent's
+  // list refetch returns and passes a terminal-status prop (e.g. "cancelled"), trust the prop
+  // over the (now stale) mutation state. This avoids the drawer getting stuck on "取消中" after
+  // the run has actually transitioned to "已取消". Gating on `isActiveRun(run.status)` is what
+  // distinguishes the two phases: stop returns while prop is still active → use stopRun.data;
+  // refetch lands with a terminal prop → use prop.
+  const displayedRun =
+    stopRun.data && run && isActiveRun(run.status) && stopRun.data.id === run.id ? stopRun.data : run;
 
   if (!run) {
     return null;

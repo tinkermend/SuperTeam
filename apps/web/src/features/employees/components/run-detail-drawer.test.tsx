@@ -69,4 +69,49 @@ describe("RunDetailDrawer", () => {
     await expect.element(screen.getByText("取消中")).toBeVisible();
     expect(onStopped).toHaveBeenCalled();
   });
+
+  it("heals stale stopRun mutation state once parent passes a terminal run prop", async () => {
+    // Regression guard: after stop succeeds, stopRun.data.status === "cancelling" with id === run.id.
+    // If the parent's list refetch then returns status === "cancelled" and passes that refreshed
+    // run prop, the drawer must show "已取消" (the prop), NOT stay stuck on "取消中" (stale mutation).
+    const fetcher = createFetcher();
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={runningRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText(/正在执行/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "停止" }));
+    await expect.element(screen.getByText("取消中")).toBeVisible();
+
+    // Parent refetch lands: same run id, now terminal. Drawer must trust the prop over the stale
+    // stopRun.data and show "已取消".
+    const cancelledRun: DigitalEmployeeRunListItem = { ...runningRun, status: "cancelled" };
+    await screen.rerender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={cancelledRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("已取消")).toBeVisible();
+    // vitest-browser-react's `getBy*` queries throw when no match is found, so a successful
+    // "已取消" lookup above is itself proof the stale "取消中" pill label is gone (the pill renders
+    // exactly one label). If the bug regressed, this assertion would throw with "unable to find
+    // element with text: 已取消".
+  });
 });
