@@ -2,16 +2,16 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, UsersRound } from "lucide-react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import {
   V3Button,
   V3ErrorState,
   V3LoadingState,
-  V3PageHeader,
 } from "@/components/superteam";
-import { ThemeSwitch } from "@/components/theme-switch";
 import {
   archiveTeam,
   deleteTeam,
@@ -48,13 +48,15 @@ export function CreateTeamPage() {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回团队管理" to="/teams" />}
+        title="新建团队"
+        subtitle="配置团队负责人、成员和初始治理边界。"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <CreateTeamView
           apiBaseUrl={apiBaseUrl}
+          showHeading={false}
           onCancel={() => void navigate({ to: "/teams" })}
           onCreated={(overview, { goToGovernance }) =>
             void navigate({
@@ -91,38 +93,35 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<UsersRound />}
+        iconTone="info"
+        title="团队管理"
+        subtitle="团队负责人、治理配置和协作边界。"
+      />
       <Main className="min-w-0 overflow-x-hidden">
-          <V3PageHeader
-            icon={<UsersRound />}
-            iconTone="info"
-            title="团队管理"
-            subtitle="团队负责人、治理配置和协作边界。"
-            actions={
-              <V3Button asChild className="self-start sm:self-auto">
-                <Link to="/teams/new">
-                  <Plus data-icon="inline-start" />
-                  新建团队
-                </Link>
-              </V3Button>
-            }
+        <div className="flex min-w-0 flex-col gap-5">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <V3Button asChild className="self-start sm:self-auto">
+              <Link to="/teams/new">
+                <Plus data-icon="inline-start" />
+                新建团队
+              </Link>
+            </V3Button>
+          </div>
+          <TeamManagementToolbar
+            filters={filters}
+            onChange={setFilters}
+            onReset={() => setFilters({ q: "" })}
           />
-
-        <TeamManagementToolbar
-          filters={filters}
-          onChange={setFilters}
-          onReset={() => setFilters({ q: "" })}
-        />
-        <TeamCardGrid
-          apiBaseUrl={apiBaseUrl}
-          fetcher={fetcher}
-          isError={teams.isError}
-          isLoading={teams.isLoading}
-          teams={teams.data ?? []}
-        />
+          <TeamCardGrid
+            apiBaseUrl={apiBaseUrl}
+            fetcher={fetcher}
+            isError={teams.isError}
+            isLoading={teams.isLoading}
+            teams={teams.data ?? []}
+          />
+        </div>
       </Main>
     </>
   );
@@ -179,10 +178,11 @@ export function TeamDetailView({
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回团队管理" to="/teams" />}
+        title={overview.data?.team.name ?? "团队详情"}
+        subtitle={overview.data ? `${overview.data.team.slug} / 团队治理和协作边界` : "加载团队详情"}
+      />
       <Main>
         {overview.isLoading ? (
           <V3LoadingState label="团队概览加载中" />

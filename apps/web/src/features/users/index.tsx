@@ -20,7 +20,6 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   V3Segmented,
   V3Table,
   V3Td,
@@ -36,10 +35,8 @@ import {
   getUserIdentityLabel,
   type UserIdentityData,
 } from "@/components/superteam/user-identity";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   Dialog,
   DialogContent,
@@ -199,29 +196,24 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<UsersRound />}
+        iconTone="mute"
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            用户管理
+            <StatusPill className="align-middle" tone="info" showDot={false}>用户治理台</StatusPill>
+          </span>
+        }
+        subtitle="管理平台人类用户、账号状态、控制台访问与成员身份；本页只处理账号治理动作。"
+      />
       <Main className="min-w-0 overflow-x-hidden" fluid>
-        <V3PageHeader
-          className="mb-4"
-          icon={<UsersRound />}
-          iconTone="mute"
-          title={
-            <span className="inline-flex flex-wrap items-center gap-2">
-              用户管理
-              <StatusPill className="align-middle" tone="info" showDot={false}>用户治理台</StatusPill>
-            </span>
-          }
-          subtitle="管理平台人类用户、账号状态、控制台访问与成员身份；本页只处理账号治理动作。"
-          actions={
-            <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
-              <UserPlus data-icon="inline-start" />
-              新建用户
-            </V3Button>
-          }
-        />
+        <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+          <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
+            <UserPlus data-icon="inline-start" />
+            新建用户
+          </V3Button>
+        </div>
 
         <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <UserMetric icon={<CheckCircle2 />} label="活跃用户" tone="ok" value={stats.active} />

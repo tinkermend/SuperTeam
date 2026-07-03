@@ -79,9 +79,9 @@ export function TeamDetailLayout({
           </IconTile>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-[28px] font-extrabold tracking-tight text-v3-ink">
+              <p className="text-[28px] font-extrabold tracking-tight text-v3-ink">
                 {team.name}
-              </h1>
+              </p>
               <TeamStatusPill status={team.status} />
             </div>
             <p className="mt-1 text-[13px] text-v3-ink-2">

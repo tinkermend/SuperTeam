@@ -13,7 +13,6 @@ import {
   StatusPill,
   V3EmptyState,
   V3MetricCard,
-  V3PageHeader,
   V3Segmented,
   V3StateSurface,
   V3Table,
@@ -22,6 +21,8 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
+import { Main } from "@/components/layout/main";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import type { CostPeriod, CostSummary } from "@/lib/api/costs";
 import { getCostSummary } from "@/lib/api/costs";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -78,8 +79,8 @@ function CostsRoute() {
   const activeEmployees = employees.filter((e) => e.total_tokens > 0).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
-      <V3PageHeader
+    <>
+      <ShellPageHeader
         icon={<CircleDollarSign />}
         iconTone="warn"
         title="成本管理"
@@ -92,6 +93,8 @@ function CostsRoute() {
           />
         }
       />
+      <Main className="min-w-0 overflow-x-hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
 
       {/* 顶部指标卡 */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -228,6 +231,8 @@ function CostsRoute() {
           </V3Table>
         </V3StateSurface>
       </WorkSurface>
-    </div>
+        </div>
+      </Main>
+    </>
   );
 }

@@ -2,17 +2,17 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft,
   Bot,
   CheckCircle2,
   LayoutTemplate,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import {
   IconTile,
   SoftCard,
@@ -21,7 +21,6 @@ import {
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
-  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -79,7 +78,7 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
     <TemplateShell
       title="数字员工模板"
       subtitle="只读查看内置模板、能力默认值和团队治理影响"
-      action={
+      actions={
         <V3Button asChild>
           <Link to="/employees/new">
             <Bot className="size-4" />
@@ -144,14 +143,7 @@ export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: Templa
     <TemplateShell
       title="模板详情"
       subtitle="查看模板默认画像、注入策略和团队约束"
-      back={
-        <V3Button asChild variant="outline">
-          <Link to="/employees/templates">
-            <ArrowLeft className="size-4" />
-            模板管理
-          </Link>
-        </V3Button>
-      }
+      back={<ShellPageHeaderBack ariaLabel="返回数字员工模板列表" to="/employees/templates" />}
     >
       <TemplateQuerySurface state={state}>
         {!template ? (
@@ -179,13 +171,13 @@ export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: Templa
 }
 
 function TemplateShell({
-  action,
+  actions,
   back,
   children,
   subtitle,
   title,
 }: {
-  action?: React.ReactNode;
+  actions?: React.ReactNode;
   back?: React.ReactNode;
   children: React.ReactNode;
   subtitle: string;
@@ -193,19 +185,20 @@ function TemplateShell({
 }) {
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={back}
+        icon={back ? undefined : <LayoutTemplate />}
+        iconTone="brand"
+        subtitle={subtitle}
+        title={title}
+      />
       <Main>
         <div className="flex flex-col gap-5">
-          <V3PageHeader
-            icon={<LayoutTemplate />}
-            iconTone="brand"
-            title={title}
-            subtitle={subtitle}
-            actions={<div className="flex flex-wrap items-center gap-2">{back}{action}</div>}
-          />
+          {actions ? (
+            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+              {actions}
+            </div>
+          ) : null}
           {children}
         </div>
       </Main>

@@ -8,7 +8,6 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -16,10 +15,8 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   createMcpServerDefinition,
   deleteMcpServerDefinition,
@@ -112,27 +109,23 @@ export function McpManagementPage() {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<Network />}
+        iconTone="brand"
+        title="MCP 管理"
+        subtitle="注册 HTTP/streamable HTTP 能力，绑定到团队或数字员工"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <V3PageHeader
-            icon={<Network />}
-            iconTone="brand"
-            title="MCP 管理"
-            subtitle="注册 HTTP/streamable HTTP 能力，绑定到团队或数字员工"
-            actions={
-              <V3Button
-                className="h-11 self-start px-5"
-                onClick={() => setShowCreate((value) => !value)}
-              >
-                <Plus data-icon="inline-start" />
-                注册 MCP
-              </V3Button>
-            }
-          />
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <V3Button
+              className="h-11 self-start px-5"
+              onClick={() => setShowCreate((value) => !value)}
+            >
+              <Plus data-icon="inline-start" />
+              注册 MCP
+            </V3Button>
+          </div>
 
           <section
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"

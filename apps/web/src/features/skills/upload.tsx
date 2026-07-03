@@ -1,8 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowLeft,
   BadgeCheck,
   CheckCircle2,
   CircleCheck,
@@ -16,9 +15,11 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import {
   IconTile,
   SignatureCard,
@@ -27,10 +28,8 @@ import {
   V3Button,
   type V3Tone,
 } from "@/components/superteam";
-import { ThemeSwitch } from "@/components/theme-switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,32 +110,13 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
-      <Main className="min-w-0 overflow-x-hidden bg-v3-bg">
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回技能市场" to="/skills" />}
+        title="上传技能"
+        subtitle="上传技能包并完善元数据与运行依赖声明，发布后可安装到团队或数字员工。"
+      />
+      <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Link className="hover:text-foreground" to="/skills">技能市场</Link>
-                <span>/</span>
-                <span>上传技能</span>
-              </div>
-              <h1 className="text-2xl font-bold tracking-normal text-foreground">上传技能</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                上传技能包并完善元数据与运行依赖声明，发布后可安装到团队或数字员工。
-              </p>
-            </div>
-            <Button asChild className="self-start" variant="outline">
-              <Link to="/skills">
-                <ArrowLeft data-icon="inline-start" />
-                返回技能市场
-              </Link>
-            </Button>
-          </div>
-
           <PackageStatusBand
             canPublish={canPublish}
             dependencyCount={dependencyCount}

@@ -7,6 +7,22 @@ import { Route } from "./index";
 
 type TestFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+vi.mock("@/components/layout/header", () => ({
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+}));
+
+vi.mock("@/components/layout/main", () => ({
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+}));
+
+vi.mock("@/components/search", () => ({
+  Search: () => <button type="button">Search</button>,
+}));
+
+vi.mock("@/components/theme-switch", () => ({
+  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+}));
+
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
     "@tanstack/react-router",

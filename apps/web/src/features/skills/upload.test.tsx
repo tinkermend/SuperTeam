@@ -23,8 +23,8 @@ vi.mock("@/components/theme-switch", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a data-router-link="true" href={to}>{children}</a>
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
+    <a {...props} data-router-link="true" href={to}>{children}</a>
   ),
   useNavigate: () => vi.fn(),
 }));
@@ -111,13 +111,9 @@ describe("SkillUploadView", () => {
   it("uses router navigation for links back to the skill market", async () => {
     const screen = await renderUploadView();
 
-    for (const link of [
-      screen.getByRole("link", { exact: true, name: "技能市场" }),
-      screen.getByRole("link", { exact: true, name: "返回技能市场" }),
-    ]) {
-      await expect.element(link).toHaveAttribute("href", "/skills");
-      await expect.element(link).toHaveAttribute("data-router-link", "true");
-    }
+    const link = screen.getByRole("link", { exact: true, name: "返回技能市场" });
+    await expect.element(link).toHaveAttribute("href", "/skills");
+    await expect.element(link).toHaveAttribute("data-router-link", "true");
   });
 
   it("derives the package display name from the zip filename and requires a Chinese skill name", async () => {

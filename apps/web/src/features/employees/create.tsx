@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
@@ -28,11 +28,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { IconTile, V3PageHeader } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
+import { IconTile } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import type {
   DigitalEmployeeAvatarAsset,
   DigitalEmployeeCreateOptions,
@@ -362,51 +363,44 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
-      <Main>
-        <V3PageHeader
-          icon={<Bot />}
-          iconTone="brand"
-          title="创建数字员工"
-          subtitle={flowStep === "template"
-            ? "先选择模板，再分步完成预检、配置和确认。"
-            : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"
-          }
-          actions={
-            <div className="flex flex-wrap gap-2">
-              {flowStep === "template" ? (
-                <Button asChild type="button" variant="outline">
-                  <Link to="/employees">
-                    <ArrowLeft data-icon="inline-start" />
-                    返回数字员工
-                  </Link>
-                </Button>
-              ) : (
-                <Button onClick={requestTemplateChange} type="button" variant="outline">
-                  <ArrowLeft data-icon="inline-start" />
-                  返回
-                </Button>
-              )}
-              <Button
-                disabled={
-                  flowStep !== "template" ||
-                  createOptions.isLoading ||
-                  createOptions.isError ||
-                  !draft.employee_type
-                }
-                onClick={enterPreflight}
-                type="button"
-              >
-                进入预检
-                <ChevronRight data-icon="inline-end" />
+      <ShellPageHeader
+        back={
+          flowStep === "template" ? (
+            <ShellPageHeaderBack ariaLabel="返回数字员工列表" to="/employees" />
+          ) : undefined
+        }
+        icon={flowStep === "template" ? undefined : <Bot />}
+        iconTone="brand"
+        title="创建数字员工"
+        subtitle={flowStep === "template"
+          ? "先选择模板，再分步完成预检、配置和确认。"
+          : "按模板默认值补齐职责画像、能力边界、治理策略和运行绑定。"
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {flowStep !== "template" ? (
+              <Button onClick={requestTemplateChange} type="button" variant="outline">
+                <ArrowLeft data-icon="inline-start" />
+                返回
               </Button>
-            </div>
-          }
-        />
-
+            ) : null}
+            <Button
+              disabled={
+                flowStep !== "template" ||
+                createOptions.isLoading ||
+                createOptions.isError ||
+                !draft.employee_type
+              }
+              onClick={enterPreflight}
+              type="button"
+            >
+              进入预检
+              <ChevronRight data-icon="inline-end" />
+            </Button>
+          </div>
+        }
+      />
+      <Main>
         {teams.isError ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>团队列表加载失败</AlertTitle>

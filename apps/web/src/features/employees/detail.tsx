@@ -1,16 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Bot, Play, Square } from "lucide-react";
+import { Play, Square } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusPill, V3PageHeader, type V3Tone } from "@/components/superteam";
+import { StatusPill, type V3Tone } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError } from "@/lib/api/client";
@@ -143,26 +143,12 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回数字员工列表" to="/employees" />}
+        title={employee.data?.name ?? "数字员工详情"}
+        subtitle="执行实例、运行事件、结果和人工停止。"
+      />
       <Main className="min-w-0 overflow-x-hidden">
-        <V3PageHeader
-          icon={<Bot />}
-          iconTone="brand"
-          title={employee.data?.name ?? "数字员工详情"}
-          subtitle="执行实例、运行事件、结果和人工停止。"
-          actions={
-            <Button asChild variant="outline">
-              <Link to="/employees">
-                <ArrowLeft className="size-4" />
-                返回列表
-              </Link>
-            </Button>
-          }
-        />
-
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">数字员工加载失败</p> : null}
 

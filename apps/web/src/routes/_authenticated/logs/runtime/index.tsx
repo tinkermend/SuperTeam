@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ServerCog } from "lucide-react";
 import { useState } from "react";
 import {
-  IconTile,
   StatusPill,
   V3EmptyState,
   V3ErrorState,
@@ -15,10 +14,8 @@ import {
   type V3Tone,
   WorkSurface,
 } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   listRuntimeEvents,
   type RuntimeEvent,
@@ -95,24 +92,14 @@ function RuntimeEventLogsRoute() {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<ServerCog />}
+        iconTone="mute"
+        title="平台事件"
+        subtitle="Runtime 节点上线/掉线、能力降级与平台服务异常事件"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
-          <div className="flex items-center gap-3">
-            <IconTile tone="mute" size="sm">
-              <ServerCog />
-            </IconTile>
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold text-v3-ink">平台事件</h1>
-              <p className="truncate text-sm text-v3-ink-2">
-                Runtime 节点上线/掉线、能力降级与平台服务异常事件
-              </p>
-            </div>
-          </div>
-
           <WorkSurface>
             <LogFilterBar>
               <LogSelectFilter

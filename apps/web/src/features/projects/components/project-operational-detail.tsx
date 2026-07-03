@@ -193,9 +193,9 @@ export function ProjectOperationalDetail({
             </IconTile>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-semibold tracking-normal">
+                <p className="truncate text-xl font-semibold tracking-normal text-v3-ink">
                   {project.name}
-                </h2>
+                </p>
                 <StatusPill tone={projectStatusTone(project.status)}>
                   {projectStatusLabel(project.status)}
                 </StatusPill>

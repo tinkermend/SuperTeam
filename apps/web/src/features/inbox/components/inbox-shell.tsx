@@ -4,7 +4,6 @@ import {
   StatusPill,
   V3Button,
   V3MetricCard,
-  V3PageHeader,
   V3StateSurface,
   V3Tabs,
   V3Tab,
@@ -18,10 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import type {
   InboxAction,
   InboxItem,
@@ -86,20 +83,13 @@ export function InboxShell({
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        title="收件箱"
+        subtitle="需要你处理、确认或继续追踪的事项。"
+        icon={<Inbox />}
+        iconTone="brand"
+      />
       <Main className="space-y-5 text-v3-ink">
-        <SoftCard className="p-5">
-          <V3PageHeader
-            title="收件箱"
-            subtitle="需要你处理、确认或继续追踪的事项。"
-            icon={<Inbox />}
-            iconTone="brand"
-          />
-        </SoftCard>
-
         {data ? (
           <div className="grid gap-4 md:grid-cols-3">
             <V3MetricCard

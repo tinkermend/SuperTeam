@@ -536,6 +536,16 @@ describe("SkillsView", () => {
     expect(viewSwitcher).not.toBeNull();
   });
 
+  it("keeps the skill upload action in the page content instead of the shell header", async () => {
+    await renderSkillsView();
+
+    const header = document.body.querySelector("header");
+    const main = document.body.querySelector("main");
+
+    expect(header?.textContent).not.toContain("上传技能");
+    expect(main?.textContent).toContain("上传技能");
+  });
+
   it("renders a v3 loading state inside the page shell", async () => {
     const pending = createPendingSkillsFetcher();
     const loadingScreen = await renderSkillsView(pending.fetcher);

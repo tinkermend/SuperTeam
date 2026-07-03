@@ -25,6 +25,7 @@ type CreateTeamViewProps = {
   fetcher?: typeof fetch;
   onCancel?: () => void;
   onCreated?: CreateTeamCreatedHandler;
+  showHeading?: boolean;
 };
 
 const STEPS = [
@@ -39,6 +40,7 @@ export function CreateTeamView({
   fetcher,
   onCancel,
   onCreated,
+  showHeading = true,
 }: CreateTeamViewProps) {
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
@@ -94,12 +96,14 @@ export function CreateTeamView({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
       {/* Header and Stepper */}
       <div className="flex flex-col items-start gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            团队管理 › 新建团队
-          </p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight">新建团队</h1>
-        </div>
+        {showHeading ? (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">
+              团队管理 › 新建团队
+            </p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">新建团队</h1>
+          </div>
+        ) : null}
 
         {/* Horizontal Stepper */}
         <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-sm lg:gap-4">

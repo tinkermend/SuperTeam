@@ -29,6 +29,7 @@ type CreateProjectShellProps = {
   isSubmitting?: boolean;
   isTeamsLoading?: boolean;
   onCancel: () => void;
+  showHeading?: boolean;
   onSubmit: (input: CreateProjectInput) => void;
   submitError?: string;
   teamsError?: string;
@@ -44,6 +45,7 @@ export function CreateProjectShell({
   isSubmitting,
   isTeamsLoading,
   onCancel,
+  showHeading = true,
   onSubmit,
   submitError,
   teamsError,
@@ -124,18 +126,21 @@ export function CreateProjectShell({
 
   return (
     <div
-      aria-labelledby="project-create-title"
+      aria-label={showHeading ? undefined : "新建项目"}
+      aria-labelledby={showHeading ? "project-create-title" : undefined}
       className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-v3-card bg-v3-bg shadow-v3"
       data-testid="project-create-page"
     >
       <div className="flex min-h-[calc(100svh-7rem)] flex-col">
         <header className="border-b border-v3-line bg-v3-card/90 px-4 py-5 backdrop-blur lg:px-8">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-v3-brand">项目管理 / 新建项目</p>
-              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
-              <p className="mt-2 text-sm text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与策略预设。</p>
-            </div>
+            {showHeading ? (
+              <div>
+                <p className="text-sm font-medium text-v3-brand">项目管理 / 新建项目</p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
+                <p className="mt-2 text-sm text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与策略预设。</p>
+              </div>
+            ) : null}
             <Button aria-label="关闭新建项目" className="size-10 rounded-xl" onClick={onCancel} size="icon" type="button" variant="ghost">
               <X className="size-5" />
             </Button>

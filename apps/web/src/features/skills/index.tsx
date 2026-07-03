@@ -28,7 +28,6 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   V3Segmented,
   V3Table,
   V3Td,
@@ -45,10 +44,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { listSkillInstallations, listSkills, type Skill, type SkillInstallation } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -143,26 +140,22 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<Blocks />}
+        iconTone="artifact"
+        title="技能市场"
+        subtitle="发现、查看并治理技能档案与绑定范围"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <V3PageHeader
-            icon={<Blocks />}
-            iconTone="artifact"
-            title="技能市场"
-            subtitle="发现、查看并治理技能档案与绑定范围"
-            actions={
-              <V3Button asChild className="h-11 self-start px-5">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <V3Button asChild className="h-11 self-start px-5">
               <Link to="/skills/upload">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
               </Link>
-              </V3Button>
-            }
-          />
+            </V3Button>
+          </div>
 
           <section
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"

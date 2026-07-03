@@ -22,7 +22,6 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -53,10 +52,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   approveRuntimeEnrollment,
   getRuntimeOverview,
@@ -232,32 +229,27 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<Server />}
+        iconTone="info"
+        title="Runtime 节点"
+        subtitle="运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。"
+        actions={
+          <V3Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void overview.refetch();
+              void events.refetch();
+            }}
+          >
+            <RefreshCw data-icon="inline-start" />
+            刷新
+          </V3Button>
+        }
+      />
       <Main>
         <div className="flex min-w-0 flex-col gap-5 text-v3-ink">
-          <V3PageHeader
-            icon={<Server />}
-            iconTone="info"
-            title="Runtime 节点"
-            subtitle="运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。"
-            actions={
-              <V3Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  void overview.refetch();
-                  void events.refetch();
-                }}
-              >
-                <RefreshCw data-icon="inline-start" />
-                刷新
-              </V3Button>
-            }
-          />
-
           {overview.isLoading ? (
             <WorkSurface>
               <V3LoadingState label="加载 Runtime 总览中" />

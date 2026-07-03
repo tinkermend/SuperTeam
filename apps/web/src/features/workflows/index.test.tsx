@@ -25,11 +25,35 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({
+    children,
+    showSidebarTrigger = true,
+  }: {
+    children?: ReactNode;
+    showSidebarTrigger?: boolean;
+  }) => (
+    <header data-slot="v3-shell-header">
+      {showSidebarTrigger ? (
+        <button data-slot="sidebar-trigger" type="button">
+          切换侧栏
+        </button>
+      ) : (
+        children
+      )}
+      <button
+        className={showSidebarTrigger ? "" : "justify-self-center max-w-sm"}
+        type="button"
+      >
+        搜索任务、数字员工、能力、文档或快捷命令... ⌘ K
+      </button>
+    </header>
+  ),
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <main className={className}>{children}</main>
+  ),
 }));
 
 vi.mock("@/components/search", () => ({
@@ -377,10 +401,33 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByRole("table", { name: "流程实例列表" })).toBeVisible();
 
     expect(document.body.querySelector('[data-slot="v3-soft-card"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-signature-card"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
     expect(document.body.innerHTML).not.toContain(["superteam", ""].join("-"));
+  });
+
+  it("keeps the workflow page header in the global top bar", async () => {
+    const screen = await renderWorkflowView({ demandId: undefined });
+
+    const heading = screen.getByRole("heading", { name: "流程编排" }).element() as HTMLElement;
+    const shellHeader = document.body.querySelector('[data-slot="v3-shell-header"]');
+    const mainHeader = document.body.querySelector('main [data-slot="v3-page-header"]');
+    const sidebarTrigger = document.body.querySelector('[data-slot="sidebar-trigger"]');
+    const subtitle = screen.getByText("查看需求触发的规划、执行、阻塞和结果状态").element() as HTMLElement;
+    const search = screen.getByRole("button", {
+      name: /搜索任务、数字员工、能力、文档或快捷命令/,
+    }).element() as HTMLElement;
+
+    expect(shellHeader).toBeInstanceOf(HTMLElement);
+    expect(shellHeader?.contains(heading)).toBe(true);
+    expect(mainHeader).toBeNull();
+    expect(sidebarTrigger).toBeNull();
+    expect(subtitle.className).toContain("text-xs");
+    expect(search.className).toContain("justify-self-center");
+    expect(search.className).toContain("max-w-sm");
+    expect(document.body.querySelector("main")?.className).not.toContain("bg-v3-bg");
   });
 
   it("shows optional SLA priority and risk on workflow cards only when present", async () => {

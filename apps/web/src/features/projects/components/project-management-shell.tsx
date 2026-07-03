@@ -1,13 +1,11 @@
 import type { ReactNode } from "react";
 import { FolderKanban } from "lucide-react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
-import { V3PageHeader } from "@/components/superteam";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 
 type ProjectManagementShellProps = {
   actions?: ReactNode;
+  back?: ReactNode;
   children: ReactNode;
   description?: string;
   title: string;
@@ -15,25 +13,27 @@ type ProjectManagementShellProps = {
 
 export function ProjectManagementShell({
   actions,
+  back,
   children,
   description,
   title,
 }: ProjectManagementShellProps) {
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={back}
+        icon={<FolderKanban />}
+        iconTone="brand"
+        subtitle={description}
+        title={title}
+      />
       <Main>
         <div className="flex flex-col gap-5">
-          <V3PageHeader
-            icon={<FolderKanban />}
-            iconTone="brand"
-            title={title}
-            subtitle={description}
-            actions={actions}
-          />
+          {actions ? (
+            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+              {actions}
+            </div>
+          ) : null}
           {children}
         </div>
       </Main>

@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +49,7 @@ import {
 } from "@/lib/api/projects";
 import { statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { ProjectManagementShell } from "./project-management-shell";
+import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
 
@@ -316,12 +316,12 @@ export function ProjectConfigView({
     <ProjectManagementShell
       title="项目配置"
       description="成员、数字员工池、协调策略、审批规则和证据归档"
-      actions={
-        <V3Button asChild variant="outline">
-          <Link params={{ projectId }} to="/projects/$projectId">
-            返回运行详情
-          </Link>
-        </V3Button>
+      back={
+        <ShellPageHeaderBack
+          ariaLabel="返回项目运行详情"
+          params={{ projectId }}
+          to="/projects/$projectId"
+        />
       }
     >
       {configQuery.isLoading ? <ProjectLoadingState /> : null}

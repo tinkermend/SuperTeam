@@ -1,9 +1,26 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { Route } from "./index";
 
 const projectId = "11111111-1111-4111-8111-111111111111";
+
+vi.mock("@/components/layout/header", () => ({
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+}));
+
+vi.mock("@/components/layout/main", () => ({
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+}));
+
+vi.mock("@/components/search", () => ({
+  Search: () => <button type="button">Search</button>,
+}));
+
+vi.mock("@/components/theme-switch", () => ({
+  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+}));
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>(

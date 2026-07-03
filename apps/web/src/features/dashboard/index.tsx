@@ -4,9 +4,8 @@ import { useAuth } from "@/features/auth/use-auth";
 import type { LoginLogRecord } from "@/lib/api";
 import { getHealth, listLoginLogs } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   IconTile,
   SignatureCard,
@@ -15,14 +14,12 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
-import { ThemeSwitch } from "@/components/theme-switch";
 
 const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -49,23 +46,18 @@ export function Dashboard() {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        title="工作台"
+        subtitle={`欢迎回来，${displayName}。`}
+        icon={<LayoutDashboard />}
+        iconTone="brand"
+        actions={
+          <StatusPill tone={healthQuery.data?.status === "ok" ? "ok" : "mute"}>
+            Control Plane {healthStatus}
+          </StatusPill>
+        }
+      />
       <Main className="space-y-6 text-v3-ink">
-        <V3PageHeader
-          title="工作台"
-          subtitle={`欢迎回来，${displayName}。`}
-          icon={<LayoutDashboard />}
-          iconTone="brand"
-          action={
-            <StatusPill tone={healthQuery.data?.status === "ok" ? "ok" : "mute"}>
-              Control Plane {healthStatus}
-            </StatusPill>
-          }
-        />
-
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <SignatureCard className="min-h-[14rem]">
             <div className="flex h-full flex-col justify-between gap-8">

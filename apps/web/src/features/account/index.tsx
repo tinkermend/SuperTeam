@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock3, KeyRound, Save, ShieldCheck, UserRound } from "lucide-react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   IconTile,
   SoftCard,
@@ -13,7 +11,6 @@ import {
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
-  V3PageHeader,
   V3Table,
   V3Td,
   V3Th,
@@ -128,10 +125,12 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
   if (!user) {
     return (
       <>
-        <Header>
-          <Search />
-          <ThemeSwitch />
-        </Header>
+        <ShellPageHeader
+          icon={<UserRound />}
+          iconTone="mute"
+          title="账户设置"
+          subtitle="当前控制台账号资料与安全设置。"
+        />
         <Main className="min-w-0 overflow-x-hidden" fluid>
           <SoftCard className="p-6 text-sm text-v3-ink-2">未登录</SoftCard>
         </Main>
@@ -144,26 +143,22 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<UserRound />}
+        iconTone="mute"
+        title="账户设置"
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span className="truncate">{identity.primary}</span>
+            <span aria-hidden="true">/</span>
+            <span className="truncate">{identity.secondary}</span>
+          </span>
+        }
+        actions={
+          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
+        }
+      />
       <Main className="min-w-0 overflow-x-hidden" fluid>
-        <V3PageHeader
-          icon={<UserRound />}
-          iconTone="mute"
-          title="账户设置"
-          subtitle={
-            <span className="inline-flex flex-wrap items-center gap-2">
-              <span className="truncate">{identity.primary}</span>
-              <span aria-hidden="true">/</span>
-              <span className="truncate">{identity.secondary}</span>
-            </span>
-          }
-          actions={
-            <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
-          }
-        />
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <SoftCard className="min-w-0 p-6">
             <div className="mb-5 flex items-center gap-3">

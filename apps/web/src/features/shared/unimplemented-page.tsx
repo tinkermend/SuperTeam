@@ -1,9 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { IconTile, SoftCard, type V3Tone } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
+import { SoftCard, type V3Tone } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 
 type LegacyTone = "primary" | "success" | "warning" | "neutral" | "decision";
 type UnimplementedTone = V3Tone | LegacyTone;
@@ -35,20 +33,13 @@ export function UnimplementedPage({ description, icon: Icon, title, tone = "neut
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<Icon />}
+        iconTone={v3Tone}
+        title={title}
+        subtitle={description}
+      />
       <Main>
-        <div className="mb-5 flex min-w-0 items-center gap-3">
-          <IconTile tone={v3Tone} size="lg">
-            <Icon />
-          </IconTile>
-          <div>
-            <h1 className="text-[28px] leading-tight font-extrabold tracking-tight text-v3-ink">{title}</h1>
-            <p className="mt-1 text-[13px] text-v3-ink-2">{description}</p>
-          </div>
-        </div>
         <SoftCard className="p-6">
           <div className="flex flex-col gap-2">
             <h2 className="text-base font-bold text-v3-ink">功能建设中</h2>

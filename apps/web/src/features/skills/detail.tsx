@@ -1,7 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft,
   Blocks,
   Bot,
   CalendarClock,
@@ -23,14 +21,14 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
-  V3PageHeader,
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import { getSkill, type Skill } from "@/lib/api/skills";
 
 type SkillDetailViewProps = {
@@ -62,10 +60,31 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回技能市场" to="/skills" />}
+        title={skill.data?.name ?? "技能档案"}
+        subtitle={
+          skill.data ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>技能档案</span>
+              <span className="text-v3-ink-3">/</span>
+              <span className="font-mono">{skill.data.slug}</span>
+            </span>
+          ) : (
+            "加载技能详情"
+          )
+        }
+        actions={
+          skill.data ? (
+            <>
+              <V3Button disabled className="h-10 px-4" type="button">
+                安装到...
+              </V3Button>
+              <StatusPill tone="mute">即将支持</StatusPill>
+            </>
+          ) : undefined
+        }
+      />
       <Main className="min-w-0 overflow-x-hidden">
         {skill.isPending ? (
           <WorkSurface>
@@ -93,35 +112,6 @@ function SkillArchiveDetail({ skill }: { skill: Skill }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <V3PageHeader
-        back={
-          <V3Button asChild size="icon" variant="outline">
-            <Link aria-label="返回技能市场" to="/skills">
-              <ArrowLeft />
-            </Link>
-          </V3Button>
-        }
-        title={skill.name}
-        subtitle={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <span>技能档案</span>
-            <span className="text-v3-ink-3">/</span>
-            <span className="font-mono">{skill.slug}</span>
-          </span>
-        }
-        actions={
-          <>
-            <V3Button disabled className="h-10 px-4" type="button">
-              安装到...
-            </V3Button>
-            <StatusPill tone="mute">即将支持</StatusPill>
-            <V3Button asChild variant="outline">
-              <Link to="/skills">返回技能市场</Link>
-            </V3Button>
-          </>
-        }
-      />
-
       <SoftCard className="p-5">
         <div
           className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.58fr)_minmax(320px,0.5fr)] xl:items-start"

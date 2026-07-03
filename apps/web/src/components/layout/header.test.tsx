@@ -110,6 +110,49 @@ describe("Header", () => {
     expect(document.body.textContent).not.toContain("旧页面动作");
   });
 
+  it("can replace the sidebar trigger with page-level header content", async () => {
+    const screen = await render(
+      <AuthContext
+        value={{
+          apiBaseUrl: "http://control-plane.local",
+          isAuthenticated: true,
+          isLoading: false,
+          login: vi.fn(),
+          logout: vi.fn(),
+          refreshCurrentUser: vi.fn(),
+          user: {
+            display_name: "林 Anna",
+            email: "anna@example.com",
+            id: "user-1",
+            status: "active",
+            username: "anna",
+            avatar: {
+              provider: "dicebear",
+              seed: "anna",
+              style: "adventurer",
+            },
+          },
+        }}
+      >
+        <SidebarProvider>
+          <Header showSidebarTrigger={false}>
+            <div data-testid="page-title-slot">流程编排</div>
+          </Header>
+        </SidebarProvider>
+      </AuthContext>,
+    );
+
+    const titleSlot = screen.getByTestId("page-title-slot").element();
+    const search = screen.getByRole("button", {
+      name: /搜索任务、数字员工、能力、文档或快捷命令/,
+    }).element() as HTMLElement;
+
+    expect(titleSlot).toBeInstanceOf(HTMLElement);
+    expect(document.querySelector('[data-slot="sidebar-trigger"]')).toBeNull();
+    expect(search.className).toContain("justify-self-center");
+    expect(search.className).toContain("max-w-sm");
+  });
+
   it("opens lightweight top-right controls without blocking neighboring clicks", async () => {
     const screen = await render(
       <AuthContext

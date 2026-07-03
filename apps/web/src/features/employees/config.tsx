@@ -1,14 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Bot, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import { useState } from "react";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { V3PageHeader } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -300,26 +299,18 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={
+          <ShellPageHeaderBack
+            ariaLabel="返回数字员工详情"
+            params={{ employeeId }}
+            to="/employees/$employeeId"
+          />
+        }
+        title={employee.data?.name ?? "数字员工配置"}
+        subtitle="配置员工技能、策略和输出契约"
+      />
       <Main>
-        <V3PageHeader
-          icon={<Bot />}
-          iconTone="brand"
-          title={employee.data?.name ?? "数字员工配置"}
-          subtitle="配置员工技能、策略和输出契约"
-          actions={
-            <Button asChild variant="outline">
-              <Link to="/employees/$employeeId" params={{ employeeId }}>
-                <ArrowLeft />
-                返回详情
-              </Link>
-            </Button>
-          }
-        />
-
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 

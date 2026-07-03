@@ -157,7 +157,7 @@ describe("SkillDetailView", () => {
     expect(document.body.textContent).toContain("kubectl");
     expect(document.body.textContent).toContain("GH_TOKEN");
 
-    const backLink = screen.getByText("返回技能市场");
+    const backLink = screen.getByRole("link", { name: "返回技能市场" });
     await expect.element(backLink).toHaveAttribute("href", "/skills");
     await expect.element(backLink).toHaveAttribute("data-router-link", "true");
   });

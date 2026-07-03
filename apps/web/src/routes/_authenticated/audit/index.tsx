@@ -2,7 +2,6 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { FileClock } from "lucide-react";
 import {
-  IconTile,
   StatusPill,
   V3EmptyState,
   V3ErrorState,
@@ -13,6 +12,8 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
+import { Main } from "@/components/layout/main";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { buildApiUrl, parseJson } from "@/lib/api/client";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
@@ -56,18 +57,15 @@ function AuditRoute() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 bg-v3-bg p-4 text-v3-ink md:p-6">
-      <div className="flex items-center gap-3">
-        <IconTile tone="mute" size="sm">
-          <FileClock />
-        </IconTile>
-        <div className="min-w-0">
-          <h1 className="text-lg font-bold text-v3-ink">审计中心</h1>
-          <p className="truncate text-sm text-v3-ink-2">
-            {projectId ? `项目 ${projectId}` : "等待项目上下文"}
-          </p>
-        </div>
-      </div>
+    <>
+      <ShellPageHeader
+        icon={<FileClock />}
+        iconTone="mute"
+        title="审计中心"
+        subtitle={projectId ? `项目 ${projectId}` : "等待项目上下文"}
+      />
+      <Main className="min-w-0 overflow-x-hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
 
       {!projectId ? (
         <AuditEmptyState />
@@ -79,7 +77,9 @@ function AuditRoute() {
           isLoading={eventsQuery.isLoading && !currentEvents}
         />
       )}
-    </div>
+        </div>
+      </Main>
+    </>
   );
 }
 

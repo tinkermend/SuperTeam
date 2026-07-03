@@ -60,15 +60,15 @@ import {
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import {
+  ShellPageHeader,
+  ShellPageHeaderBack,
+} from "@/components/layout/shell-page-header";
 import {
   V3Button,
   V3ErrorState,
   V3LoadingState,
-  V3PageHeader,
   WorkSurface,
 } from "@/components/superteam";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
@@ -195,10 +195,11 @@ export function CreateProjectView({
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={<ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />}
+        title="新建项目"
+        subtitle="建立项目事实容器，配置负责人、团队、数字员工池与策略预设。"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <CreateProjectShell
           apiBaseUrl={apiBaseUrl}
@@ -211,6 +212,7 @@ export function CreateProjectView({
           isTeamsLoading={projectTeamScopesQuery.isFetching}
           submitError={createMutation.error?.message}
           teamsError={projectTeamScopesQuery.error?.message}
+          showHeading={false}
           onCancel={() => void navigate({ to: "/projects" })}
           onSubmit={(input) => createMutation.mutate(input)}
         />
@@ -733,29 +735,38 @@ export function ProjectsView({
   const projectDispatchGates = (dispatchGatesQuery.data?.items ?? []).filter(
     (gate) => gate.project_task_id === dispatchGateTaskId,
   );
+  const projectHeaderBack = routeProjectId ? (
+    <ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />
+  ) : undefined;
+  const projectCreateAction = routeProjectId ? null : (
+    <V3Button asChild className="h-11 self-start px-5">
+      <Link to="/projects/new">
+        <Plus data-icon="inline-start" />
+        新建项目
+      </Link>
+    </V3Button>
+  );
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        back={projectHeaderBack}
+        icon={routeProjectId ? undefined : <FolderKanban />}
+        iconTone="brand"
+        title={routeProjectId ? selectedProject?.name ?? "项目详情" : "项目管理"}
+        subtitle={
+          routeProjectId
+            ? selectedProject?.goal ?? "查看项目运行状态、证据、决策和验收进度"
+            : "围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
+        }
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <V3PageHeader
-            icon={<FolderKanban />}
-            iconTone="brand"
-            title="项目管理"
-            subtitle="围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
-            actions={
-              <V3Button asChild className="h-11 self-start px-5">
-                <Link to="/projects/new">
-                  <Plus data-icon="inline-start" />
-                  新建项目
-                </Link>
-              </V3Button>
-            }
-          />
+          {projectCreateAction ? (
+            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+              {projectCreateAction}
+            </div>
+          ) : null}
 
           {isInitialLoading ? (
             <WorkSurface>

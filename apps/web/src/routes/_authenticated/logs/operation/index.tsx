@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ClipboardList } from "lucide-react";
 import { useState } from "react";
 import {
-  IconTile,
   StatusPill,
   V3EmptyState,
   V3ErrorState,
@@ -14,10 +13,8 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
-import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
-import { Search } from "@/components/search";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   listOperationLogs,
   type OperationLogRecord,
@@ -78,24 +75,14 @@ function OperationLogsRoute() {
 
   return (
     <>
-      <Header>
-        <Search />
-        <ThemeSwitch />
-      </Header>
+      <ShellPageHeader
+        icon={<ClipboardList />}
+        iconTone="mute"
+        title="操作日志"
+        subtitle="控制台管理操作（增删改）记录"
+      />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
-          <div className="flex items-center gap-3">
-            <IconTile tone="mute" size="sm">
-              <ClipboardList />
-            </IconTile>
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold text-v3-ink">操作日志</h1>
-              <p className="truncate text-sm text-v3-ink-2">
-                控制台管理操作（增删改）记录
-              </p>
-            </div>
-          </div>
-
           <WorkSurface>
             <LogFilterBar>
               <LogTextFilter

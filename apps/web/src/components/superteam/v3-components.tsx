@@ -463,6 +463,7 @@ function V3Segmented<T extends string>({
 /** 页面标题区：标题 + 副标题 + 右侧主操作槽。 */
 function V3PageHeader({
   className,
+  variant = "page",
   title,
   subtitle,
   action,
@@ -472,6 +473,7 @@ function V3PageHeader({
   back,
 }: {
   className?: string;
+  variant?: "page" | "shell";
   title: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
@@ -480,21 +482,38 @@ function V3PageHeader({
   iconTone?: V3Tone;
   back?: ReactNode;
 }) {
-  const leading = back ?? (icon ? <IconTile tone={iconTone} size="lg">{icon}</IconTile> : null);
+  const isShell = variant === "shell";
+  const leading =
+    back ?? (icon ? <IconTile tone={iconTone} size={isShell ? "default" : "lg"}>{icon}</IconTile> : null);
   const trailing = actions ?? action;
 
   return (
     <header
       data-slot="v3-page-header"
-      className={cn("flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between", className)}
+      data-variant={variant}
+      className={cn(
+        isShell
+          ? "flex w-full min-w-0 items-center justify-between gap-3"
+          : "flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between",
+        className,
+      )}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className={cn("flex min-w-0 items-center", isShell ? "gap-2.5" : "gap-3")}>
         {leading}
         <div className="min-w-0">
-          <h1 className="text-[28px] leading-tight font-extrabold tracking-tight text-v3-ink">
+          <h1
+            className={cn(
+              "leading-tight font-extrabold tracking-tight text-v3-ink",
+              isShell ? "truncate text-[18px]" : "text-[28px]",
+            )}
+          >
             {title}
           </h1>
-          {subtitle ? <p className="mt-1 text-[13px] text-v3-ink-2">{subtitle}</p> : null}
+          {subtitle ? (
+            <p className={cn("truncate text-v3-ink-2", isShell ? "mt-0.5 text-xs" : "mt-1 text-[13px]")}>
+              {subtitle}
+            </p>
+          ) : null}
         </div>
       </div>
       {trailing ? <div className="flex shrink-0 gap-2">{trailing}</div> : null}

@@ -344,6 +344,18 @@ describe("EmployeesView", () => {
       .toHaveAttribute("href", "/employees/templates");
   });
 
+  it("keeps employee creation actions in the page content instead of the shell header", async () => {
+    await renderEmployeesView();
+
+    const header = document.body.querySelector("header");
+    const main = document.body.querySelector("main");
+
+    expect(header?.textContent).not.toContain("模板管理");
+    expect(header?.textContent).not.toContain("创建数字员工");
+    expect(main?.textContent).toContain("模板管理");
+    expect(main?.textContent).toContain("创建数字员工");
+  });
+
   it("renders unbound employees as waiting for runtime binding", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
     const unboundArticle = employeeArticle(screen, "待绑定员工");
