@@ -1,60 +1,35 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { BookOpen, Boxes, KeyRound, Network, ScrollText } from "lucide-react";
 import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
-import type { ApiClientOptions } from "@/lib/api/client";
-import { ApiRequestError } from "@/lib/api/client";
-import {
-  getCurrentDigitalEmployeeEffectiveConfig,
-  listEmployeeEnvironmentVariables,
-  type DigitalEmployee,
-  type DigitalEmployeeExecutionInstance,
-} from "@/lib/api/employees";
-import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
-import { listEmployeeSkills } from "@/lib/api/skills";
+import type { DigitalEmployee, DigitalEmployeeExecutionInstance } from "@/lib/api/employees";
 
 type EffectiveContextPanelProps = {
-  apiOptions: ApiClientOptions;
-  employeeId: string;
   employee: DigitalEmployee;
   executionInstance: DigitalEmployeeExecutionInstance | undefined;
+  employeeId: string;
+  effectiveConfig: { isLoading: boolean; isError: boolean; noApprovedConfig: boolean };
+  skills: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
+  mcp: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
+  envVars: {
+    isLoading: boolean;
+    isError: boolean;
+    configuredCount: number;
+    totalCount: number;
+    missingNames: string[];
+  };
   onManageCapabilities: () => void;
 };
 
 export function EffectiveContextPanel({
-  apiOptions,
-  employeeId,
   employee,
   executionInstance,
+  employeeId,
+  effectiveConfig,
+  skills,
+  mcp,
+  envVars,
   onManageCapabilities,
 }: EffectiveContextPanelProps) {
-  const effectiveConfig = useQuery({
-    queryKey: ["digital-employee-effective-config", employeeId],
-    queryFn: () => getCurrentDigitalEmployeeEffectiveConfig(apiOptions, employeeId),
-    retry: false,
-  });
-  const skills = useQuery({
-    queryKey: ["employee-skills", employeeId],
-    queryFn: () => listEmployeeSkills(apiOptions, employeeId),
-  });
-  const mcpServers = useQuery({
-    queryKey: ["employee-effective-mcp", employeeId],
-    queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
-  });
-  const envVars = useQuery({
-    queryKey: ["employee-environment-variables", employeeId],
-    queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
-  });
-
-  const noApprovedConfig =
-    effectiveConfig.error instanceof ApiRequestError && effectiveConfig.error.status === 404;
-  const personalSkillCount = skills.data?.filter((skill) => !skill.inherited).length ?? 0;
-  const inheritedSkillCount = skills.data?.filter((skill) => skill.inherited).length ?? 0;
-  const personalMcpCount = mcpServers.data?.filter((server) => server.source_scope !== "team").length ?? 0;
-  const inheritedMcpCount = mcpServers.data?.filter((server) => server.source_scope === "team").length ?? 0;
-  const configuredEnvCount = envVars.data?.filter((item) => item.configured).length ?? 0;
-  const missingEnvVars = envVars.data?.filter((item) => !item.configured) ?? [];
-
   return (
     <SoftCard className="flex flex-col gap-5 p-5">
       <div className="flex items-center justify-between">
@@ -94,7 +69,7 @@ export function EffectiveContextPanel({
           <p className="text-xs text-destructive">技能加载失败</p>
         ) : (
           <p className="text-xs text-v3-ink-2">
-            个人技能 {personalSkillCount} · 团队继承技能 {inheritedSkillCount} · 生效总数 {skills.data?.length ?? 0}
+            个人技能 {skills.personalCount} · 团队继承技能 {skills.inheritedCount} · 生效总数 {skills.totalCount}
           </p>
         )}
       </section>
@@ -111,13 +86,13 @@ export function EffectiveContextPanel({
             查看全部
           </Link>
         </div>
-        {mcpServers.isLoading ? (
+        {mcp.isLoading ? (
           <p className="text-xs text-v3-ink-3">加载中</p>
-        ) : mcpServers.isError ? (
+        ) : mcp.isError ? (
           <p className="text-xs text-destructive">MCP 加载失败</p>
         ) : (
           <p className="text-xs text-v3-ink-2">
-            个人 MCP {personalMcpCount} · 团队 MCP {inheritedMcpCount} · 生效总数 {mcpServers.data?.length ?? 0}
+            个人 MCP {mcp.personalCount} · 团队 MCP {mcp.inheritedCount} · 生效总数 {mcp.totalCount}
           </p>
         )}
       </section>
@@ -131,7 +106,7 @@ export function EffectiveContextPanel({
         </p>
         {effectiveConfig.isLoading ? (
           <p className="text-xs text-v3-ink-3">加载中</p>
-        ) : noApprovedConfig ? (
+        ) : effectiveConfig.noApprovedConfig ? (
           <p className="text-xs text-v3-ink-3">尚无已批准的生效配置</p>
         ) : effectiveConfig.isError ? (
           <p className="text-xs text-destructive">生效配置加载失败</p>
@@ -167,13 +142,13 @@ export function EffectiveContextPanel({
         ) : (
           <>
             <p className="text-xs text-v3-ink-2">
-              已配置 {configuredEnvCount} · 缺失 {missingEnvVars.length} · 总数 {envVars.data?.length ?? 0}
+              已配置 {envVars.configuredCount} · 缺失 {envVars.missingNames.length} · 总数 {envVars.totalCount}
             </p>
-            {missingEnvVars.length ? (
+            {envVars.missingNames.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {missingEnvVars.map((item) => (
-                  <StatusPill key={item.name} tone="danger">
-                    {item.name}
+                {envVars.missingNames.map((name) => (
+                  <StatusPill key={name} tone="danger">
+                    {name}
                   </StatusPill>
                 ))}
               </div>
