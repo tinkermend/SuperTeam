@@ -885,4 +885,83 @@ func TestPgRepositoryGetDigitalEmployeeRunStatsAggregatesByStatus(t *testing.T) 
 	require.NotNil(t, stats.AvgDurationSec)
 	// durations across all 4 finished runs for employeeID: 1200s, 3600s, 1200s, 1200s -> avg 1800s.
 	require.InDelta(t, 1800, *stats.AvgDurationSec, 1)
+	require.NotNil(t, stats.P90DurationSec)
+	// PERCENTILE_CONT(0.9) over sorted [1200, 1200, 1200, 3600] interpolates to 2880s.
+	require.InDelta(t, 2880, *stats.P90DurationSec, 1)
+}
+
+func TestPgRepositoryGetDigitalEmployeeRunStatsNullDurationsForNoFinishedRuns(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_stats_null_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeWithNoRuns := uuid.New()
+	employeeWithUnfinishedRuns := uuid.New()
+	taskID := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, provider_type, status)
+		VALUES ($1, $2, 'stats-fixture-task-null', 'codex', 'running');
+	`, taskID, tenantID)
+	require.NoError(t, err)
+
+	insertRun := func(employee uuid.UUID, status string, startedAt time.Time, finishedAt *time.Time, createdAt time.Time) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+			VALUES ($1, $2, $3, $4, 'node-a', $5, $6, $7, $8)
+		`, uuid.New(), tenantID, taskID, employee, status, startedAt, finishedAt, createdAt)
+		require.NoError(t, err)
+	}
+
+	now := time.Now().UTC()
+	// employeeWithUnfinishedRuns has runs, but none of them have finished_at set (still in flight).
+	insertRun(employeeWithUnfinishedRuns, "running", now.Add(-10*time.Minute), nil, now.Add(-10*time.Minute))
+	insertRun(employeeWithUnfinishedRuns, "dispatching", now.Add(-5*time.Minute), nil, now.Add(-5*time.Minute))
+
+	repo := NewPgRepository(queries.New(conn))
+
+	t.Run("employee with zero runs at all", func(t *testing.T) {
+		stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeWithNoRuns)
+		require.NoError(t, err)
+		require.Equal(t, int64(0), stats.TotalCount)
+		require.Equal(t, int64(0), stats.SucceededCount)
+		require.Equal(t, int64(0), stats.FailedCount)
+		require.Equal(t, int64(0), stats.CancelledCount)
+		require.Equal(t, int64(0), stats.Last7dCount)
+		require.Equal(t, int64(0), stats.Prev7dCount)
+		require.Nil(t, stats.AvgDurationSec)
+		require.Nil(t, stats.P90DurationSec)
+	})
+
+	t.Run("employee with runs but none finished", func(t *testing.T) {
+		stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeWithUnfinishedRuns)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), stats.TotalCount)
+		require.Equal(t, int64(0), stats.SucceededCount)
+		require.Equal(t, int64(0), stats.FailedCount)
+		require.Equal(t, int64(0), stats.CancelledCount)
+		require.Nil(t, stats.AvgDurationSec)
+		require.Nil(t, stats.P90DurationSec)
+	})
 }
