@@ -6,6 +6,7 @@ import type {
   ProjectTaskGraphEmployee,
   ProjectTaskGraphNode,
 } from "@/lib/api/projects";
+import { taskStatusLabel } from "@/lib/status-labels";
 
 const STAGE_X = 360;
 const ROW_Y = 170;
@@ -197,7 +198,7 @@ function buildTaskDependencyEdges(
       source: taskNodeId(edge.blocker_task_id),
       target: taskNodeId(edge.dependent_task_id),
       type: "smoothstep",
-      label: options.includeLabel ? edge.edge_status : undefined,
+      label: options.includeLabel ? taskStatusLabel(edge.edge_status) : undefined,
       animated: ANIMATED_EDGE_STATUSES.has(normalizeStatus(edge.edge_status)),
       markerEnd: options.markerEnd,
       style: options.style,

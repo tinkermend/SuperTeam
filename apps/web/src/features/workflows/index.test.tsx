@@ -49,8 +49,14 @@ vi.mock("@xyflow/react", () => {
     parentId?: string;
   };
 
+  type MockEdge = {
+    id: string;
+    label?: ReactNode;
+  };
+
   type MockReactFlowProps = {
     children?: ReactNode;
+    edges?: MockEdge[];
     nodes?: MockNode[];
     onNodeClick?: (event: MouseEvent<HTMLButtonElement>, node: MockNode) => void;
     onPaneClick?: () => void;
@@ -62,11 +68,22 @@ vi.mock("@xyflow/react", () => {
     Handle: () => null,
     MiniMap: () => null,
     Position: { Bottom: "bottom", Top: "top" },
-    ReactFlow: ({ children, nodes = [], onNodeClick, onPaneClick }: MockReactFlowProps) => (
+    ReactFlow: ({
+      children,
+      edges = [],
+      nodes = [],
+      onNodeClick,
+      onPaneClick,
+    }: MockReactFlowProps) => (
       <div data-testid="workflow-canvas">
         <button onClick={onPaneClick} type="button">
           canvas pane
         </button>
+        {edges.map((edge) => (
+          <span data-testid={`workflow-edge-label-${edge.id}`} key={edge.id}>
+            {edge.label}
+          </span>
+        ))}
         {nodes.map((node) => (
           <button key={node.id} onClick={(event) => onNodeClick?.(event, node)} type="button">
             {node.data?.title ?? node.id}
@@ -450,6 +467,42 @@ describe("WorkflowView", () => {
     expect(detailMainCard?.textContent).toContain("需求摘要");
     expect(detailMainCard?.textContent).toContain("支付成功率下降");
     expect(detailMainCard?.textContent).toContain("生产支付链路成功率持续下降，需要定位并恢复。");
+  });
+
+  it("renders workflow dependency edge statuses in Chinese", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph(
+          [
+            makeGraphNode("task-1", "任务一", "planned"),
+            makeGraphNode("task-2", "任务二", "waiting_human"),
+            makeGraphNode("task-3", "任务三", "completed"),
+          ],
+          {
+            edges: [
+              {
+                blocker_task_id: "task-1",
+                dependent_task_id: "task-2",
+                edge_status: "waiting_human",
+              },
+              {
+                blocker_task_id: "task-2",
+                dependent_task_id: "task-3",
+                edge_status: "completed",
+              },
+            ],
+          },
+        ),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+
+    const canvasText = screen.getByTestId("workflow-canvas").element().textContent ?? "";
+    expect(canvasText).toContain("等待人工");
+    expect(canvasText).toContain("已完成");
+    expect(canvasText).not.toContain("waiting_human");
+    expect(canvasText).not.toContain("completed");
   });
 
   it("renders the canvas full width without a fixed inspector column", async () => {
