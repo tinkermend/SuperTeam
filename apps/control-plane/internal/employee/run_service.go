@@ -808,6 +808,7 @@ func validateRunPreflight(preflight RunPreflight) error {
 	if !preflight.HasApprovedEffectiveConfig {
 		return fmt.Errorf("%w: approved effective config is required", ErrEffectiveConfigRequired)
 	}
+	// Legacy workbench runs still require a concrete execution instance. ProjectTask dispatch uses project placement preflight instead.
 	if preflight.ExecutionInstanceID == uuid.Nil {
 		return fmt.Errorf("%w: execution_instance_id is required", ErrInvalidInput)
 	}

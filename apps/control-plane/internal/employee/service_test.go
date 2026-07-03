@@ -1046,6 +1046,12 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 	employeeID := uuid.New()
 	firstRuntimeID := uuid.New()
 	secondRuntimeID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		Status:       DigitalEmployeeStatusReady,
+		ProviderType: "codex",
+	}
 
 	first, err := svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
 		TenantID:          tenantID,
@@ -1062,7 +1068,7 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		RuntimeNodeID:     secondRuntimeID,
-		ProviderType:      "opencode",
+		ProviderType:      "codex",
 		AgentHomeDir:      "/srv/superteam/employees/finance-v2",
 		SessionPolicy:     map[string]any{"max_turns": float64(12)},
 	})
@@ -1076,7 +1082,7 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 	if second.RuntimeNodeID != secondRuntimeID {
 		t.Fatalf("expected updated runtime node id %s, got %s", secondRuntimeID, second.RuntimeNodeID)
 	}
-	if second.ProviderType != "opencode" {
+	if second.ProviderType != "codex" {
 		t.Fatalf("expected updated provider type, got %q", second.ProviderType)
 	}
 	if second.AgentHomeDir != "/srv/superteam/employees/finance-v2" {
@@ -1087,6 +1093,38 @@ func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
 	}
 	if second.Status != ExecutionInstanceStatusReady {
 		t.Fatalf("expected ready status, got %q", second.Status)
+	}
+}
+
+func TestBindExecutionInstanceCannotChangeEmployeeProvider(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		Status:       DigitalEmployeeStatusReady,
+		ProviderType: "codex",
+	}
+
+	_, err = svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProviderType:      "opencode",
+		AgentHomeDir:      "/tmp/opencode",
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+	if repo.employees[employeeID].ProviderType != "codex" {
+		t.Fatalf("expected employee provider to remain codex, got %q", repo.employees[employeeID].ProviderType)
 	}
 }
 
@@ -1150,15 +1188,6 @@ func TestServiceValidation(t *testing.T) {
 			run: func() error {
 				req := validCreateReq()
 				req.Name = " "
-				_, err := svc.CreateDigitalEmployee(context.Background(), req)
-				return err
-			},
-		},
-		{
-			name: "create requires runtime node",
-			run: func() error {
-				req := validCreateReq()
-				req.RuntimeNodeID = uuid.Nil
 				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},

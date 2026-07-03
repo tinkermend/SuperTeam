@@ -1420,6 +1420,14 @@ func (s *Service) BindExecutionInstance(ctx context.Context, req BindExecutionIn
 		return nil, fmt.Errorf("%w: agent_home_dir is required", ErrInvalidInput)
 	}
 
+	employeeRecord, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee: %w", err)
+	}
+	if existingProvider := strings.TrimSpace(employeeRecord.ProviderType); existingProvider != "" && existingProvider != providerType {
+		return nil, fmt.Errorf("%w: provider_type is fixed on digital employee", ErrInvalidInput)
+	}
+
 	record, err := s.repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
 		TenantID:             req.TenantID,
 		DigitalEmployeeID:    req.DigitalEmployeeID,
