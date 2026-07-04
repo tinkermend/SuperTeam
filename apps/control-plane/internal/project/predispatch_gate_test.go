@@ -49,6 +49,7 @@ func TestEvaluatePreDispatchGatePassesReadyTask(t *testing.T) {
 			Matched:  []string{"database.read", "sql.analysis"},
 		},
 		Runtime: PreDispatchRuntimeSnapshot{
+			PlacementPresent:        true,
 			NodeOnline:              true,
 			ProviderAvailable:       true,
 			WorkspaceReady:          true,
@@ -420,6 +421,7 @@ func readyPreDispatchGateSnapshot(projectID, taskID, employeeID uuid.UUID) PreDi
 			AvailableLoadSlots: 1,
 		},
 		Runtime: PreDispatchRuntimeSnapshot{
+			PlacementPresent:        true,
 			NodeOnline:              true,
 			ProviderAvailable:       true,
 			WorkspaceReady:          true,
