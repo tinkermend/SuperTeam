@@ -2427,8 +2427,8 @@ func (s *ProjectStore) recordDispatchBlocked(ctx context.Context, input Dispatch
 		EventType:    project.ProjectEventTaskDispatchBlocked,
 		ActorType:    "project_coordinator",
 		ActorID:      task.ID.String(),
-		ResourceType: strPtr("project_task"),
-		ResourceID:   strPtr(task.ID.String()),
+		ResourceType: stringPtr("project_task"),
+		ResourceID:   stringPtr(task.ID.String()),
 		Summary:      "项目任务派发被阻塞",
 		Payload:      payload,
 	})
