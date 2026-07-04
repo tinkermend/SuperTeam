@@ -274,11 +274,6 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		if member.PrincipalType != project.PrincipalTypeDigitalEmployee || member.Status != "active" || !isRoutableDigitalProjectRole(member.ProjectRole) {
 			continue
 		}
-		// Only runtime-ready digital employees are eligible executors; filtering here keeps
-		// the reasoning planner from selecting employees whose runs cannot start.
-		if readyEmployees != nil && !readyEmployees[member.PrincipalID] {
-			continue
-		}
 		candidates = append(candidates, member)
 		candidateIDs = append(candidateIDs, member.PrincipalID)
 	}
@@ -295,6 +290,12 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		}
 		eligibleCandidates = append(eligibleCandidates, member)
 		eligibleCandidateIDs = append(eligibleCandidateIDs, member.PrincipalID)
+	}
+	if len(eligibleCandidates) == 0 {
+		_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked, input.DemandID.String(), "项目没有可参与规划的数字员工", map[string]any{
+			"reason_code": "no_plannable_digital_employee",
+			"demand_id":   input.DemandID.String(),
+		}))
 	}
 	profileRecords := s.planningProfileRecords(ctx, input.TenantID, input.ProjectID, eligibleCandidateIDs)
 	pool := make([]ProjectMemberSnapshot, 0, len(eligibleCandidates))

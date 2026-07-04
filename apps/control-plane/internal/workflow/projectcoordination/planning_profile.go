@@ -57,10 +57,12 @@ type PlanningToolBinding struct {
 }
 
 type PlanningRuntimeRequirements struct {
-	ProviderTypes         []string `json:"provider_types,omitempty"`
-	ProviderStatus        string   `json:"provider_status,omitempty"`
-	RuntimeNodeID         string   `json:"runtime_node_id,omitempty"`
-	EffectiveConfigStatus string   `json:"effective_config_status,omitempty"`
+	ProviderTypes           []string `json:"provider_types,omitempty"`
+	ProviderStatus          string   `json:"provider_status,omitempty"`
+	RuntimeNodeID           string   `json:"runtime_node_id,omitempty"`
+	EffectiveConfigStatus   string   `json:"effective_config_status,omitempty"`
+	DispatchReadinessStatus string   `json:"dispatch_readiness_status,omitempty"`
+	DispatchBlockingReasons []string `json:"dispatch_blocking_reasons,omitempty"`
 }
 
 type PlanningPermission struct {
@@ -288,6 +290,10 @@ func buildPlanningRuntimeRequirements(source DigitalEmployeePlanningProfileSourc
 	requirements := PlanningRuntimeRequirements{
 		ProviderTypes:         stringSliceFromMap(source.CapabilitySelection, "enabled_provider_types"),
 		EffectiveConfigStatus: normalizePlanningString(source.EffectiveConfigStatus),
+	}
+	if !runtimeReady {
+		requirements.DispatchReadinessStatus = "not_ready"
+		requirements.DispatchBlockingReasons = []string{"runtime_not_ready"}
 	}
 	requirements.ProviderTypes = appendUniqueString(requirements.ProviderTypes, normalizePlanningString(source.ProviderType))
 	if source.RuntimeNodeID != uuid.Nil {

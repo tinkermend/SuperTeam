@@ -157,6 +157,32 @@ func TestBuildDigitalEmployeePlanningProfileKeepsRuntimeStatusUnknownWithoutExec
 	require.Equal(t, "unknown", profile.RuntimeRequirements.ProviderStatus)
 }
 
+func TestBuildDigitalEmployeePlanningProfileMarksDispatchNotReadyWithoutHardFailure(t *testing.T) {
+	employeeID := uuid.New()
+	member := project.ProjectMember{
+		PrincipalID:         employeeID,
+		ProjectRole:         project.ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("执行员工"),
+	}
+
+	profile := BuildDigitalEmployeePlanningProfile(member, DigitalEmployeePlanningProfileSourceRecord{
+		DigitalEmployeeID: employeeID,
+		EmployeeType:      "implementation",
+		EmployeeStatus:    "active",
+		CapabilitySelection: map[string]any{
+			"enabled_provider_types": []any{"codex"},
+		},
+		ProviderType:    "codex",
+		ExecutionStatus: "ready",
+	}, false)
+
+	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
+	require.Equal(t, "not_ready", profile.RuntimeRequirements.DispatchReadinessStatus)
+	require.Equal(t, []string{"runtime_not_ready"}, profile.RuntimeRequirements.DispatchBlockingReasons)
+	require.Empty(t, profile.HardFailures)
+}
+
 func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 	profile := DigitalEmployeePlanningProfile{
 		DigitalEmployeeID: uuid.New(),

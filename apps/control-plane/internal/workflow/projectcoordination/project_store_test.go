@@ -64,6 +64,36 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestLoadProjectCoordinationSnapshotRecordsBlockedEventWhenNoPlannableDigitalEmployee(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	observerID := uuid.New()
+	humanID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "无法规划"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: observerID, ProjectRole: project.ProjectRoleObserver, Status: "active"},
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeHumanUser, PrincipalID: humanID, ProjectRole: project.ProjectRoleOwner, Status: "active"},
+		},
+	}
+	store := NewProjectStore(repo)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, snapshot.DigitalEmployeePool)
+	blockedEvents := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blockedEvents, 1)
+	require.Equal(t, "no_plannable_digital_employee", blockedEvents[0].Payload["reason_code"])
+	require.Equal(t, demandID.String(), blockedEvents[0].Payload["demand_id"])
+}
+
 func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -136,6 +166,77 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 	require.Equal(t, []string{"codex"}, profile.RuntimeRequirements.ProviderTypes)
 	score := ScorePlanningProfile(*profile, PlanningTaskRequirements{RequiredCapabilities: []string{"implementation"}})
 	require.Empty(t, score.HardFailures)
+}
+
+func TestLoadProjectCoordinationSnapshotKeepsPlannableEmployeesWhenRuntimeNotReady(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "规划运行准备度"},
+		members: []project.ProjectMember{{
+			ID:                  uuid.New(),
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			PrincipalType:       project.PrincipalTypeDigitalEmployee,
+			PrincipalID:         employeeID,
+			ProjectRole:         project.ProjectRoleExecutor,
+			Status:              "active",
+			DisplayNameSnapshot: strPtr("执行员工"),
+		}},
+	}
+	reader := projectStoreGateRuntimeReader{
+		employee: project.PreDispatchEmployeeSnapshot{
+			ID:                 employeeID,
+			Status:             "ready",
+			PolicyAllowed:      true,
+			AvailableLoadSlots: 1,
+			RequiredLoadSlots:  1,
+		},
+		runtime: project.PreDispatchRuntimeSnapshot{
+			NodeOnline:              false,
+			ProviderAvailable:       true,
+			WorkspaceReady:          false,
+			SlotAvailable:           true,
+			ContractVersionAccepted: true,
+		},
+	}
+	source := &fakePlanningProfileSource{records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+		employeeID: {
+			DigitalEmployeeID: employeeID,
+			EmployeeType:      "implementation",
+			EmployeeStatus:    "ready",
+			CapabilitySelection: map[string]any{
+				"enabled_external_capabilities": []any{"implementation"},
+				"enabled_provider_types":        []any{"codex"},
+			},
+			RuntimeNodeID:         runtimeNodeID,
+			ProviderType:          "codex",
+			ExecutionStatus:       "ready",
+			EffectiveConfigStatus: "approved",
+		},
+	}}
+	store := NewProjectStore(repo).
+		WithDigitalEmployeePlanningProfiles(source).
+		WithPreDispatchGateReaders(reader, nil)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.DigitalEmployeePool, 1)
+	require.Equal(t, employeeID, snapshot.DigitalEmployeePool[0].PrincipalID)
+	require.NotNil(t, snapshot.DigitalEmployeePool[0].PlanningProfile)
+	profile := snapshot.DigitalEmployeePool[0].PlanningProfile
+	require.Equal(t, "not_ready", profile.RuntimeRequirements.DispatchReadinessStatus)
+	require.Equal(t, []string{"runtime_not_ready"}, profile.RuntimeRequirements.DispatchBlockingReasons)
+	require.Empty(t, profile.HardFailures)
 }
 
 func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
