@@ -100,6 +100,7 @@ function makeGraph(): ProjectTaskGraph {
         status_snapshot: "pending",
       },
     ],
+    blocking_facts: [],
   };
 }
 

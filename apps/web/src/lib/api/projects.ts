@@ -255,6 +255,15 @@ export type ProjectTaskGraphStageSummary = {
   blocked_nodes: number;
 };
 
+export type ProjectTaskGraphBlockingFact = {
+  reason_code: string;
+  message: string;
+  resource_type?: string;
+  resource_id?: string;
+  recommended_action?: string;
+  created_at?: string;
+};
+
 export type ProjectTaskGraph = {
   nodes: ProjectTaskGraphNode[];
   edges: ProjectTaskGraphEdge[];
@@ -264,6 +273,7 @@ export type ProjectTaskGraph = {
   recent_events: ProjectEvent[];
   decision_requests: ProjectDecisionRequest[];
   stage_summaries?: ProjectTaskGraphStageSummary[];
+  blocking_facts: ProjectTaskGraphBlockingFact[];
 };
 
 export type DispatchGateStatus =

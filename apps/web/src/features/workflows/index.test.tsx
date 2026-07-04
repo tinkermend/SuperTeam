@@ -259,6 +259,7 @@ function makeGraph(
     nodes,
     recent_events: [],
     runs: overrides.runs ?? [],
+    blocking_facts: overrides.blocking_facts ?? [],
     ...overrides,
   };
 }

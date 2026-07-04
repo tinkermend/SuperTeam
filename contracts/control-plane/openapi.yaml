@@ -4791,10 +4791,13 @@ components:
         - project.archived
         - demand.submitted
         - workflow.signaled
+        - workflow.coordination_failed
+        - coordination.blocked
         - coordination_job.created
         - route_decision.created
         - project_task.created
         - project_task.dispatched
+        - project_task.dispatch_blocked
         - project_task.completed
         - project_task.failed
         - transfer.requested

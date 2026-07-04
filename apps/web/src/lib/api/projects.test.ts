@@ -471,6 +471,7 @@ describe("project API", () => {
       execution_summaries: [],
       recent_events: [],
       decision_requests: [],
+      blocking_facts: [],
       stage_summaries: [
         {
           stage_index: 1,

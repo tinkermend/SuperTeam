@@ -878,6 +878,7 @@ func (e ProjectDemandStatus) Valid() bool {
 
 // Defines values for ProjectEventType.
 const (
+	CoordinationBlocked            ProjectEventType = "coordination.blocked"
 	CoordinationJobCreated         ProjectEventType = "coordination_job.created"
 	DecisionRequested              ProjectEventType = "decision.requested"
 	DecisionSubmitted              ProjectEventType = "decision.submitted"
@@ -895,16 +896,20 @@ const (
 	ProjectReportLinked            ProjectEventType = "project.report.linked"
 	ProjectTaskCompleted           ProjectEventType = "project_task.completed"
 	ProjectTaskCreated             ProjectEventType = "project_task.created"
+	ProjectTaskDispatchBlocked     ProjectEventType = "project_task.dispatch_blocked"
 	ProjectTaskDispatched          ProjectEventType = "project_task.dispatched"
 	ProjectTaskFailed              ProjectEventType = "project_task.failed"
 	RouteDecisionCreated           ProjectEventType = "route_decision.created"
 	TransferRequested              ProjectEventType = "transfer.requested"
+	WorkflowCoordinationFailed     ProjectEventType = "workflow.coordination_failed"
 	WorkflowSignaled               ProjectEventType = "workflow.signaled"
 )
 
 // Valid indicates whether the value is a known member of the ProjectEventType enum.
 func (e ProjectEventType) Valid() bool {
 	switch e {
+	case CoordinationBlocked:
+		return true
 	case CoordinationJobCreated:
 		return true
 	case DecisionRequested:
@@ -939,6 +944,8 @@ func (e ProjectEventType) Valid() bool {
 		return true
 	case ProjectTaskCreated:
 		return true
+	case ProjectTaskDispatchBlocked:
+		return true
 	case ProjectTaskDispatched:
 		return true
 	case ProjectTaskFailed:
@@ -946,6 +953,8 @@ func (e ProjectEventType) Valid() bool {
 	case RouteDecisionCreated:
 		return true
 	case TransferRequested:
+		return true
+	case WorkflowCoordinationFailed:
 		return true
 	case WorkflowSignaled:
 		return true
