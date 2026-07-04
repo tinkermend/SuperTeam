@@ -293,11 +293,13 @@ export type ProjectRuntimePlacementStatus =
   | "workspace_pending"
   | "contract_mismatch";
 
+export type ProjectRuntimePlacementState = "active" | "released" | "lost";
+
 export type ProjectRuntimePlacement = {
   id: string;
   project_id: string;
   runtime_node_id: string;
-  placement_status: ProjectRuntimePlacementStatus;
+  placement_status: ProjectRuntimePlacementState;
   placement_reason?: string;
   assigned_at: string;
   released_at?: string;
@@ -322,11 +324,12 @@ export type ProjectReadinessAction = {
 
 export type ProjectEmployeeReadiness = {
   digital_employee_id: string;
-  display_name: string;
-  ready: boolean;
-  required_provider_types: string[];
-  missing_provider_types: string[];
-  reasons: ProjectReadinessReason[];
+  display_name?: string;
+  provider_type?: string;
+  can_plan: boolean;
+  can_dispatch: boolean;
+  reason_code?: string;
+  reason_message?: string;
 };
 
 export type ProjectRuntimePlacementReadiness = {
