@@ -26,6 +26,7 @@ export type ProjectRuntimePlacementPanelProps = {
   onReleaseRuntime: () => void;
   isBinding: boolean;
   isReleasing: boolean;
+  isReadinessLoading?: boolean;
 };
 
 export function ProjectRuntimePlacementPanel({
@@ -37,10 +38,11 @@ export function ProjectRuntimePlacementPanel({
   onReleaseRuntime,
   isBinding,
   isReleasing,
+  isReadinessLoading,
 }: ProjectRuntimePlacementPanelProps) {
   const sortedNodes = [...runtimeNodes].sort((left, right) => {
     if (left.status === right.status) {
-      return left.name.localeCompare(right.name);
+      return runtimeNodeLabel(left).localeCompare(runtimeNodeLabel(right));
     }
     return left.status === "online" ? -1 : 1;
   });
@@ -51,8 +53,9 @@ export function ProjectRuntimePlacementPanel({
     ? readiness.provider_capabilities
     : selectedNode?.supported_providers ?? readiness?.required_provider_types ?? [];
   const hasActivePlacement = Boolean(readiness?.runtime_node_id);
-  const canBind = Boolean(selectedRuntimeNodeId) && !isBinding && !isReleasing;
-  const canRelease = hasActivePlacement && !isBinding && !isReleasing;
+  const canBind =
+    Boolean(selectedRuntimeNodeId) && !isReadinessLoading && !isBinding && !isReleasing;
+  const canRelease = hasActivePlacement && !isReadinessLoading && !isBinding && !isReleasing;
 
   return (
     <SoftCard className="overflow-hidden" data-testid="project-runtime-placement-panel">
@@ -112,11 +115,11 @@ export function ProjectRuntimePlacementPanel({
               }
             >
               <option value="">选择 Runtime 节点</option>
-              {sortedNodes.map((node) => {
+              {sortedNodes.map((node, index) => {
                 const value = runtimeNodeValue(node);
                 return (
-                  <option key={value} value={value}>
-                    {node.name} · {runtimeNodeStatusLabel(node.status)}
+                  <option key={`${value}-${index}`} value={value}>
+                    {runtimeNodeLabel(node)} · {runtimeNodeStatusLabel(node.status)}
                   </option>
                 );
               })}
@@ -136,7 +139,7 @@ export function ProjectRuntimePlacementPanel({
             <RuntimeLine
               icon={<Cable className="size-3.5" />}
               label="当前节点"
-              value={readiness?.runtime_node_name ?? selectedNode?.name ?? "未绑定"}
+              value={readiness?.runtime_node_name ?? runtimeNodeLabel(selectedNode) ?? "未绑定"}
             />
           </div>
         </div>
@@ -249,5 +252,12 @@ function runtimeNodeStatusLabel(status: RuntimeNodeResponse["status"]) {
 }
 
 function runtimeNodeValue(node: RuntimeNodeResponse) {
-  return node.runtime_node_id ?? node.node_id;
+  return node.runtime_node_id ?? node.node_id ?? node.name ?? "";
+}
+
+function runtimeNodeLabel(node?: RuntimeNodeResponse) {
+  if (!node) {
+    return undefined;
+  }
+  return node.name || node.node_id || node.runtime_node_id || "未命名节点";
 }

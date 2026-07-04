@@ -1,4 +1,4 @@
-import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -312,6 +312,7 @@ function createProjectFetcher(
     projectTeamScopesStatus?: "default" | "empty" | "error" | "loading";
     project2OverviewGate?: Promise<void>;
     project2RiskSignalGate?: Promise<void>;
+    project2RuntimeReadinessGate?: Promise<void>;
     riskSignalFailureProjectId?: string;
     slowFilteredList?: boolean;
     runtimeReadinessStatus?: "missing" | "ready";
@@ -618,6 +619,10 @@ function createProjectFetcher(
     }
 
     if (url.pathname.endsWith("/runtime-readiness") && method === "GET") {
+      const id = url.pathname.split("/")[4];
+      if (id === "project-2" && options.project2RuntimeReadinessGate) {
+        await options.project2RuntimeReadinessGate;
+      }
       return jsonResponse({
         blocking_reasons: [],
         command_channel_connected: false,
@@ -1235,6 +1240,34 @@ async function renderProjectCreate(
   );
 }
 
+async function renderProjectRouteSwitcher(
+  fetcher: typeof fetch,
+  queryClient = createQueryClient(),
+) {
+  function ProjectRouteSwitcher() {
+    const [projectId, setProjectId] = useState("project-1");
+
+    return (
+      <>
+        <button type="button" onClick={() => setProjectId("project-2")}>
+          切换到项目二
+        </button>
+        <ProjectsView
+          apiBaseUrl="http://control-plane.test"
+          fetcher={fetcher}
+          routeProjectId={projectId}
+        />
+      </>
+    );
+  }
+
+  return await render(
+    <QueryClientProvider client={queryClient}>
+      <ProjectRouteSwitcher />
+    </QueryClientProvider>,
+  );
+}
+
 describe("ProjectsView", () => {
   it("filters project plan revisions to the latest demand", async () => {
     const fetcher = createProjectFetcher();
@@ -1523,6 +1556,30 @@ describe("ProjectsView", () => {
         }).length,
       ).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it("does not show stale runtime readiness actions while switching projects", async () => {
+    const project2RuntimeReadiness = makeDeferred<Response>();
+    const fetcher = createProjectFetcher({
+      project2RuntimeReadinessGate: project2RuntimeReadiness.promise.then(() => undefined),
+      runtimeReadinessStatus: "ready",
+    });
+    const screen = await renderProjectRouteSwitcher(fetcher);
+
+    await expect.element(screen.getByText("已就绪")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "释放绑定" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "切换到项目二" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "生产巡检整改" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("等待检查")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "释放绑定" }))
+      .toBeDisabled();
+
+    project2RuntimeReadiness.resolve(jsonResponse({}));
   });
 
   it("treats missing project acceptance as an optional empty state", async () => {

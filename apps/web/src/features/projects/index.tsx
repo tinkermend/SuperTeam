@@ -387,7 +387,6 @@ export function ProjectsView({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-runtime-readiness", effectiveProjectId],
     queryFn: () => getProjectRuntimeReadiness(apiOptions, effectiveProjectId as string),
-    placeholderData: keepPreviousData,
   });
 
   const runtimeNodesQuery = useQuery({
@@ -396,6 +395,8 @@ export function ProjectsView({
     queryFn: () => listRuntimeNodes({ ...apiOptions, limit: 100 }),
     placeholderData: keepPreviousData,
   });
+  const currentProjectRuntimeReadiness =
+    runtimeReadinessQuery.isSuccess ? runtimeReadinessQuery.data : undefined;
 
   const latestDemandId = demandsQuery.data?.[0]?.id;
   const planRevisionsQuery = useQuery({
@@ -579,10 +580,9 @@ export function ProjectsView({
     mutationFn: (runtimeNodeId: string) =>
       putProjectRuntimePlacement(apiOptions, effectiveProjectId as string, {
         runtime_node_id: runtimeNodeId,
-        expected_provider_types:
-          runtimeReadinessQuery.data?.required_provider_types?.length
-            ? runtimeReadinessQuery.data.required_provider_types
-            : undefined,
+        expected_provider_types: currentProjectRuntimeReadiness?.required_provider_types?.length
+          ? currentProjectRuntimeReadiness.required_provider_types
+          : undefined,
         reason: "project_runtime_placement_panel",
       }),
     onSuccess: async (placement) => {
@@ -948,8 +948,11 @@ export function ProjectsView({
                     runtimePlacementPanel={
                       <ProjectRuntimePlacementPanel
                         isBinding={bindRuntimePlacementMutation.isPending}
+                        isReadinessLoading={
+                          runtimeReadinessQuery.isLoading || runtimeReadinessQuery.isFetching
+                        }
                         isReleasing={releaseRuntimePlacementMutation.isPending}
-                        readiness={runtimeReadinessQuery.data}
+                        readiness={currentProjectRuntimeReadiness}
                         runtimeNodes={projectRuntimeNodes}
                         selectedRuntimeNodeId={selectedRuntimeNodeId}
                         onBindRuntime={() => {
