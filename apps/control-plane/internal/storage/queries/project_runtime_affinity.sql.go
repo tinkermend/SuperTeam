@@ -402,6 +402,41 @@ func (q *Queries) ListProjectTaskAttestations(ctx context.Context, arg ListProje
 	return items, nil
 }
 
+const ReleaseProjectPlacement = `-- name: ReleaseProjectPlacement :one
+UPDATE project_placements
+SET
+    placement_status = 'released',
+    released_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND placement_status = 'active'
+RETURNING id, tenant_id, project_id, runtime_node_id, placement_status, placement_reason, assigned_at, released_at, created_at, updated_at
+`
+
+type ReleaseProjectPlacementParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjectPlacementParams) (ProjectPlacement, error) {
+	row := q.db.QueryRow(ctx, ReleaseProjectPlacement, arg.TenantID, arg.ProjectID)
+	var i ProjectPlacement
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.RuntimeNodeID,
+		&i.PlacementStatus,
+		&i.PlacementReason,
+		&i.AssignedAt,
+		&i.ReleasedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttemptBudgetHeartbeat :one
 UPDATE project_task_attempts
 SET

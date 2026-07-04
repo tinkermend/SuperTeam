@@ -76,6 +76,12 @@ const (
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
+	ProjectEventRuntimePlacementUpdated    ProjectEventType = "project.runtime_placement.updated"
+	ProjectEventRuntimePlacementReleased   ProjectEventType = "project.runtime_placement.released"
+	ProjectEventCoordinationBlocked        ProjectEventType = "coordination.blocked"
+	ProjectEventWorkflowCoordinationFailed ProjectEventType = "workflow.coordination_failed"
+	ProjectEventTaskDispatchBlocked        ProjectEventType = "project_task.dispatch_blocked"
+
 	ProjectEventWorkflowSignaled               ProjectEventType = "workflow.signaled"
 	ProjectEventCoordinationJobCreated         ProjectEventType = "coordination_job.created"
 	ProjectEventRouteDecisionCreated           ProjectEventType = "route_decision.created"
@@ -304,6 +310,85 @@ type ProjectRepoBindingInput struct {
 	DefaultBranch    string   `json:"default_branch"`
 	GitCredentialRef *string  `json:"git_credential_ref"`
 	Scope            []string `json:"scope"`
+}
+
+type ProjectRuntimePlacementStatus string
+
+const (
+	ProjectRuntimePlacementStatusMissing                    ProjectRuntimePlacementStatus = "missing"
+	ProjectRuntimePlacementStatusReady                      ProjectRuntimePlacementStatus = "ready"
+	ProjectRuntimePlacementStatusRuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
+	ProjectRuntimePlacementStatusCommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
+	ProjectRuntimePlacementStatusProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
+	ProjectRuntimePlacementStatusCapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
+	ProjectRuntimePlacementStatusWorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
+	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
+)
+
+type ProjectRuntimePlacement struct {
+	ID              uuid.UUID  `json:"id"`
+	TenantID        uuid.UUID  `json:"tenant_id,omitempty"`
+	ProjectID       uuid.UUID  `json:"project_id"`
+	RuntimeNodeID   uuid.UUID  `json:"runtime_node_id"`
+	PlacementStatus string     `json:"placement_status"`
+	PlacementReason string     `json:"placement_reason,omitempty"`
+	AssignedAt      time.Time  `json:"assigned_at,omitempty"`
+	ReleasedAt      *time.Time `json:"released_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at,omitempty"`
+}
+
+type PutProjectRuntimePlacementRequest struct {
+	TenantID              uuid.UUID
+	ProjectID             uuid.UUID
+	RuntimeNodeID         uuid.UUID
+	ActorUserID           uuid.UUID
+	Reason                string
+	ExpectedProviderTypes []string
+}
+
+type GetProjectRuntimePlacementRequest struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+}
+
+type ReleaseProjectRuntimePlacementRequest struct {
+	TenantID    uuid.UUID
+	ProjectID   uuid.UUID
+	ActorUserID uuid.UUID
+	Reason      string
+}
+
+type ProjectRuntimePlacementReadiness struct {
+	PlacementStatus         ProjectRuntimePlacementStatus `json:"placement_status"`
+	RuntimeNodeID           *uuid.UUID                    `json:"runtime_node_id,omitempty"`
+	RuntimeNodeName         string                        `json:"runtime_node_name,omitempty"`
+	CommandChannelConnected bool                          `json:"command_channel_connected"`
+	ProviderCapabilities    []string                      `json:"provider_capabilities,omitempty"`
+	RequiredProviderTypes   []string                      `json:"required_provider_types,omitempty"`
+	EmployeeReadiness       []ProjectEmployeeReadiness    `json:"employee_readiness,omitempty"`
+	BlockingReasons         []ProjectReadinessReason      `json:"blocking_reasons,omitempty"`
+	NextActions             []ProjectReadinessAction      `json:"next_actions,omitempty"`
+}
+
+type ProjectEmployeeReadiness struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	DisplayName       string    `json:"display_name,omitempty"`
+	ProviderType      string    `json:"provider_type,omitempty"`
+	CanPlan           bool      `json:"can_plan"`
+	CanDispatch       bool      `json:"can_dispatch"`
+	ReasonCode        string    `json:"reason_code,omitempty"`
+	ReasonMessage     string    `json:"reason_message,omitempty"`
+}
+
+type ProjectReadinessReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type ProjectReadinessAction struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
 }
 
 type ProjectTaskAttestationStatus string

@@ -306,6 +306,41 @@ func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries
 	return projectFromRecord(row)
 }
 
+func (r *PgRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error) {
+	row, err := r.q.GetActiveProjectPlacement(ctx, queries.GetActiveProjectPlacementParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return ProjectRuntimePlacement{}, projectRepositoryError(err)
+	}
+	return projectRuntimePlacementFromRecord(row), nil
+}
+
+func (r *PgRepository) UpsertProjectPlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
+	row, err := r.q.UpsertProjectPlacement(ctx, queries.UpsertProjectPlacementParams{
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   req.RuntimeNodeID,
+		PlacementReason: textOrNull(req.Reason),
+	})
+	if err != nil {
+		return ProjectRuntimePlacement{}, projectRepositoryError(err)
+	}
+	return projectRuntimePlacementFromRecord(row), nil
+}
+
+func (r *PgRepository) ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
+	row, err := r.q.ReleaseProjectPlacement(ctx, queries.ReleaseProjectPlacementParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+	})
+	if err != nil {
+		return ProjectRuntimePlacement{}, projectRepositoryError(err)
+	}
+	return projectRuntimePlacementFromRecord(row), nil
+}
+
 // TransitionProjectStatus moves a project's status forward only when its current
 // status is in fromStatuses. If the guard does not match (e.g. already in the target
 // status), it returns ErrProjectNotFound so callers can treat it as an idempotent no-op.
@@ -5096,6 +5131,21 @@ func projectRepoBindingFromRecord(row queries.Project) (ProjectRepoBinding, erro
 		GitCredentialRef: ptrText(row.RepoGitCredentialRef),
 		Scope:            scope,
 	}, nil
+}
+
+func projectRuntimePlacementFromRecord(row queries.ProjectPlacement) ProjectRuntimePlacement {
+	return ProjectRuntimePlacement{
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		ProjectID:       row.ProjectID,
+		RuntimeNodeID:   row.RuntimeNodeID,
+		PlacementStatus: row.PlacementStatus,
+		PlacementReason: textValue(row.PlacementReason),
+		AssignedAt:      timeFromSQL(row.AssignedAt),
+		ReleasedAt:      ptrTime(row.ReleasedAt),
+		CreatedAt:       timeFromSQL(row.CreatedAt),
+		UpdatedAt:       timeFromSQL(row.UpdatedAt),
+	}
 }
 
 func projectTaskAttestationFromCreateRow(row queries.CreateProjectTaskAttestationRow) (ProjectTaskAttestation, error) {

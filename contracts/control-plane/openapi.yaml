@@ -879,6 +879,64 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/runtime-placement:
+    get:
+      operationId: getProjectRuntimePlacement
+      summary: Get active Runtime placement for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project Runtime placement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRuntimePlacement"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProjectRuntimePlacement
+      summary: Bind a project to an active Runtime placement
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProjectRuntimePlacementRequest"
+      responses:
+        "200":
+          description: Updated Project Runtime placement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRuntimePlacement"
+    delete:
+      operationId: releaseProjectRuntimePlacement
+      summary: Release active Runtime placement for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Released Project Runtime placement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRuntimePlacement"
+  /api/v1/projects/{projectId}/runtime-readiness:
+    get:
+      operationId: getProjectRuntimeReadiness
+      summary: Get project Runtime execution readiness
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project Runtime readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRuntimePlacementReadiness"
   /api/v1/projects/{projectId}/archive:
     post:
       operationId: archiveProject
@@ -5019,6 +5077,144 @@ components:
           type: array
           items:
             type: string
+    ProjectRuntimePlacementStatus:
+      type: string
+      enum:
+        - missing
+        - ready
+        - runtime_offline
+        - command_channel_disconnected
+        - provider_unavailable
+        - capacity_full
+        - workspace_pending
+        - contract_mismatch
+    ProjectRuntimePlacement:
+      type: object
+      required:
+        - id
+        - project_id
+        - runtime_node_id
+        - placement_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        placement_status:
+          type: string
+        placement_reason:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+        released_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PutProjectRuntimePlacementRequest:
+      type: object
+      required:
+        - runtime_node_id
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        expected_provider_types:
+          type: array
+          items:
+            type: string
+    ProjectRuntimePlacementReadiness:
+      type: object
+      required:
+        - placement_status
+        - command_channel_connected
+      properties:
+        placement_status:
+          $ref: "#/components/schemas/ProjectRuntimePlacementStatus"
+        runtime_node_id:
+          type: string
+          format: uuid
+        runtime_node_name:
+          type: string
+        command_channel_connected:
+          type: boolean
+        provider_capabilities:
+          type: array
+          items:
+            type: string
+        required_provider_types:
+          type: array
+          items:
+            type: string
+        employee_readiness:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectEmployeeReadiness"
+        blocking_reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectReadinessReason"
+        next_actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectReadinessAction"
+    ProjectEmployeeReadiness:
+      type: object
+      required:
+        - digital_employee_id
+        - can_plan
+        - can_dispatch
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        provider_type:
+          type: string
+        can_plan:
+          type: boolean
+        can_dispatch:
+          type: boolean
+        reason_code:
+          type: string
+        reason_message:
+          type: string
+    ProjectReadinessReason:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ProjectReadinessAction:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+        label:
+          type: string
     ProjectMember:
       type: object
       required:

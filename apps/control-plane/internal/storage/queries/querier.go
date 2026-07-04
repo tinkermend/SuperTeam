@@ -385,6 +385,7 @@ type Querier interface {
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
 	RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
+	ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjectPlacementParams) (ProjectPlacement, error)
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
