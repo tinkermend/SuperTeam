@@ -7543,6 +7543,7 @@ type memoryRepository struct {
 	executionLedgerEvents            []ExecutionLedgerEvent
 	projectTaskResults               []ProjectTaskResult
 	projectTaskAttestations          []ProjectTaskAttestation
+	projectRuntimePlacements         map[uuid.UUID]ProjectRuntimePlacement
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
 	contextUpdates                   []ProjectTaskAttemptContextUpdate
@@ -7611,6 +7612,7 @@ func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
 		members:                    map[uuid.UUID][]ProjectMember{},
+		projectRuntimePlacements:   map[uuid.UUID]ProjectRuntimePlacement{},
 		projectTeamScopes:          map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool{},
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
@@ -7904,6 +7906,47 @@ func (r *memoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, ten
 		}
 	}
 	return count > 0, nil
+}
+
+func (r *memoryRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error) {
+	placement, ok := r.projectRuntimePlacements[projectID]
+	if !ok || placement.TenantID != tenantID || placement.PlacementStatus != ProjectRuntimePlacementStateActive {
+		return ProjectRuntimePlacement{}, ErrProjectNotFound
+	}
+	return placement, nil
+}
+
+func (r *memoryRepository) UpsertProjectPlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
+	if project, ok := r.projects[req.ProjectID]; !ok || project.TenantID != req.TenantID {
+		return ProjectRuntimePlacement{}, ErrProjectNotFound
+	}
+	now := time.Now()
+	placement := ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   req.RuntimeNodeID,
+		PlacementStatus: ProjectRuntimePlacementStateActive,
+		PlacementReason: req.Reason,
+		AssignedAt:      now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	r.projectRuntimePlacements[req.ProjectID] = placement
+	return placement, nil
+}
+
+func (r *memoryRepository) ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
+	placement, ok := r.projectRuntimePlacements[req.ProjectID]
+	if !ok || placement.TenantID != req.TenantID || placement.PlacementStatus != ProjectRuntimePlacementStateActive {
+		return ProjectRuntimePlacement{}, ErrProjectNotFound
+	}
+	now := time.Now()
+	placement.PlacementStatus = ProjectRuntimePlacementStateReleased
+	placement.ReleasedAt = &now
+	placement.UpdatedAt = now
+	r.projectRuntimePlacements[req.ProjectID] = placement
+	return placement, nil
 }
 
 func (r *memoryRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {

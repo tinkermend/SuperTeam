@@ -325,17 +325,25 @@ const (
 	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
 )
 
+type ProjectRuntimePlacementState string
+
+const (
+	ProjectRuntimePlacementStateActive   ProjectRuntimePlacementState = "active"
+	ProjectRuntimePlacementStateReleased ProjectRuntimePlacementState = "released"
+	ProjectRuntimePlacementStateLost     ProjectRuntimePlacementState = "lost"
+)
+
 type ProjectRuntimePlacement struct {
-	ID              uuid.UUID  `json:"id"`
-	TenantID        uuid.UUID  `json:"tenant_id,omitempty"`
-	ProjectID       uuid.UUID  `json:"project_id"`
-	RuntimeNodeID   uuid.UUID  `json:"runtime_node_id"`
-	PlacementStatus string     `json:"placement_status"`
-	PlacementReason string     `json:"placement_reason,omitempty"`
-	AssignedAt      time.Time  `json:"assigned_at,omitempty"`
-	ReleasedAt      *time.Time `json:"released_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at,omitempty"`
-	UpdatedAt       time.Time  `json:"updated_at,omitempty"`
+	ID              uuid.UUID                    `json:"id"`
+	TenantID        uuid.UUID                    `json:"tenant_id,omitempty"`
+	ProjectID       uuid.UUID                    `json:"project_id"`
+	RuntimeNodeID   uuid.UUID                    `json:"runtime_node_id"`
+	PlacementStatus ProjectRuntimePlacementState `json:"placement_status"`
+	PlacementReason string                       `json:"placement_reason,omitempty"`
+	AssignedAt      time.Time                    `json:"assigned_at,omitempty"`
+	ReleasedAt      *time.Time                   `json:"released_at,omitempty"`
+	CreatedAt       time.Time                    `json:"created_at,omitempty"`
+	UpdatedAt       time.Time                    `json:"updated_at,omitempty"`
 }
 
 type PutProjectRuntimePlacementRequest struct {

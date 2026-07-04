@@ -912,6 +912,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectRuntimePlacement"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
     delete:
       operationId: releaseProjectRuntimePlacement
       summary: Release active Runtime placement for a project
@@ -924,6 +930,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectRuntimePlacement"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/runtime-readiness:
     get:
       operationId: getProjectRuntimeReadiness
@@ -5088,6 +5100,12 @@ components:
         - capacity_full
         - workspace_pending
         - contract_mismatch
+    ProjectRuntimePlacementState:
+      type: string
+      enum:
+        - active
+        - released
+        - lost
     ProjectRuntimePlacement:
       type: object
       required:
@@ -5109,7 +5127,7 @@ components:
           type: string
           format: uuid
         placement_status:
-          type: string
+          $ref: "#/components/schemas/ProjectRuntimePlacementState"
         placement_reason:
           type: string
         assigned_at:

@@ -5069,6 +5069,9 @@ func projectRepositoryError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrProjectNotFound
 	}
+	if isPGForeignKeyConstraint(err, "fk_project_placements_project") {
+		return ErrProjectNotFound
+	}
 	return err
 }
 
@@ -5139,7 +5142,7 @@ func projectRuntimePlacementFromRecord(row queries.ProjectPlacement) ProjectRunt
 		TenantID:        row.TenantID,
 		ProjectID:       row.ProjectID,
 		RuntimeNodeID:   row.RuntimeNodeID,
-		PlacementStatus: row.PlacementStatus,
+		PlacementStatus: ProjectRuntimePlacementState(row.PlacementStatus),
 		PlacementReason: textValue(row.PlacementReason),
 		AssignedAt:      timeFromSQL(row.AssignedAt),
 		ReleasedAt:      ptrTime(row.ReleasedAt),
@@ -6830,5 +6833,12 @@ func isPGUniqueConstraint(err error, constraintName string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == "23505" &&
+		pgErr.ConstraintName == constraintName
+}
+
+func isPGForeignKeyConstraint(err error, constraintName string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23503" &&
 		pgErr.ConstraintName == constraintName
 }
