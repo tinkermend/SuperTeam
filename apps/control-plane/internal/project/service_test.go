@@ -5775,15 +5775,59 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected signal error")
 	}
-	if len(repo.eventTypes) != 2 || repo.eventTypes[1] != ProjectEventWorkflowSignaled {
+	if len(repo.eventTypes) != 3 || repo.eventTypes[1] != ProjectEventWorkflowSignaled || repo.eventTypes[2] != ProjectEventWorkflowCoordinationFailed {
 		t.Fatalf("expected workflow signal failure event, got %#v", repo.eventTypes)
 	}
-	payload := repo.events[len(repo.events)-1].Payload
+	payload := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled).Payload
 	if payload["signal_name"] != "DemandSubmitted" || payload["status"] != "failed" || payload["retryable"] != true {
 		t.Fatalf("unexpected workflow signal payload: %#v", payload)
 	}
 	if payload["demand_id"] == "" || payload["error"] == "" {
 		t.Fatalf("expected retry payload to include demand id and error: %#v", payload)
+	}
+}
+
+func TestSubmitDemandProjectsWorkflowCoordinationFailedReason(t *testing.T) {
+	// Failed coordinator signal projection is owned by project service appendWorkflowSignalEvent.
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("digital_employee_pool is empty for project")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "客户侧 Runtime 接入验收",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 连接",
+		Content:           "检查心跳和命令回写",
+	})
+	if err == nil {
+		t.Fatal("expected signal error")
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventWorkflowSignaled) != 1 {
+		t.Fatalf("expected original workflow signal failure event, got %#v", repo.eventTypes)
+	}
+	projected := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowCoordinationFailed)
+	if projected.Payload["signal_name"] != "DemandSubmitted" || projected.Payload["reason_code"] != "no_plannable_digital_employee" {
+		t.Fatalf("unexpected coordination failure payload: %#v", projected.Payload)
+	}
+	if projected.Payload["recommended_action"] != "assign_digital_employee" || projected.Payload["demand_id"] == "" {
+		t.Fatalf("expected recommended action and preserved demand id: %#v", projected.Payload)
 	}
 }
 
@@ -5818,7 +5862,7 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected first signal error")
 	}
-	failedEvent := repo.events[len(repo.events)-1]
+	failedEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	coordinator.demandSignalErr = nil
 
 	event, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
@@ -6317,7 +6361,7 @@ func TestRetryWorkflowSignalReplaysCompletedTaskWithoutDuplicateWriteback(t *tes
 	if completedEvents != 1 {
 		t.Fatalf("expected one completed event after failed signal, got %d events=%#v", completedEvents, repo.eventTypes)
 	}
-	failedSignalEvent := repo.events[len(repo.events)-1]
+	failedSignalEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	coordinator.completedSignalErr = nil
 
 	retryEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
@@ -6381,9 +6425,13 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 	if len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
 		t.Fatalf("expected one persisted demand before retry, demands=%d events=%#v", len(repo.demands), repo.eventTypes)
 	}
-	failedDemandSignalEvent := repo.events[len(repo.events)-1]
+	failedDemandSignalEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	if failedDemandSignalEvent.EventType != ProjectEventWorkflowSignaled || failedDemandSignalEvent.Payload["signal_name"] != "DemandSubmitted" || failedDemandSignalEvent.Payload["status"] != "failed" {
 		t.Fatalf("expected retryable demand signal failure event, got %#v", failedDemandSignalEvent)
+	}
+	demandCoordinationFailedEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowCoordinationFailed)
+	if demandCoordinationFailedEvent.Payload["reason_code"] != "workflow_signal_failed" || demandCoordinationFailedEvent.Payload["recommended_action"] != "inspect_workflow_signal_failure" {
+		t.Fatalf("unexpected projected demand coordination failure event: %#v", demandCoordinationFailedEvent.Payload)
 	}
 
 	coordinator.demandSignalErr = nil
@@ -6445,7 +6493,7 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 	if repo.tasks[0].Status != "completed" || len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
 		t.Fatalf("expected successful writeback before signal retry, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
 	}
-	failedCompletedSignalEvent := repo.events[len(repo.events)-1]
+	failedCompletedSignalEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	if failedCompletedSignalEvent.EventType != ProjectEventWorkflowSignaled || failedCompletedSignalEvent.Payload["signal_name"] != "EmployeeTaskCompleted" || failedCompletedSignalEvent.Payload["status"] != "failed" {
 		t.Fatalf("expected retryable completed signal failure event, got %#v", failedCompletedSignalEvent)
 	}
@@ -6482,7 +6530,7 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
-	if len(demands) != 1 || len(summaries) != 1 || countProjectEvents(projectEventTypes(events), ProjectEventWorkflowSignaled) != 4 {
+	if len(demands) != 1 || len(summaries) != 1 || countProjectEvents(projectEventTypes(events), ProjectEventWorkflowSignaled) != 4 || countProjectEvents(projectEventTypes(events), ProjectEventWorkflowCoordinationFailed) != 2 {
 		t.Fatalf("unexpected API-facing read model: demands=%d summaries=%d events=%#v", len(demands), len(summaries), projectEventTypes(events))
 	}
 }
@@ -7756,10 +7804,10 @@ func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected signal error")
 	}
-	if len(repo.eventTypes) != 2 || repo.eventTypes[1] != ProjectEventWorkflowSignaled {
+	if len(repo.eventTypes) != 3 || repo.eventTypes[1] != ProjectEventWorkflowSignaled || repo.eventTypes[2] != ProjectEventWorkflowCoordinationFailed {
 		t.Fatalf("expected workflow signal failure event, got %#v", repo.eventTypes)
 	}
-	payload := repo.events[len(repo.events)-1].Payload
+	payload := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled).Payload
 	if payload["signal_name"] != "ProjectPolicyChanged" || payload["status"] != "failed" || payload["retryable"] != true {
 		t.Fatalf("unexpected workflow signal payload: %#v", payload)
 	}

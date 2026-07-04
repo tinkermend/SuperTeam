@@ -5056,9 +5056,7 @@ func (s *Service) findDecisionRequest(ctx context.Context, tenantID, projectID, 
 }
 
 func (s *Service) appendWorkflowSignalEvent(ctx context.Context, tenantID, projectID uuid.UUID, signalName, status string, signalErr error, payload map[string]any) error {
-	if payload == nil {
-		payload = map[string]any{}
-	}
+	payload = cloneMap(mapOrEmptyAny(payload))
 	payload["signal_name"] = signalName
 	payload["status"] = status
 	payload["retryable"] = signalErr != nil
@@ -5074,7 +5072,53 @@ func (s *Service) appendWorkflowSignalEvent(ctx context.Context, tenantID, proje
 		Summary:   "Workflow signal 状态已记录",
 		Payload:   payload,
 	})
+	if err != nil {
+		return err
+	}
+	if status != "failed" || signalErr == nil {
+		return nil
+	}
+	summary, failurePayload := workflowCoordinationFailurePayload(signalName, signalErr, payload)
+	_, err = s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventWorkflowCoordinationFailed,
+		ActorType: "control_plane",
+		ActorID:   "project_service",
+		Summary:   summary,
+		Payload:   failurePayload,
+	})
 	return err
+}
+
+func workflowCoordinationFailurePayload(signalName string, err error, extra map[string]any) (summary string, payload map[string]any) {
+	reasonCode := "workflow_signal_failed"
+	recommendedAction := "inspect_workflow_signal_failure"
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+		lowerErr := strings.ToLower(errText)
+		switch {
+		case strings.Contains(lowerErr, "digital_employee_pool is empty"):
+			reasonCode = "no_plannable_digital_employee"
+			recommendedAction = "assign_digital_employee"
+		case strings.Contains(lowerErr, "runtime_placement_missing"):
+			reasonCode = "runtime_placement_missing"
+			recommendedAction = "bind_runtime"
+		case strings.Contains(lowerErr, "provider_unavailable"):
+			reasonCode = "provider_unavailable"
+			recommendedAction = "check_provider"
+		}
+	}
+	payload = cloneMap(mapOrEmptyAny(extra))
+	payload["signal_name"] = signalName
+	payload["status"] = "failed"
+	payload["reason_code"] = reasonCode
+	payload["recommended_action"] = recommendedAction
+	if errText != "" {
+		payload["error"] = errText
+	}
+	return "Workflow coordination failure projected: " + reasonCode, payload
 }
 
 func uuidFromPayload(payload map[string]any, key string) (uuid.UUID, error) {

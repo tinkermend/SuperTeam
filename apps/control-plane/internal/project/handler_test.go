@@ -1402,7 +1402,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	if repo.demands[0].Content == nil || *repo.demands[0].Content != "模拟 Workflow signal 短暂失败" {
 		t.Fatalf("expected demand content to be decoded and persisted, got %#v", repo.demands[0])
 	}
-	failedDemandSignalEvent := repo.events[len(repo.events)-1]
+	failedDemandSignalEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	if failedDemandSignalEvent.Payload["signal_name"] != "DemandSubmitted" || failedDemandSignalEvent.Payload["status"] != "failed" {
 		t.Fatalf("expected failed demand signal event, got %#v", failedDemandSignalEvent)
 	}
@@ -1505,7 +1505,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	if summary.RecommendedNextAction == nil || *summary.RecommendedNextAction != "提交负责人验收" {
 		t.Fatalf("expected recommended next action to be decoded, got %#v", summary.RecommendedNextAction)
 	}
-	failedCompletedSignalEvent := repo.events[len(repo.events)-1]
+	failedCompletedSignalEvent := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowSignaled)
 	if failedCompletedSignalEvent.Payload["signal_name"] != "EmployeeTaskCompleted" || failedCompletedSignalEvent.Payload["status"] != "failed" {
 		t.Fatalf("expected failed completed signal event, got %#v", failedCompletedSignalEvent)
 	}
