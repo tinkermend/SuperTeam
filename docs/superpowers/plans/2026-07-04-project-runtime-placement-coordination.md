@@ -236,21 +236,7 @@ ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementR
 
 In `apps/control-plane/internal/project/pg_repository.go`, implement the three methods using `queries.GetActiveProjectPlacementParams`, `queries.UpsertProjectPlacementParams`, and generated `queries.ReleaseProjectPlacementParams`.
 
-Map `pgtype.Text` reason with repo-local helpers already used in this file. If no helper exists for text, add focused helpers:
-
-```go
-func pgTextFromString(value string) pgtype.Text {
-	value = strings.TrimSpace(value)
-	return pgtype.Text{String: value, Valid: value != ""}
-}
-
-func stringFromPgText(value pgtype.Text) string {
-	if !value.Valid {
-		return ""
-	}
-	return value.String
-}
-```
+Map `pgtype.Text` reason using the text-to-pgtype helpers already present in this file (`textOrNull`, `textPtr`, `textValue`, `ptrText` — confirm exact names in-file before use). Do not add new `pgTextFromString`/`stringFromPgText` helpers; they would duplicate existing ones.
 
 Expected mapping: `ProjectPlacement.RuntimeNodeID` becomes `ProjectRuntimePlacement.RuntimeNodeID`; nullable `ReleasedAt` maps to `*time.Time`.
 
@@ -415,8 +401,11 @@ Readiness aggregation:
 type ProjectRuntimeNodeReader interface {
 	ListRuntimeNodesForTenant(ctx context.Context, params runtime.ListRuntimeNodesForTenantParams) ([]runtime.NodeRecord, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error)
+	IsConnected(nodeID string) bool
 }
 ```
+
+`IsConnected` must be satisfied by `runtime.ConnectionRegistry.IsConnected` (`apps/control-plane/internal/runtime/connection.go`) — this is the actual source of `command_channel_connected` today (see `apps/control-plane/internal/api/handlers/responses.go: newRuntimeNodeResponseWithCommandChannel`). `ListRuntimeNodesForTenant`/`ListRuntimeCapabilitiesForNode` alone cannot produce this field; wire the app's existing `*runtime.ConnectionRegistry` instance into project service construction alongside the node/capability reader. Do not report `CommandChannelConnected` as derived from node/capability listing alone.
 
 Prefer existing app wiring over duplicating SQL in project service.
 
@@ -523,7 +512,7 @@ DispatchReadinessStatus: "not_ready"
 DispatchBlockingReasons: []string{"runtime_not_ready"}
 ```
 
-but does not append to `HardFailures`.
+Note: `buildPlanningRuntimeRequirements` does not currently populate `HardFailures` at all — that field lives on `DigitalEmployeePlanningProfile`/`PlanningProfileScore` and is set separately by `scoreRuntime`/`scoreCapabilities` against per-task requirements (`planning_profile.go`). The real candidate-exclusion mechanism this task must remove is the filter in `LoadProjectCoordinationSnapshot` (Step 3 below), not anything in `buildPlanningRuntimeRequirements`. Keep this step scoped to adding the two hint fields; do not add new `HardFailures` writes here.
 
 - [ ] **Step 3: Stop filtering candidates by runtime readiness**
 
@@ -591,41 +580,66 @@ Expected gate:
 - `AllowRunStart=false`
 - `Terminal=false`
 - `Retryable=false`
-- reason code `runtime_placement_missing`
-- recommended action `bind_runtime`
+- `gate.Gate.Blockers` contains a blocker with `Key=="runtime.placement_missing"`
+- (add a second assertion once Step 2's mapping helper exists) `dispatchBlockReasonFromGate(gate.Gate)` returns `reasonCode=="runtime_placement_missing"` and `recommendedAction=="bind_runtime"`
 
 - [ ] **Step 2: Normalize dispatch reason codes**
 
-In `predispatch_gate.go`, ensure gate results can produce stable reason codes:
+Correction: `PreDispatchGateDecision` (`predispatch_gate.go`, project coordination package) has only `Gate`, `AllowRunStart`, `Retryable`, `Terminal` — there is no `PrimaryReasonCode`, `PrimaryReasonMessage`, or `RecommendedAction` field anywhere in the codebase. The real reason codes live in `project.PreDispatchGateResult.Gate.Blockers[].Key` (`apps/control-plane/internal/project/predispatch_gate.go`), using an existing dotted namespace already in production:
 
 ```go
-runtime_placement_missing
-runtime_node_offline
-command_channel_disconnected
-provider_unavailable
-capacity_full
-workspace_pending
-contract_mismatch
+runtime.node_offline
+runtime.provider_unavailable
+runtime.workspace_not_ready
+runtime.slot_unavailable
+runtime.contract_version_unsupported
 ```
+
+Add one more blocker to this same namespace for the missing-placement case:
+
+```go
+runtime.placement_missing
+```
+
+`PreDispatchRuntimeSnapshot` (`apps/control-plane/internal/project/predispatch_gate.go`, struct around line 96) currently has no placement field — add `PlacementPresent bool`. In `EvaluatePreDispatchGate`'s runtime `if/else-if` chain (project package, around line 322: `if !snapshot.Runtime.NodeOnline { ... } else if !snapshot.Runtime.ProviderAvailable { ... }`), add a new leading branch checked *before* `NodeOnline`:
+
+```go
+if !snapshot.Runtime.PlacementPresent {
+	addCheck("runtime.placement", "failed", nil)
+	addBlocker("runtime.placement_missing", PreDispatchGateStatusBlocked, "hard", false, nil)
+	setStatus(PreDispatchGateStatusBlocked)
+} else if !snapshot.Runtime.NodeOnline {
+	...
+```
+
+Populate `PlacementPresent` in `loadPreDispatchGateSnapshot` (`apps/control-plane/internal/workflow/projectcoordination/predispatch_gate.go`) by calling the project repository's placement lookup directly — `s.repository.GetActiveProjectPlacement(ctx, input.TenantID, input.ProjectID)` (added in Task 1; `ProjectStore.repository` is already `project.Repository`) — not through `s.employeeReader.GetEmployeeRuntimeSnapshot`. This keeps placement presence project-scoped rather than tied to the per-employee runtime-snapshot path the design doc flags as circular (§2.2). Treat "not found" as `PlacementPresent=false`, not an error.
+
+Then, in the `projectcoordination` package, add a small mapping helper (e.g. `dispatchBlockReasonFromGate(gate project.PreDispatchGateResult) (reasonCode, recommendedAction string)`) that reads `gate.Blockers` and maps each `Key` to a human-facing `reason_code`/`recommended_action` pair (e.g. `runtime.placement_missing` → `runtime_placement_missing` / `bind_runtime`). This mapping is what produces the reason codes for events and the Web-facing readiness API — do not add `PrimaryReasonCode`/`RecommendedAction` fields to `PreDispatchGateDecision` itself; derive them at the call site from `gate.Gate.Blockers`.
 
 Keep raw errors in diagnostic payload only.
 
 - [ ] **Step 3: Record blocked dispatch fact**
 
-In `ProjectStore.DispatchProjectTask`, when `!gate.AllowRunStart`, append `ProjectEventTaskDispatchBlocked` with payload:
+In `ProjectStore.DispatchProjectTask` (`project_store.go:2145`), the `!gate.AllowRunStart` branch currently does nothing observable in the `waiting_human` case (`default: return nil`) — this is the actual bug behind the design doc's "silently hidden as still planning" complaint. Add, right before the existing `switch`, a call to record the blocked fact using the Step 2 mapping helper:
 
 ```go
-map[string]any{
-  "project_task_id": task.ID.String(),
-  "demand_id": task.DemandID.String(),
-  "reason_code": gate.PrimaryReasonCode,
-  "reason_message": gate.PrimaryReasonMessage,
-  "recommended_action": gate.RecommendedAction,
-  "dispatch_gate_result_id": gate.Gate.ID.String(),
+reasonCode, recommendedAction := dispatchBlockReasonFromGate(gate.Gate)
+if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(
+	input.TenantID, input.ProjectID, project.ProjectEventTaskDispatchBlocked, input.TaskID.String(),
+	"项目任务派发被阻塞",
+	map[string]any{
+		"project_task_id":         task.ID.String(),
+		"demand_id":                task.DemandID.String(),
+		"reason_code":              reasonCode,
+		"recommended_action":       recommendedAction,
+		"dispatch_gate_result_id":  gate.Gate.ID.String(),
+	},
+)); err != nil {
+	return err
 }
 ```
 
-If `gate.Retryable`, still return `ErrProjectTaskDispatchRetryLater` after recording the event.
+Keep the existing `switch { case gate.Retryable: return ErrProjectTaskDispatchRetryLater; ... }` behavior unchanged after recording the event — this step only adds visibility, it must not change gate control flow.
 
 - [ ] **Step 4: Create or expose a blocking task graph node**
 
@@ -819,7 +833,7 @@ export function putProjectRuntimePlacement(
 }
 
 export function releaseProjectRuntimePlacement(options: ApiClientOptions, projectId: string): Promise<ProjectRuntimePlacement> {
-  return deleteJson<ProjectRuntimePlacement>(options, projectPath(projectId, "/runtime-placement"), "project runtime placement");
+  return deleteJsonWithResponse<ProjectRuntimePlacement>(options, projectPath(projectId, "/runtime-placement"), "project runtime placement");
 }
 
 export function getProjectRuntimeReadiness(options: ApiClientOptions, projectId: string): Promise<ProjectRuntimePlacementReadiness> {
@@ -827,7 +841,7 @@ export function getProjectRuntimeReadiness(options: ApiClientOptions, projectId:
 }
 ```
 
-If `deleteJson` does not exist in `apps/web/src/lib/api/client.ts`, add it there with the same error handling pattern as `putJson`.
+Correction: `deleteJson` already exists in `apps/web/src/lib/api/client.ts` but is non-generic (`Promise<void>`, never parses a response body) and has 8 existing call sites across `teams.ts`, `employees.ts`, and `capabilities.ts` that all expect void — do not change its signature. Instead add a new function `deleteJsonWithResponse<T>(options, path, resource): Promise<T>` in `client.ts` that mirrors `putJson`'s success-path JSON parsing but issues a `DELETE` request (same pattern as `deleteJson`, plus a `parseJson<T>` call on success). Use this new function only for `releaseProjectRuntimePlacement`.
 
 - [ ] **Step 4: Run API client tests**
 
@@ -956,7 +970,8 @@ git commit -m "feat(web): show project runtime placement readiness"
 **Files:**
 - Modify: `apps/web/src/lib/api/projects.ts`
 - Modify: `apps/web/src/features/workflows/workflow-graph-adapter.ts`
-- Modify: `apps/web/src/features/workflows/components/workflow-task-node.tsx`
+- Create: `apps/web/src/features/workflows/components/workflow-blocking-node.tsx`
+- Modify: `apps/web/src/features/workflows/components/workflow-graph-canvas.tsx` (register the new node type in its `nodeTypes` map, alongside existing `workflowAttachment`/`workflowStageLabel`/`workflowTask` entries)
 - Modify: `apps/web/src/features/workflows/index.tsx`
 - Test: `apps/web/src/features/workflows/workflow-graph-adapter.test.ts`
 - Test: `apps/web/src/features/workflows/index.test.tsx`
@@ -991,14 +1006,26 @@ In `workflow-graph-adapter.test.ts`, add a test:
 
 - [ ] **Step 3: Add blocked graph node adapter logic**
 
-In `workflow-graph-adapter.ts`, when graph nodes are empty and `blocking_facts` is non-empty, return a synthetic UI node:
+Correction: real graph nodes use the type discriminator `"workflowTask"` (not `"task"`), and `WorkflowTaskNodeData` requires a real `task: ProjectTaskGraphNode` field and has no `subtitle` field — a synthetic blocking fact cannot be represented as a `WorkflowTaskNode` without inventing a fake `ProjectTask`, which this plan explicitly forbids.
+
+Instead, add a distinct node type in `workflow-graph-adapter.ts`:
+
+```ts
+export type WorkflowBlockingNodeData = {
+  reasonCode: string;
+  message: string;
+  recommendedAction: string | undefined;
+};
+
+type WorkflowBlockingNode = Node<WorkflowBlockingNodeData, "workflowBlocking">;
+```
+
+Add `WorkflowBlockingNode` to the `WorkflowGraphNode` union. When graph nodes are empty and `blocking_facts` is non-empty, return a synthetic node of this new type:
 
 ```ts
 id: `blocking-${fact.reason_code}`
-type: "task"
-data.status: "blocked"
-data.title: fact.message
-data.subtitle: fact.recommended_action
+type: "workflowBlocking"
+data: { reasonCode: fact.reason_code, message: fact.message, recommendedAction: fact.recommended_action }
 ```
 
 This is a UI node only. It must not be posted back as a ProjectTask.
@@ -1014,9 +1041,9 @@ In `apps/web/src/features/workflows/index.tsx`, display a concise blocking banne
 
 Keep existing graph visible below.
 
-- [ ] **Step 5: Update workflow node rendering if needed**
+- [ ] **Step 5: Update workflow node rendering**
 
-If `WorkflowTaskNode` lacks blocked styling for this node shape, add the minimal blocked tone using existing status tone conventions.
+Create `apps/web/src/features/workflows/components/workflow-blocking-node.tsx` exporting `WorkflowBlockingNode`, a React Flow node component rendering `WorkflowBlockingNodeData` (reason, message, recommended action). Register it in the `nodeTypes` map in `apps/web/src/features/workflows/components/workflow-graph-canvas.tsx:26-29`, next to the existing `workflowAttachment`/`workflowStageLabel`/`workflowTask` entries: `workflowBlocking: WorkflowBlockingNode`. Reuse existing blocked/status tone conventions from `WorkflowTaskNode` for visual consistency, but do not force the blocking fact through `WorkflowTaskNode`'s props.
 
 - [ ] **Step 6: Run workflow tests**
 
@@ -1033,7 +1060,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add apps/web/src/lib/api/projects.ts apps/web/src/features/workflows/workflow-graph-adapter.ts apps/web/src/features/workflows/components/workflow-task-node.tsx apps/web/src/features/workflows/index.tsx apps/web/src/features/workflows/workflow-graph-adapter.test.ts apps/web/src/features/workflows/index.test.tsx apps/web/src/features/workflows/components/workflow-task-node.test.tsx
+git add apps/web/src/lib/api/projects.ts apps/web/src/features/workflows/workflow-graph-adapter.ts apps/web/src/features/workflows/components/workflow-blocking-node.tsx apps/web/src/features/workflows/components/workflow-graph-canvas.tsx apps/web/src/features/workflows/index.tsx apps/web/src/features/workflows/workflow-graph-adapter.test.ts apps/web/src/features/workflows/index.test.tsx
 git diff --cached --check
 git commit -m "feat(web): show workflow coordination blockers"
 ```
