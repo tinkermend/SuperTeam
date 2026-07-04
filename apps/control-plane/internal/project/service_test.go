@@ -281,6 +281,37 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 	require.Equal(t, "employee_workspace_pending", readiness.EmployeeReadiness[0].ReasonCode)
 }
 
+func TestAvailableProviderCapabilitiesAcceptsHealthyRuntimeStatus(t *testing.T) {
+	capabilities := []runtimepkg.RuntimeCapability{
+		{
+			ProviderType: "codex",
+			Available:    true,
+			Status:       "healthy",
+			HealthStatus: "healthy",
+		},
+		{
+			ProviderType: "opencode",
+			Available:    true,
+			Status:       "unavailable",
+			HealthStatus: "healthy",
+		},
+		{
+			ProviderType: "claude-code",
+			Available:    true,
+			Status:       "available",
+			HealthStatus: "unhealthy",
+		},
+		{
+			ProviderType: "pi",
+			Available:    false,
+			Status:       "healthy",
+			HealthStatus: "healthy",
+		},
+	}
+
+	require.Equal(t, []string{"codex"}, availableProviderCapabilities(capabilities, nil))
+}
+
 func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

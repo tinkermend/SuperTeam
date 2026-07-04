@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -345,7 +346,7 @@ func (h *HTTPHandler) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *h
 	}
 	var body releaseProjectRuntimePlacementBody
 	if r.Body != nil && r.Body != http.NoBody {
-		if !decodeJSONBody(w, r, &body) {
+		if !decodeOptionalJSONBody(w, r, &body) {
 			return
 		}
 	}
@@ -1583,6 +1584,19 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		if errors.Is(err, io.EOF) {
+			return true
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return false
 	}

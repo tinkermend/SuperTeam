@@ -257,6 +257,27 @@ func TestReleaseProjectRuntimePlacement(t *testing.T) {
 	}
 }
 
+func TestReleaseProjectRuntimePlacementAcceptsEmptyBody(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(""))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ReleaseProjectRuntimePlacement(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected empty-body runtime placement delete to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.releaseRuntimePlacementReq.TenantID != tenantID || service.releaseRuntimePlacementReq.ProjectID != projectID || service.releaseRuntimePlacementReq.ActorUserID != actorID || service.releaseRuntimePlacementReq.Reason != "" {
+		t.Fatalf("expected runtime placement release request without reason, got %#v", service.releaseRuntimePlacementReq)
+	}
+}
+
 func TestGetProjectRuntimeReadiness(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()

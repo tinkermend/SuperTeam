@@ -920,10 +920,7 @@ func availableProviderCapabilities(capabilities []runtimepkg.RuntimeCapability, 
 		if strings.TrimSpace(capability.ProviderType) == "" || !capability.Available {
 			continue
 		}
-		if capability.Status != "" && capability.Status != "available" {
-			continue
-		}
-		if capability.HealthStatus != "" && capability.HealthStatus != "healthy" {
+		if !runtimeCapabilityProviderReady(capability.Status, capability.HealthStatus) {
 			continue
 		}
 		providers = append(providers, capability.ProviderType)
@@ -935,6 +932,18 @@ func availableProviderCapabilities(capabilities []runtimepkg.RuntimeCapability, 
 		}
 	}
 	return normalizeStringSet(providers)
+}
+
+func runtimeCapabilityProviderReady(status, healthStatus string) bool {
+	status = strings.TrimSpace(status)
+	healthStatus = strings.TrimSpace(healthStatus)
+	if status != "" && status != "available" && status != "healthy" {
+		return false
+	}
+	if healthStatus != "" && healthStatus != "healthy" {
+		return false
+	}
+	return true
 }
 
 func missingProviderTypes(required, available []string) []string {
