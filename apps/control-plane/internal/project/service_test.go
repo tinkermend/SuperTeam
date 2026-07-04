@@ -196,6 +196,49 @@ func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.
 	require.Equal(t, "codex", readiness.EmployeeReadiness[0].ProviderType)
 }
 
+func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	foreignTenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	actorID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "runtime placement readiness",
+		Goal:             "reject foreign runtime placement",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	service.SetProjectRuntimeNodeReader(&fakeProjectRuntimeNodeReader{
+		nodes: []runtimepkg.NodeRecord{{
+			ID:       runtimeNodeID,
+			TenantID: foreignTenantID,
+			NodeID:   "foreign-node",
+			Name:     "Foreign Node",
+			Status:   string(runtimepkg.NodeStatusOnline),
+		}},
+	})
+
+	placement, err := service.PutProjectRuntimePlacement(context.Background(), PutProjectRuntimePlacementRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        "foreign node",
+	})
+
+	require.ErrorIs(t, err, ErrProjectNotFound)
+	require.Nil(t, placement)
+	require.Empty(t, repo.projectRuntimePlacements)
+	require.NotContains(t, repo.eventTypes, ProjectEventRuntimePlacementUpdated)
+}
+
 func TestGetExecutionTraceGroupsEventsByAttempt(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

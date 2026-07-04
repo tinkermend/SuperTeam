@@ -283,6 +283,9 @@ func (s *Service) PutProjectRuntimePlacement(ctx context.Context, req PutProject
 	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
 		return nil, err
 	}
+	if err := s.requireRuntimeNodeForTenant(ctx, req.TenantID, req.RuntimeNodeID); err != nil {
+		return nil, err
+	}
 	placement, err := s.repository.UpsertProjectPlacement(ctx, req)
 	if err != nil {
 		return nil, err
@@ -885,6 +888,20 @@ func (s *Service) findRuntimeNode(ctx context.Context, tenantID, runtimeNodeID u
 		}
 	}
 	return runtimepkg.NodeRecord{}, false, nil
+}
+
+func (s *Service) requireRuntimeNodeForTenant(ctx context.Context, tenantID, runtimeNodeID uuid.UUID) error {
+	if s.runtimeNodes == nil {
+		return ErrProjectNotFound
+	}
+	_, found, err := s.findRuntimeNode(ctx, tenantID, runtimeNodeID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrProjectNotFound
+	}
+	return nil
 }
 
 func availableProviderCapabilities(capabilities []runtimepkg.RuntimeCapability, supportedProviders []byte) []string {
