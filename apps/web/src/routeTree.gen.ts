@@ -25,6 +25,7 @@ import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedTaskLaunchesIndexRouteImport } from './routes/_authenticated/task-launches/index'
 import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
+import { Route as AuthenticatedRunOverviewIndexRouteImport } from './routes/_authenticated/run-overview/index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
 import { Route as AuthenticatedMcpIndexRouteImport } from './routes/_authenticated/mcp/index'
@@ -137,6 +138,12 @@ const AuthenticatedRuntimeIndexRoute =
   AuthenticatedRuntimeIndexRouteImport.update({
     id: '/runtime/',
     path: '/runtime/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRunOverviewIndexRoute =
+  AuthenticatedRunOverviewIndexRouteImport.update({
+    id: '/run-overview/',
+    path: '/run-overview/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProjectsIndexRoute =
@@ -347,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/mcp/': typeof AuthenticatedMcpIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/skills/': typeof AuthenticatedSkillsIndexRoute
   '/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
@@ -394,6 +402,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof AuthenticatedMcpIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/run-overview': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
   '/skills': typeof AuthenticatedSkillsIndexRoute
   '/task-launches': typeof AuthenticatedTaskLaunchesIndexRoute
@@ -443,6 +452,7 @@ export interface FileRoutesById {
   '/_authenticated/mcp/': typeof AuthenticatedMcpIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
   '/_authenticated/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
@@ -492,6 +502,7 @@ export interface FileRouteTypes {
     | '/mcp/'
     | '/permissions/'
     | '/projects/'
+    | '/run-overview/'
     | '/runtime/'
     | '/skills/'
     | '/task-launches/'
@@ -539,6 +550,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/permissions'
     | '/projects'
+    | '/run-overview'
     | '/runtime'
     | '/skills'
     | '/task-launches'
@@ -587,6 +599,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mcp/'
     | '/_authenticated/permissions/'
     | '/_authenticated/projects/'
+    | '/_authenticated/run-overview/'
     | '/_authenticated/runtime/'
     | '/_authenticated/skills/'
     | '/_authenticated/task-launches/'
@@ -726,6 +739,13 @@ declare module '@tanstack/react-router' {
       path: '/runtime'
       fullPath: '/runtime/'
       preLoaderRoute: typeof AuthenticatedRuntimeIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/run-overview/': {
+      id: '/_authenticated/run-overview/'
+      path: '/run-overview'
+      fullPath: '/run-overview/'
+      preLoaderRoute: typeof AuthenticatedRunOverviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/': {
@@ -996,6 +1016,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMcpIndexRoute: typeof AuthenticatedMcpIndexRoute
   AuthenticatedPermissionsIndexRoute: typeof AuthenticatedPermissionsIndexRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
+  AuthenticatedRunOverviewIndexRoute: typeof AuthenticatedRunOverviewIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
   AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
   AuthenticatedTaskLaunchesIndexRoute: typeof AuthenticatedTaskLaunchesIndexRoute
@@ -1038,6 +1059,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMcpIndexRoute: AuthenticatedMcpIndexRoute,
   AuthenticatedPermissionsIndexRoute: AuthenticatedPermissionsIndexRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
+  AuthenticatedRunOverviewIndexRoute: AuthenticatedRunOverviewIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,
   AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
   AuthenticatedTaskLaunchesIndexRoute: AuthenticatedTaskLaunchesIndexRoute,

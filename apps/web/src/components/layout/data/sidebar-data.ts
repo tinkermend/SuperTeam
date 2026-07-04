@@ -7,6 +7,7 @@ import {
   FileClock,
   FolderKanban,
   GitBranch,
+  Gauge,
   Inbox,
   KeyRound,
   LogIn,
@@ -124,6 +125,12 @@ export function buildSidebarData({
       {
         title: "平台管理",
         items: [
+          {
+            title: "运行总览",
+            url: "/run-overview",
+            icon: Gauge,
+            iconTone: "neutral",
+          },
           {
             title: "权限中心",
             url: "/permissions",
