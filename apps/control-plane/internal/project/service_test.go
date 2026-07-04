@@ -196,6 +196,91 @@ func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.
 	require.Equal(t, "codex", readiness.EmployeeReadiness[0].ProviderType)
 }
 
+func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	nodeID := "local-dev-node"
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "runtime placement readiness",
+		Goal:             "block dispatch until employee config is ready",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		PrincipalType:       PrincipalTypeDigitalEmployee,
+		PrincipalID:         employeeID,
+		ProjectRole:         ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("Codex executor"),
+	}}
+	repo.projectRuntimePlacements[projectID] = ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   runtimeNodeID,
+		PlacementStatus: ProjectRuntimePlacementStateActive,
+		AssignedAt:      time.Now().UTC(),
+	}
+	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
+		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+			employeeID: {
+				DigitalEmployeeID:     employeeID,
+				ProviderType:          "codex",
+				EffectiveConfigStatus: "pending_configuration",
+				ExecutionStatus:       "unavailable",
+			},
+		},
+	})
+	service.SetProjectRuntimeNodeReader(&fakeProjectRuntimeNodeReader{
+		nodes: []runtimepkg.NodeRecord{{
+			ID:                 runtimeNodeID,
+			TenantID:           tenantID,
+			NodeID:             nodeID,
+			Name:               "Local Dev Node",
+			Status:             string(runtimepkg.NodeStatusOnline),
+			MaxSlots:           2,
+			CurrentLoad:        0,
+			LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			SupportedProviders: []byte(`["codex"]`),
+		}},
+		capabilities: map[uuid.UUID][]runtimepkg.RuntimeCapability{
+			runtimeNodeID: {{
+				ID:            uuid.New(),
+				TenantID:      tenantID,
+				RuntimeNodeID: runtimeNodeID,
+				ProviderType:  "codex",
+				Available:     true,
+				Status:        "available",
+				HealthStatus:  "healthy",
+			}},
+		},
+		connected: map[string]bool{nodeID: true},
+	})
+
+	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectRuntimePlacementStatusWorkspacePending, readiness.PlacementStatus)
+	require.Contains(t, readinessBlockingCodes(readiness.BlockingReasons), "employee_workspace_pending")
+	require.Contains(t, readinessActionCodes(readiness.NextActions), "prepare_employee_workspace")
+	require.Len(t, readiness.EmployeeReadiness, 1)
+	require.Equal(t, employeeID, readiness.EmployeeReadiness[0].DigitalEmployeeID)
+	require.True(t, readiness.EmployeeReadiness[0].CanPlan)
+	require.False(t, readiness.EmployeeReadiness[0].CanDispatch)
+	require.Equal(t, "employee_workspace_pending", readiness.EmployeeReadiness[0].ReasonCode)
+}
+
 func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

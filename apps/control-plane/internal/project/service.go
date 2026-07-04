@@ -431,6 +431,12 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 		}
 		return readiness, nil
 	}
+	if hasEmployeeDispatchBlock(readiness.EmployeeReadiness) {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusWorkspacePending
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "employee_workspace_pending", Message: "one or more project employees are not dispatch-ready"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "prepare_employee_workspace", Label: "Prepare employee workspace"})
+		return readiness, nil
+	}
 	readiness.PlacementStatus = ProjectRuntimePlacementStatusReady
 	for i := range readiness.EmployeeReadiness {
 		readiness.EmployeeReadiness[i].CanDispatch = readiness.EmployeeReadiness[i].CanPlan
@@ -868,6 +874,10 @@ func (s *Service) projectEmployeeReadiness(ctx context.Context, tenantID, projec
 			item.ReasonMessage = "digital employee provider type is missing"
 		} else {
 			requiredProviders = append(requiredProviders, providerType)
+			if code, message, blocked := employeeDispatchBlockReason(record); blocked {
+				item.ReasonCode = code
+				item.ReasonMessage = message
+			}
 		}
 		readiness = append(readiness, item)
 	}
@@ -949,6 +959,27 @@ func markEmployeesNotDispatchable(employees []ProjectEmployeeReadiness, code, me
 			employees[i].ReasonMessage = message
 		}
 	}
+}
+
+func hasEmployeeDispatchBlock(employees []ProjectEmployeeReadiness) bool {
+	for _, employee := range employees {
+		if employee.CanPlan && !employee.CanDispatch && employee.ReasonCode != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func employeeDispatchBlockReason(record DigitalEmployeePlanningProfileSourceRecord) (string, string, bool) {
+	configStatus := strings.TrimSpace(record.EffectiveConfigStatus)
+	executionStatus := strings.TrimSpace(record.ExecutionStatus)
+	if configStatus != "" && configStatus != "approved" {
+		return "employee_workspace_pending", "employee effective configuration is not approved", true
+	}
+	if executionStatus != "" && executionStatus != "ready" && executionStatus != "active" {
+		return "employee_workspace_pending", "employee execution workspace or provider is not ready", true
+	}
+	return "", "", false
 }
 
 func stringInSlice(value string, values []string) bool {
