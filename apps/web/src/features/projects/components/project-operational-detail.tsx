@@ -105,6 +105,7 @@ type ProjectOperationalDetailProps = {
   project?: Project;
   reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
+  runtimePlacementPanel?: ReactNode;
   taskGraph?: ProjectTaskGraph;
   tasks: ProjectTask[];
   transferRequests: ProjectTransferRequest[];
@@ -143,6 +144,7 @@ export function ProjectOperationalDetail({
   project,
   reports,
   routeDecisions,
+  runtimePlacementPanel,
   taskGraph,
   tasks,
   transferRequests,
@@ -249,6 +251,8 @@ export function ProjectOperationalDetail({
           />
         </div>
       </SoftCard>
+
+      {runtimePlacementPanel}
 
       {taskGraph && taskGraph.nodes.length > 0 ? (
         <section className="grid gap-2" data-testid="project-plan-graph-section">

@@ -28,6 +28,7 @@ import {
   getProjectBudgetSummary,
   getProjectExecutionTrace,
   getProjectOverview,
+  getProjectRuntimeReadiness,
   listProjectArchiveSnapshots,
   listProjectArtifacts,
   listProjectBudgetLedger,
@@ -46,6 +47,8 @@ import {
   listProjectTasks,
   listProjectTransferRequests,
   patchProjectEvidence,
+  putProjectRuntimePlacement,
+  releaseProjectRuntimePlacement,
   resolveProjectDecision,
   submitProjectDemand,
   type CreateProjectAcceptanceInput,
@@ -59,6 +62,7 @@ import {
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { Main } from "@/components/layout/main";
 import {
@@ -72,6 +76,7 @@ import {
   WorkSurface,
 } from "@/components/superteam";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
+import { ProjectRuntimePlacementPanel } from "./components/project-runtime-placement-panel";
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
@@ -237,6 +242,7 @@ export function ProjectsView({
     status: "all",
   });
   const [selectedProjectId, setSelectedProjectId] = useState(routeProjectId);
+  const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
   const [projectListPage, setProjectListPage] = useState(1);
   const [projectListPageSize, setProjectListPageSize] = useState(10);
@@ -377,6 +383,20 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const runtimeReadinessQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-runtime-readiness", effectiveProjectId],
+    queryFn: () => getProjectRuntimeReadiness(apiOptions, effectiveProjectId as string),
+    placeholderData: keepPreviousData,
+  });
+
+  const runtimeNodesQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["runtime-nodes", "project-placement"],
+    queryFn: () => listRuntimeNodes({ ...apiOptions, limit: 100 }),
+    placeholderData: keepPreviousData,
+  });
+
   const latestDemandId = demandsQuery.data?.[0]?.id;
   const planRevisionsQuery = useQuery({
     enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
@@ -398,6 +418,18 @@ export function ProjectsView({
     }),
     placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    const placedRuntimeNodeId = runtimeReadinessQuery.data?.runtime_node_id;
+    if (placedRuntimeNodeId) {
+      setSelectedRuntimeNodeId(placedRuntimeNodeId);
+      return;
+    }
+    const nodes = runtimeNodesQuery.data ?? [];
+    const firstOnlineNode = nodes.find((node) => node.status === "online");
+    const firstNode = firstOnlineNode ?? nodes[0];
+    setSelectedRuntimeNodeId(firstNode?.runtime_node_id ?? firstNode?.node_id ?? "");
+  }, [runtimeNodesQuery.data, runtimeReadinessQuery.data?.runtime_node_id]);
 
   const dispatchGateTask = selectDispatchGateTask({
     activeTasks: overviewQuery.data?.active_tasks ?? [],
@@ -529,6 +561,41 @@ export function ProjectsView({
     queryFn: () =>
       listProjectArchiveSnapshots(apiOptions, effectiveProjectId as string, { limit: 10 }),
     placeholderData: keepPreviousData,
+  });
+
+  const invalidateRuntimePlacementSurfaces = async (projectId?: string) => {
+    if (!projectId) {
+      return;
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["project-runtime-readiness", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+    ]);
+  };
+
+  const bindRuntimePlacementMutation = useMutation({
+    mutationFn: (runtimeNodeId: string) =>
+      putProjectRuntimePlacement(apiOptions, effectiveProjectId as string, {
+        runtime_node_id: runtimeNodeId,
+        expected_provider_types:
+          runtimeReadinessQuery.data?.required_provider_types?.length
+            ? runtimeReadinessQuery.data.required_provider_types
+            : undefined,
+        reason: "project_runtime_placement_panel",
+      }),
+    onSuccess: async (placement) => {
+      await invalidateRuntimePlacementSurfaces(placement.project_id || effectiveProjectId);
+    },
+  });
+
+  const releaseRuntimePlacementMutation = useMutation({
+    mutationFn: () =>
+      releaseProjectRuntimePlacement(apiOptions, effectiveProjectId as string),
+    onSuccess: async (placement) => {
+      await invalidateRuntimePlacementSurfaces(placement.project_id || effectiveProjectId);
+    },
   });
 
   const archiveMutation = useMutation({
@@ -735,6 +802,7 @@ export function ProjectsView({
   const projectDispatchGates = (dispatchGatesQuery.data?.items ?? []).filter(
     (gate) => gate.project_task_id === dispatchGateTaskId,
   );
+  const projectRuntimeNodes = runtimeNodesQuery.data ?? [];
   const projectHeaderBack = routeProjectId ? (
     <ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />
   ) : undefined;
@@ -877,6 +945,26 @@ export function ProjectsView({
                     reports={projectReports}
                     planRevisions={projectPlanRevisions}
                     routeDecisions={projectRouteDecisions}
+                    runtimePlacementPanel={
+                      <ProjectRuntimePlacementPanel
+                        isBinding={bindRuntimePlacementMutation.isPending}
+                        isReleasing={releaseRuntimePlacementMutation.isPending}
+                        readiness={runtimeReadinessQuery.data}
+                        runtimeNodes={projectRuntimeNodes}
+                        selectedRuntimeNodeId={selectedRuntimeNodeId}
+                        onBindRuntime={() => {
+                          if (effectiveProjectId && selectedRuntimeNodeId) {
+                            bindRuntimePlacementMutation.mutate(selectedRuntimeNodeId);
+                          }
+                        }}
+                        onReleaseRuntime={() => {
+                          if (effectiveProjectId) {
+                            releaseRuntimePlacementMutation.mutate();
+                          }
+                        }}
+                        onSelectedRuntimeNodeIdChange={setSelectedRuntimeNodeId}
+                      />
+                    }
                     taskGraph={taskGraphQuery.data}
                     tasks={projectTasks}
                     transferRequests={projectTransferRequests}

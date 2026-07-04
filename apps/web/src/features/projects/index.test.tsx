@@ -314,6 +314,7 @@ function createProjectFetcher(
     project2RiskSignalGate?: Promise<void>;
     riskSignalFailureProjectId?: string;
     slowFilteredList?: boolean;
+    runtimeReadinessStatus?: "missing" | "ready";
   } = {},
 ) {
   const projects = [
@@ -367,6 +368,21 @@ function createProjectFetcher(
 
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(digitalEmployeesResponse(url.searchParams.get("team_id")));
+    }
+
+    if (url.pathname === "/api/v1/runtime/nodes" && method === "GET") {
+      return jsonResponse([
+        {
+          command_channel_connected: true,
+          current_load: 0,
+          max_slots: 2,
+          name: "local-dev-node",
+          node_id: "local-dev-node",
+          runtime_node_id: "runtime-node-1",
+          status: "online",
+          supported_providers: ["codex"],
+        },
+      ]);
     }
 
     if (url.pathname === "/api/v1/projects" && method === "GET") {
@@ -487,6 +503,95 @@ function createProjectFetcher(
       });
     }
 
+    if (url.pathname === "/api/v1/projects/project-1/runtime-readiness" && method === "GET") {
+      if (options.runtimeReadinessStatus === "ready") {
+        return jsonResponse({
+          blocking_reasons: [],
+          command_channel_connected: true,
+          employee_readiness: [
+            {
+              can_dispatch: true,
+              can_plan: true,
+              digital_employee_id: "de-1",
+              display_name: "验收执行员工",
+              provider_type: "codex",
+            },
+          ],
+          next_actions: [],
+          placement_status: "ready",
+          provider_capabilities: ["codex"],
+          required_provider_types: ["codex"],
+          runtime_node_id: "runtime-node-1",
+          runtime_node_name: "local-dev-node",
+        });
+      }
+
+      return jsonResponse({
+        blocking_reasons: [
+          {
+            code: "runtime_placement_missing",
+            message: "项目尚未绑定运行节点",
+            resource_id: "project-1",
+            resource_type: "project",
+          },
+        ],
+        command_channel_connected: false,
+        employee_readiness: [
+          {
+            can_dispatch: false,
+            can_plan: true,
+            digital_employee_id: "de-1",
+            display_name: "验收执行员工",
+            provider_type: "codex",
+            reason_code: "runtime_placement_missing",
+            reason_message: "项目尚未绑定运行节点",
+          },
+        ],
+        next_actions: [
+          {
+            code: "bind_runtime_node",
+            label: "绑定运行节点",
+          },
+        ],
+        placement_status: "missing",
+        provider_capabilities: [],
+        required_provider_types: ["codex"],
+      });
+    }
+
+    if (
+      url.pathname === "/api/v1/projects/project-1/runtime-placement" &&
+      method === "PUT"
+    ) {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse({
+        assigned_at: "2026-06-21T12:00:00Z",
+        created_at: "2026-06-21T12:00:00Z",
+        id: "placement-1",
+        placement_reason: body.reason,
+        placement_status: "active",
+        project_id: "project-1",
+        runtime_node_id: body.runtime_node_id,
+        updated_at: "2026-06-21T12:00:00Z",
+      });
+    }
+
+    if (
+      url.pathname === "/api/v1/projects/project-1/runtime-placement" &&
+      method === "DELETE"
+    ) {
+      return jsonResponse({
+        assigned_at: "2026-06-21T12:00:00Z",
+        created_at: "2026-06-21T12:00:00Z",
+        id: "placement-1",
+        placement_status: "released",
+        project_id: "project-1",
+        released_at: "2026-06-21T12:10:00Z",
+        runtime_node_id: "runtime-node-1",
+        updated_at: "2026-06-21T12:10:00Z",
+      });
+    }
+
     if (url.pathname.endsWith("/overview") && method === "GET") {
       const id = url.pathname.split("/")[4];
       if (id === "project-2" && options.project2OverviewGate) {
@@ -509,6 +614,18 @@ function createProjectFetcher(
           failed_tasks: 0,
           pending_human_tasks: 0,
         },
+      });
+    }
+
+    if (url.pathname.endsWith("/runtime-readiness") && method === "GET") {
+      return jsonResponse({
+        blocking_reasons: [],
+        command_channel_connected: false,
+        employee_readiness: [],
+        next_actions: [],
+        placement_status: "missing",
+        provider_capabilities: [],
+        required_provider_types: [],
       });
     }
 
@@ -1330,6 +1447,81 @@ describe("ProjectsView", () => {
           ),
         ),
       ).toBe(false);
+    });
+  });
+
+  it("shows missing runtime placement readiness with a bind action", async () => {
+    const fetcher = createProjectFetcher({ runtimeReadinessStatus: "missing" });
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect.element(screen.getByText("运行落点")).toBeInTheDocument();
+    await expect.element(screen.getByText("缺少运行节点")).toBeInTheDocument();
+    await expect.element(screen.getByText("项目尚未绑定运行节点")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "绑定运行节点" })).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("option", { name: "local-dev-node · 在线" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("codex")).toBeInTheDocument();
+  });
+
+  it("binds the selected runtime node and refreshes placement-dependent project data", async () => {
+    const fetcher = createProjectFetcher({ runtimeReadinessStatus: "missing" });
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.selectOptions(screen.getByLabelText("选择运行节点"), "runtime-node-1");
+    await userEvent.click(screen.getByRole("button", { name: "绑定运行节点" }));
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/runtime-placement") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+        runtime_node_id: "runtime-node-1",
+      });
+    });
+
+    await vi.waitFor(() => {
+      const calls = fetchCalls(fetcher);
+      expect(
+        calls.filter(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects/project-1/runtime-readiness" &&
+            init?.method === "GET"
+          );
+        }).length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(
+        calls.filter(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects/project-1/task-graph" &&
+            init?.method === "GET"
+          );
+        }).length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(
+        calls.filter(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects/project-1/events" &&
+            init?.method === "GET"
+          );
+        }).length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(
+        calls.filter(([url, init]) => {
+          const target = new URL(String(url));
+          return (
+            target.pathname === "/api/v1/projects/project-1/overview" &&
+            init?.method === "GET"
+          );
+        }).length,
+      ).toBeGreaterThanOrEqual(2);
     });
   });
 
