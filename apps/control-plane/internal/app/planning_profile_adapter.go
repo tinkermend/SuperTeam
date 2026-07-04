@@ -54,6 +54,51 @@ type preDispatchGateAdapter struct {
 	now             func() time.Time
 }
 
+type projectPlanningProfileAdapter struct {
+	source digitalEmployeePlanningProfileAdapter
+}
+
+type projectRuntimeNodeReader struct {
+	runtimeNodes        gateRuntimePlacementNodeReader
+	runtimeCapabilities interface {
+		ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtimepkg.RuntimeCapability, error)
+	}
+	connections *runtimepkg.ConnectionRegistry
+}
+
+type gateRuntimePlacementNodeReader interface {
+	ListRuntimeNodesForTenant(ctx context.Context, params runtimepkg.ListRuntimeNodesForTenantParams) ([]runtimepkg.NodeRecord, error)
+}
+
+func (a projectPlanningProfileAdapter) PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]project.DigitalEmployeePlanningProfileSourceRecord, error) {
+	records, err := a.source.PlanningProfileRecords(ctx, tenantID, projectID, employeeIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]project.DigitalEmployeePlanningProfileSourceRecord, len(records))
+	for employeeID, record := range records {
+		out[employeeID] = project.DigitalEmployeePlanningProfileSourceRecord{
+			DigitalEmployeeID:     record.DigitalEmployeeID,
+			ProviderType:          record.ProviderType,
+			EffectiveConfigStatus: record.EffectiveConfigStatus,
+			ExecutionStatus:       record.ExecutionStatus,
+		}
+	}
+	return out, nil
+}
+
+func (r projectRuntimeNodeReader) ListRuntimeNodesForTenant(ctx context.Context, params runtimepkg.ListRuntimeNodesForTenantParams) ([]runtimepkg.NodeRecord, error) {
+	return r.runtimeNodes.ListRuntimeNodesForTenant(ctx, params)
+}
+
+func (r projectRuntimeNodeReader) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtimepkg.RuntimeCapability, error) {
+	return r.runtimeCapabilities.ListRuntimeCapabilitiesForNode(ctx, tenantID, nodeID)
+}
+
+func (r projectRuntimeNodeReader) IsConnected(nodeID string) bool {
+	return r.connections != nil && r.connections.IsConnected(nodeID)
+}
+
 func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]projectcoordination.DigitalEmployeePlanningProfileSourceRecord, error) {
 	if a.reader == nil {
 		return nil, errors.New("digital employee planning profile reader is required")

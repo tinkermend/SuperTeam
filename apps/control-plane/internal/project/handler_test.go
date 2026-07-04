@@ -168,6 +168,131 @@ func TestProjectHandlerMapsUpdateRepoBinding(t *testing.T) {
 	}
 }
 
+func TestGetProjectRuntimePlacement(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	runtimeNodeID := uuid.New()
+	service := &handlerTestService{
+		runtimePlacement: &ProjectRuntimePlacement{
+			ID:              uuid.New(),
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			RuntimeNodeID:   runtimeNodeID,
+			PlacementStatus: ProjectRuntimePlacementStateActive,
+			PlacementReason: "manual bind",
+			AssignedAt:      time.Now().UTC(),
+		},
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/runtime-placement", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectRuntimePlacement(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected runtime placement get to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.getRuntimePlacementReq.TenantID != tenantID || service.getRuntimePlacementReq.ProjectID != projectID {
+		t.Fatalf("expected runtime placement get ids, got %#v", service.getRuntimePlacementReq)
+	}
+	var body projectRuntimePlacementResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode placement response: %v", err)
+	}
+	if body.RuntimeNodeID != runtimeNodeID || body.PlacementStatus != ProjectRuntimePlacementStateActive {
+		t.Fatalf("unexpected placement response: %#v", body)
+	}
+}
+
+func TestPutProjectRuntimePlacement(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	runtimeNodeID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(`{
+		"runtime_node_id":"`+runtimeNodeID.String()+`",
+		"reason":" bind for dispatch ",
+		"expected_provider_types":["codex"]
+	}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.PutProjectRuntimePlacement(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected runtime placement put to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.putRuntimePlacementReq.TenantID != tenantID || service.putRuntimePlacementReq.ProjectID != projectID || service.putRuntimePlacementReq.ActorUserID != actorID || service.putRuntimePlacementReq.RuntimeNodeID != runtimeNodeID {
+		t.Fatalf("expected runtime placement put request ids, got %#v", service.putRuntimePlacementReq)
+	}
+	if service.putRuntimePlacementReq.Reason != " bind for dispatch " || len(service.putRuntimePlacementReq.ExpectedProviderTypes) != 1 || service.putRuntimePlacementReq.ExpectedProviderTypes[0] != "codex" {
+		t.Fatalf("expected runtime placement put body to be forwarded, got %#v", service.putRuntimePlacementReq)
+	}
+}
+
+func TestReleaseProjectRuntimePlacement(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(`{"reason":"done"}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ReleaseProjectRuntimePlacement(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected runtime placement delete to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.releaseRuntimePlacementReq.TenantID != tenantID || service.releaseRuntimePlacementReq.ProjectID != projectID || service.releaseRuntimePlacementReq.ActorUserID != actorID || service.releaseRuntimePlacementReq.Reason != "done" {
+		t.Fatalf("expected runtime placement release request, got %#v", service.releaseRuntimePlacementReq)
+	}
+}
+
+func TestGetProjectRuntimeReadiness(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	runtimeNodeID := uuid.New()
+	service := &handlerTestService{
+		runtimeReadiness: &ProjectRuntimePlacementReadiness{
+			PlacementStatus:         ProjectRuntimePlacementStatusReady,
+			RuntimeNodeID:           &runtimeNodeID,
+			CommandChannelConnected: true,
+			RequiredProviderTypes:   []string{"codex"},
+		},
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/runtime-readiness", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectRuntimeReadiness(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected runtime readiness get to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.runtimeReadinessTenantID != tenantID || service.runtimeReadinessProjectID != projectID {
+		t.Fatalf("expected runtime readiness ids, got %s/%s", service.runtimeReadinessTenantID, service.runtimeReadinessProjectID)
+	}
+	var body ProjectRuntimePlacementReadiness
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if body.PlacementStatus != ProjectRuntimePlacementStatusReady || !body.CommandChannelConnected {
+		t.Fatalf("unexpected readiness response: %#v", body)
+	}
+}
+
 func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{submitDemandErr: ErrProjectArchived}
@@ -1727,6 +1852,13 @@ type handlerTestService struct {
 	createProjectTaskAttestationReq   CreateProjectTaskAttestationRequest
 	budgetHeartbeatReq                RecordProjectTaskAttemptBudgetHeartbeatRequest
 	budgetHeartbeatResult             *ProjectTaskAttemptBudgetHeartbeatResult
+	getRuntimePlacementReq            GetProjectRuntimePlacementRequest
+	putRuntimePlacementReq            PutProjectRuntimePlacementRequest
+	releaseRuntimePlacementReq        ReleaseProjectRuntimePlacementRequest
+	runtimePlacement                  *ProjectRuntimePlacement
+	runtimeReadiness                  *ProjectRuntimePlacementReadiness
+	runtimeReadinessTenantID          uuid.UUID
+	runtimeReadinessProjectID         uuid.UUID
 	failAttemptReq                    FailProjectTaskAttemptRequest
 	waitAttemptReq                    WaitHumanProjectTaskAttemptRequest
 	resolveDecisionPlanRevisionID     uuid.UUID
@@ -1747,6 +1879,56 @@ func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjec
 func (s *handlerTestService) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error) {
 	project := testProject(tenantID, projectID, uuid.New())
 	return &project, nil
+}
+
+func (s *handlerTestService) GetProjectRuntimePlacement(ctx context.Context, req GetProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	s.getRuntimePlacementReq = req
+	if s.runtimePlacement != nil {
+		return s.runtimePlacement, nil
+	}
+	return &ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   uuid.New(),
+		PlacementStatus: ProjectRuntimePlacementStateActive,
+		AssignedAt:      time.Now().UTC(),
+	}, nil
+}
+
+func (s *handlerTestService) PutProjectRuntimePlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	s.putRuntimePlacementReq = req
+	return &ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   req.RuntimeNodeID,
+		PlacementStatus: ProjectRuntimePlacementStateActive,
+		PlacementReason: req.Reason,
+		AssignedAt:      time.Now().UTC(),
+	}, nil
+}
+
+func (s *handlerTestService) ReleaseProjectRuntimePlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	s.releaseRuntimePlacementReq = req
+	now := time.Now().UTC()
+	return &ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   uuid.New(),
+		PlacementStatus: ProjectRuntimePlacementStateReleased,
+		ReleasedAt:      &now,
+	}, nil
+}
+
+func (s *handlerTestService) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error) {
+	s.runtimeReadinessTenantID = tenantID
+	s.runtimeReadinessProjectID = projectID
+	if s.runtimeReadiness != nil {
+		return s.runtimeReadiness, nil
+	}
+	return &ProjectRuntimePlacementReadiness{PlacementStatus: ProjectRuntimePlacementStatusMissing}, nil
 }
 
 func (s *handlerTestService) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {

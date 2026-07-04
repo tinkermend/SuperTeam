@@ -392,6 +392,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
+	runtimePlacementNodes, ok := runtimeRepository.(gateRuntimePlacementNodeReader)
+	if !ok {
+		return nil, errors.New("runtime repository does not support project runtime placement node listing")
+	}
 
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
@@ -464,6 +468,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
 	var temporalClientClose func()
+	projectTaskPreflights, _ := runRepository.(gateProjectTaskRunPreflightReader)
 	if cfg.Temporal.Enabled {
 		temporalClient, err := temporalclient.NewLazyClient(temporalclient.Options{
 			HostPort:  cfg.Temporal.Address,
@@ -474,7 +479,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
-		projectTaskPreflights, ok := runRepository.(gateProjectTaskRunPreflightReader)
+		var ok bool
+		projectTaskPreflights, ok = runRepository.(gateProjectTaskRunPreflightReader)
 		if !ok {
 			return nil, errors.New("run repository does not support project task preflight")
 		}
@@ -507,6 +513,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
+	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}})
+	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
 	inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
 	inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
 

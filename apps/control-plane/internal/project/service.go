@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
 
 type Service struct {
@@ -20,6 +22,8 @@ type Service struct {
 	inbox                     DecisionInboxProjector
 	archiveArtifactLocker     ArchiveArtifactLocker
 	teamScopeAuthorizer       ProjectTeamScopeAuthorizer
+	runtimeNodes              ProjectRuntimeNodeReader
+	planningProfiles          DigitalEmployeePlanningProfileSource
 }
 
 const (
@@ -33,6 +37,23 @@ type latestConfigRevisionRepository interface {
 
 type ProjectTeamScopeAuthorizer interface {
 	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
+}
+
+type ProjectRuntimeNodeReader interface {
+	ListRuntimeNodesForTenant(ctx context.Context, params runtimepkg.ListRuntimeNodesForTenantParams) ([]runtimepkg.NodeRecord, error)
+	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtimepkg.RuntimeCapability, error)
+	IsConnected(nodeID string) bool
+}
+
+type DigitalEmployeePlanningProfileSource interface {
+	PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
+}
+
+type DigitalEmployeePlanningProfileSourceRecord struct {
+	DigitalEmployeeID     uuid.UUID
+	ProviderType          string
+	EffectiveConfigStatus string
+	ExecutionStatus       string
 }
 
 type ApprovalResolver interface {
@@ -95,6 +116,18 @@ func (s *Service) SetTeamScopeAuthorizer(authorizer ProjectTeamScopeAuthorizer) 
 func (s *Service) SetDigitalEmployeeIdentityLookup(lookup DigitalEmployeeIdentityLookup) {
 	if s != nil {
 		s.digitalEmployeeIdentities = lookup
+	}
+}
+
+func (s *Service) SetProjectRuntimeNodeReader(reader ProjectRuntimeNodeReader) {
+	if s != nil {
+		s.runtimeNodes = reader
+	}
+}
+
+func (s *Service) SetDigitalEmployeePlanningProfileSource(source DigitalEmployeePlanningProfileSource) {
+	if s != nil {
+		s.planningProfiles = source
 	}
 }
 
@@ -214,6 +247,192 @@ func (s *Service) GetProject(ctx context.Context, tenantID, projectID uuid.UUID)
 		return nil, err
 	}
 	return &project, nil
+}
+
+func (s *Service) requireActiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
+		return Project{}, ErrProjectArchived
+	}
+	return project, nil
+}
+
+func (s *Service) GetProjectRuntimePlacement(ctx context.Context, req GetProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
+	}
+	placement, err := s.repository.GetActiveProjectPlacement(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return &placement, nil
+}
+
+func (s *Service) PutProjectRuntimePlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	req.Reason = strings.TrimSpace(req.Reason)
+	req.ExpectedProviderTypes = normalizeStringSet(req.ExpectedProviderTypes)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
+	}
+	placement, err := s.repository.UpsertProjectPlacement(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+		EventType: ProjectEventRuntimePlacementUpdated,
+		ActorType: "human_user",
+		ActorID:   req.ActorUserID.String(),
+		Summary:   "项目 Runtime 绑定已更新",
+		Payload: map[string]any{
+			"runtime_node_id":         placement.RuntimeNodeID.String(),
+			"reason":                  placement.PlacementReason,
+			"expected_provider_types": append([]string(nil), req.ExpectedProviderTypes...),
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return &placement, nil
+}
+
+func (s *Service) ReleaseProjectRuntimePlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
+	}
+	placement, err := s.repository.ReleaseProjectPlacement(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+		EventType: ProjectEventRuntimePlacementReleased,
+		ActorType: "human_user",
+		ActorID:   req.ActorUserID.String(),
+		Summary:   "项目 Runtime 绑定已释放",
+		Payload: map[string]any{
+			"runtime_node_id": placement.RuntimeNodeID.String(),
+			"reason":          req.Reason,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return &placement, nil
+}
+
+func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	if _, err := s.requireActiveProject(ctx, tenantID, projectID); err != nil {
+		return nil, err
+	}
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	employeeReadiness, requiredProviders, err := s.projectEmployeeReadiness(ctx, tenantID, projectID, members)
+	if err != nil {
+		return nil, err
+	}
+	readiness := &ProjectRuntimePlacementReadiness{
+		PlacementStatus:       ProjectRuntimePlacementStatusMissing,
+		RequiredProviderTypes: requiredProviders,
+		EmployeeReadiness:     employeeReadiness,
+	}
+
+	placement, err := s.repository.GetActiveProjectPlacement(ctx, tenantID, projectID)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) {
+			readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_placement_missing", Message: "project has no active runtime placement"})
+			readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "bind_runtime", Label: "Bind runtime"})
+			return readiness, nil
+		}
+		return nil, err
+	}
+	readiness.RuntimeNodeID = &placement.RuntimeNodeID
+
+	if s.runtimeNodes == nil {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_node_reader_missing", Message: "runtime node reader is not configured"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "configure_runtime_reader", Label: "Configure runtime reader"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_node_reader_missing", "runtime node reader is not configured")
+		return readiness, nil
+	}
+	node, found, err := s.findRuntimeNode(ctx, tenantID, placement.RuntimeNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_node_missing", Message: "placed runtime node is unavailable"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "rebind_runtime", Label: "Rebind runtime"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_node_missing", "placed runtime node is unavailable")
+		return readiness, nil
+	}
+	readiness.RuntimeNodeName = node.Name
+	if node.Status != string(runtimepkg.NodeStatusOnline) {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_offline", Message: "placed runtime node is offline"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "start_runtime", Label: "Start runtime"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_offline", "placed runtime node is offline")
+		return readiness, nil
+	}
+	readiness.CommandChannelConnected = s.runtimeNodes.IsConnected(node.NodeID)
+	if !readiness.CommandChannelConnected {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusCommandChannelDisconnected
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "command_channel_disconnected", Message: "runtime command channel is disconnected"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "connect_runtime_command_channel", Label: "Connect runtime command channel"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "command_channel_disconnected", "runtime command channel is disconnected")
+		return readiness, nil
+	}
+	if node.MaxSlots > 0 && node.CurrentLoad >= node.MaxSlots {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusCapacityFull
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_capacity_full", Message: "placed runtime node has no available slots"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "free_runtime_slot", Label: "Free runtime slot"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_capacity_full", "placed runtime node has no available slots")
+		return readiness, nil
+	}
+
+	capabilities, err := s.runtimeNodes.ListRuntimeCapabilitiesForNode(ctx, tenantID, node.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	providerCapabilities := availableProviderCapabilities(capabilities, node.SupportedProviders)
+	readiness.ProviderCapabilities = providerCapabilities
+	missingProviders := missingProviderTypes(requiredProviders, providerCapabilities)
+	if len(missingProviders) > 0 {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusProviderUnavailable
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "provider_unavailable", Message: "placed runtime does not expose every required provider"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "bind_provider_capable_runtime", Label: "Bind provider-capable runtime"})
+		for i := range readiness.EmployeeReadiness {
+			if readiness.EmployeeReadiness[i].ProviderType != "" && stringInSlice(readiness.EmployeeReadiness[i].ProviderType, missingProviders) {
+				readiness.EmployeeReadiness[i].CanDispatch = false
+				readiness.EmployeeReadiness[i].ReasonCode = "provider_unavailable"
+				readiness.EmployeeReadiness[i].ReasonMessage = "required provider is unavailable on placed runtime"
+			}
+		}
+		return readiness, nil
+	}
+	readiness.PlacementStatus = ProjectRuntimePlacementStatusReady
+	for i := range readiness.EmployeeReadiness {
+		readiness.EmployeeReadiness[i].CanDispatch = readiness.EmployeeReadiness[i].CanPlan
+	}
+	return readiness, nil
 }
 
 func (s *Service) CreateProjectTaskAttestation(ctx context.Context, req CreateProjectTaskAttestationRequest) (*ProjectTaskAttestation, error) {
@@ -586,6 +805,142 @@ func trimmedStringPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func normalizeStringSet(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Service) projectEmployeeReadiness(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMember) ([]ProjectEmployeeReadiness, []string, error) {
+	employeeIDs := make([]uuid.UUID, 0, len(members))
+	activeEmployees := make([]ProjectMember, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalType != PrincipalTypeDigitalEmployee || member.PrincipalID == uuid.Nil || member.Status != "active" {
+			continue
+		}
+		activeEmployees = append(activeEmployees, member)
+		employeeIDs = append(employeeIDs, member.PrincipalID)
+	}
+	profileRecords := map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{}
+	if s.planningProfiles != nil && len(employeeIDs) > 0 {
+		records, err := s.planningProfiles.PlanningProfileRecords(ctx, tenantID, projectID, employeeIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+		profileRecords = records
+	}
+	readiness := make([]ProjectEmployeeReadiness, 0, len(activeEmployees))
+	requiredProviders := make([]string, 0, len(activeEmployees))
+	for _, member := range activeEmployees {
+		displayName := ""
+		if member.DisplayNameSnapshot != nil {
+			displayName = strings.TrimSpace(*member.DisplayNameSnapshot)
+		}
+		record := profileRecords[member.PrincipalID]
+		providerType := strings.TrimSpace(record.ProviderType)
+		item := ProjectEmployeeReadiness{
+			DigitalEmployeeID: member.PrincipalID,
+			DisplayName:       displayName,
+			ProviderType:      providerType,
+			CanPlan:           true,
+			CanDispatch:       false,
+		}
+		if providerType == "" {
+			item.CanPlan = false
+			item.ReasonCode = "provider_type_missing"
+			item.ReasonMessage = "digital employee provider type is missing"
+		} else {
+			requiredProviders = append(requiredProviders, providerType)
+		}
+		readiness = append(readiness, item)
+	}
+	return readiness, normalizeStringSet(requiredProviders), nil
+}
+
+func (s *Service) findRuntimeNode(ctx context.Context, tenantID, runtimeNodeID uuid.UUID) (runtimepkg.NodeRecord, bool, error) {
+	nodes, err := s.runtimeNodes.ListRuntimeNodesForTenant(ctx, runtimepkg.ListRuntimeNodesForTenantParams{
+		TenantID: tenantID,
+		Limit:    500,
+	})
+	if err != nil {
+		return runtimepkg.NodeRecord{}, false, err
+	}
+	for _, node := range nodes {
+		if node.ID == runtimeNodeID && node.TenantID == tenantID {
+			return node, true, nil
+		}
+	}
+	return runtimepkg.NodeRecord{}, false, nil
+}
+
+func availableProviderCapabilities(capabilities []runtimepkg.RuntimeCapability, supportedProviders []byte) []string {
+	providers := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if strings.TrimSpace(capability.ProviderType) == "" || !capability.Available {
+			continue
+		}
+		if capability.Status != "" && capability.Status != "available" {
+			continue
+		}
+		if capability.HealthStatus != "" && capability.HealthStatus != "healthy" {
+			continue
+		}
+		providers = append(providers, capability.ProviderType)
+	}
+	if len(providers) == 0 && len(supportedProviders) > 0 {
+		var decoded []string
+		if err := json.Unmarshal(supportedProviders, &decoded); err == nil {
+			providers = append(providers, decoded...)
+		}
+	}
+	return normalizeStringSet(providers)
+}
+
+func missingProviderTypes(required, available []string) []string {
+	availableSet := map[string]struct{}{}
+	for _, provider := range available {
+		availableSet[provider] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for _, provider := range required {
+		if _, ok := availableSet[provider]; !ok {
+			missing = append(missing, provider)
+		}
+	}
+	return missing
+}
+
+func markEmployeesNotDispatchable(employees []ProjectEmployeeReadiness, code, message string) {
+	for i := range employees {
+		employees[i].CanDispatch = false
+		if employees[i].ReasonCode == "" {
+			employees[i].ReasonCode = code
+			employees[i].ReasonMessage = message
+		}
+	}
+}
+
+func stringInSlice(value string, values []string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error) {

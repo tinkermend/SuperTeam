@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
+
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
 
 func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
@@ -59,6 +62,138 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 func TestRuntimeWritebackProjectTaskStatusesIncludeQueued(t *testing.T) {
 	require.ElementsMatch(t, []string{"assigned", "queued", "running"}, runtimeWritebackProjectTaskStatuses())
 	require.True(t, projectTaskAcceptsRuntimeWriteback("queued"))
+}
+
+func TestGetProjectRuntimeReadinessReportsMissingPlacement(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "runtime placement readiness",
+		Goal:             "dispatch only after runtime placement",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		PrincipalType:       PrincipalTypeDigitalEmployee,
+		PrincipalID:         employeeID,
+		ProjectRole:         ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("Codex executor"),
+	}}
+	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
+		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+			employeeID: {ProviderType: "codex"},
+		},
+	})
+
+	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectRuntimePlacementStatusMissing, readiness.PlacementStatus)
+	require.Contains(t, readinessBlockingCodes(readiness.BlockingReasons), "runtime_placement_missing")
+	require.Contains(t, readinessActionCodes(readiness.NextActions), "bind_runtime")
+	require.Equal(t, []string{"codex"}, readiness.RequiredProviderTypes)
+	require.Len(t, readiness.EmployeeReadiness, 1)
+	require.Equal(t, employeeID, readiness.EmployeeReadiness[0].DigitalEmployeeID)
+	require.True(t, readiness.EmployeeReadiness[0].CanPlan)
+	require.False(t, readiness.EmployeeReadiness[0].CanDispatch)
+}
+
+func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	actorID := uuid.New()
+	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	nodeID := "local-dev-node"
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "runtime placement readiness",
+		Goal:             "dispatch through codex runtime",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		PrincipalType:       PrincipalTypeDigitalEmployee,
+		PrincipalID:         employeeID,
+		ProjectRole:         ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("Codex executor"),
+	}}
+	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
+		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+			employeeID: {ProviderType: "codex"},
+		},
+	})
+	service.SetProjectRuntimeNodeReader(&fakeProjectRuntimeNodeReader{
+		nodes: []runtimepkg.NodeRecord{{
+			ID:                 runtimeNodeID,
+			TenantID:           tenantID,
+			NodeID:             nodeID,
+			Name:               "Local Dev Node",
+			Status:             string(runtimepkg.NodeStatusOnline),
+			MaxSlots:           2,
+			CurrentLoad:        1,
+			LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			SupportedProviders: []byte(`["codex"]`),
+		}},
+		capabilities: map[uuid.UUID][]runtimepkg.RuntimeCapability{
+			runtimeNodeID: {{
+				ID:            uuid.New(),
+				TenantID:      tenantID,
+				RuntimeNodeID: runtimeNodeID,
+				ProviderType:  "codex",
+				Available:     true,
+				Status:        "available",
+				HealthStatus:  "healthy",
+			}},
+		},
+		connected: map[string]bool{nodeID: true},
+	})
+
+	placement, err := service.PutProjectRuntimePlacement(context.Background(), PutProjectRuntimePlacementRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        "  bind for dispatch  ",
+	})
+	require.NoError(t, err)
+	require.Equal(t, runtimeNodeID, placement.RuntimeNodeID)
+	require.Equal(t, "bind for dispatch", placement.PlacementReason)
+	require.Equal(t, ProjectEventRuntimePlacementUpdated, repo.eventTypes[len(repo.eventTypes)-1])
+
+	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectRuntimePlacementStatusReady, readiness.PlacementStatus)
+	require.NotNil(t, readiness.RuntimeNodeID)
+	require.Equal(t, runtimeNodeID, *readiness.RuntimeNodeID)
+	require.True(t, readiness.CommandChannelConnected)
+	require.Equal(t, []string{"codex"}, readiness.RequiredProviderTypes)
+	require.Contains(t, readiness.ProviderCapabilities, "codex")
+	require.Len(t, readiness.EmployeeReadiness, 1)
+	require.True(t, readiness.EmployeeReadiness[0].CanPlan)
+	require.True(t, readiness.EmployeeReadiness[0].CanDispatch)
+	require.Equal(t, "codex", readiness.EmployeeReadiness[0].ProviderType)
 }
 
 func TestGetExecutionTraceGroupsEventsByAttempt(t *testing.T) {
@@ -7601,6 +7736,17 @@ type fakeDigitalEmployeeIdentityLookup struct {
 	calls      []uuid.UUID
 }
 
+type fakeProjectPlanningProfileSource struct {
+	records map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord
+	err     error
+}
+
+type fakeProjectRuntimeNodeReader struct {
+	nodes        []runtimepkg.NodeRecord
+	capabilities map[uuid.UUID][]runtimepkg.RuntimeCapability
+	connected    map[string]bool
+}
+
 type workflowInstanceServiceRepository struct {
 	*memoryRepository
 	calls   int
@@ -7691,6 +7837,62 @@ func (f *fakeDigitalEmployeeIdentityLookup) GetDigitalEmployeeIdentity(ctx conte
 		return DigitalEmployeeIdentity{}, err
 	}
 	return f.identities[digitalEmployeeID], nil
+}
+
+func (f *fakeProjectPlanningProfileSource) PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{}
+	for _, employeeID := range employeeIDs {
+		if record, ok := f.records[employeeID]; ok {
+			out[employeeID] = record
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeProjectRuntimeNodeReader) ListRuntimeNodesForTenant(ctx context.Context, params runtimepkg.ListRuntimeNodesForTenantParams) ([]runtimepkg.NodeRecord, error) {
+	out := make([]runtimepkg.NodeRecord, 0, len(r.nodes))
+	for _, node := range r.nodes {
+		if node.TenantID != params.TenantID {
+			continue
+		}
+		if params.Status.Valid && node.Status != params.Status.String {
+			continue
+		}
+		out = append(out, node)
+	}
+	return out, nil
+}
+
+func (r *fakeProjectRuntimeNodeReader) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtimepkg.RuntimeCapability, error) {
+	for _, node := range r.nodes {
+		if node.TenantID == tenantID && node.NodeID == nodeID {
+			return append([]runtimepkg.RuntimeCapability(nil), r.capabilities[node.ID]...), nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *fakeProjectRuntimeNodeReader) IsConnected(nodeID string) bool {
+	return r.connected[nodeID]
+}
+
+func readinessBlockingCodes(reasons []ProjectReadinessReason) []string {
+	codes := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		codes = append(codes, reason.Code)
+	}
+	return codes
+}
+
+func readinessActionCodes(actions []ProjectReadinessAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func (r *workflowInstanceServiceRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
