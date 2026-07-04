@@ -52,10 +52,21 @@ export type WorkflowAttachmentNodeData = {
   type: "decision";
 };
 
+export type WorkflowBlockingNodeData = {
+  reasonCode: string;
+  message: string;
+  recommendedAction: string | undefined;
+};
+
 type WorkflowTaskNode = Node<WorkflowTaskNodeData, "workflowTask">;
 type WorkflowAttachmentNode = Node<WorkflowAttachmentNodeData, "workflowAttachment">;
 type WorkflowStageLabelNode = Node<WorkflowStageLabelNodeData, "workflowStageLabel">;
-type WorkflowGraphNode = WorkflowTaskNode | WorkflowAttachmentNode | WorkflowStageLabelNode;
+type WorkflowBlockingNode = Node<WorkflowBlockingNodeData, "workflowBlocking">;
+type WorkflowGraphNode =
+  | WorkflowTaskNode
+  | WorkflowAttachmentNode
+  | WorkflowStageLabelNode
+  | WorkflowBlockingNode;
 
 export type WorkflowGraphElements = {
   nodes: WorkflowGraphNode[];
@@ -107,6 +118,25 @@ function toWorkflowTaskNodeAvatarAsset(
 }
 
 export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGraphElements {
+  if (graph.nodes.length === 0 && graph.blocking_facts.length > 0) {
+    const fact = graph.blocking_facts[0];
+    return {
+      nodes: [
+        {
+          id: `blocking-${fact.reason_code}`,
+          type: "workflowBlocking",
+          position: { x: -180, y: 96 },
+          data: {
+            reasonCode: fact.reason_code,
+            message: fact.message,
+            recommendedAction: fact.recommended_action,
+          },
+        },
+      ],
+      edges: [],
+    };
+  }
+
   const taskIds = new Set(graph.nodes.map((task) => task.id));
   const employeesById = new Map(
     graph.employees.map((employee) => [employee.digital_employee_id, employee]),

@@ -8,6 +8,7 @@ import {
   stageLabelNodeId,
 } from "./workflow-graph-adapter";
 import type {
+  WorkflowBlockingNodeData,
   WorkflowStageLabelNodeData,
   WorkflowTaskNodeData,
 } from "./workflow-graph-adapter";
@@ -105,6 +106,36 @@ function makeGraph(): ProjectTaskGraph {
 }
 
 describe("workflow graph adapter", () => {
+  it("shows a workflow blocking node when coordination is blocked before tasks are planned", () => {
+    const graph = makeGraph();
+    graph.nodes = [];
+    graph.edges = [];
+    graph.blocking_facts = [
+      {
+        reason_code: "runtime_placement_missing",
+        message: "项目还没有可用执行位置",
+        recommended_action: "先选择 Runtime 节点或创建执行位置",
+      },
+    ];
+
+    const result = buildWorkflowGraphElements(graph);
+    const blocker = result.nodes[0];
+
+    expect(result.edges).toEqual([]);
+    expect(result.nodes).toHaveLength(1);
+    expect(blocker).toEqual(
+      expect.objectContaining({
+        id: "blocking-runtime_placement_missing",
+        type: "workflowBlocking",
+      }),
+    );
+    expect(blocker.data as WorkflowBlockingNodeData).toEqual({
+      reasonCode: "runtime_placement_missing",
+      message: "项目还没有可用执行位置",
+      recommendedAction: "先选择 Runtime 节点或创建执行位置",
+    });
+  });
+
   it("maps project task graph nodes and edges into xyflow elements", () => {
     const result = buildWorkflowGraphElements(makeGraph());
     const runTaskData = taskData(result, "task:task-run");

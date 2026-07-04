@@ -573,6 +573,27 @@ describe("WorkflowView", () => {
     expect(root).not.toBeNull();
   });
 
+  it("renders coordination blocking facts above the graph canvas", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([], {
+          blocking_facts: [
+            {
+              reason_code: "runtime_placement_missing",
+              message: "项目还没有可用执行位置",
+              recommended_action: "先选择 Runtime 节点或创建执行位置",
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect.element(screen.getByText("协调已阻塞：项目还没有可用执行位置")).toBeVisible();
+    await expect.element(screen.getByText("下一步：先选择 Runtime 节点或创建执行位置")).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "blocking-runtime_placement_missing" })).toBeVisible();
+  });
+
   it("does not render a previous demand graph under the current demand detail", async () => {
     const screen = await renderWorkflowView({
       demandId: "demand-pr",

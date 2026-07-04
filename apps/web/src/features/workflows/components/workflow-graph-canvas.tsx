@@ -13,6 +13,7 @@ import {
   buildWorkflowGraphElements,
   type WorkflowGraphElements,
 } from "../workflow-graph-adapter";
+import { WorkflowBlockingNode } from "./workflow-blocking-node";
 import {
   WorkflowAttachmentNode,
   WorkflowStageLabelNode,
@@ -25,6 +26,7 @@ const CANVAS_BOTTOM_PADDING = 96;
 
 const nodeTypes = {
   workflowAttachment: WorkflowAttachmentNode,
+  workflowBlocking: WorkflowBlockingNode,
   workflowStageLabel: WorkflowStageLabelNode,
   workflowTask: WorkflowTaskNode,
 } satisfies NodeTypes;
@@ -96,6 +98,8 @@ function measureGraphContentHeight(elements: WorkflowGraphElements): number {
     const estimatedHeight =
       node.type === "workflowStageLabel"
         ? PLAN_TASK_GRAPH_LAYOUT.stageLabelHeight
+        : node.type === "workflowBlocking"
+          ? 220
         : PLAN_TASK_GRAPH_LAYOUT.taskEstimatedHeight;
     return Math.max(maxBottom, node.position.y + estimatedHeight);
   }, 0);

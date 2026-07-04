@@ -76,9 +76,13 @@ export function WorkflowDetail({
   }
 
   const nodes = graph?.nodes ?? [];
-  const isGraphReady = nodes.length > 0;
-  const orchestrationTitle = isGraphReady
+  const blockingFacts = graph?.blocking_facts ?? [];
+  const hasBlockingFacts = blockingFacts.length > 0;
+  const hasGraphContent = nodes.length > 0 || hasBlockingFacts;
+  const orchestrationTitle = nodes.length > 0
     ? "流程图已就绪"
+    : hasBlockingFacts
+      ? "协调已阻塞"
     : detail.coordination_jobs.length === 0
       ? "等待项目协调线程接收"
       : "任务正在规划";
@@ -90,7 +94,7 @@ export function WorkflowDetail({
 
         <div className="flex items-start justify-between gap-3 border-b border-v3-line p-4">
           <div className="flex min-w-0 items-center gap-3">
-            <IconTile tone={isGraphReady ? "info" : "warn"} size="sm">
+            <IconTile tone={nodes.length > 0 ? "info" : "warn"} size="sm">
               <ListChecks />
             </IconTile>
             <div className="min-w-0">
@@ -98,8 +102,10 @@ export function WorkflowDetail({
                 {orchestrationTitle}
               </h2>
               <p className="mt-1 text-xs text-v3-ink-2">
-                {isGraphReady
+                {nodes.length > 0
                   ? `${nodes.length} 个任务节点已从真实 task graph 读取`
+                  : hasBlockingFacts
+                    ? "协调线程已写入阻塞事实，等待处理后继续规划"
                   : "等待 Control Plane 继续写入协调事实"}
               </p>
             </div>
@@ -109,7 +115,7 @@ export function WorkflowDetail({
           </StatusPill>
         </div>
 
-        {isGraphReady && graph ? (
+        {hasGraphContent && graph ? (
           <div className="min-w-0 p-4">
             <WorkflowGraphCanvas
               graph={graph}
@@ -125,7 +131,7 @@ export function WorkflowDetail({
         )}
       </SoftCard>
 
-      {isGraphReady && graph ? (
+      {nodes.length > 0 && graph ? (
         <Dialog
           onOpenChange={(open) => {
             if (!open) setSelectedNodeId(undefined);

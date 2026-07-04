@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowEntrance } from "./components/workflow-entrance";
 import { WorkflowShell } from "./components/workflow-shell";
+import { SoftCard, StatusPill } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   getProjectDemandLaunchDetail,
@@ -95,6 +96,7 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
 
   return (
     <WorkflowShell>
+      <WorkflowBlockingBanner graph={currentGraph} />
       <WorkflowDetail
         detail={currentDetail}
         graph={currentGraph}
@@ -102,6 +104,27 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
         isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
       />
     </WorkflowShell>
+  );
+}
+
+function WorkflowBlockingBanner({ graph }: { graph: ProjectTaskGraph | undefined }) {
+  const fact = graph?.blocking_facts[0];
+  if (!fact) return null;
+
+  return (
+    <SoftCard className="mb-4 border-v3-danger/25 bg-v3-danger/5 p-4">
+      <div className="flex flex-col gap-2 text-sm leading-6 text-v3-ink sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-bold">协调已阻塞：{fact.message}</p>
+          {fact.recommended_action ? (
+            <p className="mt-1 text-v3-ink-2">下一步：{fact.recommended_action}</p>
+          ) : null}
+        </div>
+        <StatusPill className="shrink-0 self-start" tone="danger">
+          {fact.reason_code}
+        </StatusPill>
+      </div>
+    </SoftCard>
   );
 }
 
