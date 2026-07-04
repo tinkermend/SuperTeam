@@ -2699,6 +2699,7 @@ func emptyProjectTaskGraph() ProjectTaskGraph {
 		ExecutionSummaries: []ExecutionSummary{},
 		RecentEvents:       []ProjectEvent{},
 		DecisionRequests:   []DecisionRequest{},
+		BlockingFacts:      []ProjectTaskGraphBlockingFact{},
 	}
 }
 

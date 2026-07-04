@@ -68,6 +68,55 @@ func TestProjectStoreRunPreDispatchGatePersistsPassedResult(t *testing.T) {
 	require.Equal(t, project.ProjectEventTaskDispatchGateChecked, repo.events[0].EventType)
 }
 
+func TestRunPreDispatchGateBlocksMissingProjectPlacement(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	demandID := uuid.New()
+	fixedNow := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		missingActivePlacement: true,
+		projectRecord:          project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "Dispatch without placement",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+
+	gate, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    taskID,
+	})
+
+	require.NoError(t, err)
+	require.False(t, gate.AllowRunStart)
+	require.False(t, gate.Terminal)
+	require.False(t, gate.Retryable)
+	require.Contains(t, preDispatchBlockerKeys(gate.Gate.Blockers), "runtime.placement_missing")
+	reasonCode, recommendedAction := dispatchBlockReasonFromGate(gate.Gate)
+	require.Equal(t, "runtime_placement_missing", reasonCode)
+	require.Equal(t, "bind_runtime", recommendedAction)
+}
+
 func TestProjectStoreRunPreDispatchGateRequiresAcceptedDependencyResult(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -932,23 +981,32 @@ func TestProjectStoreRunPreDispatchGateDoesNotCreateRunOnRetryLater(t *testing.T
 type preDispatchGateRepositoryFake struct {
 	project.Repository
 
-	projectRecord       project.Project
-	task                project.ProjectTask
-	currentAttempt      *project.ProjectTaskAttempt
-	dependencies        []project.ProjectTaskDependency
-	dependencyTasks     map[uuid.UUID]project.ProjectTask
-	projectTaskResults  []project.ProjectTaskResult
-	members             []project.ProjectMember
-	events              []project.ProjectEvent
-	gates               []project.PreDispatchGateResult
-	decisionRequests    []project.DecisionRequest
-	operations          []string
-	createDecisionErr   error
-	linkDecisionErr     error
-	listDecisionErr     error
-	listDecisionCalls   int
-	directDecisionCalls int
-	lastMoveWaitingReq  *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
+	projectRecord          project.Project
+	task                   project.ProjectTask
+	currentAttempt         *project.ProjectTaskAttempt
+	dependencies           []project.ProjectTaskDependency
+	dependencyTasks        map[uuid.UUID]project.ProjectTask
+	projectTaskResults     []project.ProjectTaskResult
+	members                []project.ProjectMember
+	events                 []project.ProjectEvent
+	gates                  []project.PreDispatchGateResult
+	decisionRequests       []project.DecisionRequest
+	operations             []string
+	createDecisionErr      error
+	linkDecisionErr        error
+	listDecisionErr        error
+	listDecisionCalls      int
+	directDecisionCalls    int
+	missingActivePlacement bool
+	lastMoveWaitingReq     *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
+}
+
+func preDispatchBlockerKeys(blockers []project.PreDispatchGateBlocker) []string {
+	keys := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		keys = append(keys, blocker.Key)
+	}
+	return keys
 }
 
 func (r *preDispatchGateRepositoryFake) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -956,6 +1014,22 @@ func (r *preDispatchGateRepositoryFake) GetProject(ctx context.Context, tenantID
 		return r.projectRecord, nil
 	}
 	return project.Project{}, project.ErrProjectNotFound
+}
+
+func (r *preDispatchGateRepositoryFake) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (project.ProjectRuntimePlacement, error) {
+	if r.missingActivePlacement {
+		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
+	}
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
+	}
+	return project.ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   uuid.New(),
+		PlacementStatus: project.ProjectRuntimePlacementStateActive,
+	}, nil
 }
 
 func (r *preDispatchGateRepositoryFake) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {

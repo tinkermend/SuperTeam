@@ -97,6 +97,7 @@ type PreDispatchToolSnapshot struct {
 }
 
 type PreDispatchRuntimeSnapshot struct {
+	PlacementPresent        bool
 	NodeOnline              bool
 	ProviderAvailable       bool
 	WorkspaceReady          bool
@@ -320,7 +321,11 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		addCheck("tool.available", "passed", nil)
 	}
 
-	if !snapshot.Runtime.NodeOnline {
+	if !snapshot.Runtime.PlacementPresent {
+		addCheck("runtime.placement", "failed", nil)
+		addBlocker("runtime.placement_missing", PreDispatchGateStatusBlocked, "hard", false, nil)
+		setStatus(PreDispatchGateStatusBlocked)
+	} else if !snapshot.Runtime.NodeOnline {
 		addCheck("runtime.ready", "failed", map[string]any{"node_online": false})
 		addBlocker("runtime.node_offline", PreDispatchGateStatusRetryLater, "transient", true, nil)
 		setStatus(PreDispatchGateStatusRetryLater)

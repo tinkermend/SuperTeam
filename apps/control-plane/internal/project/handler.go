@@ -1994,6 +1994,7 @@ type projectTaskGraphResponse struct {
 	RecentEvents       []projectEventResponse                 `json:"recent_events"`
 	DecisionRequests   []decisionRequestResponse              `json:"decision_requests"`
 	StageSummaries     []projectTaskGraphStageSummaryResponse `json:"stage_summaries,omitempty"`
+	BlockingFacts      []projectTaskGraphBlockingFactResponse `json:"blocking_facts"`
 }
 
 type projectTaskLivenessResponse struct {
@@ -2052,6 +2053,15 @@ type projectTaskGraphStageSummaryResponse struct {
 	RunningNodes      int32  `json:"running_nodes"`
 	WaitingHumanNodes int32  `json:"waiting_human_nodes"`
 	BlockedNodes      int32  `json:"blocked_nodes"`
+}
+
+type projectTaskGraphBlockingFactResponse struct {
+	ReasonCode        string `json:"reason_code"`
+	Message           string `json:"message"`
+	ResourceType      string `json:"resource_type"`
+	ResourceID        string `json:"resource_id"`
+	RecommendedAction string `json:"recommended_action"`
+	CreatedAt         string `json:"created_at"`
 }
 
 type projectTaskGraphEdgeResponse struct {
@@ -2763,6 +2773,7 @@ func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphRespons
 		RecentEvents:       eventResponses(graph.RecentEvents),
 		DecisionRequests:   decisionRequestResponses(graph.DecisionRequests),
 		StageSummaries:     taskGraphStageSummaryResponses(graph.StageSummaries),
+		BlockingFacts:      taskGraphBlockingFactResponses(graph.BlockingFacts),
 	}
 }
 
@@ -2796,6 +2807,21 @@ func taskGraphStageSummaryResponses(items []ProjectTaskGraphStageSummary) []proj
 			RunningNodes:      item.RunningNodes,
 			WaitingHumanNodes: item.WaitingHumanNodes,
 			BlockedNodes:      item.BlockedNodes,
+		})
+	}
+	return responses
+}
+
+func taskGraphBlockingFactResponses(items []ProjectTaskGraphBlockingFact) []projectTaskGraphBlockingFactResponse {
+	responses := make([]projectTaskGraphBlockingFactResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, projectTaskGraphBlockingFactResponse{
+			ReasonCode:        item.ReasonCode,
+			Message:           item.Message,
+			ResourceType:      item.ResourceType,
+			ResourceID:        item.ResourceID,
+			RecommendedAction: item.RecommendedAction,
+			CreatedAt:         item.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	return responses

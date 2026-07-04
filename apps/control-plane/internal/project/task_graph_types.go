@@ -24,6 +24,7 @@ type ProjectTaskGraph struct {
 	RecentEvents       []ProjectEvent
 	DecisionRequests   []DecisionRequest
 	StageSummaries     []ProjectTaskGraphStageSummary
+	BlockingFacts      []ProjectTaskGraphBlockingFact
 }
 
 type ProjectTaskGraphNode struct {
@@ -74,4 +75,13 @@ type ProjectTaskGraphStageSummary struct {
 	RunningNodes      int32
 	WaitingHumanNodes int32
 	BlockedNodes      int32
+}
+
+type ProjectTaskGraphBlockingFact struct {
+	ReasonCode        string
+	Message           string
+	ResourceType      string
+	ResourceID        string
+	RecommendedAction string
+	CreatedAt         time.Time
 }

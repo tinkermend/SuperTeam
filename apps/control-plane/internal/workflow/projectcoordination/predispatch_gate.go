@@ -71,8 +71,43 @@ func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchPro
 		Gate:          gate,
 		AllowRunStart: gate.Status == project.PreDispatchGateStatusPassed,
 		Retryable:     gate.Status == project.PreDispatchGateStatusRetryLater,
-		Terminal:      gate.Status == project.PreDispatchGateStatusBlocked || gate.Status == project.PreDispatchGateStatusReplanRequired,
+		Terminal:      preDispatchGateDecisionTerminal(gate),
 	}, nil
+}
+
+func preDispatchGateDecisionTerminal(gate project.PreDispatchGateResult) bool {
+	if gate.Status == project.PreDispatchGateStatusReplanRequired {
+		return true
+	}
+	if gate.Status != project.PreDispatchGateStatusBlocked {
+		return false
+	}
+	for _, blocker := range gate.Blockers {
+		if blocker.Key == "runtime.placement_missing" {
+			return false
+		}
+	}
+	return true
+}
+
+func dispatchBlockReasonFromGate(gate project.PreDispatchGateResult) (reasonCode, recommendedAction string) {
+	for _, blocker := range gate.Blockers {
+		switch blocker.Key {
+		case "runtime.placement_missing":
+			return "runtime_placement_missing", "bind_runtime"
+		case "runtime.node_offline":
+			return "runtime_node_offline", "restart_runtime"
+		case "runtime.provider_unavailable":
+			return "provider_unavailable", "check_provider"
+		case "runtime.workspace_not_ready":
+			return "runtime_workspace_not_ready", "recover_workspace"
+		case "runtime.slot_unavailable":
+			return "runtime_slot_unavailable", "wait_for_slot"
+		case "runtime.contract_version_unsupported":
+			return "runtime_contract_version_unsupported", "upgrade_runtime"
+		}
+	}
+	return "dispatch_blocked", "inspect_dispatch_gate"
 }
 
 func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask) (project.PreDispatchGateSnapshot, error) {
@@ -85,6 +120,7 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 			AvailableLoadSlots: 1,
 		},
 		Runtime: project.PreDispatchRuntimeSnapshot{
+			PlacementPresent:        true,
 			NodeOnline:              true,
 			ProviderAvailable:       true,
 			WorkspaceReady:          true,
@@ -104,6 +140,13 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 	if attempt, err := s.repository.GetCurrentProjectTaskAttempt(ctx, input.TenantID, input.TaskID); err == nil {
 		snapshot.ActiveAttempt = &project.PreDispatchAttemptSnapshot{ID: attempt.ID, Status: attempt.Status}
 	} else if !errors.Is(err, project.ErrProjectNotFound) {
+		return project.PreDispatchGateSnapshot{}, err
+	}
+	if _, err := s.repository.GetActiveProjectPlacement(ctx, input.TenantID, input.ProjectID); err == nil {
+		snapshot.Runtime.PlacementPresent = true
+	} else if errors.Is(err, project.ErrProjectNotFound) {
+		snapshot.Runtime.PlacementPresent = false
+	} else {
 		return project.PreDispatchGateSnapshot{}, err
 	}
 	dependencies, err := s.repository.ListProjectTaskDependencies(ctx, input.TenantID, input.ProjectID, []uuid.UUID{input.TaskID})
@@ -161,6 +204,7 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 			return project.PreDispatchGateSnapshot{}, err
 		}
 		snapshot.Employee = mergePreDispatchEmployeeSnapshot(snapshot.Employee, employee)
+		runtime.PlacementPresent = snapshot.Runtime.PlacementPresent
 		snapshot.Runtime = runtime
 	}
 	if s.capabilityReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {

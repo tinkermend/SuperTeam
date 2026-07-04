@@ -1793,10 +1793,71 @@ func (s *Service) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGra
 		return nil, err
 	}
 	normalizeProjectTaskGraph(&graph)
+	if len(graph.Nodes) == 0 && req.DemandID != nil {
+		facts, err := s.projectTaskGraphBlockingFacts(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		graph.BlockingFacts = facts
+	}
 	if err := s.enrichProjectTaskGraphEmployeeIdentities(ctx, req.TenantID, &graph); err != nil {
 		return nil, err
 	}
 	return &graph, nil
+}
+
+func (s *Service) projectTaskGraphBlockingFacts(ctx context.Context, req GetProjectTaskGraphRequest) ([]ProjectTaskGraphBlockingFact, error) {
+	if req.DemandID == nil {
+		return []ProjectTaskGraphBlockingFact{}, nil
+	}
+	events, err := s.repository.ListDemandLaunchEvents(ctx, req.TenantID, req.ProjectID, *req.DemandID, nil, nil, nil, 50)
+	if err != nil {
+		return nil, err
+	}
+	facts := make([]ProjectTaskGraphBlockingFact, 0)
+	for _, event := range events {
+		if !taskGraphBlockingEventType(event.EventType) {
+			continue
+		}
+		facts = append(facts, projectTaskGraphBlockingFactFromEvent(event))
+	}
+	return facts, nil
+}
+
+func taskGraphBlockingEventType(eventType ProjectEventType) bool {
+	switch eventType {
+	case ProjectEventCoordinationBlocked, ProjectEventWorkflowCoordinationFailed, ProjectEventTaskDispatchBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func projectTaskGraphBlockingFactFromEvent(event ProjectEvent) ProjectTaskGraphBlockingFact {
+	resourceType := ""
+	if event.ResourceType != nil {
+		resourceType = *event.ResourceType
+	}
+	resourceID := ""
+	if event.ResourceID != nil {
+		resourceID = *event.ResourceID
+	}
+	message := ""
+	if event.Summary != nil {
+		message = *event.Summary
+	}
+	reasonCode := stringPayload(event.Payload, "reason_code")
+	if reasonCode == "" {
+		reasonCode = "coordination_blocked"
+	}
+	return ProjectTaskGraphBlockingFact{
+		ReasonCode:        reasonCode,
+		Message:           message,
+		ResourceType:      resourceType,
+		ResourceID:        resourceID,
+		RecommendedAction: stringPayload(event.Payload, "recommended_action"),
+		CreatedAt:         event.CreatedAt,
+	}
 }
 
 func (s *Service) enrichProjectTaskGraphEmployeeIdentities(ctx context.Context, tenantID uuid.UUID, graph *ProjectTaskGraph) error {
@@ -2024,6 +2085,9 @@ func normalizeProjectTaskGraph(graph *ProjectTaskGraph) {
 	}
 	if graph.StageSummaries == nil {
 		graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
+	}
+	if graph.BlockingFacts == nil {
+		graph.BlockingFacts = []ProjectTaskGraphBlockingFact{}
 	}
 }
 

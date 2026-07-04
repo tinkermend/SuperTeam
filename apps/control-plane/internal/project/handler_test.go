@@ -1220,6 +1220,74 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskGraphReturnsBlockingFactWhenCoordinationBlocked(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	createdAt := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes: []ProjectTaskGraphNode{},
+		},
+	}
+	eventSummary := "项目任务派发被阻塞"
+	repo.events = append(repo.events, ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventCoordinationBlocked,
+		ActorType:      "project_coordinator",
+		ActorID:        demandID.String(),
+		ResourceType:   strPtr("project_demand"),
+		ResourceID:     strPtr(demandID.String()),
+		Summary:        &eventSummary,
+		Payload: map[string]any{
+			"demand_id":           demandID.String(),
+			"reason_code":         "runtime_placement_missing",
+			"recommended_action":  "bind_runtime",
+			"ignored_extra_field": "kept out of fact shape",
+		},
+		CreatedAt: createdAt,
+	})
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?demand_id="+demandID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task graph response: %v", err)
+	}
+	nodes := body["nodes"].([]any)
+	if len(nodes) != 0 {
+		t.Fatalf("expected no task nodes, got %#v", nodes)
+	}
+	facts := body["blocking_facts"].([]any)
+	if len(facts) != 1 {
+		t.Fatalf("expected one blocking fact, got %#v", body)
+	}
+	fact := facts[0].(map[string]any)
+	if fact["reason_code"] != "runtime_placement_missing" {
+		t.Fatalf("expected stable blocking reason code, got %#v", fact)
+	}
+	if fact["recommended_action"] != "bind_runtime" || fact["resource_id"] != demandID.String() {
+		t.Fatalf("unexpected blocking fact response: %#v", fact)
+	}
+}
+
 func TestGetProjectTaskGraphRejectsMissingFilter(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()

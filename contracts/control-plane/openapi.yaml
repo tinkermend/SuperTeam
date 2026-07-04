@@ -5357,6 +5357,7 @@ components:
         - execution_summaries
         - recent_events
         - decision_requests
+        - blocking_facts
       properties:
         nodes:
           type: array
@@ -5390,6 +5391,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectTaskGraphStageSummary"
+        blocking_facts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphBlockingFact"
     ProjectTaskLiveness:
       type: object
       required:
@@ -5478,6 +5483,29 @@ components:
         blocked_nodes:
           type: integer
           format: int32
+    ProjectTaskGraphBlockingFact:
+      type: object
+      required:
+        - reason_code
+        - message
+        - resource_type
+        - resource_id
+        - recommended_action
+        - created_at
+      properties:
+        reason_code:
+          type: string
+        message:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        recommended_action:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     ProjectTaskGraphNode:
       type: object
       required:

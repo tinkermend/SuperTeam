@@ -485,19 +485,19 @@ func (e DigitalEmployeeStatus) Valid() bool {
 
 // Defines values for DigitalEmployeeWorkbenchStatus.
 const (
-	Error          DigitalEmployeeWorkbenchStatus = "error"
-	PendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
-	Ready          DigitalEmployeeWorkbenchStatus = "ready"
+	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
+	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
+	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
 func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	switch e {
-	case Error:
+	case DigitalEmployeeWorkbenchStatusError:
 		return true
-	case PendingBinding:
+	case DigitalEmployeeWorkbenchStatusPendingBinding:
 		return true
-	case Ready:
+	case DigitalEmployeeWorkbenchStatusReady:
 		return true
 	default:
 		return false
@@ -1050,6 +1050,63 @@ func (e ProjectRole) Valid() bool {
 	}
 }
 
+// Defines values for ProjectRuntimePlacementState.
+const (
+	ProjectRuntimePlacementStateActive   ProjectRuntimePlacementState = "active"
+	ProjectRuntimePlacementStateLost     ProjectRuntimePlacementState = "lost"
+	ProjectRuntimePlacementStateReleased ProjectRuntimePlacementState = "released"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRuntimePlacementState enum.
+func (e ProjectRuntimePlacementState) Valid() bool {
+	switch e {
+	case ProjectRuntimePlacementStateActive:
+		return true
+	case ProjectRuntimePlacementStateLost:
+		return true
+	case ProjectRuntimePlacementStateReleased:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectRuntimePlacementStatus.
+const (
+	ProjectRuntimePlacementStatusCapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
+	ProjectRuntimePlacementStatusCommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
+	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
+	ProjectRuntimePlacementStatusMissing                    ProjectRuntimePlacementStatus = "missing"
+	ProjectRuntimePlacementStatusProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
+	ProjectRuntimePlacementStatusReady                      ProjectRuntimePlacementStatus = "ready"
+	ProjectRuntimePlacementStatusRuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
+	ProjectRuntimePlacementStatusWorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRuntimePlacementStatus enum.
+func (e ProjectRuntimePlacementStatus) Valid() bool {
+	switch e {
+	case ProjectRuntimePlacementStatusCapacityFull:
+		return true
+	case ProjectRuntimePlacementStatusCommandChannelDisconnected:
+		return true
+	case ProjectRuntimePlacementStatusContractMismatch:
+		return true
+	case ProjectRuntimePlacementStatusMissing:
+		return true
+	case ProjectRuntimePlacementStatusProviderUnavailable:
+		return true
+	case ProjectRuntimePlacementStatusReady:
+		return true
+	case ProjectRuntimePlacementStatusRuntimeOffline:
+		return true
+	case ProjectRuntimePlacementStatusWorkspacePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectStatus.
 const (
 	ProjectStatusAcceptance  ProjectStatus = "acceptance"
@@ -1589,19 +1646,19 @@ func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestStatus.
 const (
-	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
-	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
-	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
+	Approved TeamMemberRoleRequestStatus = "approved"
+	Pending  TeamMemberRoleRequestStatus = "pending"
+	Rejected TeamMemberRoleRequestStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
 func (e TeamMemberRoleRequestStatus) Valid() bool {
 	switch e {
-	case TeamMemberRoleRequestStatusApproved:
+	case Approved:
 		return true
-	case TeamMemberRoleRequestStatusPending:
+	case Pending:
 		return true
-	case TeamMemberRoleRequestStatusRejected:
+	case Rejected:
 		return true
 	default:
 		return false
@@ -2133,13 +2190,13 @@ type CreateProviderSessionRequest struct {
 
 // CreateTaskRequest defines model for CreateTaskRequest.
 type CreateTaskRequest struct {
-	Description   *string                `json:"description,omitempty"`
-	Params        map[string]interface{} `json:"params"`
-	Priority      *int32                 `json:"priority,omitempty"`
-	ProviderType  string                 `json:"provider_type"`
-	TargetNodeId  *string                `json:"target_node_id,omitempty"`
-	Title         string                 `json:"title"`
-	WorkspacePath *string                `json:"workspace_path,omitempty"`
+	Description   *string                 `json:"description,omitempty"`
+	Params        *map[string]interface{} `json:"params,omitempty"`
+	Priority      *int32                  `json:"priority,omitempty"`
+	ProviderType  string                  `json:"provider_type"`
+	TargetNodeId  *string                 `json:"target_node_id,omitempty"`
+	Title         string                  `json:"title"`
+	WorkspacePath *string                 `json:"workspace_path,omitempty"`
 }
 
 // CreateTeamConfigRevisionRequest defines model for CreateTeamConfigRevisionRequest.
@@ -3269,6 +3326,17 @@ type ProjectDemandSourceType string
 // ProjectDemandStatus defines model for ProjectDemandStatus.
 type ProjectDemandStatus string
 
+// ProjectEmployeeReadiness defines model for ProjectEmployeeReadiness.
+type ProjectEmployeeReadiness struct {
+	CanDispatch       bool               `json:"can_dispatch"`
+	CanPlan           bool               `json:"can_plan"`
+	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+	DisplayName       *string            `json:"display_name,omitempty"`
+	ProviderType      *string            `json:"provider_type,omitempty"`
+	ReasonCode        *string            `json:"reason_code,omitempty"`
+	ReasonMessage     *string            `json:"reason_message,omitempty"`
+}
+
 // ProjectEvent defines model for ProjectEvent.
 type ProjectEvent struct {
 	ActorId        string                 `json:"actor_id"`
@@ -3446,6 +3514,18 @@ type ProjectPlanRevision struct {
 // ProjectPrincipalType defines model for ProjectPrincipalType.
 type ProjectPrincipalType string
 
+// ProjectReadinessAction defines model for ProjectReadinessAction.
+type ProjectReadinessAction struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+}
+
+// ProjectReadinessReason defines model for ProjectReadinessReason.
+type ProjectReadinessReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // ProjectRepoBinding defines model for ProjectRepoBinding.
 type ProjectRepoBinding struct {
 	DefaultBranch    *string                   `json:"default_branch,omitempty"`
@@ -3494,6 +3574,39 @@ type ProjectRouteDecision struct {
 	SelectedDigitalEmployeeIds  []openapi_types.UUID   `json:"selected_digital_employee_ids"`
 	TenantId                    openapi_types.UUID     `json:"tenant_id"`
 }
+
+// ProjectRuntimePlacement defines model for ProjectRuntimePlacement.
+type ProjectRuntimePlacement struct {
+	AssignedAt      *time.Time                   `json:"assigned_at,omitempty"`
+	CreatedAt       *time.Time                   `json:"created_at,omitempty"`
+	Id              openapi_types.UUID           `json:"id"`
+	PlacementReason *string                      `json:"placement_reason,omitempty"`
+	PlacementStatus ProjectRuntimePlacementState `json:"placement_status"`
+	ProjectId       openapi_types.UUID           `json:"project_id"`
+	ReleasedAt      *time.Time                   `json:"released_at,omitempty"`
+	RuntimeNodeId   openapi_types.UUID           `json:"runtime_node_id"`
+	TenantId        *openapi_types.UUID          `json:"tenant_id,omitempty"`
+	UpdatedAt       *time.Time                   `json:"updated_at,omitempty"`
+}
+
+// ProjectRuntimePlacementReadiness defines model for ProjectRuntimePlacementReadiness.
+type ProjectRuntimePlacementReadiness struct {
+	BlockingReasons         *[]ProjectReadinessReason     `json:"blocking_reasons,omitempty"`
+	CommandChannelConnected bool                          `json:"command_channel_connected"`
+	EmployeeReadiness       *[]ProjectEmployeeReadiness   `json:"employee_readiness,omitempty"`
+	NextActions             *[]ProjectReadinessAction     `json:"next_actions,omitempty"`
+	PlacementStatus         ProjectRuntimePlacementStatus `json:"placement_status"`
+	ProviderCapabilities    *[]string                     `json:"provider_capabilities,omitempty"`
+	RequiredProviderTypes   *[]string                     `json:"required_provider_types,omitempty"`
+	RuntimeNodeId           *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
+	RuntimeNodeName         *string                       `json:"runtime_node_name,omitempty"`
+}
+
+// ProjectRuntimePlacementState defines model for ProjectRuntimePlacementState.
+type ProjectRuntimePlacementState string
+
+// ProjectRuntimePlacementStatus defines model for ProjectRuntimePlacementStatus.
+type ProjectRuntimePlacementStatus string
 
 // ProjectStatus defines model for ProjectStatus.
 type ProjectStatus string
@@ -3582,6 +3695,7 @@ type ProjectTaskAttestationStatus string
 
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
+	BlockingFacts      []ProjectTaskGraphBlockingFact  `json:"blocking_facts"`
 	DecisionRequests   []ProjectDecisionRequest        `json:"decision_requests"`
 	Edges              []ProjectTaskGraphEdge          `json:"edges"`
 	Employees          []ProjectTaskGraphEmployee      `json:"employees"`
@@ -3590,6 +3704,16 @@ type ProjectTaskGraph struct {
 	RecentEvents       []ProjectEvent                  `json:"recent_events"`
 	Runs               []ProjectTaskGraphRun           `json:"runs"`
 	StageSummaries     *[]ProjectTaskGraphStageSummary `json:"stage_summaries,omitempty"`
+}
+
+// ProjectTaskGraphBlockingFact defines model for ProjectTaskGraphBlockingFact.
+type ProjectTaskGraphBlockingFact struct {
+	CreatedAt         time.Time `json:"created_at"`
+	Message           string    `json:"message"`
+	ReasonCode        string    `json:"reason_code"`
+	RecommendedAction string    `json:"recommended_action"`
+	ResourceId        string    `json:"resource_id"`
+	ResourceType      string    `json:"resource_type"`
 }
 
 // ProjectTaskGraphEdge defines model for ProjectTaskGraphEdge.
@@ -3792,6 +3916,13 @@ type ProviderSessionEvent1 = interface{}
 // PushTaskEventsRequest defines model for PushTaskEventsRequest.
 type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
+}
+
+// PutProjectRuntimePlacementRequest defines model for PutProjectRuntimePlacementRequest.
+type PutProjectRuntimePlacementRequest struct {
+	ExpectedProviderTypes *[]string          `json:"expected_provider_types,omitempty"`
+	Reason                *string            `json:"reason,omitempty"`
+	RuntimeNodeId         openapi_types.UUID `json:"runtime_node_id"`
 }
 
 // RecordProjectTaskAttemptBudgetHeartbeatRequest defines model for RecordProjectTaskAttemptBudgetHeartbeatRequest.
@@ -5248,6 +5379,9 @@ type CreateProjectLendingRequestJSONRequestBody = CreateProjectLendingRequest
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
+// PutProjectRuntimePlacementJSONRequestBody defines body for PutProjectRuntimePlacement for application/json ContentType.
+type PutProjectRuntimePlacementJSONRequestBody = PutProjectRuntimePlacementRequest
+
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
 
@@ -6084,6 +6218,18 @@ type ServerInterface interface {
 	// List project route decisions
 	// (GET /api/v1/projects/{projectId}/route-decisions)
 	ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams)
+	// Release active Runtime placement for a project
+	// (DELETE /api/v1/projects/{projectId}/runtime-placement)
+	ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Get active Runtime placement for a project
+	// (GET /api/v1/projects/{projectId}/runtime-placement)
+	GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Bind a project to an active Runtime placement
+	// (PUT /api/v1/projects/{projectId}/runtime-placement)
+	PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Get project Runtime execution readiness
+	// (GET /api/v1/projects/{projectId}/runtime-readiness)
+	GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Get project task graph read model
 	// (GET /api/v1/projects/{projectId}/task-graph)
 	GetProjectTaskGraph(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectTaskGraphParams)
@@ -6873,6 +7019,30 @@ func (_ Unimplemented) ListProjectReports(w http.ResponseWriter, r *http.Request
 // List project route decisions
 // (GET /api/v1/projects/{projectId}/route-decisions)
 func (_ Unimplemented) ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Release active Runtime placement for a project
+// (DELETE /api/v1/projects/{projectId}/runtime-placement)
+func (_ Unimplemented) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get active Runtime placement for a project
+// (GET /api/v1/projects/{projectId}/runtime-placement)
+func (_ Unimplemented) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind a project to an active Runtime placement
+// (PUT /api/v1/projects/{projectId}/runtime-placement)
+func (_ Unimplemented) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project Runtime execution readiness
+// (GET /api/v1/projects/{projectId}/runtime-readiness)
+func (_ Unimplemented) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10620,6 +10790,110 @@ func (siw *ServerInterfaceWrapper) ListProjectRouteDecisions(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectRouteDecisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReleaseProjectRuntimePlacement operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReleaseProjectRuntimePlacement(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectRuntimePlacement operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectRuntimePlacement(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProjectRuntimePlacement operation middleware
+func (siw *ServerInterfaceWrapper) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProjectRuntimePlacement(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectRuntimeReadiness operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectRuntimeReadiness(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14553,6 +14827,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/route-decisions", wrapper.ListProjectRouteDecisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.ReleaseProjectRuntimePlacement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.GetProjectRuntimePlacement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.PutProjectRuntimePlacement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-readiness", wrapper.GetProjectRuntimeReadiness)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/task-graph", wrapper.GetProjectTaskGraph)

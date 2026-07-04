@@ -2186,6 +2186,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		return err
 	}
 	if !gate.AllowRunStart {
+		if err := s.recordDispatchBlocked(ctx, input, task, gate); err != nil {
+			return err
+		}
 		switch {
 		case gate.Retryable:
 			return ErrProjectTaskDispatchRetryLater
@@ -2403,6 +2406,33 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		return err
 	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
+}
+
+func (s *ProjectStore) recordDispatchBlocked(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask, gate PreDispatchGateDecision) error {
+	reasonCode, recommendedAction := dispatchBlockReasonFromGate(gate.Gate)
+	demandID := ""
+	if task.DemandID != nil {
+		demandID = task.DemandID.String()
+	}
+	payload := map[string]any{
+		"project_task_id":         task.ID.String(),
+		"demand_id":               demandID,
+		"reason_code":             reasonCode,
+		"recommended_action":      recommendedAction,
+		"dispatch_gate_result_id": gate.Gate.ID.String(),
+	}
+	_, err := s.repository.AppendProjectEvent(ctx, project.AppendProjectEventRequest{
+		TenantID:     input.TenantID,
+		ProjectID:    input.ProjectID,
+		EventType:    project.ProjectEventTaskDispatchBlocked,
+		ActorType:    "project_coordinator",
+		ActorID:      task.ID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务派发被阻塞",
+		Payload:      payload,
+	})
+	return err
 }
 
 func (s *ProjectStore) recordQueuedAttemptDispatchStartFailure(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask, attempt project.ProjectTaskAttempt, dispatchErr error) error {

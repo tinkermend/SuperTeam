@@ -3026,6 +3026,54 @@ func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
 	}, starter.requests[0].Metadata["project_git"])
 }
 
+func TestDispatchProjectTaskRecordsDispatchBlockedEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord:          project.Project{ID: projectID, TenantID: tenantID, Name: "Blocked project", HumanOwnerUserID: uuid.New()},
+		demand:                 project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "Needs runtime"},
+		members:                []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		missingActivePlacement: true,
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Status:                    project.ProjectTaskStatusPlanned,
+			Title:                     "Implement with runtime",
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID, DispatchReason: project.DispatchReasonRootReady,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, starter.requests)
+	blockedEvents := eventsByType(repo.events, project.ProjectEventTaskDispatchBlocked)
+	require.Len(t, blockedEvents, 1)
+	event := blockedEvents[0]
+	require.Equal(t, "project_coordinator", event.ActorType)
+	require.Equal(t, taskID.String(), event.ActorID)
+	require.NotNil(t, event.ResourceType)
+	require.Equal(t, "project_task", *event.ResourceType)
+	require.NotNil(t, event.ResourceID)
+	require.Equal(t, taskID.String(), *event.ResourceID)
+	require.Equal(t, taskID.String(), event.Payload["project_task_id"])
+	require.Equal(t, demandID.String(), event.Payload["demand_id"])
+	require.Equal(t, "runtime_placement_missing", event.Payload["reason_code"])
+	require.Equal(t, "bind_runtime", event.Payload["recommended_action"])
+	require.NotEmpty(t, event.Payload["dispatch_gate_result_id"])
+}
+
 func TestDispatchProjectTaskBranchWorkspaceRequiresRuntimeAttestation(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4110,6 +4158,8 @@ type projectStoreMemoryRepository struct {
 	decomposeAcceptedPlanRevisionRequests []project.DecomposeAcceptedPlanRevisionRequest
 	decisionRequests                      []project.DecisionRequest
 	createDecisionRequestErr              error
+	activePlacement                       *project.ProjectRuntimePlacement
+	missingActivePlacement                bool
 
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
@@ -4131,6 +4181,25 @@ func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID,
 		return r.projectRecord, nil
 	}
 	return project.Project{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (project.ProjectRuntimePlacement, error) {
+	if r.missingActivePlacement {
+		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
+	}
+	if r.activePlacement != nil && r.activePlacement.TenantID == tenantID && r.activePlacement.ProjectID == projectID && r.activePlacement.PlacementStatus == project.ProjectRuntimePlacementStateActive {
+		return *r.activePlacement, nil
+	}
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
+	}
+	return project.ProjectRuntimePlacement{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   uuid.New(),
+		PlacementStatus: project.ProjectRuntimePlacementStateActive,
+	}, nil
 }
 
 func (r *projectStoreMemoryRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (project.Project, error) {
@@ -4267,7 +4336,19 @@ func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, r
 	if r.appendProjectEventErr != nil {
 		return project.ProjectEvent{}, r.appendProjectEventErr
 	}
-	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, ActorType: req.ActorType, ActorID: req.ActorID, Payload: req.Payload, CreatedAt: time.Now().UTC()}
+	event := project.ProjectEvent{
+		ID:           uuid.New(),
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    req.EventType,
+		ActorType:    req.ActorType,
+		ActorID:      req.ActorID,
+		ResourceType: req.ResourceType,
+		ResourceID:   req.ResourceID,
+		Summary:      &req.Summary,
+		Payload:      req.Payload,
+		CreatedAt:    time.Now().UTC(),
+	}
 	r.events = append(r.events, event)
 	return event, nil
 }
