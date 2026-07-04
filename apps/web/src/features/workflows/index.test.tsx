@@ -613,6 +613,95 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
   });
 
+  it("does not render a previous zero-node blocker while the selected demand graph is loading", async () => {
+    let resolveDemandPrGraph: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+
+      if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+        return jsonResponse([
+          makeWorkflowInstance("demand-running"),
+          makeWorkflowInstance("demand-pr", {
+            demand_id: "demand-pr",
+            project_name: "代码审查项目",
+            status: "running",
+            status_reason: "",
+            title: "PR 审查",
+          }),
+        ]);
+      }
+
+      if (
+        url.pathname === "/api/v1/project-demands/demand-running/launch-detail" &&
+        method === "GET"
+      ) {
+        return jsonResponse(makeLaunchDetail("demand-running"));
+      }
+
+      if (
+        url.pathname === "/api/v1/project-demands/demand-pr/launch-detail" &&
+        method === "GET"
+      ) {
+        return jsonResponse(makeLaunchDetail("demand-pr", {
+          demand: {
+            ...makeLaunchDetail("demand-pr").demand,
+            title: "PR 审查",
+          },
+        }));
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
+        const demandId = url.searchParams.get("demand_id");
+        if (demandId === "demand-running") {
+          return jsonResponse(makeGraph([], {
+            blocking_facts: [
+              {
+                reason_code: "runtime_placement_missing",
+                message: "上一需求缺少 Runtime 执行位置",
+                recommended_action: "先给上一需求选择 Runtime",
+              },
+            ],
+          }));
+        }
+
+        if (demandId === "demand-pr") {
+          return await new Promise<Response>((resolve) => {
+            resolveDemandPrGraph = resolve;
+          });
+        }
+      }
+
+      return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWorkflowView({ demandId: "demand-running", fetcher });
+
+    await expect.element(screen.getByText("协调已阻塞：上一需求缺少 Runtime 执行位置")).toBeVisible();
+
+    await screen.rerender(
+      <QueryClientProvider client={createQueryClient()}>
+        <WorkflowView
+          apiBaseUrl="http://control-plane.local"
+          demandId="demand-pr"
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("PR 审查").first()).toBeVisible();
+    await expect.element(screen.getByText("协调已阻塞：上一需求缺少 Runtime 执行位置")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "blocking-runtime_placement_missing" })).not.toBeInTheDocument();
+
+    resolveDemandPrGraph?.(jsonResponse(makeGraph([
+      makeGraphNode("task-pr", "PR 审查任务", "assigned", {
+        demand_id: "demand-pr",
+      }),
+    ])));
+
+    await expect.element(screen.getByText("PR 审查任务").first()).toBeVisible();
+  });
+
   it("opens a centered dialog with node details when a task node is clicked", async () => {
     const graph = makeGraph(
       [

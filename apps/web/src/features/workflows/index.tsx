@@ -80,7 +80,11 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     queryKey: ["workflow-task-graph", apiBaseUrl, currentDetail?.project.id, selectedDemandId],
     refetchInterval: 5000,
   });
-  const currentGraph = currentTaskGraph(graphQuery.data, selectedDemandId);
+  const currentGraph = currentTaskGraph(
+    graphQuery.data,
+    selectedDemandId,
+    graphQuery.isPlaceholderData,
+  );
 
   if (!demandId) {
     return (
@@ -131,9 +135,16 @@ function WorkflowBlockingBanner({ graph }: { graph: ProjectTaskGraph | undefined
 function currentTaskGraph(
   graph: ProjectTaskGraph | undefined,
   selectedDemandId: string | undefined,
+  isPlaceholderData = false,
 ): ProjectTaskGraph | undefined {
   if (!graph) return undefined;
-  if (graph.nodes.length === 0) return graph;
+  if (graph.nodes.length === 0) {
+    if (graph.blocking_facts.length > 0 && isPlaceholderData) {
+      return undefined;
+    }
+
+    return graph;
+  }
   if (!selectedDemandId) return undefined;
 
   return graph.nodes.every(
