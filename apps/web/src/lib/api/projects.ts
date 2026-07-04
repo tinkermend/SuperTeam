@@ -1,5 +1,12 @@
 import type { ApiClientOptions } from "./client";
-import { getJson, patchJson, postJson, postJsonWithoutBody, putJson } from "./client";
+import {
+  deleteJsonWithResponse,
+  getJson,
+  patchJson,
+  postJson,
+  postJsonWithoutBody,
+  putJson,
+} from "./client";
 
 export type ProjectStatus =
   | "draft"
@@ -274,6 +281,70 @@ export type ProjectTaskGraph = {
   decision_requests: ProjectDecisionRequest[];
   stage_summaries?: ProjectTaskGraphStageSummary[];
   blocking_facts: ProjectTaskGraphBlockingFact[];
+};
+
+export type ProjectRuntimePlacementStatus =
+  | "missing"
+  | "ready"
+  | "runtime_offline"
+  | "command_channel_disconnected"
+  | "provider_unavailable"
+  | "capacity_full"
+  | "workspace_pending"
+  | "contract_mismatch";
+
+export type ProjectRuntimePlacement = {
+  id: string;
+  project_id: string;
+  runtime_node_id: string;
+  placement_status: ProjectRuntimePlacementStatus;
+  placement_reason?: string;
+  assigned_at: string;
+  released_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectReadinessReason = {
+  code: string;
+  message: string;
+  resource_type?: string;
+  resource_id?: string;
+};
+
+export type ProjectReadinessAction = {
+  code: string;
+  label: string;
+  description?: string;
+  resource_type?: string;
+  resource_id?: string;
+};
+
+export type ProjectEmployeeReadiness = {
+  digital_employee_id: string;
+  display_name: string;
+  ready: boolean;
+  required_provider_types: string[];
+  missing_provider_types: string[];
+  reasons: ProjectReadinessReason[];
+};
+
+export type ProjectRuntimePlacementReadiness = {
+  placement_status: ProjectRuntimePlacementStatus;
+  runtime_node_id?: string;
+  runtime_node_name?: string;
+  command_channel_connected: boolean;
+  provider_capabilities?: string[];
+  required_provider_types: string[];
+  employee_readiness: ProjectEmployeeReadiness[];
+  blocking_reasons: ProjectReadinessReason[];
+  next_actions: ProjectReadinessAction[];
+};
+
+export type PutProjectRuntimePlacementInput = {
+  runtime_node_id: string;
+  reason?: string;
+  expected_provider_types?: string[];
 };
 
 export type DispatchGateStatus =
@@ -1027,6 +1098,52 @@ export function getProjectConfig(
     options,
     projectPath(projectId, "/config"),
     "project config",
+  );
+}
+
+export function getProjectRuntimePlacement(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectRuntimePlacement> {
+  return getJson<ProjectRuntimePlacement>(
+    options,
+    projectPath(projectId, "/runtime-placement"),
+    "project runtime placement",
+  );
+}
+
+export function putProjectRuntimePlacement(
+  options: ApiClientOptions,
+  projectId: string,
+  input: PutProjectRuntimePlacementInput,
+): Promise<ProjectRuntimePlacement> {
+  return putJson<ProjectRuntimePlacement>(
+    options,
+    projectPath(projectId, "/runtime-placement"),
+    input,
+    "project runtime placement",
+  );
+}
+
+export function releaseProjectRuntimePlacement(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectRuntimePlacement> {
+  return deleteJsonWithResponse<ProjectRuntimePlacement>(
+    options,
+    projectPath(projectId, "/runtime-placement"),
+    "project runtime placement",
+  );
+}
+
+export function getProjectRuntimeReadiness(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectRuntimePlacementReadiness> {
+  return getJson<ProjectRuntimePlacementReadiness>(
+    options,
+    projectPath(projectId, "/runtime-readiness"),
+    "project runtime readiness",
   );
 }
 

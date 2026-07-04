@@ -10,6 +10,8 @@ import {
   getProjectDemandLaunchDetail,
   getProjectOverview,
   getProjectPlanRevision,
+  getProjectRuntimePlacement,
+  getProjectRuntimeReadiness,
   getProjectTaskGraph,
   listProjectTaskDispatchGates,
   listProjectConfigRevisions,
@@ -18,6 +20,8 @@ import {
   listProjectRouteDecisions,
   listWorkflowInstances,
   patchProjectEvidence,
+  putProjectRuntimePlacement,
+  releaseProjectRuntimePlacement,
   replaceProjectMembers,
   resolveProjectDecision,
   submitProjectDemand,
@@ -175,6 +179,170 @@ describe("project API", () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/projects/project%201%2Fprimary/config",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("getProjectRuntimePlacement encodes project id", async () => {
+    const placement = {
+      id: "placement-1",
+      project_id: "project 1/primary",
+      runtime_node_id: "runtime-node-1",
+      placement_status: "ready",
+      placement_reason: "manual assignment",
+      assigned_at: "2026-07-05T01:00:00Z",
+      created_at: "2026-07-05T01:00:00Z",
+      updated_at: "2026-07-05T01:00:00Z",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(placement), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getProjectRuntimePlacement(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(placement);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("putProjectRuntimePlacement posts runtime node and reason", async () => {
+    const placement = {
+      id: "placement-1",
+      project_id: "project 1/primary",
+      runtime_node_id: "runtime-node-1",
+      placement_status: "ready",
+      placement_reason: "manual assignment",
+      assigned_at: "2026-07-05T01:00:00Z",
+      created_at: "2026-07-05T01:00:00Z",
+      updated_at: "2026-07-05T01:00:00Z",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(placement), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+    const input = {
+      runtime_node_id: "runtime-node-1",
+      reason: "manual assignment",
+      expected_provider_types: ["codex", "claude"],
+    };
+
+    await expect(
+      putProjectRuntimePlacement(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        input,
+      ),
+    ).resolves.toEqual(placement);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
+      {
+        body: JSON.stringify(input),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "PUT",
+      },
+    );
+  });
+
+  it("releaseProjectRuntimePlacement deletes active placement", async () => {
+    const placement = {
+      id: "placement-1",
+      project_id: "project 1/primary",
+      runtime_node_id: "runtime-node-1",
+      placement_status: "missing",
+      assigned_at: "2026-07-05T01:00:00Z",
+      released_at: "2026-07-05T01:10:00Z",
+      created_at: "2026-07-05T01:00:00Z",
+      updated_at: "2026-07-05T01:10:00Z",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(placement), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      releaseProjectRuntimePlacement(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(placement);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("getProjectRuntimeReadiness encodes project id", async () => {
+    const readiness = {
+      placement_status: "ready",
+      runtime_node_id: "runtime-node-1",
+      runtime_node_name: "Runtime Node 1",
+      command_channel_connected: true,
+      provider_capabilities: ["codex", "claude"],
+      required_provider_types: ["codex"],
+      employee_readiness: [
+        {
+          digital_employee_id: "employee-1",
+          display_name: "Planner",
+          ready: true,
+          required_provider_types: ["codex"],
+          missing_provider_types: [],
+          reasons: [],
+        },
+      ],
+      blocking_reasons: [],
+      next_actions: [],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(readiness), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getProjectRuntimeReadiness(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(readiness);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-readiness",
       {
         credentials: "include",
         headers: { accept: "application/json" },

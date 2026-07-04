@@ -123,6 +123,21 @@ export async function deleteJson(
   }
 }
 
+export async function deleteJsonWithResponse<T>(
+  options: ApiClientOptions,
+  path: string,
+  resource: string,
+): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "DELETE",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
 async function readErrorDetail(response: Response): Promise<string | undefined> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = await response.text();
