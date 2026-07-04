@@ -433,8 +433,9 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 	}
 	if hasEmployeeDispatchBlock(readiness.EmployeeReadiness) {
 		readiness.PlacementStatus = ProjectRuntimePlacementStatusWorkspacePending
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "employee_workspace_pending", Message: "one or more project employees are not dispatch-ready"})
-		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "prepare_employee_workspace", Label: "Prepare employee workspace"})
+		code, action := employeeDispatchBlockProjectReason(readiness.EmployeeReadiness)
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: code, Message: "one or more project employees are not dispatch-ready"})
+		readiness.NextActions = append(readiness.NextActions, action)
 		return readiness, nil
 	}
 	readiness.PlacementStatus = ProjectRuntimePlacementStatusReady
@@ -925,7 +926,7 @@ func availableProviderCapabilities(capabilities []runtimepkg.RuntimeCapability, 
 		}
 		providers = append(providers, capability.ProviderType)
 	}
-	if len(providers) == 0 && len(supportedProviders) > 0 {
+	if len(capabilities) == 0 && len(supportedProviders) > 0 {
 		var decoded []string
 		if err := json.Unmarshal(supportedProviders, &decoded); err == nil {
 			providers = append(providers, decoded...)
@@ -972,11 +973,20 @@ func markEmployeesNotDispatchable(employees []ProjectEmployeeReadiness, code, me
 
 func hasEmployeeDispatchBlock(employees []ProjectEmployeeReadiness) bool {
 	for _, employee := range employees {
-		if employee.CanPlan && !employee.CanDispatch && employee.ReasonCode != "" {
+		if !employee.CanDispatch && employee.ReasonCode != "" {
 			return true
 		}
 	}
 	return false
+}
+
+func employeeDispatchBlockProjectReason(employees []ProjectEmployeeReadiness) (string, ProjectReadinessAction) {
+	for _, employee := range employees {
+		if !employee.CanDispatch && employee.ReasonCode == "provider_type_missing" {
+			return "provider_type_missing", ProjectReadinessAction{Code: "configure_employee_provider", Label: "Configure employee provider"}
+		}
+	}
+	return "employee_workspace_pending", ProjectReadinessAction{Code: "prepare_employee_workspace", Label: "Prepare employee workspace"}
 }
 
 func employeeDispatchBlockReason(record DigitalEmployeePlanningProfileSourceRecord) (string, string, bool) {
