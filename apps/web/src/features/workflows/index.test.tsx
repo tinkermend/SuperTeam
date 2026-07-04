@@ -14,6 +14,7 @@ import type {
   ProjectExecutionSummary,
   Project,
   ProjectDemandLaunchDetail,
+  ProjectEvent,
   ProjectTaskGraph,
   ProjectTaskGraphNode,
   ProjectTaskGraphRun,
@@ -285,7 +286,24 @@ function makeGraphNode(
   };
 }
 
+function makeProjectEvent(
+  eventType: ProjectEvent["event_type"],
+  payload: Record<string, unknown> = {},
+): ProjectEvent {
+  return {
+    actor_id: "coordinator",
+    actor_type: "system",
+    event_type: eventType,
+    id: `event-${eventType}`,
+    payload,
+    project_id: "project-1",
+    sequence_number: 1,
+    tenant_id: "tenant-1",
+  };
+}
+
 function createWorkflowFetcher({
+  events = [],
   graph = makeGraph(),
   graphsByDemandId,
   instances = [
@@ -306,6 +324,7 @@ function createWorkflowFetcher({
     }),
   ],
 }: {
+  events?: ProjectEvent[];
   graph?: ProjectTaskGraph;
   graphsByDemandId?: Record<string, ProjectTaskGraph>;
   instances?: WorkflowInstanceSummary[];
@@ -340,6 +359,10 @@ function createWorkflowFetcher({
     if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
       const demandId = url.searchParams.get("demand_id");
       return jsonResponse(graphsByDemandId?.[demandId ?? ""] ?? graph);
+    }
+
+    if (url.pathname === "/api/v1/projects/project-1/events" && method === "GET") {
+      return jsonResponse(events);
     }
 
     return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
@@ -594,6 +617,26 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByRole("button", { name: "blocking-runtime_placement_missing" })).toBeVisible();
   });
 
+  it("surfaces dispatch gate replan blockers even when task graph nodes exist", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        events: [
+          makeProjectEvent("project_task.dispatch_gate.replan_required", {
+            project_task_id: "task-1",
+            status: "replan_required",
+          }),
+        ],
+        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "waiting_human")]),
+      }),
+    });
+
+    await expect.element(screen.getByText("计划需要调整")).toBeVisible();
+    await expect
+      .element(screen.getByText("当前计划不再满足执行条件，需要重新编排后继续。"))
+      .toBeVisible();
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+  });
+
   it("does not render a previous demand graph under the current demand detail", async () => {
     const screen = await renderWorkflowView({
       demandId: "demand-pr",
@@ -670,6 +713,10 @@ describe("WorkflowView", () => {
             resolveDemandPrGraph = resolve;
           });
         }
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/events" && method === "GET") {
+        return jsonResponse([]);
       }
 
       return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);

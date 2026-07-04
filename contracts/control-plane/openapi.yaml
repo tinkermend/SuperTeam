@@ -4798,6 +4798,11 @@ components:
         - project_task.created
         - project_task.dispatched
         - project_task.dispatch_blocked
+        - project_task.dispatch_gate.blocked
+        - project_task.dispatch_gate.checked
+        - project_task.dispatch_gate.replan_required
+        - project_task.dispatch_gate.retry_later
+        - project_task.dispatch_gate.waiting_human
         - project_task.completed
         - project_task.failed
         - transfer.requested
