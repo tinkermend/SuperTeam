@@ -372,27 +372,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           : "按模板默认值补齐职责画像、能力边界、治理策略和执行器。"
         }
         actions={
-          <div className="flex flex-wrap gap-2">
-            {flowStep !== "template" ? (
-              <Button onClick={requestTemplateChange} type="button" variant="outline">
-                <ArrowLeft data-icon="inline-start" />
-                返回
-              </Button>
-            ) : null}
-            <Button
-              disabled={
-                flowStep !== "template" ||
-                createOptions.isLoading ||
-                createOptions.isError ||
-                !draft.employee_type
-              }
-              onClick={enterPreflight}
-              type="button"
-            >
-              进入预检
-              <ChevronRight data-icon="inline-end" />
+          flowStep !== "template" ? (
+            <Button onClick={requestTemplateChange} type="button" variant="outline">
+              <ArrowLeft data-icon="inline-start" />
+              返回
             </Button>
-          </div>
+          ) : undefined
         }
       />
       <Main>
@@ -424,24 +409,18 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         <CreationStageProgress flowStep={flowStep} />
 
         {flowStep === "template" ? (
-          <>
-            <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-              <CreationPathPanel />
+          <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[260px_minmax(0,1fr)]">
+            <CreationPathPanel />
 
-              <TemplateSelectionPanel
-                draft={draft}
-                options={createOptions.data}
-                selectedType={selectedType}
-                onSelectType={selectType}
-              />
-            </div>
-            <TemplateStepSummary
+            <TemplateSelectionPanel
               draft={draft}
+              options={createOptions.data}
               selectedTeamName={selectedTeam?.name}
               selectedType={selectedType}
               onEnterPreflight={enterPreflight}
+              onSelectType={selectType}
             />
-          </>
+          </div>
         ) : null}
 
         {flowStep === "preflight" ? (
@@ -456,124 +435,127 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         ) : null}
 
         {flowStep === "configure" ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
-            <div className="border-b p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">员工画像蓝图</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    按职责目标、可用能力、治理边界和执行器完成员工画像。
-                  </p>
-                </div>
-                <StepTabs currentStep={currentStep} />
-              </div>
-            </div>
-
-            <div className="grid gap-4 p-4">
-              <SelectedTemplateSummary
-                draft={draft}
-                selectedType={selectedType}
-                onChangeTemplate={requestTemplateChange}
-              />
-
-              <div className="min-h-[420px] rounded-md border bg-background p-4">
-                {teams.isLoading || avatarAssets.isLoading || createOptions.isLoading ? (
-                  <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" />
-                    加载创建选项
+          <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[minmax(0,1fr)_340px]">
+            <section className="flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
+              <div className="border-b p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">员工画像蓝图</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      按职责目标、可用能力、治理边界和执行器完成员工画像。
+                    </p>
                   </div>
-                ) : null}
-                {!teams.isLoading && !avatarAssets.isLoading && !createOptions.isLoading && currentStep === "身份" ? (
-                  <IdentityStep
-                    avatarAssets={avatarAssets.data ?? []}
-                    draft={draft}
-                    errors={errors}
-                    options={createOptions.data}
-                    selectedType={selectedType}
-                    teamOptions={teamOptions}
-                    onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
-                    onSelectTeam={requestTeamChange}
-                    onUpdate={updateDraft}
-                  />
-                ) : null}
-                {!teams.isLoading && !createOptions.isLoading && currentStep === "能力" ? (
-                  <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
-                ) : null}
-                {!teams.isLoading && !createOptions.isLoading && currentStep === "治理" ? (
-                  <GovernanceStep
-                    draft={draft}
-                    errors={errors}
-                    options={createOptions.data}
-                    selectedType={selectedType}
-                    onUpdate={updateDraft}
-                  />
-                ) : null}
-                {!teams.isLoading && !createOptions.isLoading && currentStep === "执行器" ? (
-                  <ProviderStep
-                    draft={draft}
-                    error={errors.runtime}
-                    options={createOptions.data}
-                    onSelectProvider={selectProvider}
-                    onUpdate={updateDraft}
-                  />
-                ) : null}
+                  <StepTabs currentStep={currentStep} />
+                </div>
               </div>
-            </div>
 
-            {createEmployee.isError ? (
-              <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
-            ) : null}
-            <div className="flex justify-between gap-3 border-t p-4">
-            <Button
-                disabled={stepIndex === 0 || createEmployee.isPending}
-                onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
-                type="button"
-                variant="outline"
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4">
+                <SelectedTemplateSummary
+                  draft={draft}
+                  selectedType={selectedType}
+                  onChangeTemplate={requestTemplateChange}
+                />
+
+                <div className="min-h-0 rounded-md border bg-background p-4">
+                  {teams.isLoading || avatarAssets.isLoading || createOptions.isLoading ? (
+                    <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="animate-spin" />
+                      加载创建选项
+                    </div>
+                  ) : null}
+                  {!teams.isLoading && !avatarAssets.isLoading && !createOptions.isLoading && currentStep === "身份" ? (
+                    <IdentityStep
+                      avatarAssets={avatarAssets.data ?? []}
+                      draft={draft}
+                      errors={errors}
+                      options={createOptions.data}
+                      selectedType={selectedType}
+                      teamOptions={teamOptions}
+                      onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
+                      onSelectTeam={requestTeamChange}
+                      onUpdate={updateDraft}
+                    />
+                  ) : null}
+                  {!teams.isLoading && !createOptions.isLoading && currentStep === "能力" ? (
+                    <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
+                  ) : null}
+                  {!teams.isLoading && !createOptions.isLoading && currentStep === "治理" ? (
+                    <GovernanceStep
+                      draft={draft}
+                      errors={errors}
+                      options={createOptions.data}
+                      selectedType={selectedType}
+                      onUpdate={updateDraft}
+                    />
+                  ) : null}
+                  {!teams.isLoading && !createOptions.isLoading && currentStep === "执行器" ? (
+                    <ProviderStep
+                      draft={draft}
+                      error={errors.runtime}
+                      options={createOptions.data}
+                      onSelectProvider={selectProvider}
+                      onUpdate={updateDraft}
+                    />
+                  ) : null}
+                </div>
+              </div>
+
+              {createEmployee.isError ? (
+                <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
+              ) : null}
+              <div
+                className="sticky bottom-0 z-10 flex justify-between gap-3 border-t bg-card/95 p-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]"
+                data-testid="employee-configure-actions"
               >
-                <ChevronLeft data-icon="inline-start" />
-                上一步
-              </Button>
-              {stepIndex < configSteps.length - 1 ? (
                 <Button
-                  disabled={
-                    createOptions.isLoading ||
-                    createOptions.isError ||
-                    avatarAssets.isLoading ||
-                    avatarAssets.isError
-                  }
-                  onClick={nextStep}
+                  disabled={stepIndex === 0 || createEmployee.isPending}
+                  onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
                   type="button"
+                  variant="outline"
                 >
-                  下一步
-                  <ChevronRight data-icon="inline-end" />
+                  <ChevronLeft data-icon="inline-start" />
+                  上一步
                 </Button>
-              ) : (
-                <Button
-                  disabled={
-                    createEmployee.isPending ||
-                    createOptions.isLoading ||
-                    createOptions.isError ||
-                    avatarAssets.isLoading ||
-                    avatarAssets.isError ||
-                    !draft.avatar_asset_id ||
-                    !draft.provider_type
-                  }
-                  onClick={enterConfirmCreation}
-                  type="button"
-                >
-                  进入确认创建
-                  <ChevronRight data-icon="inline-end" />
-                </Button>
-              )}
-            </div>
-          </section>
+                {stepIndex < configSteps.length - 1 ? (
+                  <Button
+                    disabled={
+                      createOptions.isLoading ||
+                      createOptions.isError ||
+                      avatarAssets.isLoading ||
+                      avatarAssets.isError
+                    }
+                    onClick={nextStep}
+                    type="button"
+                  >
+                    下一步
+                    <ChevronRight data-icon="inline-end" />
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={
+                      createEmployee.isPending ||
+                      createOptions.isLoading ||
+                      createOptions.isError ||
+                      avatarAssets.isLoading ||
+                      avatarAssets.isError ||
+                      !draft.avatar_asset_id ||
+                      !draft.provider_type
+                    }
+                    onClick={enterConfirmCreation}
+                    type="button"
+                  >
+                    进入确认创建
+                    <ChevronRight data-icon="inline-end" />
+                  </Button>
+                )}
+              </div>
+            </section>
 
-          <CreationPreflightPanel
-            draft={draft}
-            options={createOptions.data}
-            selectedType={selectedType}
-          />
+            <CreationPreflightPanel
+              draft={draft}
+              options={createOptions.data}
+              selectedType={selectedType}
+            />
           </div>
         ) : null}
 
@@ -726,50 +708,19 @@ function CreationPathPanel() {
   );
 }
 
-function TemplateStepSummary({
-  draft,
-  selectedTeamName,
-  selectedType,
-  onEnterPreflight,
-}: {
-  draft: WizardDraft;
-  selectedTeamName?: string;
-  selectedType?: DigitalEmployeeTypeOption;
-  onEnterPreflight: () => void;
-}) {
-  return (
-    <section className="mt-4 rounded-md border bg-card/95 p-4 shadow-xs">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div>
-          <h2 className="text-base font-semibold">已选模板摘要</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            模板只生成配置草稿；Provider 和最终创建会在后续步骤确认。
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
-            <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
-            <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
-            <Badge variant="secondary">风险 {draft.risk_level || "medium"}</Badge>
-          </div>
-        </div>
-        <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
-          进入配置预检
-          <ChevronRight data-icon="inline-end" />
-        </Button>
-      </div>
-    </section>
-  );
-}
-
 function TemplateSelectionPanel({
   draft,
   options,
+  selectedTeamName,
   selectedType,
+  onEnterPreflight,
   onSelectType,
 }: {
   draft: WizardDraft;
   options?: DigitalEmployeeCreateOptions;
+  selectedTeamName?: string;
   selectedType?: DigitalEmployeeTypeOption;
+  onEnterPreflight: () => void;
   onSelectType: (value: string) => void;
 }) {
   const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
@@ -790,7 +741,7 @@ function TemplateSelectionPanel({
   }, [employeeTypes, riskFilter, templateQuery]);
 
   return (
-    <section className="@container/template min-w-0 rounded-md border bg-card/95 shadow-xs">
+    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
       <div className="border-b p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -823,17 +774,17 @@ function TemplateSelectionPanel({
         </div>
       </div>
       {employeeTypes.length === 0 ? (
-        <div className="m-4 flex min-h-[420px] items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
           当前团队治理配置未返回可用专业模板。
         </div>
       ) : (
-        <div className="p-4">
+        <div className="min-h-0 flex-1 p-4">
           <div
-            className="overflow-hidden rounded-md border bg-background"
+            className="h-full overflow-hidden rounded-md border bg-background"
             data-testid="template-selection-table"
             data-slot="template-selection-table"
           >
-            <div className="max-h-[min(680px,calc(100vh-360px))] overflow-auto">
+            <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
               <table className="w-full min-w-[860px] border-collapse text-sm">
                 <thead className="sticky top-0 z-10 border-b bg-muted text-xs font-medium text-muted-foreground">
                   <tr>
@@ -865,11 +816,28 @@ function TemplateSelectionPanel({
           </div>
         </div>
       )}
-      <div className="border-t px-4 py-3 text-sm text-muted-foreground">
-        没有合适的模板？
-        <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
-          选择空白自定义（暂未开放）
-        </button>
+      <div className="border-t bg-card/95 px-4 py-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium text-foreground">已选模板摘要</span>
+              <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
+              <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
+              <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
+              <Badge variant="secondary">风险 {draft.risk_level || "medium"}</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              没有合适的模板？
+              <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
+                选择空白自定义（暂未开放）
+              </button>
+            </p>
+          </div>
+          <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
+            进入配置预检
+            <ChevronRight data-icon="inline-end" />
+          </Button>
+        </div>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
     </section>

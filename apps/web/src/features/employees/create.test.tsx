@@ -404,6 +404,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView();
 
     await expect.element(screen.getByRole("heading", { name: "创建数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "进入预检" })).not.toBeInTheDocument();
     await expect.element(screen.getByText("选择模板", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("配置预检", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("完成配置", { exact: true })).toBeVisible();
@@ -414,6 +415,18 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("button", { name: /进入配置预检/ })).toBeVisible();
     expect(document.body.textContent).not.toContain("Runtime 可用");
     expect(document.body.textContent).not.toContain("即将创建");
+  });
+
+  it("keeps the configure step actions fixed to the viewport bottom", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+
+    const actions = document.body.querySelector('[data-testid="employee-configure-actions"]');
+    expect(actions).toBeTruthy();
+    expect(actions).toHaveClass("sticky");
+    expect(actions).toHaveClass("bottom-0");
+    await expect.element(screen.getByRole("button", { name: "下一步" })).toBeVisible();
   });
 
   it("loads built-in templates without a team-scoped create-options request before team selection", async () => {
