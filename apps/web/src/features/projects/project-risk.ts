@@ -3,6 +3,8 @@ import type {
   Project,
   ProjectDecisionRequest,
   ProjectEvidenceRef,
+  ProjectMember,
+  ProjectPrincipalType,
   ProjectTask,
 } from "@/lib/api/projects";
 
@@ -35,6 +37,8 @@ export type ProjectRiskSummary = {
   project: Project;
   level: ProjectRiskLevel;
   state: ProjectRiskSummaryState;
+  currentHandler?: ProjectTaskHandler;
+  currentTask?: ProjectTask;
   reasons: ProjectRiskReason[];
   primaryReason?: ProjectRiskReason;
   requiresHuman: boolean;
@@ -44,12 +48,19 @@ export type ProjectRiskSummary = {
 
 export type ProjectRiskSummaryMap = Record<string, ProjectRiskSummary>;
 
+export type ProjectTaskHandler = {
+  id: string;
+  label: string;
+  principalType: ProjectPrincipalType;
+};
+
 export type ProjectRiskInput = {
   project: Project;
   tasks?: ProjectTask[];
   decisions?: ProjectDecisionRequest[];
   evidence?: ProjectEvidenceRef[];
   events?: unknown[];
+  members?: ProjectMember[];
 };
 
 export type ProjectRiskOptions = {
@@ -115,6 +126,26 @@ const reasonLabels: Record<ProjectRiskReasonType, string> = {
   runtime_or_coordination: "协调异常",
   evidence_required: "证据待补",
   sla_waiting: "等待超时",
+};
+
+const taskStatusPriority: Record<string, number> = {
+  running: 100,
+  executing: 95,
+  in_progress: 95,
+  dispatching: 90,
+  claimed: 85,
+  waiting_human: 80,
+  pending_human: 80,
+  pending_review: 80,
+  approval_required: 80,
+  queued: 70,
+  pending: 65,
+  planned: 60,
+  failed: 50,
+  error: 50,
+  blocked: 50,
+  completed: 20,
+  cancelled: 10,
 };
 
 export function deriveProjectRiskSummary(
@@ -215,12 +246,20 @@ export function deriveProjectRiskSummary(
 
   const primaryReason = pickPrimaryReason(reasons);
   const level = primaryReason?.level ?? "none";
+  const currentTask = selectCurrentTask(input.tasks ?? []);
+  const currentHandler = selectCurrentHandler(
+    project,
+    currentTask,
+    input.members ?? [],
+  );
 
   return {
     projectId: project.id,
     project,
     level,
     state: options.state ?? "ready",
+    currentHandler,
+    currentTask,
     reasons,
     primaryReason,
     requiresHuman: reasons.some((reason) => reason.type === "human_decision"),
@@ -378,6 +417,72 @@ function pickPrimaryReason(
   })[0];
 }
 
+function selectCurrentTask(tasks: ProjectTask[]): ProjectTask | undefined {
+  return [...tasks].sort((left, right) => {
+    const leftPriority = taskStatusPriority[normalize(left.status)] ?? 40;
+    const rightPriority = taskStatusPriority[normalize(right.status)] ?? 40;
+    return (
+      compareDesc(leftPriority, rightPriority) ||
+      compareAsc(left.stage_index, right.stage_index)
+    );
+  })[0];
+}
+
+function selectCurrentHandler(
+  project: Project,
+  task: ProjectTask | undefined,
+  members: ProjectMember[],
+): ProjectTaskHandler | undefined {
+  const assignedDigitalEmployeeId = task?.assigned_digital_employee_id?.trim();
+  if (assignedDigitalEmployeeId) {
+    return buildTaskHandler(
+      assignedDigitalEmployeeId,
+      "digital_employee",
+      members,
+    );
+  }
+
+  const humanOwnerId = project.human_owner_user_id?.trim();
+  if (humanOwnerId && isHumanHandledTask(task)) {
+    return buildTaskHandler(humanOwnerId, "human_user", members);
+  }
+
+  return undefined;
+}
+
+function buildTaskHandler(
+  id: string,
+  principalType: ProjectPrincipalType,
+  members: ProjectMember[],
+): ProjectTaskHandler {
+  const member = members.find(
+    (item) =>
+      item.principal_type === principalType &&
+      item.principal_id === id &&
+      item.status !== "removed",
+  );
+  const displayName = member?.display_name_snapshot?.trim();
+  return {
+    id,
+    label: displayName || id,
+    principalType,
+  };
+}
+
+function isHumanHandledTask(task: ProjectTask | undefined): boolean {
+  if (!task) {
+    return false;
+  }
+  const status = normalize(task.status);
+  return (
+    task.requires_human_approval ||
+    status === "waiting_human" ||
+    status === "pending_human" ||
+    status === "pending_review" ||
+    status === "approval_required"
+  );
+}
+
 function earliestWaitingSince(
   reasons: ProjectRiskReason[],
 ): string | undefined {
@@ -396,6 +501,19 @@ function summaryReasonPriority(summary: ProjectRiskSummary): number {
 
 function compareDesc(left: number, right: number): number {
   return right - left;
+}
+
+function compareAsc(left?: number, right?: number): number {
+  if (left === undefined && right === undefined) {
+    return 0;
+  }
+  if (left === undefined) {
+    return 1;
+  }
+  if (right === undefined) {
+    return -1;
+  }
+  return left - right;
 }
 
 function compareWaitingSince(left?: string, right?: string): number {

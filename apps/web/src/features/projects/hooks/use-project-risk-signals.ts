@@ -4,10 +4,12 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import {
   listProjectDecisionRequests,
   listProjectEvidence,
+  listProjectMembers,
   listProjectTasks,
   type Project,
   type ProjectDecisionRequest,
   type ProjectEvidenceRef,
+  type ProjectMember,
   type ProjectTask,
 } from "@/lib/api/projects";
 import {
@@ -20,12 +22,13 @@ const fetcherIds = new WeakMap<typeof fetch, number>();
 let nextFetcherId = 1;
 
 // R3/R4: events no longer contribute to risk (runtime/coordination risk comes
-// from coordination_status), so they are not fetched here: 3 requests/project.
+// from coordination_status), so they are not fetched here: 4 requests/project.
 type ProjectRiskSignalPayload = {
   projectId: string;
   tasks: ProjectTask[];
   decisions: ProjectDecisionRequest[];
   evidence: ProjectEvidenceRef[];
+  members: ProjectMember[];
 };
 
 type UseProjectRiskSignalsInput = {
@@ -53,15 +56,17 @@ export function useProjectRiskSignals({
       enabled,
       placeholderData: keepPreviousData,
       queryFn: async (): Promise<ProjectRiskSignalPayload> => {
-        const [tasks, decisions, evidence] = await Promise.all([
+        const [tasks, decisions, evidence, members] = await Promise.all([
           listProjectTasks(apiOptions, project.id, { limit: 20 }),
           listProjectDecisionRequests(apiOptions, project.id, { limit: 20 }),
           listProjectEvidence(apiOptions, project.id, { limit: 10 }),
+          listProjectMembers(apiOptions, project.id),
         ]);
 
         return {
           decisions: decisions.filter((decision) => decision.project_id === project.id),
           evidence: evidence.filter((item) => item.project_id === project.id),
+          members: members.filter((member) => member.project_id === project.id),
           projectId: project.id,
           tasks: tasks.filter((task) => task.project_id === project.id),
         };
@@ -89,6 +94,7 @@ export function useProjectRiskSignals({
           decisions: payload.decisions,
           evidence: payload.evidence,
           events: [],
+          members: payload.members,
           project,
           tasks: payload.tasks,
         });

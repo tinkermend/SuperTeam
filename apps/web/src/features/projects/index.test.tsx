@@ -47,9 +47,13 @@ vi.mock("@tanstack/react-router", () => {
   };
   const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
     ({ children, params, search, to, ...props }, ref) => {
-      const path = params?.projectId
-        ? to.replace("$projectId", encodeURIComponent(params.projectId))
-        : to;
+      let path = to;
+      if (params?.projectId) {
+        path = path.replace("$projectId", encodeURIComponent(params.projectId));
+      }
+      if (params?.demandId) {
+        path = path.replace("$demandId", encodeURIComponent(params.demandId));
+      }
       const query = search ? `?${new URLSearchParams(search).toString()}` : "";
 
       return (
@@ -90,6 +94,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function makeProject(id: string, name: string, status: Project["status"] = "running"): Project {
+  const updatedAt = id === "project-2" ? "2026-06-05T02:28:13Z" : "2026-06-04T02:28:13Z";
   return {
     approval_policy: { high_risk: "human" },
     coordination_policy: { cadence: "daily" },
@@ -102,6 +107,7 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
     name,
     status,
     tenant_id: "tenant-1",
+    updated_at: updatedAt,
   };
 }
 
@@ -411,6 +417,48 @@ function createProjectFetcher(
         project: created,
       });
     }
+    if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+      return jsonResponse([
+        {
+          created_at: "2026-06-04T02:30:00Z",
+          demand_id: "demand-1",
+          progress: {
+            blocked_nodes: 0,
+            completed_nodes: 1,
+            running_nodes: 1,
+            total_nodes: 2,
+            waiting_human_nodes: 1,
+          },
+          project_id: "project-1",
+          project_name: "客户接入验收",
+          status: "waiting_human",
+          status_reason: "需要负责人确认",
+          submitted_by_display_name: "负责人甲",
+          submitted_by_user_id: "human-owner-1",
+          title: "补充上线验收说明",
+          updated_at: "2026-06-04T03:00:00Z",
+        },
+        {
+          created_at: "2026-06-05T02:10:00Z",
+          demand_id: "demand-2",
+          progress: {
+            blocked_nodes: 1,
+            completed_nodes: 0,
+            running_nodes: 0,
+            total_nodes: 1,
+            waiting_human_nodes: 0,
+          },
+          project_id: "project-2",
+          project_name: "生产巡检整改",
+          status: "failed",
+          status_reason: "任务执行失败",
+          submitted_by_display_name: "负责人甲",
+          submitted_by_user_id: "human-owner-1",
+          title: "分析生产接口 5xx 激增原因并输出处置建议",
+          updated_at: "2026-06-05T02:40:00Z",
+        },
+      ]);
+    }
 
     if (url.pathname === "/api/v1/projects/project-1/overview" && method === "GET") {
       return jsonResponse({
@@ -637,12 +685,58 @@ function createProjectFetcher(
     if (
       options.riskSignalFailureProjectId &&
       url.pathname.startsWith(`/api/v1/projects/${options.riskSignalFailureProjectId}/`) &&
-      ["/tasks", "/decisions", "/evidence", "/events"].some((suffix) =>
+      ["/tasks", "/decisions", "/evidence", "/events", "/members"].some((suffix) =>
         url.pathname.endsWith(suffix),
       ) &&
       method === "GET"
     ) {
       return jsonResponse({ error: "risk signal load failed" }, 500);
+    }
+
+    if (url.pathname === "/api/v1/projects/project-1/members" && method === "GET") {
+      return jsonResponse([
+        {
+          display_name_snapshot: "验收执行员工",
+          id: "member-employee-1",
+          principal_id: "de-1",
+          principal_type: "digital_employee",
+          project_id: "project-1",
+          project_role: "executor",
+          settings: { source_team_name: "平台运营" },
+          status: "active",
+          tenant_id: "tenant-1",
+        },
+        {
+          display_name_snapshot: "负责人甲",
+          id: "member-owner-1",
+          principal_id: "human-owner-1",
+          principal_type: "human_user",
+          project_id: "project-1",
+          project_role: "owner",
+          settings: {},
+          status: "active",
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+
+    if (url.pathname === "/api/v1/projects/project-2/members" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
+      return jsonResponse([
+        {
+          display_name_snapshot: "运维检索员工",
+          id: "member-ops-1",
+          principal_id: "de-ops-1",
+          principal_type: "digital_employee",
+          project_id: "project-2",
+          project_role: "executor",
+          settings: { source_team_name: "平台运营" },
+          status: "active",
+          tenant_id: "tenant-1",
+        },
+      ]);
     }
 
     if (url.pathname === "/api/v1/projects/project-2/tasks" && method === "GET") {
@@ -654,9 +748,11 @@ function createProjectFetcher(
           id: "task-project-2-failed",
           project_id: "project-2",
           requires_human_approval: false,
+          assigned_digital_employee_id: "de-ops-1",
+          task_kind: "data_source.log_search",
           status: "failed",
           tenant_id: "tenant-1",
-          title: "巡检脚本失败",
+          title: "数据源: 日志检索",
         },
       ]);
     }
@@ -689,6 +785,21 @@ function createProjectFetcher(
     }
 
     if (url.pathname.endsWith("/tasks") && method === "GET") {
+      const projectId = url.pathname.split("/")[4];
+      if (projectId === "project-1") {
+        return jsonResponse([
+          {
+            assigned_digital_employee_id: "de-1",
+            id: "task-1",
+            project_id: "project-1",
+            requires_human_approval: true,
+            status: "running",
+            task_kind: "human_review",
+            tenant_id: "tenant-1",
+            title: "人工: 负责人确认",
+          },
+        ]);
+      }
       return jsonResponse([]);
     }
     if (
@@ -1288,19 +1399,31 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("renders the risk-first project homepage and selected context", async () => {
+  it("renders the project homepage as a full-width operational queue", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeInTheDocument();
     await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
+      "客户接入验收",
+    );
     await expect.element(screen.getByLabelText("项目风险汇总（当前页）")).toBeInTheDocument();
-    await expect.element(screen.getByLabelText("选中项目上下文")).toBeInTheDocument();
-    await expect.element(screen.getByText("主要风险")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("选中项目上下文")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("主要风险")).not.toBeInTheDocument();
     await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
-    await expect.element(screen.getByText("暂无最近事件")).toBeInTheDocument();
+    await expect.element(screen.getByText("最后事件")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("最后运行时间")).toBeInTheDocument();
+    await expect.element(screen.getByText("补充上线验收说明")).toBeInTheDocument();
+    await expect.element(screen.getByText("人工: 负责人确认")).toBeInTheDocument();
+    await expect.element(screen.getByText("分析生产接口 5xx 激增原因并输出处置建议")).toBeInTheDocument();
+    await expect.element(screen.getByText("数据源: 日志检索")).toBeInTheDocument();
+    await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
+    await expect.element(screen.getByText("运维检索员工")).toBeInTheDocument();
+    expect(screen.getByTestId("project-risk-queue").element().textContent).not.toContain("de-1");
+    expect(screen.getByTestId("project-risk-queue").element().textContent).not.toContain("de-ops-1");
+    await expect
+      .element(screen.getByRole("link", { name: "进入流程编排 客户接入验收" }))
+      .toHaveAttribute("href", "/workflows/demand-1");
 
     expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("路由决策");
@@ -1372,9 +1495,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
 
     const listSurface = screen.container.querySelector('[data-testid="project-risk-queue"]');
     expect(listSurface).toBeTruthy();
@@ -1384,7 +1505,46 @@ describe("ProjectsView", () => {
       listSurface?.querySelectorAll("thead th") ?? [],
       (header) => header.textContent?.trim(),
     );
-    expect(headers).toEqual(["项目", "风险与落点", "状态", "操作"]);
+    expect(headers).toEqual([
+      "项目",
+      "当前任务",
+      "当前节点/能力",
+      "当前处理者",
+      "执行状态",
+      "最后运行时间",
+      "操作",
+    ]);
+
+    const table = listSurface?.querySelector('[data-slot="v3-table"]');
+    expect(table?.className).toContain("table-fixed");
+    const columns = Array.from(table?.querySelectorAll("colgroup col") ?? []);
+    expect(columns.map((column) => column.getAttribute("data-column"))).toEqual([
+      "project",
+      "task",
+      "node",
+      "handler",
+      "status",
+      "last-run",
+      "action",
+    ]);
+    const projectTitle = listSurface?.querySelector(
+      '[data-testid="project-queue-project-title"]',
+    );
+    expect(projectTitle?.className).toContain("line-clamp-2");
+    expect(projectTitle?.className).toContain("break-words");
+    expect(projectTitle?.className).toContain("max-h-10");
+    const taskTitle = listSurface?.querySelector(
+      '[data-testid="project-queue-current-task"]',
+    );
+    expect(taskTitle?.className).toContain("line-clamp-2");
+    expect(taskTitle?.className).toContain("break-words");
+    expect(taskTitle?.className).toContain("max-h-10");
+    const handler = listSurface?.querySelector(
+      '[data-testid="project-queue-current-handler"]',
+    );
+    expect(handler?.className).toContain("line-clamp-2");
+    expect(handler?.className).toContain("break-words");
+    expect(handler?.className).toContain("max-h-10");
   });
 
   it("keeps the projects index queue-dominant instead of splitting the page evenly", async () => {
@@ -1394,8 +1554,8 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
 
     const layout = screen.getByTestId("projects-risk-home-layout").element();
-    expect(layout.className).toContain("xl:grid-cols-[minmax(0,1fr)_360px]");
-    expect(layout.className).not.toContain("2xl:grid-cols-[minmax(720px,1.05fr)_minmax(0,1fr)]");
+    expect(layout.className).not.toContain("xl:grid-cols-[minmax(0,1fr)_360px]");
+    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
   });
 
   it("keeps the project detail route full-width for the plan graph", async () => {
@@ -1416,9 +1576,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
     expect(screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent).toContain(
       "客户接入验收",
     );
@@ -2052,17 +2210,12 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ slowFilteredList: true });
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("搜索项目"), "巡检");
 
-    await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
-      .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("heading", { name: "生产巡检整改" }))
-      .toBeInTheDocument();
+    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    expect(queueText).toContain("客户接入验收");
+    expect(queueText).toContain("生产巡检整改");
   });
 
   it("posts to the archive route", async () => {
@@ -2121,7 +2274,7 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("does not keep stale project detail actions after selecting another project", async () => {
+  it("does not mount project detail actions on the projects index", async () => {
     let releaseProject2Overview!: () => void;
     const project2OverviewGate = new Promise<void>((resolve) => {
       releaseProject2Overview = resolve;
@@ -2130,32 +2283,13 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "查看项目上下文 生产巡检整改" }),
-    );
-
-    await vi.waitFor(() => {
-      expect(
-        fetchCalls(fetcher).some(([url]) =>
-          String(url).includes("/api/v1/projects/project-2/overview"),
-        ),
-      ).toBe(true);
-    });
-
-    try {
-      const detailHeadings = Array.from(
-        screen.container.querySelectorAll("h2"),
-        (heading) => heading.textContent?.trim(),
-      );
-      expect(detailHeadings).toContain("生产巡检整改");
-      expect(
-        screen.container.querySelector(
-          'button[aria-label="批准：需要负责人确认"]',
-        ),
-      ).toBeNull();
-    } finally {
-      releaseProject2Overview();
-    }
+    expect(
+      fetchCalls(fetcher).some(([url]) =>
+        String(url).includes("/api/v1/projects/project-2/overview"),
+      ),
+    ).toBe(false);
+    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
+    releaseProject2Overview();
 
     await expect
       .element(screen.getByRole("button", { name: "归档项目" }))
@@ -2197,7 +2331,7 @@ describe("ProjectsView", () => {
     const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
     expect(pendingQueueText).toContain("正在识别风险");
     expect(pendingRowsText).not.toContain("等待人工决策");
-    expect(pendingRowsText).not.toContain("执行失败");
+    expect(pendingRowsText).toContain("失败");
 
     project2RiskGate.resolve();
 
@@ -2232,38 +2366,15 @@ describe("ProjectsView", () => {
     ).toBe(true);
   });
 
-  it("shows a lightweight selected-project context on the projects index", async () => {
+  it("keeps workflow orchestration as the project index row action", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByLabelText("选中项目上下文")).toBeVisible();
-    await userEvent.click(
-      screen.getByRole("button", { name: "查看项目上下文 生产巡检整改" }),
-    );
-
-    let panel = screen.getByLabelText("选中项目上下文").element();
-    await vi.waitFor(() => {
-      expect(panel.textContent).toContain("生产巡检整改");
-      expect(panel.textContent).toContain("project-coordinator:project-2");
-      expect(panel.textContent).not.toContain("客户接入验收");
-    });
-    expect(panel.querySelector('a[href="/task-launches?projectId=project-2"]')?.textContent).toContain(
-      "发起任务",
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "查看项目上下文 客户接入验收" }),
-    );
-
-    panel = screen.getByLabelText("选中项目上下文").element();
-    await vi.waitFor(() => {
-      expect(panel.textContent).toContain("客户接入验收");
-      expect(panel.textContent).toContain("project-coordinator:project-1");
-      expect(panel.textContent).not.toContain("生产巡检整改");
-    });
-    expect(panel.querySelector('a[href="/task-launches?projectId=project-1"]')?.textContent).toContain(
-      "发起任务",
-    );
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "进入流程编排 生产巡检整改" }))
+      .toHaveAttribute("href", "/workflows/demand-2");
+    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
   });
 
   it("keeps the full operational detail on project detail routes", async () => {
@@ -2290,6 +2401,6 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("生产巡检整改")).toBeVisible();
     await expect.element(screen.getByText("风险待确认")).toBeVisible();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    expect(queueText).toContain("详情");
+    expect(queueText).toContain("进入流程编排");
   });
 });

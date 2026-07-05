@@ -46,6 +46,7 @@ import {
   listProjectTaskDispatchGates,
   listProjectTasks,
   listProjectTransferRequests,
+  listWorkflowInstances,
   patchProjectEvidence,
   putProjectRuntimePlacement,
   releaseProjectRuntimePlacement,
@@ -83,7 +84,6 @@ import { ProjectConfigView } from "./components/project-config-page";
 import {
   ProjectHomeRiskSummaryBar,
   ProjectRiskQueue,
-  ProjectSelectedContextPanel,
 } from "./components/project-risk-home";
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
 import {
@@ -241,17 +241,10 @@ export function ProjectsView({
     risk: "all",
     status: "all",
   });
-  const [selectedProjectId, setSelectedProjectId] = useState(routeProjectId);
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
   const [projectListPage, setProjectListPage] = useState(1);
   const [projectListPageSize, setProjectListPageSize] = useState(10);
-
-  useEffect(() => {
-    if (routeProjectId) {
-      setSelectedProjectId(routeProjectId);
-    }
-  }, [routeProjectId]);
 
   const listFilters = useMemo<ListProjectsFilters>(() => {
     const request: ListProjectsFilters = { limit: 50, offset: 0 };
@@ -267,6 +260,12 @@ export function ProjectsView({
   const projectsQuery = useQuery({
     queryKey: ["projects", listFilters],
     queryFn: () => listProjects(apiOptions, listFilters),
+    placeholderData: keepPreviousData,
+  });
+  const workflowInstancesQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["workflow-instances", "project-home", { limit: 50, offset: 0 }],
+    queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
     placeholderData: keepPreviousData,
   });
   const projects = projectsQuery.data ?? [];
@@ -304,48 +303,23 @@ export function ProjectsView({
     setProjectListPage(1);
   }, [filters.q, filters.risk, filters.status]);
 
-  const selectedProjectFromList = selectedProjectId
-    ? projects.find((project) => project.id === selectedProjectId)
+  const effectiveProjectId = routeProjectId;
+  const selectedProjectFromList = effectiveProjectId
+    ? projects.find((project) => project.id === effectiveProjectId)
     : undefined;
 
   const selectedProjectQuery = useQuery({
-    enabled: Boolean(selectedProjectId) && !selectedProjectFromList,
-    queryKey: ["project", selectedProjectId],
-    queryFn: () => getProject(apiOptions, selectedProjectId as string),
+    enabled: Boolean(effectiveProjectId) && !selectedProjectFromList,
+    queryKey: ["project", effectiveProjectId],
+    queryFn: () => getProject(apiOptions, effectiveProjectId as string),
     placeholderData: keepPreviousData,
   });
 
   const selectedProject =
     selectedProjectFromList ??
-    (selectedProjectQuery.data?.id === selectedProjectId
+    (selectedProjectQuery.data?.id === effectiveProjectId
       ? selectedProjectQuery.data
       : undefined);
-  const effectiveProjectId = selectedProjectId;
-
-  useEffect(() => {
-    if (routeProjectId || projects.length === 0) {
-      if (!routeProjectId && projects.length === 0) {
-        setSelectedProjectId(undefined);
-      }
-      return;
-    }
-
-    if (!selectedProjectId || !projects.some((project) => project.id === selectedProjectId)) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [projects, routeProjectId, selectedProjectId]);
-
-  useEffect(() => {
-    if (routeProjectId || pagedProjects.length === 0) {
-      return;
-    }
-    if (
-      !selectedProjectId ||
-      !pagedProjects.some((project) => project.id === selectedProjectId)
-    ) {
-      setSelectedProjectId(pagedProjects[0].id);
-    }
-  }, [pagedProjects, routeProjectId, selectedProjectId]);
 
   const overviewQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -861,7 +835,7 @@ export function ProjectsView({
                 className={
                   routeProjectId
                     ? "grid min-w-0 items-start gap-5"
-                    : "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"
+                    : "grid min-w-0 items-start gap-5"
                 }
                 data-testid="projects-risk-home-layout"
               >
@@ -869,20 +843,23 @@ export function ProjectsView({
                   <ProjectRiskQueue
                     activePage={activeProjectListPage}
                     filters={filters}
-                    isFetching={projectsQuery.isFetching || isCurrentPageRiskSettling}
+                    isFetching={
+                      projectsQuery.isFetching ||
+                      workflowInstancesQuery.isFetching ||
+                      isCurrentPageRiskSettling
+                    }
                     onFiltersChange={setFilters}
                     onPageChange={setProjectListPage}
                     onPageSizeChange={(size) => {
                       setProjectListPageSize(size);
                       setProjectListPage(1);
                     }}
-                    onSelectProject={setSelectedProjectId}
                     pageCount={projectListPageCount}
                     pageSize={projectListPageSize}
                     projects={pagedProjects}
                     riskSummaries={displayedRiskSummaries}
-                    selectedProjectId={effectiveProjectId}
                     total={projects.length}
+                    workflowInstances={workflowInstancesQuery.data ?? []}
                   />
                 ) : null}
                 {routeProjectId ? (
@@ -972,18 +949,7 @@ export function ProjectsView({
                     tasks={projectTasks}
                     transferRequests={projectTransferRequests}
                   />
-                ) : (
-                  <ProjectSelectedContextPanel
-                    isLoading={eventsQuery.isFetching}
-                    project={displayedProject}
-                    recentEvents={projectEvents}
-                    riskSummary={
-                      effectiveProjectId
-                        ? displayedRiskSummaries[effectiveProjectId]
-                        : undefined
-                    }
-                  />
-                )}
+                ) : null}
               </div>
             </>
           )}
