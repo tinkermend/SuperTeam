@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperTeam · 项目管理 — Quantum Command Center</title>
+<style>
+/* ============================================================
+   QUANTUM COMMAND CENTER — Design System
+   A dark, glass-morphic command center for AI orchestration
+   ============================================================ */
+
+/* ---------- Design Tokens ---------- */
+:root {
+  /* — Surface Layers — */
+  --bg-void:        #08090F;
+  --bg-deep:        #0B0D16;
+  --bg-elevated:    #12141F;
+  --bg-card:        rgba(22, 25, 38, 0.55);
+  --bg-card-solid:  #161926;
+  --bg-hover:       rgba(38, 42, 62, 0.5);
+  --bg-input:       rgba(15, 17, 27, 0.8);
+
+  /* — Glass Effects — */
+  --glass-blur:     20px;
+  --glass-border:   rgba(255, 255, 255, 0.07);
+  --glass-border-hi:rgba(255, 255, 255, 0.12);
+  --glass-shadow:   0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-shadow-lg:0 20px 60px rgba(0, 0, 0, 0.5);
+
+  /* — Text Hierarchy — */
+  --text-primary:   #F0F2F8;
+  --text-secondary: #A8AEC0;
+  --text-tertiary:  #6B7180;
+  --text-inverse:   #0B0D16;
+
+  /* — Brand Accent: Indigo-Violet — */
+  --accent:         #818CF8;
+  --accent-deep:    #6366F1;
+  --accent-glow:    rgba(129, 140, 248, 0.35);
+  --accent-soft:    rgba(99, 102, 241, 0.12);
+
+  /* — Status Colors (Luminous) — */
+  --status-run:     #34D399;  /* Emerald — running */
+  --status-run-glow:rgba(52, 211, 153, 0.4);
+  --status-wait:    #FBBF24;  /* Amber — waiting */
+  --status-wait-glow:rgba(251, 191, 36, 0.4);
+  --status-block:   #F87171;  /* Rose — blocked */
+  --status-block-glow:rgba(248, 113, 113, 0.4);
+  --status-info:    #38BDF8;  /* Sky — info */
+  --status-info-glow:rgba(56, 189, 248, 0.4);
+  --status-done:    #818CF8;  /* Indigo — completed */
+  --status-mute:    #64748B;  /* Slate — archived */
+  --status-mute-glow:rgba(100, 116, 139, 0.3);
+
+  /* — Semantic Soft Backgrounds — */
+  --run-soft:   rgba(52, 211, 153, 0.10);
+  --wait-soft:  rgba(251, 191, 36, 0.10);
+  --block-soft: rgba(248, 113, 113, 0.10);
+  --info-soft:  rgba(56, 189, 248, 0.10);
+  --done-soft:  rgba(129, 140, 248, 0.10);
+  --mute-soft:  rgba(100, 116, 139, 0.10);
+
+  /* — Geometry — */
+  --radius-xl:  20px;
+  --radius-lg:  16px;
+  --radius-md:  12px;
+  --radius-sm:  8px;
+  --radius-xs:  6px;
+
+  /* — Shadows — */
+  --shadow-glow-accent: 0 0 24px var(--accent-glow);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+
+  /* — Transitions — */
+  --t-fast: 120ms cubic-bezier(.4, 0, .2, 1);
+  --t-normal: 240ms cubic-bezier(.4, 0, .2, 1);
+  --t-slow: 400ms cubic-bezier(.4, 0, .2, 1);
+
+  /* — Layout — */
+  --sidebar-w: 64px;
+  --topbar-h: 60px;
+  --content-max: 1480px;
+
+  /* — Fonts — */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ---------- Reset & Base ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 15px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-void);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Ambient background glow */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 0%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(ellipse 500px 300px at 85% 100%, rgba(56, 189, 248, 0.05), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------- Layout Shell ---------- */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg-deep);
+  border-right: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 50;
+}
+
+.sidebar-logo {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent-deep), #4F46E5);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+  flex-shrink: 0;
+}
+.sidebar-logo svg { width: 20px; height: 20px; color: white; }
+
+.sidebar-divider {
+  width: 32px; height: 1px;
+  background: var(--glass-border);
+  margin: 4px 0 8px;
+}
+
+.nav-item {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  position: relative;
+  border: 1px solid transparent;
+}
+.nav-item svg { width: 20px; height: 20px; }
+.nav-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--glass-border);
+}
+.nav-item.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(129, 140, 248, 0.2);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.nav-spacer { flex: 1; }
+
+.nav-badge {
+  position: absolute;
+  top: 4px; right: 4px;
+  min-width: 16px; height: 16px;
+  border-radius: 8px;
+  background: var(--status-block);
+  font-size: 10px;
+  font-weight: 700;
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 8px var(--status-block-glow);
+}
+
+/* ---------- Main Area ---------- */
+.main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Top Bar ---------- */
+.topbar {
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  background: rgba(11, 13, 22, 0.7);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.topbar-breadcrumb {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.topbar-breadcrumb .current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.topbar-breadcrumb svg { width: 14px; height: 14px; opacity: .5; }
+
+.topbar-spacer { flex: 1; }
+
+.topbar-search {
+  width: 320px; height: 36px;
+  background: var(--bg-input);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  transition: all var(--t-fast);
+}
+.topbar-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.topbar-search svg { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+.topbar-search input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text-primary); font-size: 13px; font-family: var(--font-sans);
+}
+.topbar-search input::placeholder { color: var(--text-tertiary); }
+.topbar-search kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 6px; border-radius: 4px;
+  background: var(--bg-elevated); border: 1px solid var(--glass-border);
+  color: var(--text-tertiary);
+}
+
+.topbar-icon-btn {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  border: 1px solid transparent;
+  background: none;
+  position: relative;
+}
+.topbar-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--glass-border);
+}
+.topbar-icon-btn svg { width: 20px; height: 20px; }
+
+.topbar-avatar {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: white;
+  cursor: pointer;
+  border: 2px solid var(--glass-border-hi);
+}
+
+/* ---------- Content ---------- */
+.content {
+  flex: 1;
+  padding: 28px 32px 48px;
+  max-width: var(--content-max);
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ---------- Page Header ---------- */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.page-header-left { min-width: 0; }
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-header h1 .header-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent-deep), #4F46E5);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+.page-header h1 .header-icon svg { width: 20px; height: 20px; color: white; }
+
+.page-header .subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 600px;
+}
+
+.page-header-actions {
+  display: flex; gap: 10px; flex-shrink: 0;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px; font-weight: 600;
+  padding: 0 16px; height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.btn svg { width: 16px; height: 16px; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-deep), #7C3AED);
+  color: white;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+}
+.btn-primary:active { transform: translateY(0); }
+
+.btn-ghost {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(12px);
+}
+.btn-ghost:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--glass-border-hi);
+}
+
+.btn-sm {
+  height: 32px; padding: 0 12px; font-size: 12px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- Risk Summary Strip ---------- */
+.risk-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.risk-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all var(--t-normal);
+  position: relative;
+  overflow: hidden;
+}
+.risk-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  opacity: 0.6;
+  transition: opacity var(--t-fast);
+}
+.risk-card[data-tone="block"]::before { background: var(--status-block); box-shadow: 0 0 12px var(--status-block-glow); }
+.risk-card[data-tone="wait"]::before  { background: var(--status-wait);  box-shadow: 0 0 12px var(--status-wait-glow); }
+.risk-card[data-tone="info"]::before  { background: var(--status-info);  box-shadow: 0 0 12px var(--status-info-glow); }
+
+.risk-card:hover {
+  border-color: var(--glass-border-hi);
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow);
+}
+.risk-card:hover::before { opacity: 1; }
+
+.risk-card-header {
+  display: flex; align-items: center; gap: 8px;
+}
+.risk-icon {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-xs);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.risk-icon svg { width: 16px; height: 16px; }
+.risk-card[data-tone="block"] .risk-icon { background: var(--block-soft); color: var(--status-block); }
+.risk-card[data-tone="wait"]  .risk-icon { background: var(--wait-soft);  color: var(--status-wait); }
+.risk-card[data-tone="info"]  .risk-icon { background: var(--info-soft);  color: var(--status-info); }
+
+.risk-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.risk-value {
+  font-size: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.risk-card[data-tone="block"] .risk-value { color: var(--status-block); }
+.risk-card[data-tone="wait"]  .risk-value { color: var(--status-wait); }
+.risk-card[data-tone="info"]  .risk-value { color: var(--status-info); }
+
+.risk-value.zero { color: var(--text-tertiary); }
+
+.risk-pulse {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.risk-card[data-tone="block"] .risk-pulse {
+  background: var(--status-block);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+.risk-card[data-tone="wait"] .risk-pulse {
+  background: var(--status-wait);
+  animation: pulse-glow 2s ease-in-out infinite 0.5s;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--status-block-glow); opacity: 1; }
+  50% { box-shadow: 0 0 0 6px transparent; opacity: 0.5; }
+}
+
+/* ---------- Filter Bar ---------- */
+.filter-bar {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-search {
+  flex: 1; min-width: 200px;
+  height: 36px;
+  background: var(--bg-input);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  transition: all var(--t-fast);
+}
+.filter-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.filter-search svg { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+.filter-search input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text-primary); font-size: 13px;
+}
+.filter-search input::placeholder { color: var(--text-tertiary); }
+
+.filter-select {
+  height: 36px;
+  background: var(--bg-input);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px; font-family: var(--font-sans);
+  padding: 0 32px 0 12px;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A8AEC0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.filter-select:hover { border-color: var(--glass-border-hi); }
+.filter-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.filter-chips {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  white-space: nowrap;
+}
+.chip:hover { color: var(--text-primary); border-color: var(--glass-border-hi); background: var(--bg-hover); }
+.chip.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(129, 140, 248, 0.3);
+}
+.chip .chip-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+}
+.chip.active .chip-count {
+  background: var(--accent-deep);
+  color: white;
+}
+
+/* ---------- Project Table ---------- */
+.project-table-wrap {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-top: none;
+  overflow: hidden;
+}
+
+.table-info-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.table-info-left { display: flex; align-items: center; gap: 10px; }
+.table-info-left h2 { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+
+.live-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+.live-indicator .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  animation: blink 1.5s ease-in-out infinite;
+}
+.live-indicator.live { color: var(--status-run); background: var(--run-soft); }
+.live-indicator.live .dot { background: var(--status-run); box-shadow: 0 0 8px var(--status-run-glow); }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.table-info-right {
+  font-size: 12px; color: var(--text-tertiary);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.project-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.project-table thead th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--glass-border);
+  position: sticky; top: 0;
+  white-space: nowrap;
+}
+
+.project-table tbody tr {
+  transition: background var(--t-fast);
+  position: relative;
+}
+.project-table tbody tr:hover { background: var(--bg-hover); }
+
+.project-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  vertical-align: top;
+}
+.project-table tbody tr:last-child td { border-bottom: none; }
+
+/* Risk accent bar (left) */
+.risk-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.risk-bar.danger { background: var(--status-block); box-shadow: 0 0 12px var(--status-block-glow); }
+.risk-bar.warn   { background: var(--status-wait);  box-shadow: 0 0 8px var(--status-wait-glow); }
+.risk-bar.ok     { background: var(--status-run);   opacity: 0.4; }
+.risk-bar.none   { background: transparent; }
+
+/* — Project Cell — */
+.cell-project { min-width: 240px; }
+.project-title-row { display: flex; align-items: center; gap: 10px; }
+.project-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.project-icon svg { width: 16px; height: 16px; }
+.project-icon[data-status="running"]   { background: var(--run-soft);   color: var(--status-run); }
+.project-icon[data-status="configuring"] { background: var(--info-soft);  color: var(--status-info); }
+.project-icon[data-status="draft"]     { background: var(--info-soft);  color: var(--status-info); }
+.project-icon[data-status="paused"]    { background: var(--wait-soft);  color: var(--status-wait); }
+.project-icon[data-status="acceptance"]{ background: var(--wait-soft);  color: var(--status-wait); }
+.project-icon[data-status="archived"]  { background: var(--mute-soft);  color: var(--status-mute); }
+
+.project-name {
+  font-weight: 700; font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.project-meta {
+  margin-top: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+  padding-left: 42px;
+}
+.project-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.project-owner {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.project-owner code {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* — Task Cell — */
+.cell-task { min-width: 200px; }
+.task-title {
+  font-weight: 600; font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* — Node Cell — */
+.cell-node { min-width: 160px; }
+.node-title {
+  font-weight: 600; font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.node-kind {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* — Handler Cell — */
+.cell-handler { min-width: 130px; }
+.handler-name {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.handler-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 6px; border-radius: 4px;
+}
+.handler-badge.human { background: var(--wait-soft); color: var(--status-wait); }
+.handler-badge.agent { background: var(--accent-soft); color: var(--accent); }
+.handler-badge.idle  { background: var(--mute-soft); color: var(--status-mute); }
+
+/* — Status Cell — */
+.cell-status { min-width: 120px; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.status-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.status-pill.running  { background: var(--run-soft);   color: var(--status-run); }
+.status-pill.running .dot  { background: var(--status-run);   box-shadow: 0 0 6px var(--status-run-glow); animation: blink 1.5s infinite; }
+.status-pill.waiting  { background: var(--wait-soft);  color: var(--status-wait); }
+.status-pill.waiting .dot  { background: var(--status-wait);  box-shadow: 0 0 6px var(--status-wait-glow); }
+.status-pill.blocked  { background: var(--block-soft); color: var(--status-block); }
+.status-pill.blocked .dot  { background: var(--status-block); box-shadow: 0 0 6px var(--status-block-glow); animation: blink 1s infinite; }
+.status-pill.info     { background: var(--info-soft);  color: var(--status-info); }
+.status-pill.info .dot     { background: var(--status-info); }
+.status-pill.done     { background: var(--done-soft);  color: var(--status-done); }
+.status-pill.done .dot     { background: var(--status-done); }
+.status-pill.mute     { background: var(--mute-soft);  color: var(--status-mute); }
+.status-pill.mute .dot     { background: var(--status-mute); }
+
+.status-reason {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+/* — Time Cell — */
+.cell-time { min-width: 110px; white-space: nowrap; }
+.time-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.time-empty { font-size: 12px; color: var(--text-tertiary); }
+
+/* — Action Cell — */
+.cell-action { min-width: 130px; text-align: right; }
+.action-group { display: inline-flex; gap: 6px; justify-content: flex-end; }
+
+/* — Progress Mini Bar — */
+.progress-mini {
+  margin-top: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  position: relative;
+}
+.progress-mini-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--t-slow);
+}
+.progress-mini-fill.running { background: var(--status-run); box-shadow: 0 0 8px var(--status-run-glow); }
+.progress-mini-fill.waiting { background: var(--status-wait); }
+.progress-mini-fill.blocked { background: var(--status-block); }
+.progress-mini-fill.done    { background: var(--status-done); }
+
+/* ---------- Pagination ---------- */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.02);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.pagination-info strong { color: var(--text-secondary); font-weight: 600; }
+
+.pagination-controls { display: flex; align-items: center; gap: 4px; }
+
+.page-btn {
+  min-width: 32px; height: 32px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 8px;
+  font-family: var(--font-sans);
+}
+.page-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--glass-border);
+  color: var(--text-primary);
+}
+.page-btn.active {
+  background: var(--accent-soft);
+  border-color: rgba(129, 140, 248, 0.3);
+  color: var(--accent);
+}
+.page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.page-btn svg { width: 16px; height: 16px; }
+
+.page-size-select {
+  height: 32px;
+  background: var(--bg-input);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  padding: 0 28px 0 10px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A8AEC0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+/* ---------- Empty State ---------- */
+.empty-row td {
+  padding: 60px 20px !important;
+  text-align: center;
+}
+.empty-state {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.empty-state svg { width: 40px; height: 40px; color: var(--text-tertiary); opacity: 0.4; }
+.empty-state h3 { font-size: 15px; font-weight: 700; color: var(--text-secondary); }
+.empty-state p { font-size: 13px; color: var(--text-tertiary); max-width: 300px; }
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1280px) {
+  .risk-strip { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .risk-strip { grid-template-columns: repeat(2, 1fr); }
+  .content { padding: 20px 16px 40px; }
+  .topbar-search { width: 180px; }
+  .page-header { flex-direction: column; }
+}
+
+/* ---------- Focus Visible ---------- */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- Reduced Motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- ============ SIDEBAR ============ -->
+  <nav class="sidebar" aria-label="主导航">
+    <div class="sidebar-logo" title="SuperTeam">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+        <polyline points="2 17 12 22 22 17"/>
+        <polyline points="2 12 12 17 22 12"/>
+      </svg>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <button class="nav-item" title="工作台">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+
+    <button class="nav-item active" title="项目管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+      <span class="nav-badge">3</span>
+    </button>
+
+    <button class="nav-item" title="任务">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    </button>
+
+    <button class="nav-item" title="收件箱">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span class="nav-badge">5</span>
+    </button>
+
+    <button class="nav-item" title="数字员工">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </button>
+
+    <button class="nav-item" title="技能">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    </button>
+
+    <button class="nav-item" title="运行时">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+    </button>
+
+    <button class="nav-item" title="流程编排">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+    </button>
+
+    <div class="nav-spacer"></div>
+
+    <button class="nav-item" title="审计">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    </button>
+
+    <button class="nav-item" title="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </nav>
+
+  <!-- ============ MAIN AREA ============ -->
+  <div class="main-area">
+    <!-- ======== TOP BAR ======== -->
+    <header class="topbar">
+      <div class="topbar-breadcrumb">
+        <span>SuperTeam</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span class="current">项目管理</span>
+      </div>
+
+      <div class="topbar-spacer"></div>
+
+      <div class="topbar-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="全局搜索项目、任务、员工…" aria-label="全局搜索">
+        <kbd>⌘K</kbd>
+      </div>
+
+      <button class="topbar-icon-btn" title="通知" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      </button>
+
+      <div class="topbar-avatar" title="张明 — 项目管理员">ZM</div>
+    </header>
+
+    <!-- ======== CONTENT ======== -->
+    <main class="content">
+      <!-- ======== PAGE HEADER ======== -->
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>
+            <span class="header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            </span>
+            项目管理
+          </h1>
+          <p class="subtitle">围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环</p>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            归档快照
+          </button>
+          <button class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            新建项目
+          </button>
+        </div>
+      </div>
+
+      <!-- ======== RISK SUMMARY STRIP ======== -->
+      <div class="risk-strip">
+        <div class="risk-card" data-tone="block">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <span class="risk-label">阻塞项目</span>
+          </div>
+          <div class="risk-value">3</div>
+        </div>
+
+        <div class="risk-card" data-tone="wait">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+            </div>
+            <span class="risk-label">人工决策</span>
+          </div>
+          <div class="risk-value">7</div>
+        </div>
+
+        <div class="risk-card" data-tone="block">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <span class="risk-label">执行失败</span>
+          </div>
+          <div class="risk-value">2</div>
+        </div>
+
+        <div class="risk-card" data-tone="wait">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13l2 2 4-4"/></svg>
+            </div>
+            <span class="risk-label">证据待补</span>
+          </div>
+          <div class="risk-value">5</div>
+        </div>
+
+        <div class="risk-card" data-tone="wait">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <span class="risk-label">等待超时</span>
+          </div>
+          <div class="risk-value">4</div>
+        </div>
+
+        <div class="risk-card" data-tone="info">
+          <div class="risk-pulse"></div>
+          <div class="risk-card-header">
+            <div class="risk-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            </div>
+            <span class="risk-label">协调异常</span>
+          </div>
+          <div class="risk-value">1</div>
+        </div>
+      </div>
+
+      <!-- ======== FILTER BAR ======== -->
+      <div class="filter-bar">
+        <div class="filter-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="tableSearch" placeholder="搜索项目名称或目标…" aria-label="搜索项目">
+        </div>
+
+        <select class="filter-select" id="statusFilter" aria-label="项目状态筛选">
+          <option value="all">全部状态</option>
+          <option value="running">运行中</option>
+          <option value="configuring">配置中</option>
+          <option value="draft">草稿</option>
+          <option value="paused">已暂停</option>
+          <option value="acceptance">验收中</option>
+          <option value="archived">已归档</option>
+        </select>
+
+        <div class="filter-chips">
+          <button class="chip active" data-risk="all">全部风险 <span class="chip-count">24</span></button>
+          <button class="chip" data-risk="blocked">阻塞 <span class="chip-count">3</span></button>
+          <button class="chip" data-risk="human_decision">人工决策 <span class="chip-count">7</span></button>
+          <button class="chip" data-risk="execution_failed">执行失败 <span class="chip-count">2</span></button>
+          <button class="chip" data-risk="evidence_required">证据待补 <span class="chip-count">5</span></button>
+          <button class="chip" data-risk="sla_waiting">等待超时 <span class="chip-count">4</span></button>
+          <button class="chip" data-risk="runtime_or_coordination">协调异常 <span class="chip-count">1</span></button>
+          <button class="chip" data-risk="ok">健康 <span class="chip-count">8</span></button>
+        </div>
+      </div>
+
+      <!-- ======== PROJECT TABLE ======== -->
+      <div class="project-table-wrap">
+        <div class="table-info-bar">
+          <div class="table-info-left">
+            <h2>项目队列</h2>
+            <span class="live-indicator live">
+              <span class="dot"></span>
+              实时监控中
+            </span>
+          </div>
+          <div class="table-info-right">
+            按需要介入程度排序 · 风险识别基于当前页
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="project-table">
+            <thead>
+              <tr>
+                <th style="width: 22%;">项目</th>
+                <th style="width: 20%;">当前任务</th>
+                <th style="width: 16%;">当前节点 / 能力</th>
+                <th style="width: 12%;">当前处理者</th>
+                <th style="width: 10%;">执行状态</th>
+                <th style="width: 10%;">最后运行</th>
+                <th style="width: 10%; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="projectTbody">
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ======== PAGINATION ======== -->
+        <div class="pagination">
+          <div class="pagination-info">
+            共 <strong>24</strong> 个项目 · 第 <strong>1</strong> / 3 页
+          </div>
+          <div class="pagination-controls">
+            <select class="page-size-select" aria-label="每页条数">
+              <option value="10">10 条/页</option>
+              <option value="20">20 条/页</option>
+            </select>
+            <button class="page-btn" disabled aria-label="上一页">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <button class="page-btn active">1</button>
+            <button class="page-btn">2</button>
+            <button class="page-btn">3</button>
+            <button class="page-btn" aria-label="下一页">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Sample Data — reflects real SuperTeam project management domain
+// ============================================================
+const projects = [
+  {
+    id: 'prj_01HXK8MA4V7N2QJ3ZB5Y6C9DWE',
+    name: '用户增长漏斗优化 — Q3 营收冲刺',
+    goal: '通过 A/B 实验优化注册转化路径',
+    owner: 'usr_zhangming',
+    status: 'running',
+    risk: 'danger',
+    riskLabel: '阻塞 · 执行失败',
+    task: '修复支付回调超时导致订单丢失',
+    taskSub: '需求 dem_8f3a2c',
+    node: 'payment-retry-handler',
+    nodeKind: 'task_kind: payment_retry',
+    handler: '数字员工: codex-prod-01',
+    handlerType: 'agent',
+    workflowStatus: 'failed',
+    workflowLabel: '执行失败',
+    statusReason: 'Provider 返回 503 连续 3 次',
+    lastRun: '07/05 22:48',
+    progress: 68,
+    progressTone: 'blocked',
+  },
+  {
+    id: 'prj_01HXK7JD3F6M1PL4AC8E2B7XKG',
+    name: '数据中台 ETL 管道迁移至 Temporal',
+    goal: '将 32 条定时任务迁移到 Temporal Workflow',
+    owner: 'usr_liwei',
+    status: 'running',
+    risk: 'danger',
+    riskLabel: '阻塞 · 人工决策',
+    task: '审批生产环境数据库写权限申请',
+    taskSub: '需求 dem_7c2e1b',
+    node: 'approval-gate-db-write',
+    nodeKind: 'dispatch_gate: human',
+    handler: '李伟（待确认）',
+    handlerType: 'human',
+    workflowStatus: 'waiting_human',
+    workflowLabel: '等待人工决策',
+    statusReason: '已等待 2h14m · SLA 剩余 46m',
+    lastRun: '07/05 21:12',
+    progress: 42,
+    progressTone: 'waiting',
+  },
+  {
+    id: 'prj_01HXJ9FE2G5N3QM8BD6F4A1YLP',
+    name: '移动端 5.2 版本灰度发布',
+    goal: '从 5% 灰度逐步扩展到 30%',
+    owner: 'usr_wangfang',
+    status: 'running',
+    risk: 'warn',
+    riskLabel: '预警 · 等待超时',
+    task: '收集灰度崩溃率并判断是否回滚',
+    taskSub: '需求 dem_6b1d0a',
+    node: 'crash-rate-monitor',
+    nodeKind: 'task_kind: metric_collect',
+    handler: '数字员工: opencode-prod-02',
+    handlerType: 'agent',
+    workflowStatus: 'running',
+    workflowLabel: '运行中',
+    statusReason: '崩溃率 0.12% · 阈值 0.5%',
+    lastRun: '07/05 23:05',
+    progress: 75,
+    progressTone: 'running',
+  },
+  {
+    id: 'prj_01HXG6AC1F4M2PL9CE7B3K8XJH',
+    name: '客户反馈自动分类与路由系统',
+    goal: 'AI 分类工单并路由到对应处理团队',
+    owner: 'usr_chenyu',
+    status: 'running',
+    risk: 'warn',
+    riskLabel: '预警 · 证据待补',
+    task: '补充分类准确率验证证据',
+    taskSub: '需求 dem_5a0c9f',
+    node: 'evidence-verification',
+    nodeKind: 'task_kind: evidence_verify',
+    handler: '陈宇（待补证）',
+    handlerType: 'human',
+    workflowStatus: 'waiting_human',
+    workflowLabel: '等待人工补证',
+    statusReason: '需要 500 条标注样本验证',
+    lastRun: '07/05 18:33',
+    progress: 55,
+    progressTone: 'waiting',
+  },
+  {
+    id: 'prj_01HXF4BD9G3N7QM2AF5C6L1XKE',
+    name: '内部知识库语义搜索升级',
+    goal: '从关键词搜索升级到向量语义检索',
+    owner: 'usr_zhaolei',
+    status: 'running',
+    risk: 'ok',
+    riskLabel: '健康',
+    task: '索引重建 · 预计 12 分钟完成',
+    taskSub: '需求 dem_4f9b8e',
+    node: 'vector-index-builder',
+    nodeKind: 'task_kind: index_build',
+    handler: '数字员工: claude-code-01',
+    handlerType: 'agent',
+    workflowStatus: 'running',
+    workflowLabel: '运行中',
+    statusReason: '进度 78% · 无异常',
+    lastRun: '07/05 23:02',
+    progress: 78,
+    progressTone: 'running',
+  },
+  {
+    id: 'prj_01HXE3AC8F2M6PL1BD4C5J9XWG',
+    name: '支付风控规则引擎重构',
+    goal: '将硬编码规则迁移到可配置 DSL',
+    owner: 'usr_sunli',
+    status: 'acceptance',
+    risk: 'warn',
+    riskLabel: '预警 · 验收中',
+    task: '等待验收人确认风控覆盖率',
+    taskSub: '需求 dem_3e8a7d',
+    node: 'acceptance-review',
+    nodeKind: 'task_kind: acceptance',
+    handler: '孙丽（验收人）',
+    handlerType: 'human',
+    workflowStatus: 'waiting_human',
+    workflowLabel: '等待验收',
+    statusReason: '已提交验收报告 · 等待确认',
+    lastRun: '07/05 16:47',
+    progress: 92,
+    progressTone: 'waiting',
+  },
+  {
+    id: 'prj_01HXD2BD7G1N5QM9CE3B4K8XLF',
+    name: 'API 网关限流策略优化',
+    goal: '实现动态限流和自适应熔断',
+    owner: 'usr_zhouqiang',
+    status: 'configuring',
+    risk: 'ok',
+    riskLabel: '健康',
+    task: '配置 Runtime Provider 类型映射',
+    taskSub: '需求 dem_2d7b6c',
+    node: 'runtime-placement-config',
+    nodeKind: 'task_kind: config',
+    handler: '待调度',
+    handlerType: 'idle',
+    workflowStatus: 'planning',
+    workflowLabel: '规划中',
+    statusReason: '等待 Runtime 就绪检查',
+    lastRun: '暂无运行记录',
+    progress: 15,
+    progressTone: 'waiting',
+  },
+  {
+    id: 'prj_01HXC1AC6F0M4PL8BD2B3J7XKG',
+    name: '日志审计流水线标准化',
+    goal: '统一全平台日志格式和审计追溯链',
+    owner: 'usr_wumin',
+    status: 'running',
+    risk: 'ok',
+    riskLabel: '健康',
+    task: '批量解析历史日志并写入审计表',
+    taskSub: '需求 dem_1c6a5b',
+    node: 'log-batch-processor',
+    nodeKind: 'task_kind: batch_process',
+    handler: '数字员工: pi-agent-03',
+    handlerType: 'agent',
+    workflowStatus: 'running',
+    workflowLabel: '运行中',
+    statusReason: '已处理 1.2M / 3.8M 条',
+    lastRun: '07/05 23:08',
+    progress: 32,
+    progressTone: 'running',
+  },
+  {
+    id: 'prj_01HWZ9BD5G8N3QM7CE1A2K6XJF',
+    name: '用户画像标签体系 v2',
+    goal: '重构标签计算逻辑并支持实时更新',
+    owner: 'usr_zhenghua',
+    status: 'paused',
+    risk: 'warn',
+    riskLabel: '预警 · 已暂停',
+    task: '等待依赖服务升级完成后恢复',
+    taskSub: '需求 dem_0b5a4a',
+    node: 'paused-checkpoint',
+    nodeKind: 'task_kind: checkpoint',
+    handler: '待调度',
+    handlerType: 'idle',
+    workflowStatus: 'cancelled',
+    workflowLabel: '已暂停',
+    statusReason: '依赖 user-service v3.2 部署',
+    lastRun: '07/04 14:21',
+    progress: 60,
+    progressTone: 'waiting',
+  },
+  {
+    id: 'prj_01HWY8AC4F7N2PL6CE9B1J5XKG',
+    name: '前端组件库 Design System 迁移',
+    goal: '将 v2 组件全部迁移到 v3 设计系统',
+    owner: 'usr_linfeng',
+    status: 'archived',
+    risk: 'none',
+    riskLabel: '已归档',
+    task: '项目已归档 · 快照已生成',
+    taskSub: '需求 dem_9a4b3z',
+    node: 'archive-snapshot',
+    nodeKind: 'task_kind: archive',
+    handler: '—',
+    handlerType: 'idle',
+    workflowStatus: 'completed',
+    workflowLabel: '已完成',
+    statusReason: '归档于 07/03 10:15',
+    lastRun: '07/03 10:15',
+    progress: 100,
+    progressTone: 'done',
+  },
+];
+
+// ============================================================
+// Render Logic
+// ============================================================
+
+function statusIcon(status) {
+  const icons = {
+    running: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    configuring: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"/></svg>',
+    draft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    paused: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+    acceptance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    archived: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+  };
+  return icons[status] || icons.draft;
+}
+
+function renderRows(data) {
+  const tbody = document.getElementById('projectTbody');
+  if (data.length === 0) {
+    tbody.innerHTML = `
+      <tr class="empty-row">
+        <td colspan="7">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <h3>没有符合筛选条件的项目</h3>
+            <p>调整风险筛选、搜索关键词或项目状态后重试。</p>
+          </div>
+        </td>
+      </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.map(p => {
+    const riskBarClass = p.risk === 'danger' ? 'danger' : p.risk === 'warn' ? 'warn' : p.risk === 'ok' ? 'ok' : 'none';
+    const statusClass = p.workflowStatus;
+    const handlerBadgeClass = p.handlerType === 'human' ? 'human' : p.handlerType === 'agent' ? 'agent' : 'idle';
+    const handlerBadgeLabel = p.handlerType === 'human' ? '人工' : p.handlerType === 'agent' ? 'AI' : '空闲';
+
+    return `
+      <tr style="position: relative;">
+        <td class="risk-bar ${riskBarClass}"></td>
+        <td class="cell-project">
+          <div class="project-title-row">
+            <div class="project-icon" data-status="${p.status}">${statusIcon(p.status)}</div>
+            <div style="min-width:0;flex:1;">
+              <div class="project-name">${p.name}</div>
+            </div>
+          </div>
+          <div class="project-meta">
+            <div class="project-id">${p.id}</div>
+            <div class="project-owner">负责人 <code>${p.owner}</code></div>
+          </div>
+        </td>
+        <td class="cell-task">
+          <div class="task-title">${p.task}</div>
+          <div class="task-sub">${p.taskSub} · ${p.goal}</div>
+        </td>
+        <td class="cell-node">
+          <div class="node-title">${p.node}</div>
+          <div class="node-kind">${p.nodeKind}</div>
+        </td>
+        <td class="cell-handler">
+          <div class="handler-name">${p.handler}</div>
+          <span class="handler-badge ${handlerBadgeClass}">${handlerBadgeLabel}</span>
+        </td>
+        <td class="cell-status">
+          <span class="status-pill ${statusClass}">
+            <span class="dot"></span>
+            ${p.workflowLabel}
+          </span>
+          <div class="status-reason">${p.statusReason}</div>
+          <div class="progress-mini">
+            <div class="progress-mini-fill ${p.progressTone}" style="width: ${p.progress}%;"></div>
+          </div>
+        </td>
+        <td class="cell-time">
+          ${p.lastRun === '暂无运行记录' 
+            ? '<span class="time-empty">暂无运行记录</span>' 
+            : `<span class="time-value">${p.lastRun}</span>`}
+        </td>
+        <td class="cell-action">
+          <div class="action-group">
+            <button class="btn btn-ghost btn-sm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+              编排
+            </button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// Initial render
+renderRows(projects);
+
+// ============================================================
+// Filter Interactions
+// ============================================================
+
+let activeRisk = 'all';
+let activeStatus = 'all';
+let searchTerm = '';
+
+function applyFilters() {
+  let filtered = [...projects];
+
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    filtered = filtered.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.goal.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q)
+    );
+  }
+
+  if (activeStatus !== 'all') {
+    filtered = filtered.filter(p => p.status === activeStatus);
+  }
+
+  if (activeRisk !== 'all') {
+    filtered = filtered.filter(p => p.risk === activeRisk);
+  }
+
+  renderRows(filtered);
+}
+
+// Search
+document.getElementById('tableSearch').addEventListener('input', (e) => {
+  searchTerm = e.target.value;
+  applyFilters();
+});
+
+// Status filter
+document.getElementById('statusFilter').addEventListener('change', (e) => {
+  activeStatus = e.target.value;
+  applyFilters();
+});
+
+// Risk chips
+document.querySelectorAll('.chip[data-risk]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip[data-risk]').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeRisk = chip.dataset.risk;
+    applyFilters();
+  });
+});
+
+// Pagination buttons
+document.querySelectorAll('.page-btn').forEach(btn => {
+  if (btn.textContent.trim().match(/^\d+$/)) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.page-btn').forEach(b => {
+        if (b.textContent.trim().match(/^\d+$/)) b.classList.remove('active');
+      });
+      btn.classList.add('active');
+    });
+  }
+});
+
+// Nav items
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+  });
+});
+</script>
+
+</body>
+</html>

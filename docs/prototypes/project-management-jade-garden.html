@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperTeam · 项目管理 — Jade Garden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   JADE GARDEN DESIGN SYSTEM
+   柔彩卡片风 · 翡翠绿系 · 友好圆润
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* ---- Base Surfaces ---- */
+  --bg-canvas: #F8FAF8;        /* warm off-white with green tint */
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+
+  /* ---- Pastel Section Washes ---- */
+  --pastel-mint: #ECFDF5;      /* emerald tint — low risk / success */
+  --pastel-mint-deep: #D1FAE5;
+  --pastel-cream: #FEFCE8;     /* warm yellow — medium risk / caution */
+  --pastel-cream-deep: #FEF3C7;
+  --pastel-peach: #FFF1EC;     /* warm coral — high risk / urgent */
+  --pastel-peach-deep: #FFE4D6;
+  --pastel-lavender: #F5F3FF;  /* soft violet — blocked / waiting */
+  --pastel-lavender-deep: #EDE9FE;
+  --pastel-sky: #EFF6FF;       /* soft blue — info / running */
+
+  /* ---- Primary: Emerald ---- */
+  --emerald-50: #ECFDF5;
+  --emerald-100: #D1FAE5;
+  --emerald-200: #A7F3D0;
+  --emerald-300: #6EE7B7;
+  --emerald-400: #34D399;
+  --emerald-500: #10B981;
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+  --emerald-800: #065F46;
+  --emerald-900: #064E3B;
+
+  /* ---- Semantic Status ---- */
+  --status-running: #10B981;     /* emerald */
+  --status-running-bg: #ECFDF5;
+  --status-blocked: #8B5CF6;     /* violet */
+  --status-blocked-bg: #F5F3FF;
+  --status-waiting: #F59E0B;     /* amber */
+  --status-waiting-bg: #FEFCE8;
+  --status-review: #3B82F6;      /* blue */
+  --status-review-bg: #EFF6FF;
+  --status-paused: #94A3B8;      /* slate */
+  --status-paused-bg: #F1F5F9;
+  --status-archived: #64748B;    /* slate deep */
+  --status-archived-bg: #F8FAFC;
+
+  /* ---- Risk ---- */
+  --risk-low: #10B981;
+  --risk-low-bg: #ECFDF5;
+  --risk-medium: #F59E0B;
+  --risk-medium-bg: #FEFCE8;
+  --risk-high: #EF4444;
+  --risk-high-bg: #FEF2F2;
+  --risk-critical: #DC2626;
+  --risk-critical-bg: #FEE2E2;
+
+  /* ---- Text ---- */
+  --text-primary: #1A2E2A;       /* warm near-black with green undertone */
+  --text-secondary: #5C6B66;
+  --text-tertiary: #94A39E;
+  --text-inverse: #FFFFFF;
+
+  /* ---- Borders ---- */
+  --border-soft: #EDF0EE;
+  --border-medium: #E2E8E4;
+  --border-strong: #CBD5D0;
+
+  /* ---- Shadows (soft, multi-layer) ---- */
+  --shadow-xs: 0 1px 2px rgba(6, 78, 59, 0.04);
+  --shadow-sm: 0 1px 3px rgba(6, 78, 59, 0.05), 0 1px 2px rgba(6, 78, 59, 0.03);
+  --shadow-md: 0 4px 12px rgba(6, 78, 59, 0.06), 0 2px 4px rgba(6, 78, 59, 0.04);
+  --shadow-lg: 0 10px 28px rgba(6, 78, 59, 0.08), 0 4px 10px rgba(6, 78, 59, 0.05);
+  --shadow-xl: 0 20px 48px rgba(6, 78, 59, 0.10), 0 8px 20px rgba(6, 78, 59, 0.06);
+  --shadow-emerald: 0 4px 14px rgba(16, 185, 129, 0.25);
+
+  /* ---- Radii ---- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-2xl: 24px;
+  --r-full: 9999px;
+
+  /* ---- Typography ---- */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ---- Transitions ---- */
+  --t-fast: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  --t-normal: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  --t-slow: 360ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html { font-size: 16px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* Subtle organic background texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 12% 8%, rgba(16, 185, 129, 0.04), transparent 60%),
+    radial-gradient(ellipse 500px 350px at 88% 92%, rgba(139, 92, 246, 0.03), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================================
+   APP LAYOUT
+   ============================================================ */
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-soft);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px 20px;
+}
+
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-emerald);
+  flex-shrink: 0;
+}
+
+.brand-mark svg { width: 22px; height: 22px; }
+
+.brand-text {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.brand-text span { color: var(--emerald-600); }
+
+.sidebar-section {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding: 16px 12px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.nav-item:hover {
+  background: var(--pastel-mint);
+  color: var(--emerald-700);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-emerald);
+}
+
+.nav-item.active svg { color: var(--text-inverse); }
+
+.nav-item svg {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: color var(--t-fast);
+}
+
+.nav-item:hover svg { color: var(--emerald-600); }
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--pastel-peach-deep);
+  color: #C2410C;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+}
+
+.nav-item.active .nav-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--text-inverse);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: var(--pastel-mint);
+  border: 1px solid var(--emerald-100);
+}
+
+.sidebar-footer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--emerald-800);
+  margin-bottom: 2px;
+}
+
+.sidebar-footer-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ============================================================
+   MAIN CONTENT
+   ============================================================ */
+.main {
+  padding: 0 40px 60px;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* ---- Top Bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(to bottom, var(--bg-canvas) 80%, transparent);
+  z-index: 50;
+  margin-bottom: 8px;
+}
+
+.topbar-search {
+  position: relative;
+  flex: 1;
+  max-width: 420px;
+}
+
+.topbar-search input {
+  width: 100%;
+  height: 42px;
+  padding: 0 16px 0 42px;
+  border: 1.5px solid var(--border-medium);
+  border-radius: var(--r-full);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition: all var(--t-fast);
+}
+
+.topbar-search input::placeholder { color: var(--text-tertiary); }
+
+.topbar-search input:focus {
+  outline: none;
+  border-color: var(--emerald-400);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+}
+
+.topbar-search svg {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--text-tertiary);
+}
+
+.topbar-spacer { flex: 1; }
+
+.icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--border-medium);
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  position: relative;
+  color: var(--text-secondary);
+}
+
+.icon-btn:hover {
+  background: var(--pastel-mint);
+  border-color: var(--emerald-300);
+  color: var(--emerald-600);
+}
+
+.icon-btn svg { width: 19px; height: 19px; }
+
+.icon-btn .dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  border: 2px solid var(--bg-surface);
+}
+
+.user-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r-full);
+  background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-inverse);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  border: 2px solid var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--t-fast);
+}
+
+.user-avatar:hover { transform: scale(1.05); }
+
+/* ---- Page Header ---- */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.page-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.page-subtitle b { color: var(--emerald-600); font-weight: 700; }
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  height: 42px;
+  border-radius: var(--r-full);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  border: none;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:focus-visible {
+  outline: 2.5px solid var(--emerald-500);
+  outline-offset: 2px;
+}
+
+.btn svg { width: 17px; height: 17px; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-emerald);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+}
+
+.btn-secondary {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border-medium);
+}
+
+.btn-secondary:hover {
+  background: var(--pastel-mint);
+  border-color: var(--emerald-300);
+  color: var(--emerald-700);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0 12px;
+}
+
+.btn-ghost:hover { background: var(--pastel-mint); color: var(--emerald-600); }
+
+/* ============================================================
+   RISK SUMMARY BENTO
+   ============================================================ */
+.risk-bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.risk-card {
+  border-radius: var(--r-xl);
+  padding: 22px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid transparent;
+  transition: transform var(--t-normal), box-shadow var(--t-normal);
+  cursor: pointer;
+}
+
+.risk-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
+.risk-card--low {
+  background: var(--pastel-mint);
+  border-color: var(--emerald-100);
+}
+.risk-card--medium {
+  background: var(--pastel-cream);
+  border-color: #FDE68A;
+}
+.risk-card--high {
+  background: var(--pastel-peach);
+  border-color: #FDBA74;
+}
+.risk-card--blocked {
+  background: var(--pastel-lavender);
+  border-color: var(--pastel-lavender-deep);
+}
+
+.risk-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.risk-card--low .risk-card-icon { background: var(--emerald-200); color: var(--emerald-700); }
+.risk-card--medium .risk-card-icon { background: #FDE68A; color: #B45309; }
+.risk-card--high .risk-card-icon { background: #FDBA74; color: #C2410C; }
+.risk-card--blocked .risk-card-icon { background: var(--pastel-lavender-deep); color: #6D28D9; }
+
+.risk-card-icon svg { width: 22px; height: 22px; }
+
+.risk-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.risk-card-value {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.risk-card--low .risk-card-value { color: var(--emerald-700); }
+.risk-card--medium .risk-card-value { color: #B45309; }
+.risk-card--high .risk-card-value { color: #C2410C; }
+.risk-card--blocked .risk-card-value { color: #6D28D9; }
+
+.risk-card-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.risk-card-trend {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.risk-card-trend.up { color: #10B981; }
+.risk-card-trend.down { color: #EF4444; }
+
+/* Decorative blob */
+.risk-card::after {
+  content: '';
+  position: absolute;
+  right: -20px;
+  bottom: -20px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  opacity: 0.15;
+}
+
+.risk-card--low::after { background: var(--emerald-400); }
+.risk-card--medium::after { background: #FBBF24; }
+.risk-card--high::after { background: #F97316; }
+.risk-card--blocked::after { background: #A78BFA; }
+
+/* ============================================================
+   FILTER BAR
+   ============================================================ */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--r-full);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  font-family: inherit;
+}
+
+.filter-pill:hover {
+  border-color: var(--emerald-300);
+  color: var(--emerald-600);
+  background: var(--pastel-mint);
+}
+
+.filter-pill.active {
+  background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+  color: var(--text-inverse);
+  border-color: transparent;
+  box-shadow: var(--shadow-emerald);
+}
+
+.filter-pill .count {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.filter-pill.active .count { background: rgba(255, 255, 255, 0.25); }
+
+.filter-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-medium);
+  margin: 0 4px;
+}
+
+.filter-pill.risk-low.active { background: var(--emerald-500); }
+.filter-pill.risk-medium.active { background: #F59E0B; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25); }
+.filter-pill.risk-high.active { background: #EF4444; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25); }
+.filter-pill.risk-critical.active { background: #DC2626; box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25); }
+.filter-pill.risk-clear.active { background: var(--text-secondary); }
+
+/* ============================================================
+   PROJECT LIST (card-based)
+   ============================================================ */
+.project-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.project-section-head h2 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.section-meta {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-card {
+  background: var(--bg-surface);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--border-soft);
+  padding: 20px 24px;
+  transition: all var(--t-normal);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.project-card:hover {
+  border-color: var(--emerald-200);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Left accent bar by risk */
+.project-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  transition: width var(--t-fast);
+}
+
+.project-card.risk-low::before { background: var(--risk-low); }
+.project-card.risk-medium::before { background: var(--risk-medium); }
+.project-card.risk-high::before { background: var(--risk-high); }
+.project-card.risk-critical::before { background: var(--risk-critical); }
+
+.project-card:hover::before { width: 5px; }
+
+.project-card-grid {
+  display: grid;
+  grid-template-columns: 2.2fr 1.6fr 1fr 1.1fr 0.9fr;
+  gap: 20px;
+  align-items: center;
+}
+
+/* --- Project identity --- */
+.proj-id-block { min-width: 0; }
+
+.proj-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proj-name .proj-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-canvas);
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+}
+
+.proj-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-owner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.owner-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-inverse);
+  flex-shrink: 0;
+}
+
+.owner-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* --- Current task --- */
+.proj-task-block { min-width: 0; }
+
+.proj-task-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.proj-task-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+
+.proj-task-node {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.node-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--emerald-400);
+  flex-shrink: 0;
+}
+
+.node-dot.offline { background: var(--text-tertiary); }
+
+/* --- Handler --- */
+.handler-block { text-align: center; }
+
+.handler-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--r-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.handler-human {
+  background: var(--pastel-cream);
+  color: #B45309;
+}
+
+.handler-ai {
+  background: var(--pastel-mint);
+  color: var(--emerald-700);
+}
+
+.handler-idle {
+  background: #F1F5F9;
+  color: var(--text-tertiary);
+}
+
+.handler-badge svg { width: 13px; height: 13px; }
+
+/* --- Status --- */
+.status-block { text-align: center; }
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.status-pill .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.status-running { background: var(--status-running-bg); color: var(--emerald-700); }
+.status-running .status-dot { background: var(--status-running); animation: pulse-soft 2s infinite; }
+
+.status-blocked { background: var(--status-blocked-bg); color: #6D28D9; }
+.status-blocked .status-dot { background: var(--status-blocked); }
+
+.status-waiting { background: var(--status-waiting-bg); color: #B45309; }
+.status-waiting .status-dot { background: var(--status-waiting); animation: pulse-soft 2s infinite; }
+
+.status-review { background: var(--status-review-bg); color: #2563EB; }
+.status-review .status-dot { background: var(--status-review); }
+
+.status-paused { background: var(--status-paused-bg); color: #475569; }
+.status-paused .status-dot { background: var(--status-paused); }
+
+.status-archived { background: var(--status-archived-bg); color: #475569; }
+.status-archived .status-dot { background: var(--status-archived); }
+
+.status-reason {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* --- Progress + time --- */
+.progress-block { text-align: right; }
+
+.progress-bar {
+  height: 6px;
+  background: var(--pastel-mint);
+  border-radius: var(--r-full);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, var(--emerald-400), var(--emerald-600));
+  transition: width var(--t-slow);
+}
+
+.progress-fill.blocked { background: linear-gradient(90deg, #A78BFA, #8B5CF6); }
+.progress-fill.paused { background: var(--border-strong); }
+
+.progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.last-run {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ---- Pagination ---- */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 28px;
+  padding: 16px 4px;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.page-info b { color: var(--text-primary); }
+
+.page-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.page-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border-medium);
+  background: var(--bg-surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--t-fast);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-btn:hover:not(:disabled) {
+  border-color: var(--emerald-300);
+  color: var(--emerald-600);
+  background: var(--pastel-mint);
+}
+
+.page-btn.active {
+  background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+  color: var(--text-inverse);
+  border-color: transparent;
+  box-shadow: var(--shadow-emerald);
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Empty state ---- */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  border-radius: var(--r-2xl);
+  background: var(--bg-surface);
+  border: 2px dashed var(--border-medium);
+  display: none;
+}
+
+.empty-state.visible { display: block; }
+
+.empty-state svg {
+  width: 56px;
+  height: 56px;
+  color: var(--emerald-300);
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.empty-state p {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1280px) {
+  .risk-bento { grid-template-columns: repeat(2, 1fr); }
+  .project-card-grid { grid-template-columns: 2fr 1.5fr 1fr 1fr; }
+  .project-card-grid .handler-block { display: none; }
+}
+
+@media (max-width: 1024px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .main { padding: 0 24px 40px; }
+  .project-card-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .project-card-grid .proj-task-block,
+  .project-card-grid .handler-block { grid-column: 1 / -1; }
+}
+
+@media (max-width: 640px) {
+  .risk-bento { grid-template-columns: 1fr; }
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .page-title { font-size: 26px; }
+  .project-card-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--emerald-300); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" role="navigation" aria-label="主导航">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="brand-text">Super<span>Team</span></div>
+    </div>
+
+    <div class="sidebar-section">工作空间</div>
+    <button class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      项目管理
+      <span class="nav-badge">10</span>
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      任务看板
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      收件箱
+      <span class="nav-badge">3</span>
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      审批待办
+    </button>
+
+    <div class="sidebar-section">管理</div>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      数字员工
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      技能库
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      运行时节点
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      审计日志
+    </button>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-title">💡 小贴士</div>
+      <div class="sidebar-footer-desc">点击项目卡片可进入协调线程详情，查看任务流和证据链。</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="searchInput" placeholder="搜索项目名称、ID 或负责人…" aria-label="搜索项目">
+      </div>
+      <div class="topbar-spacer"></div>
+      <button class="icon-btn" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="dot"></span>
+      </button>
+      <button class="icon-btn" aria-label="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="user-avatar" title="张明远 · 项目负责人">张</div>
+    </div>
+
+    <!-- Page Header -->
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">项目管理</h1>
+        <p class="page-subtitle">共 <b>10 个</b>活跃项目 · 3 个等待你的决策</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          导入项目
+        </button>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新建项目
+        </button>
+      </div>
+    </div>
+
+    <!-- Risk Summary Bento -->
+    <div class="risk-bento">
+      <div class="risk-card risk-card--low" role="button" tabindex="0" data-risk="low">
+        <div class="risk-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div class="risk-card-label">低风险项目</div>
+        <div class="risk-card-value">5</div>
+        <div class="risk-card-meta">
+          <span class="risk-card-trend up">↑ 2</span>
+          <span>较上周</span>
+        </div>
+      </div>
+
+      <div class="risk-card risk-card--medium" role="button" tabindex="0" data-risk="medium">
+        <div class="risk-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="risk-card-label">中风险项目</div>
+        <div class="risk-card-value">3</div>
+        <div class="risk-card-meta">
+          <span class="risk-card-trend down">↓ 1</span>
+          <span>较上周</span>
+        </div>
+      </div>
+
+      <div class="risk-card risk-card--high" role="button" tabindex="0" data-risk="high">
+        <div class="risk-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="risk-card-label">高风险项目</div>
+        <div class="risk-card-value">1</div>
+        <div class="risk-card-meta">
+          <span class="risk-card-trend">—</span>
+          <span>需关注</span>
+        </div>
+      </div>
+
+      <div class="risk-card risk-card--blocked" role="button" tabindex="0" data-risk="blocked">
+        <div class="risk-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        </div>
+        <div class="risk-card-label">阻塞中项目</div>
+        <div class="risk-card-value">1</div>
+        <div class="risk-card-meta">
+          <span class="risk-card-trend down">↑ 1</span>
+          <span>需介入</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar" role="toolbar" aria-label="项目筛选">
+      <button class="filter-pill active" data-status="all">全部 <span class="count">10</span></button>
+      <button class="filter-pill" data-status="running">运行中 <span class="count">4</span></button>
+      <button class="filter-pill" data-status="blocked">阻塞 <span class="count">1</span></button>
+      <button class="filter-pill" data-status="waiting">等待人工 <span class="count">2</span></button>
+      <button class="filter-pill" data-status="review">验收中 <span class="count">1</span></button>
+      <button class="filter-pill" data-status="paused">已暂停 <span class="count">1</span></button>
+      <button class="filter-pill" data-status="archived">已归档 <span class="count">1</span></button>
+      <div class="filter-divider"></div>
+      <button class="filter-pill risk-low" data-risk-filter="low">低风险</button>
+      <button class="filter-pill risk-medium" data-risk-filter="medium">中风险</button>
+      <button class="filter-pill risk-high" data-risk-filter="high">高风险</button>
+      <button class="filter-pill risk-critical" data-risk-filter="critical">严重</button>
+    </div>
+
+    <!-- Project List -->
+    <div class="project-section-head">
+      <h2>项目队列</h2>
+      <span class="section-meta" id="resultCount">显示 10 / 10 个项目</span>
+    </div>
+
+    <div class="project-list" id="projectList"></div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <h3>没有匹配的项目</h3>
+      <p>试试调整搜索关键词或筛选条件</p>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination">
+      <div class="page-info">第 <b>1</b> 页，共 <b>1</b> 页 · <b>10</b> 条记录</div>
+      <div class="page-controls">
+        <button class="page-btn" disabled aria-label="上一页">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="page-btn active">1</button>
+        <button class="page-btn">2</button>
+        <button class="page-btn" aria-label="下一页">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ============================================================
+// SAMPLE DATA — reflects real project management domain
+// ============================================================
+const projects = [
+  {
+    id: 'PRJ-2024-0312',
+    name: '支付网关迁移 v2',
+    desc: '将核心支付链路从旧网关迁移至新统一支付平台',
+    owner: { name: '张明远', initial: '张', color: '#10B981' },
+    task: '生成集成测试用例并执行回归验证',
+    node: 'prod-runner-03',
+    nodeOnline: true,
+    handler: { type: 'ai', label: 'Claude Code' },
+    status: 'running',
+    statusReason: '正在执行第 3 阶段',
+    risk: 'low',
+    progress: 72,
+    lastRun: '2 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0287',
+    name: '用户权限系统重构',
+    desc: '基于 OpenFGA 重构细粒度权限模型与授权策略',
+    owner: { name: '李婉清', initial: '李', color: '#8B5CF6' },
+    task: '等待审批：删除旧权限表迁移脚本',
+    node: 'dev-runner-01',
+    nodeOnline: true,
+    handler: { type: 'human', label: '张明远' },
+    status: 'waiting',
+    statusReason: '高风险删除操作待确认',
+    risk: 'high',
+    progress: 85,
+    lastRun: '12 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0301',
+    name: '移动端性能优化',
+    desc: '首屏加载时间从 3.2s 优化至 1.5s 以内',
+    owner: { name: '陈思远', initial: '陈', color: '#F59E0B' },
+    task: '图片懒加载 + 代码分割实施',
+    node: 'prod-runner-02',
+    nodeOnline: true,
+    handler: { type: 'ai', label: 'Codex CLI' },
+    status: 'running',
+    statusReason: '执行中 · 已完成 5/8 子任务',
+    risk: 'low',
+    progress: 62,
+    lastRun: '5 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0295',
+    name: '数据导出服务 API v3',
+    desc: '重构导出服务支持流式传输与异步任务队列',
+    owner: { name: '王浩然', initial: '王', color: '#3B82F6' },
+    task: 'Provider 超时：OpenCode 连接中断',
+    node: 'dev-runner-02',
+    nodeOnline: false,
+    handler: { type: 'idle', label: '等待重试' },
+    status: 'blocked',
+    statusReason: 'Runtime 节点离线 · 自动重试中',
+    risk: 'medium',
+    progress: 45,
+    lastRun: '18 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0318',
+    name: '审计日志检索增强',
+    desc: '新增全文检索 + 时间线聚合视图',
+    owner: { name: '赵晓琳', initial: '赵', color: '#EC4899' },
+    task: '等待验收：UI 交互原型评审',
+    node: 'prod-runner-01',
+    nodeOnline: true,
+    handler: { type: 'human', label: '李婉清' },
+    status: 'review',
+    statusReason: '验收人待确认交付物',
+    risk: 'low',
+    progress: 95,
+    lastRun: '1 小时前'
+  },
+  {
+    id: 'PRJ-2024-0276',
+    name: '多租户隔离方案落地',
+    desc: '实现数据库行级安全策略与租户上下文注入',
+    owner: { name: '张明远', initial: '张', color: '#10B981' },
+    task: '迁移脚本生成与 Atlas 校验',
+    node: 'dev-runner-01',
+    nodeOnline: true,
+    handler: { type: 'ai', label: 'Claude Code' },
+    status: 'running',
+    statusReason: '执行中 · 第 2 阶段迁移',
+    risk: 'medium',
+    progress: 38,
+    lastRun: '8 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0258',
+    name: '前端组件库 v4 升级',
+    desc: '迁移至 Design System v4 + Token 体系统一',
+    owner: { name: '刘雨桐', initial: '刘', color: '#14B8A6' },
+    task: '等待审批：批量替换 API 调用',
+    node: 'prod-runner-03',
+    nodeOnline: true,
+    handler: { type: 'human', label: '陈思远' },
+    status: 'waiting',
+    statusReason: '批量变更待确认',
+    risk: 'medium',
+    progress: 78,
+    lastRun: '32 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0245',
+    name: 'WebSocket 实时推送',
+    desc: '替换轮询为 WebSocket 降低服务端负载',
+    owner: { name: '王浩然', initial: '王', color: '#3B82F6' },
+    task: '连接稳定性压测',
+    node: 'prod-runner-02',
+    nodeOnline: true,
+    handler: { type: 'ai', label: 'Pi Agent' },
+    status: 'running',
+    statusReason: '压测中 · 1200 并发',
+    risk: 'low',
+    progress: 55,
+    lastRun: '3 分钟前'
+  },
+  {
+    id: 'PRJ-2024-0201',
+    name: '遗留系统退役计划',
+    desc: '分阶段下线旧版订单服务与数据归档',
+    owner: { name: '赵晓琳', initial: '赵', color: '#EC4899' },
+    task: '已暂停 · 等待业务方确认时间窗',
+    node: '—',
+    nodeOnline: false,
+    handler: { type: 'idle', label: '已暂停' },
+    status: 'paused',
+    statusReason: '业务窗口未排期',
+    risk: 'low',
+    progress: 20,
+    lastRun: '3 天前'
+  },
+  {
+    id: 'PRJ-2024-0189',
+    name: '日志聚合 Pipeline',
+    desc: 'EFK → Loki 迁移完成 · 已归档',
+    owner: { name: '刘雨桐', initial: '刘', color: '#14B8A6' },
+    task: '项目已归档',
+    node: '—',
+    nodeOnline: false,
+    handler: { type: 'idle', label: '已归档' },
+    status: 'archived',
+    statusReason: '验收通过 · 2024-06-28',
+    risk: 'low',
+    progress: 100,
+    lastRun: '7 天前'
+  }
+];
+
+const statusLabels = {
+  running: '运行中',
+  blocked: '阻塞',
+  waiting: '等待人工',
+  review: '验收中',
+  paused: '已暂停',
+  archived: '已归档'
+};
+
+const handlerIcons = {
+  human: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>',
+  idle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+};
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderProjects(list) {
+  const container = document.getElementById('projectList');
+  const empty = document.getElementById('emptyState');
+
+  if (list.length === 0) {
+    container.innerHTML = '';
+    empty.classList.add('visible');
+    document.getElementById('pagination').style.display = 'none';
+    return;
+  }
+
+  empty.classList.remove('visible');
+  document.getElementById('pagination').style.display = 'flex';
+
+  container.innerHTML = list.map(p => `
+    <article class="project-card risk-${p.risk}" data-status="${p.status}" data-risk="${p.risk}" tabindex="0">
+      <div class="project-card-grid">
+        <div class="proj-id-block">
+          <div class="proj-name">
+            ${p.name}
+            <span class="proj-id">${p.id}</span>
+          </div>
+          <div class="proj-desc">${p.desc}</div>
+          <div class="proj-owner">
+            <div class="owner-avatar" style="background:${p.owner.color}">${p.owner.initial}</div>
+            <span class="owner-name">${p.owner.name}</span>
+          </div>
+        </div>
+
+        <div class="proj-task-block">
+          <div class="proj-task-label">当前任务</div>
+          <div class="proj-task-name">${p.task}</div>
+          <div class="proj-task-node">
+            <span class="node-dot ${p.nodeOnline ? '' : 'offline'}"></span>
+            ${p.node}
+          </div>
+        </div>
+
+        <div class="handler-block">
+          <div class="handler-badge handler-${p.handler.type}">
+            ${handlerIcons[p.handler.type]}
+            ${p.handler.label}
+          </div>
+        </div>
+
+        <div class="status-block">
+          <div class="status-pill status-${p.status}">
+            <span class="status-dot"></span>
+            ${statusLabels[p.status]}
+          </div>
+          <div class="status-reason">${p.statusReason}</div>
+        </div>
+
+        <div class="progress-block">
+          <div class="progress-text">${p.progress}%</div>
+          <div class="progress-bar">
+            <div class="progress-fill ${p.status === 'blocked' ? 'blocked' : p.status === 'paused' || p.status === 'archived' ? 'paused' : ''}" style="width:${p.progress}%"></div>
+          </div>
+          <div class="last-run">${p.lastRun}</div>
+        </div>
+      </div>
+    </article>
+  `).join('');
+
+  document.getElementById('resultCount').textContent = `显示 ${list.length} / ${projects.length} 个项目`;
+}
+
+// ============================================================
+// FILTERING
+// ============================================================
+let activeStatus = 'all';
+let activeRisk = null;
+let searchTerm = '';
+
+function applyFilters() {
+  let filtered = projects;
+
+  if (activeStatus !== 'all') {
+    filtered = filtered.filter(p => p.status === activeStatus);
+  }
+
+  if (activeRisk) {
+    filtered = filtered.filter(p => p.risk === activeRisk);
+  }
+
+  if (searchTerm) {
+    const term = searchTerm.toLowerCase();
+    filtered = filtered.filter(p =>
+      p.name.toLowerCase().includes(term) ||
+      p.id.toLowerCase().includes(term) ||
+      p.owner.name.toLowerCase().includes(term)
+    );
+  }
+
+  renderProjects(filtered);
+}
+
+// Status filters
+document.querySelectorAll('.filter-pill[data-status]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pill[data-status]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeStatus = btn.dataset.status;
+    applyFilters();
+  });
+});
+
+// Risk filters
+document.querySelectorAll('.filter-pill[data-risk-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const risk = btn.dataset.riskFilter;
+    if (activeRisk === risk) {
+      activeRisk = null;
+      btn.classList.remove('active');
+    } else {
+      document.querySelectorAll('.filter-pill[data-risk-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeRisk = risk;
+    }
+    applyFilters();
+  });
+});
+
+// Risk card quick filter
+document.querySelectorAll('.risk-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const risk = card.dataset.risk;
+    const pill = document.querySelector(`.filter-pill[data-risk-filter="${risk === 'blocked' ? 'critical' : risk}"]`);
+    if (pill) pill.click();
+  });
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      card.click();
+    }
+  });
+});
+
+// Search
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchTerm = e.target.value;
+  applyFilters();
+});
+
+// Initial render
+renderProjects(projects);
+</script>
+
+</body>
+</html>

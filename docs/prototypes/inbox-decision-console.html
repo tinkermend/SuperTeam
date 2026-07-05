@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>收件箱 · 决策控制台 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格一 · 决策控制台（Decision Console）
+   三栏主从详情：紧凑列表 | 详情面板 | 快速操作
+   信息密度最高，控制台风格，适合高效批量处理
+   数据源：InboxListResponse(items + summary + pagination)
+   ============================================================ */
+:root{
+  --v3-bg:#f8fafc; --v3-shell-bg:#f6f8fb; --v3-card:#ffffff; --v3-card-soft:#f7f8fa; --v3-card-inner:#fafbfc;
+  --v3-ink:#0b0d12; --v3-ink-2:#4d586b; --v3-ink-3:#6d7580;
+  --v3-line:#eef1f4; --v3-line-strong:#dfe4ea;
+  --v3-brand:#2f5fff; --v3-brand-deep:#2348e0; --v3-brand-soft:#e9efff;
+  --v3-info:#0094b7; --v3-info-text:#00617d; --v3-info-soft:#def8fe;
+  --v3-ok:#009a60; --v3-ok-text:#006639; --v3-ok-soft:#e3f9ec;
+  --v3-warn:#bb6900; --v3-warn-text:#7f3f00; --v3-warn-soft:#ffefdf;
+  --v3-danger:#d14647; --v3-danger-text:#8a2f2d; --v3-danger-soft:#ffece9;
+  --v3-artifact:#9565c7; --v3-artifact-text:#633d89; --v3-artifact-soft:#f7eeff;
+  --v3-mute:#64748b; --v3-mute-text:#4d586b; --v3-mute-soft:#eef1f4;
+  --r-card:1.375rem; --r-inner:0.875rem;
+  --shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+  --shadow-pop:0 10px 44px rgba(16,24,40,0.12);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--v3-bg);color:var(--v3-ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;overflow-x:hidden;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--v3-line-strong);border-radius:6px;}
+
+/* ===== 顶栏 ===== */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:20px;padding:11px 28px;background:rgba(248,250,252,.86);backdrop-filter:blur(18px) saturate(1.3);border-bottom:1px solid var(--v3-line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 4px 14px rgba(47,95,255,.3);}
+.logo .nm{font-size:15.5px;}
+.nav{display:flex;gap:3px;margin-left:14px;}
+.nav a{padding:7px 12px;border-radius:9px;color:var(--v3-ink-2);font-size:13px;font-weight:550;transition:.15s;text-decoration:none;}
+.nav a:hover{background:var(--v3-card);color:var(--v3-ink);}
+.nav a.on{color:var(--v3-brand-deep);background:var(--v3-brand-soft);font-weight:650;}
+.grow{flex:1;}
+.search{display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:10px;background:var(--v3-card);border:1px solid var(--v3-line-strong);min-width:220px;color:var(--v3-ink-3);font-size:12.5px;box-shadow:var(--shadow);}
+.search svg{width:15px;height:15px;}
+.me{display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:13px;background:var(--v3-card);box-shadow:var(--shadow);border:1px solid var(--v3-line);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+.me .nm{font-size:12px;font-weight:650;} .me .ro{font-size:10.5px;color:var(--v3-ink-3);}
+
+/* ===== 页面头 ===== */
+.wrap{max-width:1480px;margin:0 auto;padding:22px 28px 50px;}
+.pagehead{display:flex;align-items:flex-start;gap:18px;margin-bottom:22px;flex-wrap:wrap;}
+.pagehead .ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:#fff;font-size:22px;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 8px 22px rgba(47,95,255,.28);}
+.pagehead h1{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
+.pagehead .sub{font-size:13.5px;color:var(--v3-ink-2);margin-top:5px;}
+.pagehead .actions{margin-left:auto;display:flex;gap:10px;align-items:center;}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:11px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;border:1px solid transparent;font-family:inherit;}
+.btn.primary{background:var(--v3-brand);color:#fff;border-color:var(--v3-brand);}
+.btn.primary:hover{background:var(--v3-brand-deep);}
+.btn.outline{background:var(--v3-card);color:var(--v3-ink);border-color:var(--v3-line-strong);box-shadow:var(--shadow);}
+.btn.outline:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.btn.danger{background:var(--v3-danger);color:#fff;}
+.btn.ghost{background:transparent;color:var(--v3-ink-2);}
+.btn.ghost:hover{background:var(--v3-card-soft);color:var(--v3-ink);}
+.btn svg{width:15px;height:15px;}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px;}
+
+/* ===== 摘要指标 ===== */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+.metric{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);padding:18px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden;}
+.metric .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:17px;margin-bottom:12px;}
+.metric .ic.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.metric .ic.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.metric .ic.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.metric .ic.mute{background:var(--v3-mute-soft);color:var(--v3-mute);}
+.metric .n{font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1;}
+.metric .n.danger{color:var(--v3-danger);}
+.metric .n.warn{color:var(--v3-warn);}
+.metric .n.brand{color:var(--v3-brand);}
+.metric .l{font-size:12px;color:var(--v3-ink-2);margin-top:6px;font-weight:600;}
+.metric .m{font-size:11px;color:var(--v3-ink-3);margin-top:3px;}
+.metric .src{position:absolute;top:14px;right:16px;font-size:9.5px;color:var(--v3-ink-3);font-family:var(--mono);opacity:.7;}
+
+/* ===== 工具栏 ===== */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+.tabs{display:inline-flex;gap:3px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:11px;padding:3px;}
+.tab{padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;transition:.15s;border:none;background:transparent;}
+.tab:hover{color:var(--v3-ink);}
+.tab.on{background:var(--v3-card);color:var(--v3-brand-deep);box-shadow:var(--shadow);}
+.tab .ct{font-family:var(--mono);font-size:10.5px;margin-left:6px;padding:1px 5px;border-radius:4px;background:var(--v3-brand-soft);color:var(--v3-brand-deep);}
+.grow2{flex:1;}
+.filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.fsel{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;background:var(--v3-card);border:1px solid var(--v3-line-strong);font-size:12.5px;font-weight:550;color:var(--v3-ink-2);cursor:pointer;box-shadow:var(--shadow);}
+.fsel:hover{border-color:var(--v3-brand);}
+.fsel .v{color:var(--v3-ink);font-weight:650;}
+
+/* ===== 三栏控制台 ===== */
+.console{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) 290px;gap:14px;align-items:start;}
+
+/* 左栏：列表 */
+.list-panel{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+.list-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--v3-line);background:var(--v3-card-soft);}
+.list-hd .ttl{font-size:14px;font-weight:700;}
+.list-hd .cnt{font-size:11.5px;color:var(--v3-ink-3);font-family:var(--mono);}
+.list-body{max-height:680px;overflow-y:auto;}
+.row{display:flex;align-items:flex-start;gap:12px;padding:13px 18px;border-bottom:1px solid var(--v3-line);cursor:pointer;transition:.12s;position:relative;border-left:3px solid transparent;}
+.row:hover{background:var(--v3-card-soft);}
+.row.sel{background:var(--v3-brand-soft);}
+.row.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--v3-brand);}
+.row.danger{border-left-color:var(--v3-danger);}
+.row.warn{border-left-color:var(--v3-warn);}
+.row.mute{border-left-color:var(--v3-line-strong);}
+.row .ri{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex-shrink:0;}
+.row .ri.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.row .ri.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.row .ri.artifact{background:var(--v3-artifact-soft);color:var(--v3-artifact);}
+.row .rc{flex:1;min-width:0;}
+.row .rt{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.row .tt{font-size:13.5px;font-weight:700;color:var(--v3-ink);line-height:1.3;}
+.row.sel .tt{color:var(--v3-brand-deep);}
+.row .su{font-size:12px;color:var(--v3-ink-2);margin-top:4px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.row .rm{display:flex;align-items:center;gap:10px;margin-top:7px;font-size:11px;color:var(--v3-ink-3);flex-wrap:wrap;}
+.row .rm .src{font-family:var(--mono);font-size:10.5px;}
+.row .rm .tm{display:inline-flex;align-items:center;gap:3px;}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:6px;font-size:10.5px;font-weight:700;line-height:1.4;}
+.pill i{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.pill.approval{color:var(--v3-info-text);background:var(--v3-info-soft);}
+.pill.decision{color:var(--v3-artifact-text);background:var(--v3-artifact-soft);}
+.pill.danger{color:var(--v3-danger-text);background:var(--v3-danger-soft);}
+.pill.warn{color:var(--v3-warn-text);background:var(--v3-warn-soft);}
+.pill.mute{color:var(--v3-mute-text);background:var(--v3-mute-soft);}
+.pill.ok{color:var(--v3-ok-text);background:var(--v3-ok-soft);}
+
+/* 中栏：详情 */
+.detail-panel{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+.detail-empty{padding:60px 28px;text-align:center;color:var(--v3-ink-3);}
+.detail-empty .ei{width:64px;height:64px;border-radius:18px;margin:0 auto 18px;background:var(--v3-card-soft);display:grid;place-items:center;font-size:28px;color:var(--v3-ink-3);}
+.detail-empty h3{font-size:17px;font-weight:800;color:var(--v3-ink);margin-bottom:8px;}
+.detail-empty p{font-size:13px;line-height:1.6;max-width:340px;margin:0 auto;}
+.detail-hd{padding:20px 24px 18px;border-bottom:1px solid var(--v3-line);}
+.detail-hd .ki{font-size:10.5px;font-family:var(--mono);color:var(--v3-brand-deep);letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:8px;}
+.detail-hd h2{font-size:19px;font-weight:800;line-height:1.3;margin-bottom:10px;}
+.detail-hd .pills{display:flex;gap:7px;flex-wrap:wrap;}
+.sec{padding:18px 24px;border-bottom:1px solid var(--v3-line);}
+.sec:last-child{border-bottom:none;}
+.sec h3{font-size:12px;font-weight:800;color:var(--v3-ink);letter-spacing:.02em;margin-bottom:11px;display:flex;align-items:center;gap:6px;}
+.sec h3 .n{font-family:var(--mono);font-size:10px;color:var(--v3-ink-3);font-weight:600;}
+.dl{display:grid;grid-template-columns:5.5rem minmax(0,1fr);gap:8px 14px;font-size:12.5px;}
+.dl dt{color:var(--v3-ink-3);font-weight:600;}
+.dl dd{color:var(--v3-ink);font-weight:600;min-width:0;word-break:break-word;}
+.dl dd.mono{font-family:var(--mono);font-size:11px;color:var(--v3-ink-2);}
+.summary-box{background:var(--v3-card-soft);border-radius:var(--r-inner);padding:12px 14px;font-size:12.5px;line-height:1.6;color:var(--v3-ink-2);margin-top:4px;}
+
+/* 过程记录时间线 */
+.timeline{display:flex;flex-direction:column;gap:14px;}
+.tl-item{display:flex;gap:11px;}
+.tl-dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;font-size:12px;}
+.tl-dot.done{background:var(--v3-ok-soft);color:var(--v3-ok);}
+.tl-dot.current{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.tl-dot.wait{background:var(--v3-mute-soft);color:var(--v3-mute);}
+.tl-c{flex:1;min-width:0;}
+.tl-t{font-size:12.5px;font-weight:700;color:var(--v3-ink);}
+.tl-d{font-size:11.5px;color:var(--v3-ink-3);margin-top:2px;line-height:1.5;}
+.tl-tm{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);margin-top:3px;}
+
+/* 证据 */
+.ev{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--v3-line);border-radius:var(--r-inner);background:var(--v3-card-soft);font-size:12.5px;}
+.ev svg{width:15px;height:15px;flex-shrink:0;color:var(--v3-ink-3);}
+.ev .lab{flex:1;min-width:0;font-weight:600;color:var(--v3-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ev .meta{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);flex-shrink:0;}
+.ev + .ev{margin-top:7px;}
+
+/* 右栏：操作面板 */
+.ops-panel{display:flex;flex-direction:column;gap:12px;position:sticky;top:78px;}
+.ops-card{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+.ops-card .oh{padding:13px 16px;border-bottom:1px solid var(--v3-line);background:var(--v3-card-soft);font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;}
+.ops-card .ob{padding:14px 16px;}
+.sla{display:flex;align-items:center;gap:11px;padding:14px 16px;border-radius:var(--r-inner);background:linear-gradient(135deg,var(--v3-danger-soft),#fff);border:1px solid rgba(209,70,71,.2);}
+.sla .ring{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;color:var(--v3-danger);background:conic-gradient(var(--v3-danger) 25%,var(--v3-danger-soft) 0);position:relative;}
+.sla .ring::before{content:"";position:absolute;inset:4px;border-radius:50%;background:#fff;}
+.sla .ring span{position:relative;z-index:1;}
+.sla .sc{flex:1;}
+.sla .st{font-size:11px;color:var(--v3-danger-text);font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+.sla .sv{font-size:18px;font-weight:800;color:var(--v3-ink);margin-top:2px;}
+.sla .sd{font-size:11px;color:var(--v3-ink-3);margin-top:1px;}
+.act-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.act{padding:11px 12px;border-radius:var(--r-inner);font-size:12.5px;font-weight:650;cursor:pointer;border:1px solid var(--v3-line-strong);background:var(--v3-card);color:var(--v3-ink);transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px;text-align:center;}
+.act:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.act.primary{background:var(--v3-brand);color:#fff;border-color:var(--v3-brand);}
+.act.primary:hover{background:var(--v3-brand-deep);}
+.act.ok{border-color:var(--v3-ok);color:var(--v3-ok-text);}
+.act.ok:hover{background:var(--v3-ok-soft);}
+.act.warn{border-color:var(--v3-warn);color:var(--v3-warn-text);}
+.act.warn:hover{background:var(--v3-warn-soft);}
+.act.danger{border-color:var(--v3-danger);color:var(--v3-danger-text);}
+.act.danger:hover{background:var(--v3-danger-soft);}
+.act svg{width:14px;height:14px;}
+.quick-link{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:var(--r-inner);font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;transition:.12s;border:none;background:transparent;width:100%;text-align:left;}
+.quick-link:hover{background:var(--v3-card-soft);color:var(--v3-brand-deep);}
+.quick-link svg{width:15px;height:15px;color:var(--v3-ink-3);}
+.quick-link .arr{margin-left:auto;color:var(--v3-ink-3);}
+
+.legend{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);padding:0 28px 24px;text-align:center;opacity:.8;}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="logo"><div class="mk">S</div><span class="nm">SuperTeam</span></div>
+  <nav class="nav">
+    <a href="#">工作台</a>
+    <a href="#">项目</a>
+    <a href="#" class="on">收件箱</a>
+    <a href="#">数字员工</a>
+    <a href="#">流程编排</a>
+    <a href="#">审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    搜索事项、项目或数字员工…
+    <span style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:2px 6px;border-radius:5px;background:var(--v3-line);color:var(--v3-ink-3);">⌘K</span>
+  </div>
+  <div class="me"><div class="pic">林</div><div><div class="nm">林知远</div><div class="ro">平台负责人</div></div></div>
+</div>
+
+<div class="wrap">
+  <!-- 页面头 -->
+  <div class="pagehead">
+    <div class="ic">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+    </div>
+    <div>
+      <h1>收件箱</h1>
+      <div class="sub">需要你处理、确认或继续追踪的事项。高风险与阻断项优先处理。</div>
+    </div>
+    <div class="actions">
+      <button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>刷新</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>批量处理</button>
+    </div>
+  </div>
+
+  <!-- 摘要指标（summary 真实字段） -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="ic info"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+      <div class="n num brand">8</div>
+      <div class="l">开放事项</div>
+      <div class="m">我的待处理队列</div>
+      <div class="src">summary.open_count</div>
+    </div>
+    <div class="metric">
+      <div class="ic danger"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+      <div class="n num danger">3</div>
+      <div class="l">高风险</div>
+      <div class="m">需优先确认</div>
+      <div class="src">summary.high_risk_count</div>
+    </div>
+    <div class="metric">
+      <div class="ic warn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg></div>
+      <div class="n num warn">2</div>
+      <div class="l">阻断</div>
+      <div class="m">等待人工判断</div>
+      <div class="src">summary.blocked_count</div>
+    </div>
+    <div class="metric">
+      <div class="ic mute"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <div class="n num">3.2h</div>
+      <div class="l">等待最久</div>
+      <div class="m">基于 created_at 计算</div>
+      <div class="src">max(now - items[].created_at)</div>
+    </div>
+  </div>
+
+  <!-- 工具栏 -->
+  <div class="toolbar">
+    <div class="tabs">
+      <button class="tab on">我的待办<span class="ct">8</span></button>
+      <button class="tab">团队待办<span class="ct">14</span></button>
+    </div>
+    <div class="grow2"></div>
+    <div class="filterbar">
+      <button class="fsel">状态：<span class="v">开放</span></button>
+      <button class="fsel">类型：<span class="v">全部</span></button>
+      <button class="fsel">风险：<span class="v">全部</span></button>
+      <button class="fsel">项目ID<span style="color:var(--v3-ink-3);font-weight:400;"> · 精确匹配</span></button>
+      <button class="btn ghost sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>重置</button>
+    </div>
+  </div>
+
+  <!-- 三栏控制台 -->
+  <div class="console">
+    <!-- 左栏：列表 -->
+    <div class="list-panel">
+      <div class="list-hd">
+        <span class="ttl">待处理事项</span>
+        <span class="cnt">8 项 · 按风险排序</span>
+      </div>
+      <div class="list-body">
+        <div class="row danger sel" onclick="selectRow(this)">
+          <div class="ri danger"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">生产环境数据库迁移变更审批</span><span class="pill danger"><i></i>阻断</span></div>
+            <div class="su">订单服务库结构变更，涉及唯一索引重建，需在低峰窗口执行并准备回滚脚本。</div>
+            <div class="rm"><span class="pill approval"><i></i>审批</span><span class="src">订单中台重构 · current_node=人工审批</span><span class="tm">· 12 分钟前</span></div>
+          </div>
+        </div>
+        <div class="row danger" onclick="selectRow(this)">
+          <div class="ri danger"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">删除生产环境测试数据</span><span class="pill danger"><i></i>阻断</span></div>
+            <div class="su">数字员工请求清理过期的灰度用户数据，涉及真实用户表，需确认影响范围与脱敏策略。</div>
+            <div class="rm"><span class="pill approval"><i></i>审批</span><span class="src">数据治理 · current_node=人工审批</span><span class="tm">· 3 小时前</span></div>
+          </div>
+        </div>
+        <div class="row danger" onclick="selectRow(this)">
+          <div class="ri info"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">上线发布前最终确认</span><span class="pill danger"><i></i>高风险</span></div>
+            <div class="su">v2.4.0 发布窗口已就绪，已完成回归与金丝雀验证，等待最终放行确认。</div>
+            <div class="rm"><span class="pill approval"><i></i>审批</span><span class="src">支付网关 · current_node=发布门禁</span><span class="tm">· 5 分钟前</span></div>
+          </div>
+        </div>
+        <div class="row danger" onclick="selectRow(this)">
+          <div class="ri info"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">API 凭证轮换确认</span><span class="pill danger"><i></i>高风险</span></div>
+            <div class="su">外部支付通道凭证 30 天到期，需确认轮换计划与下游服务兼容性。</div>
+            <div class="rm"><span class="pill approval"><i></i>审批</span><span class="src">支付网关 · current_node=凭证轮换</span><span class="tm">· 1 小时前</span></div>
+          </div>
+        </div>
+        <div class="row warn" onclick="selectRow(this)">
+          <div class="ri artifact"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 3 3 0 0 1 3.86-3.86A2.5 2.5 0 0 1 9.5 2z"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">需求歧义需要人类裁决</span><span class="pill warn"><i></i>中风险</span></div>
+            <div class="su">数字员工在「订单导出」场景识别到两处冲突需求，需确认以哪一份需求文档为准。</div>
+            <div class="rm"><span class="pill decision"><i></i>项目决策</span><span class="src">订单中台重构 · current_node=需求裁决</span><span class="tm">· 38 分钟前</span></div>
+          </div>
+        </div>
+        <div class="row warn" onclick="selectRow(this)">
+          <div class="ri artifact"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 3 3 0 0 1 3.86-3.86A2.5 2.5 0 0 1 9.5 2z"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">验收标准不一致</span><span class="pill warn"><i></i>中风险</span></div>
+            <div class="su">PRD 验收标准与测试用例口径不一致，需确认以 PRD 还是测试用例为最终依据。</div>
+            <div class="rm"><span class="pill decision"><i></i>项目决策</span><span class="src">技能市场重构 · current_node=验收裁决</span><span class="tm">· 2 小时前</span></div>
+          </div>
+        </div>
+        <div class="row warn" onclick="selectRow(this)">
+          <div class="ri artifact"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 3 3 0 0 1 3.86-3.86A2.5 2.5 0 0 1 9.5 2z"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">数字员工边界判定</span><span class="pill warn"><i></i>中风险</span></div>
+            <div class="su">「客户工单分类」任务是否归入「客服」数字员工边界，需人类确认职责归属。</div>
+            <div class="rm"><span class="pill decision"><i></i>项目决策</span><span class="src">客服自动化 · current_node=边界判定</span><span class="tm">· 6 小时前</span></div>
+          </div>
+        </div>
+        <div class="row mute" onclick="selectRow(this)">
+          <div class="ri info"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg></div>
+          <div class="rc">
+            <div class="rt"><span class="tt">技能市场上传审核</span><span class="pill mute"><i></i>低风险</span></div>
+            <div class="su">「财报摘要生成」技能已通过自动化扫描，等待人工最终审核上架。</div>
+            <div class="rm"><span class="pill approval"><i></i>审批</span><span class="src">技能治理 · current_node=上架审核</span><span class="tm">· 5 小时前</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中栏：详情 -->
+    <div class="detail-panel" id="detail">
+      <div class="detail-hd">
+        <div class="ki">APPROVAL · source 8f3a2c1e</div>
+        <h2>生产环境数据库迁移变更审批</h2>
+        <div class="pills">
+          <span class="pill approval"><i></i>审批</span>
+          <span class="pill danger"><i></i>阻断</span>
+          <span class="pill mute"><i></i>待我处理</span>
+        </div>
+      </div>
+      <div class="sec">
+        <h3>为什么需要你处理</h3>
+        <dl class="dl">
+          <dt>关联对象</dt><dd>订单中台重构 / 订单服务库结构变更</dd>
+          <dt>当前节点</dt><dd>人工审批</dd>
+          <dt>发起来源</dt><dd>审批请求</dd>
+          <dt>更新时间</dt><dd>12 分钟前</dd>
+          <dt>关联任务</dt><dd class="mono">task_8f3a2c1e-4b5d</dd>
+        </dl>
+        <div class="summary-box">订单服务库结构变更，涉及唯一索引重建，需在低峰窗口执行并准备回滚脚本。本次变更将影响线上订单查询路径，必须在确认无活跃长事务后执行。</div>
+      </div>
+      <div class="sec">
+        <h3>过程记录 <span class="n">2 时间点 · 进行中</span></h3>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-dot done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
+            <div class="tl-c"><div class="tl-t">事项已创建</div><div class="tl-d">审批请求进入收件箱，等待人工处理。</div><div class="tl-tm">今天 10:42 · created_at</div></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
+            <div class="tl-c"><div class="tl-t">最近活动</div><div class="tl-d">来源对象更新了上下文快照。</div><div class="tl-tm">12 分钟前 · last_activity_at</div></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot current"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <div class="tl-c"><div class="tl-t">等待人类决策</div><div class="tl-d">选择同意、驳回或要求补证后将推动流程进入下一节点。</div><div class="tl-tm">进行中</div></div>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--v3-ink-3);margin-top:11px;font-family:var(--mono);line-height:1.5;">注：InboxItem 仅 created_at / last_activity_at / resolved_at 三个时间点，无多步过程记录字段。如需完整过程追溯，需后端补 process_records[] 或跳转至关联任务详情查看。</p>
+      </div>
+      <div class="sec">
+        <h3>关联引用 <span class="n">3 项 · 跳转</span></h3>
+        <div class="ev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+          <span class="lab">关联项目 · 订单中台重构</span><span class="meta">source_project_id ↗</span>
+        </div>
+        <div class="ev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="lab">关联任务 task_8f3a2c1e</span><span class="meta">source_task_id ↗</span>
+        </div>
+        <div class="ev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span class="lab">关联审批请求</span><span class="meta">source_approval_request_id ↗</span>
+        </div>
+        <div class="ev">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18z"/></svg>
+          <span class="lab">操作将写入审计日志</span><span class="meta">审计</span>
+        </div>
+        <p style="font-size:11px;color:var(--v3-ink-3);margin-top:11px;font-family:var(--mono);line-height:1.5;">注：context_payload 无 artifacts[] 结构，无法直接展示工件文件。需查看工件请跳转至关联任务详情。</p>
+      </div>
+    </div>
+
+    <!-- 右栏：操作面板 -->
+    <div class="ops-panel">
+      <div class="ops-card">
+        <div class="oh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 3"/></svg>
+          已等待时长
+        </div>
+        <div class="ob">
+          <div class="sla">
+            <div class="ring"><span>3h</span></div>
+            <div class="sc">
+              <div class="st">已等待</div>
+              <div class="sv num">3 时 12 分</div>
+              <div class="sd">基于 created_at 计算 · 阻断级建议尽快处理</div>
+            </div>
+          </div>
+          <p style="font-size:10.5px;color:var(--v3-ink-3);margin-top:10px;font-family:var(--mono);line-height:1.5;">注：InboxItem 无 sla 字段，此为前端基于 created_at 计算的已等待时长，非 SLA 超时倒计时。</p>
+        </div>
+      </div>
+
+      <div class="ops-card">
+        <div class="oh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
+          可执行动作
+        </div>
+        <div class="ob">
+          <div class="act-grid">
+            <button class="act primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>同意</button>
+            <button class="act danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>驳回</button>
+            <button class="act warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4"/><path d="M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg>要求补证</button>
+            <button class="act ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>委派</button>
+          </div>
+          <p style="font-size:11px;color:var(--v3-ink-3);margin-top:11px;line-height:1.5;">动作将写入审计日志，并推动流程进入下一节点。</p>
+        </div>
+      </div>
+
+      <div class="ops-card">
+        <div class="oh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          快速跳转
+        </div>
+        <div class="ob" style="padding:6px 8px;">
+          <button class="quick-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>查看完整详情<span class="arr">↗</span></button>
+          <button class="quick-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>进入流程实例<span class="arr">↗</span></button>
+          <button class="quick-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 8v4l3 3"/></svg>查看流程编排<span class="arr">↗</span></button>
+          <button class="quick-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/></svg>查看关联任务<span class="arr">↗</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">数据源 · GET /api/v1/inbox/items + /badge · summary{open,high_risk,blocked_count} · InboxItem{item_type,risk_level,source_*,context,deep_link,actions,last_activity_at,created_at} · 已等待时长=前端基于created_at计算 · 过程记录仅created/last_activity两点 · 关联引用走source_*_id跳转</div>
+</div>
+
+<script>
+function selectRow(el){
+  document.querySelectorAll('.row').forEach(r=>r.classList.remove('sel'));
+  el.classList.add('sel');
+}
+</script>
+</body>
+</html>

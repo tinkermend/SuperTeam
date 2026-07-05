@@ -123,3 +123,8 @@ doc/
 
 .scratch/
 .tests/
+
+.workbuddy
+.playwright-mcp
+.gemini
+.codex

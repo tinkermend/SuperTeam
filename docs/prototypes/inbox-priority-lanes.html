@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>收件箱 · 优先级泳道 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格二 · 优先级泳道（Priority Lanes）
+   按风险/状态分横向泳道：阻断 → 高风险 → 普通 → 已处理
+   每条泳道横向卡片流，适合按优先级扫读与并行处理
+   数据源：InboxListResponse(items 按 risk_level / status 分桶)
+   ============================================================ */
+:root{
+  --v3-bg:#f8fafc; --v3-card:#ffffff; --v3-card-soft:#f7f8fa; --v3-card-inner:#fafbfc;
+  --v3-ink:#0b0d12; --v3-ink-2:#4d586b; --v3-ink-3:#6d7580;
+  --v3-line:#eef1f4; --v3-line-strong:#dfe4ea;
+  --v3-brand:#2f5fff; --v3-brand-deep:#2348e0; --v3-brand-soft:#e9efff;
+  --v3-info:#0094b7; --v3-info-text:#00617d; --v3-info-soft:#def8fe;
+  --v3-ok:#009a60; --v3-ok-text:#006639; --v3-ok-soft:#e3f9ec;
+  --v3-warn:#bb6900; --v3-warn-text:#7f3f00; --v3-warn-soft:#ffefdf;
+  --v3-danger:#d14647; --v3-danger-text:#8a2f2d; --v3-danger-soft:#ffece9;
+  --v3-artifact:#9565c7; --v3-artifact-text:#633d89; --v3-artifact-soft:#f7eeff;
+  --v3-mute:#64748b; --v3-mute-text:#4d586b; --v3-mute-soft:#eef1f4;
+  --r-card:1.375rem; --r-inner:0.875rem;
+  --shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+  --shadow-pop:0 10px 44px rgba(16,24,40,0.12);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--v3-bg);color:var(--v3-ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::--scrollbar-thumb{background:var(--v3-line-strong);border-radius:6px;}
+
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:20px;padding:11px 28px;background:rgba(248,250,252,.86);backdrop-filter:blur(18px) saturate(1.3);border-bottom:1px solid var(--v3-line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 4px 14px rgba(47,95,255,.3);}
+.nav{display:flex;gap:3px;margin-left:14px;}
+.nav a{padding:7px 12px;border-radius:9px;color:var(--v3-ink-2);font-size:13px;font-weight:550;text-decoration:none;}
+.nav a.on{color:var(--v3-brand-deep);background:var(--v3-brand-soft);font-weight:650;}
+.grow{flex:1;}
+.search{display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:10px;background:var(--v3-card);border:1px solid var(--v3-line-strong);min-width:220px;color:var(--v3-ink-3);font-size:12.5px;box-shadow:var(--shadow);}
+.search svg{width:15px;height:15px;}
+.me{display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:13px;background:var(--v3-card);box-shadow:var(--shadow);border:1px solid var(--v3-line);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+
+.wrap{max-width:1480px;margin:0 auto;padding:22px 28px 50px;}
+.pagehead{display:flex;align-items:flex-start;gap:18px;margin-bottom:22px;flex-wrap:wrap;}
+.pagehead .ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:#fff;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 8px 22px rgba(47,95,255,.28);}
+.pagehead h1{font-size:25px;font-weight:800;letter-spacing:-.02em;}
+.pagehead .sub{font-size:13.5px;color:var(--v3-ink-2);margin-top:5px;}
+.pagehead .actions{margin-left:auto;display:flex;gap:10px;align-items:center;}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:11px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:inherit;}
+.btn.primary{background:var(--v3-brand);color:#fff;}
+.btn.outline{background:var(--v3-card);color:var(--v3-ink);border-color:var(--v3-line-strong);box-shadow:var(--shadow);}
+.btn.outline:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.btn svg{width:15px;height:15px;}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px;}
+
+/* 摘要指标 - 紧凑横排 */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+.metric{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);padding:16px 18px;box-shadow:var(--shadow);display:flex;align-items:center;gap:13px;}
+.metric .ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:17px;flex-shrink:0;}
+.metric .ic.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.metric .ic.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.metric .ic.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.metric .ic.mute{background:var(--v3-mute-soft);color:var(--v3-mute);}
+.metric .n{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;}
+.metric .n.danger{color:var(--v3-danger);} .metric .n.warn{color:var(--v3-warn);} .metric .n.brand{color:var(--v3-brand);}
+.metric .l{font-size:12px;color:var(--v3-ink-2);font-weight:600;margin-top:3px;}
+.metric .m{font-size:10.5px;color:var(--v3-ink-3);margin-top:2px;}
+
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+.tabs{display:inline-flex;gap:3px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:11px;padding:3px;}
+.tab{padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;border:none;background:transparent;}
+.tab.on{background:var(--v3-card);color:var(--v3-brand-deep);box-shadow:var(--shadow);}
+.tab .ct{font-family:var(--mono);font-size:10.5px;margin-left:6px;padding:1px 5px;border-radius:4px;background:var(--v3-brand-soft);color:var(--v3-brand-deep);}
+.grow2{flex:1;}
+.fsel{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;background:var(--v3-card);border:1px solid var(--v3-line-strong);font-size:12.5px;font-weight:550;color:var(--v3-ink-2);cursor:pointer;box-shadow:var(--shadow);}
+.fsel .v{color:var(--v3-ink);font-weight:650;}
+
+/* ===== 泳道看板 ===== */
+.board{display:flex;flex-direction:column;gap:14px;}
+.lane{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+.lane-hd{display:flex;align-items:center;gap:13px;padding:14px 18px;border-bottom:1px solid var(--v3-line);background:var(--v3-card-soft);}
+.lane-hd .stripe{width:4px;height:26px;border-radius:3px;flex-shrink:0;}
+.lane.danger .lane-hd{background:linear-gradient(90deg,var(--v3-danger-soft),var(--v3-card-soft) 40%);}
+.lane.danger .stripe{background:var(--v3-danger);}
+.lane.high .lane-hd{background:linear-gradient(90deg,rgba(209,70,71,.12),var(--v3-card-soft) 40%);}
+.lane.high .stripe{background:var(--v3-danger);opacity:.7;}
+.lane.medium .lane-hd{background:linear-gradient(90deg,var(--v3-warn-soft),var(--v3-card-soft) 40%);}
+.lane.medium .stripe{background:var(--v3-warn);}
+.lane.done .lane-hd{background:linear-gradient(90deg,var(--v3-ok-soft),var(--v3-card-soft) 40%);}
+.lane.done .stripe{background:var(--v3-ok);}
+.lane-hd .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:14px;flex-shrink:0;}
+.lane.danger .ic{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.lane.high .ic{background:rgba(209,70,71,.12);color:var(--v3-danger);}
+.lane.medium .ic{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.lane.done .ic{background:var(--v3-ok-soft);color:var(--v3-ok);}
+.lane-hd .tt{font-size:14.5px;font-weight:800;}
+.lane-hd .ct{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:5px;background:var(--v3-card);color:var(--v3-ink-2);font-weight:700;border:1px solid var(--v3-line);}
+.lane-hd .hint{font-size:11.5px;color:var(--v3-ink-3);margin-left:4px;}
+.lane-hd .all{margin-left:auto;font-size:11.5px;color:var(--v3-brand-deep);font-weight:650;cursor:pointer;}
+.lane-hd .all:hover{text-decoration:underline;}
+
+.lane-body{display:flex;gap:14px;padding:16px 18px;overflow-x:auto;}
+.card{flex:0 0 318px;background:var(--v3-card);border:1px solid var(--v3-line-strong);border-radius:var(--r-inner);padding:15px;transition:.15s;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:11px;}
+.card:hover{border-color:var(--v3-brand);box-shadow:var(--shadow-pop);transform:translateY(-2px);}
+.card.danger{border-color:rgba(209,70,71,.3);border-left:3px solid var(--v3-danger);}
+.card.warn{border-left:3px solid var(--v3-warn);}
+.card.mute{border-left:3px solid var(--v3-line-strong);}
+.card.ok{border-left:3px solid var(--v3-ok);opacity:.82;}
+.card-hd{display:flex;align-items:flex-start;gap:9px;}
+.card .ri{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:14px;flex-shrink:0;}
+.card .ri.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.card .ri.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.card .ri.artifact{background:var(--v3-artifact-soft);color:var(--v3-artifact);}
+.card .ri.ok{background:var(--v3-ok-soft);color:var(--v3-ok);}
+.card .tt{font-size:13.5px;font-weight:700;line-height:1.35;color:var(--v3-ink);flex:1;min-width:0;}
+.card .pills{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:6px;font-size:10.5px;font-weight:700;line-height:1.4;}
+.pill i{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.pill.approval{color:var(--v3-info-text);background:var(--v3-info-soft);}
+.pill.decision{color:var(--v3-artifact-text);background:var(--v3-artifact-soft);}
+.pill.danger{color:var(--v3-danger-text);background:var(--v3-danger-soft);}
+.pill.warn{color:var(--v3-warn-text);background:var(--v3-warn-soft);}
+.pill.mute{color:var(--v3-mute-text);background:var(--v3-mute-soft);}
+.pill.ok{color:var(--v3-ok-text);background:var(--v3-ok-soft);}
+.card .su{font-size:12px;color:var(--v3-ink-2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.card .ctx{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--v3-ink-3);padding:8px 10px;background:var(--v3-card-soft);border-radius:7px;}
+.card .ctx .cn{font-weight:650;color:var(--v3-ink-2);}
+.card .ctx .sep{opacity:.4;}
+.card .ft{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px solid var(--v3-line);}
+.card .tm{font-size:11px;color:var(--v3-ink-3);display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);}
+.card .acts{display:flex;gap:5px;}
+.mini-btn{padding:5px 9px;border-radius:6px;font-size:11px;font-weight:650;cursor:pointer;border:1px solid var(--v3-line-strong);background:var(--v3-card);color:var(--v3-ink-2);transition:.12s;}
+.mini-btn:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.mini-btn.primary{background:var(--v3-brand);color:#fff;border-color:var(--v3-brand);}
+.mini-btn.danger{border-color:var(--v3-danger);color:var(--v3-danger-text);}
+.mini-btn.danger:hover{background:var(--v3-danger-soft);}
+
+.sla-tag{position:absolute;top:13px;right:13px;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:var(--v3-danger-soft);color:var(--v3-danger-text);font-family:var(--mono);border:1px solid rgba(209,70,71,.2);}
+
+.empty-card{flex:0 0 318px;border:1.5px dashed var(--v3-line-strong);border-radius:var(--r-inner);padding:24px;text-align:center;color:var(--v3-ink-3);font-size:12.5px;background:var(--v3-card-soft);display:flex;flex-direction:column;align-items:center;gap:8px;}
+.empty-card svg{width:26px;height:26px;opacity:.5;}
+
+.legend{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);padding:14px 28px 0;text-align:center;opacity:.8;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="mk">S</div><span class="nm" style="font-size:15.5px;">SuperTeam</span></div>
+  <nav class="nav">
+    <a href="#">工作台</a><a href="#">项目</a><a href="#" class="on">收件箱</a><a href="#">数字员工</a><a href="#">流程编排</a><a href="#">审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    搜索事项…
+    <span style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:2px 6px;border-radius:5px;background:var(--v3-line);color:var(--v3-ink-3);">⌘K</span>
+  </div>
+  <div class="me"><div class="pic">林</div><div><div style="font-size:12px;font-weight:650;">林知远</div><div style="font-size:10.5px;color:var(--v3-ink-3);">平台负责人</div></div></div>
+</div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+    <div>
+      <h1>收件箱</h1>
+      <div class="sub">按风险优先级横向分泳道，从上到下逐层处理。阻断与高风险优先。</div>
+    </div>
+    <div class="actions">
+      <button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>刷新</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>全部标记已读</button>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="ic info"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/></svg></div><div><div class="n num brand">8</div><div class="l">开放事项</div><div class="m">我的待处理队列</div></div></div>
+    <div class="metric"><div class="ic danger"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/></svg></div><div><div class="n num danger">3</div><div class="l">高风险</div><div class="m">需优先确认</div></div></div>
+    <div class="metric"><div class="ic warn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg></div><div><div class="n num warn">2</div><div class="l">阻断</div><div class="m">等待人工判断</div></div></div>
+    <div class="metric"><div class="ic mute"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div><div class="n num">23</div><div class="l">本周已处理</div><div class="m">平均 2.4h</div></div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tabs">
+      <button class="tab on">我的待办<span class="ct">8</span></button>
+      <button class="tab">团队待办<span class="ct">14</span></button>
+    </div>
+    <div class="grow2"></div>
+    <button class="fsel">类型：<span class="v">全部</span></button>
+    <button class="fsel">项目：<span class="v">全部</span></button>
+    <button class="btn outline sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M7 12h10M10 18h4"/></svg>密度：舒适</button>
+  </div>
+
+  <!-- 泳道看板 -->
+  <div class="board">
+
+    <!-- 泳道1：阻断 -->
+    <div class="lane danger">
+      <div class="lane-hd">
+        <div class="stripe"></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;"><span class="tt">阻断 · 必须立即处理</span><span class="ct">2</span></div>
+          <div class="hint">流程已暂停，等待人类放行才能继续</div>
+        </div>
+        <div class="all">查看全部 ↗</div>
+      </div>
+      <div class="lane-body">
+        <div class="card danger">
+          <span class="sla-tag">2h 超时</span>
+          <div class="card-hd">
+            <div class="ri danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">生产环境数据库迁移变更审批</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill danger"><i></i>阻断</span></div>
+            </div>
+          </div>
+          <div class="su">订单服务库结构变更，涉及唯一索引重建，需在低峰窗口执行并准备回滚脚本。</div>
+          <div class="ctx"><span class="cn">订单中台重构</span><span class="sep">·</span><span>人工审批</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>12 分钟前</span>
+            <div class="acts"><button class="mini-btn primary">同意</button><button class="mini-btn danger">驳回</button></div>
+          </div>
+        </div>
+        <div class="card danger">
+          <div class="card-hd">
+            <div class="ri danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">删除生产环境测试数据</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill danger"><i></i>阻断</span></div>
+            </div>
+          </div>
+          <div class="su">数字员工请求清理过期的灰度用户数据，涉及真实用户表，需确认影响范围与脱敏策略。</div>
+          <div class="ctx"><span class="cn">数据治理</span><span class="sep">·</span><span>人工审批</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>3 小时前</span>
+            <div class="acts"><button class="mini-btn primary">同意</button><button class="mini-btn danger">驳回</button></div>
+          </div>
+        </div>
+        <div class="empty-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>阻断泳道仅 2 项，处理完即可继续</div>
+      </div>
+    </div>
+
+    <!-- 泳道2：高风险 -->
+    <div class="lane high">
+      <div class="lane-hd">
+        <div class="stripe"></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;"><span class="tt">高风险 · 今日内处理</span><span class="ct">2</span></div>
+          <div class="hint">影响线上服务或安全凭证，需尽快确认</div>
+        </div>
+        <div class="all">查看全部 ↗</div>
+      </div>
+      <div class="lane-body">
+        <div class="card danger">
+          <div class="card-hd">
+            <div class="ri info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">上线发布前最终确认</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill danger"><i></i>高风险</span></div>
+            </div>
+          </div>
+          <div class="su">v2.4.0 发布窗口已就绪，已完成回归与金丝雀验证，等待最终放行确认。</div>
+          <div class="ctx"><span class="cn">支付网关</span><span class="sep">·</span><span>发布门禁</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>5 分钟前</span>
+            <div class="acts"><button class="mini-btn primary">放行</button><button class="mini-btn">暂缓</button></div>
+          </div>
+        </div>
+        <div class="card danger">
+          <div class="card-hd">
+            <div class="ri info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">API 凭证轮换确认</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill danger"><i></i>高风险</span></div>
+            </div>
+          </div>
+          <div class="su">外部支付通道凭证 30 天到期，需确认轮换计划与下游服务兼容性。</div>
+          <div class="ctx"><span class="cn">支付网关</span><span class="sep">·</span><span>凭证轮换</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>1 小时前</span>
+            <div class="acts"><button class="mini-btn primary">同意</button><button class="mini-btn">补证</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 泳道3：普通 -->
+    <div class="lane medium">
+      <div class="lane-hd">
+        <div class="stripe"></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;"><span class="tt">普通 · 按节奏处理</span><span class="ct">3</span></div>
+          <div class="hint">中低风险，需求裁决与技能审核类</div>
+        </div>
+        <div class="all">查看全部 ↗</div>
+      </div>
+      <div class="lane-body">
+        <div class="card warn">
+          <div class="card-hd">
+            <div class="ri artifact"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 3 3 0 0 1 3.86-3.86A2.5 2.5 0 0 1 9.5 2z"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">需求歧义需要人类裁决</div>
+              <div class="pills"><span class="pill decision"><i></i>项目决策</span><span class="pill warn"><i></i>中风险</span></div>
+            </div>
+          </div>
+          <div class="su">数字员工在「订单导出」场景识别到两处冲突需求，需确认以哪一份需求文档为准。</div>
+          <div class="ctx"><span class="cn">订单中台重构</span><span class="sep">·</span><span>需求裁决</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>38 分钟前</span>
+            <div class="acts"><button class="mini-btn">裁决</button><button class="mini-btn">详情</button></div>
+          </div>
+        </div>
+        <div class="card warn">
+          <div class="card-hd">
+            <div class="ri artifact"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 3 3 0 0 1 3.86-3.86A2.5 2.5 0 0 1 9.5 2z"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">验收标准不一致</div>
+              <div class="pills"><span class="pill decision"><i></i>项目决策</span><span class="pill warn"><i></i>中风险</span></div>
+            </div>
+          </div>
+          <div class="su">PRD 验收标准与测试用例口径不一致，需确认以 PRD 还是测试用例为最终依据。</div>
+          <div class="ctx"><span class="cn">技能市场重构</span><span class="sep">·</span><span>验收裁决</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>2 小时前</span>
+            <div class="acts"><button class="mini-btn">裁决</button><button class="mini-btn">详情</button></div>
+          </div>
+        </div>
+        <div class="card mute">
+          <div class="card-hd">
+            <div class="ri info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">技能市场上传审核</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill mute"><i></i>低风险</span></div>
+            </div>
+          </div>
+          <div class="su">「财报摘要生成」技能已通过自动化扫描，等待人工最终审核上架。</div>
+          <div class="ctx"><span class="cn">技能治理</span><span class="sep">·</span><span>上架审核</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>5 小时前</span>
+            <div class="acts"><button class="mini-btn primary">通过</button><button class="mini-btn">详情</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 泳道4：已处理 -->
+    <div class="lane done">
+      <div class="lane-hd">
+        <div class="stripe"></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;"><span class="tt">已处理 · 本周</span><span class="ct">23</span></div>
+          <div class="hint">已同意 / 驳回 / 已验收，可追溯审计</div>
+        </div>
+        <div class="all">查看全部 ↗</div>
+      </div>
+      <div class="lane-body">
+        <div class="card ok">
+          <div class="card-hd">
+            <div class="ri ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">灰度发布回滚审批</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill ok"><i></i>已同意</span></div>
+            </div>
+          </div>
+          <div class="su">v2.3.8 灰度阶段出现错误率上升，已批准执行回滚操作。</div>
+          <div class="ctx"><span class="cn">支付网关</span><span class="sep">·</span><span>已归档</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>昨天 16:20</span>
+            <div class="acts"><button class="mini-btn">审计 ↗</button></div>
+          </div>
+        </div>
+        <div class="card ok">
+          <div class="card-hd">
+            <div class="ri ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">项目验收结论确认</div>
+              <div class="pills"><span class="pill decision"><i></i>项目决策</span><span class="pill ok"><i></i>已验收</span></div>
+            </div>
+          </div>
+          <div class="su">「客服自动分类」项目已通过验收，数字员工边界与产出符合契约。</div>
+          <div class="ctx"><span class="cn">客服自动化</span><span class="sep">·</span><span>已归档</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>2 天前</span>
+            <div class="acts"><button class="mini-btn">审计 ↗</button></div>
+          </div>
+        </div>
+        <div class="card ok">
+          <div class="card-hd">
+            <div class="ri ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+            <div style="flex:1;">
+              <div class="tt">权限变更审批</div>
+              <div class="pills"><span class="pill approval"><i></i>审批</span><span class="pill ok"><i></i>已驳回</span></div>
+            </div>
+          </div>
+          <div class="su">数字员工请求扩大文件系统写入范围，因超出职责边界被驳回。</div>
+          <div class="ctx"><span class="cn">权限治理</span><span class="sep">·</span><span>已归档</span></div>
+          <div class="ft">
+            <span class="tm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>3 天前</span>
+            <div class="acts"><button class="mini-btn">审计 ↗</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">数据源 · GET /api/v1/inbox/items · items 按 risk_level 分桶渲染泳道 · 已处理泳道由 status=resolved|cancelled 驱动</div>
+</div>
+
+</body>
+</html>
