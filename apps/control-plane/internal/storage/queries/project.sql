@@ -1603,6 +1603,16 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
 ORDER BY created_at DESC;
 
+-- name: ListProjectTaskGraphNodeTimings :many
+SELECT
+  pta.project_task_id AS project_task_id,
+  MIN(pta.started_at)::timestamptz AS started_at,
+  MAX(pta.finished_at)::timestamptz AS finished_at
+FROM project_task_attempts pta
+WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pta.project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+GROUP BY pta.project_task_id;
+
 -- name: CreateProjectTransferRequest :one
 INSERT INTO project_transfer_requests (
     tenant_id,

@@ -3843,23 +3843,29 @@ type ProjectTaskGraphNode struct {
 	CurrentBlocker            *WorkflowInstanceCurrentBlocker `json:"current_blocker,omitempty"`
 	DemandId                  *openapi_types.UUID             `json:"demand_id,omitempty"`
 	ExpectedOutputs           []interface{}                   `json:"expected_outputs"`
-	HandoffContract           map[string]interface{}          `json:"handoff_contract"`
-	Id                        openapi_types.UUID              `json:"id"`
-	InputRequirements         map[string]interface{}          `json:"input_requirements"`
-	PlannedTaskKey            *string                         `json:"planned_task_key,omitempty"`
-	PlannerMetadata           map[string]interface{}          `json:"planner_metadata"`
-	ProjectId                 openapi_types.UUID              `json:"project_id"`
-	RequiresHumanApproval     bool                            `json:"requires_human_approval"`
-	RiskLevel                 *string                         `json:"risk_level,omitempty"`
-	RouteDecisionId           *openapi_types.UUID             `json:"route_decision_id,omitempty"`
-	StageIndex                *int32                          `json:"stage_index,omitempty"`
-	Status                    string                          `json:"status"`
-	StatusReason              *string                         `json:"status_reason,omitempty"`
-	Summary                   *string                         `json:"summary,omitempty"`
-	TaskKind                  *string                         `json:"task_kind,omitempty"`
-	TenantId                  openapi_types.UUID              `json:"tenant_id"`
-	Title                     string                          `json:"title"`
-	UpdatedAt                 *time.Time                      `json:"updated_at,omitempty"`
+
+	// FinishedAt 节点进入终态时间，取自该任务最近一次 project_task_attempts.finished_at；非终态任务为 null。
+	FinishedAt            *time.Time             `json:"finished_at,omitempty"`
+	HandoffContract       map[string]interface{} `json:"handoff_contract"`
+	Id                    openapi_types.UUID     `json:"id"`
+	InputRequirements     map[string]interface{} `json:"input_requirements"`
+	PlannedTaskKey        *string                `json:"planned_task_key,omitempty"`
+	PlannerMetadata       map[string]interface{} `json:"planner_metadata"`
+	ProjectId             openapi_types.UUID     `json:"project_id"`
+	RequiresHumanApproval bool                   `json:"requires_human_approval"`
+	RiskLevel             *string                `json:"risk_level,omitempty"`
+	RouteDecisionId       *openapi_types.UUID    `json:"route_decision_id,omitempty"`
+	StageIndex            *int32                 `json:"stage_index,omitempty"`
+
+	// StartedAt 节点首次 dispatch 成功时间，取自该任务最早一次 project_task_attempts.started_at。
+	StartedAt    *time.Time         `json:"started_at,omitempty"`
+	Status       string             `json:"status"`
+	StatusReason *string            `json:"status_reason,omitempty"`
+	Summary      *string            `json:"summary,omitempty"`
+	TaskKind     *string            `json:"task_kind,omitempty"`
+	TenantId     openapi_types.UUID `json:"tenant_id"`
+	Title        string             `json:"title"`
+	UpdatedAt    *time.Time         `json:"updated_at,omitempty"`
 }
 
 // ProjectTaskGraphRun defines model for ProjectTaskGraphRun.

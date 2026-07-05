@@ -323,6 +323,7 @@ type Querier interface {
 	ListProjectTaskDispatchGateResults(ctx context.Context, arg ListProjectTaskDispatchGateResultsParams) ([]ProjectTaskDispatchGateResult, error)
 	ListProjectTaskGraphDecisionRequests(ctx context.Context, arg ListProjectTaskGraphDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListProjectTaskGraphEvents(ctx context.Context, arg ListProjectTaskGraphEventsParams) ([]ProjectEvent, error)
+	ListProjectTaskGraphNodeTimings(ctx context.Context, arg ListProjectTaskGraphNodeTimingsParams) ([]ListProjectTaskGraphNodeTimingsRow, error)
 	ListProjectTaskGraphReplayEvents(ctx context.Context, arg ListProjectTaskGraphReplayEventsParams) ([]ProjectEvent, error)
 	ListProjectTaskResults(ctx context.Context, arg ListProjectTaskResultsParams) ([]ProjectTaskResult, error)
 	ListProjectTasks(ctx context.Context, arg ListProjectTasksParams) ([]ProjectTask, error)

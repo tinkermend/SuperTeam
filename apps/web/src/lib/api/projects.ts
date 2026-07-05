@@ -226,6 +226,8 @@ export type ProjectTaskGraphNode = ProjectTask & {
   planner_metadata: Record<string, unknown>;
   status_reason?: string;
   updated_at?: string;
+  started_at?: string;
+  finished_at?: string;
   current_blocker?: WorkflowInstanceCurrentBlocker;
 };
 

@@ -31,6 +31,8 @@ type ProjectTaskGraphNode struct {
 	Task           ProjectTask
 	StatusReason   string
 	UpdatedAt      *time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
 	CurrentBlocker *WorkflowInstanceCurrentBlocker
 }
 

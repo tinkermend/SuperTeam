@@ -5635,6 +5635,16 @@ components:
         planner_metadata:
           type: object
           additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 节点首次 dispatch 成功时间，取自该任务最早一次 project_task_attempts.started_at。
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 节点进入终态时间，取自该任务最近一次 project_task_attempts.finished_at；非终态任务为 null。
     ProjectTaskGraphEdge:
       type: object
       required:

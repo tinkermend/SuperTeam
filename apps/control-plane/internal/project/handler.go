@@ -2042,6 +2042,8 @@ type projectTaskGraphNodeResponse struct {
 	PlannerMetadata           map[string]any                          `json:"planner_metadata"`
 	StatusReason              string                                  `json:"status_reason,omitempty"`
 	UpdatedAt                 string                                  `json:"updated_at,omitempty"`
+	StartedAt                 string                                  `json:"started_at,omitempty"`
+	FinishedAt                string                                  `json:"finished_at,omitempty"`
 	CurrentBlocker            *workflowInstanceCurrentBlockerResponse `json:"current_blocker,omitempty"`
 }
 
@@ -2843,6 +2845,14 @@ func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraph
 	} else if !task.UpdatedAt.IsZero() {
 		updatedAt = task.UpdatedAt.Format(time.RFC3339)
 	}
+	startedAt := ""
+	if node.StartedAt != nil {
+		startedAt = node.StartedAt.Format(time.RFC3339)
+	}
+	finishedAt := ""
+	if node.FinishedAt != nil {
+		finishedAt = node.FinishedAt.Format(time.RFC3339)
+	}
 	return projectTaskGraphNodeResponse{
 		ID:                        task.ID.String(),
 		TenantID:                  task.TenantID.String(),
@@ -2865,6 +2875,8 @@ func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraph
 		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
 		StatusReason:              node.StatusReason,
 		UpdatedAt:                 updatedAt,
+		StartedAt:                 startedAt,
+		FinishedAt:                finishedAt,
 		CurrentBlocker:            workflowBlockerResponse(node.CurrentBlocker),
 	}
 }

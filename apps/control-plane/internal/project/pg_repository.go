@@ -2557,6 +2557,7 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 		return graph, err
 	}
 	graph.Nodes = enrichProjectTaskGraphNodes(graph.Nodes, graph.DecisionRequests)
+	graph.Nodes = r.attachProjectTaskGraphNodeTimings(ctx, graph.Nodes, req.TenantID)
 	graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
 	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
 	if err != nil {
@@ -2738,6 +2739,48 @@ func enrichProjectTaskGraphNodes(nodes []ProjectTaskGraphNode, decisions []Decis
 			Type:       "decision_request",
 			Title:      stringValueOr(decision.TitleSnapshot, "等待人工决策"),
 			ResourceID: &decision.ID,
+		}
+	}
+	return nodes
+}
+
+// attachProjectTaskGraphNodeTimings fills StartedAt/FinishedAt for each graph
+// node from the aggregated project_task_attempts timings. StartedAt is the
+// earliest attempt start (first dispatch success), FinishedAt is the latest
+// attempt finish (terminal time when the task itself is terminal).
+func (r *PgRepository) attachProjectTaskGraphNodeTimings(ctx context.Context, nodes []ProjectTaskGraphNode, tenantID uuid.UUID) []ProjectTaskGraphNode {
+	if len(nodes) == 0 {
+		return nodes
+	}
+	taskIDs := make([]uuid.UUID, 0, len(nodes))
+	for _, node := range nodes {
+		taskIDs = append(taskIDs, node.Task.ID)
+	}
+	rows, err := r.q.ListProjectTaskGraphNodeTimings(ctx, queries.ListProjectTaskGraphNodeTimingsParams{
+		TenantID:       tenantID,
+		ProjectTaskIds: taskIDs,
+	})
+	if err != nil {
+		return nodes
+	}
+	startedByTaskID := map[uuid.UUID]time.Time{}
+	finishedByTaskID := map[uuid.UUID]time.Time{}
+	for _, row := range rows {
+		if row.StartedAt.Valid {
+			startedByTaskID[row.ProjectTaskID] = row.StartedAt.Time
+		}
+		if row.FinishedAt.Valid {
+			finishedByTaskID[row.ProjectTaskID] = row.FinishedAt.Time
+		}
+	}
+	for index, node := range nodes {
+		if started, ok := startedByTaskID[node.Task.ID]; ok {
+			startedCopy := started
+			nodes[index].StartedAt = &startedCopy
+		}
+		if finished, ok := finishedByTaskID[node.Task.ID]; ok {
+			finishedCopy := finished
+			nodes[index].FinishedAt = &finishedCopy
 		}
 	}
 	return nodes

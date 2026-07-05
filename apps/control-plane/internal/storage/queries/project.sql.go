@@ -4984,6 +4984,48 @@ func (q *Queries) ListProjectTaskGraphEvents(ctx context.Context, arg ListProjec
 	return items, nil
 }
 
+const ListProjectTaskGraphNodeTimings = `-- name: ListProjectTaskGraphNodeTimings :many
+SELECT
+  pta.project_task_id AS project_task_id,
+  MIN(pta.started_at)::timestamptz AS started_at,
+  MAX(pta.finished_at)::timestamptz AS finished_at
+FROM project_task_attempts pta
+WHERE pta.tenant_id = $1::uuid
+  AND pta.project_task_id = ANY($2::uuid[])
+GROUP BY pta.project_task_id
+`
+
+type ListProjectTaskGraphNodeTimingsParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+type ListProjectTaskGraphNodeTimingsRow struct {
+	ProjectTaskID uuid.UUID          `json:"project_task_id"`
+	StartedAt     pgtype.Timestamptz `json:"started_at"`
+	FinishedAt    pgtype.Timestamptz `json:"finished_at"`
+}
+
+func (q *Queries) ListProjectTaskGraphNodeTimings(ctx context.Context, arg ListProjectTaskGraphNodeTimingsParams) ([]ListProjectTaskGraphNodeTimingsRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskGraphNodeTimings, arg.TenantID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectTaskGraphNodeTimingsRow{}
+	for rows.Next() {
+		var i ListProjectTaskGraphNodeTimingsRow
+		if err := rows.Scan(&i.ProjectTaskID, &i.StartedAt, &i.FinishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectTaskGraphReplayEvents = `-- name: ListProjectTaskGraphReplayEvents :many
 SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
 WHERE tenant_id = $1::uuid
