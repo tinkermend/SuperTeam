@@ -35,7 +35,7 @@ func TestInboxItemMapperPreservesJSONAndOptionalFields(t *testing.T) {
 		RiskLevel:               pgtype.Text{String: "high", Valid: true},
 		Priority:                pgtype.Text{String: "urgent", Valid: true},
 		Status:                  "resolved",
-		ActionSchema:            []byte(`[{"key":"approved","label":"Approve","tone":"positive","requires_comment":false,"metadata":{"decision":"approved"}}]`),
+		ActionSchema:            []byte(`[{"key":"approved","label":"同意","tone":"positive","requires_comment":false,"metadata":{"decision":"approved"}}]`),
 		ContextPayload:          []byte(`{"project_id":"project-1","risk":"high"}`),
 		DeepLink:                []byte(`{"route":"/projects/project-1","tab":"approval"}`),
 		ResolvedAt:              pgtype.Timestamptz{Time: resolvedAt, Valid: true},
@@ -71,6 +71,9 @@ func TestInboxItemMapperPreservesJSONAndOptionalFields(t *testing.T) {
 	}
 	if len(item.Actions) != 1 || item.Actions[0].Key != "approved" {
 		t.Fatalf("expected action schema, got %#v", item.Actions)
+	}
+	if item.Actions[0].Label != "同意" {
+		t.Fatalf("expected localized action label, got %q", item.Actions[0].Label)
 	}
 	if item.Actions[0].Metadata["decision"] != "approved" {
 		t.Fatalf("expected action metadata, got %#v", item.Actions[0].Metadata)

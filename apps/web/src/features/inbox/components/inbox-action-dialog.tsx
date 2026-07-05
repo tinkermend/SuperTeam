@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { formatInboxActionLabel } from "./action-format";
 
 type InboxActionDialogProps = {
   action: InboxAction | null;
@@ -67,7 +68,7 @@ export function InboxActionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-v3-line bg-v3-card text-v3-ink shadow-v3-pop sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{action ? action.label : "处理事项"}</DialogTitle>
+          <DialogTitle>{action ? formatInboxActionLabel(action) : "处理事项"}</DialogTitle>
           <DialogDescription>{item?.title ?? "确认本次收件箱处理动作。"}</DialogDescription>
         </DialogHeader>
         {submitError ? (

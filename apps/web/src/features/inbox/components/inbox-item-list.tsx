@@ -3,86 +3,112 @@ import { Link } from "@tanstack/react-router";
 import {
   IconTile,
   StatusPill,
-  V3Button,
   V3Table,
   V3Td,
   V3Th,
   V3Tr,
   WorkSurface,
-  type V3ButtonVariant,
   type V3Tone,
 } from "@/components/superteam";
-import type { InboxAction, InboxItem, InboxViewMode } from "@/lib/api/inbox";
+import type { InboxItem } from "@/lib/api/inbox";
 import { cn } from "@/lib/utils";
 
 type InboxItemListProps = {
   items: InboxItem[];
-  onAction: (item: InboxItem, action: InboxAction) => void;
-  view: InboxViewMode;
+  onSelect: (item: InboxItem) => void;
+  selectedItemId: string | null;
 };
 
-const riskLabel: Record<string, string> = {
+export const riskLabel: Record<string, string> = {
   blocked: "阻断",
   high: "高风险",
   low: "低风险",
   medium: "中风险",
 };
 
-const riskTone: Record<string, V3Tone> = {
+export const riskTone: Record<string, V3Tone> = {
   blocked: "danger",
   high: "danger",
   low: "mute",
   medium: "warn",
 };
 
-const actionToneVariant: Record<string, V3ButtonVariant> = {
-  danger: "danger",
-  destructive: "danger",
-  primary: "primary",
-  success: "outline",
-  warning: "outline",
+const itemTypeLabel: Record<string, string> = {
+  approval: "审批",
+  project_decision: "项目决策",
 };
 
-const actionToneClass: Record<string, string> = {
-  primary: "",
-  success: "border-v3-ok text-v3-ok hover:bg-v3-ok-soft",
-  warning: "border-v3-warn text-v3-warn hover:bg-v3-warn-soft",
+const sourceTypeLabel: Record<string, string> = {
+  approval_request: "审批请求",
+  project_decision_request: "项目决策请求",
 };
 
-export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
+export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemListProps) {
   return (
     <WorkSurface>
       <div className="flex flex-col gap-1 border-b border-v3-line px-5 py-4">
         <h2 className="text-lg font-extrabold text-v3-ink">待处理事项</h2>
-        <p className="text-[13px] text-v3-ink-2">逐项查看来源、风险、时间和可执行动作。</p>
+        <p className="text-[13px] text-v3-ink-2">逐项查看需要你同意、审核、确认或验收的事项。</p>
       </div>
-      <V3Table>
+      <V3Table className="table-fixed">
+        <colgroup>
+          <col className="w-[35%]" />
+          <col className="w-[10%]" />
+          <col className="w-[27%]" />
+          <col className="w-[16%]" />
+          <col className="w-[12%]" />
+        </colgroup>
         <thead>
           <tr>
-            <V3Th className="min-w-[22rem]">事项</V3Th>
-            <V3Th className="min-w-[16rem]">上下文</V3Th>
-            <V3Th>更新时间</V3Th>
-            <V3Th className="text-right">操作</V3Th>
+            <V3Th className="whitespace-normal">事项</V3Th>
+            <V3Th className="whitespace-normal">类型</V3Th>
+            <V3Th className="whitespace-normal">来源 / 关联对象</V3Th>
+            <V3Th className="whitespace-normal">当前节点</V3Th>
+            <V3Th className="whitespace-normal">更新时间</V3Th>
           </tr>
         </thead>
         <tbody>
           {items.map((item) => {
-            const actions = Array.isArray(item.actions) ? item.actions : [];
             const contextLabel = formatContext(item);
-            const rowTone = item.risk_level === "blocked" || item.risk_level === "high" ? "danger" : item.risk_level === "medium" ? "warn" : undefined;
+            const currentNode = formatCurrentNode(item);
+            const riskAccent =
+              item.risk_level === "blocked" || item.risk_level === "high"
+                ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]"
+                : item.risk_level === "medium"
+                  ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]"
+                  : undefined;
+            const isSelected = item.id === selectedItemId;
 
             return (
-              <V3Tr key={item.id} tone={rowTone}>
-                <V3Td>
+              <V3Tr
+                aria-label={`打开事项：${item.title}`}
+                aria-selected={isSelected}
+                className={cn(
+                  "group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-v3-brand/60",
+                  riskAccent,
+                  isSelected && "[&>td]:bg-v3-brand-soft/60 [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]",
+                )}
+                key={item.id}
+                onClick={() => onSelect(item)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(item);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <V3Td className="min-w-0">
                   <div className="flex min-w-0 gap-3">
-                    <IconTile tone={item.risk_level === "high" || item.risk_level === "blocked" ? "danger" : "info"} size="sm">
+                    <IconTile className="hidden shrink-0 2xl:grid" tone={item.risk_level === "high" || item.risk_level === "blocked" ? "danger" : "info"} size="sm">
                       {item.risk_level === "high" || item.risk_level === "blocked" ? <AlertTriangle /> : <FileText />}
                     </IconTile>
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h2 className="min-w-0 text-[15px] font-bold text-v3-ink">
+                        <span className="min-w-0 text-left text-[15px] font-bold text-v3-ink group-hover:text-v3-brand">
                           {item.title}
-                        </h2>
+                        </span>
                         {item.risk_level ? (
                           <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
                             {riskLabel[item.risk_level] ?? item.risk_level}
@@ -90,21 +116,29 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
                         ) : null}
                       </div>
                       {item.summary ? (
-                        <p className="mt-1 max-w-[38rem] text-[13px] leading-5 text-v3-ink-2">
+                        <p className="mt-1 line-clamp-2 max-w-full break-words text-[13px] leading-5 text-v3-ink-2">
                           {item.summary}
                         </p>
                       ) : null}
                     </div>
                   </div>
                 </V3Td>
-                <V3Td>
+                <V3Td className="min-w-0">
+                  <StatusPill className="max-w-full px-2 text-[11px]" showDot={false} tone={item.item_type === "approval" ? "info" : "artifact"}>
+                    {formatItemType(item)}
+                  </StatusPill>
+                </V3Td>
+                <V3Td className="min-w-0">
                   <div className="flex min-w-0 flex-col gap-1 text-[13px] text-v3-ink-2">
-                    {contextLabel ? <span className="truncate font-semibold text-v3-ink">{contextLabel}</span> : null}
+                    <span className="line-clamp-2 break-words font-semibold text-v3-ink">
+                      {contextLabel ?? formatSourceType(item)}
+                    </span>
                     {item.source_task_id ? (
-                      <span className="truncate font-mono text-xs text-v3-ink-3">任务 {item.source_task_id}</span>
+                      <span className="line-clamp-2 break-all font-mono text-xs text-v3-ink-3">任务 {item.source_task_id}</span>
                     ) : null}
                     <Link
                       className="inline-flex w-fit items-center gap-1 font-semibold text-v3-brand-deep hover:text-v3-brand"
+                      onClick={(event) => event.stopPropagation()}
                       to={resolveInboxHref(item)}
                     >
                       查看上下文
@@ -112,31 +146,17 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
                     </Link>
                   </div>
                 </V3Td>
-                <V3Td className="whitespace-nowrap text-v3-ink-2 tabular-nums">
-                  <span className="inline-flex items-center gap-1">
-                    <Clock aria-hidden className="size-3.5" />
+                <V3Td className="min-w-0">
+                  <div className="flex min-w-0 flex-col gap-1 text-[13px] text-v3-ink-2">
+                    <span className="line-clamp-2 break-words font-semibold text-v3-ink">{currentNode}</span>
+                    <span className="line-clamp-2 break-words text-xs text-v3-ink-3">{formatSourceType(item)}</span>
+                  </div>
+                </V3Td>
+                <V3Td className="min-w-0 text-v3-ink-2 tabular-nums">
+                  <span className="inline-flex min-w-0 items-center gap-1 whitespace-normal break-words">
+                    <Clock aria-hidden className="hidden size-3.5 shrink-0 2xl:block" />
                     {formatDateTime(item.last_activity_at)}
                   </span>
-                </V3Td>
-                <V3Td>
-                  {view === "mine" && actions.length > 0 ? (
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      {actions.map((action) => (
-                        <V3Button
-                          className={cn(actionToneClass[action.tone])}
-                          key={action.key}
-                          onClick={() => onAction(item, action)}
-                          size="sm"
-                          type="button"
-                          variant={actionToneVariant[action.tone] ?? "outline"}
-                        >
-                          {action.label}
-                        </V3Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="block text-right text-xs font-semibold text-v3-ink-3">只读</span>
-                  )}
                 </V3Td>
               </V3Tr>
             );
@@ -147,7 +167,7 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
   );
 }
 
-function formatContext(item: InboxItem) {
+export function formatContext(item: InboxItem) {
   const projectName = readContextText(item.context, ["project_name", "project", "project_title"]);
   const sourceName = readContextText(item.context, ["source_title", "approval_title", "task_title"]);
 
@@ -157,7 +177,27 @@ function formatContext(item: InboxItem) {
   return projectName ?? sourceName ?? (item.source_project_id ? `项目 ${item.source_project_id}` : undefined);
 }
 
-function readContextText(context: Record<string, unknown>, keys: string[]) {
+export function formatItemType(item: InboxItem) {
+  return itemTypeLabel[item.item_type] ?? item.item_type;
+}
+
+export function formatSourceType(item: InboxItem) {
+  return sourceTypeLabel[item.source_type] ?? item.source_type;
+}
+
+export function formatCurrentNode(item: InboxItem) {
+  return (
+    readContextText(item.context, [
+      "current_node",
+      "node_title",
+      "workflow_node",
+      "stage",
+      "decision_type",
+    ]) ?? formatItemType(item)
+  );
+}
+
+export function readContextText(context: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = context[key];
     if (typeof value === "string" && value.trim()) {
@@ -167,7 +207,7 @@ function readContextText(context: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
-function resolveInboxHref(item: InboxItem) {
+export function resolveInboxHref(item: InboxItem) {
   const route = typeof item.deep_link.route === "string" ? item.deep_link.route : undefined;
   const anchor = typeof item.deep_link.anchor === "string" ? item.deep_link.anchor : undefined;
   const path = resolveSafeInboxPath(route, item.source_project_id);
@@ -175,7 +215,7 @@ function resolveInboxHref(item: InboxItem) {
   return anchor ? `${path}#${encodeURIComponent(anchor)}` : path;
 }
 
-function resolveSafeInboxPath(route: string | undefined, sourceProjectId: string | undefined) {
+export function resolveSafeInboxPath(route: string | undefined, sourceProjectId: string | undefined) {
   if (route && isSafeAppPath(route)) {
     return route;
   }
@@ -187,7 +227,7 @@ function resolveSafeInboxPath(route: string | undefined, sourceProjectId: string
   return "/inbox";
 }
 
-function isSafeAppPath(route: string) {
+export function isSafeAppPath(route: string) {
   if (
     !route.startsWith("/") ||
     route.startsWith("//") ||
@@ -206,7 +246,7 @@ function isSafeAppPath(route: string) {
   }
 }
 
-function formatDateTime(value: string) {
+export function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;

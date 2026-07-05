@@ -48,16 +48,22 @@ function makeInboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
     actions: [
       {
-        key: "approve",
-        label: "通过",
+        key: "approved",
+        label: "Approve",
         requires_comment: false,
-        tone: "success",
+        tone: "positive",
       },
       {
-        key: "reject",
-        label: "退回",
+        key: "rejected",
+        label: "Reject",
         requires_comment: true,
-        tone: "danger",
+        tone: "destructive",
+      },
+      {
+        key: "needs_more_evidence",
+        label: "Request evidence",
+        requires_comment: true,
+        tone: "warning",
       },
     ],
     context: {
@@ -125,11 +131,16 @@ function createInboxFetcher(
     teamItem?: InboxItem;
   } = {},
 ) {
-  const requests: Array<{ method: string; pathname: string; url: string }> = [];
+  const requests: Array<{ body?: string; method: string; pathname: string; url: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
-    requests.push({ method, pathname: url.pathname, url: url.toString() });
+    requests.push({
+      body: typeof init?.body === "string" ? init.body : undefined,
+      method,
+      pathname: url.pathname,
+      url: url.toString(),
+    });
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       const view = url.searchParams.get("view") ?? "mine";
@@ -215,6 +226,60 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
   });
 
+  it("shows a default guidance panel until a human decision item is selected", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "选择一条事项查看详情" })).toBeVisible();
+    await expect.element(screen.getByText("今日待处理摘要")).toBeVisible();
+    await expect.element(screen.getByText("选择事项后可执行")).toBeVisible();
+    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
+  });
+
+  it("opens item details with process records, evidence, actions, and flow links", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
+
+    await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
+    await expect.element(screen.getByText("过程记录")).toBeVisible();
+    await expect.element(screen.getByText("证据与上下文")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "同意" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "驳回" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "要求补证" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "Reject" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "Request evidence" }).query()).toBeNull();
+    await expect.element(screen.getByRole("link", { name: "查看完整详情" })).toHaveAttribute(
+      "href",
+      "/projects/project-1/approvals#approval-1",
+    );
+    await expect.element(screen.getByRole("link", { name: "进入流程实例" })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看流程编排" })).toBeVisible();
+  });
+
+  it("opens item details when clicking the pending item row body", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByRole("heading", { name: "选择一条事项查看详情" })).toBeVisible();
+    await userEvent.click(screen.getByText("需要确认客户侧 Runtime 节点接入证据。"));
+
+    await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "同意" })).toBeVisible();
+  });
+
+  it("uses a fixed-width inbox table so long text wraps within columns", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+
+    const table = document.body.querySelector('[data-slot="v3-table"]');
+    expect(table).not.toBeNull();
+    expect(table?.className).toContain("table-fixed");
+  });
+
   it("renders the inbox with v3 Soft-Flat containers", async () => {
     const screen = await renderInboxView();
 
@@ -254,8 +319,8 @@ describe("InboxView", () => {
     const screen = await renderInboxView(createInboxFetcher({ mineItem: itemWithNullActions }));
 
     await expect.element(screen.getByText("验收项目交付")).toBeVisible();
-    expect(screen.getByRole("button", { name: "通过" }).query()).toBeNull();
-    expect(screen.getByRole("button", { name: "退回" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
   });
 
   it("requests open inbox by default", async () => {
@@ -370,8 +435,8 @@ describe("InboxView", () => {
     await userEvent.click(screen.getByRole("tab", { name: "团队待办" }));
 
     await expect.element(screen.getByText("团队发布窗口确认")).toBeVisible();
-    expect(screen.getByRole("button", { name: "通过" }).query()).toBeNull();
-    expect(screen.getByRole("button", { name: "退回" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
     const contextLink = screen.getByRole("link", { name: "查看上下文" });
     await expect.element(contextLink).toHaveAttribute("href", "/projects/project-1/approvals#approval-1");
     await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
@@ -397,10 +462,12 @@ describe("InboxView", () => {
     const screen = await renderInboxView(createInboxFetcher({ actionStatus: 500 }));
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "通过" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
     await userEvent.click(screen.getByRole("button", { name: "提交" }));
 
     await expect.element(screen.getByRole("dialog")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
     await expect.element(screen.getByText("上游审批服务暂时不可用")).toBeVisible();
   });
 
@@ -410,13 +477,17 @@ describe("InboxView", () => {
     const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "通过" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
     await Promise.all([
       userEvent.click(screen.getByRole("button", { name: "提交" })),
       userEvent.click(screen.getByRole("button", { name: "提交" })),
     ]);
 
     expect(fetcher.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    expect(JSON.parse(fetcher.requests.find((request) => request.method === "POST")?.body ?? "{}")).toMatchObject({
+      action: "approved",
+    });
     deferred.resolve();
   });
 });

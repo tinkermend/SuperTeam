@@ -503,12 +503,18 @@ func TestDefaultActionsRequireCommentsForNegativeDecisions(t *testing.T) {
 
 	if _, ok := byKey["approved"]; !ok {
 		t.Fatalf("expected approved default action, got %#v", actions)
+	} else if byKey["approved"].Label != "同意" {
+		t.Fatalf("expected approved label to be localized, got %q", byKey["approved"].Label)
 	}
 	if rejected, ok := byKey["rejected"]; !ok || !rejected.RequiresComment {
 		t.Fatalf("expected rejected action requiring comment, got %#v", rejected)
+	} else if rejected.Label != "驳回" {
+		t.Fatalf("expected rejected label to be localized, got %q", rejected.Label)
 	}
 	if needsMoreEvidence, ok := byKey["needs_more_evidence"]; !ok || !needsMoreEvidence.RequiresComment {
 		t.Fatalf("expected needs_more_evidence action requiring comment, got %#v", needsMoreEvidence)
+	} else if needsMoreEvidence.Label != "要求补证" {
+		t.Fatalf("expected needs_more_evidence label to be localized, got %q", needsMoreEvidence.Label)
 	}
 }
 

@@ -302,9 +302,9 @@ func DefaultActions(itemType ItemType) []Action {
 		return []Action{}
 	}
 	actions := []Action{
-		{Key: "approved", Label: "Approve", Tone: "positive"},
-		{Key: "rejected", Label: "Reject", Tone: "destructive", RequiresComment: true},
-		{Key: "needs_more_evidence", Label: "Request evidence", Tone: "warning", RequiresComment: true},
+		{Key: "approved", Label: "同意", Tone: "positive"},
+		{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true},
+		{Key: "needs_more_evidence", Label: "要求补证", Tone: "warning", RequiresComment: true},
 	}
 	if itemType == ItemTypeProjectDecision {
 		actions[0].Metadata = map[string]any{"decision": "approved"}
