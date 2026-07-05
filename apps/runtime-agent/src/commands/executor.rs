@@ -2384,11 +2384,25 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
     let Some(object) = value.as_object() else {
         return value.clone();
     };
-    let mut normalized = object.clone();
-    if !normalized.contains_key("criterion") {
-        if let Some(criteria) = object.get("criteria") {
-            normalized.insert("criterion".to_string(), criteria.clone());
-            normalized.remove("criteria");
+    let mut normalized = serde_json::Map::new();
+    if let Some(criterion) = object
+        .get("criterion")
+        .or_else(|| object.get("criteria"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+    {
+        normalized.insert(
+            "criterion".to_string(),
+            serde_json::Value::String(criterion),
+        );
+    }
+    for key in ["id", "criterion_id", "name", "summary", "human_accepted_reason"] {
+        if let Some(value) = object
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| trimmed_optional(Some(text)))
+        {
+            normalized.insert(key.to_string(), serde_json::Value::String(value));
         }
     }
     if let Some(status) = object
@@ -2950,6 +2964,41 @@ mod tests {
             json!("return structured result")
         );
         assert!(contract.acceptance_results[0].get("criteria").is_none());
+    }
+
+    #[test]
+    fn parsed_result_contract_strips_unknown_acceptance_result_fields() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "acceptance_results": [
+                    {
+                        "criteria": "return structured result",
+                        "status": "passed",
+                        "summary": "checked output",
+                        "evidence_refs": ["runtime-command://cmd-smoke"],
+                        "verification": "provider-local note that belongs at result_contract.verification",
+                        "unexpected": {"nested": true}
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        let acceptance = &contract.acceptance_results[0];
+        assert_eq!(acceptance["criterion"], json!("return structured result"));
+        assert_eq!(acceptance["status"], json!("passed"));
+        assert_eq!(acceptance["summary"], json!("checked output"));
+        assert_eq!(
+            acceptance["evidence_refs"],
+            json!(["runtime-command://cmd-smoke"])
+        );
+        assert!(acceptance.get("criteria").is_none());
+        assert!(acceptance.get("verification").is_none());
+        assert!(acceptance.get("unexpected").is_none());
     }
 
     #[test]

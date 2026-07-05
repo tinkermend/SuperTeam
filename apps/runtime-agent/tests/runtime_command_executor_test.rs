@@ -1828,8 +1828,10 @@ async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty
             "summary": "Codex produced a structured task result.",
             "acceptance_results": [
                 {
-                    "criterion": "execution_summary",
+                    "criteria": "execution_summary",
                     "status": "passed",
+                    "summary": "Provider asserted the execution summary.",
+                    "verification": "provider-local note that should not be sent inside acceptance_results",
                     "evidence_refs": [
                         {
                             "type": "log",
@@ -1976,6 +1978,33 @@ async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty
     assert_eq!(
         project_complete.payload["result_contract"]["acceptance_results"][0]["evidence_refs"][0],
         "runtime-command://cmd-codex-project-task"
+    );
+    assert_eq!(
+        project_complete.payload["result_contract"]["acceptance_results"][0]["criterion"],
+        "execution_summary"
+    );
+    assert!(
+        project_complete.payload["result_contract"]["acceptance_results"][0]
+            .get("criteria")
+            .is_none(),
+        "criteria alias must be normalized before Control Plane decode: {}",
+        project_complete.payload
+    );
+    assert!(
+        project_complete.payload["result_contract"]["acceptance_results"][0]
+            .get("verification")
+            .is_none(),
+        "acceptance result unknown fields must not reach Control Plane: {}",
+        project_complete.payload
+    );
+    assert!(
+        project_complete.payload.get("verification").is_none(),
+        "verification must stay nested under result_contract: {}",
+        project_complete.payload
+    );
+    assert_eq!(
+        project_complete.payload["result_contract"]["verification"][0]["status"],
+        "passed"
     );
 
     http_server.task.abort();
