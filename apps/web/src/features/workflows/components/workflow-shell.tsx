@@ -12,7 +12,7 @@ export function WorkflowShell({ children }: WorkflowShellProps) {
     <>
       <ShellPageHeader
         icon={<GitBranch />}
-        iconTone="info"
+        iconTone="brand"
         subtitle="查看需求触发的规划、执行、阻塞和结果状态"
         title="流程编排"
       />

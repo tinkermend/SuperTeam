@@ -94,7 +94,7 @@ export function WorkflowDetail({
 
         <div className="flex items-start justify-between gap-3 border-b border-v3-line p-4">
           <div className="flex min-w-0 items-center gap-3">
-            <IconTile tone={nodes.length > 0 ? "info" : "warn"} size="sm">
+            <IconTile tone="brand" size="sm">
               <ListChecks />
             </IconTile>
             <div className="min-w-0">
@@ -110,9 +110,6 @@ export function WorkflowDetail({
               </p>
             </div>
           </div>
-          <StatusPill tone={workflowStatusTone(instance.status)}>
-            {workflowStatusLabel(instance.status)}
-          </StatusPill>
         </div>
 
         {hasGraphContent && graph ? (
@@ -190,20 +187,20 @@ function DemandSummaryBar({
           <StatusPill tone={workflowStatusTone(instance.status)}>
             {workflowStatusLabel(instance.status)}
           </StatusPill>
-          <StatusPill tone="mute">
+          <StatusPill showDot={false} tone="mute">
             已完成 {instance.progress.completed_nodes}/{instance.progress.total_nodes}
           </StatusPill>
-          <StatusPill tone={instance.progress.running_nodes > 0 ? "info" : "mute"}>
-            运行中 {instance.progress.running_nodes}
-          </StatusPill>
-          <StatusPill
-            tone={instance.progress.waiting_human_nodes > 0 ? "warn" : "mute"}
-          >
-            等待人工 {instance.progress.waiting_human_nodes}
-          </StatusPill>
-          <StatusPill tone={instance.progress.blocked_nodes > 0 ? "danger" : "mute"}>
-            阻塞 {instance.progress.blocked_nodes}
-          </StatusPill>
+          {instance.progress.running_nodes > 0 ? (
+            <StatusPill tone="info">运行中 {instance.progress.running_nodes}</StatusPill>
+          ) : null}
+          {instance.progress.waiting_human_nodes > 0 ? (
+            <StatusPill tone="warn">
+              等待人工 {instance.progress.waiting_human_nodes}
+            </StatusPill>
+          ) : null}
+          {instance.progress.blocked_nodes > 0 ? (
+            <StatusPill tone="danger">阻塞 {instance.progress.blocked_nodes}</StatusPill>
+          ) : null}
           <V3Button asChild size="sm" variant="outline">
             <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">
               <FolderKanban className="size-4" />

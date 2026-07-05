@@ -422,12 +422,14 @@ describe("WorkflowView", () => {
     const screen = await renderWorkflowView({ demandId: undefined });
 
     await expect.element(screen.getByRole("heading", { name: "流程编排" })).toBeVisible();
-    await expect.element(screen.getByRole("table", { name: "流程实例列表" })).toBeVisible();
+    await expect.element(screen.getByRole("list", { name: "流程实例列表" })).toBeVisible();
 
-    expect(document.body.querySelector('[data-slot="v3-soft-card"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-signature-card"]')).not.toBeNull();
+    // v3.1 流水线运行流：入口不渲染 signature/指标卡带/数据表格，
+    // 首屏是工作面 + 统计筛选条 + 分组运行列表
+    expect(document.body.querySelector('[data-slot="v3-signature-card"]')).toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-table"]')).toBeNull();
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="v3-chip"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
     expect(document.body.innerHTML).not.toContain(["superteam", ""].join("-"));
   });

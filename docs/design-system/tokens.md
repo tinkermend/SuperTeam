@@ -29,22 +29,24 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 
 矩枢平台的色彩使用边界见 `visual-language.md`：蓝色用于品牌、主操作、焦点、选中和小面积节点/线条；大面积蓝紫渐变不再作为默认页面识别方式。
 
-| 用途 | 浅色基准 | 软底（soft） | 使用范围 |
-| --- | --- | --- | --- |
-| 品牌主色 `--v3-brand` | `#2F5FFF` | `#E9EFFF` | 主按钮、导航激活、焦点、关键链接、signature 线条和局部 accent |
-| 品牌深色 `--v3-brand-deep` | `#2348E0` | — | 强调文字、按钮 hover、焦点边缘、小面积渐变终点 |
-| 中性底 `--v3-bg` | `#F8FAFC` | — | 页面底色（近白冷灰，不带色相） |
-| Shell 底 `--v3-shell-bg` / `--v3-shell-background` | `#F6F8FB` + 低对比渐变 | — | 登录页与控制台外壳背景，允许柔和 wash 与低对比网格，但不进入数据面 |
-| Shell 毛玻璃 `--v3-shell-glass*` | 侧栏基底 `#FBFCFF` → `#F1F5FB` → `#E8EEF6`，叠弱蓝/绿反射，边界 `rgba(126,143,172,.20)` | — | 左侧导航、顶栏等壳层表面；侧栏要与页面渐变拉开层级，内容卡片、表格和表单仍使用实底 token |
-| 卡片面 `--v3-card` | `#FFFFFF` | `--v3-card-soft #F7F8FA` | 柔和卡片、面板、表格容器外壳 |
-| 主文字 `--v3-ink` | `#0B0D12` | `--v3-ink-2 #697586` / `--v3-ink-3 #9AA4B2` | 黑色粗体大数字与标题、次级、三级文字 |
-| 边框 `--v3-line` | `#EEF1F4` | `--v3-line-strong #DFE4EA` | 卡片内分隔线、表格行线、表头底线 |
-| 运行 / 信息 `--v3-info` | `#2563EB` | `#E8EFFD` | 运行中、队列、Runtime、系统信息 |
-| 成功 / 通过 `--v3-ok` | `#15A06B` | `#E4F6EE` | 成功、在线、健康、已通过、验收通过 |
-| 预警 / 等待 `--v3-warn` | `#CF7A14` | `#FDF0DB` | SLA、待处理、待确认、阈值预警 |
-| 危险 / 阻断 `--v3-danger` | `#E5484D` | `#FDE8E9` | 失败、高风险、不可逆、阻断、危险操作 |
-| 工件 / 产物 `--v3-artifact` | `#7C5CFF` | `#EFEAFF` | Artifact、报告、附件、生成物 |
-| 中性 / 审计 `--v3-mute` | `#64748B` | `#EEF1F4` | 审计、历史、说明、低优先级、排队 |
+| 用途 | 浅色基准 | 文字层（text） | 软底（soft） | 使用范围 |
+| --- | --- | --- | --- | --- |
+| 品牌主色 `--v3-brand` | `#2F5FFF` | `--v3-brand-deep`（兼任） | `#E9EFFF` | 主按钮、导航激活、焦点、关键链接、signature 线条和局部 accent |
+| 品牌深色 `--v3-brand-deep` | `#2348E0` | — | — | 强调文字、按钮 hover、焦点边缘、小面积渐变终点 |
+| 中性底 `--v3-bg` | `#F8FAFC` | — | — | 页面底色（近白冷灰，不带色相） |
+| Shell 底 `--v3-shell-bg` / `--v3-shell-background` | `#F6F8FB` + 低对比渐变 | — | — | 登录页与控制台外壳背景，允许柔和 wash 与低对比网格，但不进入数据面 |
+| Shell 毛玻璃 `--v3-shell-glass*` | 侧栏基底 `#FBFCFF` → `#F1F5FB` → `#E8EEF6`，叠弱蓝/绿反射，边界 `rgba(126,143,172,.20)` | — | — | 左侧导航、顶栏等壳层表面；侧栏要与页面渐变拉开层级，内容卡片、表格和表单仍使用实底 token |
+| 卡片面 `--v3-card` | `#FFFFFF` | — | `--v3-card-soft #F7F8FA` | 柔和卡片、面板、表格容器外壳 |
+| 主文字 `--v3-ink` | `#0B0D12` | `--v3-ink-2 #4D586B` / `--v3-ink-3 #6D7580` | — | 黑色粗体大数字与标题、次级、三级文字 |
+| 边框 `--v3-line` | `#EEF1F4` | — | `--v3-line-strong #DFE4EA` | 卡片内分隔线、表格行线、表头底线 |
+| 运行 / 信息 `--v3-info` | `#0094B7` | `#00617D` | `#DEF8FE` | 运行中、队列、Runtime、系统信息 |
+| 成功 / 通过 `--v3-ok` | `#009A60` | `#006639` | `#E3F9EC` | 成功、在线、健康、已通过、验收通过 |
+| 预警 / 等待 `--v3-warn` | `#BB6900` | `#7F3F00` | `#FFEFDF` | SLA、待处理、待确认、阈值预警 |
+| 危险 / 阻断 `--v3-danger` | `#D14647` | `#8A2F2D` | `#FFECE9` | 失败、高风险、不可逆、阻断、危险操作 |
+| 工件 / 产物 `--v3-artifact` | `#9565C7` | `#633D89` | `#F7EEFF` | Artifact、报告、附件、生成物（仅类别，不进状态词表） |
+| 中性 / 审计 `--v3-mute` | `#64748B` | `#4D586B` | `#EEF1F4` | 审计、历史、说明、低优先级、排队 |
+
+语义色由 OKLCH 公式派生，保证同明度同饱和、并排不打架：浅色端 solid = `oklch(0.60 0.15 H)`、text = `oklch(0.44 0.125 H)`、soft = `oklch(0.962 0.028 H)`；深色端 solid = `oklch(0.75 0.115 H)`、text = `oklch(0.80 0.10 H)`、soft = solid 16% 透明叠加。danger 是唯一饱和度例外（C=0.175，保警示强度）。**text 层专用于 soft 底上的文字（≥4.5:1 对比度）；solid 用于图标、状态点和 accent bar，不再直接当小字号文字色。**
 
 注意：v3 把“颜色 = 紧迫度/状态”收敛为 5 个状态色（info/ok/warn/danger/mute）+ artifact，**类别（task/runtime/employee 等）改用图标 + 文字编码，不再每类各占一个色**。色彩比例：约 70% 中性面、20% 灰蓝文字与边框、10% 主色与语义色。
 
@@ -68,12 +70,12 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 | 分隔线 / 强边框 | `--v3-line` / `--v3-line-strong` | `border-v3-line` / `border-v3-line-strong` |
 | 品牌色（背景 / 文字 / 软底） | `--v3-brand` / `--v3-brand-deep` / `--v3-brand-soft` | `bg-v3-brand` `text-v3-brand` / `text-v3-brand-deep` / `bg-v3-brand-soft` |
 | 焦点环 | `--v3-brand` | `ring-v3-brand`（如 `focus-visible:ring-v3-brand/60`） |
-| 信息 / 运行 | `--v3-info` / `--v3-info-soft` | `text-v3-info` / `bg-v3-info-soft` |
-| 成功 / 通过 | `--v3-ok` / `--v3-ok-soft` | `text-v3-ok` / `bg-v3-ok-soft` |
-| 预警 / 等待 | `--v3-warn` / `--v3-warn-soft` | `text-v3-warn` / `bg-v3-warn-soft` |
-| 危险 / 阻断 | `--v3-danger` / `--v3-danger-soft` | `text-v3-danger` / `bg-v3-danger-soft` |
-| 工件 / 产物 | `--v3-artifact` / `--v3-artifact-soft` | `text-v3-artifact` / `bg-v3-artifact-soft` |
-| 中性 / 审计 | `--v3-mute` / `--v3-mute-soft` | `text-v3-mute` / `bg-v3-mute-soft` |
+| 信息 / 运行 | `--v3-info` / `--v3-info-text` / `--v3-info-soft` | `text-v3-info` / `text-v3-info-text` / `bg-v3-info-soft` |
+| 成功 / 通过 | `--v3-ok` / `--v3-ok-text` / `--v3-ok-soft` | `text-v3-ok` / `text-v3-ok-text` / `bg-v3-ok-soft` |
+| 预警 / 等待 | `--v3-warn` / `--v3-warn-text` / `--v3-warn-soft` | `text-v3-warn` / `text-v3-warn-text` / `bg-v3-warn-soft` |
+| 危险 / 阻断 | `--v3-danger` / `--v3-danger-text` / `--v3-danger-soft` | `text-v3-danger` / `text-v3-danger-text` / `bg-v3-danger-soft` |
+| 工件 / 产物 | `--v3-artifact` / `--v3-artifact-text` / `--v3-artifact-soft` | `text-v3-artifact` / `text-v3-artifact-text` / `bg-v3-artifact-soft` |
+| 中性 / 审计 | `--v3-mute` / `--v3-mute-text` / `--v3-mute-soft` | `text-v3-mute` / `text-v3-mute-text` / `bg-v3-mute-soft` |
 | 卡片圆角 / 内层圆角 | `--v3-r-card` / `--v3-r-inner` | `rounded-v3-card` / `rounded-v3-inner` |
 | 弥散阴影 / 浮层阴影 | `--v3-shadow` / `--v3-shadow-pop` | `shadow-v3` / `shadow-v3-pop` |
 
@@ -104,12 +106,12 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--v3-*` t
 - `--v3-ink-3`
 - `--v3-line`
 - `--v3-line-strong`
-- `--v3-info`
-- `--v3-ok`
-- `--v3-warn`
-- `--v3-danger`
-- `--v3-artifact`
-- `--v3-mute`
+- `--v3-info` / `--v3-info-text`
+- `--v3-ok` / `--v3-ok-text`
+- `--v3-warn` / `--v3-warn-text`
+- `--v3-danger` / `--v3-danger-text`
+- `--v3-artifact` / `--v3-artifact-text`
+- `--v3-mute` / `--v3-mute-text`
 - `--v3-r-card`
 - `--v3-r-inner`
 - `--v3-shadow`

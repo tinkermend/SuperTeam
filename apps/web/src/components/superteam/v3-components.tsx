@@ -33,6 +33,27 @@ const toneSoftBg: Record<V3Tone, string> = {
   artifact: "bg-v3-artifact-soft",
 };
 
+/** soft 底上的文字层（--v3-*-text，比 solid 深两档，≥4.5:1）。 */
+const toneTextStrong: Record<V3Tone, string> = {
+  brand: "text-v3-brand-deep",
+  info: "text-v3-info-text",
+  ok: "text-v3-ok-text",
+  warn: "text-v3-warn-text",
+  danger: "text-v3-danger-text",
+  mute: "text-v3-mute-text",
+  artifact: "text-v3-artifact-text",
+};
+
+const toneSolidBg: Record<V3Tone, string> = {
+  brand: "bg-v3-brand",
+  info: "bg-v3-info",
+  ok: "bg-v3-ok",
+  warn: "bg-v3-warn",
+  danger: "bg-v3-danger",
+  mute: "bg-v3-mute",
+  artifact: "bg-v3-artifact",
+};
+
 /** 柔和白卡：页面外壳、概览卡、面板、表格容器外壳。 */
 function SoftCard({
   className,
@@ -81,7 +102,7 @@ function IconTile({
   );
 }
 
-/** 状态胶囊：实底柔色，过 AA。tone 表达紧迫度/状态，类别请用图标+文字。 */
+/** 状态胶囊：文字用 text 层（过 AA），圆点用 solid。tone 表达紧迫度/状态，类别请用图标+文字。 */
 function StatusPill({
   className,
   tone = "mute",
@@ -94,14 +115,14 @@ function StatusPill({
       data-slot="v3-status-pill"
       data-tone={tone}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold whitespace-nowrap",
-        toneText[tone],
+        "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap",
+        toneTextStrong[tone],
         toneSoftBg[tone],
         className,
       )}
       {...props}
     >
-      {showDot ? <span aria-hidden className="size-1.5 rounded-full bg-current" /> : null}
+      {showDot ? <span aria-hidden className={cn("size-1.5 rounded-full", toneSolidBg[tone])} /> : null}
       {children}
     </span>
   );

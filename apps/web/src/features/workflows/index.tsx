@@ -154,7 +154,7 @@ function WorkflowDispatchBlockerBanner({ event }: { event: ProjectEvent | undefi
   const label = workflowDispatchBlockerLabel(event.event_type);
 
   return (
-    <SoftCard className="mb-4 border-v3-warning/25 bg-v3-warning/5 p-4">
+    <SoftCard className="mb-4 border-v3-warn/25 bg-v3-warn/5 p-4">
       <div className="flex flex-col gap-2 text-sm leading-6 text-v3-ink sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="font-bold">{label.title}</p>

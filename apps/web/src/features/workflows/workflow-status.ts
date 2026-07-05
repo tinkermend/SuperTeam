@@ -29,11 +29,12 @@ export function workflowStatusTone(status: WorkflowInstanceStatus): V3Tone {
     case "cancelled":
     case "failed":
       return "danger";
-    case "planning":
     case "waiting_human":
       return "warn";
     case "running":
       return "info";
+    // 规划中是协调线程的正常工作态，不需要人介入，保持安静
+    case "planning":
     case "unknown":
       return "mute";
     default:

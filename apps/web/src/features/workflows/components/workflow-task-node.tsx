@@ -76,8 +76,12 @@ export function WorkflowTaskNode({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {data.riskLevel ? (
-          <StatusPill className="max-w-full" showDot={false} tone="danger">
+        {data.riskLevel && nodeRiskTone(data.riskLevel) ? (
+          <StatusPill
+            className="max-w-full"
+            showDot={false}
+            tone={nodeRiskTone(data.riskLevel)}
+          >
             <ShieldCheck className="size-3.5 shrink-0" />
             <span className="truncate">风险 {data.riskLevel}</span>
           </StatusPill>
@@ -89,7 +93,7 @@ export function WorkflowTaskNode({
           </StatusPill>
         ) : null}
         {showHumanApproval ? (
-          <StatusPill className="max-w-full" showDot={false} tone="ok">
+          <StatusPill className="max-w-full" showDot={false} tone="warn">
             <ShieldCheck className="size-3.5 shrink-0" />
             <span className="truncate">
               {data.hasPendingDecision ? "等待人工决策" : "需要人工审批"}
@@ -113,6 +117,18 @@ function employeeRoleLabel(role: string | undefined): string | undefined {
   return EMPLOYEE_ROLE_LABELS[normalized] ?? role;
 }
 
+/** 风险 pill 按级别取语义色；低风险无信息量，不渲染。 */
+function nodeRiskTone(level: string): "danger" | "warn" | undefined {
+  const normalized = level.trim().toLowerCase();
+  if (["critical", "high", "severe", "高", "高风险"].includes(normalized)) {
+    return "danger";
+  }
+  if (["medium", "moderate", "中", "中风险"].includes(normalized)) {
+    return "warn";
+  }
+  return undefined;
+}
+
 export function WorkflowAttachmentNode({
   data,
   selected,
@@ -120,18 +136,18 @@ export function WorkflowAttachmentNode({
   return (
     <SoftCard
       className={cn(
-        "relative w-[220px] border border-v3-ok/25 p-3 text-xs",
-        selected && "ring-2 ring-v3-ok/25",
+        "relative w-[220px] border border-v3-line p-3 text-xs",
+        selected && "border-v3-brand ring-2 ring-v3-brand/20",
       )}
     >
       <Handle
-        className="!size-2 !border-v3-ok/40 !bg-v3-ok"
+        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
         isConnectable={false}
         position={Position.Top}
         type="target"
       />
       <div className="flex items-start gap-2">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-v3-ok" />
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-v3-ink-3" />
         <div className="min-w-0">
           <p className="line-clamp-2 font-semibold text-v3-ink">{data.title}</p>
           <StatusPill className="mt-2" tone={taskStatusTone(data.status)}>
@@ -140,7 +156,7 @@ export function WorkflowAttachmentNode({
         </div>
       </div>
       <Handle
-        className="!size-2 !border-v3-ok/40 !bg-v3-ok"
+        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
         isConnectable={false}
         position={Position.Bottom}
         type="source"
@@ -154,10 +170,10 @@ export function WorkflowStageLabelNode({
 }: NodeProps<Node<WorkflowStageLabelNodeData, "workflowStageLabel">>) {
   return (
     <SoftCard
-      className="flex w-[168px] items-center justify-center rounded-full border border-v3-line bg-white/92 px-3 py-1.5 shadow-sm"
+      className="flex w-[168px] items-center justify-center rounded-full border border-v3-line bg-v3-card/92 px-3 py-1.5 shadow-sm"
       data-testid="workflow-stage-label"
     >
-      <GitBranch className="mr-1.5 size-3.5 shrink-0 text-v3-artifact" />
+      <GitBranch className="mr-1.5 size-3.5 shrink-0 text-v3-ink-3" />
       <div className="min-w-0 text-center">
         <p className="truncate text-[11px] font-bold leading-4 text-v3-ink">{data.title}</p>
         <p className="truncate text-[10px] leading-3 text-v3-ink-3">

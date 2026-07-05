@@ -60,7 +60,7 @@ describe("v3 组件族 · 基础渲染", () => {
     const { getByText } = await render(<StatusPill tone="warn">预警</StatusPill>);
     const pill = getByText("预警");
     await expect.element(pill).toHaveAttribute("data-slot", "v3-status-pill");
-    await expect.element(pill).toHaveClass("text-v3-warn");
+    await expect.element(pill).toHaveClass("text-v3-warn-text");
     await expect.element(pill).toHaveClass("bg-v3-warn-soft");
   });
 

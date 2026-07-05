@@ -1,35 +1,19 @@
-import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Clock3, GitBranch } from "lucide-react";
 import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
-  GitBranch,
-  PlayCircle,
-  UserCheck,
-} from "lucide-react";
-import {
-  IconTile,
-  SignatureCard,
   SoftCard,
   StatusPill,
+  V3Chip,
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
-  V3MetricCard,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
-import type {
-  WorkflowInstanceStatus,
-  WorkflowInstanceSummary,
-} from "@/lib/api/projects";
-import { workflowStatusLabel } from "../workflow-status";
+import { cn } from "@/lib/utils";
+import type { WorkflowInstanceSummary } from "@/lib/api/projects";
+import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
 
 type WorkflowEntranceProps = {
   instances: WorkflowInstanceSummary[];
@@ -37,11 +21,37 @@ type WorkflowEntranceProps = {
   isLoading: boolean;
 };
 
+type WorkflowCategory = "active" | "blocked" | "done" | "other" | "waiting";
+type WorkflowFilter = "all" | Exclude<WorkflowCategory, "other">;
+
+const filterChips: Array<{ label: string; value: WorkflowFilter }> = [
+  { label: "全部", value: "all" },
+  { label: "进行中", value: "active" },
+  { label: "等待人工", value: "waiting" },
+  { label: "阻断", value: "blocked" },
+  { label: "已完成", value: "done" },
+];
+
+/** 分诊分组：需要介入（阻断优先）→ 进行中 → 已完成 → 其他。 */
+const runGroups: Array<{
+  categories: WorkflowCategory[];
+  key: string;
+  label: string;
+  tone: "danger" | "mute" | "ok" | "warn";
+}> = [
+  { categories: ["blocked", "waiting"], key: "attention", label: "需要介入", tone: "warn" },
+  { categories: ["active"], key: "active", label: "进行中", tone: "mute" },
+  { categories: ["done"], key: "done", label: "已完成", tone: "ok" },
+  { categories: ["other"], key: "other", label: "其他", tone: "mute" },
+];
+
 export function WorkflowEntrance({
   instances,
   isError,
   isLoading,
 }: WorkflowEntranceProps) {
+  const [filter, setFilter] = useState<WorkflowFilter>("all");
+
   if (isError && instances.length === 0) {
     return (
       <SoftCard className="p-5">
@@ -73,298 +83,339 @@ export function WorkflowEntrance({
     );
   }
 
-  const totals = workflowInstanceTotals(instances);
+  const counts = workflowCategoryCounts(instances);
+  const visibleInstances =
+    filter === "all"
+      ? instances
+      : instances.filter((instance) => workflowCategory(instance) === filter);
+  const groups = runGroups
+    .map((group) => ({
+      ...group,
+      instances: sortGroupInstances(
+        visibleInstances.filter((instance) =>
+          group.categories.includes(workflowCategory(instance)),
+        ),
+      ),
+    }))
+    .filter((group) => group.instances.length > 0);
 
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <div className="grid min-w-0 gap-4 xl:grid-cols-4">
-        <SignatureCard className="flex min-h-44 flex-col justify-between gap-5 xl:col-span-1">
-          <div>
-            <p className="text-[13px] font-semibold text-white/80">流程实例</p>
-            <p className="mt-2 text-4xl leading-none font-extrabold tabular-nums">
-              {instances.length}
-            </p>
-            <p className="mt-3 max-w-sm text-sm text-white/80">
-              个可见实例，进入单个实例查看编排画布和阶段详情。
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {isLoading ? (
-              <StatusPill className="bg-white/20 text-white" tone="info">
-                同步中
-              </StatusPill>
-            ) : null}
-            {isError ? (
-              <StatusPill className="bg-white/20 text-white" tone="danger">
-                刷新失败
-              </StatusPill>
-            ) : null}
-          </div>
-        </SignatureCard>
-        <V3MetricCard
-          icon={<PlayCircle />}
-          iconTone="info"
-          label="运行中"
-          meta="正在推进的协调线程"
-          value={totals.running}
-        />
-        <V3MetricCard
-          icon={<UserCheck />}
-          iconTone="warn"
-          label="等待人工"
-          loud={totals.waitingHuman > 0}
-          meta="需要人类负责人处理"
-          value={totals.waitingHuman}
-        />
-        <V3MetricCard
-          icon={<AlertTriangle />}
-          iconTone={totals.blocked > 0 ? "danger" : "mute"}
-          label="阻断节点"
-          loud={totals.blocked > 0}
-          meta="当前实例内阻塞任务"
-          value={totals.blocked}
-        />
-      </div>
-
-      <WorkSurface>
-        <div className="flex flex-col gap-3 border-b border-v3-line px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-[15px] font-bold text-v3-ink">流程实例</h2>
-            <p className="mt-1 text-[13px] text-v3-ink-2">
-              按最近更新时间展示实例状态、进度和人工/阻断计数。
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {isLoading ? <StatusPill tone="info">同步中</StatusPill> : null}
-            {isError ? <StatusPill tone="danger">刷新失败</StatusPill> : null}
-          </div>
+    <WorkSurface>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-v3-line px-4 py-3">
+        <h2 className="text-[15px] font-bold text-v3-ink">流程实例</h2>
+        {isLoading ? <StatusPill tone="mute">同步中</StatusPill> : null}
+        {isError ? <StatusPill tone="danger">刷新失败</StatusPill> : null}
+        <div className="ml-auto flex flex-wrap gap-1.5">
+          {filterChips.map((chip) => (
+            <V3Chip
+              active={filter === chip.value}
+              className="px-2.5 py-1 text-xs"
+              count={chip.value === "all" ? instances.length : counts[chip.value]}
+              key={chip.value}
+              onClick={() => setFilter(chip.value)}
+            >
+              {chip.label}
+            </V3Chip>
+          ))}
         </div>
-        <V3Table aria-label="流程实例列表">
-          <thead>
-            <tr>
-              <V3Th>流程</V3Th>
-              <V3Th>状态</V3Th>
-              <V3Th>进度</V3Th>
-              <V3Th>人工 / 阻断</V3Th>
-              <V3Th>最新状态</V3Th>
-              <V3Th>更新</V3Th>
-            </tr>
-          </thead>
-          <tbody>
-            {instances.map((instance) => (
-              <WorkflowInstanceRow
-                instance={instance}
-                key={instance.demand_id}
-              />
-            ))}
-          </tbody>
-        </V3Table>
-      </WorkSurface>
-    </div>
+      </div>
+      {groups.length === 0 ? (
+        <V3EmptyState
+          className="py-10"
+          description="切换上方筛选查看其他状态的实例。"
+          title="该筛选下暂无实例"
+        />
+      ) : (
+        <div aria-label="流程实例列表" role="list">
+          {groups.map((group) => (
+            <section key={group.key}>
+              <header className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-1.5 text-xs font-semibold text-v3-ink-2">
+                <span
+                  aria-hidden
+                  className={cn("size-1.5 rounded-full", groupDotClass[group.tone])}
+                />
+                {group.label}
+                <span className="tabular-nums text-v3-ink-3">
+                  {group.instances.length}
+                </span>
+              </header>
+              {group.instances.map((instance) => (
+                <WorkflowRunRow instance={instance} key={instance.demand_id} />
+              ))}
+            </section>
+          ))}
+        </div>
+      )}
+    </WorkSurface>
   );
 }
 
-function WorkflowInstanceRow({ instance }: { instance: WorkflowInstanceSummary }) {
-  const completed = instance.progress.completed_nodes;
-  const total = instance.progress.total_nodes;
-  const progressMax = Math.max(total, 1);
-  const progressNow = Math.min(completed, progressMax);
-  const progressPercent =
-    total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
-  const statusTone = workflowV3StatusTone(instance.status);
+const groupDotClass = {
+  danger: "bg-v3-danger",
+  mute: "bg-v3-mute",
+  ok: "bg-v3-ok",
+  warn: "bg-v3-warn",
+} as const;
+
+/** 单条流水线运行行：状态 + 标题行 / 节点链 / 摘要行。整行可点进详情。 */
+function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
+  const navigate = useNavigate();
+  const category = workflowCategory(instance);
   const summary = workflowInstanceSummary(instance);
   const optionalBadges = workflowOptionalBadges(instance);
+  const nodeCounters = workflowNodeCounters(instance);
+  const completed = instance.progress.completed_nodes;
+  const total = instance.progress.total_nodes;
 
   return (
-    <V3Tr tone={workflowRowTone(instance)}>
-      <V3Td className="min-w-[280px]">
+    <div
+      className={cn(
+        "cursor-pointer border-b border-v3-line px-4 py-3 transition-colors last:border-b-0 hover:bg-v3-card-inner",
+        category === "blocked" &&
+          "bg-v3-danger-soft/40 shadow-[inset_3px_0_0_var(--v3-danger)]",
+      )}
+      onClick={() =>
+        void navigate({
+          params: { demandId: instance.demand_id },
+          to: "/workflows/$demandId",
+        })
+      }
+      role="listitem"
+    >
+      <div className="flex items-start justify-between gap-4">
         <Link
-          className="group flex min-w-0 items-start gap-3 rounded-v3-inner outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60"
+          className="group block min-w-0 flex-1 rounded-v3-inner outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60"
+          onClick={(event) => event.stopPropagation()}
           params={{ demandId: instance.demand_id }}
           to="/workflows/$demandId"
         >
-          <IconTile tone={statusTone} size="sm">
-            <GitBranch />
-          </IconTile>
-          <span className="min-w-0">
-            <span className="line-clamp-2 text-[14px] leading-5 font-bold text-v3-ink group-hover:text-v3-brand-deep">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <StatusPill tone={workflowStatusTone(instance.status)}>
+              {workflowStatusLabel(instance.status)}
+            </StatusPill>
+            <span className="min-w-0 truncate text-[13px] font-bold text-v3-ink group-hover:text-v3-brand-deep">
               {instance.title}
             </span>
-            <span className="mt-1 block truncate text-xs text-v3-ink-2">
+            <span className="truncate text-xs text-v3-ink-3">
               {instance.project_name}
             </span>
-            {optionalBadges.length > 0 ? (
-              <span className="mt-2 flex flex-wrap gap-1.5">
-                {optionalBadges.map((badge) => (
-                  <StatusPill
-                    key={badge.key}
-                    showDot={false}
-                    tone={badge.tone}
-                  >
-                    {badge.label}
-                  </StatusPill>
+            {optionalBadges.map((badge) => (
+              <StatusPill key={badge.key} showDot={false} tone={badge.tone}>
+                {badge.label}
+              </StatusPill>
+            ))}
+          </span>
+          <span className="mt-2.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+            <WorkflowNodeChain progress={instance.progress} />
+            <span className="text-xs font-semibold tabular-nums text-v3-ink-2">
+              {completed}/{total}
+            </span>
+            {nodeCounters.length > 0 ? (
+              <span className="text-xs text-v3-ink-2">
+                {nodeCounters.map((counter, index) => (
+                  <span key={counter.key}>
+                    {index > 0 ? <span className="text-v3-ink-3"> · </span> : null}
+                    <span
+                      className={
+                        counter.key === "blocked"
+                          ? "font-semibold text-v3-danger-text"
+                          : undefined
+                      }
+                    >
+                      {counter.label} {counter.value}
+                    </span>
+                  </span>
                 ))}
               </span>
             ) : null}
           </span>
+          {summary.text ? (
+            <span className="mt-1.5 flex items-start gap-2 text-[13px] leading-5 text-v3-ink-2">
+              <span
+                aria-hidden
+                className={cn(
+                  "mt-1.5 size-1.5 shrink-0 rounded-full",
+                  summary.blocked ? "bg-v3-danger" : "bg-v3-mute",
+                )}
+              />
+              <span className="line-clamp-1">{summary.text}</span>
+            </span>
+          ) : null}
         </Link>
-      </V3Td>
-      <V3Td>
-        <StatusPill tone={statusTone}>
-          {workflowStatusLabel(instance.status)}
-        </StatusPill>
-      </V3Td>
-      <V3Td className="min-w-[170px]">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3 text-xs text-v3-ink-2">
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 text-v3-ok" />
-              已完成
-            </span>
-            <span className="font-semibold tabular-nums text-v3-ink">
-              {completed}/{total}
-            </span>
-          </div>
-          <div
-            aria-label={`完成进度 ${completed}/${total}`}
-            aria-valuemax={progressMax}
-            aria-valuemin={0}
-            aria-valuenow={progressNow}
-            aria-valuetext={`已完成 ${completed}/${total}`}
-            className="h-2 overflow-hidden rounded-full bg-v3-card-soft"
-            role="progressbar"
-          >
-            <div
-              className="h-full rounded-full bg-v3-brand transition-[width]"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-      </V3Td>
-      <V3Td>
-        <div className="grid min-w-[170px] grid-cols-3 gap-2">
-          <Counter
-            icon={<PlayCircle className="size-3.5" />}
-            label="运行"
-            tone="info"
-            value={instance.progress.running_nodes}
-          />
-          <Counter
-            icon={<UserCheck className="size-3.5" />}
-            label="人工"
-            tone="warn"
-            value={instance.progress.waiting_human_nodes}
-          />
-          <Counter
-            icon={<AlertTriangle className="size-3.5" />}
-            label="阻断"
-            tone={instance.progress.blocked_nodes > 0 ? "danger" : "mute"}
-            value={instance.progress.blocked_nodes}
-          />
-        </div>
-      </V3Td>
-      <V3Td className="min-w-[240px]">
-        <div className="flex items-start gap-2 text-[13px] leading-5 text-v3-ink-2">
-          {summary.icon}
-          <span className="line-clamp-2">{summary.text}</span>
-        </div>
-      </V3Td>
-      <V3Td className="whitespace-nowrap text-xs tabular-nums text-v3-ink-2">
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex shrink-0 items-center gap-1.5 pt-1 text-xs tabular-nums text-v3-ink-2">
           <Clock3 className="size-3.5" />
           {formatWorkflowTime(instance.updated_at)}
         </span>
-      </V3Td>
-    </V3Tr>
-  );
-}
-
-function Counter({
-  icon,
-  label,
-  tone,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  tone: V3Tone;
-  value: number;
-}) {
-  return (
-    <div className="flex min-w-0 items-center justify-center gap-1 rounded-lg bg-v3-card-soft px-2 py-1.5 text-xs font-semibold text-v3-ink-2">
-      <span className={counterToneClass[tone]}>{icon}</span>
-      <span className="truncate">{label}</span>
-      <span className="tabular-nums text-v3-ink">{value}</span>
+      </div>
     </div>
   );
 }
 
-function workflowInstanceTotals(instances: WorkflowInstanceSummary[]) {
-  return instances.reduce(
-    (totals, instance) => ({
-      blocked: totals.blocked + instance.progress.blocked_nodes,
-      running:
-        totals.running +
-        (instance.status === "running" ? 1 : 0),
-      waitingHuman:
-        totals.waitingHuman + instance.progress.waiting_human_nodes,
-    }),
-    { blocked: 0, running: 0, waitingHuman: 0 },
+const chainBuckets = [
+  { dotClass: "bg-v3-brand", key: "completed", label: "已完成" },
+  { dotClass: "bg-v3-info", key: "running", label: "运行中" },
+  { dotClass: "bg-v3-warn", key: "waiting", label: "等待人工" },
+  { dotClass: "bg-v3-danger", key: "blocked", label: "阻断" },
+] as const;
+
+/**
+ * mini 节点链：按 已完成 → 运行 → 等待人工 → 阻断 → 待执行 渲染节点点位。
+ * 节点数多于 14 时退化为等宽分段条，保持行高稳定。
+ */
+function WorkflowNodeChain({
+  progress,
+}: {
+  progress: WorkflowInstanceSummary["progress"];
+}) {
+  const values: Record<(typeof chainBuckets)[number]["key"], number> = {
+    blocked: progress.blocked_nodes,
+    completed: progress.completed_nodes,
+    running: progress.running_nodes,
+    waiting: progress.waiting_human_nodes,
+  };
+  const known = Object.values(values).reduce((sum, count) => sum + count, 0);
+  const pending = Math.max(progress.total_nodes - known, 0);
+  const total = known + pending;
+
+  if (total === 0) {
+    return (
+      <span className="inline-flex items-center gap-2" aria-hidden>
+        <span className="h-px w-16 border-t border-dashed border-v3-line-strong" />
+        <span className="text-xs text-v3-ink-3">待规划</span>
+      </span>
+    );
+  }
+
+  const segments = [
+    ...chainBuckets.map((bucket) => ({ ...bucket, count: values[bucket.key] })),
+    { count: pending, dotClass: "", key: "pending", label: "待执行" },
+  ].filter((segment) => segment.count > 0);
+
+  if (total > 14) {
+    return (
+      <span
+        aria-label={chainAriaLabel(segments)}
+        className="inline-flex h-1.5 w-40 overflow-hidden rounded-full bg-v3-card-soft"
+        role="img"
+      >
+        {segments.map((segment) => (
+          <span
+            className={cn(
+              "h-full",
+              segment.key === "pending" ? "bg-v3-line" : segment.dotClass,
+            )}
+            key={segment.key}
+            style={{ width: `${(segment.count / total) * 100}%` }}
+          />
+        ))}
+      </span>
+    );
+  }
+
+  const dots = segments.flatMap((segment) =>
+    Array.from({ length: segment.count }, (_, index) => ({
+      dotClass: segment.dotClass,
+      key: `${segment.key}-${index}`,
+      pending: segment.key === "pending",
+    })),
+  );
+
+  return (
+    <span
+      aria-label={chainAriaLabel(segments)}
+      className="inline-flex items-center"
+      role="img"
+    >
+      {dots.map((dot, index) => (
+        <span className="inline-flex items-center" key={dot.key}>
+          {index > 0 ? <span className="h-px w-2.5 bg-v3-line-strong" /> : null}
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              dot.pending
+                ? "border border-v3-line-strong bg-transparent"
+                : dot.dotClass,
+            )}
+          />
+        </span>
+      ))}
+    </span>
   );
 }
 
-function workflowV3StatusTone(status: WorkflowInstanceStatus): V3Tone {
-  switch (status) {
-    case "completed":
-      return "ok";
-    case "cancelled":
-    case "failed":
-      return "danger";
-    case "planning":
-    case "waiting_human":
-      return "warn";
-    case "running":
-      return "info";
-    case "unknown":
-      return "mute";
-    default:
-      return status satisfies never;
-  }
+function chainAriaLabel(
+  segments: Array<{ count: number; label: string }>,
+): string {
+  return `节点：${segments
+    .map((segment) => `${segment.label} ${segment.count}`)
+    .join("，")}`;
 }
 
-function workflowRowTone(
-  instance: WorkflowInstanceSummary,
-): "danger" | "warn" | undefined {
+function workflowCategory(instance: WorkflowInstanceSummary): WorkflowCategory {
   if (
+    instance.progress.blocked_nodes > 0 ||
     instance.status === "failed" ||
-    instance.status === "cancelled" ||
-    instance.progress.blocked_nodes > 0
+    instance.status === "cancelled"
   ) {
-    return "danger";
+    return "blocked";
   }
   if (instance.status === "waiting_human") {
-    return "warn";
+    return "waiting";
   }
-  return undefined;
+  if (instance.status === "running" || instance.status === "planning") {
+    return "active";
+  }
+  if (instance.status === "completed") {
+    return "done";
+  }
+  return "other";
+}
+
+/** 组内排序：阻断类置顶，其余按更新时间倒序。 */
+function sortGroupInstances(instances: WorkflowInstanceSummary[]) {
+  return [...instances].sort((a, b) => {
+    const aBlocked = workflowCategory(a) === "blocked" ? 0 : 1;
+    const bBlocked = workflowCategory(b) === "blocked" ? 0 : 1;
+    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
+    return b.updated_at.localeCompare(a.updated_at);
+  });
+}
+
+function workflowCategoryCounts(instances: WorkflowInstanceSummary[]) {
+  const counts = { active: 0, blocked: 0, done: 0, other: 0, waiting: 0 };
+  for (const instance of instances) {
+    counts[workflowCategory(instance)] += 1;
+  }
+  return counts;
+}
+
+function workflowNodeCounters(instance: WorkflowInstanceSummary) {
+  return [
+    { key: "running", label: "运行", value: instance.progress.running_nodes },
+    {
+      key: "waiting",
+      label: "人工",
+      value: instance.progress.waiting_human_nodes,
+    },
+    { key: "blocked", label: "阻断", value: instance.progress.blocked_nodes },
+  ].filter((counter) => counter.value > 0);
 }
 
 function workflowInstanceSummary(instance: WorkflowInstanceSummary) {
   if (instance.current_blocker?.title) {
+    // 红点只给真正的阻断类实例；等待人工等行保持安静，文字自带「阻塞：」前缀
     return {
-      icon: <AlertTriangle className="mt-0.5 size-4 shrink-0 text-v3-danger" />,
+      blocked: workflowCategory(instance) === "blocked",
       text: `阻塞：${instance.current_blocker.title}`,
     };
   }
 
   if (instance.recent_event?.summary) {
-    return {
-      icon: <AlertCircle className="mt-0.5 size-4 shrink-0 text-v3-info" />,
-      text: `最新事件：${instance.recent_event.summary}`,
-    };
+    return { blocked: false, text: `最新事件：${instance.recent_event.summary}` };
   }
 
   return {
-    icon: <AlertCircle className="mt-0.5 size-4 shrink-0 text-v3-mute" />,
+    blocked: false,
     text: instance.status_reason || "等待协调线程更新状态",
   };
 }
@@ -394,16 +445,17 @@ function workflowOptionalBadges(instance: WorkflowInstanceSummary) {
       : undefined,
   ].filter(
     (badge): badge is { key: string; label: string; tone: V3Tone } =>
-      Boolean(badge),
+      // 只保留有信息量的标记：low 优先级 / 低风险等 mute 档不渲染，保持行安静
+      Boolean(badge) && badge?.tone !== "mute",
   );
 }
 
 function priorityTone(priority: string): V3Tone {
   const normalized = priority.toLowerCase();
-  if (["p0", "p1", "critical", "urgent"].includes(normalized)) {
+  if (["critical", "p0", "p1", "urgent"].includes(normalized)) {
     return "danger";
   }
-  if (["p2", "high"].includes(normalized)) {
+  if (["high", "p2"].includes(normalized)) {
     return "warn";
   }
   return "mute";
@@ -433,13 +485,3 @@ function formatWorkflowTime(value: string): string {
     month: "2-digit",
   }).format(date);
 }
-
-const counterToneClass: Record<V3Tone, string> = {
-  artifact: "text-v3-artifact",
-  brand: "text-v3-brand",
-  danger: "text-v3-danger",
-  info: "text-v3-info",
-  mute: "text-v3-mute",
-  ok: "text-v3-ok",
-  warn: "text-v3-warn",
-};

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>v3 语义色板改版对照</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --card-soft: #f7f8fa;
+    --ink: #0b0d12;
+    --ink-2: #4d586b;
+    --ink-3: #6d7580;
+    --line: #e3e7ec;
+    --line-strong: #d5dbe2;
+    --brand: #2f5fff;
+    --brand-deep: #2348e0;
+    --brand-soft: #e9efff;
+    --pass: #006639;
+    --pass-bg: #e3f9ec;
+    --fail: #8a2f2d;
+    --fail-bg: #ffece9;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1014; --card: #171b22; --card-soft: #1c212a;
+      --ink: #f3f5f8; --ink-2: #aab4c2; --ink-3: #8b95a3;
+      --line: #262c35; --line-strong: #333b45;
+      --brand: #5b8bff; --brand-deep: #93b4ff; --brand-soft: rgba(91,139,255,.16);
+      --pass: #82d2a8; --pass-bg: #233634; --fail: #f8a49d; --fail-bg: #392e32;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --card: #ffffff; --card-soft: #f7f8fa;
+    --ink: #0b0d12; --ink-2: #4d586b; --ink-3: #6d7580;
+    --line: #e3e7ec; --line-strong: #d5dbe2;
+    --brand: #2f5fff; --brand-deep: #2348e0; --brand-soft: #e9efff;
+    --pass: #006639; --pass-bg: #e3f9ec; --fail: #8a2f2d; --fail-bg: #ffece9;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1014; --card: #171b22; --card-soft: #1c212a;
+    --ink: #f3f5f8; --ink-2: #aab4c2; --ink-3: #8b95a3;
+    --line: #262c35; --line-strong: #333b45;
+    --brand: #5b8bff; --brand-deep: #93b4ff; --brand-soft: rgba(91,139,255,.16);
+    --pass: #82d2a8; --pass-bg: #233634; --fail: #f8a49d; --fail-bg: #392e32;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Inter", system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+    margin: 0; padding: 32px 20px 72px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h2 { font-size: 15px; font-weight: 700; margin: 0; }
+  h2 .no { color: var(--ink-3); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  p { margin: 0; }
+  .lede { color: var(--ink-2); max-width: 62ch; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 13px;
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .hint { font-size: 12.5px; color: var(--ink-3); max-width: 74ch; }
+  .mono { font-family: var(--mono); font-size: 11.5px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    border-radius: 6px; padding: 1px 7px;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge.pass { color: var(--pass); background: var(--pass-bg); }
+  .badge.fail { color: var(--fail); background: var(--fail-bg); }
+
+  /* —— 色板总览表 —— */
+  .ptable { display: flex; flex-direction: column; gap: 0; }
+  .prow {
+    display: grid; grid-template-columns: 76px 1fr 22px 1.35fr;
+    gap: 14px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--line);
+  }
+  .prow:last-child { border-bottom: 0; }
+  .prow.head { padding: 4px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line-strong); }
+  .tname { font-weight: 700; font-size: 13px; }
+  .tname small { display: block; font-weight: 400; color: var(--ink-3); font-size: 11px; }
+  .swgroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sw { display: flex; align-items: center; gap: 6px; }
+  .sw i { display: block; width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(0,0,0,.08); }
+  .sw .lab { display: flex; flex-direction: column; line-height: 1.25; }
+  .sw .lab b { font-size: 10px; font-weight: 600; color: var(--ink-3); letter-spacing: .04em; text-transform: uppercase; }
+  .sw .lab span { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); }
+  .arrow { color: var(--ink-3); text-align: center; }
+
+  /* —— 色相轴 —— */
+  .hueaxis { position: relative; height: 14px; border-radius: 7px; margin: 26px 8px 30px;
+    background: linear-gradient(to right, #c9526b, #bb6900, #7b8a00, #009a60, #0094b7, #4a6ffb, #9565c7, #c9526b);
+  }
+  .hdot { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; border: 2.5px solid var(--card); box-shadow: 0 0 0 1px rgba(0,0,0,.25); transform: translate(-50%, -50%); }
+  .hlab { position: absolute; transform: translateX(-50%); font-size: 10.5px; font-family: var(--mono); color: var(--ink-2); white-space: nowrap; }
+  .hlab.up { bottom: calc(100% + 5px); }
+  .hlab.down { top: calc(100% + 5px); }
+  .cluster { position: absolute; bottom: calc(100% + 22px); transform: translateX(-50%); font-size: 11px; color: var(--fail); font-weight: 600; white-space: nowrap; }
+  .huewrap { padding: 26px 4px 10px; }
+
+  /* —— 对照双栏 —— */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .duo { grid-template-columns: 1fr; } .prow { grid-template-columns: 64px 1fr; } .prow .arrow, .prow .newcell { grid-column: 2; } }
+  .pane { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; background: var(--card); }
+  .pane-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .pane-tag.old { color: var(--ink-3); }
+  .pane-tag.new { color: var(--brand); }
+
+  /* —— 组件仿真样式（固定色值，不随主题变，代表规范本身） —— */
+  .sim { background: #ffffff; border: 1px solid #e3e7ec; border-radius: 10px; padding: 14px; color: #0b0d12; }
+  .sim.dark { background: #171b22; border-color: #333b45; color: #f3f5f8; }
+  .pillrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 8px; padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+  .pill i { width: 6px; height: 6px; border-radius: 50%; }
+  .tilerow { display: flex; gap: 18px; flex-wrap: wrap; }
+  .metric { display: flex; align-items: center; gap: 9px; }
+  .metric .tile { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 16px; }
+  .metric .mv { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .metric .ml { font-size: 11px; color: #6d7580; line-height: 1.2; }
+  .empcard { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
+  .empcard .t { display: flex; align-items: center; gap: 8px; }
+  .empcard .t b { font-size: 13px; }
+  .simtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .simtable th { text-align: left; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: #6d7580; padding: 5px 10px; border-bottom: 1px solid #d5dbe2; }
+  .simtable td { padding: 7px 10px; border-bottom: 1px solid #eef1f4; }
+  .simtable tr:last-child td { border-bottom: 0; }
+  pre { margin: 0; background: var(--card-soft); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.75; }
+  pre .del { color: var(--fail); }
+  pre .add { color: var(--pass); }
+  pre .cmt { color: var(--ink-3); }
+  ul.decision { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); }
+  ul.decision b { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <header class="card" style="gap:8px">
+    <p class="mono" style="color:var(--ink-3)">SuperTeam · DESIGN v3 → v3.1 提案</p>
+    <h1>语义色板改版对照：一个公式，一套家族</h1>
+    <p class="lede">现状 7 个语义色来源混杂，明度 54.6–65.8、饱和度 0.136–0.242，并排使用时轻重不一。提案在 OKLCH 中固定 <span class="mono">L=0.60 / C=0.15</span> 只转色相派生全家族，并为每个语义色增加深两档的文字层，让 soft 底上的文字全部达到 WCAG AA（≥4.5:1）。品牌蓝 <span class="mono">#2F5FFF</span> 保持不动。</p>
+  </header>
+
+  <section class="card">
+    <h2><span class="no">01</span>色板总览：现状 → 提案</h2>
+    <p class="hint">现状只有 solid + soft 两档，并把 solid 直接当 pill 文字色用——这是对比度不达标的根源。提案每个语义色三档：<b>solid</b>（图标 / 圆点 / accent bar）、<b>text</b>（soft 底上的文字）、<b>soft</b>（底色）。徽标数字为该组文字对 soft 底的实测对比度。</p>
+    <div class="ptable">
+      <div class="prow head"><span>语义</span><span>现状（solid 兼文字）</span><span></span><span>提案（solid / text / soft）</span></div>
+
+      <div class="prow">
+        <span class="tname">ok<small>正常 · 成功</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#15a06b"></i><span class="lab"><b>solid</b><span>#15A06B · L62 C.136</span></span></span>
+          <span class="sw"><i style="background:#e4f6ee"></i><span class="lab"><b>soft</b><span>#E4F6EE</span></span></span>
+          <span class="badge fail">2.98:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#009a60"></i><span class="lab"><b>solid</b><span>#009A60 · L60 C.15</span></span></span>
+          <span class="sw"><i style="background:#006639"></i><span class="lab"><b>text</b><span>#006639</span></span></span>
+          <span class="sw"><i style="background:#e3f9ec"></i><span class="lab"><b>soft</b><span>#E3F9EC</span></span></span>
+          <span class="badge pass">6.43:1 ✓</span>
+        </span>
+      </div>
+
+      <div class="prow">
+        <span class="tname">warn<small>预警 · 等待人工</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#cf7a14"></i><span class="lab"><b>solid</b><span>#CF7A14 · L66 C.146</span></span></span>
+          <span class="sw"><i style="background:#fdf0db"></i><span class="lab"><b>soft</b><span>#FDF0DB</span></span></span>
+          <span class="badge fail">2.89:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#bb6900"></i><span class="lab"><b>solid</b><span>#BB6900 · L60 C.15</span></span></span>
+          <span class="sw"><i style="background:#7f3f00"></i><span class="lab"><b>text</b><span>#7F3F00</span></span></span>
+          <span class="sw"><i style="background:#ffefdf"></i><span class="lab"><b>soft</b><span>#FFEFDF</span></span></span>
+          <span class="badge pass">7.14:1 ✓</span>
+        </span>
+      </div>
+
+      <div class="prow">
+        <span class="tname">danger<small>危险 · 失败</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#e5484d"></i><span class="lab"><b>solid</b><span>#E5484D · L63 C.193</span></span></span>
+          <span class="sw"><i style="background:#fde8e9"></i><span class="lab"><b>soft</b><span>#FDE8E9</span></span></span>
+          <span class="badge fail">3.34:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#d14647"></i><span class="lab"><b>solid</b><span>#D14647 · L59 C.175*</span></span></span>
+          <span class="sw"><i style="background:#8a2f2d"></i><span class="lab"><b>text</b><span>#8A2F2D</span></span></span>
+          <span class="sw"><i style="background:#ffece9"></i><span class="lab"><b>soft</b><span>#FFECE9</span></span></span>
+          <span class="badge pass">7.30:1 ✓</span>
+        </span>
+      </div>
+
+      <div class="prow">
+        <span class="tname">info<small>信息</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#2563eb"></i><span class="lab"><b>solid</b><span>#2563EB · H263（距 brand 3°）</span></span></span>
+          <span class="sw"><i style="background:#e8effd"></i><span class="lab"><b>soft</b><span>#E8EFFD</span></span></span>
+          <span class="badge fail">4.48:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#0094b7"></i><span class="lab"><b>solid</b><span>#0094B7 · H215（距 brand 51°）</span></span></span>
+          <span class="sw"><i style="background:#00617d"></i><span class="lab"><b>text</b><span>#00617D</span></span></span>
+          <span class="sw"><i style="background:#def8fe"></i><span class="lab"><b>soft</b><span>#DEF8FE</span></span></span>
+          <span class="badge pass">6.31:1 ✓</span>
+        </span>
+      </div>
+
+      <div class="prow">
+        <span class="tname">artifact<small>工件（仅类别）</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#7c5cff"></i><span class="lab"><b>solid</b><span>#7C5CFF · H286（距 brand 20°）</span></span></span>
+          <span class="sw"><i style="background:#efeaff"></i><span class="lab"><b>soft</b><span>#EFEAFF</span></span></span>
+          <span class="badge fail">3.70:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#9565c7"></i><span class="lab"><b>solid</b><span>#9565C7 · H305（距 brand 39°）</span></span></span>
+          <span class="sw"><i style="background:#633d89"></i><span class="lab"><b>text</b><span>#633D89</span></span></span>
+          <span class="sw"><i style="background:#f7eeff"></i><span class="lab"><b>soft</b><span>#F7EEFF</span></span></span>
+          <span class="badge pass">7.28:1 ✓</span>
+        </span>
+      </div>
+
+      <div class="prow">
+        <span class="tname">ink-3<small>辅助文字</small></span>
+        <span class="swgroup">
+          <span class="sw"><i style="background:#9aa4b2"></i><span class="lab"><b>text</b><span>#9AA4B2 对白底</span></span></span>
+          <span class="badge fail">2.52:1 ✕</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="swgroup newcell">
+          <span class="sw"><i style="background:#6d7580"></i><span class="lab"><b>text</b><span>#6D7580 对白底</span></span></span>
+          <span class="badge pass">4.66:1 ✓</span>
+        </span>
+      </div>
+    </div>
+    <p class="hint">* danger 是全家族唯一的饱和度例外（C=0.175）：危险状态需要比其他语义色更高的警示强度，属于有意为之并写进规范的例外，不是漂移。brand / mute 不变。</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">02</span>蓝紫拥挤：色相分布对照</h2>
+    <p class="hint">现状 info 距 brand 仅 3°，并排出现像渲染误差；artifact 紫又只离 20°。提案把 info 迁到青色区（H215），artifact 移到 H305，语义色之间最小间距从 3° 拉开到 39°。</p>
+    <div class="huewrap">
+      <div class="hueaxis">
+        <span class="cluster" style="left:74.6%">现状：3° / 20° 挤在一起 ↓</span>
+        <span class="hdot" style="left:6.4%;  background:#e5484d"></span><span class="hlab down" style="left:6.4%">danger 23</span>
+        <span class="hdot" style="left:17.2%; background:#cf7a14"></span><span class="hlab down" style="left:17.2%">warn 62</span>
+        <span class="hdot" style="left:44.4%; background:#15a06b"></span><span class="hlab down" style="left:44.4%">ok 160</span>
+        <span class="hdot" style="left:73.1%; background:#2563eb"></span><span class="hlab down" style="left:70%">info 263</span>
+        <span class="hdot" style="left:73.9%; background:#2f5fff; z-index:1; box-shadow:0 0 0 2px #2f5fff55, 0 0 0 1px rgba(0,0,0,.25)"></span><span class="hlab up" style="left:73.9%">brand 266</span>
+        <span class="hdot" style="left:79.4%; background:#7c5cff"></span><span class="hlab down" style="left:81%">artifact 286</span>
+      </div>
+      <div class="hueaxis" style="margin-top:44px">
+        <span class="hdot" style="left:6.7%;  background:#d14647"></span><span class="hlab down" style="left:6.7%">danger 24</span>
+        <span class="hdot" style="left:18.1%; background:#bb6900"></span><span class="hlab down" style="left:18.1%">warn 65</span>
+        <span class="hdot" style="left:44.4%; background:#009a60"></span><span class="hlab down" style="left:44.4%">ok 160</span>
+        <span class="hdot" style="left:59.7%; background:#0094b7"></span><span class="hlab down" style="left:59.7%">info 215</span>
+        <span class="hdot" style="left:73.9%; background:#2f5fff; z-index:1; box-shadow:0 0 0 2px #2f5fff55, 0 0 0 1px rgba(0,0,0,.25)"></span><span class="hlab up" style="left:73.9%">brand 266</span>
+        <span class="hdot" style="left:84.7%; background:#9565c7"></span><span class="hlab down" style="left:84.7%">artifact 305</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">03</span>状态胶囊（StatusPill）</h2>
+    <p class="hint">现状：solid 当文字色 + 全加粗补偿可读性。提案：文字用 text 层（≥6:1），字重降到 600，圆点保留 solid——不加粗也更清楚。</p>
+    <div class="duo">
+      <div class="pane">
+        <span class="pane-tag old">现状</span>
+        <div class="sim">
+          <div class="pillrow">
+            <span class="pill" style="color:#15a06b;background:#e4f6ee;font-weight:700"><i style="background:currentColor"></i>已通过</span>
+            <span class="pill" style="color:#cf7a14;background:#fdf0db;font-weight:700"><i style="background:currentColor"></i>等待人工</span>
+            <span class="pill" style="color:#e5484d;background:#fde8e9;font-weight:700"><i style="background:currentColor"></i>异常</span>
+            <span class="pill" style="color:#2563eb;background:#e8effd;font-weight:700"><i style="background:currentColor"></i>运行中</span>
+            <span class="pill" style="color:#7c5cff;background:#efeaff;font-weight:700"><i style="background:currentColor"></i>工件就绪</span>
+            <span class="pill" style="color:#64748b;background:#eef1f4;font-weight:700"><i style="background:currentColor"></i>已归档</span>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <span class="pane-tag new">提案</span>
+        <div class="sim">
+          <div class="pillrow">
+            <span class="pill" style="color:#006639;background:#e3f9ec;font-weight:600"><i style="background:#009a60"></i>已通过</span>
+            <span class="pill" style="color:#7f3f00;background:#ffefdf;font-weight:600"><i style="background:#bb6900"></i>等待人工</span>
+            <span class="pill" style="color:#8a2f2d;background:#ffece9;font-weight:600"><i style="background:#d14647"></i>异常</span>
+            <span class="pill" style="color:#00617d;background:#def8fe;font-weight:600"><i style="background:#0094b7"></i>运行中</span>
+            <span class="pill" style="color:#633d89;background:#f7eeff;font-weight:600"><i style="background:#9565c7"></i>工件就绪</span>
+            <span class="pill" style="color:#4d586b;background:#eef1f4;font-weight:600"><i style="background:#64748b"></i>已归档</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">04</span>指标带图标：状态色和类别色分家</h2>
+    <p class="hint">现状 /projects 指标带 6 个图标 6 种语义色，数值为 0 也在喊。提案：装饰 / 类别图标一律灰或品牌淡底，只有「需人工介入且数值 &gt; 0」的指标点亮 warn / danger——回到规范里写的「默认安静，例外强调」。</p>
+    <div class="duo">
+      <div class="pane">
+        <span class="pane-tag old">现状</span>
+        <div class="sim">
+          <div class="tilerow">
+            <span class="metric"><span class="tile" style="background:#fde8e9;color:#e5484d">⛨</span><span><span class="mv">10</span><br><span class="ml">阻塞项目</span></span></span>
+            <span class="metric"><span class="tile" style="background:#fdf0db;color:#cf7a14">☻</span><span><span class="mv">7</span><br><span class="ml">人工决策</span></span></span>
+            <span class="metric"><span class="tile" style="background:#fde8e9;color:#e5484d">▲</span><span><span class="mv">3</span><br><span class="ml">执行失败</span></span></span>
+            <span class="metric"><span class="tile" style="background:#fdf0db;color:#cf7a14">▤</span><span><span class="mv">3</span><br><span class="ml">证据待补</span></span></span>
+            <span class="metric"><span class="tile" style="background:#fdf0db;color:#cf7a14">◷</span><span><span class="mv">8</span><br><span class="ml">等待超时</span></span></span>
+            <span class="metric"><span class="tile" style="background:#e8effd;color:#2563eb">▶</span><span><span class="mv">0</span><br><span class="ml">协调异常</span></span></span>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <span class="pane-tag new">提案</span>
+        <div class="sim">
+          <div class="tilerow">
+            <span class="metric"><span class="tile" style="background:#eef1f4;color:#4d586b">⛨</span><span><span class="mv">10</span><br><span class="ml">阻塞项目</span></span></span>
+            <span class="metric"><span class="tile" style="background:#ffefdf;color:#bb6900">☻</span><span><span class="mv" style="color:#7f3f00">7</span><br><span class="ml">人工决策</span></span></span>
+            <span class="metric"><span class="tile" style="background:#ffece9;color:#d14647">▲</span><span><span class="mv" style="color:#8a2f2d">3</span><br><span class="ml">执行失败</span></span></span>
+            <span class="metric"><span class="tile" style="background:#eef1f4;color:#4d586b">▤</span><span><span class="mv">3</span><br><span class="ml">证据待补</span></span></span>
+            <span class="metric"><span class="tile" style="background:#eef1f4;color:#4d586b">◷</span><span><span class="mv">8</span><br><span class="ml">等待超时</span></span></span>
+            <span class="metric"><span class="tile" style="background:#eef1f4;color:#4d586b">▶</span><span><span class="mv">0</span><br><span class="ml">协调异常</span></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">05</span>卡片文字层级：一张卡只保留一种状态编码</h2>
+    <p class="hint">现状员工卡同时用四种方式表达状态：红 pill、黑粗体正文、灰字、绿字。提案：状态只走 pill，正文层级只用灰阶 + 字重，时间类元信息用灰字 + 前置语义圆点。</p>
+    <div class="duo">
+      <div class="pane">
+        <span class="pane-tag old">现状</span>
+        <div class="sim">
+          <div class="empcard">
+            <span class="t"><b>故障分析数据员工-1433…</b><span class="pill" style="color:#e5484d;background:#fde8e9;font-weight:700;font-size:11px"><i style="background:currentColor"></i>异常</span></span>
+            <span style="color:#9aa4b2">DevOps 运维 · 未分组</span>
+            <span style="font-weight:700">等待绑定 Runtime Agent</span>
+            <span style="color:#9aa4b2">工作台：待绑定</span>
+            <span style="color:#15a06b;font-weight:600">成功 · 7 小时前</span>
+            <span style="color:#9aa4b2">配置 v1 已审批 · skills 0 · MCP 0</span>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <span class="pane-tag new">提案</span>
+        <div class="sim">
+          <div class="empcard">
+            <span class="t"><b>故障分析数据员工-1433…</b><span class="pill" style="color:#8a2f2d;background:#ffece9;font-weight:600;font-size:11px"><i style="background:#d14647"></i>异常 · 等待绑定 Runtime</span></span>
+            <span style="color:#6d7580">DevOps 运维 · 未分组 · 工作台待绑定</span>
+            <span style="color:#4d586b"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#009a60;margin-right:5px;vertical-align:1px"></span>上次运行成功 · 7 小时前</span>
+            <span style="color:#6d7580">配置 v1 已审批 · skills 0 · MCP 0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">06</span>表格 tone 行</h2>
+    <p class="hint">accent bar 与行底色的结构不变，只换色值；行内 pill 换 text 层。</p>
+    <div class="duo">
+      <div class="pane">
+        <span class="pane-tag old">现状</span>
+        <div class="sim" style="padding:0;overflow:hidden">
+          <table class="simtable">
+            <thead><tr><th>项目</th><th>当前任务</th><th>执行状态</th></tr></thead>
+            <tbody>
+              <tr><td>Dispatch Recovery Smoke</td><td>验证 Runtime 分派恢复</td><td><span class="pill" style="color:#15a06b;background:#e4f6ee;font-weight:700;font-size:11px"><i style="background:currentColor"></i>已完成</span></td></tr>
+              <tr style="background:#fdf0db"><td style="box-shadow:inset 3px 0 0 #cf7a14">ProjectTask Writeback</td><td>测试一下</td><td><span class="pill" style="color:#cf7a14;background:#ffffff88;font-weight:700;font-size:11px"><i style="background:currentColor"></i>等待人工</span></td></tr>
+              <tr style="background:#fde8e9"><td style="box-shadow:inset 3px 0 0 #e5484d">Main Dispatch Recovery</td><td>验证 Runtime 心跳</td><td><span class="pill" style="color:#e5484d;background:#ffffff88;font-weight:700;font-size:11px"><i style="background:currentColor"></i>执行失败</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="pane">
+        <span class="pane-tag new">提案</span>
+        <div class="sim" style="padding:0;overflow:hidden">
+          <table class="simtable">
+            <thead><tr><th>项目</th><th>当前任务</th><th>执行状态</th></tr></thead>
+            <tbody>
+              <tr><td>Dispatch Recovery Smoke</td><td>验证 Runtime 分派恢复</td><td><span class="pill" style="color:#006639;background:#e3f9ec;font-weight:600;font-size:11px"><i style="background:#009a60"></i>已完成</span></td></tr>
+              <tr style="background:#fff8f0"><td style="box-shadow:inset 3px 0 0 #bb6900">ProjectTask Writeback</td><td>测试一下</td><td><span class="pill" style="color:#7f3f00;background:#ffefdf;font-weight:600;font-size:11px"><i style="background:#bb6900"></i>等待人工</span></td></tr>
+              <tr style="background:#fff5f2"><td style="box-shadow:inset 3px 0 0 #d14647">Main Dispatch Recovery</td><td>验证 Runtime 心跳</td><td><span class="pill" style="color:#8a2f2d;background:#ffece9;font-weight:600;font-size:11px"><i style="background:#d14647"></i>执行失败</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">07</span>深色模式（同一公式：L=0.75 / C=0.115，text 层 L=0.80）</h2>
+    <div class="duo">
+      <div class="pane">
+        <span class="pane-tag old">现状（Tailwind 现成色，色相与浅色端漂移）</span>
+        <div class="sim dark">
+          <div class="pillrow">
+            <span class="pill" style="color:#34d399;background:rgba(52,211,153,.15);font-weight:700"><i style="background:currentColor"></i>已通过</span>
+            <span class="pill" style="color:#fbbf24;background:rgba(251,191,36,.15);font-weight:700"><i style="background:currentColor"></i>等待人工</span>
+            <span class="pill" style="color:#f87171;background:rgba(248,113,113,.16);font-weight:700"><i style="background:currentColor"></i>异常</span>
+            <span class="pill" style="color:#60a5fa;background:rgba(96,165,250,.16);font-weight:700"><i style="background:currentColor"></i>运行中</span>
+            <span class="pill" style="color:#a78bfa;background:rgba(167,139,250,.16);font-weight:700"><i style="background:currentColor"></i>工件就绪</span>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <span class="pane-tag new">提案（与浅色端同色相）</span>
+        <div class="sim dark">
+          <div class="pillrow">
+            <span class="pill" style="color:#82d2a8;background:#233634;font-weight:600"><i style="background:#65c495"></i>已通过</span>
+            <span class="pill" style="color:#ebb077;background:#37302b;font-weight:600"><i style="background:#e09e5b"></i>等待人工</span>
+            <span class="pill" style="color:#f8a49d;background:#392e32;font-weight:600"><i style="background:#ee9089"></i>异常</span>
+            <span class="pill" style="color:#69cee6;background:#1e3540;font-weight:600"><i style="background:#40c0db"></i>运行中</span>
+            <span class="pill" style="color:#cdaef2;background:#322f42;font-weight:600"><i style="background:#bf9be8"></i>工件就绪</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">08</span>落地：theme.css token 变更</h2>
+<pre><code><span class="cmt">/* 浅色端 —— 派生公式：solid = oklch(0.60 0.15 H)、text = oklch(0.44 0.125 H)、soft = oklch(0.962 0.028 H) */</span>
+<span class="del">- --v3-ok: #15a06b;            --v3-ok-soft: #e4f6ee;</span>
+<span class="add">+ --v3-ok: #009a60;            --v3-ok-text: #006639;    --v3-ok-soft: #e3f9ec;</span>
+<span class="del">- --v3-warn: #cf7a14;          --v3-warn-soft: #fdf0db;</span>
+<span class="add">+ --v3-warn: #bb6900;          --v3-warn-text: #7f3f00;  --v3-warn-soft: #ffefdf;</span>
+<span class="del">- --v3-danger: #e5484d;        --v3-danger-soft: #fde8e9;</span>
+<span class="add">+ --v3-danger: #d14647;        --v3-danger-text: #8a2f2d; --v3-danger-soft: #ffece9;  <span class="cmt">/* C=0.175 例外 */</span></span>
+<span class="del">- --v3-info: #2563eb;          --v3-info-soft: #e8effd;</span>
+<span class="add">+ --v3-info: #0094b7;          --v3-info-text: #00617d;  --v3-info-soft: #def8fe;    <span class="cmt">/* H263→215 */</span></span>
+<span class="del">- --v3-artifact: #7c5cff;      --v3-artifact-soft: #efeaff;</span>
+<span class="add">+ --v3-artifact: #9565c7;      --v3-artifact-text: #633d89; --v3-artifact-soft: #f7eeff; <span class="cmt">/* H286→305，仅类别 */</span></span>
+<span class="del">- --v3-ink-3: #9aa4b2;</span>
+<span class="add">+ --v3-ink-3: #6d7580;         <span class="cmt">/* 2.52:1 → 4.66:1 */</span></span>
+
+<span class="cmt">/* 深色端 —— solid = oklch(0.75 0.115 H)、text = oklch(0.80 0.10 H)、soft = solid 16% 叠 #171b22 */</span>
+<span class="add">+ --v3-ok: #65c495;   --v3-ok-text: #82d2a8;   --v3-ok-soft: #233634;   <span class="cmt">/* …warn/danger/info/artifact 同表 */</span></span>
+
+<span class="cmt">/* StatusPill：文字层换 text token，字重 700 → 600 */</span>
+<span class="del">- "… rounded-lg px-2.5 py-1 text-xs font-bold", toneText[tone]</span>
+<span class="add">+ "… rounded-lg px-2.5 py-1 text-xs font-semibold", toneTextStrong[tone]  <span class="cmt">/* text-v3-*-text */</span></span></code></pre>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">09</span>随色板一起生效的使用规则（写入 DESIGN.md）</h2>
+    <ul class="decision">
+      <li><b>状态色词表</b>：ok / warn / danger / mute 只允许出现在 StatusPill、状态圆点、accent bar、V3Tr tone；<b>类别图标（IconTile）默认 mute 或 brand-soft</b>，不再按实体换色。</li>
+      <li><b>artifact 紫只表示「工件」这一个类别</b>，退出状态词表。</li>
+      <li><b>info 的取舍</b>：迁到青色后保留；若后续实践中仍与 mute 职责重叠，可直接并入 mute（本页展示保留方案）。</li>
+      <li><b>彩色文字只保留两种</b>：链接 / 主操作（brand）与 danger 警示；「成功 · 7 小时前」类元信息一律灰字 + 前置语义圆点。</li>
+      <li><b>每屏语义色预算</b>：一行 / 一卡最多 1 个语义色状态编码；KPI / 图标带同屏最多 2 种非灰色调。</li>
+      <li>顺手修：<span class="mono">capabilities/index.tsx:8</span> 的 <span class="mono">tone="warning"</span> → <span class="mono">"warn"</span>（现为静默无样式）。</li>
+    </ul>
+  </section>
+</div>
+
+</body>
+</html>
