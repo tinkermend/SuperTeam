@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目管理 · Compact Control Surface · SuperTeam</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --shell: #eef2f6;
+        --card: #ffffff;
+        --card-soft: #f8fafc;
+        --card-inner: #fbfcfd;
+        --ink: #101318;
+        --ink-2: #4e5b6b;
+        --ink-3: #7c8796;
+        --line: #e7ebf0;
+        --line-strong: #d6dde6;
+        --brand: #2f5fff;
+        --brand-deep: #2348e0;
+        --brand-soft: #e9efff;
+        --info: #2563eb;
+        --info-soft: #e8effd;
+        --ok: #15a06b;
+        --ok-soft: #e4f6ee;
+        --warn: #cf7a14;
+        --warn-soft: #fdf0db;
+        --danger: #e5484d;
+        --danger-soft: #fde8e9;
+        --artifact: #7c5cff;
+        --artifact-soft: #efeaff;
+        --mute: #64748b;
+        --mute-soft: #eef1f4;
+        --radius-panel: 16px;
+        --radius-inner: 10px;
+        --radius-pill: 8px;
+        --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 10px 24px rgba(15, 23, 42, .055);
+        --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        color: var(--ink);
+        background:
+          linear-gradient(180deg, rgba(246, 247, 249, .98), rgba(250, 251, 252, .98)),
+          linear-gradient(rgba(47, 95, 255, .035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(47, 95, 255, .035) 1px, transparent 1px);
+        background-size: auto, 32px 32px, 32px 32px;
+        font-family: var(--sans);
+        font-size: 13px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 244px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        padding: 14px 12px;
+        border-right: 1px solid var(--line-strong);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, .88), rgba(244, 247, 251, .88)),
+          var(--shell);
+        backdrop-filter: blur(14px) saturate(1.08);
+      }
+
+      .brand {
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        padding: 8px 8px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border: 1px solid rgba(47, 95, 255, .22);
+        border-radius: 12px;
+        color: var(--brand);
+        background: #fff;
+      }
+
+      .brand-title {
+        font-size: 19px;
+        font-weight: 820;
+        letter-spacing: 0;
+        color: var(--brand-deep);
+      }
+
+      .brand-sub {
+        margin-top: 1px;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .nav-section {
+        margin-top: 16px;
+      }
+
+      .nav-title {
+        padding: 0 10px 7px;
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      .nav-item {
+        position: relative;
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 36px;
+        padding: 0 10px;
+        border-radius: 10px;
+        color: var(--ink-2);
+        font-weight: 690;
+      }
+
+      .nav-item + .nav-item {
+        margin-top: 2px;
+      }
+
+      .nav-item:hover {
+        background: rgba(255, 255, 255, .7);
+        color: var(--ink);
+      }
+
+      .nav-item.active {
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      .nav-item.active::before {
+        content: "";
+        position: absolute;
+        top: 8px;
+        bottom: 8px;
+        left: 0;
+        width: 3px;
+        border-radius: 99px;
+        background: var(--brand);
+      }
+
+      .nav-icon,
+      .icon-slot {
+        display: grid;
+        place-items: center;
+        color: currentColor;
+      }
+
+      .nav-icon svg,
+      .icon-slot svg,
+      [data-lucide] svg {
+        width: 17px;
+        height: 17px;
+        stroke-width: 2;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: var(--radius-pill);
+        font-size: 11px;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+
+      .badge::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .badge.brand {
+        display: inline-flex;
+        border: 0;
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      .badge.info {
+        color: var(--info);
+        background: var(--info-soft);
+      }
+
+      .badge.ok {
+        color: var(--ok);
+        background: var(--ok-soft);
+      }
+
+      .badge.warn {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+
+      .badge.danger {
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      .badge.artifact {
+        color: var(--artifact);
+        background: var(--artifact-soft);
+      }
+
+      .badge.mute {
+        color: var(--mute);
+        background: var(--mute-soft);
+      }
+
+      .count {
+        display: inline-grid;
+        min-width: 20px;
+        height: 20px;
+        place-items: center;
+        padding: 0 6px;
+        border-radius: 99px;
+        color: var(--brand);
+        background: #fff;
+        font-size: 11px;
+        font-weight: 820;
+      }
+
+      .main {
+        min-width: 0;
+        padding: 14px 22px 28px;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(260px, 440px) minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      .search {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 40px;
+        padding: 0 10px;
+        border: 1px solid rgba(47, 95, 255, .18);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, .86);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+        color: var(--ink-3);
+      }
+
+      .search [data-lucide] svg,
+      .button [data-lucide] svg,
+      .icon-button [data-lucide] svg,
+      .chip [data-lucide] svg,
+      .eyebrow [data-lucide] svg,
+      .check [data-lucide] svg,
+      .audit-icon [data-lucide] svg,
+      .brand-mark [data-lucide] svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2;
+      }
+
+      .search input {
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        color: var(--ink);
+        background: transparent;
+      }
+
+      .keycap {
+        display: inline-grid;
+        height: 23px;
+        min-width: 42px;
+        place-items: center;
+        padding: 0 7px;
+        border: 1px solid #dbe3f7;
+        border-radius: 8px;
+        color: var(--brand);
+        background: #f5f7ff;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .crumb {
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .icon-button,
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        height: 36px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        color: var(--ink-2);
+        background: rgba(255, 255, 255, .88);
+        font-weight: 760;
+      }
+
+      .icon-button {
+        width: 36px;
+        padding: 0;
+      }
+
+      .button {
+        padding: 0 12px;
+      }
+
+      .button.primary {
+        border-color: var(--brand);
+        color: #fff;
+        background: var(--brand);
+        box-shadow: 0 7px 15px rgba(47, 95, 255, .18);
+      }
+
+      .button.danger {
+        border-color: rgba(229, 72, 77, .28);
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      .button.ghost {
+        border-color: transparent;
+        background: transparent;
+      }
+
+      .avatar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 10px 0 4px;
+        border: 1px solid var(--line-strong);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--ink);
+        font-weight: 770;
+      }
+
+      .avatar-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 9px;
+        color: #fff;
+        background: #334155;
+        font-size: 12px;
+      }
+
+      .page-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: end;
+        margin-bottom: 14px;
+      }
+
+      .eyebrow {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 4px;
+        color: var(--brand-deep);
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 24px;
+        line-height: 1.18;
+        font-weight: 830;
+        letter-spacing: 0;
+      }
+
+      .page-desc {
+        max-width: 760px;
+        margin: 5px 0 0;
+        color: var(--ink-2);
+        font-size: 13px;
+      }
+
+      .density-toggle {
+        display: inline-grid;
+        grid-template-columns: 1fr 1fr;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #fff;
+      }
+
+      .density-toggle button {
+        height: 30px;
+        border: 0;
+        border-radius: 8px;
+        color: var(--ink-3);
+        background: transparent;
+        font-weight: 760;
+      }
+
+      .density-toggle button.active {
+        color: var(--ink);
+        background: var(--card-soft);
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+
+      .metric-strip {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .metric {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        min-height: 70px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-panel);
+        background: rgba(255, 255, 255, .9);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .03);
+      }
+
+      .metric-label {
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 720;
+      }
+
+      .metric-value {
+        margin-top: 5px;
+        font-size: 25px;
+        line-height: 1;
+        font-weight: 850;
+      }
+
+      .metric-sub {
+        align-self: end;
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 650;
+        text-align: right;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(560px, 1.12fr) minmax(520px, .88fr);
+        gap: 12px;
+        align-items: start;
+      }
+
+      .panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-panel);
+        background: var(--card);
+        box-shadow: var(--shadow);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .panel-title {
+        margin: 0;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 820;
+      }
+
+      .panel-note {
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--ink-2);
+        background: #fff;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .chip.active {
+        border-color: rgba(47, 95, 255, .24);
+        color: var(--brand-deep);
+        background: var(--brand-soft);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th {
+        height: 34px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line-strong);
+        color: var(--ink-3);
+        background: var(--card-soft);
+        font-size: 11px;
+        font-weight: 800;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      td {
+        min-height: 42px;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink-2);
+        vertical-align: middle;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      tbody tr:hover td {
+        background: var(--card-inner);
+      }
+
+      .risk-danger td {
+        background: linear-gradient(90deg, rgba(229, 72, 77, .08), transparent 52%);
+      }
+
+      .risk-danger {
+        box-shadow: inset 3px 0 0 var(--danger);
+      }
+
+      .risk-warn {
+        box-shadow: inset 3px 0 0 var(--warn);
+      }
+
+      .project-name {
+        display: block;
+        color: var(--ink);
+        font-weight: 820;
+      }
+
+      .project-id {
+        display: block;
+        margin-top: 1px;
+        color: var(--ink-3);
+        font-size: 11px;
+      }
+
+      .owner {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--ink);
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .owner-dot {
+        display: grid;
+        width: 23px;
+        height: 23px;
+        place-items: center;
+        border-radius: 8px;
+        color: #fff;
+        background: #475569;
+        font-size: 11px;
+        font-weight: 820;
+      }
+
+      .progress {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 7px;
+        align-items: center;
+        min-width: 100px;
+      }
+
+      .track {
+        overflow: hidden;
+        height: 6px;
+        border-radius: 99px;
+        background: #edf1f5;
+      }
+
+      .fill {
+        height: 100%;
+        border-radius: 99px;
+        background: var(--brand);
+      }
+
+      .row-actions {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .mini-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        color: var(--ink-2);
+        background: #fff;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .mini-button.primary {
+        border-color: var(--brand);
+        color: #fff;
+        background: var(--brand);
+      }
+
+      .creation {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+      }
+
+      .step-rail {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--card-soft);
+      }
+
+      .step {
+        position: relative;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 12px;
+        border-right: 1px solid var(--line);
+        color: var(--ink-3);
+        font-weight: 760;
+      }
+
+      .step:last-child {
+        border-right: 0;
+      }
+
+      .step.active {
+        color: var(--brand-deep);
+        background: #fff;
+      }
+
+      .step.active::after {
+        content: "";
+        position: absolute;
+        right: 12px;
+        bottom: 0;
+        left: 12px;
+        height: 2px;
+        border-radius: 99px;
+        background: var(--brand);
+      }
+
+      .step.done {
+        color: var(--ok);
+      }
+
+      .step-index {
+        display: grid;
+        width: 23px;
+        height: 23px;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        color: currentColor;
+        background: #fff;
+        font-size: 11px;
+        font-weight: 820;
+      }
+
+      .step.active .step-index {
+        border-color: var(--brand);
+        color: #fff;
+        background: var(--brand);
+      }
+
+      .create-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(300px, .92fr);
+        gap: 12px;
+        padding: 12px;
+        background: #fff;
+      }
+
+      .form-panel,
+      .review-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: var(--card);
+      }
+
+      .form-section {
+        padding: 13px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .form-section:last-child {
+        border-bottom: 0;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+        color: var(--ink);
+        font-weight: 820;
+      }
+
+      .section-title span {
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      label {
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 780;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: 9px;
+        outline: 0;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      input {
+        height: 36px;
+        padding: 0 10px;
+      }
+
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+        padding: 9px 10px;
+      }
+
+      input:focus,
+      textarea:focus {
+        border-color: rgba(47, 95, 255, .76);
+        box-shadow: 0 0 0 3px rgba(47, 95, 255, .12);
+      }
+
+      .hint {
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .select-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 38px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--card-inner);
+      }
+
+      .select-row + .select-row {
+        margin-top: 7px;
+      }
+
+      .select-main {
+        min-width: 0;
+      }
+
+      .select-title {
+        color: var(--ink);
+        font-weight: 780;
+      }
+
+      .select-sub {
+        margin-top: 1px;
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 620;
+      }
+
+      .review-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .review-table th {
+        height: 31px;
+        padding: 0 10px;
+      }
+
+      .review-table td {
+        padding: 8px 10px;
+      }
+
+      .review-section-row td {
+        height: 31px;
+        color: var(--ink);
+        background: var(--card-soft);
+        font-size: 12px;
+        font-weight: 820;
+      }
+
+      .review-label {
+        width: 112px;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 720;
+      }
+
+      .review-value {
+        color: var(--ink);
+        font-weight: 760;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 7px;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: var(--card-inner);
+      }
+
+      .check {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .check i {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        place-items: center;
+        border-radius: 6px;
+        color: #fff;
+        background: var(--ok);
+      }
+
+      .check.warn i {
+        background: var(--warn);
+      }
+
+      .footbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--line);
+        background: var(--card-soft);
+      }
+
+      .foot-note {
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .aside-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .audit-list {
+        display: grid;
+        gap: 0;
+      }
+
+      .audit-item {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: start;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .audit-item:last-child {
+        border-bottom: 0;
+      }
+
+      .audit-icon {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 9px;
+        color: var(--brand);
+        background: var(--brand-soft);
+      }
+
+      .audit-icon.warn {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+
+      .audit-icon.danger {
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      .audit-title {
+        color: var(--ink);
+        font-weight: 780;
+      }
+
+      .audit-meta {
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 620;
+      }
+
+      .compact-rule {
+        display: grid;
+        grid-template-columns: 136px minmax(0, 1fr);
+        gap: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .compact-rule div {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .compact-rule div:nth-child(odd) {
+        color: var(--ink-3);
+        background: var(--card-soft);
+        font-weight: 720;
+      }
+
+      .compact-rule div:nth-child(even) {
+        color: var(--ink);
+        font-weight: 760;
+      }
+
+      @media (max-width: 1440px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .aside-stack {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+          height: auto;
+        }
+
+        .metric-strip,
+        .create-grid,
+        .field-grid,
+        .aside-stack {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar,
+        .page-header {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark"><i data-lucide="network"></i></div>
+          <div>
+            <div class="brand-title">矩枢平台</div>
+            <div class="brand-sub">新矩网络</div>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-title">工作区</div>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="send"></i></span><span>任务中枢</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="inbox"></i></span><span>收件箱</span><span class="count">14</span></a>
+          <a class="nav-item active" href="#"><span class="nav-icon"><i data-lucide="folder-kanban"></i></span><span>项目管理</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="bot"></i></span><span>数字员工</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="blocks"></i></span><span>技能管理</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="users"></i></span><span>团队管理</span></a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-title">核心导航</div>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="git-branch"></i></span><span>流程编排</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="calendar-clock"></i></span><span>自动化任务</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="plug-zap"></i></span><span>外部能力</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="shield-check"></i></span><span>审批中心</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="server"></i></span><span>Runtime 节点</span></a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-title">平台管理</div>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="gauge"></i></span><span>运行总览</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="key-round"></i></span><span>权限中心</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="receipt"></i></span><span>成本管理</span></a>
+          <a class="nav-item" href="#"><span class="nav-icon"><i data-lucide="file-search"></i></span><span>审计中心</span></a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <label class="search">
+            <i data-lucide="search"></i>
+            <input placeholder="搜索项目、负责人、证据、任务或输入命令..." />
+            <span class="keycap">⌘ K</span>
+          </label>
+          <div class="crumb">控制平面 / 项目管理 / 紧凑控制台原型</div>
+          <div class="top-actions">
+            <button class="icon-button" aria-label="主题"><i data-lucide="sun-medium"></i></button>
+            <button class="icon-button" aria-label="通知"><i data-lucide="bell"></i></button>
+            <button class="button primary"><i data-lucide="plus"></i>新建项目</button>
+            <div class="avatar"><span class="avatar-mark">林</span>开发管理员</div>
+          </div>
+        </div>
+
+        <header class="page-header">
+          <div>
+            <div class="eyebrow"><i data-lucide="layout-dashboard"></i>Compact Control Surface / 项目管理</div>
+            <h1>更紧凑的项目队列与创建工作台</h1>
+            <p class="page-desc">这个版本把柔和感收敛到外壳，内容区改成实底、低圆角、字段对齐和审阅表，优先服务企业级平台的扫读、审批和可审计操作。</p>
+          </div>
+          <div class="density-toggle" aria-label="密度切换">
+            <button>舒适</button>
+            <button class="active">紧凑</button>
+          </div>
+        </header>
+
+        <section class="metric-strip" aria-label="项目指标">
+          <div class="metric">
+            <div><div class="metric-label">运行中项目</div><div class="metric-value num">37</div></div>
+            <div class="metric-sub">+6 / 今日</div>
+          </div>
+          <div class="metric">
+            <div><div class="metric-label">待人工决策</div><div class="metric-value num" style="color: var(--warn)">9</div></div>
+            <div class="metric-sub">4 个审批</div>
+          </div>
+          <div class="metric">
+            <div><div class="metric-label">阻塞风险</div><div class="metric-value num" style="color: var(--danger)">5</div></div>
+            <div class="metric-sub">2 个高危</div>
+          </div>
+          <div class="metric">
+            <div><div class="metric-label">今日验收</div><div class="metric-value num">18</div></div>
+            <div class="metric-sub">7 份结论</div>
+          </div>
+          <div class="metric">
+            <div><div class="metric-label">Runtime 健康</div><div class="metric-value num">4/5</div></div>
+            <div class="metric-sub">node-4 离线</div>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 class="panel-title">项目队列</h2>
+                <div class="panel-note">默认按“需要介入程度”排序，行内直接暴露状态、证据和下一步动作。</div>
+              </div>
+              <div class="toolbar">
+                <button class="chip active">全部 44</button>
+                <button class="chip">需处理 5</button>
+                <button class="chip">待验收 7</button>
+                <button class="chip"><i data-lucide="sliders-horizontal"></i>筛选</button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>负责人</th>
+                  <th>状态</th>
+                  <th>进度</th>
+                  <th>任务</th>
+                  <th>最新证据</th>
+                  <th>SLA</th>
+                  <th>动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="risk-danger">
+                  <td><span class="project-name">支付网关迁移</span><span class="project-id mono">prj_a91f7d2c</span></td>
+                  <td><span class="owner"><span class="owner-dot">林</span>林 Anna</span></td>
+                  <td><span class="badge danger">待审批</span></td>
+                  <td><span class="progress"><span class="track"><span class="fill" style="width: 72%; background: var(--danger)"></span></span><span class="num">72%</span></span></td>
+                  <td class="num">3 / 8</td>
+                  <td><span class="badge artifact">发布包</span></td>
+                  <td class="num" style="color: var(--danger); font-weight: 820">2m</td>
+                  <td><span class="row-actions"><button class="mini-button primary">审批</button><button class="mini-button">详情</button></span></td>
+                </tr>
+                <tr class="risk-warn">
+                  <td><span class="project-name">客户数据导出治理</span><span class="project-id mono">prj_77be0d31</span></td>
+                  <td><span class="owner"><span class="owner-dot">王</span>王经理</span></td>
+                  <td><span class="badge warn">权限确认</span></td>
+                  <td><span class="progress"><span class="track"><span class="fill" style="width: 48%; background: var(--warn)"></span></span><span class="num">48%</span></span></td>
+                  <td class="num">6 / 11</td>
+                  <td><span class="badge artifact">权限说明</span></td>
+                  <td class="num" style="color: var(--warn); font-weight: 820">38m</td>
+                  <td><span class="row-actions"><button class="mini-button primary">补证</button><button class="mini-button">详情</button></span></td>
+                </tr>
+                <tr>
+                  <td><span class="project-name">智能客服上线</span><span class="project-id mono">prj_5c109a44</span></td>
+                  <td><span class="owner"><span class="owner-dot">林</span>林 Anna</span></td>
+                  <td><span class="badge info">运行中</span></td>
+                  <td><span class="progress"><span class="track"><span class="fill" style="width: 61%"></span></span><span class="num">61%</span></span></td>
+                  <td class="num">4 / 9</td>
+                  <td><span class="badge artifact">测试报告</span></td>
+                  <td class="num">2h</td>
+                  <td><span class="row-actions"><button class="mini-button">进入</button><button class="mini-button">发起任务</button></span></td>
+                </tr>
+                <tr class="risk-danger">
+                  <td><span class="project-name">对账系统重构</span><span class="project-id mono">prj_30a2bbf1</span></td>
+                  <td><span class="owner"><span class="owner-dot">许</span>许 Kai</span></td>
+                  <td><span class="badge danger">测试失败</span></td>
+                  <td><span class="progress"><span class="track"><span class="fill" style="width: 55%; background: var(--danger)"></span></span><span class="num">55%</span></span></td>
+                  <td class="num">2 / 5</td>
+                  <td><span class="badge artifact">失败证据</span></td>
+                  <td class="num" style="color: var(--danger); font-weight: 820">6m</td>
+                  <td><span class="row-actions"><button class="mini-button primary">处理</button><button class="mini-button">详情</button></span></td>
+                </tr>
+                <tr>
+                  <td><span class="project-name">需求文档体系建设</span><span class="project-id mono">prj_b8d46e09</span></td>
+                  <td><span class="owner"><span class="owner-dot">周</span>周 Ming</span></td>
+                  <td><span class="badge ok">待验收</span></td>
+                  <td><span class="progress"><span class="track"><span class="fill" style="width: 94%; background: var(--ok)"></span></span><span class="num">94%</span></span></td>
+                  <td class="num">1 / 12</td>
+                  <td><span class="badge artifact">交接包</span></td>
+                  <td class="num">1d</td>
+                  <td><span class="row-actions"><button class="mini-button primary">验收</button><button class="mini-button">详情</button></span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="aside-stack">
+            <div class="panel creation">
+              <div class="panel-head">
+                <div>
+                  <h2 class="panel-title">新建项目工作台</h2>
+                  <div class="panel-note">把原来的大弹窗改成紧凑的创建与审阅同屏。</div>
+                </div>
+                <span class="badge warn">待创建</span>
+              </div>
+              <div class="step-rail">
+                <div class="step active"><span class="step-index">1</span>基础信息</div>
+                <div class="step done"><span class="step-index">2</span>负责人</div>
+                <div class="step"><span class="step-index">3</span>员工池</div>
+                <div class="step"><span class="step-index">4</span>策略</div>
+              </div>
+              <div class="create-grid">
+                <div class="form-panel">
+                  <div class="form-section">
+                    <div class="section-title">项目事实 <span>必填</span></div>
+                    <div class="field-grid">
+                      <div class="field">
+                        <label>项目名称 *</label>
+                        <input value="客户接入验收" />
+                      </div>
+                      <div class="field">
+                        <label>来源团队 *</label>
+                        <input value="交付实施组" />
+                      </div>
+                      <div class="field full">
+                        <label>项目目标 *</label>
+                        <textarea>完成客户接入流程的验收闭环，明确成功标准、执行人员、审计证据与人工验收结论。</textarea>
+                        <div class="hint">建议用业务闭环目标描述，不写成单纯技术任务。</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-section">
+                    <div class="section-title">执行池 <span>可选但建议配置</span></div>
+                    <div class="select-row">
+                      <div class="select-main"><div class="select-title">api-builder</div><div class="select-sub">接口实现 / 契约修复 / 代码证据</div></div>
+                      <span class="badge ok">已选</span>
+                    </div>
+                    <div class="select-row">
+                      <div class="select-main"><div class="select-title">test-runner</div><div class="select-sub">回归测试 / 失败证据 / 验收报告</div></div>
+                      <span class="badge ok">已选</span>
+                    </div>
+                  </div>
+                  <div class="form-section">
+                    <div class="section-title">策略预设 <span>默认治理</span></div>
+                    <div class="select-row">
+                      <div class="select-main"><div class="select-title">标准治理</div><div class="select-sub">审计日志自动开启，验收前必须补齐证据。</div></div>
+                      <span class="badge brand">当前</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="review-panel">
+                  <table class="review-table">
+                    <thead>
+                      <tr><th colspan="2">创建前审阅</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr class="review-section-row"><td colspan="2">项目事实</td></tr>
+                      <tr><td class="review-label">项目名称</td><td class="review-value">客户接入验收</td></tr>
+                      <tr><td class="review-label">来源团队</td><td class="review-value">交付实施组</td></tr>
+                      <tr><td class="review-label">目标</td><td class="review-value">验收闭环已填写</td></tr>
+                      <tr class="review-section-row"><td colspan="2">人类负责人</td></tr>
+                      <tr><td class="review-label">主负责人</td><td class="review-value">开发管理员</td></tr>
+                      <tr><td class="review-label">额外负责人</td><td class="review-value">0 位已选</td></tr>
+                      <tr class="review-section-row"><td colspan="2">策略与审计</td></tr>
+                      <tr><td class="review-label">策略预设</td><td class="review-value">标准治理</td></tr>
+                      <tr><td class="review-label">审计日志</td><td class="review-value">自动开启</td></tr>
+                      <tr><td class="review-label">证据要求</td><td class="review-value">验收前必须补齐</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="checklist">
+                    <div class="check"><i data-lucide="check"></i><span>基础信息已填写</span><span class="badge ok">通过</span></div>
+                    <div class="check"><i data-lucide="check"></i><span>来源团队已选择</span><span class="badge ok">通过</span></div>
+                    <div class="check"><i data-lucide="check"></i><span>审计策略已开启</span><span class="badge ok">通过</span></div>
+                    <div class="check warn"><i data-lucide="minus"></i><span>额外负责人未选择</span><span class="badge mute">可选</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="footbar">
+                <div class="foot-note">创建后会注册项目协调线程，并可在任务发起中选择该项目提交需求。</div>
+                <div class="top-actions"><button class="button ghost">取消</button><button class="button">上一步</button><button class="button primary">创建项目</button></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2 class="panel-title">待处理审计流</h2>
+                  <div class="panel-note">强化证据来源和人工动作，不用松散提示卡。</div>
+                </div>
+                <span class="badge warn">4 项</span>
+              </div>
+              <div class="audit-list">
+                <div class="audit-item">
+                  <span class="audit-icon danger"><i data-lucide="shield-alert"></i></span>
+                  <div><div class="audit-title">生产发布请求等待审批</div><div class="audit-meta mono">prj_a91f7d2c · req_release_2048 · 2m</div></div>
+                  <button class="mini-button primary">审批</button>
+                </div>
+                <div class="audit-item">
+                  <span class="audit-icon warn"><i data-lucide="key-round"></i></span>
+                  <div><div class="audit-title">读取 PII 权限提升待确认</div><div class="audit-meta mono">prj_77be0d31 · req_scope_0931 · 38m</div></div>
+                  <button class="mini-button">查看</button>
+                </div>
+                <div class="audit-item">
+                  <span class="audit-icon danger"><i data-lucide="circle-x"></i></span>
+                  <div><div class="audit-title">回归测试失败并生成证据包</div><div class="audit-meta mono">prj_30a2bbf1 · test-runner · 6m</div></div>
+                  <button class="mini-button">处理</button>
+                </div>
+              </div>
+              <div class="compact-rule">
+                <div>设计差异</div><div>低圆角、低阴影、表格化审阅、字段密度收紧</div>
+                <div>蓝色使用</div><div>只保留在主操作、焦点、当前步骤和关键选中态</div>
+                <div>内容区</div><div>全部实底，不透出背景网格，不使用玻璃感</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script>
+      const iconPaths = {
+        "bell": '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
+        "blocks": '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+        "bot": '<path d="M12 8V4H8"/><rect x="5" y="8" width="14" height="10" rx="2"/><path d="M2 14h3M19 14h3M9 13h.01M15 13h.01M9 18v2h6v-2"/>',
+        "calendar-clock": '<path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 14v3l2 1"/>',
+        "check": '<path d="m5 12 4 4L19 6"/>',
+        "circle-x": '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/>',
+        "file-search": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11" cy="15" r="2"/><path d="m13 17 2 2"/>',
+        "folder-kanban": '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/><path d="M8 11v5M12 11v3M16 11v7"/>',
+        "gauge": '<path d="M20.2 15.7A8 8 0 1 0 3.8 15.7"/><path d="m12 14 4-4"/>',
+        "git-branch": '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+        "inbox": '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
+        "key-round": '<path d="M2 18v3h3l9.5-9.5"/><circle cx="15.5" cy="8.5" r="5.5"/>',
+        "layout-dashboard": '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+        "minus": '<path d="M5 12h14"/>',
+        "network": '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-2a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2"/>',
+        "plug-zap": '<path d="M13 2 3 14h7l-1 8 10-12h-7z"/><path d="M18 13v4M22 13v4M20 17v3"/>',
+        "plus": '<path d="M12 5v14M5 12h14"/>',
+        "receipt": '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2Z"/><path d="M8 7h8M8 12h8M8 17h5"/>',
+        "search": '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+        "send": '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+        "server": '<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/>',
+        "shield-alert": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/>',
+        "shield-check": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
+        "sliders-horizontal": '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"/><circle cx="12" cy="4" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="14" cy="20" r="2"/>',
+        "sun-medium": '<circle cx="12" cy="12" r="4"/><path d="M12 3v1M12 20v1M3 12h1M20 12h1M5.6 5.6l.7.7M17.7 17.7l.7.7M18.4 5.6l-.7.7M6.3 17.7l-.7.7"/>',
+        "users": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>'
+      };
+
+      document.querySelectorAll("[data-lucide]").forEach((node) => {
+        const name = node.getAttribute("data-lucide");
+        const path = iconPaths[name] || iconPaths["network"];
+        node.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+      });
+    </script>
+  </body>
+</html>
