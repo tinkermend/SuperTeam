@@ -202,7 +202,7 @@ export function CreateProjectView({
     <>
       <ShellPageHeader
         back={<ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />}
-        title="新建项目"
+        title="新建项目工作台"
         subtitle="建立项目事实容器，配置负责人、团队、数字员工池与策略预设。"
       />
       <Main className="min-w-0 overflow-x-hidden">
@@ -803,7 +803,7 @@ export function ProjectsView({
         }
       />
       <Main className="min-w-0 overflow-x-hidden">
-        <div className="flex min-w-0 flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-5">
           {projectCreateAction ? (
             <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
               {projectCreateAction}
@@ -823,7 +823,14 @@ export function ProjectsView({
               />
             </WorkSurface>
           ) : (
-            <>
+            <div
+              className={
+                routeProjectId
+                  ? "contents"
+                  : "grid min-w-0 gap-4"
+              }
+              data-testid={routeProjectId ? undefined : "projects-compact-control-surface"}
+            >
               {!routeProjectId ? (
                 <ProjectHomeRiskSummaryBar
                   isLoading={isCurrentPageRiskSettling}
@@ -951,7 +958,7 @@ export function ProjectsView({
                   />
                 ) : null}
               </div>
-            </>
+            </div>
           )}
       <SubmitDemandDialog
         isSubmitting={submitDemandMutation.isPending}

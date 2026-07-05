@@ -2403,4 +2403,36 @@ describe("ProjectsView", () => {
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
     expect(queueText).toContain("进入流程编排");
   });
+
+  it("renders the project index with the compact control surface structure", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+
+    expect(screen.getByTestId("projects-compact-control-surface").element()).toBeVisible();
+    expect(screen.getByTestId("project-risk-queue").element()).toHaveAttribute(
+      "data-density",
+      "compact",
+    );
+    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
+      "按需要介入程度排序",
+    );
+  });
+
+  it("renders project creation with a compact workbench and tabular review", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjectCreate(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "新建项目工作台" })).toBeVisible();
+
+    expect(screen.getByTestId("project-create-page").element()).toHaveAttribute(
+      "data-variant",
+      "compact-control-surface",
+    );
+    expect(screen.getByTestId("project-create-review-table").element()).toBeVisible();
+    expect(screen.getByTestId("project-create-review-table").element().textContent).toContain(
+      "项目事实",
+    );
+  });
 });

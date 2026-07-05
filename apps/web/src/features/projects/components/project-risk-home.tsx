@@ -125,7 +125,7 @@ export function ProjectHomeRiskSummaryBar({
     return (
       <section
         aria-label="项目风险汇总（当前页）"
-        className="grid gap-3 rounded-v3-card border border-v3-line bg-v3-card p-4 shadow-v3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
+        className="grid gap-3 rounded-[14px] border border-v3-line bg-v3-card p-3 shadow-sm sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
       >
         <IconTile tone="info" size="sm">
           <ShieldAlert />
@@ -146,14 +146,14 @@ export function ProjectHomeRiskSummaryBar({
   return (
     <section
       aria-label="项目风险汇总（当前页）"
-      className="grid gap-3 rounded-v3-card border border-v3-line bg-v3-card p-4 shadow-v3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      className="grid gap-2 rounded-[14px] border border-v3-line bg-v3-card p-3 shadow-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
     >
       {items.map((item) => {
         const Icon = item.icon;
         return (
           <div
             key={item.label}
-            className="flex min-w-0 items-center gap-3 rounded-v3-inner bg-v3-card-soft/70 px-3 py-2.5"
+            className="flex min-w-0 items-center gap-2.5 rounded-[10px] bg-v3-card-soft/70 px-3 py-2"
           >
             <IconTile tone={item.tone} size="sm">
               <Icon />
@@ -163,7 +163,7 @@ export function ProjectHomeRiskSummaryBar({
                 {item.label}
                 <span className="sr-only">（当前页）</span>
               </div>
-              <div className="text-2xl font-extrabold tabular-nums text-v3-ink">
+              <div className="text-xl font-extrabold tabular-nums text-v3-ink">
                 {item.value}
               </div>
             </div>
@@ -194,13 +194,14 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
     <section
       aria-label="项目队列"
       className="min-w-0"
+      data-density="compact"
       data-testid="project-risk-queue"
     >
-      <WorkSurface className="min-w-0">
-        <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-start lg:justify-between">
+      <WorkSurface className="min-w-0 rounded-[14px] shadow-sm">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-v3-line bg-v3-card px-3 py-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h2 className="text-base font-extrabold text-v3-ink">项目队列</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <StatusPill tone={props.isFetching ? "info" : "mute"}>
                 {props.isFetching ? "正在识别风险" : `${props.total} 个项目`}
               </StatusPill>
@@ -209,12 +210,12 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
               </StatusPill>
             </div>
             <p className="mt-1 text-[11px] leading-5 text-v3-ink-3">
-              风险识别与排序基于当前页；风险筛选仅过滤当前页项目，分页仍对应完整项目列表。
+              按需要介入程度排序；风险识别基于当前页，筛选仅过滤当前页项目，分页仍对应完整项目列表。
             </p>
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-v3-line bg-v3-card-soft/45 px-3 py-3">
           <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
             <V3ToolbarSearch
               aria-label="搜索项目"
@@ -230,7 +231,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             />
             <select
               aria-label="项目状态筛选"
-              className="h-9 rounded-[10px] border border-v3-line bg-v3-card px-3 text-[13px] text-v3-ink outline-none transition-colors hover:bg-v3-card-soft focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/25"
+              className="h-8 rounded-[8px] border border-v3-line bg-v3-card px-2.5 text-[12px] text-v3-ink outline-none transition-colors hover:bg-v3-card-soft focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/25"
               onChange={(event) =>
                 props.onFiltersChange({
                   ...props.filters,
@@ -251,6 +252,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             {PROJECT_RISK_FILTERS.map((filter) => (
               <V3Chip
                 active={props.filters.risk === filter.value}
+                className="rounded-[8px] px-2.5 py-1.5 text-[12px]"
                 count={riskFilterCount(filter.value, riskCounts)}
                 key={filter.value}
                 onClick={() =>
@@ -267,7 +269,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           </div>
         </div>
 
-        <V3Table className="min-w-[76rem] table-fixed">
+        <V3Table className="min-w-[72rem] table-fixed text-[12px]">
           <colgroup>
             <col className="w-[21%]" data-column="project" />
             <col className="w-[22%]" data-column="task" />
@@ -279,13 +281,13 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           </colgroup>
           <thead>
             <tr>
-              <V3Th>项目</V3Th>
-              <V3Th>当前任务</V3Th>
-              <V3Th>当前节点/能力</V3Th>
-              <V3Th>当前处理者</V3Th>
-              <V3Th>执行状态</V3Th>
-              <V3Th>最后运行时间</V3Th>
-              <V3Th className="text-right">操作</V3Th>
+              <V3Th className="px-3 py-2">项目</V3Th>
+              <V3Th className="px-3 py-2">当前任务</V3Th>
+              <V3Th className="px-3 py-2">当前节点/能力</V3Th>
+              <V3Th className="px-3 py-2">当前处理者</V3Th>
+              <V3Th className="px-3 py-2">执行状态</V3Th>
+              <V3Th className="px-3 py-2">最后运行时间</V3Th>
+              <V3Th className="px-3 py-2 text-right">操作</V3Th>
             </tr>
           </thead>
           <tbody>
@@ -299,7 +301,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             ))}
             {sortedProjects.length === 0 ? (
               <tr>
-                <V3Td colSpan={7}>
+                <V3Td className="px-3 py-3" colSpan={7}>
                   <V3EmptyState
                     description="调整风险筛选、搜索关键词或项目状态后重试。"
                     icon={<FolderKanban />}
@@ -341,9 +343,17 @@ function ProjectRiskQueueRow({
   const handler = summary.currentHandler?.label;
 
   return (
-    <V3Tr>
-      <V3Td className="whitespace-normal">
-        <div className="flex min-w-0 items-start gap-3">
+    <V3Tr
+      className={
+        summary.level === "danger"
+          ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]"
+          : summary.level === "warn"
+            ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]"
+            : undefined
+      }
+    >
+      <V3Td className="whitespace-normal px-3 py-2">
+        <div className="flex min-w-0 items-start gap-2.5">
           <IconTile tone={projectStatusTone(project.status)} size="sm">
             <FolderKanban />
           </IconTile>
@@ -363,7 +373,7 @@ function ProjectRiskQueueRow({
                 {project.human_owner_user_id || "未设置"}
               </span>
             </span>
-            <span className="mt-2 block">
+            <span className="mt-1.5 block">
               <StatusPill tone={projectRiskLevelTone(summary.level)}>
                 {projectRiskLevelLabel(summary)}
               </StatusPill>
@@ -371,10 +381,10 @@ function ProjectRiskQueueRow({
           </span>
         </div>
       </V3Td>
-      <V3Td className="whitespace-normal">
-        <div className="flex min-w-0 flex-col gap-1">
+      <V3Td className="whitespace-normal px-3 py-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
           <span
-            className="max-h-10 line-clamp-2 break-words text-sm font-bold leading-5 text-v3-ink"
+            className="max-h-10 line-clamp-2 break-words text-[13px] font-bold leading-5 text-v3-ink"
             data-testid="project-queue-current-task"
           >
             {taskTitle ?? "暂无任务发起记录"}
@@ -384,8 +394,8 @@ function ProjectRiskQueueRow({
           </span>
         </div>
       </V3Td>
-      <V3Td className="whitespace-normal">
-        <div className="flex min-w-0 flex-col gap-1">
+      <V3Td className="whitespace-normal px-3 py-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
           <span className="line-clamp-2 break-words text-[13px] font-semibold leading-5 text-v3-ink">
             {nodeTitle ?? "暂无执行节点"}
           </span>
@@ -394,7 +404,7 @@ function ProjectRiskQueueRow({
           </span>
         </div>
       </V3Td>
-      <V3Td className="whitespace-normal">
+      <V3Td className="whitespace-normal px-3 py-2">
         <span
           className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
           data-testid="project-queue-current-handler"
@@ -402,7 +412,7 @@ function ProjectRiskQueueRow({
           {handler ?? "待调度"}
         </span>
       </V3Td>
-      <V3Td className="whitespace-normal">
+      <V3Td className="whitespace-normal px-3 py-2">
         <div className="flex min-w-0 flex-col items-start gap-1">
           <StatusPill
             tone={workflow ? workflowStatusTone(workflow.status) : projectStatusTone(project.status)}
@@ -416,12 +426,12 @@ function ProjectRiskQueueRow({
           ) : null}
         </div>
       </V3Td>
-      <V3Td className="whitespace-nowrap">
+      <V3Td className="whitespace-nowrap px-3 py-2">
         <span className="block min-w-0 max-w-full truncate font-mono text-[12px] text-v3-ink-2">
           {workflow ? formatRunTime(workflow.updated_at) : "暂无运行记录"}
         </span>
       </V3Td>
-      <V3Td className="whitespace-nowrap text-right">
+      <V3Td className="whitespace-nowrap px-3 py-2 text-right">
         <div className="flex min-w-0 justify-end gap-2">
           {workflow ? (
             <V3Button asChild className="max-w-full" size="sm" variant="outline">

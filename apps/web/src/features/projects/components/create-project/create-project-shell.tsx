@@ -128,32 +128,36 @@ export function CreateProjectShell({
     <div
       aria-label={showHeading ? undefined : "新建项目"}
       aria-labelledby={showHeading ? "project-create-title" : undefined}
-      className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-v3-card bg-v3-bg shadow-v3"
+      className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-[16px] border border-v3-line bg-v3-bg shadow-sm"
+      data-variant="compact-control-surface"
       data-testid="project-create-page"
     >
       <div className="flex min-h-[calc(100svh-7rem)] flex-col">
-        <header className="border-b border-v3-line bg-v3-card/90 px-4 py-5 backdrop-blur lg:px-8">
-          <div className="flex items-start justify-between gap-4">
-            {showHeading ? (
+        <header className="border-b border-v3-line bg-v3-card px-4 py-4 lg:px-6">
+          {showHeading ? (
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-v3-brand">项目管理 / 新建项目</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
-                <p className="mt-2 text-sm text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与策略预设。</p>
+                <p className="text-[12px] font-bold text-v3-brand">项目管理 / 新建项目</p>
+                <h2 className="mt-1 text-xl font-extrabold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
+                <p className="mt-1 text-[13px] text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与策略预设。</p>
               </div>
-            ) : null}
-            <Button aria-label="关闭新建项目" className="size-10 rounded-xl" onClick={onCancel} size="icon" type="button" variant="ghost">
-              <X className="size-5" />
-            </Button>
-          </div>
-          <nav aria-label="新建项目步骤" className="mt-8 flex items-center gap-3">
+              <Button aria-label="关闭新建项目" className="size-9 rounded-[10px]" onClick={onCancel} size="icon" type="button" variant="ghost">
+                <X className="size-5" />
+              </Button>
+            </div>
+          ) : null}
+          <nav
+            aria-label="新建项目步骤"
+            className={cn("flex flex-wrap items-center gap-2", showHeading && "mt-4")}
+          >
             {projectCreateSteps.map((step, index) => {
               const active = step.id === activeStep;
               const done = index < activeIndex;
               return (
                 <button
                   className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition",
-                    active ? "bg-v3-brand-soft text-v3-brand" : "text-v3-ink-2 hover:bg-v3-card-soft",
+                    "flex min-w-0 items-center gap-2 rounded-[9px] border px-2.5 py-1.5 text-[12px] font-bold transition",
+                    active ? "border-v3-brand/30 bg-v3-brand-soft text-v3-brand" : "border-v3-line bg-v3-card text-v3-ink-2 hover:bg-v3-card-soft",
                   )}
                   key={step.id}
                   onClick={() => setActiveStep(step.id)}
@@ -161,7 +165,7 @@ export function CreateProjectShell({
                 >
                   <span
                     className={cn(
-                      "grid size-7 shrink-0 place-items-center rounded-full border text-xs",
+                      "grid size-6 shrink-0 place-items-center rounded-[7px] border text-[11px]",
                       active && "border-v3-brand bg-v3-brand text-white",
                       done && "border-v3-ok bg-v3-ok text-white",
                       !active && !done && "border-v3-line-strong bg-v3-card text-v3-ink-2",
@@ -176,10 +180,16 @@ export function CreateProjectShell({
           </nav>
         </header>
 
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8 lg:py-6">
-          <section className="min-w-0 rounded-v3-card border border-v3-line bg-v3-card p-8 shadow-v3">
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto px-4 py-4 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-6">
+          <section className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-5 shadow-sm">
+            <div className="mb-4 border-b border-v3-line pb-3">
+              <p className="text-base font-extrabold text-v3-ink">新建项目工作台</p>
+              <p className="mt-1 text-[12px] leading-5 text-v3-ink-3">
+                按步骤补齐项目事实、责任人、来源团队和治理策略。
+              </p>
+            </div>
             {authorizationError ? (
-              <div className="mb-5 rounded-xl border border-v3-danger/20 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
+              <div className="mb-4 rounded-[10px] border border-v3-danger/20 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
                 {currentUserError ? "加载当前用户失败" : "加载可选团队失败"}
               </div>
             ) : null}
@@ -204,7 +214,7 @@ export function CreateProjectShell({
             ) : activeStep === "policies" ? (
               <ProjectPolicyStep draft={draft} onChange={setDraft} />
             ) : (
-              <div className="rounded-xl border border-dashed border-v3-line-strong bg-v3-card-soft p-8 text-sm text-v3-ink-2">
+              <div className="rounded-[10px] border border-dashed border-v3-line-strong bg-v3-card-soft p-6 text-sm text-v3-ink-2">
                 {projectCreateSteps.find((step) => step.id === activeStep)?.label} 步骤将在后续任务中接入。
               </div>
             )}
@@ -213,7 +223,7 @@ export function CreateProjectShell({
           <ProjectReviewPanel currentUser={currentUser} draft={draft} selectableTeams={selectableTeams} />
         </main>
 
-        <footer className="flex flex-col gap-3 border-t border-v3-line bg-v3-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-8">
+        <footer className="flex flex-col gap-3 border-t border-v3-line bg-v3-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-6">
           <Button onClick={onCancel} type="button" variant="ghost">
             返回项目列表
           </Button>
