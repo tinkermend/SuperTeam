@@ -245,7 +245,7 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
     await expect.element(screen.getByText("过程记录")).toBeVisible();
-    await expect.element(screen.getByText("证据与上下文")).toBeVisible();
+    await expect.element(screen.getByText("关联引用")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "同意" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "驳回" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "要求补证" })).toBeVisible();
@@ -270,14 +270,14 @@ describe("InboxView", () => {
     await expect.element(screen.getByRole("button", { name: "同意" })).toBeVisible();
   });
 
-  it("uses a fixed-width inbox table so long text wraps within columns", async () => {
+  it("renders inbox items in a compact list within a work surface", async () => {
     const screen = await renderInboxView();
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
-    const table = document.body.querySelector('[data-slot="v3-table"]');
-    expect(table).not.toBeNull();
-    expect(table?.className).toContain("table-fixed");
+    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
+    const itemRows = document.body.querySelectorAll('[role="button"][aria-label^="打开事项"]');
+    expect(itemRows.length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders the inbox with v3 Soft-Flat containers", async () => {
@@ -288,7 +288,6 @@ describe("InboxView", () => {
     expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
     expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-tabs"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
   });

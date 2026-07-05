@@ -1,12 +1,8 @@
-import { AlertTriangle, ArrowUpRight, Clock, FileText } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Clock, FileText, Lightbulb } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
   IconTile,
   StatusPill,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
@@ -43,126 +39,120 @@ const sourceTypeLabel: Record<string, string> = {
   project_decision_request: "项目决策请求",
 };
 
+/**
+ * 紧凑列表：每行带风险 accent bar + 图标 + 标题 + 风险pill + 摘要 + 来源·节点 + 时间。
+ * 装入 WorkSurface 软壳，保持 v3 脆数据面容器语义。
+ */
 export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemListProps) {
   return (
-    <WorkSurface>
-      <div className="flex flex-col gap-1 border-b border-v3-line px-5 py-4">
-        <h2 className="text-lg font-extrabold text-v3-ink">待处理事项</h2>
-        <p className="text-[13px] text-v3-ink-2">逐项查看需要你同意、审核、确认或验收的事项。</p>
+    <WorkSurface className="flex flex-col">
+      <div className="flex items-center justify-between border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
+        <span className="text-sm font-bold text-v3-ink">待处理事项</span>
+        <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按风险排序</span>
       </div>
-      <V3Table className="table-fixed">
-        <colgroup>
-          <col className="w-[35%]" />
-          <col className="w-[10%]" />
-          <col className="w-[27%]" />
-          <col className="w-[16%]" />
-          <col className="w-[12%]" />
-        </colgroup>
-        <thead>
-          <tr>
-            <V3Th className="whitespace-normal">事项</V3Th>
-            <V3Th className="whitespace-normal">类型</V3Th>
-            <V3Th className="whitespace-normal">来源 / 关联对象</V3Th>
-            <V3Th className="whitespace-normal">当前节点</V3Th>
-            <V3Th className="whitespace-normal">更新时间</V3Th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const contextLabel = formatContext(item);
-            const currentNode = formatCurrentNode(item);
-            const riskAccent =
-              item.risk_level === "blocked" || item.risk_level === "high"
-                ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]"
-                : item.risk_level === "medium"
-                  ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]"
-                  : undefined;
-            const isSelected = item.id === selectedItemId;
+      <div className="max-h-[680px] overflow-y-auto">
+        {items.map((item) => {
+          const isSelected = item.id === selectedItemId;
+          const isHighRisk = item.risk_level === "blocked" || item.risk_level === "high";
+          const isMediumRisk = item.risk_level === "medium";
+          const accentShadow = isSelected
+            ? "shadow-[inset_3px_0_0_var(--v3-brand)]"
+            : isHighRisk
+              ? "shadow-[inset_3px_0_0_var(--v3-danger)]"
+              : isMediumRisk
+                ? "shadow-[inset_3px_0_0_var(--v3-warn)]"
+                : "shadow-[inset_3px_0_0_var(--v3-line-strong)]";
+          const iconTone: V3Tone = isHighRisk
+            ? "danger"
+            : item.item_type === "project_decision"
+              ? "artifact"
+              : "info";
+          const icon = isHighRisk ? (
+            <AlertTriangle />
+          ) : item.item_type === "project_decision" ? (
+            <Lightbulb />
+          ) : (
+            <FileText />
+          );
 
-            return (
-              <V3Tr
-                aria-label={`打开事项：${item.title}`}
-                aria-selected={isSelected}
-                className={cn(
-                  "group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-v3-brand/60",
-                  riskAccent,
-                  isSelected && "[&>td]:bg-v3-brand-soft/60 [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]",
-                )}
-                key={item.id}
-                onClick={() => onSelect(item)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelect(item);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-              >
-                <V3Td className="min-w-0">
-                  <div className="flex min-w-0 gap-3">
-                    <IconTile className="hidden shrink-0 2xl:grid" tone={item.risk_level === "high" || item.risk_level === "blocked" ? "danger" : "info"} size="sm">
-                      {item.risk_level === "high" || item.risk_level === "blocked" ? <AlertTriangle /> : <FileText />}
-                    </IconTile>
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="min-w-0 text-left text-[15px] font-bold text-v3-ink group-hover:text-v3-brand">
-                          {item.title}
-                        </span>
-                        {item.risk_level ? (
-                          <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
-                            {riskLabel[item.risk_level] ?? item.risk_level}
-                          </StatusPill>
-                        ) : null}
-                      </div>
-                      {item.summary ? (
-                        <p className="mt-1 line-clamp-2 max-w-full break-words text-[13px] leading-5 text-v3-ink-2">
-                          {item.summary}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </V3Td>
-                <V3Td className="min-w-0">
-                  <StatusPill className="max-w-full px-2 text-[11px]" showDot={false} tone={item.item_type === "approval" ? "info" : "artifact"}>
+          return (
+            <div
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`打开事项：${item.title}`}
+              aria-selected={isSelected}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 border-b border-v3-line px-4 py-3 transition-colors",
+                "hover:bg-v3-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-v3-brand/60",
+                accentShadow,
+                isSelected && "bg-v3-brand-soft",
+              )}
+              onClick={() => onSelect(item)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(item);
+                }
+              }}
+            >
+              <IconTile tone={iconTone} size="sm" className="mt-0.5">
+                {icon}
+              </IconTile>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-left text-sm font-bold text-v3-ink",
+                      isSelected && "text-v3-brand-deep",
+                    )}
+                  >
+                    {item.title}
+                  </span>
+                  {item.risk_level ? (
+                    <StatusPill
+                      tone={riskTone[item.risk_level] ?? "mute"}
+                      showDot={false}
+                      className="px-2 py-0.5 text-[11px]"
+                    >
+                      {riskLabel[item.risk_level] ?? item.risk_level}
+                    </StatusPill>
+                  ) : null}
+                </div>
+                {item.summary ? (
+                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-v3-ink-2">
+                    {item.summary}
+                  </p>
+                ) : null}
+                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-v3-ink-3">
+                  <StatusPill
+                    tone={item.item_type === "approval" ? "info" : "artifact"}
+                    showDot={false}
+                    className="px-2 py-0.5 text-[11px]"
+                  >
                     {formatItemType(item)}
                   </StatusPill>
-                </V3Td>
-                <V3Td className="min-w-0">
-                  <div className="flex min-w-0 flex-col gap-1 text-[13px] text-v3-ink-2">
-                    <span className="line-clamp-2 break-words font-semibold text-v3-ink">
-                      {contextLabel ?? formatSourceType(item)}
-                    </span>
-                    {item.source_task_id ? (
-                      <span className="line-clamp-2 break-all font-mono text-xs text-v3-ink-3">任务 {item.source_task_id}</span>
-                    ) : null}
-                    <Link
-                      className="inline-flex w-fit items-center gap-1 font-semibold text-v3-brand-deep hover:text-v3-brand"
-                      onClick={(event) => event.stopPropagation()}
-                      to={resolveInboxHref(item)}
-                    >
-                      查看上下文
-                      <ArrowUpRight aria-hidden className="size-3.5" />
-                    </Link>
-                  </div>
-                </V3Td>
-                <V3Td className="min-w-0">
-                  <div className="flex min-w-0 flex-col gap-1 text-[13px] text-v3-ink-2">
-                    <span className="line-clamp-2 break-words font-semibold text-v3-ink">{currentNode}</span>
-                    <span className="line-clamp-2 break-words text-xs text-v3-ink-3">{formatSourceType(item)}</span>
-                  </div>
-                </V3Td>
-                <V3Td className="min-w-0 text-v3-ink-2 tabular-nums">
-                  <span className="inline-flex min-w-0 items-center gap-1 whitespace-normal break-words">
-                    <Clock aria-hidden className="hidden size-3.5 shrink-0 2xl:block" />
-                    {formatDateTime(item.last_activity_at)}
+                  <span className="min-w-0 truncate font-mono text-[11px]">
+                    {formatContext(item) ?? formatSourceType(item)} · {formatCurrentNode(item)}
                   </span>
-                </V3Td>
-              </V3Tr>
-            );
-          })}
-        </tbody>
-      </V3Table>
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <Clock aria-hidden className="size-3" />
+                    {formatRelativeTime(item.last_activity_at)}
+                  </span>
+                  <Link
+                    className="inline-flex w-fit items-center gap-1 font-semibold text-v3-brand-deep hover:text-v3-brand"
+                    onClick={(event) => event.stopPropagation()}
+                    to={resolveInboxHref(item)}
+                  >
+                    查看上下文
+                    <ArrowUpRight aria-hidden className="size-3" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </WorkSurface>
   );
 }
@@ -257,4 +247,42 @@ export function formatDateTime(value: string) {
     minute: "2-digit",
     month: "2-digit",
   }).format(date);
+}
+
+/** 相对时间格式化："刚刚" / "X 分钟前" / "X 小时前" / "X 天前"。 */
+export function formatRelativeTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const diff = Date.now() - date.getTime();
+  if (diff < 0) {
+    return formatDateTime(value);
+  }
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
+
+/** 已等待时长（毫秒）→ "X 时 Y 分" 格式，负值钳为 0。 */
+export function formatElapsedDuration(ms: number): string {
+  const clamped = Math.max(0, ms);
+  const totalMinutes = Math.floor(clamped / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours} 时 ${minutes} 分`;
+  return `${minutes} 分`;
+}
+
+/** 已等待时长（毫秒）→ 指标卡短格式 "X.Yh" / "Xm"，负值钳为 0。 */
+export function formatWaitShort(ms: number): string {
+  const clamped = Math.max(0, ms);
+  const totalHours = clamped / 3600000;
+  if (totalHours >= 1) return `${totalHours.toFixed(1)}h`;
+  const totalMinutes = Math.floor(clamped / 60000);
+  return `${totalMinutes}m`;
 }

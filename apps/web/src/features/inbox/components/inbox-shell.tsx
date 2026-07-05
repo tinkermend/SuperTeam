@@ -5,14 +5,17 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Clock,
-  FileQuestion,
   FileText,
+  FolderKanban,
   Inbox,
+  Layers,
   ListChecks,
   RotateCcw,
   Route as RouteIcon,
   ShieldCheck,
-  XCircle,
+  ShieldQuestion,
+  Sparkles,
+  Zap,
 } from "lucide-react";
 import {
   SoftCard,
@@ -49,8 +52,11 @@ import {
   formatContext,
   formatCurrentNode,
   formatDateTime,
+  formatElapsedDuration,
   formatItemType,
+  formatRelativeTime,
   formatSourceType,
+  formatWaitShort,
   InboxItemList,
   resolveInboxHref,
   riskLabel,
@@ -112,6 +118,17 @@ export function InboxShell({
     return data?.items.find((item) => item.id === selectedItemId) ?? null;
   }, [data?.items, selectedItemId]);
 
+  // 数据真实性修正 #1：第 4 指标卡「等待最久」= 前端基于 items[].created_at 取 max(now - created_at)
+  const maxWaitMs = useMemo(() => {
+    if (!data?.items.length) return 0;
+    const now = Date.now();
+    return data.items.reduce((max, item) => {
+      const created = new Date(item.created_at).getTime();
+      if (Number.isNaN(created)) return max;
+      return Math.max(max, now - created);
+    }, 0);
+  }, [data?.items]);
+
   useEffect(() => {
     if (selectedItemId && data && !data.items.some((item) => item.id === selectedItemId)) {
       setSelectedItemId(null);
@@ -122,13 +139,13 @@ export function InboxShell({
     <>
       <ShellPageHeader
         title="收件箱"
-        subtitle="需要你处理、确认或继续追踪的事项。"
+        subtitle="需要你处理、确认或继续追踪的事项。高风险与阻断项优先处理。"
         icon={<Inbox />}
         iconTone="brand"
       />
       <Main className="space-y-5 text-v3-ink">
         {data ? (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <V3MetricCard
               icon={<Inbox />}
               iconTone="info"
@@ -149,6 +166,13 @@ export function InboxShell({
               label="阻断"
               value={data.summary.blocked_count}
               meta="等待人工判断"
+            />
+            <V3MetricCard
+              icon={<Clock />}
+              iconTone="mute"
+              label="等待最久"
+              value={maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—"}
+              meta="基于 created_at 计算"
             />
           </div>
         ) : null}
@@ -209,14 +233,21 @@ export function InboxShell({
           }
         >
           {data && hasItems ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem] 2xl:grid-cols-[minmax(0,1fr)_26rem]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_290px]">
+              {/* 左栏：紧凑列表 */}
               <InboxItemList
                 items={data.items}
                 onSelect={(item) => setSelectedItemId(item.id)}
                 selectedItemId={selectedItemId}
               />
-              <InboxDecisionPanel
+              {/* 中栏：详情 */}
+              <InboxDetailPanel
                 data={data}
+                item={selectedItem}
+                view={view}
+              />
+              {/* 右栏：操作面板 */}
+              <InboxActionPanel
                 item={selectedItem}
                 onAction={onAction}
                 view={view}
@@ -229,60 +260,46 @@ export function InboxShell({
   );
 }
 
-type InboxDecisionPanelProps = {
+// ---------------------------------------------------------------------------
+// 中栏：详情面板
+// ---------------------------------------------------------------------------
+
+type InboxDetailPanelProps = {
   data: InboxListResponse;
   item: InboxItem | null;
-  onAction: (item: InboxItem, action: InboxAction) => void;
   view: InboxViewMode;
 };
 
-const actionToneVariant: Record<string, "primary" | "outline" | "danger"> = {
-  danger: "danger",
-  destructive: "danger",
-  positive: "primary",
-  primary: "primary",
-  success: "outline",
-  warning: "outline",
-};
-
-const actionToneClass: Record<string, string> = {
-  primary: "",
-  positive: "",
-  success: "border-v3-ok text-v3-ok hover:bg-v3-ok-soft",
-  warning: "border-v3-warn text-v3-warn hover:bg-v3-warn-soft",
-};
-
-function InboxDecisionPanel({ data, item, onAction, view }: InboxDecisionPanelProps) {
+function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
   if (!item) {
     return <InboxEmptyDetailPanel data={data} />;
   }
 
-  const actions = Array.isArray(item.actions) ? item.actions : [];
-  const detailHref = resolveInboxHref(item);
-
   return (
     <SoftCard className="overflow-hidden">
+      {/* 详情头：KI 编号 + 标题 + pills */}
       <div className="border-b border-v3-line px-5 py-4">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-extrabold text-v3-ink">{item.title}</h2>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <StatusPill tone={item.item_type === "approval" ? "info" : "artifact"}>
-                {formatItemType(item)}
-              </StatusPill>
-              {item.risk_level ? (
-                <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
-                  {riskLabel[item.risk_level] ?? item.risk_level}
-                </StatusPill>
-              ) : null}
-              <StatusPill tone={view === "mine" ? "warn" : "mute"}>
-                {view === "mine" ? "待我处理" : "团队只读"}
-              </StatusPill>
-            </div>
-          </div>
+        {/* 数据真实性修正 #2：KI 编号 = item_type + source_id 前 8 位 */}
+        <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-wider text-v3-brand-deep">
+          {formatKiNumber(item)}
+        </p>
+        <h2 className="text-lg font-extrabold leading-tight text-v3-ink">{item.title}</h2>
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <StatusPill tone={item.item_type === "approval" ? "info" : "artifact"}>
+            {formatItemType(item)}
+          </StatusPill>
+          {item.risk_level ? (
+            <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
+              {riskLabel[item.risk_level] ?? item.risk_level}
+            </StatusPill>
+          ) : null}
+          <StatusPill tone={view === "mine" ? "warn" : "mute"}>
+            {view === "mine" ? "待我处理" : "团队只读"}
+          </StatusPill>
         </div>
       </div>
 
+      {/* 为什么需要你处理 */}
       <section className="border-b border-v3-line px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-v3-ink">为什么需要你处理</h3>
         <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px]">
@@ -308,83 +325,48 @@ function InboxDecisionPanel({ data, item, onAction, view }: InboxDecisionPanelPr
         ) : null}
       </section>
 
-      <section className="border-b border-v3-line bg-v3-card-soft px-5 py-4">
-        {view === "mine" && actions.length > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-            {actions.map((action) => (
-              <V3Button
-                className={cn(actionToneClass[action.tone])}
-                key={action.key}
-                onClick={() => onAction(item, action)}
-                type="button"
-                variant={actionToneVariant[action.tone] ?? "outline"}
-              >
-                {formatInboxActionLabel(action)}
-              </V3Button>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm font-semibold text-v3-ink-2">
-            {view === "mine" ? "该事项暂无可执行动作。" : "团队视图仅用于查看上下文。"}
-          </p>
-        )}
-      </section>
-
-      <section className="grid gap-2 border-b border-v3-line px-5 py-4">
-        <V3Button asChild variant="outline" className="justify-start">
-          <Link to={detailHref}>
-            <ArrowUpRight className="size-4" />
-            查看完整详情
-          </Link>
-        </V3Button>
-        <V3Button asChild variant="outline" className="justify-start">
-          <Link to={resolveWorkflowInstanceHref(item)}>
-            <RouteIcon className="size-4" />
-            进入流程实例
-          </Link>
-        </V3Button>
-        <V3Button asChild variant="outline" className="justify-start">
-          <Link to={resolveWorkflowTemplateHref(item)}>
-            <ListChecks className="size-4" />
-            查看流程编排
-          </Link>
-        </V3Button>
-      </section>
-
+      {/* 过程记录 — 数据真实性修正 #3：仅 created_at / last_activity_at 两真实时间点 + 当前状态 */}
       <section className="border-b border-v3-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">过程记录</h3>
-        <div className="mt-3 space-y-3">
-          {buildProcessRecords(item).map((record) => (
-            <div className="flex gap-3" key={record.title}>
-              <span
-                className={cn(
-                  "mt-0.5 grid size-5 shrink-0 place-items-center rounded-full",
-                  record.current ? "bg-v3-brand-soft text-v3-brand" : "bg-v3-ok-soft text-v3-ok",
-                )}
-              >
-                {record.current ? <Clock className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
-              </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-bold text-v3-ink">{record.title}</p>
-                <p className="text-xs text-v3-ink-3">{record.description}</p>
-              </div>
-            </div>
-          ))}
+        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-v3-ink">
+          过程记录
+          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">2 时间点 · 进行中</span>
+        </h3>
+        <div className="mt-3 flex flex-col gap-3.5">
+          <TimelineItem
+            dot={<CheckCircle2 className="size-3" />}
+            dotClassName="bg-v3-ok-soft text-v3-ok"
+            title="事项已创建"
+            description="事项进入收件箱，等待人工处理。"
+            timestamp={`${formatDateTime(item.created_at)} · created_at`}
+          />
+          <TimelineItem
+            dot={<CheckCircle2 className="size-3" />}
+            dotClassName="bg-v3-ok-soft text-v3-ok"
+            title="最近活动"
+            description="来源对象更新了上下文快照。"
+            timestamp={`${formatRelativeTime(item.last_activity_at)} · last_activity_at`}
+          />
+          <TimelineItem
+            dot={<Clock className="size-3" />}
+            dotClassName="bg-v3-brand-soft text-v3-brand"
+            title="等待人类决策"
+            description="选择同意、驳回或要求补证后将推动流程进入下一节点。"
+            timestamp="进行中"
+          />
         </div>
       </section>
 
+      {/* 关联引用 — 数据真实性修正 #4：source_*_id 跳转入口，不编造 artifacts */}
       <section className="px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">证据与上下文</h3>
+        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-v3-ink">
+          关联引用
+          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">
+            {countRelatedReferences(item)} 项 · 跳转
+          </span>
+        </h3>
         <div className="mt-3 grid gap-2">
-          {buildEvidenceItems(item).map((evidence) => (
-            <div
-              className="flex min-w-0 items-center gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-[13px]"
-              key={evidence.label}
-            >
-              <FileText className="size-4 shrink-0 text-v3-ink-3" />
-              <span className="min-w-0 flex-1 truncate font-semibold text-v3-ink">{evidence.label}</span>
-              <span className="shrink-0 text-xs text-v3-ink-3">{evidence.meta}</span>
-            </div>
+          {buildRelatedReferences(item).map((ref) => (
+            <RelatedReferenceRow key={ref.key} reference={ref} />
           ))}
         </div>
       </section>
@@ -392,13 +374,320 @@ function InboxDecisionPanel({ data, item, onAction, view }: InboxDecisionPanelPr
   );
 }
 
+function TimelineItem({
+  dot,
+  dotClassName,
+  title,
+  description,
+  timestamp,
+}: {
+  dot: React.ReactNode;
+  dotClassName: string;
+  title: string;
+  description: string;
+  timestamp: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <span className={cn("mt-0.5 grid size-6 shrink-0 place-items-center rounded-full", dotClassName)}>
+        {dot}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[13px] font-bold text-v3-ink">{title}</p>
+        <p className="mt-0.5 text-xs leading-5 text-v3-ink-3">{description}</p>
+        <p className="mt-0.5 font-mono text-[11px] text-v3-ink-3">{timestamp}</p>
+      </div>
+    </div>
+  );
+}
+
+type RelatedReference = {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+  meta: string;
+  href?: string;
+};
+
+function buildRelatedReferences(item: InboxItem): RelatedReference[] {
+  const refs: RelatedReference[] = [];
+
+  if (item.source_project_id) {
+    refs.push({
+      key: "project",
+      icon: <FolderKanban className="size-4 shrink-0 text-v3-ink-3" />,
+      label: `关联项目 · ${formatContext(item) ?? item.source_project_id}`,
+      meta: "source_project_id ↗",
+      href: `/projects/${encodeURIComponent(item.source_project_id)}`,
+    });
+  }
+
+  if (item.source_task_id) {
+    refs.push({
+      key: "task",
+      icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
+      label: `关联任务 ${item.source_task_id}`,
+      meta: "source_task_id ↗",
+      href: resolveInboxHref(item),
+    });
+  }
+
+  if (item.source_approval_request_id) {
+    refs.push({
+      key: "approval",
+      icon: <ShieldQuestion className="size-4 shrink-0 text-v3-ink-3" />,
+      label: "关联审批请求",
+      meta: "source_approval_request_id ↗",
+      href: resolveInboxHref(item),
+    });
+  }
+
+  refs.push({
+    key: "audit",
+    icon: <ShieldCheck className="size-4 shrink-0 text-v3-ink-3" />,
+    label: "操作将写入审计日志",
+    meta: "审计",
+  });
+
+  return refs;
+}
+
+function countRelatedReferences(item: InboxItem): number {
+  let count = 0;
+  if (item.source_project_id) count++;
+  if (item.source_task_id) count++;
+  if (item.source_approval_request_id) count++;
+  count++; // 审计日志
+  return count;
+}
+
+function RelatedReferenceRow({ reference }: { reference: RelatedReference }) {
+  const content = (
+    <>
+      {reference.icon}
+      <span className="min-w-0 flex-1 truncate font-semibold text-v3-ink">{reference.label}</span>
+      <span className="shrink-0 font-mono text-[11px] text-v3-ink-3">{reference.meta}</span>
+    </>
+  );
+
+  if (reference.href) {
+    return (
+      <Link
+        className="flex min-w-0 items-center gap-2.5 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-[13px] transition-colors hover:border-v3-brand hover:bg-v3-card"
+        to={reference.href}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-[13px]">
+      {content}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 右栏：操作面板
+// ---------------------------------------------------------------------------
+
+type InboxActionPanelProps = {
+  item: InboxItem | null;
+  onAction: (item: InboxItem, action: InboxAction) => void;
+  view: InboxViewMode;
+};
+
+const actionToneVariant: Record<string, "primary" | "outline" | "danger"> = {
+  danger: "danger",
+  destructive: "danger",
+  positive: "primary",
+  primary: "primary",
+  success: "outline",
+  warning: "outline",
+};
+
+const actionToneClass: Record<string, string> = {
+  primary: "",
+  positive: "",
+  success: "border-v3-ok text-v3-ok hover:bg-v3-ok-soft",
+  warning: "border-v3-warn text-v3-warn hover:bg-v3-warn-soft",
+};
+
+function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
+  if (!item) {
+    return (
+      <div className="flex flex-col gap-3 xl:sticky xl:top-[78px]">
+        <SoftCard className="px-5 py-8 text-center">
+          <Sparkles aria-hidden className="mx-auto mb-3 size-8 text-v3-ink-3" />
+          <p className="text-sm font-bold text-v3-ink">选择事项后可操作</p>
+          <p className="mt-1.5 text-xs text-v3-ink-3">
+            从左侧列表选择一条事项，这里会展示已等待时长、可执行动作和快速跳转。
+          </p>
+        </SoftCard>
+      </div>
+    );
+  }
+
+  const actions = Array.isArray(item.actions) ? item.actions : [];
+  const detailHref = resolveInboxHref(item);
+  const waitMs = computeWaitMs(item);
+
+  return (
+    <div className="flex flex-col gap-3 xl:sticky xl:top-[78px]">
+      {/* 已等待时长 — 数据真实性修正 #5：前端基于 created_at 计算，非 SLA 超时倒计时 */}
+      <SoftCard className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+          <Clock aria-hidden className="size-3.5" />
+          已等待时长
+        </div>
+        <div className="px-4 py-3.5">
+          <WaitTimeRing waitMs={waitMs} riskLevel={item.risk_level} />
+        </div>
+      </SoftCard>
+
+      {/* 可执行动作 */}
+      <SoftCard className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+          <Zap aria-hidden className="size-3.5" />
+          可执行动作
+        </div>
+        <div className="px-4 py-3.5">
+          {view === "mine" && actions.length > 0 ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {actions.map((action) => (
+                  <V3Button
+                    className={cn("justify-center", actionToneClass[action.tone])}
+                    key={action.key}
+                    onClick={() => onAction(item, action)}
+                    type="button"
+                    variant={actionToneVariant[action.tone] ?? "outline"}
+                    size="sm"
+                  >
+                    {formatInboxActionLabel(action)}
+                  </V3Button>
+                ))}
+              </div>
+              <p className="mt-2.5 text-[11px] leading-5 text-v3-ink-3">
+                动作将写入审计日志，并推动流程进入下一节点。
+              </p>
+            </>
+          ) : (
+            <p className="text-[13px] font-semibold text-v3-ink-2">
+              {view === "mine" ? "该事项暂无可执行动作。" : "团队视图仅用于查看上下文。"}
+            </p>
+          )}
+        </div>
+      </SoftCard>
+
+      {/* 快速跳转 */}
+      <SoftCard className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+          <Layers aria-hidden className="size-3.5" />
+          快速跳转
+        </div>
+        <div className="flex flex-col gap-0.5 px-2 py-1.5">
+          <QuickLink to={detailHref} icon={<ArrowUpRight className="size-3.5" />}>
+            查看完整详情
+          </QuickLink>
+          <QuickLink to={resolveWorkflowInstanceHref(item)} icon={<RouteIcon className="size-3.5" />}>
+            进入流程实例
+          </QuickLink>
+          <QuickLink to={resolveWorkflowTemplateHref(item)} icon={<ListChecks className="size-3.5" />}>
+            查看流程编排
+          </QuickLink>
+          {item.source_task_id ? (
+            <QuickLink to={detailHref} icon={<FileText className="size-3.5" />}>
+              查看关联任务
+            </QuickLink>
+          ) : null}
+        </div>
+      </SoftCard>
+    </div>
+  );
+}
+
+function WaitTimeRing({ waitMs, riskLevel }: { waitMs: number; riskLevel?: string }) {
+  const clamped = Math.max(0, waitMs);
+  const totalHours = clamped / 3600000;
+  const ringPercentage = Math.min(100, Math.max(0, (totalHours / 24) * 100));
+  const isUrgent = riskLevel === "blocked" || riskLevel === "high";
+  const ringColor = isUrgent ? "var(--v3-danger)" : "var(--v3-warn)";
+  const ringSoft = isUrgent ? "var(--v3-danger-soft)" : "var(--v3-warn-soft)";
+  const shortLabel = totalHours >= 1 ? `${Math.floor(totalHours)}h` : `${Math.floor(clamped / 60000)}m`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-v3-inner border px-3.5 py-3",
+        isUrgent
+          ? "border-v3-danger/20 bg-gradient-to-br from-v3-danger-soft to-v3-card"
+          : "border-v3-warn/20 bg-gradient-to-br from-v3-warn-soft to-v3-card",
+      )}
+    >
+      <div
+        className="relative grid size-12 shrink-0 place-items-center rounded-full text-[13px] font-extrabold"
+        style={{
+          background: `conic-gradient(${ringColor} ${ringPercentage}%, ${ringSoft} 0)`,
+          color: isUrgent ? "var(--v3-danger)" : "var(--v3-warn)",
+        }}
+      >
+        <span className="absolute inset-1 rounded-full bg-v3-card" />
+        <span className="relative z-10">{shortLabel}</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "text-[11px] font-bold uppercase tracking-wide",
+            isUrgent ? "text-v3-danger-text" : "text-v3-warn-text",
+          )}
+        >
+          已等待
+        </p>
+        <p className="mt-0.5 text-lg font-extrabold tabular-nums text-v3-ink">
+          {formatElapsedDuration(clamped)}
+        </p>
+        <p className="mt-0.5 text-[11px] text-v3-ink-3">
+          基于 created_at 计算{isUrgent ? " · 阻断级建议尽快处理" : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({
+  to,
+  icon,
+  children,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      className="flex items-center gap-2.5 rounded-v3-inner px-3 py-2.5 text-[13px] font-semibold text-v3-ink-2 transition-colors hover:bg-v3-card-soft hover:text-v3-brand-deep"
+      to={to}
+    >
+      <span className="text-v3-ink-3">{icon}</span>
+      <span className="flex-1 text-left">{children}</span>
+      <ArrowUpRight aria-hidden className="size-3 text-v3-ink-3" />
+    </Link>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 空状态详情面板
+// ---------------------------------------------------------------------------
+
 function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
   return (
     <SoftCard className="overflow-hidden">
       <div className="border-b border-v3-line px-5 py-5">
         <h2 className="text-lg font-extrabold text-v3-ink">选择一条事项查看详情</h2>
         <p className="mt-2 text-[13px] leading-5 text-v3-ink-2">
-          左侧列出所有需要你同意、审核、确认或验收的事项。选择任一事项后，这里会展示过程记录、证据、上下文和可执行动作。
+          左侧列出所有需要你同意、审核、确认或验收的事项。选择任一事项后，这里会展示过程记录、关联引用和可执行动作。
         </p>
       </div>
       <section className="border-b border-v3-line px-5 py-4">
@@ -412,15 +701,15 @@ function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
       <section className="border-b border-v3-line px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-v3-ink">处理顺序建议</h3>
         <ol className="mt-3 space-y-2 text-[13px] text-v3-ink-2">
-          <li className="flex gap-2"><span className="font-bold text-v3-ink">1.</span>先处理临近超时事项。</li>
-          <li className="flex gap-2"><span className="font-bold text-v3-ink">2.</span>再处理高风险审批与验收。</li>
+          <li className="flex gap-2"><span className="font-bold text-v3-ink">1.</span>先处理阻断与高风险审批。</li>
+          <li className="flex gap-2"><span className="font-bold text-v3-ink">2.</span>再处理等待最久的事项。</li>
           <li className="flex gap-2"><span className="font-bold text-v3-ink">3.</span>最后处理普通同意或复核事项。</li>
         </ol>
       </section>
       <section className="px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-v3-ink">选择事项后可执行</h3>
         <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
-          {["查看完整详情", "查看过程记录", "查看证据与上下文", "同意 / 驳回 / 要求补证", "进入流程实例 / 查看流程编排"].map((label) => (
+          {["查看完整详情", "查看过程记录", "查看关联引用", "同意 / 驳回 / 要求补证", "进入流程实例 / 查看流程编排"].map((label) => (
             <div className="flex items-center gap-2" key={label}>
               <CheckCircle2 className="size-4 text-v3-ok" />
               <span>{label}</span>
@@ -455,43 +744,21 @@ function MiniSummary({
   );
 }
 
-function buildProcessRecords(item: InboxItem) {
-  const context = formatContext(item) ?? formatSourceType(item);
-  return [
-    {
-      description: "事项进入收件箱并等待人工处理。",
-      title: `${formatSourceType(item)}创建`,
-    },
-    {
-      description: context,
-      title: "关联上下文已归档",
-    },
-    {
-      description: "选择同意、驳回或要求补证后将推动流程进入下一节点。",
-      current: true,
-      title: "等待人类决策",
-    },
-  ];
+// ---------------------------------------------------------------------------
+// 辅助函数
+// ---------------------------------------------------------------------------
+
+/** 数据真实性修正 #2：KI 编号 = item_type (大写) + source_id 前 8 位 */
+function formatKiNumber(item: InboxItem): string {
+  const sourceIdShort = item.source_id.slice(0, 8);
+  return `${item.item_type.toUpperCase()} · ${sourceIdShort}`;
 }
 
-function buildEvidenceItems(item: InboxItem) {
-  const items = [
-    {
-      label: formatContext(item) ?? item.title,
-      meta: "上下文",
-    },
-  ];
-
-  if (item.source_task_id) {
-    items.push({ label: `任务 ${item.source_task_id}`, meta: "任务" });
-  }
-
-  if (item.source_approval_request_id) {
-    items.push({ label: `审批 ${item.source_approval_request_id}`, meta: "审批" });
-  }
-
-  items.push({ label: "操作将写入审计日志", meta: "审计" });
-  return items;
+/** 数据真实性修正 #5：已等待时长 = now - created_at（毫秒），负值钳为 0 */
+function computeWaitMs(item: InboxItem): number {
+  const created = new Date(item.created_at).getTime();
+  if (Number.isNaN(created)) return 0;
+  return Math.max(0, Date.now() - created);
 }
 
 function resolveWorkflowInstanceHref(item: InboxItem) {
@@ -525,6 +792,10 @@ function readStringFromContext(context: Record<string, unknown>, keys: string[])
 function isLocalPath(value: string | undefined): value is string {
   return Boolean(value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
 }
+
+// ---------------------------------------------------------------------------
+// 筛选器（保留原有逻辑）
+// ---------------------------------------------------------------------------
 
 type InboxFiltersProps = {
   filters: InboxListFilters;
