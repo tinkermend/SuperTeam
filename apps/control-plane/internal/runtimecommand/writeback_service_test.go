@@ -175,7 +175,7 @@ func (f fakeRunRepository) GetRunByCommandID(context.Context, uuid.UUID, string)
 	return nil, employee.ErrInvalidInput
 }
 
-func (f fakeRunRepository) ListRuns(context.Context, uuid.UUID, uuid.UUID, int32, int32) ([]*employee.DigitalEmployeeRun, error) {
+func (f fakeRunRepository) ListRunsDetailed(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ employee.DigitalEmployeeRunListFilter) (*employee.DigitalEmployeeRunListResult, error) {
 	return nil, employee.ErrInvalidInput
 }
 
@@ -237,4 +237,8 @@ func (f fakeRunRepository) DeleteExecutionInstance(context.Context, uuid.UUID, u
 
 func (f fakeRunRepository) DeleteDigitalEmployee(context.Context, uuid.UUID, uuid.UUID) error {
 	return employee.ErrInvalidInput
+}
+
+func (f fakeRunRepository) GetDigitalEmployeeRunStats(context.Context, uuid.UUID, uuid.UUID) (employee.DigitalEmployeeRunStats, error) {
+	return employee.DigitalEmployeeRunStats{}, employee.ErrInvalidInput
 }

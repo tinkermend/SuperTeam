@@ -66,6 +66,18 @@ const executionInstance = {
   status: "ready",
 };
 
+const runStats = {
+  total_count: 12,
+  succeeded_count: 9,
+  failed_count: 2,
+  cancelled_count: 1,
+  success_rate: 0.75,
+  avg_duration_sec: 540,
+  p90_duration_sec: 960,
+  last_7d_count: 4,
+  prev_7d_count: 3,
+};
+
 function runFixture(overrides: Record<string, unknown> = {}) {
   return {
     id: "44444444-4444-4444-8444-444444444444",
@@ -83,9 +95,28 @@ function runFixture(overrides: Record<string, unknown> = {}) {
     work_products: [],
     session_state: {},
     timed_out: false,
+    // New list-item fields required by EmployeeRunHistoryTable/RunDetailDrawer:
+    task_title: "需求梳理任务",
+    work_product_count: 0,
+    duration_sec: 120,
     created_at: "2026-06-05T01:00:00Z",
     updated_at: "2026-06-05T01:01:00Z",
     ...overrides,
+  };
+}
+
+function runsPayload(items: Array<Record<string, unknown>>) {
+  return {
+    items,
+    total_count: items.length,
+    filters: {
+      statuses: [
+        { value: "running", label: "执行中" },
+        { value: "completed", label: "已完成" },
+        { value: "failed", label: "失败" },
+      ],
+      projects: [],
+    },
   };
 }
 
@@ -143,43 +174,80 @@ function createDetailFetcher({
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+    const path = url.pathname;
 
-    if (url.pathname === `/api/v1/digital-employees/${employee.id}` && method === "GET") {
+    if (path === `/api/v1/digital-employees/${employee.id}` && method === "GET") {
       return jsonResponse(employee);
     }
 
-    if (url.pathname === `/api/v1/digital-employees/${employee.id}/execution-instance` && method === "GET") {
+    if (path === `/api/v1/digital-employees/${employee.id}/execution-instance` && method === "GET") {
       if (executionInstanceStatus !== 200) {
         return jsonResponse({ error: "execution instance failed" }, executionInstanceStatus);
       }
       return jsonResponse(executionInstance);
     }
 
-    if (url.pathname === `/api/v1/digital-employees/${employee.id}/runs` && method === "GET") {
+    if (path === `/api/v1/digital-employees/${employee.id}/run-stats` && method === "GET") {
+      return jsonResponse(runStats);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/effective-config` && method === "GET") {
+      return jsonResponse({
+        id: "config-1",
+        tenant_id: "tenant-1",
+        digital_employee_id: employee.id,
+        team_config_revision_id: "team-rev-1",
+        employee_config_revision_id: "employee-rev-1",
+        effective_config: {},
+        validation_result: { ok: true },
+        status: "approved",
+      });
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/skills` && method === "GET") {
+      return jsonResponse([]);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/effective-mcp-config` && method === "GET") {
+      return jsonResponse([]);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/environment-variables` && method === "GET") {
+      return jsonResponse([]);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/runs` && method === "GET") {
       expect(url.searchParams.get("limit")).toBe("10");
       if (runsStatus !== 200) {
         return jsonResponse({ error: "runs failed" }, runsStatus);
       }
-      return jsonResponse(currentRuns);
+      return jsonResponse(runsPayload(currentRuns));
     }
 
-    if (url.pathname === "/api/v1/runtime/overview" && method === "GET") {
+    if (path === "/api/v1/runtime/overview" && method === "GET") {
       return jsonResponse(runtimeOverview);
     }
 
-    if (url.pathname.startsWith(`/api/v1/digital-employees/${employee.id}/runs/`) && url.pathname.endsWith("/events") && method === "GET") {
-      const runId = decodeURIComponent(url.pathname.split("/runs/")[1]?.replace("/events", "") ?? "");
+    if (
+      path.startsWith(`/api/v1/digital-employees/${employee.id}/runs/`) &&
+      path.endsWith("/events") &&
+      method === "GET"
+    ) {
+      const runId = decodeURIComponent(path.split("/runs/")[1]?.replace("/events", "") ?? "");
       return jsonResponse(eventsByRunId?.[runId] ?? events);
     }
 
-    if (url.pathname === `/api/v1/digital-employees/${employee.id}/runs/${currentRun.id}/stop` && method === "POST") {
+    if (
+      path === `/api/v1/digital-employees/${employee.id}/runs/${currentRun.id}/stop` &&
+      method === "POST"
+    ) {
       expect(JSON.parse(String(init?.body))).toEqual({ reason: "用户从 Web 停止" });
       currentRun = { ...currentRun, status: "cancelling" };
       currentRuns = currentRuns.map((runItem) => (runItem.id === currentRun.id ? currentRun : runItem));
       return jsonResponse(currentRun);
     }
 
-    if (url.pathname === `/api/v1/digital-employees/${employee.id}/runs` && method === "POST") {
+    if (path === `/api/v1/digital-employees/${employee.id}/runs` && method === "POST") {
       expect(JSON.parse(String(init?.body))).toEqual({
         objective: "梳理上线风险",
         prompt: "请检查最近失败任务",
@@ -188,12 +256,13 @@ function createDetailFetcher({
         id: "55555555-5555-4555-8555-555555555555",
         objective: "梳理上线风险",
         status: "dispatching",
+        task_title: "梳理上线风险",
       });
       currentRuns = [currentRun, ...currentRuns];
       return jsonResponse(currentRun, 201);
     }
 
-    return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 404);
+    return jsonResponse({ error: `unhandled ${method} ${path}` }, 404);
   }) as unknown as typeof fetch;
 
   return fetcher;
@@ -231,12 +300,16 @@ async function renderEmployeeDetail(fetcher = createDetailFetcher()) {
 }
 
 describe("EmployeeDetailView", () => {
-  it("renders active run events and stops the run with refresh", async () => {
+  it("opens a run drawer, renders events and stops the active run with refresh", async () => {
     const fetcher = createDetailFetcher();
     const screen = await renderEmployeeDetail(fetcher);
 
-    await expect.element(screen.getByRole("heading", { name: "需求分析员工" })).toBeVisible();
-    await expect.element(screen.getByText("执行中")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { level: 1, name: "需求分析员工" })).toBeVisible();
+    // Rows are plain <tr> elements with onClick; click by row text rather than role.
+    await userEvent.click(screen.getByText("需求梳理任务"));
+
+    // Drawer opens; event stream renders. (Status pill label "执行中" is also used
+    // by a filter chip, so we verify drawer contents via event rows instead.)
     await expect.element(screen.getByText("provider.stdout")).toBeVisible();
     await expect.element(screen.getByText(/正在分析需求/)).toBeVisible();
 
@@ -246,7 +319,7 @@ describe("EmployeeDetailView", () => {
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBeGreaterThanOrEqual(2);
   });
 
-  it("starts a task when there is no active run", async () => {
+  it("starts a task from the start-task drawer when there is no active run", async () => {
     const fetcher = createDetailFetcher({
       events: [],
       run: runFixture({
@@ -256,15 +329,21 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await userEvent.fill(screen.getByLabelText("任务目标"), "梳理上线风险");
-    await userEvent.fill(screen.getByLabelText("任务提示"), "请检查最近失败任务");
+    // Open the start-task drawer via the header button.
     await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
 
-    await expect.element(screen.getByRole("button", { name: /调度中/ })).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("任务目标"), "梳理上线风险");
+    await userEvent.fill(screen.getByLabelText("任务提示"), "请检查最近失败任务");
+    // Submit button inside the drawer shares the "开始任务" label. Radix Dialog marks
+    // body siblings aria-hidden when modal, so getByRole resolves to the in-dialog button.
+    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
+
+    // Drawer closes and runs list is refetched, surfacing the new dispatching run.
+    await expect.element(screen.getByText("dispatching")).toBeVisible();
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "POST")).toBe(1);
   });
 
-  it("keeps start disabled when runtime command channel is disconnected", async () => {
+  it("keeps start submit disabled when runtime command channel is disconnected", async () => {
     const fetcher = createDetailFetcher({
       events: [],
       run: runFixture({ status: "completed" }),
@@ -295,107 +374,142 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await expect.element(screen.getByText("Runtime 命令通道未连接，暂不能开始任务")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
+
+    await expect
+      .element(screen.getByText("Runtime 命令通道未连接，暂不能开始任务"))
+      .toBeVisible();
     await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
 
-  it("renders completed run result and failed run failure reason", async () => {
+  it("renders completed run result and failed run failure reason in the drawer", async () => {
     const completedScreen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           status: "completed",
+          task_title: "已完成任务示例",
           result: { summary: "已生成验收报告" },
         }),
       }),
     );
 
-    await expect.element(completedScreen.getByText("已完成")).toBeVisible();
+    await userEvent.click(completedScreen.getByText("已完成任务示例"));
+    // Status-pill label "已完成" duplicates the filter chip text, so verify drawer
+    // state via the unique result payload instead.
     await expect.element(completedScreen.getByText(/已生成验收报告/)).toBeVisible();
+    // Close the drawer so its modal overlay stops intercepting pointer events on
+    // the second render in this same test.
+    await userEvent.keyboard("{Escape}");
 
     const failedScreen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           error_message: "Runtime 节点断开",
           status: "failed",
+          task_title: "失败任务示例",
         }),
       }),
     );
 
+    await userEvent.click(failedScreen.getByText("失败任务示例"));
     await expect.element(failedScreen.getByText("失败原因")).toBeVisible();
     await expect.element(failedScreen.getByText("Runtime 节点断开")).toBeVisible();
   });
 
-  it("renders cancellation and timeout as failure reasons", async () => {
+  it("renders cancellation and timeout as failure reasons in the drawer", async () => {
     const cancelledScreen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           error_message: "用户停止执行",
           status: "cancelled",
+          task_title: "取消任务示例",
         }),
       }),
     );
 
-    await expect.element(cancelledScreen.getByText("已取消")).toBeVisible();
+    await userEvent.click(cancelledScreen.getByText("取消任务示例"));
     await expect.element(cancelledScreen.getByText("用户停止执行")).toBeVisible();
+    // Close the drawer so its modal overlay stops intercepting pointer events on
+    // the second render in this same test.
+    await userEvent.keyboard("{Escape}");
 
     const timedOutScreen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           diagnostic: { reason: "lease expired" },
           status: "timed_out",
+          task_title: "超时任务示例",
         }),
       }),
     );
 
-    await expect.element(timedOutScreen.getByText("已超时")).toBeVisible();
+    await userEvent.click(timedOutScreen.getByText("超时任务示例"));
     await expect.element(timedOutScreen.getByText(/lease expired/)).toBeVisible();
   });
 
-  it("keeps start disabled when run list cannot be trusted", async () => {
+  it("keeps start submit disabled when run list cannot be trusted", async () => {
     const fetcher = createDetailFetcher({
       run: runFixture({ status: "completed" }),
       runsStatus: 500,
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await expect.element(screen.getByText("运行列表加载失败，暂不能开始新任务")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
+
+    await expect
+      .element(screen.getByText("运行列表加载失败，暂不能开始新任务"))
+      .toBeVisible();
     await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
 
-  it("keeps start disabled when execution instance is missing", async () => {
+  it("keeps start submit disabled when execution instance is missing", async () => {
     const fetcher = createDetailFetcher({
       executionInstanceStatus: 404,
       run: runFixture({ status: "completed" }),
     });
     const screen = await renderEmployeeDetail(fetcher);
 
+    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
+
     await expect.element(screen.getByText("未绑定 Runtime，暂不能开始任务")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
 
-  it("switches event stream when selecting a historical run", async () => {
+  it("switches event stream when opening the drawer for different historical runs", async () => {
     const latestRun = runFixture({
       id: "latest-run",
       status: "completed",
+      task_title: "最新执行任务",
       result: { summary: "最新执行完成" },
     });
     const previousRun = runFixture({
       id: "previous-run",
       status: "failed",
       error_message: "旧运行失败",
+      task_title: "旧失败任务",
     });
     const fetcher = createDetailFetcher({
       runs: [latestRun, previousRun],
       eventsByRunId: {
-        "latest-run": [{ event_type: "provider.stdout", sequence_number: 1, payload: { text: "最新事件" } }],
-        "previous-run": [{ event_type: "provider.stderr", sequence_number: 2, payload: { text: "历史失败事件" } }],
+        "latest-run": [
+          { event_type: "provider.stdout", sequence_number: 1, payload: { text: "最新事件" } },
+        ],
+        "previous-run": [
+          { event_type: "provider.stderr", sequence_number: 2, payload: { text: "历史失败事件" } },
+        ],
       },
     });
     const screen = await renderEmployeeDetail(fetcher);
 
+    // Open drawer for the latest run — its events stream in.
+    await userEvent.click(screen.getByText("最新执行任务"));
     await expect.element(screen.getByText(/最新事件/)).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: /失败.*previous/ }));
 
+    // Close the drawer so the table rows behind the modal become clickable again.
+    await userEvent.keyboard("{Escape}");
+
+    // Reopen for the previous (failed) run — drawer must swap to its events/failure reason.
+    await userEvent.click(screen.getByText("旧失败任务"));
     await expect.element(screen.getByText("旧运行失败")).toBeVisible();
     await expect.element(screen.getByText(/历史失败事件/)).toBeVisible();
   });

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,10 +16,11 @@ import (
 
 type RunHandlerService interface {
 	CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
-	ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error)
+	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	StopRun(ctx context.Context, req StopDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
+	GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRunStats, error)
 }
 
 const (
@@ -93,17 +96,106 @@ func (h *HTTPHandler) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	limit, offset, parseErr := parseRunPagination(r)
+	filter, parseErr := parseRunListFilter(r)
 	if parseErr != "" {
 		http.Error(w, parseErr, http.StatusBadRequest)
 		return
 	}
-	runs, err := service.ListRuns(r.Context(), tenantID, employeeID, limit, offset)
+	result, err := service.ListRunsDetailed(r.Context(), tenantID, employeeID, filter)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, runResponses(runs))
+	writeJSON(w, http.StatusOK, runListResponseFromDomain(result))
+}
+
+// parseRunListFilter parses the run list query parameters: pagination (limit/offset),
+// comma-separated status filter, project_id, and RFC3339 from/to time window. An empty
+// error string means success; a non-empty string is an HTTP 400 message.
+func parseRunListFilter(r *http.Request) (DigitalEmployeeRunListFilter, string) {
+	limit, offset, parseErr := parseRunPagination(r)
+	if parseErr != "" {
+		return DigitalEmployeeRunListFilter{}, parseErr
+	}
+	query := r.URL.Query()
+	filter := DigitalEmployeeRunListFilter{Limit: limit, Offset: offset}
+	if raw := query.Get("status"); raw != "" {
+		filter.Statuses = strings.Split(raw, ",")
+	}
+	if raw := query.Get("project_id"); raw != "" {
+		projectID, err := uuid.Parse(raw)
+		if err != nil {
+			return DigitalEmployeeRunListFilter{}, "project_id must be a valid uuid"
+		}
+		filter.ProjectID = &projectID
+	}
+	if raw := query.Get("from"); raw != "" {
+		from, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return DigitalEmployeeRunListFilter{}, "from must be an RFC3339 timestamp"
+		}
+		filter.From = &from
+	}
+	if raw := query.Get("to"); raw != "" {
+		to, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return DigitalEmployeeRunListFilter{}, "to must be an RFC3339 timestamp"
+		}
+		filter.To = &to
+	}
+	return filter, ""
+}
+
+func (h *HTTPHandler) GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee run stats read")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	stats, err := service.GetRunStats(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, runStatsResponseFromDomain(stats))
+}
+
+type digitalEmployeeRunStatsResponse struct {
+	TotalCount     int64    `json:"total_count"`
+	SucceededCount int64    `json:"succeeded_count"`
+	FailedCount    int64    `json:"failed_count"`
+	CancelledCount int64    `json:"cancelled_count"`
+	SuccessRate    *float64 `json:"success_rate"`
+	AvgDurationSec *float64 `json:"avg_duration_sec"`
+	P90DurationSec *float64 `json:"p90_duration_sec"`
+	Last7dCount    int64    `json:"last_7d_count"`
+	Prev7dCount    int64    `json:"prev_7d_count"`
+}
+
+func runStatsResponseFromDomain(stats *DigitalEmployeeRunStats) digitalEmployeeRunStatsResponse {
+	var successRate *float64
+	if stats.TotalCount > 0 {
+		rate := float64(stats.SucceededCount) / float64(stats.TotalCount)
+		successRate = &rate
+	}
+	return digitalEmployeeRunStatsResponse{
+		TotalCount:     stats.TotalCount,
+		SucceededCount: stats.SucceededCount,
+		FailedCount:    stats.FailedCount,
+		CancelledCount: stats.CancelledCount,
+		SuccessRate:    successRate,
+		AvgDurationSec: stats.AvgDurationSec,
+		P90DurationSec: stats.P90DurationSec,
+		Last7dCount:    stats.Last7dCount,
+		Prev7dCount:    stats.Prev7dCount,
+	}
 }
 
 func (h *HTTPHandler) GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Request) {
@@ -261,14 +353,6 @@ type digitalEmployeeRunResponse struct {
 	UpdatedAt                 string                   `json:"updated_at,omitempty"`
 }
 
-func runResponses(runs []*DigitalEmployeeRun) []digitalEmployeeRunResponse {
-	responses := make([]digitalEmployeeRunResponse, 0, len(runs))
-	for _, run := range runs {
-		responses = append(responses, runResponseFromDomain(run))
-	}
-	return responses
-}
-
 func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 	return digitalEmployeeRunResponse{
 		ID:                        run.ID.String(),
@@ -304,6 +388,97 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		CreatedAt:                 timeString(run.CreatedAt),
 		UpdatedAt:                 timeString(run.UpdatedAt),
 	}
+}
+
+// digitalEmployeeRunListItemResponse embeds the base run response and adds the joined
+// task/project context, work-product count, and finished-run duration surfaced by the
+// detailed list query.
+type digitalEmployeeRunListItemResponse struct {
+	digitalEmployeeRunResponse
+	TaskTitle        string   `json:"task_title"`
+	ProjectID        *string  `json:"project_id,omitempty"`
+	ProjectName      *string  `json:"project_name,omitempty"`
+	WorkProductCount int32    `json:"work_product_count"`
+	DurationSec      *float64 `json:"duration_sec,omitempty"`
+}
+
+// runFilterOption is a single selectable filter value with a localized label, used for
+// the statuses and projects filter dropdowns in the run list response.
+type runFilterOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// digitalEmployeeRunListResponse is the new run list payload shape: a paginated items
+// array, the total count of runs matching the active filters (independent of limit/
+// offset), and the filter options (statuses is a fixed enum; projects is scoped to the
+// employee's runs).
+type digitalEmployeeRunListResponse struct {
+	Items      []digitalEmployeeRunListItemResponse `json:"items"`
+	TotalCount int64                                `json:"total_count"`
+	Filters    struct {
+		Statuses []runFilterOption `json:"statuses"`
+		Projects []runFilterOption `json:"projects"`
+	} `json:"filters"`
+}
+
+// digitalEmployeeRunStatusLabels maps each run status enum value to its localized
+// display label for the run list filter dropdown. The order of the underlying
+// runStatusFilterOrder slice defines the rendered order.
+var digitalEmployeeRunStatusLabels = map[DigitalEmployeeRunStatus]string{
+	DigitalEmployeeRunStatusQueued:      "排队中",
+	DigitalEmployeeRunStatusDispatching: "调度中",
+	DigitalEmployeeRunStatusRunning:     "执行中",
+	DigitalEmployeeRunStatusCancelling:  "取消中",
+	DigitalEmployeeRunStatusCompleted:   "已完成",
+	DigitalEmployeeRunStatusFailed:      "失败",
+	DigitalEmployeeRunStatusCancelled:   "已取消",
+	DigitalEmployeeRunStatusTimedOut:    "已超时",
+}
+
+// runStatusFilterOrder fixes the display order of the status filter options so the
+// frontend renders a stable, semantically grouped list regardless of map iteration.
+var runStatusFilterOrder = []DigitalEmployeeRunStatus{
+	DigitalEmployeeRunStatusQueued,
+	DigitalEmployeeRunStatusDispatching,
+	DigitalEmployeeRunStatusRunning,
+	DigitalEmployeeRunStatusCancelling,
+	DigitalEmployeeRunStatusCompleted,
+	DigitalEmployeeRunStatusFailed,
+	DigitalEmployeeRunStatusCancelled,
+	DigitalEmployeeRunStatusTimedOut,
+}
+
+func runListResponseFromDomain(result *DigitalEmployeeRunListResult) digitalEmployeeRunListResponse {
+	response := digitalEmployeeRunListResponse{TotalCount: result.TotalCount}
+	response.Items = make([]digitalEmployeeRunListItemResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		entry := digitalEmployeeRunListItemResponse{
+			digitalEmployeeRunResponse: runResponseFromDomain(item.Run),
+			TaskTitle:                  item.TaskTitle,
+			WorkProductCount:           item.WorkProductCount,
+			DurationSec:                item.DurationSec,
+		}
+		if item.ProjectID != nil {
+			id := item.ProjectID.String()
+			entry.ProjectID = &id
+		}
+		entry.ProjectName = item.ProjectName
+		response.Items = append(response.Items, entry)
+	}
+	for _, status := range runStatusFilterOrder {
+		response.Filters.Statuses = append(response.Filters.Statuses, runFilterOption{
+			Value: string(status),
+			Label: digitalEmployeeRunStatusLabels[status],
+		})
+	}
+	for _, project := range result.Projects {
+		response.Filters.Projects = append(response.Filters.Projects, runFilterOption{
+			Value: project.ID.String(),
+			Label: project.Name,
+		})
+	}
+	return response
 }
 
 func employeeAndRunIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {

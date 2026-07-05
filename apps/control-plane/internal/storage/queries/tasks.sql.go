@@ -54,6 +54,44 @@ func (q *Queries) CancelTask(ctx context.Context, arg CancelTaskParams) (Task, e
 	return i, err
 }
 
+const CountDigitalEmployeeRunsDetailed = `-- name: CountDigitalEmployeeRunsDetailed :one
+SELECT COUNT(*)::bigint AS total_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality($3::text[]) = 0 OR tr.status = ANY($3::text[]))
+  AND ($4::uuid IS NULL OR p.id = $4::uuid)
+  AND ($5::timestamptz IS NULL OR tr.created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR tr.created_at < $6::timestamptz)
+`
+
+type CountDigitalEmployeeRunsDetailedParams struct {
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	Statuses          []string           `json:"statuses"`
+	ProjectID         uuid.NullUUID      `json:"project_id"`
+	FromTime          pgtype.Timestamptz `json:"from_time"`
+	ToTime            pgtype.Timestamptz `json:"to_time"`
+}
+
+func (q *Queries) CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountDigitalEmployeeRunsDetailed,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.Statuses,
+		arg.ProjectID,
+		arg.FromTime,
+		arg.ToTime,
+	)
+	var total_count int64
+	err := row.Scan(&total_count)
+	return total_count, err
+}
+
 const CreateDigitalEmployeeTaskRun = `-- name: CreateDigitalEmployeeTaskRun :one
 WITH idempotency_input AS (
     SELECT
@@ -918,6 +956,75 @@ func (q *Queries) GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetD
 	return i, err
 }
 
+const GetDigitalEmployeeRunStats = `-- name: GetDigitalEmployeeRunStats :one
+WITH scoped AS (
+    SELECT status, started_at, finished_at, created_at
+    FROM task_runs
+    WHERE tenant_id = $1::uuid
+      AND digital_employee_id = $2::uuid
+),
+counts AS (
+    SELECT
+        COUNT(*)::bigint AS total_count,
+        COUNT(*) FILTER (WHERE status = 'completed')::bigint AS succeeded_count,
+        COUNT(*) FILTER (WHERE status IN ('failed', 'timed_out'))::bigint AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::bigint AS cancelled_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::bigint AS last_7d_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::bigint AS prev_7d_count
+    FROM scoped
+),
+durations AS (
+    SELECT
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_duration_sec,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS p90_duration_sec
+    FROM scoped
+    WHERE finished_at IS NOT NULL
+)
+SELECT
+    counts.total_count,
+    counts.succeeded_count,
+    counts.failed_count,
+    counts.cancelled_count,
+    counts.last_7d_count,
+    counts.prev_7d_count,
+    durations.avg_duration_sec,
+    durations.p90_duration_sec
+FROM counts
+LEFT JOIN durations ON true
+`
+
+type GetDigitalEmployeeRunStatsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type GetDigitalEmployeeRunStatsRow struct {
+	TotalCount     int64         `json:"total_count"`
+	SucceededCount int64         `json:"succeeded_count"`
+	FailedCount    int64         `json:"failed_count"`
+	CancelledCount int64         `json:"cancelled_count"`
+	Last7dCount    int64         `json:"last_7d_count"`
+	Prev7dCount    int64         `json:"prev_7d_count"`
+	AvgDurationSec pgtype.Float8 `json:"avg_duration_sec"`
+	P90DurationSec pgtype.Float8 `json:"p90_duration_sec"`
+}
+
+func (q *Queries) GetDigitalEmployeeRunStats(ctx context.Context, arg GetDigitalEmployeeRunStatsParams) (GetDigitalEmployeeRunStatsRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeRunStats, arg.TenantID, arg.DigitalEmployeeID)
+	var i GetDigitalEmployeeRunStatsRow
+	err := row.Scan(
+		&i.TotalCount,
+		&i.SucceededCount,
+		&i.FailedCount,
+		&i.CancelledCount,
+		&i.Last7dCount,
+		&i.Prev7dCount,
+		&i.AvgDurationSec,
+		&i.P90DurationSec,
+	)
+	return i, err
+}
+
 const GetLatestTaskEventSequence = `-- name: GetLatestTaskEventSequence :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer as max_sequence
 FROM task_events
@@ -1148,6 +1255,46 @@ func (q *Queries) GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun
 	return i, err
 }
 
+const ListDigitalEmployeeRunProjectOptions = `-- name: ListDigitalEmployeeRunProjectOptions :many
+SELECT DISTINCT p.id, p.name
+FROM task_runs tr
+JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+ORDER BY p.name
+`
+
+type ListDigitalEmployeeRunProjectOptionsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListDigitalEmployeeRunProjectOptionsRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeRunProjectOptions, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeRunProjectOptionsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeRunProjectOptionsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListDigitalEmployeeRuns = `-- name: ListDigitalEmployeeRuns :many
 SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
 FROM task_runs tr
@@ -1215,6 +1362,150 @@ func (q *Queries) ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEm
 			&i.TimedOut,
 			&i.ProviderType,
 			&i.ProviderSessionExternalID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDigitalEmployeeRunsDetailed = `-- name: ListDigitalEmployeeRunsDetailed :many
+SELECT
+    tr.id, tr.tenant_id, tr.task_id, tr.digital_employee_id, tr.execution_instance_id,
+    tr.runtime_node_id, tr.node_id, tr.command_id, tr.provider_type, tr.provider_session_id,
+    tr.provider_session_external_id, tr.status, tr.result, tr.diagnostic, tr.log_ref,
+    tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_message, tr.error_code,
+    tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.idempotency_key,
+    tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
+    tr.created_at, tr.updated_at,
+    t.title AS task_title,
+    p.id AS project_id,
+    p.name AS project_name,
+    jsonb_array_length(tr.work_products) AS work_product_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality($3::text[]) = 0 OR tr.status = ANY($3::text[]))
+  AND ($4::uuid IS NULL OR p.id = $4::uuid)
+  AND ($5::timestamptz IS NULL OR tr.created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR tr.created_at < $6::timestamptz)
+ORDER BY tr.created_at DESC
+LIMIT $8 OFFSET $7
+`
+
+type ListDigitalEmployeeRunsDetailedParams struct {
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	Statuses          []string           `json:"statuses"`
+	ProjectID         uuid.NullUUID      `json:"project_id"`
+	FromTime          pgtype.Timestamptz `json:"from_time"`
+	ToTime            pgtype.Timestamptz `json:"to_time"`
+	Offset            int32              `json:"offset"`
+	Limit             int32              `json:"limit"`
+}
+
+type ListDigitalEmployeeRunsDetailedRow struct {
+	ID                        uuid.UUID          `json:"id"`
+	TenantID                  uuid.UUID          `json:"tenant_id"`
+	TaskID                    uuid.UUID          `json:"task_id"`
+	DigitalEmployeeID         uuid.NullUUID      `json:"digital_employee_id"`
+	ExecutionInstanceID       uuid.NullUUID      `json:"execution_instance_id"`
+	RuntimeNodeID             uuid.NullUUID      `json:"runtime_node_id"`
+	NodeID                    string             `json:"node_id"`
+	CommandID                 pgtype.Text        `json:"command_id"`
+	ProviderType              pgtype.Text        `json:"provider_type"`
+	ProviderSessionID         pgtype.Text        `json:"provider_session_id"`
+	ProviderSessionExternalID pgtype.Text        `json:"provider_session_external_id"`
+	Status                    string             `json:"status"`
+	Result                    []byte             `json:"result"`
+	Diagnostic                []byte             `json:"diagnostic"`
+	LogRef                    pgtype.Text        `json:"log_ref"`
+	RawResultRef              pgtype.Text        `json:"raw_result_ref"`
+	WorkProducts              []byte             `json:"work_products"`
+	SessionState              []byte             `json:"session_state"`
+	ErrorMessage              pgtype.Text        `json:"error_message"`
+	ErrorCode                 pgtype.Text        `json:"error_code"`
+	ErrorFamily               pgtype.Text        `json:"error_family"`
+	ExitCode                  pgtype.Int4        `json:"exit_code"`
+	Signal                    pgtype.Text        `json:"signal"`
+	TimedOut                  bool               `json:"timed_out"`
+	IdempotencyKey            pgtype.Text        `json:"idempotency_key"`
+	TimeoutSec                pgtype.Int4        `json:"timeout_sec"`
+	GraceSec                  pgtype.Int4        `json:"grace_sec"`
+	StartedAt                 pgtype.Timestamptz `json:"started_at"`
+	CompletedAt               pgtype.Timestamptz `json:"completed_at"`
+	FinishedAt                pgtype.Timestamptz `json:"finished_at"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	TaskTitle                 string             `json:"task_title"`
+	ProjectID                 uuid.NullUUID      `json:"project_id"`
+	ProjectName               pgtype.Text        `json:"project_name"`
+	WorkProductCount          int32              `json:"work_product_count"`
+}
+
+func (q *Queries) ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeRunsDetailed,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.Statuses,
+		arg.ProjectID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeRunsDetailedRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeRunsDetailedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TaskID,
+			&i.DigitalEmployeeID,
+			&i.ExecutionInstanceID,
+			&i.RuntimeNodeID,
+			&i.NodeID,
+			&i.CommandID,
+			&i.ProviderType,
+			&i.ProviderSessionID,
+			&i.ProviderSessionExternalID,
+			&i.Status,
+			&i.Result,
+			&i.Diagnostic,
+			&i.LogRef,
+			&i.RawResultRef,
+			&i.WorkProducts,
+			&i.SessionState,
+			&i.ErrorMessage,
+			&i.ErrorCode,
+			&i.ErrorFamily,
+			&i.ExitCode,
+			&i.Signal,
+			&i.TimedOut,
+			&i.IdempotencyKey,
+			&i.TimeoutSec,
+			&i.GraceSec,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.FinishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TaskTitle,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.WorkProductCount,
 		); err != nil {
 			return nil, err
 		}

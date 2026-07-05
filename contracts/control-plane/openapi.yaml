@@ -3254,6 +3254,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeEffectiveConfig"
+  /api/v1/digital-employees/{employeeId}/effective-config:
+    get:
+      operationId: getDigitalEmployeeEffectiveConfig
+      summary: Get current approved digital employee effective config
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Current approved effective config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeEffectiveConfig"
+        "404":
+          description: No approved effective config exists yet
   /api/v1/digital-employees/{employeeId}/status:
     put:
       operationId: updateDigitalEmployeeStatus
@@ -3306,6 +3321,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeExecutionInstance"
+  /api/v1/digital-employees/{employeeId}/run-stats:
+    get:
+      operationId: getDigitalEmployeeRunStats
+      summary: Get digital employee run statistics
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Digital employee run statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRunStats"
   /api/v1/digital-employees/{employeeId}/runs:
     get:
       operationId: listDigitalEmployeeRuns
@@ -3314,15 +3342,37 @@ paths:
         - $ref: "#/components/parameters/EmployeeId"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated run statuses to filter by
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: Digital employee run list
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DigitalEmployeeRun"
+                $ref: "#/components/schemas/DigitalEmployeeRunList"
     post:
       operationId: createDigitalEmployeeRun
       summary: Start a digital employee run
@@ -10609,6 +10659,101 @@ components:
         updated_at:
           type: string
           format: date-time
+    DigitalEmployeeRunStats:
+      type: object
+      required:
+        - total_count
+        - succeeded_count
+        - failed_count
+        - cancelled_count
+        - last_7d_count
+        - prev_7d_count
+      properties:
+        total_count:
+          type: integer
+          format: int64
+        succeeded_count:
+          type: integer
+          format: int64
+        failed_count:
+          type: integer
+          format: int64
+        cancelled_count:
+          type: integer
+          format: int64
+        success_rate:
+          type: number
+          nullable: true
+        avg_duration_sec:
+          type: number
+          nullable: true
+        p90_duration_sec:
+          type: number
+          nullable: true
+        last_7d_count:
+          type: integer
+          format: int64
+        prev_7d_count:
+          type: integer
+          format: int64
+    DigitalEmployeeRunListItem:
+      allOf:
+        - $ref: "#/components/schemas/DigitalEmployeeRun"
+        - type: object
+          required:
+            - task_title
+            - work_product_count
+          properties:
+            task_title:
+              type: string
+            project_id:
+              type: string
+              format: uuid
+            project_name:
+              type: string
+            work_product_count:
+              type: integer
+            duration_sec:
+              type: number
+              nullable: true
+    DigitalEmployeeRunFilterOption:
+      type: object
+      required:
+        - value
+        - label
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+    DigitalEmployeeRunList:
+      type: object
+      required:
+        - items
+        - total_count
+        - filters
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeRunListItem"
+        total_count:
+          type: integer
+          format: int64
+        filters:
+          type: object
+          required:
+            - statuses
+            - projects
+          properties:
+            statuses:
+              type: array
+              items:
+                $ref: "#/components/schemas/DigitalEmployeeRunFilterOption"
+            projects:
+              type: array
+              items:
+                $ref: "#/components/schemas/DigitalEmployeeRunFilterOption"
     CreateDigitalEmployeeRunRequest:
       type: object
       required:

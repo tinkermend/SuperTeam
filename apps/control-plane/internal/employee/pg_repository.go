@@ -754,6 +754,41 @@ func (r *PgRepository) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Cont
 	return effectiveConfigRecordFromQuery(effectiveConfig)
 }
 
+func (r *PgRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error) {
+	row, err := r.q.GetDigitalEmployeeRunStats(ctx, queries.GetDigitalEmployeeRunStatsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return DigitalEmployeeRunStats{}, mapNoRows(err)
+	}
+	return DigitalEmployeeRunStats{
+		TotalCount:     row.TotalCount,
+		SucceededCount: row.SucceededCount,
+		FailedCount:    row.FailedCount,
+		CancelledCount: row.CancelledCount,
+		Last7dCount:    row.Last7dCount,
+		Prev7dCount:    row.Prev7dCount,
+		AvgDurationSec: pgFloat8Ptr(row.AvgDurationSec),
+		P90DurationSec: pgFloat8Ptr(row.P90DurationSec),
+	}, nil
+}
+
+// ListRunsDetailed forwards to the run-scoped PgRunRepository so the broad Repository
+// interface also exposes the enriched run history list. This mirrors the
+// GetDigitalEmployeeRunStats forwarding above.
+func (r *PgRepository) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
+	return (&PgRunRepository{q: r.q}).ListRunsDetailed(ctx, tenantID, employeeID, filter)
+}
+
+func pgFloat8Ptr(value pgtype.Float8) *float64 {
+	if !value.Valid {
+		return nil
+	}
+	v := value.Float64
+	return &v
+}
+
 func (r *PgRepository) CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
 	effectiveConfigSnapshot, err := jsonbFromMap(params.EffectiveConfig, "effective_config_snapshot")
 	if err != nil {

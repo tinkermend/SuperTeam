@@ -480,6 +480,92 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY tr.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: GetDigitalEmployeeRunStats :one
+WITH scoped AS (
+    SELECT status, started_at, finished_at, created_at
+    FROM task_runs
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+),
+counts AS (
+    SELECT
+        COUNT(*)::bigint AS total_count,
+        COUNT(*) FILTER (WHERE status = 'completed')::bigint AS succeeded_count,
+        COUNT(*) FILTER (WHERE status IN ('failed', 'timed_out'))::bigint AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::bigint AS cancelled_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::bigint AS last_7d_count,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::bigint AS prev_7d_count
+    FROM scoped
+),
+durations AS (
+    SELECT
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_duration_sec,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS p90_duration_sec
+    FROM scoped
+    WHERE finished_at IS NOT NULL
+)
+SELECT
+    counts.total_count,
+    counts.succeeded_count,
+    counts.failed_count,
+    counts.cancelled_count,
+    counts.last_7d_count,
+    counts.prev_7d_count,
+    durations.avg_duration_sec,
+    durations.p90_duration_sec
+FROM counts
+LEFT JOIN durations ON true;
+
+-- name: ListDigitalEmployeeRunsDetailed :many
+SELECT
+    tr.id, tr.tenant_id, tr.task_id, tr.digital_employee_id, tr.execution_instance_id,
+    tr.runtime_node_id, tr.node_id, tr.command_id, tr.provider_type, tr.provider_session_id,
+    tr.provider_session_external_id, tr.status, tr.result, tr.diagnostic, tr.log_ref,
+    tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_message, tr.error_code,
+    tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.idempotency_key,
+    tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
+    tr.created_at, tr.updated_at,
+    t.title AS task_title,
+    p.id AS project_id,
+    p.name AS project_name,
+    jsonb_array_length(tr.work_products) AS work_product_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
+  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
+ORDER BY tr.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountDigitalEmployeeRunsDetailed :one
+SELECT COUNT(*)::bigint AS total_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.deleted_at IS NULL
+  AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
+  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz);
+
+-- name: ListDigitalEmployeeRunProjectOptions :many
+SELECT DISTINCT p.id, p.name
+FROM task_runs tr
+JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+ORDER BY p.name;
+
 -- name: UpdateDigitalEmployeeRunStatus :one
 UPDATE task_runs
 SET status = sqlc.arg('status')::varchar,

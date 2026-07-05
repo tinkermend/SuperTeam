@@ -878,31 +878,36 @@ func (e ProjectDemandStatus) Valid() bool {
 
 // Defines values for ProjectEventType.
 const (
-	CoordinationBlocked            ProjectEventType = "coordination.blocked"
-	CoordinationJobCreated         ProjectEventType = "coordination_job.created"
-	DecisionRequested              ProjectEventType = "decision.requested"
-	DecisionSubmitted              ProjectEventType = "decision.submitted"
-	DemandSubmitted                ProjectEventType = "demand.submitted"
-	ProjectAcceptanceSubmitted     ProjectEventType = "project.acceptance.submitted"
-	ProjectArchiveRetentionPending ProjectEventType = "project.archive.retention_pending"
-	ProjectArchiveSnapshotCreated  ProjectEventType = "project.archive_snapshot.created"
-	ProjectArchived                ProjectEventType = "project.archived"
-	ProjectArtifactLinked          ProjectEventType = "project.artifact.linked"
-	ProjectBudgetRecorded          ProjectEventType = "project.budget.recorded"
-	ProjectConfigChanged           ProjectEventType = "project.config.changed"
-	ProjectCreated                 ProjectEventType = "project.created"
-	ProjectEvidenceLinked          ProjectEventType = "project.evidence.linked"
-	ProjectEvidenceVerified        ProjectEventType = "project.evidence.verified"
-	ProjectReportLinked            ProjectEventType = "project.report.linked"
-	ProjectTaskCompleted           ProjectEventType = "project_task.completed"
-	ProjectTaskCreated             ProjectEventType = "project_task.created"
-	ProjectTaskDispatchBlocked     ProjectEventType = "project_task.dispatch_blocked"
-	ProjectTaskDispatched          ProjectEventType = "project_task.dispatched"
-	ProjectTaskFailed              ProjectEventType = "project_task.failed"
-	RouteDecisionCreated           ProjectEventType = "route_decision.created"
-	TransferRequested              ProjectEventType = "transfer.requested"
-	WorkflowCoordinationFailed     ProjectEventType = "workflow.coordination_failed"
-	WorkflowSignaled               ProjectEventType = "workflow.signaled"
+	CoordinationBlocked                   ProjectEventType = "coordination.blocked"
+	CoordinationJobCreated                ProjectEventType = "coordination_job.created"
+	DecisionRequested                     ProjectEventType = "decision.requested"
+	DecisionSubmitted                     ProjectEventType = "decision.submitted"
+	DemandSubmitted                       ProjectEventType = "demand.submitted"
+	ProjectAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
+	ProjectArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
+	ProjectArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
+	ProjectArchived                       ProjectEventType = "project.archived"
+	ProjectArtifactLinked                 ProjectEventType = "project.artifact.linked"
+	ProjectBudgetRecorded                 ProjectEventType = "project.budget.recorded"
+	ProjectConfigChanged                  ProjectEventType = "project.config.changed"
+	ProjectCreated                        ProjectEventType = "project.created"
+	ProjectEvidenceLinked                 ProjectEventType = "project.evidence.linked"
+	ProjectEvidenceVerified               ProjectEventType = "project.evidence.verified"
+	ProjectReportLinked                   ProjectEventType = "project.report.linked"
+	ProjectTaskCompleted                  ProjectEventType = "project_task.completed"
+	ProjectTaskCreated                    ProjectEventType = "project_task.created"
+	ProjectTaskDispatchBlocked            ProjectEventType = "project_task.dispatch_blocked"
+	ProjectTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
+	ProjectTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
+	ProjectTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
+	ProjectTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
+	ProjectTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
+	ProjectTaskDispatched                 ProjectEventType = "project_task.dispatched"
+	ProjectTaskFailed                     ProjectEventType = "project_task.failed"
+	RouteDecisionCreated                  ProjectEventType = "route_decision.created"
+	TransferRequested                     ProjectEventType = "transfer.requested"
+	WorkflowCoordinationFailed            ProjectEventType = "workflow.coordination_failed"
+	WorkflowSignaled                      ProjectEventType = "workflow.signaled"
 )
 
 // Valid indicates whether the value is a known member of the ProjectEventType enum.
@@ -945,6 +950,16 @@ func (e ProjectEventType) Valid() bool {
 	case ProjectTaskCreated:
 		return true
 	case ProjectTaskDispatchBlocked:
+		return true
+	case ProjectTaskDispatchGateBlocked:
+		return true
+	case ProjectTaskDispatchGateChecked:
+		return true
+	case ProjectTaskDispatchGateReplanRequired:
+		return true
+	case ProjectTaskDispatchGateRetryLater:
+		return true
+	case ProjectTaskDispatchGateWaitingHuman:
 		return true
 	case ProjectTaskDispatched:
 		return true
@@ -2663,6 +2678,76 @@ type DigitalEmployeeRunEvent struct {
 	RawEventRef               *string                 `json:"raw_event_ref,omitempty"`
 	SequenceNumber            int32                   `json:"sequence_number"`
 	SessionStatePatch         *map[string]interface{} `json:"session_state_patch,omitempty"`
+}
+
+// DigitalEmployeeRunFilterOption defines model for DigitalEmployeeRunFilterOption.
+type DigitalEmployeeRunFilterOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// DigitalEmployeeRunList defines model for DigitalEmployeeRunList.
+type DigitalEmployeeRunList struct {
+	Filters struct {
+		Projects []DigitalEmployeeRunFilterOption `json:"projects"`
+		Statuses []DigitalEmployeeRunFilterOption `json:"statuses"`
+	} `json:"filters"`
+	Items      []DigitalEmployeeRunListItem `json:"items"`
+	TotalCount int64                        `json:"total_count"`
+}
+
+// DigitalEmployeeRunListItem defines model for DigitalEmployeeRunListItem.
+type DigitalEmployeeRunListItem struct {
+	CommandId                 string                   `json:"command_id"`
+	CompletedAt               *time.Time               `json:"completed_at,omitempty"`
+	CreatedAt                 *time.Time               `json:"created_at,omitempty"`
+	Diagnostic                map[string]interface{}   `json:"diagnostic"`
+	DigitalEmployeeId         openapi_types.UUID       `json:"digital_employee_id"`
+	DurationSec               *float32                 `json:"duration_sec,omitempty"`
+	ErrorCode                 *string                  `json:"error_code,omitempty"`
+	ErrorFamily               *string                  `json:"error_family,omitempty"`
+	ErrorMessage              *string                  `json:"error_message,omitempty"`
+	ExecutionInstanceId       openapi_types.UUID       `json:"execution_instance_id"`
+	ExitCode                  *int32                   `json:"exit_code,omitempty"`
+	FinishedAt                *time.Time               `json:"finished_at,omitempty"`
+	GraceSec                  *int32                   `json:"grace_sec,omitempty"`
+	Id                        openapi_types.UUID       `json:"id"`
+	IdempotencyKey            *string                  `json:"idempotency_key,omitempty"`
+	LogRef                    *string                  `json:"log_ref,omitempty"`
+	NodeId                    string                   `json:"node_id"`
+	ProjectId                 *openapi_types.UUID      `json:"project_id,omitempty"`
+	ProjectName               *string                  `json:"project_name,omitempty"`
+	ProviderSessionExternalId *string                  `json:"provider_session_external_id,omitempty"`
+	ProviderSessionId         *string                  `json:"provider_session_id,omitempty"`
+	ProviderType              string                   `json:"provider_type"`
+	RawResultRef              *string                  `json:"raw_result_ref,omitempty"`
+	Result                    map[string]interface{}   `json:"result"`
+	RuntimeNodeId             openapi_types.UUID       `json:"runtime_node_id"`
+	SessionState              map[string]interface{}   `json:"session_state"`
+	Signal                    *string                  `json:"signal,omitempty"`
+	StartedAt                 *time.Time               `json:"started_at,omitempty"`
+	Status                    DigitalEmployeeRunStatus `json:"status"`
+	TaskId                    openapi_types.UUID       `json:"task_id"`
+	TaskTitle                 string                   `json:"task_title"`
+	TenantId                  openapi_types.UUID       `json:"tenant_id"`
+	TimedOut                  bool                     `json:"timed_out"`
+	TimeoutSec                *int32                   `json:"timeout_sec,omitempty"`
+	UpdatedAt                 *time.Time               `json:"updated_at,omitempty"`
+	WorkProductCount          int                      `json:"work_product_count"`
+	WorkProducts              []map[string]interface{} `json:"work_products"`
+}
+
+// DigitalEmployeeRunStats defines model for DigitalEmployeeRunStats.
+type DigitalEmployeeRunStats struct {
+	AvgDurationSec *float32 `json:"avg_duration_sec,omitempty"`
+	CancelledCount int64    `json:"cancelled_count"`
+	FailedCount    int64    `json:"failed_count"`
+	Last7dCount    int64    `json:"last_7d_count"`
+	P90DurationSec *float32 `json:"p90_duration_sec,omitempty"`
+	Prev7dCount    int64    `json:"prev_7d_count"`
+	SucceededCount int64    `json:"succeeded_count"`
+	SuccessRate    *float32 `json:"success_rate,omitempty"`
+	TotalCount     int64    `json:"total_count"`
 }
 
 // DigitalEmployeeRunStatus defines model for DigitalEmployeeRunStatus.
@@ -4976,6 +5061,12 @@ type ListProviderSessionsForDigitalEmployeeParams struct {
 type ListDigitalEmployeeRunsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Status Comma-separated run statuses to filter by
+	Status    *string             `form:"status,omitempty" json:"status,omitempty"`
+	ProjectId *openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
+	From      *time.Time          `form:"from,omitempty" json:"from,omitempty"`
+	To        *time.Time          `form:"to,omitempty" json:"to,omitempty"`
 }
 
 // ListDigitalEmployeeRunEventsParams defines parameters for ListDigitalEmployeeRunEvents.
@@ -6008,6 +6099,9 @@ type ServerInterface interface {
 	// Create a digital employee governance config revision
 	// (POST /api/v1/digital-employees/{employeeId}/config-revisions)
 	CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Get current approved digital employee effective config
+	// (GET /api/v1/digital-employees/{employeeId}/effective-config)
+	GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Approve a digital employee effective config
 	// (POST /api/v1/digital-employees/{employeeId}/effective-configs/approve)
 	ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -6059,6 +6153,9 @@ type ServerInterface interface {
 	// Create a provider session mapping for a digital employee
 	// (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 	CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Get digital employee run statistics
+	// (GET /api/v1/digital-employees/{employeeId}/run-stats)
+	GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List digital employee runs
 	// (GET /api/v1/digital-employees/{employeeId}/runs)
 	ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeRunsParams)
@@ -6593,6 +6690,12 @@ func (_ Unimplemented) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get current approved digital employee effective config
+// (GET /api/v1/digital-employees/{employeeId}/effective-config)
+func (_ Unimplemented) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Approve a digital employee effective config
 // (POST /api/v1/digital-employees/{employeeId}/effective-configs/approve)
 func (_ Unimplemented) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
@@ -6692,6 +6795,12 @@ func (_ Unimplemented) ListProviderSessionsForDigitalEmployee(w http.ResponseWri
 // Create a provider session mapping for a digital employee
 // (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 func (_ Unimplemented) CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get digital employee run statistics
+// (GET /api/v1/digital-employees/{employeeId}/run-stats)
+func (_ Unimplemented) GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8084,6 +8193,32 @@ func (siw *ServerInterfaceWrapper) CreateDigitalEmployeeConfigRevision(w http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetDigitalEmployeeEffectiveConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeEffectiveConfig(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ApproveDigitalEmployeeEffectiveConfig operation middleware
 func (siw *ServerInterfaceWrapper) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
 
@@ -8591,6 +8726,32 @@ func (siw *ServerInterfaceWrapper) CreateProviderSessionForDigitalEmployee(w htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetDigitalEmployeeRunStats operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeRunStats(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListDigitalEmployeeRuns operation middleware
 func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Request) {
 
@@ -8631,6 +8792,58 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRuns(w http.ResponseWriter
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
 		}
 		return
 	}
@@ -14619,6 +14832,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/config-revisions", wrapper.CreateDigitalEmployeeConfigRevision)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-config", wrapper.GetDigitalEmployeeEffectiveConfig)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-configs/approve", wrapper.ApproveDigitalEmployeeEffectiveConfig)
 	})
 	r.Group(func(r chi.Router) {
@@ -14668,6 +14884,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.CreateProviderSessionForDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/run-stats", wrapper.GetDigitalEmployeeRunStats)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs", wrapper.ListDigitalEmployeeRuns)

@@ -1,39 +1,47 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, Square } from "lucide-react";
-import type { ReactNode } from "react";
 import { useState } from "react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusPill, type V3Tone } from "@/components/superteam";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ApiRequestError } from "@/lib/api/client";
-import type { DigitalEmployeeRun, DigitalEmployeeRunEvent, DigitalEmployeeRunStatus } from "@/lib/api/employees";
+import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
 import {
   createDigitalEmployeeRun,
+  getCurrentDigitalEmployeeEffectiveConfig,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
-  listDigitalEmployeeRunEvents,
+  getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
-  stopDigitalEmployeeRun,
+  listEmployeeEnvironmentVariables,
+  type DigitalEmployeeRun,
+  type DigitalEmployeeRunListItem,
+  type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
+import { listEmployeeSkills } from "@/lib/api/skills";
 import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { cn } from "@/lib/utils";
+import { ContextInjectionChain } from "./components/context-injection-chain";
+import { EffectiveContextPanel } from "./components/effective-context-panel";
 import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
+import { EmployeeDetailHeader } from "./components/employee-detail-header";
+import { EmployeeMetricsStrip } from "./components/employee-metrics-strip";
+import { EmployeeRunHistoryTable } from "./components/employee-run-history-table";
+import { RunDetailDrawer } from "./components/run-detail-drawer";
+import { StartTaskDrawer } from "./components/start-task-drawer";
 
-const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
-const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
+const activeRunStatuses = new Set<DigitalEmployeeRunStatus>([
+  "queued",
+  "dispatching",
+  "running",
+  "cancelling",
+]);
+const PAGE_SIZE = 10;
 
 export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   const apiBaseUrl = resolveControlPlaneUrl();
-
   return <EmployeeDetailView apiBaseUrl={apiBaseUrl} employeeId={employeeId} />;
 }
 
@@ -46,10 +54,13 @@ type EmployeeDetailViewProps = {
 export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: EmployeeDetailViewProps) {
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const queryClient = useQueryClient();
-  const [objective, setObjective] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const runsQueryKey = ["digital-employee-runs", employeeId, { limit: 10 }] as const;
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<DigitalEmployeeRunStatus | undefined>(undefined);
+  const [selectedRun, setSelectedRun] = useState<DigitalEmployeeRunListItem | undefined>(undefined);
+  const [runDrawerOpen, setRunDrawerOpen] = useState(false);
+  const [startTaskOpen, setStartTaskOpen] = useState(false);
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
     queryFn: () => getDigitalEmployee(apiOptions, employeeId),
@@ -59,87 +70,111 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryFn: () => getDigitalEmployeeExecutionInstance(apiOptions, employeeId),
     retry: false,
   });
+  const runStats = useQuery({
+    queryKey: ["digital-employee-run-stats", employeeId],
+    queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId),
+  });
   const runs = useQuery({
-    queryKey: runsQueryKey,
-    queryFn: () => listDigitalEmployeeRuns(apiOptions, employeeId, { limit: 10 }),
-    refetchInterval: (query) => {
-      const data = query.state.data as DigitalEmployeeRun[] | undefined;
-      return data?.some((run) => isActiveRun(run.status)) ? 2500 : false;
-    },
+    queryKey: ["digital-employee-runs", employeeId, { page, statusFilter }] as const,
+    queryFn: () =>
+      listDigitalEmployeeRuns(apiOptions, employeeId, {
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+        status: statusFilter ? [statusFilter] : undefined,
+      }),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false,
   });
   const runtimeOverview = useQuery({
     queryKey: ["runtime-overview"],
     queryFn: () => getRuntimeOverview(apiOptions),
     refetchInterval: 5000,
   });
-  const runList = runs.data ?? [];
-  const latestRun = runList[0];
-  const selectedRunFromList = selectedRunId ? runList.find((run) => run.id === selectedRunId) : undefined;
-  const selectedRunMissing = Boolean(selectedRunId && runs.isSuccess && !selectedRunFromList);
-  const selectedRun = selectedRunId ? selectedRunFromList : latestRun;
-  const events = useQuery({
-    enabled: Boolean(selectedRun?.id),
-    queryKey: ["digital-employee-run-events", employeeId, selectedRun?.id, { limit: 50 }],
-    queryFn: () => listDigitalEmployeeRunEvents(apiOptions, employeeId, selectedRun?.id ?? "", { limit: 50 }),
-    refetchInterval: selectedRun && isActiveRun(selectedRun.status) ? 2500 : false,
+
+  // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed both the
+  // panel (as computed props) and ContextInjectionChain (real counts). The panel
+  // is now a pure presentational component.
+  const effectiveConfigQuery = useQuery({
+    queryKey: ["digital-employee-effective-config", employeeId],
+    queryFn: () => getCurrentDigitalEmployeeEffectiveConfig(apiOptions, employeeId),
+    retry: false,
   });
-  const putRunInCache = (run: DigitalEmployeeRun, prepend: boolean) => {
-    queryClient.setQueryData<DigitalEmployeeRun[]>(runsQueryKey, (current = []) => {
-      const withoutRun = current.filter((item) => item.id !== run.id);
-      if (prepend) {
-        return [run, ...withoutRun].slice(0, 10);
-      }
-      const replaced = current.some((item) => item.id === run.id);
-      const next = current.map((item) => (item.id === run.id ? run : item));
-      return (replaced ? next : [run, ...next]).slice(0, 10);
-    });
-  };
-  const refreshRunFacts = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] }),
-      queryClient.invalidateQueries({ queryKey: ["digital-employee-run-events", employeeId] }),
-    ]);
-  };
-  const stopRun = useMutation({
-    mutationFn: (run: DigitalEmployeeRun) =>
-      stopDigitalEmployeeRun(apiOptions, employeeId, run.id, { reason: "用户从 Web 停止" }),
-    onSuccess: async (run) => {
-      setSelectedRunId(run.id);
-      putRunInCache(run, false);
-      await refreshRunFacts();
-    },
+  const skillsQuery = useQuery({
+    queryKey: ["employee-skills", employeeId],
+    queryFn: () => listEmployeeSkills(apiOptions, employeeId),
   });
-  const createRun = useMutation({
-    mutationFn: () =>
-      createDigitalEmployeeRun(apiOptions, employeeId, {
-        objective: objective.trim(),
-        prompt: prompt.trim(),
-      }),
-    onSuccess: async (run) => {
-      setSelectedRunId(run.id);
-      putRunInCache(run, true);
-      setObjective("");
-      setPrompt("");
-      await refreshRunFacts();
-    },
+  const mcpQuery = useQuery({
+    queryKey: ["employee-effective-mcp", employeeId],
+    queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
   });
-  const instanceNotFound = instance.error instanceof ApiRequestError && instance.error.status === 404;
-  const hasActiveRun = runList.some((run) => isActiveRun(run.status));
+  const envVarsQuery = useQuery({
+    queryKey: ["employee-environment-variables", employeeId],
+    queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
+  });
+
+  const instanceNotFound =
+    instance.error instanceof ApiRequestError && instance.error.status === 404;
+  const noApprovedConfig =
+    effectiveConfigQuery.error instanceof ApiRequestError &&
+    effectiveConfigQuery.error.status === 404;
+
+  // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
+  // is the canonical flag for skill counting (matches Task 11 semantics).
+  const personalSkillCount = skillsQuery.data?.filter((skill) => !skill.inherited).length ?? 0;
+  const inheritedSkillCount = skillsQuery.data?.filter((skill) => skill.inherited).length ?? 0;
+  // EffectiveMcpServer exposes `source_scope` (no `inherited` boolean). Team scope
+  // is the inherited leg; anything else is personal.
+  const personalMcpCount = mcpQuery.data?.filter((server) => server.source_scope !== "team").length ?? 0;
+  const inheritedMcpCount = mcpQuery.data?.filter((server) => server.source_scope === "team").length ?? 0;
+  const configuredEnvCount = envVarsQuery.data?.filter((item) => item.configured).length ?? 0;
+  const missingEnvVars = envVarsQuery.data?.filter((item) => !item.configured) ?? [];
+
+  const hasActiveRun = runs.data?.items.some((item) => isActiveRun(item.status)) ?? false;
   const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
   const executionInstanceCanRun =
     instance.isSuccess && (instance.data.status === "ready" || instance.data.status === "active");
   const executionRuntimeNodeId = instance.data?.runtime_node_id;
-  const selectedRunNodeId = selectedRun?.node_id;
   const runtimeNode = runtimeOverview.data?.nodes.find(
-    (node) =>
-      (executionRuntimeNodeId && node.runtime_node_id === executionRuntimeNodeId) ||
-      (selectedRunNodeId && node.node_id === selectedRunNodeId),
+    (node) => node.runtime_node_id === executionRuntimeNodeId,
   );
   const runtimeCommandChannelDisconnected =
     runtimeOverview.isSuccess && runtimeNode?.command_channel_connected === false;
   const canStartTask =
-    employeeCanRun && executionInstanceCanRun && runs.isSuccess && !hasActiveRun && !runtimeCommandChannelDisconnected;
-  const trimmedObjective = objective.trim();
+    employeeCanRun &&
+    executionInstanceCanRun &&
+    runs.isSuccess &&
+    !hasActiveRun &&
+    !runtimeCommandChannelDisconnected;
+
+  const disabledReasons: string[] = [];
+  if (hasActiveRun) disabledReasons.push("当前已有活跃运行");
+  if (!executionInstanceCanRun && instance.isSuccess) disabledReasons.push("执行实例当前不可执行");
+  if (runtimeCommandChannelDisconnected) disabledReasons.push("Runtime 命令通道未连接，暂不能开始任务");
+  if (instanceNotFound) disabledReasons.push("未绑定 Runtime，暂不能开始任务");
+  if (runs.isError) disabledReasons.push("运行列表加载失败，暂不能开始新任务");
+
+  const refreshRunFacts = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] }),
+      queryClient.invalidateQueries({ queryKey: ["digital-employee-run-stats", employeeId] }),
+    ]);
+  };
+
+  const createRun = useMutation({
+    mutationFn: (input: { objective: string; prompt: string }) =>
+      createDigitalEmployeeRun(apiOptions, employeeId, {
+        objective: input.objective,
+        prompt: input.prompt,
+      }),
+    onSuccess: async () => {
+      setStartTaskOpen(false);
+      await refreshRunFacts();
+    },
+  });
+
+  const handleStopped = async (_run: DigitalEmployeeRun) => {
+    await refreshRunFacts();
+  };
 
   return (
     <>
@@ -149,289 +184,124 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         subtitle="执行实例、运行事件、结果和人工停止。"
       />
       <Main className="min-w-0 overflow-x-hidden">
-        {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+        {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">数字员工加载失败</p> : null}
 
         {employee.data ? (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>概览</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 md:grid-cols-4">
-                  <SummaryItem label="角色" value={employee.data.role} />
-                  <SummaryItem label="状态" value={<Badge variant={employee.data.status === "active" ? "default" : "secondary"}>{employee.data.status}</Badge>} />
-                  <SummaryItem label="风险" value={employee.data.risk_level ?? "medium"} />
-                  <SummaryItem
-                    label="执行实例"
-                    value={
-                      instance.data
-                        ? `${instance.data.provider_type} · ${instance.data.status}`
-                        : instanceNotFound
-                          ? "未绑定 Runtime"
-                          : "加载中"
-                    }
-                  />
-                </div>
-                <p className="mt-3 text-sm text-muted-foreground">{employee.data.description || "暂无描述"}</p>
-                {instance.data ? (
-                  <p className="mt-2 truncate text-xs text-muted-foreground">Runtime：{instance.data.runtime_node_id}</p>
-                ) : null}
-                {instance.isError && !instanceNotFound ? (
-                  <p className="mt-2 text-xs text-destructive">执行实例加载失败</p>
-                ) : null}
-              </CardContent>
-            </Card>
+          <div className="flex flex-col gap-4">
+            <EmployeeDetailHeader
+              employee={employee.data}
+              onManageCapabilities={() => setCapabilitiesOpen(true)}
+              onStartTask={() => setStartTaskOpen(true)}
+            />
+
+            <EmployeeMetricsStrip
+              commandChannelConnected={runtimeNode?.command_channel_connected ?? false}
+              currentStatusLabel={employee.data.status}
+              providerType={instance.data?.provider_type ?? "未绑定"}
+              runtimeNodeLabel={instance.data?.runtime_node_id ?? "未绑定"}
+              stats={runStats.data}
+            />
 
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-              <div className="rounded-md border p-4">
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold">当前运行</h2>
-                    <p className="text-sm text-muted-foreground">最新一次数字员工执行事实。</p>
-                  </div>
-                  {selectedRun ? <RunStatusPill status={selectedRun.status} /> : null}
-                </div>
-                {runs.isLoading ? <p className="text-sm text-muted-foreground">运行加载中</p> : null}
-                {runs.isError ? <p className="text-sm text-destructive">运行加载失败</p> : null}
-                {selectedRunMissing ? (
-                  <div className="rounded-md border border-dashed p-3">
-                    <p className="text-sm text-muted-foreground">选择的运行已不在当前列表</p>
-                    <Button className="mt-2" onClick={() => setSelectedRunId(null)} size="sm" type="button" variant="outline">
-                      查看最新运行
-                    </Button>
-                  </div>
-                ) : selectedRun ? (
-                  <div className="space-y-3">
-                    <div className="grid gap-2 text-sm md:grid-cols-2">
-                      <SummaryItem label="命令" value={selectedRun.command_id} />
-                      <SummaryItem label="Provider" value={selectedRun.provider_type} />
-                      <SummaryItem label="节点" value={selectedRun.node_id || selectedRun.runtime_node_id} />
-                      <SummaryItem label="更新时间" value={selectedRun.updated_at ?? selectedRun.created_at ?? "-"} />
-                    </div>
-                    {isFailedRun(selectedRun.status) ? <FailureBlock run={selectedRun} /> : null}
-                    {selectedRun.status === "completed" ? <ResultBlock run={selectedRun} /> : null}
-                    {isActiveRun(selectedRun.status) ? (
-                      <Button
-                        disabled={selectedRun.status === "cancelling" || stopRun.isPending}
-                        onClick={() => stopRun.mutate(selectedRun)}
-                        type="button"
-                        variant="destructive"
-                      >
-                        <Square className="size-4" />
-                        停止
-                      </Button>
-                    ) : null}
-                    {stopRun.isError ? <p className="text-sm text-destructive">停止失败</p> : null}
-                    {runList.length > 1 ? (
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">运行历史</p>
-                        <div className="flex flex-wrap gap-2">
-                          {runList.map((run) => (
-                            <Button
-                              aria-pressed={run.id === selectedRun?.id}
-                              key={run.id}
-                              onClick={() => setSelectedRunId(run.id)}
-                              size="sm"
-                              type="button"
-                              variant={run.id === selectedRun?.id ? "secondary" : "outline"}
-                            >
-                              {runHistoryLabel(run)}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : !runs.isLoading ? (
-                  <p className="text-sm text-muted-foreground">暂无运行记录</p>
-                ) : null}
-              </div>
-
-              <div className="rounded-md border p-4">
-                <h2 className="text-base font-semibold">开始任务</h2>
-                <form
-                  className="mt-3 space-y-3"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (canStartTask && trimmedObjective) {
-                      createRun.mutate();
-                    }
-                  }}
-                >
-                  <div className="space-y-2">
-                    <Label htmlFor="run-objective">任务目标</Label>
-                    <Textarea
-                      disabled={!canStartTask || createRun.isPending}
-                      id="run-objective"
-                      onChange={(event) => setObjective(event.target.value)}
-                      rows={2}
-                      value={objective}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="run-prompt">任务提示</Label>
-                    <Textarea
-                      disabled={!canStartTask || createRun.isPending}
-                      id="run-prompt"
-                      onChange={(event) => setPrompt(event.target.value)}
-                      rows={4}
-                      value={prompt}
-                    />
-                  </div>
-                  <Button disabled={!canStartTask || !trimmedObjective || createRun.isPending} type="submit">
-                    <Play className="size-4" />
-                    开始任务
-                  </Button>
-                  {hasActiveRun ? <p className="text-xs text-muted-foreground">当前已有活跃运行</p> : null}
-                  {!executionInstanceCanRun && instance.isSuccess ? (
-                    <p className="text-xs text-muted-foreground">执行实例当前不可执行</p>
-                  ) : null}
-                  {runtimeCommandChannelDisconnected ? (
-                    <p className="text-xs text-muted-foreground">Runtime 命令通道未连接，暂不能开始任务</p>
-                  ) : null}
-                  {instanceNotFound ? <p className="text-xs text-muted-foreground">未绑定 Runtime，暂不能开始任务</p> : null}
-                  {runs.isError ? <p className="text-xs text-destructive">运行列表加载失败，暂不能开始新任务</p> : null}
-                  {createRun.isError ? <p className="text-sm text-destructive">开始任务失败</p> : null}
-                </form>
-              </div>
+              <EmployeeRunHistoryTable
+                error={runs.error}
+                isError={runs.isError}
+                isLoading={runs.isLoading}
+                onPageChange={setPage}
+                onRetry={() => runs.refetch()}
+                onRowClick={(item) => {
+                  setSelectedRun(item);
+                  setRunDrawerOpen(true);
+                }}
+                onStatusFilterChange={(status) => {
+                  setStatusFilter(status);
+                  setPage(1);
+                }}
+                page={page}
+                pageSize={PAGE_SIZE}
+                result={runs.data}
+                statusFilter={statusFilter}
+              />
+              <EffectiveContextPanel
+                effectiveConfig={{
+                  isLoading: effectiveConfigQuery.isLoading,
+                  isError: effectiveConfigQuery.isError && !noApprovedConfig,
+                  noApprovedConfig,
+                }}
+                employee={employee.data}
+                employeeId={employeeId}
+                envVars={{
+                  isLoading: envVarsQuery.isLoading,
+                  isError: envVarsQuery.isError,
+                  configuredCount: configuredEnvCount,
+                  totalCount: envVarsQuery.data?.length ?? 0,
+                  missingNames: missingEnvVars.map((item) => item.name),
+                }}
+                executionInstance={instance.data}
+                mcp={{
+                  isLoading: mcpQuery.isLoading,
+                  isError: mcpQuery.isError,
+                  personalCount: personalMcpCount,
+                  inheritedCount: inheritedMcpCount,
+                  totalCount: mcpQuery.data?.length ?? 0,
+                }}
+                onManageCapabilities={() => setCapabilitiesOpen(true)}
+                skills={{
+                  isLoading: skillsQuery.isLoading,
+                  isError: skillsQuery.isError,
+                  personalCount: personalSkillCount,
+                  inheritedCount: inheritedSkillCount,
+                  totalCount: skillsQuery.data?.length ?? 0,
+                }}
+              />
             </section>
 
-            <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
-
-            <section className="rounded-md border p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">事件流</h2>
-                  <p className="text-sm text-muted-foreground">Runtime 和 Provider 回写事件。</p>
-                </div>
-                {events.data ? <Badge variant="secondary">{events.data.length}</Badge> : null}
-              </div>
-              {selectedRunMissing ? <p className="text-sm text-muted-foreground">选择的运行已不在当前列表</p> : null}
-              {!selectedRunMissing && events.isLoading ? <p className="text-sm text-muted-foreground">事件加载中</p> : null}
-              {!selectedRunMissing && events.isError ? <p className="text-sm text-destructive">事件加载失败</p> : null}
-              {!selectedRunMissing && events.data?.length ? (
-                <div className="space-y-2">
-                  {events.data.map((event) => (
-                    <RunEventRow event={event} key={`${event.sequence_number}-${event.event_type}`} />
-                  ))}
-                </div>
-              ) : !selectedRunMissing && !events.isLoading ? (
-                <p className="text-sm text-muted-foreground">暂无事件</p>
-              ) : null}
-            </section>
+            <ContextInjectionChain
+              envConfiguredCount={configuredEnvCount}
+              envTotalCount={envVarsQuery.data?.length ?? 0}
+              inheritedSkillCount={inheritedSkillCount}
+              mcpCount={mcpQuery.data?.length ?? 0}
+              personalSkillCount={personalSkillCount}
+              roleLabel={employee.data.role}
+            />
           </div>
         ) : null}
       </Main>
+
+      <StartTaskDrawer
+        canStartTask={canStartTask}
+        disabledReasons={disabledReasons}
+        isError={createRun.isError}
+        isPending={createRun.isPending}
+        onOpenChange={setStartTaskOpen}
+        onSubmit={(input) => createRun.mutate(input)}
+        open={startTaskOpen}
+      />
+
+      <RunDetailDrawer
+        apiOptions={apiOptions}
+        employeeId={employeeId}
+        onOpenChange={setRunDrawerOpen}
+        onStopped={handleStopped}
+        open={runDrawerOpen}
+        run={selectedRun}
+      />
+
+      <Sheet onOpenChange={setCapabilitiesOpen} open={capabilitiesOpen}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl" side="right">
+          <SheetHeader>
+            <SheetTitle>管理技能与 MCP</SheetTitle>
+          </SheetHeader>
+          <div className="px-4 pb-6">
+            <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
-  );
-}
-
-function SummaryItem({ label, value }: { label: string; value: ReactNode }) {
-  const isTextValue = typeof value === "string" || typeof value === "number";
-
-  return (
-    <div className="min-w-0 rounded-md border bg-muted/20 px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <div className={cn("mt-1 text-sm font-medium", isTextValue ? "truncate" : "flex items-center")}>{value}</div>
-    </div>
-  );
-}
-
-function RunStatusPill({ status }: { status: DigitalEmployeeRunStatus }) {
-  const label = runStatusLabel(status);
-  const tone: V3Tone = isFailedRun(status) ? "danger" : status === "completed" ? "ok" : "mute";
-
-  return <StatusPill tone={tone}>{label}</StatusPill>;
-}
-
-function FailureBlock({ run }: { run: DigitalEmployeeRun }) {
-  return (
-    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
-      <p className="text-sm font-medium text-destructive">失败原因</p>
-      <p className="mt-1 text-sm">{failureReason(run)}</p>
-    </div>
-  );
-}
-
-function ResultBlock({ run }: { run: DigitalEmployeeRun }) {
-  return (
-    <div>
-      <p className="text-sm font-medium">结果</p>
-      <pre className="mt-2 max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">{compactJson(run.result)}</pre>
-    </div>
-  );
-}
-
-function RunEventRow({ event }: { event: DigitalEmployeeRunEvent }) {
-  return (
-    <div className="grid gap-2 rounded-md border px-3 py-2 md:grid-cols-[120px_160px_minmax(0,1fr)]">
-      <p className="text-sm font-medium">#{event.sequence_number}</p>
-      <p className="truncate text-sm">{event.event_type}</p>
-      <pre className="min-w-0 overflow-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
-        {compactJson(event.payload)}
-      </pre>
-    </div>
   );
 }
 
 function isActiveRun(status: DigitalEmployeeRunStatus) {
   return activeRunStatuses.has(status);
-}
-
-function isFailedRun(status: DigitalEmployeeRunStatus) {
-  return failedRunStatuses.has(status);
-}
-
-function runStatusLabel(status: DigitalEmployeeRunStatus) {
-  switch (status) {
-    case "queued":
-      return "排队中";
-    case "dispatching":
-      return "调度中";
-    case "running":
-      return "执行中";
-    case "cancelling":
-      return "取消中";
-    case "completed":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-      return "已取消";
-    case "timed_out":
-      return "已超时";
-  }
-}
-
-function runHistoryLabel(run: DigitalEmployeeRun) {
-  return `${runStatusLabel(run.status)} · ${runTimeLabel(run.updated_at ?? run.created_at)} · ${shortRunId(run.id)}`;
-}
-
-function runTimeLabel(value?: string) {
-  if (!value) {
-    return "未知时间";
-  }
-  const match = value.match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-  if (match) {
-    return `${match[1]}-${match[2]} ${match[3]}`;
-  }
-  return value;
-}
-
-function shortRunId(id: string) {
-  return id.slice(0, 8);
-}
-
-function failureReason(run: DigitalEmployeeRun) {
-  return run.error_message || compactJson(run.diagnostic) || compactJson(run.result) || "未提供失败原因";
-}
-
-function compactJson(value: unknown) {
-  if (!value || (typeof value === "object" && Object.keys(value).length === 0)) {
-    return "";
-  }
-
-  return JSON.stringify(value, null, 2);
 }

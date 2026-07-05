@@ -339,6 +339,28 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
 		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
 	}
+
+	getEffectiveConfigReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/effective-config", nil)
+	getEffectiveConfigReq.AddCookie(cookie)
+	getEffectiveConfigResp := httptest.NewRecorder()
+	server.ServeHTTP(getEffectiveConfigResp, getEffectiveConfigReq)
+	if getEffectiveConfigResp.Code != http.StatusOK {
+		t.Fatalf("expected get effective config to succeed, got %d: %s", getEffectiveConfigResp.Code, getEffectiveConfigResp.Body.String())
+	}
+	if !service.getEffectiveConfigCalled || service.getEffectiveConfigTenant != expectedTenantID {
+		t.Fatalf("unexpected get effective config request mapping: called=%v tenant=%s", service.getEffectiveConfigCalled, service.getEffectiveConfigTenant)
+	}
+	var effectiveConfigRead struct {
+		ID                uuid.UUID `json:"id"`
+		DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+		Status            string    `json:"status"`
+	}
+	if err := json.NewDecoder(getEffectiveConfigResp.Body).Decode(&effectiveConfigRead); err != nil {
+		t.Fatalf("decode get effective config response: %v", err)
+	}
+	if effectiveConfigRead.DigitalEmployeeID != employeeID || effectiveConfigRead.Status != string(employee.EffectiveConfigStatusApproved) {
+		t.Fatalf("unexpected get effective config response body: %#v", effectiveConfigRead)
+	}
 }
 
 func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
@@ -1105,27 +1127,31 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	if runService.listTenantID != tenantID || runService.listEmployeeID != employeeID || runService.listLimit != 25 || runService.listOffset != 5 {
 		t.Fatalf("unexpected list mapping: tenant=%s employee=%s limit=%d offset=%d", runService.listTenantID, runService.listEmployeeID, runService.listLimit, runService.listOffset)
 	}
-	var listRaw []map[string]json.RawMessage
+	var listRaw struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
 	if err := json.Unmarshal(listResp.Body.Bytes(), &listRaw); err != nil {
 		t.Fatalf("decode raw list runs: %v", err)
 	}
-	if len(listRaw) != 1 {
-		t.Fatalf("unexpected raw list runs response: %#v", listRaw)
+	if len(listRaw.Items) != 1 {
+		t.Fatalf("unexpected raw list runs response: %#v", listRaw.Items)
 	}
-	if _, ok := listRaw[0]["idempotency_fingerprint"]; ok {
-		t.Fatalf("list run response must not expose idempotency_fingerprint: %s", string(listRaw[0]["idempotency_fingerprint"]))
+	if _, ok := listRaw.Items[0]["idempotency_fingerprint"]; ok {
+		t.Fatalf("list run response must not expose idempotency_fingerprint: %s", string(listRaw.Items[0]["idempotency_fingerprint"]))
 	}
-	if string(listRaw[0]["idempotency_key"]) != `"idem-route-test"` {
-		t.Fatalf("expected list run response to expose idempotency_key, got %s", string(listRaw[0]["idempotency_key"]))
+	if string(listRaw.Items[0]["idempotency_key"]) != `"idem-route-test"` {
+		t.Fatalf("expected list run response to expose idempotency_key, got %s", string(listRaw.Items[0]["idempotency_key"]))
 	}
-	var listBody []struct {
-		ID string `json:"id"`
+	var listBody struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
 	}
 	if err := json.Unmarshal(listResp.Body.Bytes(), &listBody); err != nil {
 		t.Fatalf("decode list runs: %v", err)
 	}
-	if len(listBody) != 1 || listBody[0].ID != created.ID {
-		t.Fatalf("unexpected list runs response: %#v", listBody)
+	if len(listBody.Items) != 1 || listBody.Items[0].ID != created.ID {
+		t.Fatalf("unexpected list runs response: %#v", listBody.Items)
 	}
 
 	clampListReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?limit=500&offset=6", nil)
@@ -1296,6 +1322,7 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`, action: authz.ActionEmployeeConfigPreview, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`, action: authz.ActionEmployeeConfigApprove, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "get effective config", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/effective-config", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
 
 	for _, tt := range tests {
@@ -1524,6 +1551,8 @@ type routeEmployeeService struct {
 	configCalled              bool
 	previewCalled             bool
 	approveCalled             bool
+	getEffectiveConfigCalled  bool
+	getEffectiveConfigTenant  uuid.UUID
 	createdID                 uuid.UUID
 	listErr                   error
 	overviewErr               error
@@ -1851,6 +1880,26 @@ func (s *routeEmployeeService) ApproveEffectiveConfig(ctx context.Context, req e
 	}, nil
 }
 
+func (s *routeEmployeeService) GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeEffectiveConfig, error) {
+	s.getEffectiveConfigCalled = true
+	s.getEffectiveConfigTenant = tenantID
+	now := time.Now().UTC()
+	approvedBy := uuid.New()
+	return &employee.DigitalEmployeeEffectiveConfig{
+		ID:                       uuid.New(),
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		EmployeeConfigRevisionID: uuid.New(),
+		EffectiveConfig:          map[string]any{"approved": true},
+		ValidationResult:         map[string]any{"blocking_errors": []any{}},
+		Status:                   employee.EffectiveConfigStatusApproved,
+		ApprovedBy:               &approvedBy,
+		ApprovedAt:               &now,
+		CreatedAt:                now,
+		UpdatedAt:                now,
+	}, nil
+}
+
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
@@ -1862,7 +1911,8 @@ func (s *routeEmployeeService) called() bool {
 		s.bindCalled ||
 		s.configCalled ||
 		s.previewCalled ||
-		s.approveCalled
+		s.approveCalled ||
+		s.getEffectiveConfigCalled
 }
 
 var _ employee.HandlerService = (*routeEmployeeService)(nil)
@@ -1874,6 +1924,10 @@ type routeEmployeeRunService struct {
 	listEmployeeID   uuid.UUID
 	listLimit        int32
 	listOffset       int32
+	listStatuses     []string
+	listProjectID    *uuid.UUID
+	listFrom         *time.Time
+	listTo           *time.Time
 	getTenantID      uuid.UUID
 	getEmployeeID    uuid.UUID
 	getRunID         uuid.UUID
@@ -1883,6 +1937,10 @@ type routeEmployeeRunService struct {
 	eventsLimit      int32
 	eventsOffset     int32
 	createdRun       *employee.DigitalEmployeeRun
+	statsTenantID    uuid.UUID
+	statsEmployeeID  uuid.UUID
+	stats            *employee.DigitalEmployeeRunStats
+	statsErr         error
 }
 
 func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.CreateDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {
@@ -1892,15 +1950,25 @@ func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.Cr
 	return run, nil
 }
 
-func (s *routeEmployeeRunService) ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*employee.DigitalEmployeeRun, error) {
+func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter employee.DigitalEmployeeRunListFilter) (*employee.DigitalEmployeeRunListResult, error) {
 	s.listTenantID = tenantID
 	s.listEmployeeID = employeeID
-	s.listLimit = limit
-	s.listOffset = offset
+	s.listLimit = filter.Limit
+	s.listOffset = filter.Offset
+	s.listStatuses = filter.Statuses
+	s.listProjectID = filter.ProjectID
+	s.listFrom = filter.From
+	s.listTo = filter.To
+	var run *employee.DigitalEmployeeRun
 	if s.createdRun != nil {
-		return []*employee.DigitalEmployeeRun{s.createdRun}, nil
+		run = s.createdRun
+	} else {
+		run = routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusDispatching)
 	}
-	return []*employee.DigitalEmployeeRun{routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusDispatching)}, nil
+	return &employee.DigitalEmployeeRunListResult{
+		Items:      []employee.DigitalEmployeeRunListItem{{Run: run}},
+		TotalCount: 1,
+	}, nil
 }
 
 func (s *routeEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*employee.DigitalEmployeeRun, error) {
@@ -1924,6 +1992,18 @@ func (s *routeEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, e
 		Payload:        map[string]any{"text": "running"},
 		Metadata:       map[string]any{"source": "test"},
 	}}, nil
+}
+
+func (s *routeEmployeeRunService) GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeRunStats, error) {
+	s.statsTenantID = tenantID
+	s.statsEmployeeID = employeeID
+	if s.statsErr != nil {
+		return nil, s.statsErr
+	}
+	if s.stats != nil {
+		return s.stats, nil
+	}
+	return &employee.DigitalEmployeeRunStats{}, nil
 }
 
 func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.StopDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {

@@ -190,22 +190,67 @@ func (r *PgRunRepository) GetRunByCommandID(ctx context.Context, tenantID uuid.U
 	return digitalEmployeeRunFromQuery(run), nil
 }
 
-func (r *PgRunRepository) ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error) {
-	runs, err := r.q.ListDigitalEmployeeRuns(ctx, queries.ListDigitalEmployeeRunsParams{
+func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
+	statuses := filter.Statuses
+	if statuses == nil {
+		statuses = []string{}
+	}
+	var projectID uuid.NullUUID
+	if filter.ProjectID != nil {
+		projectID = uuid.NullUUID{UUID: *filter.ProjectID, Valid: true}
+	}
+	var fromTime, toTime pgtype.Timestamptz
+	if filter.From != nil {
+		fromTime = pgtype.Timestamptz{Time: *filter.From, Valid: true}
+	}
+	if filter.To != nil {
+		toTime = pgtype.Timestamptz{Time: *filter.To, Valid: true}
+	}
+
+	rows, err := r.q.ListDigitalEmployeeRunsDetailed(ctx, queries.ListDigitalEmployeeRunsDetailedParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
-		Offset:            offset,
-		Limit:             limit,
+		Statuses:          statuses,
+		ProjectID:         projectID,
+		FromTime:          fromTime,
+		ToTime:            toTime,
+		Limit:             filter.Limit,
+		Offset:            filter.Offset,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]*DigitalEmployeeRun, 0, len(runs))
-	for _, run := range runs {
-		out = append(out, digitalEmployeeRunFromQuery(run))
+	total, err := r.q.CountDigitalEmployeeRunsDetailed(ctx, queries.CountDigitalEmployeeRunsDetailedParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Statuses:          statuses,
+		ProjectID:         projectID,
+		FromTime:          fromTime,
+		ToTime:            toTime,
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+
+	projectRows, err := r.q.ListDigitalEmployeeRunProjectOptions(ctx, queries.ListDigitalEmployeeRunProjectOptionsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]DigitalEmployeeRunListItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, digitalEmployeeRunListItemFromDetailedRow(row))
+	}
+	projects := make([]RunProjectOption, 0, len(projectRows))
+	for _, p := range projectRows {
+		projects = append(projects, RunProjectOption{ID: p.ID, Name: p.Name})
+	}
+
+	return &DigitalEmployeeRunListResult{Items: items, TotalCount: total, Projects: projects}, nil
 }
 
 func (r *PgRunRepository) ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {
@@ -233,6 +278,10 @@ func (r *PgRunRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantI
 
 func (r *PgRunRepository) UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error {
 	return (&PgRepository{q: r.q}).UpsertWorkspaceFileSync(ctx, params)
+}
+
+func (r *PgRunRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error) {
+	return (&PgRepository{q: r.q}).GetDigitalEmployeeRunStats(ctx, tenantID, digitalEmployeeID)
 }
 
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
@@ -729,6 +778,81 @@ func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {
 		CreatedAt:                 timeFromTimestamptz(run.CreatedAt),
 		UpdatedAt:                 timeFromTimestamptz(run.UpdatedAt),
 	}
+}
+
+// digitalEmployeeRunListItemFromDetailedRow maps a joined task_runs row (with task title,
+// project association, work-product count) into a DigitalEmployeeRunListItem. The row's
+// TaskRun-equivalent columns are reassembled into a queries.TaskRun so the existing
+// digitalEmployeeRunFromQuery mapper is reused. DurationSec is computed in Go from the
+// already-nullable FinishedAt/StartedAt columns rather than via SQL EXTRACT, because
+// sqlc infers EXTRACT(...)::float8 as a non-nullable float64 which would crash pgx when
+// finished_at IS NULL for in-progress runs.
+func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRunsDetailedRow) DigitalEmployeeRunListItem {
+	run := digitalEmployeeRunFromQuery(queries.TaskRun{
+		ID:                        row.ID,
+		TenantID:                  row.TenantID,
+		TaskID:                    row.TaskID,
+		DigitalEmployeeID:         row.DigitalEmployeeID,
+		ExecutionInstanceID:       row.ExecutionInstanceID,
+		RuntimeNodeID:             row.RuntimeNodeID,
+		NodeID:                    row.NodeID,
+		CommandID:                 row.CommandID,
+		ProviderType:              row.ProviderType,
+		ProviderSessionID:         row.ProviderSessionID,
+		ProviderSessionExternalID: row.ProviderSessionExternalID,
+		Status:                    row.Status,
+		Result:                    row.Result,
+		Diagnostic:                row.Diagnostic,
+		LogRef:                    row.LogRef,
+		RawResultRef:              row.RawResultRef,
+		WorkProducts:              row.WorkProducts,
+		SessionState:              row.SessionState,
+		ErrorMessage:              row.ErrorMessage,
+		ErrorCode:                 row.ErrorCode,
+		ErrorFamily:               row.ErrorFamily,
+		ExitCode:                  row.ExitCode,
+		Signal:                    row.Signal,
+		TimedOut:                  row.TimedOut,
+		IdempotencyKey:            row.IdempotencyKey,
+		TimeoutSec:                row.TimeoutSec,
+		GraceSec:                  row.GraceSec,
+		StartedAt:                 row.StartedAt,
+		CompletedAt:               row.CompletedAt,
+		FinishedAt:                row.FinishedAt,
+		CreatedAt:                 row.CreatedAt,
+		UpdatedAt:                 row.UpdatedAt,
+	})
+
+	item := DigitalEmployeeRunListItem{
+		Run:              run,
+		TaskTitle:        row.TaskTitle,
+		WorkProductCount: row.WorkProductCount,
+		DurationSec:      durationSecondsFromBounds(row.StartedAt, row.FinishedAt),
+	}
+	if row.ProjectID.Valid {
+		id := row.ProjectID.UUID
+		item.ProjectID = &id
+	}
+	if row.ProjectName.Valid {
+		name := row.ProjectName.String
+		item.ProjectName = &name
+	}
+	return item
+}
+
+// durationSecondsFromBounds returns finished-start in seconds when both timestamps are
+// valid and finished is not before started; nil otherwise. This guards against negative
+// or nonsense durations from partial timestamp state.
+func durationSecondsFromBounds(startedAt, finishedAt pgtype.Timestamptz) *float64 {
+	if !startedAt.Valid || !finishedAt.Valid {
+		return nil
+	}
+	delta := finishedAt.Time.Sub(startedAt.Time)
+	if delta < 0 {
+		return nil
+	}
+	seconds := delta.Seconds()
+	return &seconds
 }
 
 func runtimeCommandEventFromTaskEvent(event queries.TaskEvent) RuntimeCommandEventWriteback {

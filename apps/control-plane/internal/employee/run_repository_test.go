@@ -817,3 +817,271 @@ func runEmployeeRepositoryTestMigrations(ctx context.Context, conn *pgx.Conn) er
 	}
 	return nil
 }
+
+func TestPgRepositoryGetDigitalEmployeeRunStatsAggregatesByStatus(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_stats_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	otherEmployeeID := uuid.New()
+	taskID := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, provider_type, status)
+		VALUES ($1, $2, 'stats-fixture-task', 'codex', 'completed');
+	`, taskID, tenantID)
+	require.NoError(t, err)
+
+	insertRun := func(employee uuid.UUID, status string, startedAt, finishedAt *time.Time, createdAt time.Time) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+			VALUES ($1, $2, $3, $4, 'node-a', $5, $6, $7, $8)
+		`, uuid.New(), tenantID, taskID, employee, status, startedAt, finishedAt, createdAt)
+		require.NoError(t, err)
+	}
+
+	now := time.Now().UTC()
+	start1, finish1 := now.Add(-30*time.Minute), now.Add(-10*time.Minute)
+	start2, finish2 := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
+	insertRun(employeeID, "completed", &start1, &finish1, now.Add(-1*24*time.Hour))
+	insertRun(employeeID, "completed", &start2, &finish2, now.Add(-10*24*time.Hour))
+	insertRun(employeeID, "failed", &start1, &finish1, now.Add(-2*24*time.Hour))
+	insertRun(employeeID, "cancelled", &start1, &finish1, now.Add(-12*24*time.Hour))
+	insertRun(otherEmployeeID, "completed", &start1, &finish1, now)
+
+	repo := NewPgRepository(queries.New(conn))
+	stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeID)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(4), stats.TotalCount)
+	require.Equal(t, int64(2), stats.SucceededCount)
+	require.Equal(t, int64(1), stats.FailedCount)
+	require.Equal(t, int64(1), stats.CancelledCount)
+	require.Equal(t, int64(2), stats.Last7dCount)
+	// prev_7d window is [now-14d, now-7d): both the -10d and -12d fixture rows fall inside it.
+	require.Equal(t, int64(2), stats.Prev7dCount)
+	require.NotNil(t, stats.AvgDurationSec)
+	// durations across all 4 finished runs for employeeID: 1200s, 3600s, 1200s, 1200s -> avg 1800s.
+	require.InDelta(t, 1800, *stats.AvgDurationSec, 1)
+	require.NotNil(t, stats.P90DurationSec)
+	// PERCENTILE_CONT(0.9) over sorted [1200, 1200, 1200, 3600] interpolates to 2880s.
+	require.InDelta(t, 2880, *stats.P90DurationSec, 1)
+}
+
+func TestPgRepositoryGetDigitalEmployeeRunStatsNullDurationsForNoFinishedRuns(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_stats_null_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeWithNoRuns := uuid.New()
+	employeeWithUnfinishedRuns := uuid.New()
+	taskID := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, provider_type, status)
+		VALUES ($1, $2, 'stats-fixture-task-null', 'codex', 'running');
+	`, taskID, tenantID)
+	require.NoError(t, err)
+
+	insertRun := func(employee uuid.UUID, status string, startedAt time.Time, finishedAt *time.Time, createdAt time.Time) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+			VALUES ($1, $2, $3, $4, 'node-a', $5, $6, $7, $8)
+		`, uuid.New(), tenantID, taskID, employee, status, startedAt, finishedAt, createdAt)
+		require.NoError(t, err)
+	}
+
+	now := time.Now().UTC()
+	// employeeWithUnfinishedRuns has runs, but none of them have finished_at set (still in flight).
+	insertRun(employeeWithUnfinishedRuns, "running", now.Add(-10*time.Minute), nil, now.Add(-10*time.Minute))
+	insertRun(employeeWithUnfinishedRuns, "dispatching", now.Add(-5*time.Minute), nil, now.Add(-5*time.Minute))
+
+	repo := NewPgRepository(queries.New(conn))
+
+	t.Run("employee with zero runs at all", func(t *testing.T) {
+		stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeWithNoRuns)
+		require.NoError(t, err)
+		require.Equal(t, int64(0), stats.TotalCount)
+		require.Equal(t, int64(0), stats.SucceededCount)
+		require.Equal(t, int64(0), stats.FailedCount)
+		require.Equal(t, int64(0), stats.CancelledCount)
+		require.Equal(t, int64(0), stats.Last7dCount)
+		require.Equal(t, int64(0), stats.Prev7dCount)
+		require.Nil(t, stats.AvgDurationSec)
+		require.Nil(t, stats.P90DurationSec)
+	})
+
+	t.Run("employee with runs but none finished", func(t *testing.T) {
+		stats, err := repo.GetDigitalEmployeeRunStats(ctx, tenantID, employeeWithUnfinishedRuns)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), stats.TotalCount)
+		require.Equal(t, int64(0), stats.SucceededCount)
+		require.Equal(t, int64(0), stats.FailedCount)
+		require.Equal(t, int64(0), stats.CancelledCount)
+		require.Nil(t, stats.AvgDurationSec)
+		require.Nil(t, stats.P90DurationSec)
+	})
+}
+
+// TestPgRepositoryListRunsDetailedFiltersByStatusAndProject exercises the joined,
+// filtered, paginated run list: it verifies total_count matches the filtered (not
+// unfiltered) set, status/project/time-window filters apply symmetrically to list and
+// count, the task/project LEFT JOIN surfaces task_title and project_name, work-product
+// count is read, duration_sec is computed for finished runs AND stays nil for
+// in-progress runs (which have finished_at IS NULL — this guards against the pgx
+// NULL-into-float64 scan crash that a naive SQL EXTRACT column would trigger).
+func TestPgRepositoryListRunsDetailedFiltersByStatusAndProject(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_list_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	otherEmployeeID := uuid.New()
+	taskID := uuid.New()
+	projectID := uuid.New()
+	completedRunID := uuid.New()
+	failedRunID := uuid.New()
+	inProgressRunID := uuid.New()
+	humanOwnerID := uuid.New()
+	nodeID := "node-a"
+
+	// Fixture setup uses one Exec per statement: pgx's extended protocol rejects
+	// multi-statement strings that also bind parameters.
+	_, err = conn.Exec(ctx, `INSERT INTO tenants (id, slug, name, status) VALUES ($1, 'default', '默认租户', 'active') ON CONFLICT (id) DO NOTHING`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO tasks (id, tenant_id, title, provider_type, status) VALUES ($1, $2, '需求梳理任务', 'codex', 'completed')`, taskID, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, work_products, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'completed', NOW() - interval '30 minutes', NOW() - interval '10 minutes', '[{"type":"report","title":"r"}]'::jsonb, NOW() - interval '3 hours')
+	`, completedRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'failed', NOW() - interval '1 hour', NOW() - interval '50 minutes', NOW() - interval '2 hours')
+	`, failedRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	// In-progress run with NO finished_at: proves duration computation is NULL-safe.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'running', NOW() - interval '5 minutes', NOW() - interval '30 minutes')
+	`, inProgressRunID, tenantID, taskID, employeeID, nodeID)
+	require.NoError(t, err)
+	// Run for a different employee: must be excluded from every query below.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, started_at, finished_at, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, 'completed', NOW() - interval '1 hour', NOW() - interval '40 minutes', NOW())
+	`, tenantID, taskID, otherEmployeeID, nodeID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, status, human_owner_user_id) VALUES ($1, $2, '试点项目 A', 'active', $3)`, projectID, tenantID, humanOwnerID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO project_tasks (id, tenant_id, project_id, digital_employee_run_id, title, status) VALUES (gen_random_uuid(), $1, $2, $3, '需求梳理任务', 'completed')`, tenantID, projectID, completedRunID)
+	require.NoError(t, err)
+
+	repo := NewPgRepository(queries.New(conn))
+
+	all, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), all.TotalCount)
+	require.Len(t, all.Projects, 1)
+	require.Equal(t, "试点项目 A", all.Projects[0].Name)
+	require.Equal(t, projectID, all.Projects[0].ID)
+	// Ordering is created_at DESC: completed(-3h) was inserted with created_at NOW()-3h...
+	// actually each row sets its own created_at. Verify the in-progress run (most recent,
+	// created NOW()-30min) is first and has nil DurationSec.
+	require.Len(t, all.Items, 3)
+	require.Nil(t, all.Items[0].DurationSec, "in-progress run must have nil duration_sec, not crash")
+
+	onlyCompleted, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		Statuses: []string{"completed"},
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), onlyCompleted.TotalCount)
+	require.Len(t, onlyCompleted.Items, 1)
+	require.Equal(t, "需求梳理任务", onlyCompleted.Items[0].TaskTitle)
+	require.NotNil(t, onlyCompleted.Items[0].ProjectName)
+	require.Equal(t, "试点项目 A", *onlyCompleted.Items[0].ProjectName)
+	require.NotNil(t, onlyCompleted.Items[0].ProjectID)
+	require.Equal(t, projectID, *onlyCompleted.Items[0].ProjectID)
+	require.Equal(t, int32(1), onlyCompleted.Items[0].WorkProductCount)
+	require.NotNil(t, onlyCompleted.Items[0].DurationSec)
+	require.InDelta(t, 1200, *onlyCompleted.Items[0].DurationSec, 1)
+
+	scopedToProject, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		ProjectID: &projectID,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), scopedToProject.TotalCount)
+	require.Equal(t, completedRunID, scopedToProject.Items[0].Run.ID)
+
+	// Time window: only the in-progress run (created NOW()-30min) falls inside the last hour.
+	from := time.Now().UTC().Add(-1 * time.Hour)
+	to := time.Now().UTC().Add(1 * time.Minute)
+	recent, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		From:  &from,
+		To:    &to,
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), recent.TotalCount)
+	require.Equal(t, inProgressRunID, recent.Items[0].Run.ID)
+}
