@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>流程编排 · 指挥中枢 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格一 · 指挥中枢 (Command Nexus)
+   深色玻璃态科技控制台 — 任务控制中心 / NOC 视觉
+   霓虹语义色 · 脉冲指示 · 实时事件流 · 等宽遥测读数
+   ============================================================ */
+:root{
+  --bg:#070b16; --bg-2:#0a1020; --panel:rgba(18,26,46,.72); --panel-solid:#121a2e;
+  --panel-2:rgba(24,33,56,.6); --line:rgba(120,145,200,.14); --line-2:rgba(120,145,200,.22);
+  --ink:#e8eefc; --ink-2:#9fb0d0; --ink-3:#6b7da0; --ink-4:#46577a;
+  --cyan:#22d3ee; --blue:#3b82f6; --blue-deep:#2563eb; --magenta:#e879f9; --violet:#a78bfa;
+  --ok:#34d399; --warn:#fbbf24; --danger:#fb5d6b; --info:#38bdf8;
+  --ok-glow:rgba(52,211,153,.4); --warn-glow:rgba(251,191,36,.4); --danger-glow:rgba(251,93,107,.45);
+  --cyan-glow:rgba(34,211,238,.4);
+  --r:16px; --r-sm:11px; --r-xs:8px;
+  --shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.5;overflow-x:hidden;}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 80% 60% at 15% -5%,rgba(59,130,246,.16),transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 8%,rgba(34,211,238,.12),transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 110%,rgba(139,92,246,.1),transparent 60%);}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(rgba(120,145,200,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,145,200,.05) 1px,transparent 1px);
+  background-size:48px 48px;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+a{color:inherit;text-decoration:none;}
+::-webkit-scrollbar{width:9px;height:9px;} ::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(120,145,200,.22);border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:rgba(120,145,200,.36);}
+
+/* ===== 顶栏 ===== */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:24px;padding:13px 28px;
+  background:rgba(7,11,22,.72);backdrop-filter:blur(20px) saturate(1.4);border-bottom:1px solid var(--line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-.01em;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;
+  background:linear-gradient(135deg,#3b82f6,#22d3ee);box-shadow:0 4px 18px rgba(34,211,238,.4);}
+.logo .nm{display:flex;flex-direction:column;line-height:1.05;}
+.logo .nm b{font-size:14px;} .logo .nm span{font-size:10.5px;color:var(--ink-3);font-weight:500;letter-spacing:.04em;}
+.nav{display:flex;gap:2px;margin-left:14px;}
+.nav a{padding:8px 13px;border-radius:9px;color:var(--ink-2);font-size:13px;font-weight:500;transition:.15s;}
+.nav a:hover{color:var(--ink);background:rgba(120,145,200,.08);}
+.nav a.on{color:var(--cyan);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 1px rgba(34,211,238,.22);}
+.grow{flex:1;}
+.search{display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:11px;background:rgba(18,26,46,.6);
+  border:1px solid var(--line-2);min-width:240px;color:var(--ink-3);font-size:12.5px;}
+.search svg{width:15px;height:15px;}
+.search kbd{margin-left:auto;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;
+  background:rgba(120,145,200,.12);color:var(--ink-3);border:1px solid var(--line-2);}
+.tbtn{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;
+  background:rgba(18,26,46,.5);border:1px solid var(--line-2);font-size:15px;transition:.15s;}
+.tbtn:hover{color:var(--ink);border-color:var(--cyan);}
+.me{display:flex;align-items:center;gap:9px;padding:5px 11px 5px 5px;border-radius:13px;
+  background:rgba(18,26,46,.5);border:1px solid var(--line-2);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;
+  background:linear-gradient(135deg,#6366f1,#a855f7);}
+.me .nm{font-size:12px;font-weight:600;line-height:1.1;} .me .ro{font-size:10px;color:var(--ink-3);}
+
+/* ===== 主区 ===== */
+.wrap{position:relative;z-index:1;max-width:1480px;margin:0 auto;padding:22px 28px 56px;}
+.head{display:flex;align-items:flex-end;gap:18px;margin-bottom:22px;flex-wrap:wrap;}
+.head .ico{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:var(--cyan);font-size:22px;
+  background:linear-gradient(135deg,rgba(34,211,238,.16),rgba(59,130,246,.12));border:1px solid rgba(34,211,238,.28);
+  box-shadow:0 0 24px rgba(34,211,238,.18);}
+.head h1{font-size:27px;font-weight:800;letter-spacing:-.025em;line-height:1.1;}
+.head .sub{font-size:13px;color:var(--ink-2);margin-top:4px;}
+.head .live{margin-left:auto;display:flex;align-items:center;gap:14px;}
+.pulse-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:11px;font-size:12px;font-weight:600;
+  color:var(--ok);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);}
+.pulse-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok-glow);animation:pulse 2s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 var(--ok-glow);}70%{box-shadow:0 0 0 8px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+.clock{font-family:var(--mono);font-size:12px;color:var(--ink-3);text-align:right;line-height:1.3;}
+.clock b{color:var(--ink);font-weight:600;font-size:14px;}
+
+/* ===== 指标条 ===== */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px;}
+@media(max-width:1100px){.metrics{grid-template-columns:repeat(2,1fr);}}
+.mcard{position:relative;padding:16px 18px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);
+  backdrop-filter:blur(14px);overflow:hidden;}
+.mcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cyan);}
+.mcard.ok::before{background:var(--ok);} .mcard.warn::before{background:var(--warn);} .mcard.danger::before{background:var(--danger);} .mcard.mute::before{background:var(--ink-4);}
+.mcard .lbl{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3);font-weight:600;letter-spacing:.03em;text-transform:uppercase;}
+.mcard .big{font-size:32px;font-weight:800;letter-spacing:-.03em;margin:6px 0 2px;line-height:1;}
+.mcard .delta{font-size:11px;font-family:var(--mono);color:var(--ink-3);}
+.mcard .delta b{color:var(--cyan);} .mcard.ok .delta b{color:var(--ok);} .mcard.warn .delta b{color:var(--warn);} .mcard.danger .delta b{color:var(--danger);}
+.mcard .spark{position:absolute;right:14px;top:18px;width:62px;height:26px;opacity:.7;}
+
+/* ===== 三栏布局 ===== */
+.grid3{display:grid;grid-template-columns:260px 1fr 300px;gap:16px;align-items:start;}
+@media(max-width:1240px){.grid3{grid-template-columns:1fr;} .right-feed{order:3;} .left-triage{order:2;}}
+.col-title{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:11px;padding:0 2px;}
+.col-title .bar{width:3px;height:13px;border-radius:2px;background:var(--cyan);}
+.col-title .count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-4);}
+
+/* ===== 左栏：分诊 ===== */
+.triage-card{padding:14px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);margin-bottom:14px;}
+.triage-card.danger{border-color:rgba(251,93,107,.32);background:linear-gradient(180deg,rgba(251,93,107,.08),var(--panel));}
+.triage-card .th{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-bottom:10px;}
+.triage-card .th .ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;}
+.triage-card .th .ct{margin-left:auto;font-family:var(--mono);font-size:14px;font-weight:700;}
+.triage-card.danger .th{color:var(--danger);} .triage-card.danger .ic{background:rgba(251,93,107,.16);color:var(--danger);}
+.triage-card.warn .th{color:var(--warn);} .triage-card.warn .ic{background:rgba(251,191,36,.16);color:var(--warn);}
+.triage-card.cyan .th{color:var(--cyan);} .triage-card.cyan .ic{background:rgba(34,211,238,.16);color:var(--cyan);}
+.triage-item{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;transition:.15s;}
+.triage-item:hover{background:rgba(120,145,200,.08);}
+.triage-item .ring{width:9px;height:9px;border-radius:50%;flex-shrink:0;position:relative;}
+.triage-item .ring::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:1px solid currentColor;opacity:.4;}
+.triage-item.danger .ring{background:var(--danger);color:var(--danger);}
+.triage-item.warn .ring{background:var(--warn);color:var(--warn);}
+.triage-item.ok .ring{background:var(--ok);color:var(--ok);}
+.triage-item.cyan .ring{background:var(--cyan);color:var(--cyan);}
+.triage-item .nm{font-size:12px;font-weight:600;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.triage-item .pj{font-size:10.5px;color:var(--ink-3);font-family:var(--mono);}
+.triage-item .tag{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:5px;background:rgba(120,145,200,.12);color:var(--ink-2);}
+
+/* ===== 中栏：实例卡片 ===== */
+.filter-bar{display:flex;align-items:center;gap:8px;padding:11px 14px;border-radius:var(--r) var(--r) 0 0;
+  background:var(--panel);border:1px solid var(--line);border-bottom:1px solid var(--line);backdrop-filter:blur(14px);flex-wrap:wrap;}
+.filter-bar .ttl{font-size:13px;font-weight:700;margin-right:6px;}
+.chip{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;
+  background:transparent;border:1px solid transparent;transition:.15s;display:inline-flex;align-items:center;gap:6px;}
+.chip:hover{background:rgba(120,145,200,.08);color:var(--ink);}
+.chip.on{color:var(--cyan);background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.3);box-shadow:0 0 14px rgba(34,211,238,.15);}
+.chip .ct{font-family:var(--mono);font-size:10.5px;opacity:.8;}
+.chip.on .ct{color:var(--cyan);}
+.filter-bar .right{margin-left:auto;display:flex;gap:7px;}
+.seg{display:flex;background:rgba(120,145,200,.08);border-radius:8px;padding:2px;}
+.seg button{padding:5px 10px;border-radius:6px;border:none;background:transparent;color:var(--ink-3);font-size:11.5px;font-weight:600;cursor:pointer;}
+.seg button.on{background:rgba(120,145,200,.18);color:var(--ink);}
+
+.inst-list{border:1px solid var(--line);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden;background:var(--panel);backdrop-filter:blur(14px);}
+.group-hd{display:flex;align-items:center;gap:8px;padding:9px 14px;background:rgba(120,145,200,.06);border-bottom:1px solid var(--line);
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);}
+.group-hd .gd{width:7px;height:7px;border-radius:50%;}
+.group-hd.danger{color:var(--danger);} .group-hd.danger .gd{background:var(--danger);box-shadow:0 0 8px var(--danger-glow);}
+.group-hd.cyan{color:var(--cyan);} .group-hd.cyan .gd{background:var(--cyan);box-shadow:0 0 8px var(--cyan-glow);}
+.group-hd.ok{color:var(--ok);} .group-hd.ok .gd{background:var(--ok);box-shadow:0 0 8px var(--ok-glow);}
+.group-hd .ct{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);}
+
+.inst{position:relative;padding:14px 16px;border-bottom:1px solid var(--line);cursor:pointer;transition:.18s;}
+.inst:last-child{border-bottom:none;}
+.inst:hover{background:rgba(34,211,238,.05);}
+.inst.danger{background:linear-gradient(90deg,rgba(251,93,107,.09),transparent 40%);}
+.inst.danger::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--danger);box-shadow:0 0 12px var(--danger-glow);}
+.inst-top{display:flex;align-items:center;gap:10px;margin-bottom:9px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.02em;}
+.pill .pd{width:6px;height:6px;border-radius:50%;}
+.pill.danger{color:var(--danger);background:rgba(251,93,107,.14);border:1px solid rgba(251,93,107,.3);}
+.pill.danger .pd{background:var(--danger);box-shadow:0 0 6px var(--danger-glow);}
+.pill.warn{color:var(--warn);background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.3);}
+.pill.warn .pd{background:var(--warn);box-shadow:0 0 6px var(--warn-glow);}
+.pill.cyan{color:var(--cyan);background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.3);}
+.pill.cyan .pd{background:var(--cyan);box-shadow:0 0 6px var(--cyan-glow);}
+.pill.ok{color:var(--ok);background:rgba(52,211,153,.14);border:1px solid rgba(52,211,153,.3);}
+.pill.ok .pd{background:var(--ok);box-shadow:0 0 6px var(--ok-glow);}
+.pill.mute{color:var(--ink-2);background:rgba(120,145,200,.12);border:1px solid var(--line-2);}
+.pill.mute .pd{background:var(--ink-3);}
+.pill.sm{padding:2px 7px;font-size:10.5px;}
+.inst .ttl{font-size:13.5px;font-weight:700;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.inst .pj{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);}
+.inst .tm{margin-left:auto;font-size:11px;color:var(--ink-3);font-family:var(--mono);display:flex;align-items:center;gap:5px;flex-shrink:0;}
+
+/* 节点链 */
+.chain-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.chain{display:inline-flex;align-items:center;}
+.nd{width:11px;height:11px;border-radius:50%;flex-shrink:0;position:relative;}
+.nd.done{background:var(--ok);box-shadow:0 0 8px var(--ok-glow);}
+.nd.run{background:var(--cyan);box-shadow:0 0 10px var(--cyan-glow);}
+.nd.run::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1.5px solid var(--cyan);opacity:.5;animation:ring 1.6s infinite;}
+@keyframes ring{0%{transform:scale(.7);opacity:.7;}100%{transform:scale(1.6);opacity:0;}}
+.nd.wait{background:var(--warn);box-shadow:0 0 8px var(--warn-glow);}
+.nd.block{background:var(--danger);box-shadow:0 0 8px var(--danger-glow);}
+.nd.pend{background:transparent;border:1.5px dashed var(--ink-4);}
+.lnk{width:14px;height:2px;background:linear-gradient(90deg,var(--ink-4),var(--ink-4));opacity:.5;}
+.lnk.done{background:var(--ok);opacity:.7;}
+.chain-meta{display:flex;align-items:center;gap:14px;font-size:11px;font-family:var(--mono);color:var(--ink-3);}
+.chain-meta b{color:var(--ink);font-weight:600;}
+.chain-meta .blk{color:var(--danger);}
+.inst-sum{margin-top:8px;font-size:12px;color:var(--ink-2);display:flex;align-items:flex-start;gap:7px;}
+.inst-sum .sd{width:6px;height:6px;border-radius:50%;margin-top:6px;flex-shrink:0;}
+.inst-sum.danger .sd{background:var(--danger);box-shadow:0 0 6px var(--danger-glow);}
+.inst-sum .sd{background:var(--ink-4);}
+.inst-sum .txt{min-width:0;}
+
+/* ===== 右栏：事件流 ===== */
+.right-feed{position:sticky;top:80px;}
+.feed-card{padding:14px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);}
+.feed-hd{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:12px;color:var(--ink);}
+.feed-hd .live{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ok);font-family:var(--mono);}
+.feed-hd .live .d{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok-glow);animation:pulse 2s infinite;}
+.feed-item{padding:9px 0;border-bottom:1px dashed var(--line);font-size:11.5px;}
+.feed-item:last-child{border-bottom:none;}
+.feed-item .ft{display:flex;align-items:center;gap:7px;margin-bottom:3px;}
+.feed-item .ft .eic{width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:10px;flex-shrink:0;}
+.feed-item .ft .ety{font-size:10.5px;font-weight:700;font-family:var(--mono);letter-spacing:.02em;}
+.feed-item .ft .ts{margin-left:auto;font-size:10px;color:var(--ink-4);font-family:var(--mono);}
+.feed-item .msg{color:var(--ink-2);line-height:1.45;font-size:11.5px;}
+.feed-item .tg{font-size:10px;color:var(--ink-4);font-family:var(--mono);margin-top:2px;}
+.e-ok{color:var(--ok);background:rgba(52,211,153,.12);} .ety-ok{color:var(--ok);}
+.e-warn{color:var(--warn);background:rgba(251,191,36,.12);} .ety-warn{color:var(--warn);}
+.e-danger{color:var(--danger);background:rgba(251,93,107,.12);} .ety-danger{color:var(--danger);}
+.e-info{color:var(--info);background:rgba(56,189,248,.12);} .ety-info{color:var(--info);}
+
+/* 雷达 */
+.radar{margin-top:14px;padding:14px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);}
+.radar-hd{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;}
+.radar-box{position:relative;width:100%;aspect-ratio:1;border-radius:50%;border:1px solid var(--line-2);
+  background:radial-gradient(circle,rgba(34,211,238,.06),transparent 70%);overflow:hidden;}
+.radar-box::before,.radar-box::after{content:"";position:absolute;inset:20%;border-radius:50%;border:1px solid var(--line);}
+.radar-box::after{inset:40%;}
+.radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,rgba(34,211,238,.22) 50deg,transparent 60deg);animation:sweep 4s linear infinite;}
+@keyframes sweep{to{transform:rotate(360deg);}}
+.blip{position:absolute;width:7px;height:7px;border-radius:50%;transform:translate(-50%,-50%);}
+.blip.danger{background:var(--danger);box-shadow:0 0 8px var(--danger-glow);}
+.blip.cyan{background:var(--cyan);box-shadow:0 0 8px var(--cyan-glow);}
+.blip.ok{background:var(--ok);box-shadow:0 0 8px var(--ok-glow);}
+.blip.warn{background:var(--warn);box-shadow:0 0 8px var(--warn-glow);}
+
+.note{margin-top:18px;padding:13px 16px;border-radius:var(--r);border:1px dashed var(--line-2);
+  font-size:11.5px;color:var(--ink-3);line-height:1.6;}
+.note b{color:var(--cyan);font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="logo">
+    <div class="mk">S</div>
+    <div class="nm"><b>SuperTeam</b><span>CONTROL CONSOLE</span></div>
+  </div>
+  <nav class="nav">
+    <a>总览</a><a>项目</a><a>数字员工</a><a>技能</a><a class="on">流程编排</a><a>审批</a><a>审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    搜索流程、需求、事件…
+    <kbd>⌘K</kbd>
+  </div>
+  <div class="tbtn">◷</div>
+  <div class="me"><div class="pic">陈</div><div><div class="nm">陈知行</div><div class="ro">平台负责人</div></div></div>
+</header>
+
+<main class="wrap">
+  <!-- 页头 -->
+  <div class="head">
+    <div class="ico">⬡</div>
+    <div>
+      <h1>流程编排 · 指挥中枢</h1>
+      <div class="sub">实时追踪需求触发的规划、执行、阻塞与结果状态 · 协调线程全局视图</div>
+    </div>
+    <div class="live">
+      <div class="pulse-badge"><span class="dot"></span>协调线程在线 · 5s 轮询</div>
+      <div class="clock"><b>00:26:51</b><br>2026-07-06 GMT+8</div>
+    </div>
+  </div>
+
+  <!-- 指标条 -->
+  <section class="metrics">
+    <div class="mcard cyan">
+      <div class="lbl">活跃实例</div>
+      <div class="big num">4</div>
+      <div class="delta">运行中节点 <b>11</b> · 待执行 <b>23</b></div>
+      <svg class="spark" viewBox="0 0 62 26" fill="none"><polyline points="0,18 10,14 20,16 30,9 40,12 50,6 62,8" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </div>
+    <div class="mcard warn">
+      <div class="lbl">等待人工</div>
+      <div class="big num">2</div>
+      <div class="delta">平均滞留 <b>23m</b> · 最久 <b>1h12m</b></div>
+      <svg class="spark" viewBox="0 0 62 26" fill="none"><polyline points="0,20 10,18 20,12 30,15 40,8 50,11 62,5" stroke="#fbbf24" stroke-width="1.5"/></svg>
+    </div>
+    <div class="mcard danger">
+      <div class="lbl">阻断 / 失败</div>
+      <div class="big num">2</div>
+      <div class="delta">需立即介入 <b>2</b> · P0 <b>1</b></div>
+      <svg class="spark" viewBox="0 0 62 26" fill="none"><polyline points="0,8 10,16 20,10 30,18 40,14 50,22 62,19" stroke="#fb5d6b" stroke-width="1.5"/></svg>
+    </div>
+    <div class="mcard ok">
+      <div class="lbl">今日完成</div>
+      <div class="big num">3</div>
+      <div class="delta">平均耗时 <b>42m</b> · 准时率 <b>96%</b></div>
+      <svg class="spark" viewBox="0 0 62 26" fill="none"><polyline points="0,22 10,18 20,14 30,16 40,10 50,8 62,4" stroke="#34d399" stroke-width="1.5"/></svg>
+    </div>
+    <div class="mcard mute">
+      <div class="lbl">节点吞吐</div>
+      <div class="big num">187</div>
+      <div class="delta">本小时 <b>+34</b> · 排队 <b>8</b></div>
+      <svg class="spark" viewBox="0 0 62 26" fill="none"><polyline points="0,16 10,12 20,18 30,10 40,14 50,8 62,11" stroke="#6b7da0" stroke-width="1.5"/></svg>
+    </div>
+  </section>
+
+  <!-- 三栏 -->
+  <div class="grid3">
+    <!-- 左栏：分诊 -->
+    <aside class="left-triage">
+      <div class="col-title"><span class="bar"></span>需要介入 <span class="count">2</span></div>
+      <div class="triage-card danger">
+        <div class="th"><span class="ic">⚠</span>阻断 / 失败 <span class="ct num">2</span></div>
+        <div class="triage-item danger">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">订单异常根因分析</div><div class="pj">订单风控巡检</div></div>
+          <span class="tag">P0</span>
+        </div>
+        <div class="triage-item danger">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">知识库向量化重建</div><div class="pj">RAG 基座升级</div></div>
+          <span class="tag">P1</span>
+        </div>
+      </div>
+
+      <div class="col-title"><span class="bar" style="background:var(--warn)"></span>等待确认 <span class="count">2</span></div>
+      <div class="triage-card warn">
+        <div class="th"><span class="ic">◆</span>等待人工 <span class="ct num">2</span></div>
+        <div class="triage-item warn">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">财报数据抽取与校验</div><div class="pj">季度财报Pipeline</div></div>
+          <span class="tag">P1</span>
+        </div>
+        <div class="triage-item warn">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">发布前回归巡检</div><div class="pj">发版质量门禁</div></div>
+          <span class="tag">P1</span>
+        </div>
+      </div>
+
+      <div class="col-title"><span class="bar" style="background:var(--cyan)"></span>运行中 <span class="count">3</span></div>
+      <div class="triage-card cyan">
+        <div class="th"><span class="ic">►</span>活跃编排 <span class="ct num">3</span></div>
+        <div class="triage-item cyan">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">客户工单分类自动化</div><div class="pj">客户支持中台 v2</div></div>
+          <span class="tag">7/12</span>
+        </div>
+        <div class="triage-item cyan">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">营销文案批量生成</div><div class="pj">双11内容工厂</div></div>
+          <span class="tag">15/20</span>
+        </div>
+        <div class="triage-item cyan">
+          <span class="ring"></span>
+          <div style="min-width:0;flex:1"><div class="nm">供应商对账自动化</div><div class="pj">财务月结机器人</div></div>
+          <span class="tag">5/10</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 中栏：实例列表 -->
+    <section>
+      <div class="filter-bar">
+        <span class="ttl">流程实例</span>
+        <span class="chip on">全部 <span class="ct">10</span></span>
+        <span class="chip">进行中 <span class="ct">4</span></span>
+        <span class="chip">等待人工 <span class="ct">2</span></span>
+        <span class="chip">阻断 <span class="ct">2</span></span>
+        <span class="chip">已完成 <span class="ct">2</span></span>
+        <div class="right">
+          <div class="seg"><button class="on">分组</button><button>平铺</button></div>
+        </div>
+      </div>
+
+      <div class="inst-list">
+        <!-- 需要介入组 -->
+        <div class="group-hd danger"><span class="gd"></span>需要介入 <span class="ct">2</span></div>
+
+        <div class="inst danger">
+          <div class="inst-top">
+            <span class="pill danger"><span class="pd"></span>阻断</span>
+            <span class="pill sm danger">P0</span>
+            <span class="ttl">订单异常根因分析</span>
+            <span class="pj">订单风控巡检</span>
+            <span class="tm">◷ 7 分钟前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd block"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>3</b>/8</span>
+              <span>运行 <b>0</b></span>
+              <span class="blk">阻断 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum danger"><span class="sd"></span><span class="txt">阻塞：风控数据源连接超时，Provider 退出码 137，需人工检查凭证或切换备用通道</span></div>
+        </div>
+
+        <div class="inst danger">
+          <div class="inst-top">
+            <span class="pill danger"><span class="pd"></span>失败</span>
+            <span class="pill sm danger">P1</span>
+            <span class="ttl">知识库向量化重建</span>
+            <span class="pj">RAG 基座升级</span>
+            <span class="tm">◷ 1 小时前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd block"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>2</b>/9</span>
+              <span class="blk">失败 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum danger"><span class="sd"></span><span class="txt">阻塞：向量化节点 OOM，批量大小 512 超出显存上限，建议降配重跑或扩容 GPU 槽位</span></div>
+        </div>
+
+        <!-- 进行中组 -->
+        <div class="group-hd cyan"><span class="gd"></span>进行中 <span class="ct">3</span></div>
+
+        <div class="inst">
+          <div class="inst-top">
+            <span class="pill cyan"><span class="pd"></span>运行中</span>
+            <span class="pill sm mute">P2</span>
+            <span class="ttl">客户工单分类自动化</span>
+            <span class="pj">客户支持中台 v2</span>
+            <span class="tm">◷ 刚刚</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd run"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>7</b>/12</span>
+              <span>运行 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum"><span class="sd"></span><span class="txt">最新事件：分类模型正在批量推理第 8 批，预计 4 分钟完成</span></div>
+        </div>
+
+        <div class="inst">
+          <div class="inst-top">
+            <span class="pill cyan"><span class="pd"></span>运行中</span>
+            <span class="pill sm mute">P2</span>
+            <span class="ttl">营销文案批量生成</span>
+            <span class="pj">双11内容工厂</span>
+            <span class="tm">◷ 2 分钟前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd run"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>15</b>/20</span>
+              <span>运行 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum"><span class="sd"></span><span class="txt">最新事件：合规审核节点通过 412 条，剩余 88 条进入第二轮校验</span></div>
+        </div>
+
+        <div class="inst">
+          <div class="inst-top">
+            <span class="pill cyan"><span class="pd"></span>运行中</span>
+            <span class="pill sm mute">P2</span>
+            <span class="ttl">供应商对账自动化</span>
+            <span class="pj">财务月结机器人</span>
+            <span class="tm">◷ 5 分钟前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd run"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>5</b>/10</span>
+              <span>运行 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum"><span class="sd"></span><span class="txt">最新事件：正在拉取 3 家供应商的应付明细，已完成 2/3</span></div>
+        </div>
+
+        <!-- 等待人工组（归到需要介入，但状态不同，这里独立展示） -->
+        <div class="group-hd" style="color:var(--warn)"><span class="gd" style="background:var(--warn);box-shadow:0 0 8px var(--warn-glow)"></span>等待人工 <span class="ct">2</span></div>
+
+        <div class="inst">
+          <div class="inst-top">
+            <span class="pill warn"><span class="pd"></span>等待人工</span>
+            <span class="pill sm danger">P1</span>
+            <span class="ttl">财报数据抽取与校验</span>
+            <span class="pj">季度财报Pipeline</span>
+            <span class="tm">◷ 23 分钟前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd wait"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>9</b>/14</span>
+              <span style="color:var(--warn)">人工 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum"><span class="sd" style="background:var(--warn);box-shadow:0 0 6px var(--warn-glow)"></span><span class="txt">最新事件：识别到 3 处金额勾稽不一致，等待财务负责人确认是否调整或放行</span></div>
+        </div>
+
+        <div class="inst">
+          <div class="inst-top">
+            <span class="pill warn"><span class="pd"></span>等待人工</span>
+            <span class="pill sm danger">P1</span>
+            <span class="ttl">发布前回归巡检</span>
+            <span class="pj">发版质量门禁</span>
+            <span class="tm">◷ 1 小时前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd wait"></span><span class="lnk"></span>
+              <span class="nd pend"></span><span class="lnk"></span>
+              <span class="nd pend"></span>
+            </div>
+            <div class="chain-meta">
+              <span><b>6</b>/11</span>
+              <span style="color:var(--warn)">人工 <b>1</b></span>
+            </div>
+          </div>
+          <div class="inst-sum"><span class="sd" style="background:var(--warn);box-shadow:0 0 6px var(--warn-glow)"></span><span class="txt">最新事件：覆盖率 87.2% 低于门禁 90%，等待发布负责人放行或拦截</span></div>
+        </div>
+
+        <!-- 已完成组 -->
+        <div class="group-hd ok"><span class="gd"></span>已完成 <span class="ct">2</span></div>
+
+        <div class="inst" style="opacity:.82">
+          <div class="inst-top">
+            <span class="pill ok"><span class="pd"></span>已完成</span>
+            <span class="ttl">日志归档与敏感脱敏</span>
+            <span class="pj">合规数据治理</span>
+            <span class="tm">◷ 3 小时前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span>
+            </div>
+            <div class="chain-meta"><span><b>12</b>/12</b></span><span style="color:var(--ok)">耗时 38m</span></div>
+          </div>
+        </div>
+
+        <div class="inst" style="opacity:.82">
+          <div class="inst-top">
+            <span class="pill ok"><span class="pd"></span>已完成</span>
+            <span class="ttl">客户回访话术生成</span>
+            <span class="pj">客服效能提升</span>
+            <span class="tm">◷ 5 小时前</span>
+          </div>
+          <div class="chain-row">
+            <div class="chain">
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk done"></span>
+              <span class="nd done"></span><span class="lnk"></span>
+              <span class="nd done"></span>
+            </div>
+            <div class="chain-meta"><span><b>8</b>/8</span><span style="color:var(--ok)">耗时 22m</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右栏：实时事件流 + 雷达 -->
+    <aside class="right-feed">
+      <div class="feed-card">
+        <div class="feed-hd"><span style="color:var(--cyan)">▦</span>实时事件流<span class="live"><span class="d"></span>LIVE</span></div>
+        <div class="feed-item">
+          <div class="ft"><span class="eic e-danger">⚠</span><span class="ety ety-danger">dispatch_gate.blocked</span><span class="ts">00:26:31</span></div>
+          <div class="msg">订单风控巡检 · 数据源连接超时，Provider 退出码 137</div>
+          <div class="tg">demand: dmnd_8f3a · task: tsk_21c9</div>
+        </div>
+        <div class="feed-item">
+          <div class="ft"><span class="eic e-info">►</span><span class="ety ety-info">task.dispatched</span><span class="ts">00:25:58</span></div>
+          <div class="msg">客户工单分类自动化 · 分类模型节点开始批量推理</div>
+          <div class="tg">demand: dmnd_2c71 · task: tsk_88b1</div>
+        </div>
+        <div class="feed-item">
+          <div class="ft"><span class="eic e-warn">◆</span><span class="ety ety-warn">dispatch_gate.waiting_human</span><span class="ts">00:03:42</span></div>
+          <div class="msg">财报数据抽取与校验 · 3 处勾稽不一致，等待财务确认</div>
+          <div class="tg">demand: dmnd_9e44 · task: tsk_55a2</div>
+        </div>
+        <div class="feed-item">
+          <div class="ft"><span class="eic e-ok">✓</span><span class="ety ety-ok">task.completed</span><span class="ts">23:48:11</span></div>
+          <div class="msg">日志归档与敏感脱敏 · 12/12 节点全部完成</div>
+          <div class="tg">demand: dmnd_1d80</div>
+        </div>
+        <div class="feed-item">
+          <div class="ft"><span class="eic e-info">►</span><span class="ety ety-info">node.started</span><span class="ts">23:31:08</span></div>
+          <div class="msg">营销文案批量生成 · 合规审核节点启动</div>
+          <div class="tg">demand: dmnd_4b22 · task: tsk_77e0</div>
+        </div>
+      </div>
+
+      <div class="radar">
+        <div class="radar-hd">编排雷达 · 实时坐标</div>
+        <div class="radar-box">
+          <div class="radar-sweep"></div>
+          <span class="blip danger" style="top:32%;left:28%"></span>
+          <span class="blip danger" style="top:58%;left:71%"></span>
+          <span class="blip warn" style="top:44%;left:62%"></span>
+          <span class="blip warn" style="top:66%;left:38%"></span>
+          <span class="blip cyan" style="top:22%;left:52%"></span>
+          <span class="blip cyan" style="top:48%;left:34%"></span>
+          <span class="blip cyan" style="top:36%;left:78%"></span>
+          <span class="blip ok" style="top:74%;left:60%"></span>
+          <span class="blip ok" style="top:28%;left:40%"></span>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:10px;font-size:10px;font-family:var(--mono);color:var(--ink-3);flex-wrap:wrap">
+          <span><span style="color:var(--cyan)">●</span> 运行 3</span>
+          <span><span style="color:var(--warn)">●</span> 等待 2</span>
+          <span><span style="color:var(--danger)">●</span> 阻断 2</span>
+          <span><span style="color:var(--ok)">●</span> 完成 2</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>指挥中枢</b> 风格以"任务控制中心"为隐喻：深色玻璃面板降低长时间值守的视觉疲劳，霓虹语义色让阻断与异常在第一时间被捕获，右栏实时事件流与编排雷达让操作者像值机员一样感知全局脉动。适合<b>7×24 运维值守、高异常密度、多人协同分诊</b>的场景。
+      </div>
+    </aside>
+  </div>
+</main>
+
+</body>
+</html>

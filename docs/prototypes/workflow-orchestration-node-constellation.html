@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>流程编排 · 节点星图 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格二 · 节点星图 (Node Constellation)
+   浅色图谱流 — 以节点拓扑为视觉中心
+   强调"编排"的连接与流向 · 留白充裕 · 航图意象
+   ============================================================ */
+:root{
+  --bg:#f6f9ff; --bg-2:#eef3fb; --card:#ffffff; --card-soft:#f4f7fc; --card-inner:#fafcff;
+  --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3; --ink-4:#b4c0d4;
+  --line:#e6ecf5; --line-2:#dce4ef; --line-strong:#cdd8e6;
+  --brand:#2f5fff; --brand-deep:#2348e0; --brand-soft:#e9efff; --brand-grad:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);
+  --ok:#15a06b; --ok-soft:#e3f7ec; --warn:#cf7a14; --warn-soft:#fdf0db;
+  --danger:#d14647; --danger-soft:#fdeced; --info:#2f5fff; --info-soft:#e9efff;
+  --mute:#64748b; --mute-soft:#eef2f7; --violet:#7c5cff; --violet-soft:#efeaff;
+  --r-card:22px; --r-inner:14px; --r-sm:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+  --shadow-pop:0 14px 44px rgba(16,24,40,.12);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.5;overflow-x:hidden;}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 50% at 12% 0%,rgba(47,95,255,.08),transparent 55%),
+    radial-gradient(ellipse 60% 45% at 95% 10%,rgba(124,92,255,.06),transparent 55%);}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(rgba(47,95,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(47,95,255,.04) 1px,transparent 1px);
+  background-size:56px 56px;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+a{color:inherit;text-decoration:none;}
+::-webkit-scrollbar{width:9px;height:9px;} ::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px;}
+
+/* ===== 顶栏 ===== */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:24px;padding:14px 30px;
+  background:rgba(246,249,255,.82);backdrop-filter:blur(16px) saturate(1.3);border-bottom:1px solid var(--line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:750;font-size:15px;letter-spacing:-.01em;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;
+  background:var(--brand-grad);box-shadow:0 4px 14px rgba(47,95,255,.3);}
+.nav{display:flex;gap:3px;margin-left:14px;}
+.nav a{padding:8px 13px;border-radius:10px;color:var(--ink-2);font-size:13.5px;font-weight:550;transition:.15s;}
+.nav a:hover{background:var(--card);color:var(--ink);box-shadow:var(--shadow);}
+.nav a.on{color:var(--brand-deep);background:var(--brand-soft);font-weight:650;}
+.grow{flex:1;}
+.search{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:11px;background:var(--card);
+  border:1px solid var(--line-2);min-width:230px;color:var(--ink-3);font-size:12.5px;box-shadow:var(--shadow);}
+.search svg{width:15px;height:15px;}
+.tbtn{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;
+  background:var(--card);border:1px solid var(--line-2);font-size:15px;box-shadow:var(--shadow);transition:.15s;}
+.tbtn:hover{color:var(--brand);}
+.me{display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:13px;background:var(--card);box-shadow:var(--shadow);border:1px solid var(--line);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;
+  background:linear-gradient(135deg,#6366f1,#a855f7);}
+.me .nm{font-size:12px;font-weight:650;line-height:1.1;} .me .ro{font-size:10.5px;color:var(--ink-3);}
+
+/* ===== 主区 ===== */
+.wrap{position:relative;z-index:1;max-width:1380px;margin:0 auto;padding:24px 30px 60px;}
+.head{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
+.head .ico{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;color:var(--brand);font-size:22px;
+  background:var(--brand-soft);border:1px solid var(--brand-soft);}
+.head h1{font-size:28px;font-weight:800;letter-spacing:-.025em;line-height:1.1;}
+.head .sub{font-size:13.5px;color:var(--ink-2);margin-top:5px;max-width:540px;}
+.head .actions{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:12px;font-size:13px;font-weight:650;cursor:pointer;border:none;transition:.15s;}
+.btn-primary{background:var(--brand);color:#fff;box-shadow:0 6px 18px rgba(47,95,255,.28);}
+.btn-primary:hover{background:var(--brand-deep);transform:translateY(-1px);box-shadow:0 10px 24px rgba(47,95,255,.32);}
+.btn-ghost{background:var(--card);color:var(--ink);border:1px solid var(--line-2);box-shadow:var(--shadow);}
+.btn-ghost:hover{border-color:var(--brand);color:var(--brand-deep);}
+.live-dot{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:11px;font-size:12px;font-weight:600;
+  color:var(--ok);background:var(--ok-soft);border:1px solid rgba(21,160,107,.2);}
+.live-dot .d{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(21,160,107,.4);animation:pulse 2s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(21,160,107,.4);}70%{box-shadow:0 0 0 7px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+
+/* ===== 指标条 ===== */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px;}
+@media(max-width:980px){.metrics{grid-template-columns:repeat(2,1fr);}}
+.mcard{padding:18px 20px;border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);position:relative;overflow:hidden;}
+.mcard .lbl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);font-weight:600;}
+.mcard .ico{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;font-size:13px;}
+.mcard .big{font-size:36px;font-weight:800;letter-spacing:-.03em;margin:8px 0 3px;line-height:1;}
+.mcard .meta{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);}
+.mcard .ico.cyan{background:var(--info-soft);color:var(--brand);}
+.mcard .ico.warn{background:var(--warn-soft);color:var(--warn);}
+.mcard .ico.danger{background:var(--danger-soft);color:var(--danger);}
+.mcard .ico.ok{background:var(--ok-soft);color:var(--ok);}
+
+/* ===== 星图主区 ===== */
+.atlas{display:grid;grid-template-columns:1fr 340px;gap:18px;margin-bottom:22px;}
+@media(max-width:1100px){.atlas{grid-template-columns:1fr;}}
+.atlas-card{border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);overflow:hidden;}
+.atlas-hd{display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid var(--line);}
+.atlas-hd .ttl{font-size:15px;font-weight:750;}
+.atlas-hd .seg{display:flex;background:var(--card-soft);border-radius:9px;padding:3px;margin-left:8px;}
+.atlas-hd .seg button{padding:5px 11px;border-radius:6px;border:none;background:transparent;color:var(--ink-3);font-size:12px;font-weight:600;cursor:pointer;}
+.atlas-hd .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(16,24,40,.08);}
+.legend{margin-left:auto;display:flex;gap:13px;font-size:11.5px;color:var(--ink-3);}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+.atlas-canvas{position:relative;height:420px;background:
+  radial-gradient(circle at 50% 50%,rgba(47,95,255,.03),transparent 70%),
+  linear-gradient(rgba(47,95,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(47,95,255,.035) 1px,transparent 1px);
+  background-size:100% 100%,32px 32px,32px 32px;}
+.atlas-canvas svg{position:absolute;inset:0;width:100%;height:100%;}
+
+/* 节点 */
+.gnode{position:absolute;transform:translate(-50%,-50%);cursor:pointer;transition:.2s;}
+.gnode:hover{transform:translate(-50%,-50%) scale(1.08);}
+.gnode .ring{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;position:relative;}
+.gnode .core{width:14px;height:14px;border-radius:50%;}
+.gnode .lbl{position:absolute;top:60px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--ink);text-align:center;}
+.gnode .sub{font-size:10px;color:var(--ink-3);font-family:var(--mono);margin-top:1px;}
+.gnode.run .ring{background:radial-gradient(circle,rgba(47,95,255,.16),transparent 70%);border:2px solid var(--brand);}
+.gnode.run .core{background:var(--brand);box-shadow:0 0 0 4px rgba(47,95,255,.18);animation:breathe 2.4s infinite;}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 4px rgba(47,95,255,.18);}50%{box-shadow:0 0 0 8px rgba(47,95,255,.08);}}
+.gnode.wait .ring{background:radial-gradient(circle,rgba(207,122,20,.14),transparent 70%);border:2px solid var(--warn);}
+.gnode.wait .core{background:var(--warn);box-shadow:0 0 0 4px rgba(207,122,20,.16);}
+.gnode.block .ring{background:radial-gradient(circle,rgba(209,70,71,.14),transparent 70%);border:2px solid var(--danger);}
+.gnode.block .core{background:var(--danger);box-shadow:0 0 0 4px rgba(209,70,71,.16);animation:blink 1.4s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.5;}}
+.gnode.done .ring{background:radial-gradient(circle,rgba(21,160,107,.12),transparent 70%);border:2px solid var(--ok);}
+.gnode.done .core{background:var(--ok);box-shadow:0 0 0 3px rgba(21,160,107,.14);}
+.gnode.plan .ring{background:transparent;border:2px dashed var(--line-strong);}
+.gnode.plan .core{background:var(--card);border:2px solid var(--ink-4);}
+
+/* 详情面板 */
+.detail-panel{border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);overflow:hidden;align-self:start;}
+.dp-hd{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--brand-soft),transparent);}
+.dp-hd .pil{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:7px;font-size:11.5px;font-weight:700;}
+.pil.run{color:var(--brand);background:var(--brand-soft);border:1px solid rgba(47,95,255,.25);}
+.pil.wait{color:var(--warn);background:var(--warn-soft);border:1px solid rgba(207,122,20,.25);}
+.pil.block{color:var(--danger);background:var(--danger-soft);border:1px solid rgba(209,70,71,.25);}
+.pil.done{color:var(--ok);background:var(--ok-soft);border:1px solid rgba(21,160,107,.25);}
+.pil i{width:6px;height:6px;border-radius:50%;background:currentColor;}
+.dp-hd .tt{font-size:14.5px;font-weight:750;flex:1;min-width:0;}
+.dp-bd{padding:16px 18px;}
+.dp-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:12.5px;border-bottom:1px dashed var(--line);}
+.dp-row:last-child{border-bottom:none;}
+.dp-row .k{color:var(--ink-3);} .dp-row .v{font-weight:600;color:var(--ink);font-family:var(--mono);}
+.dp-section{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+.dp-section h4{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px;}
+.dp-nodes{display:flex;flex-wrap:wrap;gap:6px;}
+.dp-node{padding:4px 9px;border-radius:7px;font-size:11px;font-weight:600;font-family:var(--mono);background:var(--card-soft);color:var(--ink-2);border:1px solid var(--line);}
+.dp-node.done{background:var(--ok-soft);color:var(--ok);border-color:rgba(21,160,107,.2);}
+.dp-node.run{background:var(--brand-soft);color:var(--brand-deep);border-color:rgba(47,95,255,.25);}
+.dp-node.block{background:var(--danger-soft);color:var(--danger);border-color:rgba(209,70,71,.25);}
+.dp-node.pend{color:var(--ink-4);}
+.dp-cta{margin-top:14px;display:flex;gap:8px;}
+.dp-cta .btn{flex:1;justify-content:center;padding:9px;font-size:12.5px;}
+
+/* ===== 卡片网格 ===== */
+.section-title{display:flex;align-items:center;gap:10px;margin:6px 0 14px;}
+.section-title h2{font-size:16px;font-weight:750;}
+.section-title .sub{font-size:12.5px;color:var(--ink-3);}
+.section-title .fltr{margin-left:auto;display:flex;gap:6px;}
+.fchip{padding:6px 12px;border-radius:9px;font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;
+  background:var(--card);border:1px solid var(--line-2);transition:.15s;display:inline-flex;align-items:center;gap:6px;box-shadow:var(--shadow);}
+.fchip:hover{border-color:var(--brand);color:var(--ink);}
+.fchip.on{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 4px 12px rgba(47,95,255,.25);}
+.fchip .ct{font-family:var(--mono);font-size:10.5px;opacity:.8;}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+@media(max-width:1100px){.grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:680px){.grid{grid-template-columns:1fr;}}
+
+.wcard{border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);padding:18px 20px;cursor:pointer;transition:.2s;position:relative;overflow:hidden;border:1px solid transparent;}
+.wcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);border-color:var(--brand-soft);}
+.wcard.danger{border-color:rgba(209,70,71,.2);}
+.wcard.danger::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--danger);}
+.wcard-top{display:flex;align-items:center;gap:8px;margin-bottom:11px;}
+.wcard-top .pil{font-size:11px;padding:3px 8px;}
+.wcard-top .prio{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:5px;background:var(--card-soft);color:var(--ink-2);font-weight:700;}
+.wcard-top .prio.p0{background:var(--danger-soft);color:var(--danger);}
+.wcard-top .prio.p1{background:var(--warn-soft);color:var(--warn);}
+.wcard-top .tm{margin-left:auto;font-size:11px;color:var(--ink-3);font-family:var(--mono);}
+.wcard .tt{font-size:14.5px;font-weight:750;color:var(--ink);margin-bottom:3px;}
+.wcard .pj{font-size:12px;color:var(--ink-3);margin-bottom:13px;}
+
+/* 节点链（横向流） */
+.flow{display:flex;align-items:center;gap:0;margin:11px 0 9px;flex-wrap:wrap;}
+.fnd{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:10px;font-weight:700;flex-shrink:0;}
+.fnd.done{background:var(--ok-soft);color:var(--ok);}
+.fnd.run{background:var(--brand);color:#fff;box-shadow:0 0 0 3px rgba(47,95,255,.15);}
+.fnd.wait{background:var(--warn-soft);color:var(--warn);}
+.fnd.block{background:var(--danger);color:#fff;}
+.fnd.pend{background:var(--card-soft);color:var(--ink-4);border:1px dashed var(--line-strong);}
+.flnk{width:14px;height:2px;flex-shrink:0;}
+.flnk.done{background:var(--ok);opacity:.5;} .flnk.other{background:var(--line-strong);}
+.wcard-foot{display:flex;align-items:center;gap:14px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink-3);font-family:var(--mono);}
+.wcard-foot b{color:var(--ink);font-weight:650;} .wcard-foot .blk{color:var(--danger);}
+.wcard-sum{font-size:12px;color:var(--ink-2);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.wcard-sum.danger{color:var(--danger);}
+
+.note{margin-top:22px;padding:16px 20px;border-radius:var(--r-card);border:1px dashed var(--line-strong);
+  background:var(--card-inner);font-size:12.5px;color:var(--ink-2);line-height:1.65;}
+.note b{color:var(--brand-deep);font-weight:650;}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="logo"><div class="mk">S</div>SuperTeam</div>
+  <nav class="nav">
+    <a>总览</a><a>项目</a><a>数字员工</a><a>技能</a><a class="on">流程编排</a><a>审批</a><a>审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    搜索流程、需求、节点…
+  </div>
+  <div class="tbtn">◷</div>
+  <div class="me"><div class="pic">陈</div><div><div class="nm">陈知行</div><div class="ro">平台负责人</div></div></div>
+</header>
+
+<main class="wrap">
+  <!-- 页头 -->
+  <div class="head">
+    <div class="ico">◈</div>
+    <div style="flex:1;min-width:240px">
+      <h1>流程编排 · 节点星图</h1>
+      <div class="sub">以图谱视角俯瞰全局编排：节点是流程实例，连线是依赖与数据流向。点亮即关注，连线即路径。</div>
+    </div>
+    <div class="actions">
+      <span class="live-dot"><span class="d"></span>协调线程在线</span>
+      <button class="btn btn-ghost">导出快照</button>
+      <button class="btn btn-primary">+ 新建编排</button>
+    </div>
+  </div>
+
+  <!-- 指标条 -->
+  <section class="metrics">
+    <div class="mcard">
+      <div class="lbl"><span class="ico cyan">◈</span>活跃节点</div>
+      <div class="big num">11</div>
+      <div class="meta">3 个实例 · 23 待执行</div>
+    </div>
+    <div class="mcard">
+      <div class="lbl"><span class="ico warn">◆</span>等待人工</div>
+      <div class="big num">2</div>
+      <div class="meta">平均滞留 23m</div>
+    </div>
+    <div class="mcard">
+      <div class="lbl"><span class="ico danger">⚠</span>阻断节点</div>
+      <div class="big num">2</div>
+      <div class="meta">P0 × 1 · P1 × 1</div>
+    </div>
+    <div class="mcard">
+      <div class="lbl"><span class="ico ok">✓</span>今日完成</div>
+      <div class="big num">3</div>
+      <div class="meta">准时率 96%</div>
+    </div>
+  </section>
+
+  <!-- 星图主区 -->
+  <section class="atlas">
+    <div class="atlas-card">
+      <div class="atlas-hd">
+        <span class="ttl">编排拓扑</span>
+        <div class="seg"><button class="on">星图</button><button>列表</button><button>时间线</button></div>
+        <div class="legend">
+          <span><i style="background:var(--brand)"></i>运行</span>
+          <span><i style="background:var(--warn)"></i>等待</span>
+          <span><i style="background:var(--danger)"></i>阻断</span>
+          <span><i style="background:var(--ok)"></i>完成</span>
+          <span><i style="background:transparent;border:1.5px dashed var(--line-strong)"></i>规划</span>
+        </div>
+      </div>
+      <div class="atlas-canvas">
+        <!-- 连线 SVG -->
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#2f5fff" stop-opacity=".5"/>
+              <stop offset="100%" stop-color="#2f5fff" stop-opacity=".15"/>
+            </linearGradient>
+          </defs>
+          <!-- 中心枢纽 -->
+          <line x1="50" y1="48" x2="22" y2="26" stroke="url(#lg1)" stroke-width="0.4" stroke-dasharray="0"/>
+          <line x1="50" y1="48" x2="78" y2="24" stroke="url(#lg1)" stroke-width="0.4"/>
+          <line x1="50" y1="48" x2="18" y2="62" stroke="rgba(209,70,71,.4)" stroke-width="0.5"/>
+          <line x1="50" y1="48" x2="80" y2="60" stroke="url(#lg1)" stroke-width="0.4"/>
+          <line x1="50" y1="48" x2="35" y2="82" stroke="rgba(207,122,20,.35)" stroke-width="0.4"/>
+          <line x1="50" y1="48" x2="68" y2="84" stroke="rgba(21,160,107,.35)" stroke-width="0.4"/>
+          <line x1="22" y1="26" x2="8" y2="44" stroke="rgba(124,92,255,.3)" stroke-width="0.35" stroke-dasharray="1.2 1"/>
+          <line x1="78" y1="24" x2="92" y2="42" stroke="rgba(124,92,255,.3)" stroke-width="0.35" stroke-dasharray="1.2 1"/>
+          <line x1="18" y1="62" x2="30" y2="40" stroke="rgba(209,70,71,.25)" stroke-width="0.3" stroke-dasharray="1 1"/>
+        </svg>
+
+        <!-- 中心枢纽 -->
+        <div class="gnode run" style="left:50%;top:48%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">协调中枢<div class="sub">4 活跃 · 2 阻塞</div></div>
+        </div>
+
+        <!-- 周边节点 -->
+        <div class="gnode run" style="left:22%;top:26%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">客户工单分类<div class="sub">7/12 · 运行</div></div>
+        </div>
+        <div class="gnode run" style="left:78%;top:24%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">营销文案生成<div class="sub">15/20 · 运行</div></div>
+        </div>
+        <div class="gnode block" style="left:18%;top:62%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">订单异常根因<div class="sub">3/8 · 阻断</div></div>
+        </div>
+        <div class="gnode run" style="left:80%;top:60%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">供应商对账<div class="sub">5/10 · 运行</div></div>
+        </div>
+        <div class="gnode wait" style="left:35%;top:82%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">财报抽取校验<div class="sub">9/14 · 待确认</div></div>
+        </div>
+        <div class="gnode done" style="left:68%;top:84%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">日志归档脱敏<div class="sub">12/12 · 完成</div></div>
+        </div>
+        <div class="gnode plan" style="left:8%;top:44%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">API契约校验<div class="sub">0/6 · 规划</div></div>
+        </div>
+        <div class="gnode wait" style="left:92%;top:42%">
+          <div class="ring"><div class="core"></div></div>
+          <div class="lbl">发布回归巡检<div class="sub">6/11 · 待确认</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 详情面板（选中态） -->
+    <div class="detail-panel">
+      <div class="dp-hd">
+        <span class="pil run"><i></i>运行中</span>
+        <span class="tt">客户工单分类自动化</span>
+      </div>
+      <div class="dp-bd">
+        <div class="dp-row"><span class="k">所属项目</span><span class="v">客户支持中台 v2</span></div>
+        <div class="dp-row"><span class="k">需求 ID</span><span class="v">dmnd_2c71</span></div>
+        <div class="dp-row"><span class="k">进度</span><span class="v">7 / 12</span></div>
+        <div class="dp-row"><span class="k">优先级</span><span class="v">P2</span></div>
+        <div class="dp-row"><span class="k">最近更新</span><span class="v">刚刚</span></div>
+
+        <div class="dp-section">
+          <h4>节点序列</h4>
+          <div class="dp-nodes">
+            <span class="dp-node done">取数</span>
+            <span class="dp-node done">清洗</span>
+            <span class="dp-node done">分桶</span>
+            <span class="dp-node done">特征</span>
+            <span class="dp-node done">路由</span>
+            <span class="dp-node done">推理①</span>
+            <span class="dp-node done">推理②</span>
+            <span class="dp-node run">推理③</span>
+            <span class="dp-node pend">汇总</span>
+            <span class="dp-node pend">回写</span>
+            <span class="dp-node pend">校验</span>
+            <span class="dp-node pend">通知</span>
+          </div>
+        </div>
+
+        <div class="dp-section">
+          <h4>最新事件</h4>
+          <div style="font-size:12px;color:var(--ink-2);line-height:1.55">分类模型正在批量推理第 8 批，预计 4 分钟完成。上游取数与清洗均已闭环。</div>
+        </div>
+
+        <div class="dp-cta">
+          <button class="btn btn-ghost">查看轨迹</button>
+          <button class="btn btn-primary">进入详情</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 卡片网格 -->
+  <div class="section-title">
+    <h2>流程实例</h2>
+    <span class="sub">点击星图节点或下方卡片进入详情</span>
+    <div class="fltr">
+      <span class="fchip on">全部 <span class="ct">10</span></span>
+      <span class="fchip">进行中 <span class="ct">4</span></span>
+      <span class="fchip">等待人工 <span class="ct">2</span></span>
+      <span class="fchip">阻断 <span class="ct">2</span></span>
+      <span class="fchip">已完成 <span class="ct">2</span></span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- 阻断 -->
+    <div class="wcard danger">
+      <div class="wcard-top">
+        <span class="pil block"><i></i>阻断</span><span class="prio p0">P0</span>
+        <span class="tm">7 分钟前</span>
+      </div>
+      <div class="tt">订单异常根因分析</div>
+      <div class="pj">订单风控巡检</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk other"></span>
+        <span class="fnd block">!</span><span class="flnk other"></span>
+        <span class="fnd pend">5</span><span class="flnk other"></span>
+        <span class="fnd pend">6</span><span class="flnk other"></span>
+        <span class="fnd pend">7</span><span class="flnk other"></span>
+        <span class="fnd pend">8</span>
+      </div>
+      <div class="wcard-foot"><span><b>3</b>/8</span><span class="blk">阻断 1</span></div>
+      <div class="wcard-sum danger">数据源连接超时，Provider 退出码 137，需检查凭证或切换备用通道</div>
+    </div>
+
+    <div class="wcard danger">
+      <div class="wcard-top">
+        <span class="pil block"><i></i>失败</span><span class="prio p1">P1</span>
+        <span class="tm">1 小时前</span>
+      </div>
+      <div class="tt">知识库向量化重建</div>
+      <div class="pj">RAG 基座升级</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk other"></span>
+        <span class="fnd block">!</span><span class="flnk other"></span>
+        <span class="fnd pend">5</span><span class="flnk other"></span>
+        <span class="fnd pend">6</span><span class="flnk other"></span>
+        <span class="fnd pend">7</span><span class="flnk other"></span>
+        <span class="fnd pend">8</span><span class="flnk other"></span>
+        <span class="fnd pend">9</span>
+      </div>
+      <div class="wcard-foot"><span><b>2</b>/9</span><span class="blk">失败 1</span></div>
+      <div class="wcard-sum danger">向量化节点 OOM，批量大小 512 超出显存上限，建议降配重跑</div>
+    </div>
+
+    <!-- 运行中 -->
+    <div class="wcard">
+      <div class="wcard-top">
+        <span class="pil run"><i></i>运行中</span><span class="prio">P2</span>
+        <span class="tm">刚刚</span>
+      </div>
+      <div class="tt">客户工单分类自动化</div>
+      <div class="pj">客户支持中台 v2</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd run">►</span><span class="flnk other"></span>
+        <span class="fnd pend">9</span><span class="flnk other"></span>
+        <span class="fnd pend">10</span><span class="flnk other"></span>
+        <span class="fnd pend">11</span><span class="flnk other"></span>
+        <span class="fnd pend">12</span>
+      </div>
+      <div class="wcard-foot"><span><b>7</b>/12</span><span>运行 1</span></div>
+      <div class="wcard-sum">分类模型正在批量推理第 8 批，预计 4 分钟完成</div>
+    </div>
+
+    <div class="wcard">
+      <div class="wcard-top">
+        <span class="pil run"><i></i>运行中</span><span class="prio">P2</span>
+        <span class="tm">2 分钟前</span>
+      </div>
+      <div class="tt">营销文案批量生成</div>
+      <div class="pj">双11内容工厂</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk other"></span>
+        <span class="fnd run">►</span><span class="flnk other"></span>
+        <span class="fnd pend">11</span><span class="flnk other"></span>
+        <span class="fnd pend">12</span>
+      </div>
+      <div class="wcard-foot"><span><b>15</b>/20</span><span>运行 1</span></div>
+      <div class="wcard-sum">合规审核节点通过 412 条，剩余 88 条进入第二轮校验</div>
+    </div>
+
+    <!-- 等待 -->
+    <div class="wcard">
+      <div class="wcard-top">
+        <span class="pil wait"><i></i>等待人工</span><span class="prio p1">P1</span>
+        <span class="tm">23 分钟前</span>
+      </div>
+      <div class="tt">财报数据抽取与校验</div>
+      <div class="pj">季度财报Pipeline</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk other"></span>
+        <span class="fnd wait">◆</span><span class="flnk other"></span>
+        <span class="fnd pend">11</span><span class="flnk other"></span>
+        <span class="fnd pend">12</span>
+      </div>
+      <div class="wcard-foot"><span><b>9</b>/14</span><span style="color:var(--warn)">人工 1</span></div>
+      <div class="wcard-sum">识别到 3 处金额勾稽不一致，等待财务负责人确认</div>
+    </div>
+
+    <!-- 完成 -->
+    <div class="wcard" style="opacity:.85">
+      <div class="wcard-top">
+        <span class="pil done"><i></i>已完成</span>
+        <span class="tm">3 小时前</span>
+      </div>
+      <div class="tt">日志归档与敏感脱敏</div>
+      <div class="pj">合规数据治理</div>
+      <div class="flow">
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span><span class="flnk done"></span>
+        <span class="fnd done">✓</span>
+      </div>
+      <div class="wcard-foot"><span><b>12</b>/12</span><span style="color:var(--ok)">耗时 38m</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>节点星图</b> 风格以"航图"为隐喻：中心是协调中枢，周围是各流程实例节点，连线表达依赖与数据流向。浅色留白降低视觉噪音，节点的呼吸 / 闪烁动效让运行与阻断一眼可辨。适合<b>全局态势感知、编排关系理解、向非技术干系人展示"工作地图"</b>的场景。星图可下钻为列表或时间线，三种视图共享同一数据模型。
+  </div>
+</main>
+
+</body>
+</html>

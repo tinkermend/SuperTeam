@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { WorkflowDetail } from "./components/workflow-detail";
-import { WorkflowEntrance } from "./components/workflow-entrance";
+import { WorkflowRiverView } from "./components/workflow-river-view";
 import { WorkflowShell } from "./components/workflow-shell";
 import { SoftCard, StatusPill } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
@@ -105,7 +105,7 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
   if (!demandId) {
     return (
       <WorkflowShell>
-        <WorkflowEntrance
+        <WorkflowRiverView
           instances={instances}
           isError={listQuery.isError}
           isLoading={listQuery.isLoading}

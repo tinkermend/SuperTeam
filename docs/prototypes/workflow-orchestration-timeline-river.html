@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>流程编排 · 时序河道 v4 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格三 · 时序河道 v4
+   恢复 v1 饱满连续河道视觉 + 真实 progress 分桶驱动
+   SLA / 风险 / 提交人 / 事件 填满信息密度
+   河长 = 已持续时间；分桶 = 执行顺序（done→run→wait→block→pending）
+   ============================================================ */
+:root{
+  --paper:#fbf7f0; --paper-2:#f4eee3; --card:#fffdf9; --card-soft:#f6f0e6; --card-inner:#fbf6ec;
+  --ink:#231a12; --ink-2:#6b5a48; --ink-3:#9a8a76; --ink-4:#c4b8a6;
+  --line:#e8dfcf; --line-2:#ddd2bd; --line-strong:#cdc0a8;
+  --terracotta:#c2410c; --terracotta-deep:#9a3412; --terracotta-soft:#fdeee4; --terra-grad:linear-gradient(135deg,#ea580c,#c2410c);
+  --ochre:#b45309; --sage:#5b8c5a;
+  --ok:#3d7a4a; --ok-soft:#e6f0e8; --warn:#b45309; --warn-soft:#fbedd5;
+  --danger:#b91c1c; --danger-soft:#fbe4e4; --info:#1d4ed8; --info-soft:#e3eafd;
+  --violet:#7c3aed; --violet-soft:#efe9fd;
+  --r-card:18px; --r-sm:9px;
+  --shadow:0 1px 2px rgba(60,40,20,.05), 0 10px 26px rgba(60,40,20,.07);
+  --shadow-pop:0 14px 40px rgba(60,40,20,.14);
+  --serif:"Source Serif Pro","Noto Serif SC","Songti SC","Georgia",serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;overflow-x:hidden;}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 60% 40% at 10% 0%,rgba(194,65,12,.05),transparent 55%),radial-gradient(ellipse 50% 40% at 92% 8%,rgba(180,83,9,.04),transparent 55%);}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;} .serif{font-family:var(--serif);}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:var(--paper-2);} ::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px;}
+
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:24px;padding:13px 32px;background:rgba(251,247,240,.88);backdrop-filter:blur(16px) saturate(1.2);border-bottom:1px solid var(--line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;background:var(--terra-grad);box-shadow:0 4px 14px rgba(194,65,12,.3);}
+.logo .nm{font-family:var(--serif);font-size:16px;}
+.nav{display:flex;gap:3px;margin-left:14px;}
+.nav a{padding:8px 13px;border-radius:9px;color:var(--ink-2);font-size:13px;font-weight:550;transition:.15s;}
+.nav a:hover{background:var(--card);color:var(--ink);}
+.nav a.on{color:var(--terracotta-deep);background:var(--terracotta-soft);font-weight:650;}
+.grow{flex:1;}
+.search{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:10px;background:var(--card);border:1px solid var(--line-2);min-width:200px;color:var(--ink-3);font-size:12.5px;box-shadow:var(--shadow);}
+.search svg{width:15px;height:15px;}
+.tbtn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;background:var(--card);border:1px solid var(--line-2);font-size:15px;box-shadow:var(--shadow);}
+.me{display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:13px;background:var(--card);box-shadow:var(--shadow);border:1px solid var(--line);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:var(--terra-grad);}
+.me .nm{font-size:12px;font-weight:650;} .me .ro{font-size:10.5px;color:var(--ink-3);}
+
+.wrap{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:26px 32px 60px;}
+
+.masthead{display:flex;align-items:flex-end;gap:18px;margin-bottom:6px;padding-bottom:18px;border-bottom:3px double var(--line-strong);flex-wrap:wrap;}
+.masthead .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--terracotta);font-weight:700;margin-bottom:6px;}
+.masthead h1{font-family:var(--serif);font-size:38px;font-weight:800;letter-spacing:-.02em;line-height:1;}
+.masthead .stand{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:640px;line-height:1.5;}
+.masthead .stand b{color:var(--terracotta-deep);}
+.masthead .actions{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+.masthead .stamp{font-family:var(--mono);font-size:11px;color:var(--ink-3);text-align:right;line-height:1.5;}
+.masthead .stamp b{color:var(--ink);font-size:13px;}
+.live{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;font-size:11.5px;font-weight:600;color:var(--ok);background:var(--ok-soft);border:1px solid rgba(61,122,74,.22);}
+.live .d{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(61,122,74,.4);animation:pulse 2s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,122,74,.4);}70%{box-shadow:0 0 0 7px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+
+.byline{display:flex;align-items:baseline;gap:0;margin:18px 0 24px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:14px 0;flex-wrap:wrap;}
+.stat{flex:1;min-width:100px;padding:0 18px;border-right:1px solid var(--line);}
+.stat:first-child{padding-left:0;} .stat:last-child{border-right:none;padding-right:0;}
+.stat .n{font-family:var(--serif);font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1;}
+.stat .n.danger{color:var(--danger);} .stat .n.warn{color:var(--ochre);} .stat .n.ok{color:var(--ok);} .stat .n.info{color:var(--terracotta);}
+.stat .l{font-size:11px;color:var(--ink-3);margin-top:5px;letter-spacing:.02em;text-transform:uppercase;font-weight:600;}
+.stat .src{font-size:9px;color:var(--ink-4);font-family:var(--mono);margin-top:3px;}
+
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;}
+.toolbar .lbl{font-family:var(--serif);font-size:15px;font-weight:700;margin-right:6px;}
+.fchip{padding:7px 14px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer;background:var(--card);border:1px solid var(--line-2);transition:.15s;display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow);}
+.fchip:hover{border-color:var(--terracotta);color:var(--ink);}
+.fchip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+.fchip .ct{font-family:var(--mono);font-size:10.5px;opacity:.75;}
+
+/* ===== 河道 ===== */
+.river{border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--line);}
+.river-hd{display:flex;align-items:center;gap:12px;padding:15px 22px;border-bottom:1px solid var(--line);background:var(--card-soft);}
+.river-hd .ttl{font-family:var(--serif);font-size:16px;font-weight:700;}
+.river-hd .sub{font-size:12px;color:var(--ink-3);}
+.river-hd .axis-note{margin-left:auto;font-size:11px;color:var(--terracotta-deep);font-family:var(--mono);font-weight:600;}
+
+.time-axis{display:flex;align-items:center;padding:12px 22px 10px;border-bottom:1px solid var(--line);background:var(--card-inner);}
+.time-axis .lane-label{width:218px;flex-shrink:0;font-size:11px;color:var(--ink-3);font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
+.time-axis .track{flex:1;position:relative;height:26px;}
+.t-tick{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);}
+.t-tick .l{font-size:10.5px;color:var(--ink-3);font-family:var(--mono);white-space:nowrap;font-weight:600;}
+.t-tick .m{width:1px;height:10px;background:var(--line-strong);margin-top:2px;}
+.t-tick.open .l{color:var(--ink-4);}
+
+/* 河道行 */
+.lane{display:flex;align-items:stretch;border-bottom:1px solid var(--line);}
+.lane:last-child{border-bottom:none;}
+.lane.danger{background:linear-gradient(90deg,rgba(185,28,28,.04),transparent 30%);}
+.lane-label{width:218px;flex-shrink:0;padding:12px 14px 12px 22px;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;gap:3px;}
+.lane-label .head-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;font-size:10.5px;font-weight:700;}
+.pill i{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.pill.run{color:var(--terracotta-deep);background:var(--terracotta-soft);border:1px solid rgba(194,65,12,.25);}
+.pill.wait{color:var(--ochre);background:var(--warn-soft);border:1px solid rgba(180,83,9,.25);}
+.pill.fail{color:var(--danger);background:var(--danger-soft);border:1px solid rgba(185,28,28,.28);}
+.pill.done{color:var(--ok);background:var(--ok-soft);border:1px solid rgba(61,122,74,.25);}
+.pill.plan{color:#6b5a48;background:var(--card-soft);border:1px solid var(--line-2);}
+.prio{font-size:9.5px;font-family:var(--mono);padding:1px 5px;border-radius:4px;background:var(--card-soft);color:var(--ink-2);font-weight:700;}
+.prio.p0{background:var(--danger-soft);color:var(--danger);} .prio.p1{background:var(--warn-soft);color:var(--ochre);}
+.risk{font-size:9.5px;font-family:var(--mono);padding:1px 5px;border-radius:4px;font-weight:700;}
+.risk.high{background:var(--danger-soft);color:var(--danger);} .risk.medium{background:var(--warn-soft);color:var(--ochre);}
+.lane-label .tt{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.3;margin-top:2px;}
+.lane-label .pj{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);}
+.lane-label .by{font-size:10.5px;color:var(--ink-3);margin-top:1px;}
+.lane-label .by b{color:var(--ink-2);font-weight:600;}
+
+/* 河道主体 */
+.lane-body{flex:1;padding:10px 16px 10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0;}
+.river-top{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--ink-3);font-family:var(--mono);}
+.river-top .dur{font-weight:700;color:var(--ink-2);}
+.river-top .dot{width:3px;height:3px;border-radius:50%;background:var(--ink-4);}
+.sla-tag{margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;font-family:var(--mono);}
+.sla-tag.breach{background:var(--danger-soft);color:var(--danger);border:1px solid rgba(185,28,28,.28);}
+.sla-tag.warn{background:var(--warn-soft);color:var(--ochre);border:1px solid rgba(180,83,9,.25);}
+.sla-tag.ok{background:var(--ok-soft);color:var(--ok);border:1px solid rgba(61,122,74,.22);}
+
+/* 连续河道容器 — 宽度 = 已持续/maxDuration */
+.river-wrap{position:relative;display:flex;align-items:center;height:26px;}
+.river-track{position:relative;height:24px;border-radius:8px;overflow:visible;display:flex;align-items:stretch;background:var(--card-soft);border:1px solid var(--line);}
+.river-future{width:8%;min-width:18px;height:24px;border-radius:0 8px 8px 0;background:repeating-linear-gradient(135deg,transparent,transparent 4px,var(--line) 4px,var(--line) 8px);border:1px dashed var(--line-strong);border-left:none;flex-shrink:0;}
+
+/* 分桶段 — 连续饱满 */
+.rseg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;font-family:var(--mono);overflow:hidden;position:relative;white-space:nowrap;}
+.rseg:first-child{border-radius:8px 0 0 8px;}
+.rseg.done{background:linear-gradient(135deg,#5b8c5a,#3d7a4a);}
+.rseg.run{background:var(--terra-grad);overflow:hidden;}
+.rseg.run::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent);animation:flow 2s infinite;}
+@keyframes flow{0%{transform:translateX(-100%);}100%{transform:translateX(100%);}}
+.rseg.wait{background:linear-gradient(135deg,#d97706,#b45309);}
+.rseg.block{background:linear-gradient(135deg,#dc2626,#b91c1c);animation:throb 1.6s infinite;}
+@keyframes throb{0%,100%{opacity:1;}50%{opacity:.72;}}
+.rseg.pend{background:repeating-linear-gradient(135deg,var(--card-soft),var(--card-soft) 5px,var(--line) 5px,var(--line) 10px);color:var(--ink-3);border:1px dashed var(--line-strong);}
+.rseg.plan-all{background:repeating-linear-gradient(135deg,var(--card-soft),var(--card-soft) 5px,var(--line) 5px,var(--line) 10px);color:var(--ink-3);border:1px dashed var(--line-strong);border-radius:8px;width:100%;}
+.rseg .txt{position:relative;z-index:2;padding:0 4px;}
+
+/* NOW 标记 */
+.now-mark{position:absolute;top:50%;transform:translate(-50%,-50%);width:2px;height:30px;background:var(--terracotta);z-index:6;border-radius:1px;}
+.now-mark::before{content:"NOW";position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:800;color:#fff;background:var(--terracotta);padding:1px 5px;border-radius:3px;letter-spacing:.05em;font-family:var(--mono);white-space:nowrap;box-shadow:0 1px 4px rgba(194,65,12,.4);}
+.end-mark{position:absolute;top:50%;transform:translate(-50%,-50%);width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;z-index:6;box-shadow:0 0 0 3px var(--ok-soft);}
+
+/* 门禁 */
+.rgate{position:absolute;top:50%;transform:translate(-50%,-50%);width:2px;height:32px;z-index:7;}
+.rgate::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--card);border:2.5px solid;}
+.rgate.human::before{border-color:var(--ochre);background:var(--warn-soft);}
+.rgate.human::after{content:"人";position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--ochre);font-weight:700;background:var(--card);padding:0 4px;border-radius:3px;border:1px solid var(--line-2);white-space:nowrap;}
+.rgate.block::before{border-color:var(--danger);background:var(--danger-soft);}
+.rgate.block::after{content:"!";position:absolute;bottom:-15px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--danger);font-weight:800;background:var(--card);padding:0 5px;border-radius:3px;border:1px solid rgba(185,28,28,.3);}
+
+/* 河道下方：计数 + 事件 */
+.river-foot{display:flex;align-items:center;gap:10px;font-size:10.5px;}
+.cnt{font-family:var(--mono);color:var(--ink-3);font-weight:600;white-space:nowrap;}
+.cnt b{color:var(--ink);} .cnt .blk{color:var(--danger);} .cnt .wt{color:var(--ochre);} .cnt .rn{color:var(--terracotta-deep);}
+.evt{color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.evt::before{content:"●";color:var(--ink-4);margin-right:5px;font-size:7px;vertical-align:middle;}
+.evt.danger{color:var(--danger);} .evt.danger::before{color:var(--danger);}
+.evt .ts{color:var(--ink-4);font-family:var(--mono);margin-left:5px;}
+
+/* 图例 */
+.legend-bar{display:flex;align-items:center;gap:14px;padding:12px 22px;border-top:1px solid var(--line);background:var(--card-soft);flex-wrap:wrap;font-size:11px;color:var(--ink-2);}
+.lg{display:inline-flex;align-items:center;gap:5px;}
+.lg i{width:16px;height:11px;border-radius:4px;display:inline-block;}
+.lg .done{background:linear-gradient(135deg,#5b8c5a,#3d7a4a);} .lg .run{background:var(--terra-grad);}
+.lg .wait{background:linear-gradient(135deg,#d97706,#b45309);} .lg .block{background:linear-gradient(135deg,#dc2626,#b91c1c);}
+.lg .pend{background:repeating-linear-gradient(135deg,var(--card-soft),var(--card-soft) 3px,var(--line) 3px,var(--line) 6px);border:1px dashed var(--line-strong);}
+.lg .future{background:repeating-linear-gradient(135deg,transparent,transparent 3px,var(--line) 3px,var(--line) 6px);border:1px dashed var(--line-strong);}
+
+/* 数字员工接力 */
+.relay{margin-top:20px;border-radius:var(--r-card);background:var(--card);box-shadow:var(--shadow);border:1px solid var(--line);overflow:hidden;}
+.relay-hd{padding:15px 22px;border-bottom:1px solid var(--line);background:var(--card-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.relay-hd .ic{font-size:15px;color:var(--terracotta);} .relay-hd .ttl{font-family:var(--serif);font-size:15px;font-weight:700;}
+.relay-hd .inst{font-size:12px;color:var(--ink-2);margin-left:6px;}
+.relay-hd .badge{margin-left:auto;font-size:10.5px;font-family:var(--mono);color:var(--ochre);background:var(--warn-soft);border:1px solid rgba(180,83,9,.25);padding:3px 9px;border-radius:6px;font-weight:600;}
+.relay-body{padding:18px 22px;}
+.relay-intro{font-size:12px;color:var(--ink-2);margin-bottom:14px;line-height:1.55;}
+.relay-intro b{color:var(--ink);}
+.relay-track{position:relative;width:100%;height:54px;background:var(--card-inner);border-radius:10px;border:1px solid var(--line);padding:7px;display:flex;gap:3px;overflow:hidden;}
+.de-seg{position:relative;height:40px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:10.5px;font-weight:700;overflow:hidden;cursor:pointer;transition:.18s;}
+.de-seg:hover{filter:brightness(1.06);}
+.de-seg .de-name{font-size:10.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;padding:0 4px;}
+.de-seg .de-meta{font-size:9px;font-family:var(--mono);opacity:.85;font-weight:600;}
+.de-seg.done{background:linear-gradient(135deg,#5b8c5a,#3d7a4a);}
+.de-seg.run{background:var(--terra-grad);position:relative;}
+.de-seg.run::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:flow 2s infinite;}
+.de-seg.pend{background:repeating-linear-gradient(135deg,var(--card-soft),var(--card-soft) 4px,var(--line) 4px,var(--line) 8px);color:var(--ink-3);border:1px dashed var(--line-strong);}
+.de-seg .handoff{position:absolute;right:-3px;top:50%;transform:translate(50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--card);border:2px solid var(--ink-4);z-index:3;display:grid;place-items:center;font-size:8px;color:var(--ink-4);}
+.relay-legend{display:flex;gap:16px;margin-top:12px;font-size:11px;color:var(--ink-2);flex-wrap:wrap;}
+.relay-legend .lg i{width:14px;height:10px;}
+.relay-src{margin-top:14px;padding:11px 14px;border-radius:8px;background:var(--card-inner);border:1px dashed var(--line-strong);font-size:11px;color:var(--ink-3);font-family:var(--mono);line-height:1.6;}
+.relay-src b{color:var(--terracotta-deep);}
+
+.note{margin-top:20px;padding:18px 22px;border-radius:var(--r-card);background:var(--card-inner);border:1px solid var(--line);font-size:12.5px;color:var(--ink-2);line-height:1.7;font-family:var(--serif);}
+.note b{color:var(--terracotta-deep);font-weight:700;}
+.note .pull{font-family:var(--serif);font-size:15px;font-weight:700;color:var(--ink);display:block;margin-bottom:6px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><div class="mk">S</div><span class="nm">SuperTeam</span></div>
+  <nav class="nav"><a>总览</a><a>项目</a><a>数字员工</a><a>技能</a><a class="on">流程编排</a><a>审批</a><a>审计</a></nav>
+  <div class="grow"></div>
+  <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>搜索流程、需求…</div>
+  <div class="tbtn">◷</div>
+  <div class="me"><div class="pic">陈</div><div><div class="nm">陈知行</div><div class="ro">平台负责人</div></div></div>
+</header>
+
+<main class="wrap">
+  <div class="masthead">
+    <div style="flex:1;min-width:280px">
+      <div class="kicker">流程编排 · ORCHESTRATION DESK · v4 饱满河道</div>
+      <h1>时序河道</h1>
+      <div class="stand">连续彩色河道由 <b>progress 分桶</b>驱动，按执行顺序排布（已完成→运行→等待→阻断→待执行）；河长 = <b>已持续时间</b>。SLA、风险、提交人、最新事件把每一条填满——每一处都有真实字段支撑。</div>
+    </div>
+    <div class="actions">
+      <span class="live"><span class="d"></span>协调线程在线 · 5s 轮询</span>
+      <div class="stamp"><b>2026-07-06 周一</b><br>01:02 GMT+8</div>
+    </div>
+  </div>
+
+  <div class="byline">
+    <div class="stat"><div class="n info num">4</div><div class="l">运行中</div><div class="src">← status∈{running,planning}</div></div>
+    <div class="stat"><div class="n warn num">2</div><div class="l">等待人工</div><div class="src">← status=waiting_human</div></div>
+    <div class="stat"><div class="n danger num">2</div><div class="l">阻断/失败</div><div class="src">← status=failed ∨ blocked&gt;0</div></div>
+    <div class="stat"><div class="n ok num">2</div><div class="l">已完成</div><div class="src">← status=completed</div></div>
+    <div class="stat"><div class="n num" style="color:var(--danger)">1</div><div class="l">SLA 超时</div><div class="src">← sla.breached=true</div></div>
+    <div class="stat"><div class="n num" style="color:var(--ochre)">3h10m</div><div class="l">最久已持续</div><div class="src">← max(now−created_at)</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="lbl">河道视图</span>
+    <span class="fchip on">全部 <span class="ct">10</span></span>
+    <span class="fchip">需要介入 <span class="ct">4</span></span>
+    <span class="fchip">进行中 <span class="ct">3</span></span>
+    <span class="fchip">已完成 <span class="ct">2</span></span>
+  </div>
+
+  <section class="river">
+    <div class="river-hd">
+      <span class="ttl">流程实例 · 时间河道</span>
+      <span class="sub">河长=已持续时长；段宽=节点数比例（执行顺序）；段色=状态</span>
+      <span class="axis-note">轴：真实时间</span>
+    </div>
+
+    <div class="time-axis">
+      <div class="lane-label">已持续时长 →</div>
+      <div class="track">
+        <div class="t-tick" style="left:0%"><span class="l">开始</span><span class="m"></span></div>
+        <div class="t-tick" style="left:14.3%"><span class="l">30m</span><span class="m"></span></div>
+        <div class="t-tick" style="left:28.6%"><span class="l">1h</span><span class="m"></span></div>
+        <div class="t-tick" style="left:57.1%"><span class="l">2h</span><span class="m"></span></div>
+        <div class="t-tick" style="left:85.7%"><span class="l">3h</span><span class="m"></span></div>
+        <div class="t-tick open" style="left:100%"><span class="l">→开放</span><span class="m"></span></div>
+      </div>
+    </div>
+
+    <!-- 1. 订单异常 | fail | 125m=59.5% | done37.5% block12.5% pend50% | NOW@50% -->
+    <div class="lane danger">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill fail"><i></i>失败</span><span class="prio p0">P0</span><span class="risk high">高风险</span></div>
+        <div class="tt">订单异常根因分析</div><div class="pj">订单风控巡检</div>
+        <div class="by">提交 <b>王雷</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 2h05m</span><span class="dot"></span><span>created 23:45</span><span class="sla-tag breach">⚠ SLA 超时 35m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:59.5%">
+            <div class="rseg done" style="width:37.5%"><span class="txt">3</span></div>
+            <div class="rseg block" style="width:12.5%"><span class="txt">1</span></div>
+            <div class="rseg pend" style="width:50%"><span class="txt">4 待执行</span></div>
+            <div class="now-mark" style="left:50%"></div>
+            <div class="rgate block" style="left:43.75%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>3</b>/8 · <span class="blk">阻断 1</span></span><span class="evt danger">阻塞：数据源连接超时，Provider 退出码 137<span class="ts">7m前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 2. 知识库向量化 | fail | 190m=90.5% | done22.2% block11.1% pend66.7% | NOW@33.3% -->
+    <div class="lane danger">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill fail"><i></i>失败</span><span class="prio p1">P1</span><span class="risk medium">中风险</span></div>
+        <div class="tt">知识库向量化重建</div><div class="pj">RAG 基座升级</div>
+        <div class="by">提交 <b>苏临</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 3h10m</span><span class="dot"></span><span>created 21:52</span><span class="sla-tag breach">⚠ SLA 超时 1h10m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:90.5%">
+            <div class="rseg done" style="width:22.2%"><span class="txt">2</span></div>
+            <div class="rseg block" style="width:11.1%"><span class="txt">1</span></div>
+            <div class="rseg pend" style="width:66.7%"><span class="txt">6 待执行</span></div>
+            <div class="now-mark" style="left:33.3%"></div>
+            <div class="rgate block" style="left:27.8%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>2</b>/9 · <span class="blk">失败 1</span></span><span class="evt danger">阻塞：向量化节点 OOM，批量 512 超显存上限<span class="ts">1h前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 3. 客户工单分类 | run | 38m=18.1% | done58.3% run8.3% pend33.3% | NOW@66.7% -->
+    <div class="lane">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill run"><i></i>运行中</span><span class="prio">P2</span></div>
+        <div class="tt">客户工单分类自动化</div><div class="pj">客户支持中台 v2</div>
+        <div class="by">提交 <b>陈知行</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 38m</span><span class="dot"></span><span>created 00:24</span><span class="sla-tag ok">SLA 剩 1h22m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:18.1%">
+            <div class="rseg done" style="width:58.3%"><span class="txt">7 已完成</span></div>
+            <div class="rseg run" style="width:8.3%"><span class="txt">1</span></div>
+            <div class="rseg pend" style="width:33.3%"></div>
+            <div class="now-mark" style="left:66.7%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>7</b>/12 · <span class="rn">运行 1</span></span><span class="evt">分类模型批量推理第 8 批，预计 4 分钟完成<span class="ts">刚刚</span></span></div>
+      </div>
+    </div>
+
+    <!-- 4. 营销文案 | run | 85m=40.5% | done75% run5% pend20% | NOW@80% -->
+    <div class="lane">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill run"><i></i>运行中</span><span class="prio">P2</span></div>
+        <div class="tt">营销文案批量生成</div><div class="pj">双11内容工厂</div>
+        <div class="by">提交 <b>林烨</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 1h25m</span><span class="dot"></span><span>created 23:37</span><span class="sla-tag warn">SLA 剩 35m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:40.5%">
+            <div class="rseg done" style="width:75%"><span class="txt">15 已完成</span></div>
+            <div class="rseg run" style="width:5%"><span class="txt">1</span></div>
+            <div class="rseg pend" style="width:20%"><span class="txt">4 待执行</span></div>
+            <div class="now-mark" style="left:80%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>15</b>/20 · <span class="rn">运行 1</span></span><span class="evt">合规审核通过 412 条，剩 88 条第二轮校验<span class="ts">2m前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 5. 供应商对账 | run | 52m=24.8% | done50% run10% pend40% | NOW@60% -->
+    <div class="lane">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill run"><i></i>运行中</span><span class="prio">P2</span></div>
+        <div class="tt">供应商对账自动化</div><div class="pj">财务月结机器人</div>
+        <div class="by">提交 <b>周哲</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 52m</span><span class="dot"></span><span>created 00:10</span><span class="sla-tag ok">SLA 剩 1h08m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:24.8%">
+            <div class="rseg done" style="width:50%"><span class="txt">5 已完成</span></div>
+            <div class="rseg run" style="width:10%"><span class="txt">1 运行</span></div>
+            <div class="rseg pend" style="width:40%"><span class="txt">4 待执行</span></div>
+            <div class="now-mark" style="left:60%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>5</b>/10 · <span class="rn">运行 1</span></span><span class="evt">正在拉取 3 家供应商应付明细，已完成 2/3<span class="ts">5m前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 6. 财报抽取 | wait | 108m=51.4% | done64.3% wait7.1% pend28.6% | NOW@71.4% -->
+    <div class="lane">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill wait"><i></i>等待人工</span><span class="prio p1">P1</span><span class="risk medium">中风险</span></div>
+        <div class="tt">财报数据抽取与校验</div><div class="pj">季度财报Pipeline</div>
+        <div class="by">提交 <b>陈知行</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 1h48m</span><span class="dot"></span><span>created 23:14</span><span class="sla-tag warn">SLA 剩 12m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:51.4%">
+            <div class="rseg done" style="width:64.3%"><span class="txt">9 已完成</span></div>
+            <div class="rseg wait" style="width:7.1%"><span class="txt">1</span></div>
+            <div class="rseg pend" style="width:28.6%"><span class="txt">4 待执行</span></div>
+            <div class="now-mark" style="left:71.4%"></div>
+            <div class="rgate human" style="left:67.9%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>9</b>/14 · <span class="wt">人工 1</span></span><span class="evt">3 处金额勾稽不一致，等待财务确认是否调整或放行<span class="ts">23m前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 7. 发布回归 | wait | 155m=73.8% | done54.5% wait9.1% pend36.4% | NOW@63.6% -->
+    <div class="lane">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill wait"><i></i>等待人工</span><span class="prio p1">P1</span></div>
+        <div class="tt">发布前回归巡检</div><div class="pj">发版质量门禁</div>
+        <div class="by">提交 <b>王雷</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 2h35m</span><span class="dot"></span><span>created 22:27</span><span class="sla-tag warn">SLA 剩 45m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:73.8%">
+            <div class="rseg done" style="width:54.5%"><span class="txt">6 已完成</span></div>
+            <div class="rseg wait" style="width:9.1%"><span class="txt">1 待确认</span></div>
+            <div class="rseg pend" style="width:36.4%"><span class="txt">4 待执行</span></div>
+            <div class="now-mark" style="left:63.6%"></div>
+            <div class="rgate human" style="left:59.1%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>6</b>/11 · <span class="wt">人工 1</span></span><span class="evt">覆盖率 87.2% 低于门禁 90%，等待放行或拦截<span class="ts">1h前</span></span></div>
+      </div>
+    </div>
+
+    <!-- 8. API契约 | plan | 9m=4.3% | all pending | NOW@0% -->
+    <div class="lane" style="opacity:.75">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill plan"><i></i>规划中</span></div>
+        <div class="tt">API 契约一致性校验</div><div class="pj">契约治理台</div>
+        <div class="by">提交 <b>陈知行</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">已持续 9m</span><span class="dot"></span><span>created 00:53</span><span class="sla-tag ok">SLA 剩 3h51m</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:4.3%">
+            <div class="rseg plan-all"><span class="txt">规划中 · 0/6</span></div>
+            <div class="now-mark" style="left:0%"></div>
+          </div>
+          <div class="river-future"></div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>0</b>/6 · 规划中</span><span class="evt">status_reason：等待协调线程产出计划修订</span></div>
+      </div>
+    </div>
+
+    <!-- 9. 日志归档 | done | 38m=18.1% | all done | ✓@100% -->
+    <div class="lane" style="opacity:.9">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill done"><i></i>已完成</span></div>
+        <div class="tt">日志归档与敏感脱敏</div><div class="pj">合规数据治理</div>
+        <div class="by">提交 <b>周哲</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">运行 38m · 已结束</span><span class="dot"></span><span>ended 00:12</span><span class="sla-tag ok">✓ 准时完成</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:18.1%">
+            <div class="rseg done" style="width:100%"><span class="txt">12 / 12 全部完成</span></div>
+            <div class="end-mark" style="left:100%">✓</div>
+          </div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>12</b>/12 · <span style="color:var(--ok)">全部完成</span></span><span class="evt">12/12 节点全部完成，已归档</span></div>
+      </div>
+    </div>
+
+    <!-- 10. 客户回访 | done | 8m=3.8% | all done | ✓@100% -->
+    <div class="lane" style="opacity:.9">
+      <div class="lane-label">
+        <div class="head-row"><span class="pill done"><i></i>已完成</span></div>
+        <div class="tt">客户回访话术生成</div><div class="pj">客服效能提升</div>
+        <div class="by">提交 <b>林烨</b></div>
+      </div>
+      <div class="lane-body">
+        <div class="river-top"><span class="dur">运行 8m · 已结束</span><span class="dot"></span><span>ended 00:42</span><span class="sla-tag ok">✓ 准时完成</span></div>
+        <div class="river-wrap">
+          <div class="river-track" style="width:3.8%">
+            <div class="rseg done" style="width:100%"></div>
+            <div class="end-mark" style="left:100%">✓</div>
+          </div>
+        </div>
+        <div class="river-foot"><span class="cnt"><b>8</b>/8 · <span style="color:var(--ok)">全部完成</span></span><span class="evt">8/8 节点全部完成</span></div>
+      </div>
+    </div>
+
+    <div class="legend-bar">
+      <span class="lg"><i class="done"></i>已完成</span>
+      <span class="lg"><i class="run"></i>运行中</span>
+      <span class="lg"><i class="wait"></i>等待人工</span>
+      <span class="lg"><i class="block"></i>阻断/失败</span>
+      <span class="lg"><i class="pend"></i>待执行</span>
+      <span class="lg"><i class="future"></i>未来(开放)</span>
+      <span style="margin-left:auto;display:flex;gap:14px">
+        <span class="lg"><b style="width:2px;height:14px;background:var(--terracotta);display:inline-block"></b>NOW</span>
+        <span class="lg" style="color:var(--ochre)"><b style="width:11px;height:11px;border-radius:50%;border:2px solid var(--ochre);display:inline-block"></b>人工门禁</span>
+        <span class="lg" style="color:var(--danger)"><b style="width:11px;height:11px;border-radius:50%;border:2px solid var(--danger);display:inline-block"></b>阻断门禁</span>
+        <span class="lg"><b style="width:11px;height:11px;border-radius:50%;background:var(--ok);display:inline-block"></b>完成</span>
+      </span>
+    </div>
+  </section>
+
+  <!-- 数字员工接力 -->
+  <section class="relay">
+    <div class="relay-hd">
+      <span class="ic">⇄</span><span class="ttl">数字员工接力</span>
+      <span class="inst">· 选中「客户工单分类自动化」后的详情层视图</span>
+      <span class="badge">详情层 · task-graph</span>
+    </div>
+    <div class="relay-body">
+      <div class="relay-intro">
+        plan 生成任务后由<b>多个数字员工接力执行</b>。每段 = 一个数字员工负责的节点集合，交接点 ○ = handoff。当前流光段 = 正在执行的数字员工——这就是"已执行到哪个数字员工"的可视化。
+      </div>
+      <div class="relay-track">
+        <div class="de-seg done" style="width:25%"><span class="de-name">需求分析师 · 林烨</span><span class="de-meta">3 节点 · 已完成</span><span class="handoff">→</span></div>
+        <div class="de-seg done" style="width:25%"><span class="de-name">代码工程师 · 周哲</span><span class="de-meta">3 节点 · 已完成</span><span class="handoff">→</span></div>
+        <div class="de-seg run" style="width:12%"><span class="de-name">推理工程师 · 苏临</span><span class="de-meta">1 节点 · 运行中</span><span class="handoff">→</span></div>
+        <div class="de-seg pend" style="width:38%"><span class="de-name">待分派</span><span class="de-meta">4 节点 · 待执行</span></div>
+      </div>
+      <div class="relay-legend">
+        <span class="lg"><i style="background:linear-gradient(135deg,#5b8c5a,#3d7a4a)"></i>已完成接力段</span>
+        <span class="lg"><i style="background:var(--terra-grad)"></i>当前执行段(流光)</span>
+        <span class="lg"><i style="background:repeating-linear-gradient(135deg,var(--card-soft),var(--card-soft) 3px,var(--line) 3px,var(--line) 6px);border:1px dashed var(--line-strong)"></i>待分派</span>
+        <span class="lg"><b style="width:12px;height:12px;border-radius:50%;background:var(--card);border:2px solid var(--ink-4);display:inline-block"></b>handoff 交接</span>
+      </div>
+      <div class="relay-src">
+        <b>数据来源：</b>task-graph.nodes[].assigned_digital_employee_id · edges[].{dependent,blocker}_task_id（接力顺序）· employees[].display_name<br>
+        <b>时间精度缺口：</b>nodes 无 started_at/finished_at，各段暂按节点数比例排布。推动后端补节点时间戳后，接力段可与上方时间河精确对齐——那时"哪个数字员工跑了多久"才精确可见。
+      </div>
+    </div>
+  </section>
+
+  <div class="note">
+    <span class="pull">「饱满不靠虚构，靠把真实字段用满。」</span>
+    <b>v4 回到连续彩色河道的饱满视觉</b>，但每段都由 progress 分桶驱动，按执行顺序排布（已完成→运行→等待→阻断→待执行），符合 plan 依赖顺序。河长 = 已持续时间（created_at→now），进行中右端开放、完成闭合 ✓。再把之前漏用的 <b>SLA（超时/剩余）、风险等级、提交人、最新事件时间戳</b>全部填进每一条——画面满了，且每一处都来自真实字段。段宽按节点数比例（非精确时间），诚实标注；精确时间定位待后端补节点时间戳。下方数字员工接力详情预览回应"已执行到哪个数字员工"。
+  </div>
+</main>
+
+</body>
+</html>

@@ -494,13 +494,14 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("高风险")).toBeVisible();
     await expect.element(screen.getByText("剩余 18 分钟")).toBeVisible();
 
-    const paymentLink = screen.getByRole("link", { name: /支付成功率下降/ }).element();
-    expect(paymentLink.textContent).toContain("P1");
-    expect(paymentLink.textContent).toContain("高风险");
-    expect(paymentLink.textContent).toContain("剩余 18 分钟");
+    // 河道视图：优先级/风险/SLA 作为独立元素呈现在整条河道行内（不再挤进标题链接）
+    const paymentLane = screen.getByRole("listitem", { name: "支付成功率下降" }).element();
+    expect(paymentLane.textContent).toContain("P1");
+    expect(paymentLane.textContent).toContain("高风险");
+    expect(paymentLane.textContent).toContain("剩余 18 分钟");
 
-    const prLink = screen.getByRole("link", { name: /PR 审查/ }).element();
-    expect(prLink.textContent).not.toContain("P1");
+    const prLane = screen.getByRole("listitem", { name: "PR 审查" }).element();
+    expect(prLane.textContent).not.toContain("P1");
   });
 
   it("renders the selected demand task graph full width without a sidebar list", async () => {
