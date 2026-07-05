@@ -15,7 +15,6 @@ import {
 } from "@/components/superteam";
 import type { ProjectRuntimePlacementReadiness } from "@/lib/api/projects";
 import type { RuntimeNodeResponse } from "@/lib/api/runtime";
-import { cn } from "@/lib/utils";
 
 export type ProjectRuntimePlacementPanelProps = {
   readiness?: ProjectRuntimePlacementReadiness;
@@ -257,7 +256,7 @@ function runtimeNodeValue(node: RuntimeNodeResponse) {
 
 function runtimeNodeLabel(node?: RuntimeNodeResponse) {
   if (!node) {
-    return undefined;
+    return "未绑定";
   }
   return node.name || node.node_id || node.runtime_node_id || "未命名节点";
 }
