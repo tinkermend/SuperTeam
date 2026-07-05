@@ -54,12 +54,19 @@ const MS_MIN = 60_000;
 const MS_HOUR = 60 * MS_MIN;
 const FALLBACK_MAX_MS = 3 * MS_HOUR;
 
+/** 单个分组默认展示条数，超过则折叠并显示"查看更多"。 */
+const GROUP_COLLAPSE_THRESHOLD = 5;
+
 export function WorkflowRiverView({
   instances,
   isError,
   isLoading,
 }: WorkflowRiverViewProps) {
   const [filter, setFilter] = useState<RiverFilter>("all");
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (key: string) =>
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
   if (isError && instances.length === 0) {
     return (
@@ -111,6 +118,21 @@ export function WorkflowRiverView({
       ),
     }))
     .filter((group) => group.instances.length > 0);
+
+  const collapsibleGroups = groups.filter(
+    (group) => group.instances.length > GROUP_COLLAPSE_THRESHOLD,
+  );
+  const anyCollapsible = collapsibleGroups.length > 0;
+  const allExpanded =
+    anyCollapsible && collapsibleGroups.every((group) => expandedGroups[group.key]);
+  const toggleAllGroups = () => {
+    const nextAllExpanded = !allExpanded;
+    setExpandedGroups((prev) => {
+      const next = { ...prev };
+      for (const group of collapsibleGroups) next[group.key] = nextAllExpanded;
+      return next;
+    });
+  };
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
@@ -195,6 +217,15 @@ export function WorkflowRiverView({
           <span className="ml-auto text-[11px] tabular-nums text-v3-ink-3">
             显示 {visibleInstances.length} / {instances.length}
           </span>
+          {anyCollapsible ? (
+            <button
+              className="rounded-md border border-v3-line bg-v3-card px-2.5 py-1 text-[11px] font-semibold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
+              onClick={toggleAllGroups}
+              type="button"
+            >
+              {allExpanded ? "全部收起" : "全部展开"}
+            </button>
+          ) : null}
         </div>
 
         {/* 时间刻度轴 */}
@@ -209,27 +240,48 @@ export function WorkflowRiverView({
           />
         ) : (
           <div aria-label="流程实例列表" role="list">
-            {groups.map((group) => (
-              <section key={group.key}>
-                <header className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-1.5 text-xs font-semibold text-v3-ink-2">
-                  <span
-                    aria-hidden
-                    className={cn("size-1.5 rounded-full", groupDotClass[group.tone])}
-                  />
-                  {group.label}
-                  <span className="tabular-nums text-v3-ink-3">
-                    {group.instances.length}
-                  </span>
-                </header>
-                {group.instances.map((instance) => (
-                  <RiverLane
-                    instance={instance}
-                    key={instance.demand_id}
-                    maxMs={maxMs}
-                  />
-                ))}
-              </section>
-            ))}
+            {groups.map((group) => {
+              const expanded = expandedGroups[group.key];
+              const overThreshold =
+                group.instances.length > GROUP_COLLAPSE_THRESHOLD;
+              const visibleGroupInstances =
+                expanded || !overThreshold
+                  ? group.instances
+                  : group.instances.slice(0, GROUP_COLLAPSE_THRESHOLD);
+              return (
+                <section key={group.key}>
+                  <header className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-1.5 text-xs font-semibold text-v3-ink-2">
+                    <span
+                      aria-hidden
+                      className={cn("size-1.5 rounded-full", groupDotClass[group.tone])}
+                    />
+                    {group.label}
+                    <span className="tabular-nums text-v3-ink-3">
+                      {group.instances.length}
+                    </span>
+                  </header>
+                  {visibleGroupInstances.map((instance) => (
+                    <RiverLane
+                      instance={instance}
+                      key={instance.demand_id}
+                      maxMs={maxMs}
+                    />
+                  ))}
+                  {overThreshold ? (
+                    <button
+                      className="flex w-full items-center justify-center gap-1.5 border-b border-v3-line bg-v3-card-soft py-2 text-xs font-semibold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
+                      onClick={() => toggleGroup(group.key)}
+                      type="button"
+                    >
+                      {expanded
+                        ? "收起"
+                        : `查看全部 ${group.instances.length} 条（已折叠 ${group.instances.length - GROUP_COLLAPSE_THRESHOLD} 条）`}
+                      <span aria-hidden>{expanded ? "▴" : "▾"}</span>
+                    </button>
+                  ) : null}
+                </section>
+              );
+            })}
           </div>
         )}
       </WorkSurface>
