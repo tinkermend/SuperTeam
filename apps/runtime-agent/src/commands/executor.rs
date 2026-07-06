@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -51,6 +53,7 @@ struct RuntimeCommandWritebackSink {
     client: ControlPlaneClient,
     command_id: String,
     project_task: Option<ProjectTaskWritebackContext>,
+    usage_tokens: Arc<AtomicI64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,6 +340,7 @@ impl RuntimeCommandExecutor {
                 client: client.clone(),
                 command_id: payload.command_id.clone(),
                 project_task: project_task.clone(),
+                usage_tokens: Arc::new(AtomicI64::new(0)),
             });
         if let Some(writeback) = &writeback {
             if let Err(error) = writeback.start_project_task().await {
@@ -480,6 +484,7 @@ impl RuntimeCommandExecutor {
                     client: control_plane.clone(),
                     command_id: start_command_id.to_string(),
                     project_task,
+                    usage_tokens: Arc::new(AtomicI64::new(0)),
                 }
                 .fail_project_task("operator cancelled")
                 .await?;
