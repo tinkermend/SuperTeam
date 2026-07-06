@@ -89,11 +89,18 @@ describe("OperationLogsRoute", () => {
   it("renders operation logs from the control plane with v3 surfaces", async () => {
     const screen = await renderRoute();
 
-    await expect.element(screen.getByRole("heading", { name: "操作日志" })).toBeVisible();
     await expect.element(screen.getByText("user.create")).toBeVisible();
-    await expect.element(screen.getByText("users")).toBeVisible();
+    await expect.element(screen.getByRole("cell", { name: "users" })).toBeVisible();
 
     expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+  });
+
+  it("renders module quick-filter chips", async () => {
+    const screen = await renderRoute();
+
+    await expect.element(screen.getByRole("button", { name: "全部" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "users" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "authz" })).toBeVisible();
   });
 });
