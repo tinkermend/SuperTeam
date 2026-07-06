@@ -66,7 +66,7 @@ func TestHandlerListItemsUsesConsoleIdentity(t *testing.T) {
 	if service.listReq.TenantID != tenantID || service.listReq.ActorUserID != userID {
 		t.Fatalf("expected console tenant/user %s/%s, got %s/%s", tenantID, userID, service.listReq.TenantID, service.listReq.ActorUserID)
 	}
-	if service.listReq.View != ViewMine || service.listReq.Status != StatusOpen || service.listReq.Limit != 25 || service.listReq.Offset != 5 {
+	if service.listReq.View != ViewMine || service.listReq.Status == nil || *service.listReq.Status != StatusOpen || service.listReq.Limit != 25 || service.listReq.Offset != 5 {
 		t.Fatalf("expected parsed list filters, got %#v", service.listReq)
 	}
 	if service.listReq.ItemType == nil || *service.listReq.ItemType != ItemTypeApproval {

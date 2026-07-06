@@ -14,7 +14,7 @@ export function RuntimeMapSvgLayer({ floor, selectedTeamId }: RuntimeMapSvgLayer
     >
       <defs>
         <marker id={`runtime-callout-arrow-${floor.floorId}`} markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
-          <path d="M0,0 L8,4 L0,8 Z" fill="#2F5FFF" opacity="0.62" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="#6482A3" opacity="0.68" />
         </marker>
       </defs>
       {floor.layout.paths.map((path) => (
@@ -38,26 +38,15 @@ export function RuntimeMapSvgLayer({ floor, selectedTeamId }: RuntimeMapSvgLayer
             y1={workspace.cardAnchor.y + 82}
             x2={workspace.calloutTarget.x}
             y2={workspace.calloutTarget.y}
-            stroke={selected ? "#2F5FFF" : "#7EA7D8"}
+            stroke={selected ? "#3E6FAD" : "#6482A3"}
             strokeDasharray={selected ? undefined : "6 8"}
             strokeLinecap="round"
             strokeWidth={selected ? 2.5 : 1.5}
             markerEnd={`url(#runtime-callout-arrow-${floor.floorId})`}
-            opacity={selected ? 0.78 : 0.34}
+            opacity={selected ? 0.68 : 0.3}
           />
         );
       })}
-      {floor.layout.teamWorkspaces.map((workspace) =>
-        workspace.teamId === selectedTeamId ? (
-          <polygon
-            key={`${workspace.teamId}-selection`}
-            fill="rgba(47,95,255,0.06)"
-            points={workspace.polygon.map((point) => `${point.x},${point.y}`).join(" ")}
-            stroke="#2F5FFF"
-            strokeWidth="3"
-          />
-        ) : null,
-      )}
     </svg>
   );
 }

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>项目管理页 · 色彩与布局改版原型</title>
+<style>
+  :root {
+    --v3-bg: #f8fafc;
+    --v3-card: #ffffff;
+    --v3-card-soft: #f7f8fa;
+    --v3-ink: #0b0d12;
+    --v3-ink-2: #4d586b;
+    --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4;
+    --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff;
+    --v3-brand-deep: #2348e0;
+    --v3-brand-soft: #e9efff;
+    --v3-info: #0094b7; --v3-info-text: #00617d; --v3-info-soft: #def8fe;
+    --v3-ok: #009a60; --v3-ok-text: #006639; --v3-ok-soft: #e3f9ec;
+    --v3-warn: #cc572a; --v3-warn-text: #893411; --v3-warn-soft: #ffede5;
+    --v3-danger: #d14647; --v3-danger-text: #8a2f2d; --v3-danger-soft: #ffece9;
+    --v3-mute: #64748b; --v3-mute-text: #4d586b; --v3-mute-soft: #eef1f4;
+    --r-card: 22px;
+    --r-inner: 14px;
+    --shadow-v3: 0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+    --aurora:
+      radial-gradient(680px 520px at 8% 6%, rgba(95,214,200,0.28), transparent 60%),
+      radial-gradient(620px 520px at 92% 16%, rgba(167,139,250,0.26), transparent 60%),
+      radial-gradient(760px 600px at 72% 98%, rgba(99,140,255,0.24), transparent 62%),
+      linear-gradient(160deg, #eafcfb 0%, #f1edff 50%, #eaf2ff 100%);
+    --font: 'Inter Variable','Inter',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--v3-ink);
+    background: var(--aurora);
+    background-attachment: fixed;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 244px; flex-shrink: 0;
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(22px) saturate(1.35);
+    border-right: 1px solid rgba(126,143,172,0.20);
+    padding: 18px 12px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 14px; }
+  .brand-logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);
+    display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+  .brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  .nav-group-label { font-size: 11px; font-weight: 600; color: var(--v3-ink-3); padding: 14px 12px 6px; text-transform: none; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px;
+    font-size: 13px; color: var(--v3-ink-2); cursor: pointer; transition: background .15s; position: relative;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.7); }
+  .nav-item.active { background: var(--v3-brand-soft); color: var(--v3-brand-deep); font-weight: 600; }
+  .nav-item .badge { margin-left: auto; background: var(--v3-warn); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+  .nav-ico { width: 17px; height: 17px; flex-shrink: 0; opacity: .85; }
+
+  /* Main */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; gap: 16px; padding: 14px 28px;
+    border-bottom: 1px solid rgba(126,143,172,0.18);
+    background: rgba(255,255,255,0.68); backdrop-filter: blur(22px) saturate(1.35);
+  }
+  .topbar h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+  .topbar .sub { font-size: 12px; color: var(--v3-ink-3); margin-top: 2px; }
+  .topbar .spacer { flex: 1; }
+  .topbar .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(126,143,172,0.2);
+    background: rgba(255,255,255,0.82); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(140deg,#5b8bff,#2348e0); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; }
+
+  .content { padding: 22px 28px 60px; display: flex; flex-direction: column; gap: 16px; max-width: 1500px; }
+
+  /* Toggle */
+  .toggle-row { display: flex; align-items: center; gap: 12px; }
+  .toggle-row .hint { font-size: 12px; color: var(--v3-ink-3); }
+  .seg { display: inline-flex; background: var(--v3-card-soft); border: 1px solid var(--v3-line-strong); border-radius: 10px; padding: 3px; }
+  .seg button { border: none; background: transparent; font-family: var(--font); font-size: 12.5px; font-weight: 600; color: var(--v3-ink-2); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  .seg button.on { background: var(--v3-card); color: var(--v3-brand-deep); box-shadow: var(--shadow-v3); }
+
+  .card { background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: var(--r-card); box-shadow: var(--shadow-v3); }
+
+  /* Metrics — current (4 cards) */
+  .metrics-current { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+  .metric-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r-inner); border: 1px solid var(--v3-line); background: var(--v3-card); }
+  .metric-card .ic { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .metric-card .lab { font-size: 12px; font-weight: 600; color: var(--v3-ink-2); }
+  .metric-card .num { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+
+  /* Metrics — improved (pill bar) */
+  .metrics-improved { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-radius: var(--r-inner); border: 1px solid var(--v3-line); background: var(--v3-card); }
+  .mpill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; background: var(--v3-card-soft); }
+  .mpill .ic { width: 16px; height: 16px; }
+  .mpill .lab { font-size: 12px; color: var(--v3-ink-2); }
+  .mpill .num { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+
+  /* Filter — current (two-tier) */
+  .filter-current { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-inner); border: 1px solid var(--v3-line); background: var(--v3-card-soft); }
+  .filter-current .row1 { display: flex; gap: 10px; flex-wrap: wrap; }
+  .search { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 220px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--v3-line-strong); background: var(--v3-card); font-size: 13px; color: var(--v3-ink-3); }
+  .select { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--v3-line-strong); background: var(--v3-card); font-size: 13px; color: var(--v3-ink); font-family: var(--font); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 12px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--v3-line-strong); background: var(--v3-card); color: var(--v3-ink-2); cursor: pointer; }
+  .chip.on { background: var(--v3-brand-soft); border-color: transparent; color: var(--v3-brand-deep); font-weight: 600; }
+  .chip .c { color: var(--v3-ink-3); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .chip.on .c { color: var(--v3-brand-deep); }
+
+  /* Filter — improved (single row) */
+  .filter-improved { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border-radius: var(--r-inner); border: 1px solid var(--v3-line); background: var(--v3-card); }
+  .filter-improved .search { flex: 1; min-width: 200px; }
+  .filter-improved .chips { flex-wrap: nowrap; overflow-x: auto; }
+  .filter-improved .chips::-webkit-scrollbar { display: none; }
+
+  /* Body grid */
+  .body-grid { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 16px; align-items: start; }
+  .body-grid.panel-hidden { grid-template-columns: minmax(0,1fr); }
+
+  /* Work surface / table */
+  .ws { border-radius: var(--r-card); border: 1px solid var(--v3-line); box-shadow: var(--shadow-v3); overflow: hidden; background: var(--v3-card); }
+  .ws-head { padding: 14px 16px; border-bottom: 1px solid var(--v3-line); }
+  .ws-head h2 { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+  .ws-head .meta { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+  .spill { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+  col.c-proj { width: 34%; } col.c-pend { width: 22%; } col.c-hand { width: 16%; } col.c-act { width: 14%; } col.c-op { width: 14%; }
+  thead th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--v3-ink-3); background: var(--v3-card-soft); border-bottom: 1px solid var(--v3-line); }
+  thead th.right { text-align: right; }
+  tbody td { padding: 12px 14px; border-bottom: 1px solid var(--v3-line); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--v3-card-soft); }
+  tbody tr.sel { background: var(--v3-brand-soft); }
+  tbody tr.danger td:first-child { box-shadow: inset 3px 0 0 var(--v3-danger); }
+  tbody tr.warn td:first-child { box-shadow: inset 3px 0 0 var(--v3-warn); }
+
+  .p-name { display: flex; align-items: flex-start; gap: 10px; }
+  .p-ico { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .p-title { font-weight: 700; font-size: 13px; line-height: 1.35; color: var(--v3-ink); }
+  .p-owner { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--v3-ink-3); margin-top: 4px; }
+  .p-status { margin-top: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .t-ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); } .t-ok .dot { background: var(--v3-ok); }
+  .t-warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); } .t-warn .dot { background: var(--v3-warn); }
+  .t-danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); } .t-danger .dot { background: var(--v3-danger); }
+  .t-info { background: var(--v3-info-soft); color: var(--v3-info-text); } .t-info .dot { background: var(--v3-info); }
+  .t-mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); } .t-mute .dot { background: var(--v3-mute); }
+  .pend-sub { font-size: 11px; color: var(--v3-ink-3); margin-top: 5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--v3-ink-2); }
+  .op-col { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .btn { font-family: var(--font); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-primary { background: var(--v3-brand); color: #fff; }
+  .btn-primary:hover { background: var(--v3-brand-deep); }
+  .btn-ghost { background: var(--v3-card); border-color: var(--v3-line-strong); color: var(--v3-ink-2); }
+  .btn-ghost:hover { background: var(--v3-card-soft); }
+
+  /* Right panel */
+  .triage { border-radius: var(--r-card); border: 1px solid var(--v3-line); box-shadow: var(--shadow-v3); background: var(--v3-card); padding: 16px; position: sticky; top: 16px; }
+  .triage .head { display: flex; gap: 10px; align-items: flex-start; }
+  .triage h3 { font-size: 14px; font-weight: 800; line-height: 1.35; }
+  .triage .owner { font-size: 11px; color: var(--v3-ink-3); margin-top: 5px; }
+  .triage .pills { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .todo-box { margin-top: 14px; background: var(--v3-card-soft); border-radius: 12px; padding: 12px; }
+  .todo-box .tt { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--v3-ink-3); }
+  .todo-item { display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--v3-card); border-radius: 8px; margin-top: 8px; }
+  .todo-item .ti-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .todo-item .ti-txt { font-size: 12px; font-weight: 600; flex: 1; }
+  .triage .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .empty { text-align: center; color: var(--v3-ink-3); padding: 40px 16px; font-size: 13px; }
+  .empty svg { opacity: .4; margin-bottom: 10px; }
+
+  .legend { font-size: 11px; color: var(--v3-ink-3); margin-top: 4px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .legend b { color: var(--v3-ink-2); font-weight: 600; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+      </div>
+      <span class="brand-name">矩枢平台</span>
+    </div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>工作台</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>任务中枢</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>收件箱<span class="badge">11</span></div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>运行总览</div>
+
+    <div class="nav-group-label">协作对象</div>
+    <div class="nav-item active"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>项目管理</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>数字员工</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>技能管理</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>团队管理</div>
+
+    <div class="nav-group-label">流程能力</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4v7a2 2 0 0 1-2 2H6"/><circle cx="18" cy="18" r="3"/></svg>流程编排</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>自动化任务</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>外部能力</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h.01M15 9h.01M9 15h.01M15 15h.01"/></svg>MCP 管理</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>协作集成</div>
+
+    <div class="nav-group-label">治理平台</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>审批中心</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Runtime 节点</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>权限中心</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>成本管理</div>
+    <div class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>用户管理</div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1>项目管理</h1>
+        <div class="sub">围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4d586b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+      <div class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4d586b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></div>
+      <div class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4d586b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+      <div class="avatar">开</div>
+    </header>
+
+    <div class="content">
+      <!-- Toggle -->
+      <div class="toggle-row">
+        <div class="seg" id="seg">
+          <button data-mode="current">改进前</button>
+          <button data-mode="improved" class="on">改进后（推荐）</button>
+        </div>
+        <span class="hint">切换查看顶部指标条与筛选区的色彩 / 布局差异；表格与右栏为统一改进版。</span>
+      </div>
+
+      <!-- METRICS: current -->
+      <section class="metrics-current" id="metrics-current">
+        <div class="metric-card">
+          <div class="ic" style="background:var(--v3-mute-soft);color:var(--v3-mute)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+          <div><div class="lab">已加载项目</div><div class="num">24</div></div>
+        </div>
+        <div class="metric-card">
+          <div class="ic" style="background:var(--v3-ok-soft);color:var(--v3-ok)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <div><div class="lab">运行中</div><div class="num">19</div></div>
+        </div>
+        <div class="metric-card">
+          <div class="ic" style="background:var(--v3-mute-soft);color:var(--v3-mute)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></div>
+          <div><div class="lab">验收中</div><div class="num">4</div></div>
+        </div>
+        <div class="metric-card">
+          <div class="ic" style="background:var(--v3-danger-soft);color:var(--v3-danger)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+          <div><div class="lab">协调异常</div><div class="num">0</div></div>
+        </div>
+      </section>
+
+      <!-- METRICS: improved -->
+      <section class="metrics-improved hidden" id="metrics-improved">
+        <span class="mpill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--v3-mute)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="lab">已加载</span><span class="num">24</span></span>
+        <span class="mpill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--v3-info)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span class="lab">运行中</span><span class="num">19</span></span>
+        <span class="mpill"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--v3-ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg><span class="lab">验收中</span><span class="num">4</span></span>
+        <span class="mpill" style="background:var(--v3-danger-soft)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--v3-danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span class="lab">协调异常</span><span class="num" style="color:var(--v3-danger-text)">0</span></span>
+      </section>
+
+      <!-- FILTER: current -->
+      <section class="filter-current" id="filter-current">
+        <div class="row1">
+          <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>搜索项目名称或目标</div>
+          <select class="select"><option>全部状态</option><option>运行中</option><option>验收中</option><option>草稿</option><option>已暂停</option></select>
+        </div>
+        <div class="chips">
+          <span class="chip on">全部项目<span class="c">10</span></span>
+          <span class="chip">存在风险<span class="c">10</span></span>
+          <span class="chip">人工智能<span class="c">7</span></span>
+          <span class="chip">执行失败<span class="c">3</span></span>
+          <span class="chip">协商草案<span class="c">0</span></span>
+          <span class="chip">证据待补<span class="c">3</span></span>
+          <span class="chip">等待超时<span class="c">8</span></span>
+        </div>
+      </section>
+
+      <!-- FILTER: improved -->
+      <section class="filter-improved hidden" id="filter-improved">
+        <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>搜索项目名称或目标</div>
+        <select class="select"><option>全部状态</option><option>运行中</option><option>验收中</option><option>草稿</option><option>已暂停</option></select>
+        <div class="chips">
+          <span class="chip on">全部<span class="c">10</span></span>
+          <span class="chip">存在风险<span class="c">10</span></span>
+          <span class="chip">人工智能<span class="c">7</span></span>
+          <span class="chip">执行失败<span class="c">3</span></span>
+          <span class="chip">证据待补<span class="c">3</span></span>
+          <span class="chip">等待超时<span class="c">8</span></span>
+          <span class="chip" style="border-style:dashed">更多 ▾</span>
+        </div>
+      </section>
+
+      <!-- BODY -->
+      <div class="body-grid" id="bodyGrid">
+        <!-- Table -->
+        <div class="ws">
+          <div class="ws-head">
+            <h2>项目队列</h2>
+            <div class="meta">
+              <span class="spill t-mute">24 个项目</span>
+              <span class="spill t-danger">2 个阻塞（当前页）</span>
+            </div>
+            <p style="font-size:11px;color:var(--v3-ink-3);margin-top:8px;line-height:1.5">按需要介入程度排序；选中项目在右侧查看待办与直达动作。风险识别基于当前页，筛选仅过滤当前页项目。</p>
+          </div>
+          <table>
+            <colgroup>
+              <col class="c-proj"/><col class="c-pend"/><col class="c-hand"/><col class="c-act"/><col class="c-op"/>
+            </colgroup>
+            <thead>
+              <tr><th>项目</th><th>待处理</th><th>当前处理者</th><th>最近活动</th><th class="right">操作</th></tr>
+            </thead>
+            <tbody>
+              <!-- Row 1: danger (等待人工决策) -->
+              <tr class="danger sel" onclick="selectRow(this)">
+                <td>
+                  <div class="p-name">
+                    <div class="p-ico" style="background:var(--v3-danger-soft);color:var(--v3-danger)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+                    <div>
+                      <div class="p-title">ProjectTask Completion Drilldown</div>
+                      <div class="p-owner"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>tinker · 1b67f6d4</div>
+                      <div class="p-status"><span class="pill t-info"><span class="dot"></span>运行中</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pill t-danger"><span class="dot"></span>需人工决策</span>
+                  <div class="pend-sub">4 项待处理</div>
+                </td>
+                <td><span style="font-size:12px;font-weight:600">待调度</span></td>
+                <td><span class="mono">07-06 15:40</span></td>
+                <td>
+                  <div class="op-col" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary">进入项目 →</button>
+                    <button class="btn btn-ghost">编排</button>
+                  </div>
+                </td>
+              </tr>
+              <!-- Row 2: info/running -->
+              <tr onclick="selectRow(this)">
+                <td>
+                  <div class="p-name">
+                    <div class="p-ico" style="background:var(--v3-info-soft);color:var(--v3-info)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+                    <div>
+                      <div class="p-title">Dispatch Recovery Smoke Test</div>
+                      <div class="p-owner"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>tinker · 9f3c2a11</div>
+                      <div class="p-status"><span class="pill t-info"><span class="dot"></span>运行中</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pill t-mute"><span class="dot"></span>低风险</span>
+                  <div class="pend-sub">3 项待处理</div>
+                </td>
+                <td><span style="font-size:12px;font-weight:600">调度引擎</span></td>
+                <td><span class="mono">07-06 13:20</span></td>
+                <td>
+                  <div class="op-col" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary">进入项目 →</button>
+                    <button class="btn btn-ghost">编排</button>
+                  </div>
+                </td>
+              </tr>
+              <!-- Row 3: running ok-ish but using info -->
+              <tr onclick="selectRow(this)">
+                <td>
+                  <div class="p-name">
+                    <div class="p-ico" style="background:var(--v3-info-soft);color:var(--v3-info)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+                    <div>
+                      <div class="p-title">Main Dispatch Recovery Hardening</div>
+                      <div class="p-owner"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>tinker · 7d8e4b22</div>
+                      <div class="p-status"><span class="pill t-info"><span class="dot"></span>运行中</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pill t-mute"><span class="dot"></span>低风险</span>
+                  <div class="pend-sub">2 项待处理</div>
+                </td>
+                <td><span style="font-size:12px;font-weight:600">调度引擎</span></td>
+                <td><span class="mono">07-06 10:05</span></td>
+                <td>
+                  <div class="op-col" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary">进入项目 →</button>
+                    <button class="btn btn-ghost">编排</button>
+                  </div>
+                </td>
+              </tr>
+              <!-- Row 4: 验收中 = ok (green) — corrected -->
+              <tr class="warn" onclick="selectRow(this)">
+                <td>
+                  <div class="p-name">
+                    <div class="p-ico" style="background:var(--v3-ok-soft);color:var(--v3-ok)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+                    <div>
+                      <div class="p-title">Contract Review Automation</div>
+                      <div class="p-owner"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>tinker · 4c5d6e33</div>
+                      <div class="p-status"><span class="pill t-ok"><span class="dot"></span>验收中</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pill t-warn"><span class="dot"></span>证据待补</span>
+                  <div class="pend-sub">1 项待处理</div>
+                </td>
+                <td><span style="font-size:12px;font-weight:600">验收人</span></td>
+                <td><span class="mono">07-05 09:12</span></td>
+                <td>
+                  <div class="op-col" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary">进入项目 →</button>
+                    <button class="btn btn-ghost">编排</button>
+                  </div>
+                </td>
+              </tr>
+              <!-- Row 5: 草稿 = info -->
+              <tr onclick="selectRow(this)">
+                <td>
+                  <div class="p-name">
+                    <div class="p-ico" style="background:var(--v3-mute-soft);color:var(--v3-mute)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+                    <div>
+                      <div class="p-title">AI Model Evaluation Pipeline</div>
+                      <div class="p-owner"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>tinker · 2a3b4c44</div>
+                      <div class="p-status"><span class="pill t-info"><span class="dot"></span>草稿</span></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pill t-mute"><span class="dot"></span>无待处理</span>
+                  <div class="pend-sub">配置中</div>
+                </td>
+                <td><span style="font-size:12px;font-weight:600">待调度</span></td>
+                <td><span class="mono">暂无运行记录</span></td>
+                <td>
+                  <div class="op-col" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary">进入项目 →</button>
+                    <button class="btn btn-ghost">编排</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Right panel -->
+        <aside class="triage" id="triage">
+          <div class="head">
+            <div class="p-ico" style="background:var(--v3-danger-soft);color:var(--v3-danger);width:36px;height:36px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
+            <div>
+              <h3>ProjectTask Completion Drilldown</h3>
+              <div class="owner">负责人 <b style="color:var(--v3-ink-2)">tinker</b> · 1b67f6d4</div>
+              <div class="pills">
+                <span class="pill t-info"><span class="dot"></span>运行中</span>
+                <span class="pill t-danger"><span class="dot"></span>需人工决策</span>
+              </div>
+            </div>
+          </div>
+          <div class="todo-box">
+            <div class="tt">待办 · 4</div>
+            <div class="todo-item">
+              <div class="ti-ico" style="background:var(--v3-danger-soft);color:var(--v3-danger)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+              <div class="ti-txt">等待人工决策</div>
+              <button class="btn btn-ghost" style="padding:5px 10px">处理</button>
+            </div>
+            <div class="todo-item">
+              <div class="ti-ico" style="background:var(--v3-warn-soft);color:var(--v3-warn)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+              <div class="ti-txt">执行失败任务</div>
+              <button class="btn btn-ghost" style="padding:5px 10px">查看</button>
+            </div>
+            <div class="todo-item">
+              <div class="ti-ico" style="background:var(--v3-warn-soft);color:var(--v3-warn)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 2"/></svg></div>
+              <div class="ti-txt">等待超时</div>
+              <button class="btn btn-ghost" style="padding:5px 10px">查看</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">进入项目详情 →</button>
+            <button class="btn btn-ghost">进入流程编排</button>
+          </div>
+        </aside>
+      </div>
+
+      <div class="legend">
+        <span><b>色彩修正：</b>运行中→蓝(info) · 验收中→绿(ok) · 草稿→蓝(info) · 已暂停→黄(warn)</span>
+        <span><b>布局修正：</b>指标 80px→40px 横向条 · 筛选两层→单行 · 右栏 380→320px · 列宽 34/22/16/14/14</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const seg = document.getElementById('seg');
+  const mCur = document.getElementById('metrics-current');
+  const mImp = document.getElementById('metrics-improved');
+  const fCur = document.getElementById('filter-current');
+  const fImp = document.getElementById('filter-improved');
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    const mode = btn.dataset.mode;
+    [...seg.children].forEach(b => b.classList.toggle('on', b === btn));
+    const isCur = mode === 'current';
+    mCur.classList.toggle('hidden', !isCur);
+    mImp.classList.toggle('hidden', isCur);
+    fCur.classList.toggle('hidden', !isCur);
+    fImp.classList.toggle('hidden', isCur);
+  });
+  function selectRow(el) {
+    document.querySelectorAll('tbody tr').forEach(r => r.classList.remove('sel'));
+    el.classList.add('sel');
+  }
+</script>
+</body>
+</html>

@@ -71,10 +71,7 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if req.View == "" {
 		req.View = ViewMine
 	}
-	if req.Status == "" {
-		req.Status = StatusOpen
-	}
-	if !validStatus(req.Status) {
+	if req.Status != nil && !validStatus(*req.Status) {
 		return ListItemsResult{}, ErrInvalidItem
 	}
 	if req.View == ViewMine {

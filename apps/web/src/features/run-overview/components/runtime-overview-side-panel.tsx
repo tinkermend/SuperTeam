@@ -162,10 +162,6 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
             <div className="text-xs font-semibold text-v3-ink-2">消耗情况</div>
             <div className="mt-2 rounded-v3-inner bg-v3-card-soft px-3 py-3 text-sm text-v3-ink-2">
               <div className="flex items-center justify-between">
-                <span>本任务消耗</span>
-                <span className="font-semibold text-v3-ink tabular-nums">{formatNumber(selected.usage?.taskTokens ?? 0)} tokens</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
                 <span>今日累计</span>
                 <span className="font-semibold text-v3-ink tabular-nums">
                   {formatNumber(dailyTokens)}

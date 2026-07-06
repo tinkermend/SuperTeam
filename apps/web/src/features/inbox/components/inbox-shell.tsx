@@ -3,7 +3,9 @@ import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   ArrowUpRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Clock,
   FileText,
   FolderKanban,
@@ -14,7 +16,9 @@ import {
   Route as RouteIcon,
   ShieldCheck,
   ShieldQuestion,
+  SlidersHorizontal,
   Sparkles,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -26,14 +30,7 @@ import {
   V3Tab,
 } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import type {
@@ -70,7 +67,7 @@ export type InboxFilterChangeValue<Key extends InboxFilterKey> = {
   item_type: InboxItemType | "all";
   project_id: string;
   risk_level: string;
-  status: InboxStatus;
+  status: InboxStatus | "all";
   target_user_id: string;
 }[Key];
 type InboxFilterChangeHandler = <Key extends InboxFilterKey>(
@@ -938,7 +935,8 @@ const statusOptions = [
   { label: "开放", value: "open" },
   { label: "已处理", value: "resolved" },
   { label: "已取消", value: "cancelled" },
-] satisfies Array<SelectOption<InboxStatus>>;
+  { label: "所有", value: "all" },
+] satisfies Array<SelectOption<InboxStatus | "all">>;
 
 const itemTypeOptions = [
   { label: "全部类型", value: "all" },
@@ -961,48 +959,65 @@ function InboxFilters({
   uuidFilterDrafts,
   uuidFilterErrors,
 }: InboxFiltersProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const hasUuidFilterError = Boolean(
     uuidFilterErrors.project_id || uuidFilterErrors.target_user_id,
   );
+  const activeUuidCount = [
+    uuidFilterDrafts.project_id.trim(),
+    uuidFilterDrafts.target_user_id.trim(),
+  ].filter(Boolean).length;
 
   return (
     <div className="flex flex-1 flex-wrap items-center gap-2">
-      <FilterSelect
+      <FilterChip
         label="状态"
         options={statusOptions}
-        value={filters.status ?? "open"}
+        value={filters.status ?? "all"}
+        neutralValue="all"
         onValueChange={(value) => onFilterChange("status", value)}
       />
-      <FilterSelect
+      <FilterChip
         label="事项类型"
         options={itemTypeOptions}
         value={filters.item_type ?? "all"}
+        neutralValue="all"
         onValueChange={(value) => onFilterChange("item_type", value)}
       />
-      <FilterSelect
+      <FilterChip
         label="风险等级"
         options={riskOptions}
         value={filters.risk_level ?? "all"}
+        neutralValue="all"
         onValueChange={(value) => onFilterChange("risk_level", value)}
       />
-      <FilterInput
-        invalid={Boolean(uuidFilterErrors.project_id)}
-        label="项目 ID"
-        placeholder="项目 ID"
-        value={uuidFilterDrafts.project_id}
-        onValueChange={(value) => onFilterChange("project_id", value)}
+      <MoreFiltersButton
+        active={showAdvanced || activeUuidCount > 0}
+        count={activeUuidCount}
+        onToggle={() => setShowAdvanced((v) => !v)}
       />
-      <FilterInput
-        invalid={Boolean(uuidFilterErrors.target_user_id)}
-        label="目标用户 ID"
-        placeholder="目标用户 ID"
-        value={uuidFilterDrafts.target_user_id}
-        onValueChange={(value) => onFilterChange("target_user_id", value)}
-      />
-      {hasUuidFilterError ? (
-        <p className="text-xs font-semibold text-v3-danger" role="alert">
-          请输入有效 UUID
-        </p>
+      {showAdvanced ? (
+        <div className="flex w-full flex-wrap items-center gap-2 border-t border-dashed border-v3-line-strong pt-3">
+          <FilterInput
+            invalid={Boolean(uuidFilterErrors.project_id)}
+            label="项目 ID"
+            placeholder="项目 ID"
+            value={uuidFilterDrafts.project_id}
+            onValueChange={(value) => onFilterChange("project_id", value)}
+          />
+          <FilterInput
+            invalid={Boolean(uuidFilterErrors.target_user_id)}
+            label="目标用户 ID"
+            placeholder="目标用户 ID"
+            value={uuidFilterDrafts.target_user_id}
+            onValueChange={(value) => onFilterChange("target_user_id", value)}
+          />
+          {hasUuidFilterError ? (
+            <p className="text-xs font-semibold text-v3-danger" role="alert">
+              请输入有效 UUID
+            </p>
+          ) : null}
+        </div>
       ) : null}
       <V3Button
         className="ml-auto shrink-0"
@@ -1012,46 +1027,119 @@ function InboxFilters({
         size="sm"
       >
         <RotateCcw className="size-4" />
-        重置筛选
+        重置
       </V3Button>
     </div>
   );
 }
 
-type FilterSelectProps<Value extends string> = {
+type FilterChipProps<Value extends string> = {
   label: string;
+  neutralValue: Value;
   onValueChange: (value: Value) => void;
   options: ReadonlyArray<SelectOption<Value>>;
   value: Value;
 };
 
-function FilterSelect<Value extends string>({
+function FilterChip<Value extends string>({
   label,
+  neutralValue,
   onValueChange,
   options,
   value,
-}: FilterSelectProps<Value>) {
-  const selectId = `inbox-filter-${label}`;
+}: FilterChipProps<Value>) {
+  const isActive = value !== neutralValue;
+  const selected = options.find((o) => o.value === value);
+  const [open, setOpen] = useState(false);
 
   return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger
-        id={selectId}
-        aria-label={label}
-        className="h-9 w-auto min-w-[7rem] rounded-xl border-v3-line bg-v3-card-soft text-[13px] text-v3-ink shadow-none"
+    <Popover open={open} onOpenChange={setOpen}>
+      <div
+        className={cn(
+          "inline-flex items-center gap-1 rounded-xl py-1.5 pl-3.5 pr-2 text-[13px] font-semibold transition-all duration-200 ease-out",
+          isActive
+            ? "bg-v3-brand-soft text-v3-brand-deep"
+            : "border border-v3-line bg-v3-card text-v3-ink-2 shadow-sm hover:-translate-y-0.5 hover:text-v3-ink hover:shadow-md",
+        )}
       >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            className="inline-flex items-center gap-1.5 outline-none"
+          >
+            <span>{selected?.label ?? label}</span>
+            <ChevronDown aria-hidden className="size-3.5 opacity-50" />
+          </button>
+        </PopoverTrigger>
+        {isActive ? (
+          <button
+            type="button"
+            aria-label="清除"
+            className="ml-0.5 inline-flex size-4 items-center justify-center rounded-full bg-black/10 transition-colors hover:bg-black/20"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onValueChange(neutralValue);
+            }}
+          >
+            <X aria-hidden className="size-3" />
+          </button>
+        ) : null}
+      </div>
+      <PopoverContent align="start" className="min-w-[10rem] p-1.5">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={cn(
+              "flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+              opt.value === value
+                ? "font-semibold text-v3-brand-deep"
+                : "text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink",
+            )}
+            onClick={() => {
+              onValueChange(opt.value);
+              setOpen(false);
+            }}
+          >
+            <span>{opt.label}</span>
+            {opt.value === value ? <Check aria-hidden className="size-4" /> : null}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MoreFiltersButton({
+  active,
+  count,
+  onToggle,
+}: {
+  active: boolean;
+  count: number;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all",
+        active
+          ? "bg-v3-brand-soft text-v3-brand-deep"
+          : "border border-dashed border-v3-line-strong bg-transparent text-v3-ink-3 hover:border-v3-ink-3 hover:text-v3-ink-2",
+      )}
+    >
+      <SlidersHorizontal aria-hidden className="size-3.5" />
+      更多筛选
+      {count > 0 ? (
+        <span className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-v3-brand px-1 text-[11px] font-bold text-white">
+          {count}
+        </span>
+      ) : null}
+    </button>
   );
 }
 

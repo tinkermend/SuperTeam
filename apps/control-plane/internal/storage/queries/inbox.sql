@@ -140,7 +140,10 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 -- name: ListInboxItems :many
 SELECT * FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = sqlc.arg('status')::varchar
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
@@ -163,7 +166,10 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 -- name: CountInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = sqlc.arg('status')::varchar
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid

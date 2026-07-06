@@ -1,4 +1,3 @@
-import { Hand, Maximize2, Minus, Plus } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
 import { RuntimeMapSvgLayer } from "./runtime-map-svg-layer";
@@ -107,24 +106,6 @@ export function RuntimeMapStage({ activeFloorId, onSelectEmployee, overview, sel
               />
             );
           })}
-        </div>
-        <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-v3-line bg-white/92 px-3 py-2 text-sm font-semibold text-v3-ink shadow-v3 backdrop-blur">
-          <button type="button" className="grid size-8 place-items-center rounded-xl text-v3-ink-2 hover:bg-v3-card-soft" aria-label="拖动画布">
-            <Hand className="size-4" />
-          </button>
-          <span className="mx-1 h-5 w-px bg-v3-line" aria-hidden />
-          <button type="button" className="grid size-8 place-items-center rounded-xl text-v3-ink-2 hover:bg-v3-card-soft" aria-label="缩小">
-            <Minus className="size-4" />
-          </button>
-          <span className="px-3 tabular-nums">100%</span>
-          <button type="button" className="grid size-8 place-items-center rounded-xl text-v3-ink-2 hover:bg-v3-card-soft" aria-label="放大">
-            <Plus className="size-4" />
-          </button>
-          <span className="mx-1 h-5 w-px bg-v3-line" aria-hidden />
-          <button type="button" className="flex h-8 items-center gap-1 rounded-xl px-2.5 text-v3-ink-2 hover:bg-v3-card-soft">
-            <Maximize2 className="size-4" />
-            适应视图
-          </button>
         </div>
       </div>
     </section>

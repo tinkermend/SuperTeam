@@ -1,46 +1,33 @@
-# 用户体验架构重设计 · 概览
+# 收件箱筛选栏方案 B 落地概览
 
-## 做了什么
+## 完成内容
 
-对 SuperTeam Web 控制台做了一次完整的用户体验架构梳理,识别出 12 处体验断点,并产出重设计方案。
+将收件箱筛选栏的「状态」筛选从**强制必填**改为**可选**，新增「所有」中性态选项，使三个筛选维度（状态/类型/风险）行为一致——均有中性默认值 + 可清除。
 
-## 核心结论
+### 改动范围（跨前端 + 后端 + 测试）
 
-**诊断**:对象模型完整(Project 承载协调线程、任务、工件、证据、审批、预算、验收),但 UI 把对象拆成了孤岛——项目详情埋没治理上下文、人类决策旅程在 inbox 单向断裂、运行可观测与业务处置分离。
+**后端 (Go + SQL)**
+- `inbox.sql` — ListInboxItems + CountInboxItems 的 `sqlc.arg('status')` → `sqlc.narg('status')` + IS NULL 模式
+- `inbox.sql.go` — sqlc 重新生成，Status 参数 `string` → `pgtype.Text`
+- `types.go` — ListItemsRequest.Status: `Status` → `*Status`
+- `handler.go` — 仅在 status 非空非 "all" 时设置
+- `service.go` — 移除 `req.Status == "" → StatusOpen` 默认逻辑，nil = 返回所有状态
+- `pg_repository.go` — 新增 `textFromStatusPtr` 辅助函数
 
-**12 处断点分三类**:
-1. 项目详情信息孤岛(4 处):无顶层 Tab、任务行无跳转、Member 死链、无面包屑
-2. 人类决策旅程断裂(4 处):`/approvals` 占位、审批 dialog 缺上下文、无 deep-link 锚点、审批后不回流
-3. 运行可观测处置分离(4 处):运行总览零外链、异常无处置入口、workflow 与项目无互链、员工详情死按钮
+**前端 (TypeScript)**
+- `inbox-shell.tsx` — statusOptions 增加「所有」选项，类型 `InboxStatus | "all"`，默认值 `filters.status ?? "all"`
+- `index.test.tsx` — 更新状态选项测试
 
-## 设计方案(五原则)
+**测试**
+- Go: 适配 `*Status` 类型 + 新增 `TestServiceListItemsNilStatusReturnsAllStatuses`
+- Web: 19/19 inbox 测试通过
 
-1. 项目即工作中枢(详情页升级为七 Tab 工作面)
-2. 上下文贯穿(全局面包屑 + deep-link + 回流)
-3. 人类决策带上下文(审批 dialog 携带发起人/原因/风险/证据)
-4. 可观测即处置(异常旁即处置入口)
-5. 空状态即引导(消灭死胡同)
+**原型**
+- `docs/prototypes/inbox-filter-bar-option-a.html` — 方案 B 可交互原型
 
-## 关键决策
-
-- **导航重组**:从 3 组 21 项改为 4 组(工作台/协作对象/流程能力/治理平台),运行总览从平台管理提升到工作台
-- **项目详情重构**:纵向堆叠 + 折叠 → 顶层七 Tab(概览/任务/工件/审批/预算/验收/配置),治理 Tab 从折叠区提升
-- **审批闭环**:inbox dialog 增强上下文 + deep-link 锚点定位 + 审批后回流原工作流
-- **全链路面包屑**:项目 › 需求 › 任务 › 运行
-
-## 落地路线(三期)
-
-| 期 | 目标 | 风险 |
-| --- | --- | --- |
-| 第一期 | 补全跳转,消灭死胡同(12 项 Link 补全) | 低 |
-| 第二期 | 项目工作中枢七 Tab + 审批闭环 | 中 |
-| 第三期 | 导航重组 + `/approvals` 实现 | 需评审 |
-
-## 交付物
-
-- 完整方案:`docs/prototypes/ux-architecture-redesign.md`
-- 诊断与方案可视化:对话内三张 SVG(现状断点 / 新信息架构 / 核心旅程闭环)
-
-## 下一步
-
-请评审方案方向。建议从第一期(补全跳转)起步——风险最低、收益最高、不依赖架构重组评审。
+### 验证状态
+- Go build: OK
+- Go inbox 测试: 全通过
+- Web typecheck: inbox 零错误
+- Web inbox 测试: 19/19 通过
+- 真实端到端验证: 待完成（需 dev-services 运行）

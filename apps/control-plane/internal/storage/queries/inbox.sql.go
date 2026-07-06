@@ -38,7 +38,10 @@ func (q *Queries) CountHighRiskInboxItems(ctx context.Context, arg CountHighRisk
 const CountInboxItems = `-- name: CountInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = $1::uuid
-  AND status = $2::varchar
+  AND (
+    $2::varchar IS NULL
+    OR status = $2::varchar
+  )
   AND (
     $3::uuid IS NULL
     OR target_user_id = $3::uuid
@@ -59,7 +62,7 @@ WHERE tenant_id = $1::uuid
 
 type CountInboxItemsParams struct {
 	TenantID        uuid.UUID     `json:"tenant_id"`
-	Status          string        `json:"status"`
+	Status          pgtype.Text   `json:"status"`
 	TargetUserID    uuid.NullUUID `json:"target_user_id"`
 	ItemType        pgtype.Text   `json:"item_type"`
 	RiskLevel       pgtype.Text   `json:"risk_level"`
@@ -125,7 +128,10 @@ func (q *Queries) GetInboxItem(ctx context.Context, arg GetInboxItemParams) (Inb
 const ListInboxItems = `-- name: ListInboxItems :many
 SELECT id, tenant_id, team_id, target_user_id, scope, item_type, source_type, source_id, source_project_id, source_task_id, source_approval_request_id, title, summary, risk_level, priority, status, action_schema, context_payload, deep_link, resolved_at, last_activity_at, created_at, updated_at FROM inbox_items
 WHERE tenant_id = $1::uuid
-  AND status = $2::varchar
+  AND (
+    $2::varchar IS NULL
+    OR status = $2::varchar
+  )
   AND (
     $3::uuid IS NULL
     OR target_user_id = $3::uuid
@@ -148,7 +154,7 @@ LIMIT $8 OFFSET $7
 
 type ListInboxItemsParams struct {
 	TenantID        uuid.UUID     `json:"tenant_id"`
-	Status          string        `json:"status"`
+	Status          pgtype.Text   `json:"status"`
 	TargetUserID    uuid.NullUUID `json:"target_user_id"`
 	ItemType        pgtype.Text   `json:"item_type"`
 	RiskLevel       pgtype.Text   `json:"risk_level"`

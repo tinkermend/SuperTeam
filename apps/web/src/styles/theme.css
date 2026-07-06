@@ -75,6 +75,7 @@
   --v3-signature-ink-2: #5b667a;
   /* 语义色派生公式（v3.1）：solid = oklch(0.60 0.15 H)、text = oklch(0.44 0.125 H)、
      soft = oklch(0.962 0.028 H)；danger 为唯一饱和度例外（C=0.175）。
+     warn 例外：H=40（橙红，不偏棕），C=0.16，与蓝主色协调。
      text 层专用于 soft 底上的文字（≥4.5:1），solid 用于图标、圆点和 accent bar。 */
   --v3-info: #0094b7;
   --v3-info-text: #00617d;
@@ -82,9 +83,9 @@
   --v3-ok: #009a60;
   --v3-ok-text: #006639;
   --v3-ok-soft: #e3f9ec;
-  --v3-warn: #bb6900;
-  --v3-warn-text: #7f3f00;
-  --v3-warn-soft: #ffefdf;
+  --v3-warn: #cc572a;
+  --v3-warn-text: #893411;
+  --v3-warn-soft: #ffede5;
   --v3-danger: #d14647;
   --v3-danger-text: #8a2f2d;
   --v3-danger-soft: #ffece9;
@@ -204,9 +205,9 @@
   --v3-ok: #65c495;
   --v3-ok-text: #82d2a8;
   --v3-ok-soft: rgba(101, 196, 149, 0.16);
-  --v3-warn: #e09e5b;
-  --v3-warn-text: #ebb077;
-  --v3-warn-soft: rgba(224, 158, 91, 0.16);
+  --v3-warn: #ec9475;
+  --v3-warn-text: #f6a88d;
+  --v3-warn-soft: rgba(236, 148, 117, 0.16);
   --v3-danger: #ee9089;
   --v3-danger-text: #f8a49d;
   --v3-danger-soft: rgba(238, 144, 137, 0.16);

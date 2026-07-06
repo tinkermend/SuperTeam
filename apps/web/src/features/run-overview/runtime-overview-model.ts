@@ -65,6 +65,7 @@ export type RuntimeOverviewTeam = {
   floorId: RuntimeOverviewFloorId;
   name: string;
   capacity: RuntimeOverviewWorkspaceCapacity;
+  capacityUsed: number;
   employeeCount: number;
   workingCount: number;
   idleCount: number;

@@ -110,7 +110,7 @@ type ListItemsRequest struct {
 	ActorUserID     uuid.UUID
 	View            View
 	TeamViewAllowed bool
-	Status          Status
+	Status          *Status
 	ItemType        *ItemType
 	RiskLevel       *string
 	ProjectID       *uuid.UUID

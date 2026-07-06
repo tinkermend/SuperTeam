@@ -364,16 +364,16 @@ describe("InboxView", () => {
     expect(requestUrl?.searchParams.get("offset")).toBe("0");
   });
 
-  it("only offers backend-supported status filters", async () => {
+  it("offers backend-supported status filters including all", async () => {
     const screen = await renderInboxView();
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
+    await userEvent.click(screen.getByRole("button", { name: "状态" }));
 
-    expect(screen.getByRole("option", { name: "全部状态" }).query()).toBeNull();
-    await expect.element(screen.getByRole("option", { name: "开放" })).toBeVisible();
-    await expect.element(screen.getByRole("option", { name: "已处理" })).toBeVisible();
-    await expect.element(screen.getByRole("option", { name: "已取消" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "开放" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "已处理" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "已取消" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "所有" })).toBeVisible();
   });
 
   it("requests selected status, type, and risk filters", async () => {
@@ -381,12 +381,12 @@ describe("InboxView", () => {
     const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
-    await userEvent.click(screen.getByRole("option", { name: "已处理" }));
-    await userEvent.click(screen.getByRole("combobox", { name: "事项类型" }));
-    await userEvent.click(screen.getByRole("option", { name: "项目决策" }));
-    await userEvent.click(screen.getByRole("combobox", { name: "风险等级" }));
-    await userEvent.click(screen.getByRole("option", { name: "高风险" }));
+    await userEvent.click(screen.getByRole("button", { name: "状态" }));
+    await userEvent.click(screen.getByRole("button", { name: "已处理" }));
+    await userEvent.click(screen.getByRole("button", { name: "事项类型" }));
+    await userEvent.click(screen.getByRole("button", { name: "项目决策" }));
+    await userEvent.click(screen.getByRole("button", { name: "风险等级" }));
+    await userEvent.click(screen.getByRole("button", { name: "高风险" }));
 
     await vi.waitFor(() => {
       expect(
@@ -409,6 +409,7 @@ describe("InboxView", () => {
     const targetUserId = "22222222-2222-4222-8222-222222222222";
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "更多筛选" }));
     await userEvent.fill(screen.getByLabelText("项目 ID"), "project-42");
     await userEvent.fill(screen.getByLabelText("目标用户 ID"), "human-owner-42");
 
@@ -441,7 +442,7 @@ describe("InboxView", () => {
     });
     await expect.element(screen.getByLabelText("项目 ID")).toHaveValue("");
     await expect.element(screen.getByLabelText("目标用户 ID")).toHaveValue("");
-    await expect.element(screen.getByRole("combobox", { name: "状态" })).toHaveTextContent(
+    await expect.element(screen.getByRole("button", { name: "状态" })).toHaveTextContent(
       "开放",
     );
   });

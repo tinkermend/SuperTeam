@@ -1,15 +1,5 @@
 import type { RuntimeOverviewEmployee } from "../runtime-overview-model";
 
-const statusClass: Record<RuntimeOverviewEmployee["status"], string> = {
-  error: "bg-v3-danger",
-  idle: "bg-v3-mute",
-  needs_configuration: "bg-v3-warn",
-  queued: "bg-v3-info",
-  unavailable: "bg-v3-mute",
-  waiting_human: "bg-v3-warn",
-  working: "bg-v3-ok",
-};
-
 const statusLabel: Record<RuntimeOverviewEmployee["status"], string> = {
   error: "异常",
   idle: "空闲",
@@ -46,7 +36,6 @@ export function EmployeeAvatarNode({ employee, onSelect, selected, x, y }: Emplo
           {employee.avatarAsset?.fallbackLabel ?? employee.name.slice(0, 1)}
         </span>
       )}
-      <span className={`absolute right-1 bottom-1 size-3 rounded-full border-2 border-white ${statusClass[employee.status]}`} />
       <span className="sr-only">{statusLabel[employee.status]}</span>
     </button>
   );

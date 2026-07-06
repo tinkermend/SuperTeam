@@ -110,7 +110,7 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("开发团队").first()).toBeVisible();
     await expect.element(screen.getByText("运维团队").first()).toBeVisible();
     await expect.element(screen.getByText("高秀英").first()).toBeVisible();
-    await expect.element(screen.getByText("容量 3/3").first()).toBeVisible();
+    await expect.element(screen.getByText("工位 3/3").first()).toBeVisible();
     expect(requests.some((request) => request.pathname === "/api/v1/digital-employees/overview")).toBe(true);
     expect(requests.some((request) => request.pathname === "/api/v1/teams")).toBe(true);
   });
@@ -130,6 +130,10 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByRole("button", { name: "1层" })).toBeVisible();
     expect(main?.querySelector("[data-runtime-overview-toolbar]")).not.toBeNull();
     expect(main?.querySelector("button[aria-label='刷新运行总览']")).not.toBeNull();
+    await expect.element(screen.getByRole("button", { name: "拖动画布" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "缩小" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "放大" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "适应视图" })).not.toBeInTheDocument();
   });
 
   it("switches floors without refetching layout data", async () => {
@@ -149,11 +153,17 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByLabelText("运行总览地图画布")).toBeVisible();
     expect(screen.container.querySelectorAll("[data-runtime-seat='team-dev']").length).toBe(3);
     expect(screen.container.querySelectorAll("[data-runtime-seat='team-ops']").length).toBe(4);
+    expect(screen.container.textContent).not.toMatch(/\+\d+\s*空闲/);
     expect(screen.container.querySelectorAll("[data-runtime-team-callout='team-dev']").length).toBe(1);
-    expect(screen.container.querySelectorAll("[data-runtime-team-callout-link='team-dev']").length).toBe(1);
+    expect(screen.container.querySelectorAll("button[data-employee-id] > span.absolute.right-1.bottom-1.size-3.rounded-full.border-2.border-white").length).toBe(0);
+    const calloutLink = screen.container.querySelector("[data-runtime-team-callout-link='team-dev']");
+    expect(calloutLink).not.toBeNull();
+    expect(calloutLink?.getAttribute("stroke")).toBe("#6482A3");
 
     await userEvent.click(screen.getByRole("button", { name: /高秀英/ }));
-    await expect.element(screen.getByText("当前选择：高秀英")).toBeVisible();
+    await expect.element(screen.getByText("当前选择：高秀英")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
+    expect(screen.container.querySelectorAll("[data-runtime-team-selection-frame]").length).toBe(0);
   });
 
   it("keeps the office map unframed and feathered into the page background", async () => {
@@ -209,11 +219,21 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByRole("table", { name: "运行总览表格" })).not.toBeInTheDocument();
   });
 
+  it("only shows daily cumulative usage in the selected employee consumption panel", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-dev-1" });
+
+    await expect.element(screen.getByText("消耗情况")).toBeVisible();
+    await expect.element(screen.getByText("今日累计")).toBeVisible();
+    await expect.element(screen.getByText("本任务消耗")).not.toBeInTheDocument();
+  });
+
   it("deep-links to employees and runtime nodes from the selected employee panel", async () => {
     const { fetcher } = createFetcher();
     const screen = await renderPage(fetcher, { employee: "emp-dev-1" });
 
-    await expect.element(screen.getByText("当前选择：陆一鸣")).toBeVisible();
+    await expect.element(screen.getByText("当前选择：陆一鸣")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "陆一鸣" })).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看员工详情" })).toHaveAttribute(
       "href",
       "/employees/emp-dev-1",
@@ -228,7 +248,8 @@ describe("RunOverviewView", () => {
     const { fetcher } = createFetcher();
     const screen = await renderPage(fetcher, { employee: "emp-dev-1" });
 
-    await expect.element(screen.getByText("当前选择：陆一鸣")).toBeVisible();
+    await expect.element(screen.getByText("当前选择：陆一鸣")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "陆一鸣" })).toBeVisible();
 
     routerSearch = { employee: "emp-ops-1" };
     await screen.rerender(
@@ -237,6 +258,7 @@ describe("RunOverviewView", () => {
       </QueryClientProvider>,
     );
 
-    await expect.element(screen.getByText("当前选择：高秀英")).toBeVisible();
+    await expect.element(screen.getByText("当前选择：高秀英")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
   });
 });

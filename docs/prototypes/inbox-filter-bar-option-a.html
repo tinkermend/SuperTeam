@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>收件箱筛选栏 · 方案 A (Chip 标签式) 可交互原型</title>
+<style>
+  :root {
+    --v3-bg: #f8fafc;
+    --v3-card: #ffffff;
+    --v3-card-soft: #f7f8fa;
+    --v3-card-inner: #fafbfc;
+    --v3-ink: #0b0d12;
+    --v3-ink-2: #4d586b;
+    --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4;
+    --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff;
+    --v3-brand-deep: #2348e0;
+    --v3-brand-soft: #e9efff;
+    --v3-danger: #d14647;
+    --v3-danger-soft: #ffece9;
+    --v3-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
+    --v3-shadow-pop: 0 10px 44px rgba(16, 24, 40, 0.12);
+    --r-card: 22px;
+    --r-inner: 14px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--v3-bg);
+    color: var(--v3-ink);
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 24px 80px;
+    line-height: 1.5;
+  }
+
+  .page { max-width: 1080px; margin: 0 auto; }
+
+  /* ---- Shell page header ---- */
+  .shell-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .shell-icon {
+    width: 44px; height: 44px;
+    border-radius: 13px;
+    background: var(--v3-brand-soft);
+    color: var(--v3-brand-deep);
+    display: grid; place-items: center;
+    box-shadow: 0 1px 2px rgba(16,24,40,.05);
+    flex-shrink: 0;
+  }
+  .shell-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+  .shell-header p { font-size: 13px; color: var(--v3-ink-2); margin-top: 2px; }
+
+  /* ---- Summary cards ---- */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .summary-card {
+    position: relative;
+    background: var(--v3-card);
+    border: 1px solid var(--v3-line);
+    border-radius: var(--r-inner);
+    padding: 14px 16px;
+    box-shadow: var(--v3-shadow);
+    overflow: hidden;
+  }
+  .summary-card .accent { position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--v3-brand); }
+  .summary-card .accent.danger { background: var(--v3-danger); }
+  .summary-card .accent.warn { background: #cc572a; }
+  .summary-card .accent.info { background: #0094b7; }
+  .summary-card .num { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin-top: 8px; }
+  .summary-card .num.brand { color: var(--v3-brand-deep); }
+  .summary-card .num.danger { color: var(--v3-danger); }
+  .summary-card .num.warn { color: #893411; }
+  .summary-card .num.info { color: #00617d; }
+  .summary-card .label { font-size: 12px; font-weight: 600; color: var(--v3-ink-3); margin-top: 4px; }
+
+  /* ---- Toolbar (hero) ---- */
+  .toolbar {
+    background: var(--v3-card);
+    border: 1px solid var(--v3-line);
+    border-radius: var(--r-card);
+    box-shadow: var(--v3-shadow);
+    padding: 12px;
+  }
+  .toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .divider { width: 1px; height: 24px; background: var(--v3-line-strong); margin: 0 2px; }
+
+  /* Tabs */
+  .tabs {
+    display: inline-flex;
+    gap: 4px;
+    background: var(--v3-card-soft);
+    border-radius: 14px;
+    padding: 4px;
+  }
+  .tab {
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--v3-ink-2);
+    padding: 7px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all .2s ease;
+  }
+  .tab:hover { color: var(--v3-ink); }
+  .tab.active { background: var(--v3-brand-soft); color: var(--v3-brand-deep); }
+
+  /* ---- Chip (V3Chip language) ---- */
+  .chip-wrap { position: relative; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 12px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s ease;
+    border: 1px solid var(--v3-line);
+    background: var(--v3-card);
+    color: var(--v3-ink-2);
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    font-family: inherit;
+  }
+  .chip:hover { color: var(--v3-ink); transform: translateY(-1px); box-shadow: var(--v3-shadow); }
+  .chip.active {
+    background: var(--v3-brand-soft);
+    color: var(--v3-brand-deep);
+    border-color: transparent;
+  }
+  .chip .chev { opacity: .55; transition: transform .2s ease; }
+  .chip.open .chev { transform: rotate(180deg); opacity: .9; }
+  .chip .clear {
+    display: none;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,.07);
+    color: inherit;
+    margin-left: 1px;
+    cursor: pointer;
+  }
+  .chip.active .clear { display: inline-flex; }
+  .chip .clear:hover { background: rgba(0,0,0,.14); }
+
+  /* More button (dashed) */
+  .more-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 12px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    border: 1px dashed var(--v3-line-strong);
+    background: transparent;
+    color: var(--v3-ink-3);
+    transition: all .2s ease;
+  }
+  .more-btn:hover { color: var(--v3-ink-2); border-color: var(--v3-ink-3); }
+  .more-btn.active {
+    background: var(--v3-brand-soft);
+    color: var(--v3-brand-deep);
+    border-style: solid;
+    border-color: transparent;
+  }
+  .more-btn .badge {
+    display: none;
+    min-width: 17px; height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--v3-brand);
+    color: #fff;
+    font-size: 11px;
+    align-items: center; justify-content: center;
+  }
+  .more-btn.active .badge { display: inline-flex; }
+
+  /* Reset */
+  .reset-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    color: var(--v3-ink-3);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all .2s ease;
+    font-family: inherit;
+  }
+  .reset-btn:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+
+  /* ---- Dropdown menu ---- */
+  .menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 168px;
+    background: var(--v3-card);
+    border: 1px solid var(--v3-line-strong);
+    border-radius: var(--r-inner);
+    box-shadow: var(--v3-shadow-pop);
+    padding: 6px;
+    z-index: 50;
+    display: none;
+  }
+  .menu.show { display: block; animation: pop .14s ease; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--v3-ink-2);
+    padding: 9px 11px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .menu-item:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .menu-item.selected { color: var(--v3-brand-deep); font-weight: 600; }
+  .menu-item .tick { display: none; }
+  .menu-item.selected .tick { display: inline-flex; }
+
+  /* ---- Advanced row (UUID inputs) ---- */
+  .advanced-row {
+    display: none;
+    margin-top: 12px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--v3-line-strong);
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .advanced-row.show { display: flex; animation: pop .16s ease; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--v3-ink-3); padding-left: 2px; }
+  .field input {
+    width: 280px;
+    height: 38px;
+    border: 1px solid var(--v3-line-strong);
+    border-radius: 12px;
+    padding: 0 14px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--v3-ink);
+    background: var(--v3-card-soft);
+    outline: none;
+    transition: all .15s ease;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .field input::placeholder { color: var(--v3-ink-3); font-family: inherit; }
+  .field input:focus { border-color: var(--v3-brand); box-shadow: 0 0 0 3px rgba(47,95,255,.12); background: #fff; }
+  .field input.invalid { border-color: var(--v3-danger); box-shadow: 0 0 0 3px rgba(209,70,71,.1); }
+  .field .err { font-size: 11.5px; font-weight: 600; color: var(--v3-danger); padding-left: 2px; }
+
+  .note {
+    margin-top: 22px;
+    background: var(--v3-card);
+    border: 1px solid var(--v3-line);
+    border-radius: var(--r-inner);
+    padding: 16px 18px;
+    font-size: 13px;
+    color: var(--v3-ink-2);
+    line-height: 1.7;
+  }
+  .note b { color: var(--v3-ink); }
+  .note kbd {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    background: var(--v3-card-soft);
+    border: 1px solid var(--v3-line-strong);
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--v3-ink-2);
+  }
+
+  @media (max-width: 720px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .field input { width: 100%; }
+    .toolbar-row { gap: 6px; }
+    .reset-btn { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <!-- Shell page header -->
+    <div class="shell-header">
+      <div class="shell-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 13h4l2 3h4l2-3h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 13 6 5h12l2 8v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <h1>收件箱</h1>
+        <p>需要你处理、确认或继续追踪的事项。高风险与阻断项优先处理。</p>
+      </div>
+    </div>
+
+    <!-- Summary cards (context) -->
+    <div class="summary-grid">
+      <div class="summary-card"><span class="accent"></span><div class="num brand">12</div><div class="label">开放事项</div></div>
+      <div class="summary-card"><span class="accent danger"></span><div class="num danger">3</div><div class="label">高风险</div></div>
+      <div class="summary-card"><span class="accent warn"></span><div class="num warn">1</div><div class="label">阻断</div></div>
+      <div class="summary-card"><span class="accent info"></span><div class="num info">5h</div><div class="label">等待最久</div></div>
+    </div>
+
+    <!-- Toolbar: Option A hero -->
+    <div class="toolbar">
+      <div class="toolbar-row">
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab active" data-tab="mine">我的待办</button>
+          <button class="tab" data-tab="team">团队待办</button>
+        </div>
+        <div class="divider"></div>
+
+        <!-- Status chip (now has neutral "所有" + ✕) -->
+        <div class="chip-wrap">
+          <button class="chip active" data-chip="status">
+            <span class="chip-label">开放</span>
+            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="clear" data-clear="status"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+          </button>
+          <div class="menu" data-menu="status"></div>
+        </div>
+
+        <!-- Type chip -->
+        <div class="chip-wrap">
+          <button class="chip" data-chip="type">
+            <span class="chip-label">全部类型</span>
+            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="clear" data-clear="type"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+          </button>
+          <div class="menu" data-menu="type"></div>
+        </div>
+
+        <!-- Risk chip -->
+        <div class="chip-wrap">
+          <button class="chip" data-chip="risk">
+            <span class="chip-label">全部风险</span>
+            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="clear" data-clear="risk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+          </button>
+          <div class="menu" data-menu="risk"></div>
+        </div>
+
+        <!-- More button -->
+        <button class="more-btn" id="more-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+          更多筛选
+          <span class="badge" id="more-badge">0</span>
+        </button>
+
+        <button class="reset-btn" id="reset-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 14a7 7 0 0 0 12.5 2.3M18.5 10A7 7 0 0 0 6 7.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          重置
+        </button>
+      </div>
+
+      <!-- Advanced row: UUID inputs -->
+      <div class="advanced-row" id="advanced-row">
+        <div class="field">
+          <label for="pid">项目 ID</label>
+          <input id="pid" type="text" placeholder="项目 ID (UUID)" autocomplete="off" />
+          <span class="err" id="pid-err" style="display:none;">请输入有效 UUID</span>
+        </div>
+        <div class="field">
+          <label for="tuid">目标用户 ID</label>
+          <input id="tuid" type="text" placeholder="目标用户 ID (UUID)" autocomplete="off" />
+          <span class="err" id="tuid-err" style="display:none;">请输入有效 UUID</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>方案 B · Chip 标签式筛选（Linear / Vercel 风）</b><br/>
+      · 三个高频筛选是 <b>V3Chip</b>：默认态为白卡描边（空心），选中具体值后变 <b>实心品牌蓝</b>。<br/>
+      · 三个筛选都有中性态「所有 / 全部」：<b>状态</b> 默认「开放」(实心)，可切换到「所有」(空心) 展示全部状态；<b>类型 / 风险</b> 默认「全部」空心。选中具体值后出现 <b>✕</b> 可一键清除回中性态——✕ 对每个 chip 都有效。<br/>
+      · 后端需将 <code>status</code> 改为可选参数（缺失或 <code>all</code> 时返回所有状态），前端已支持 <code>delete filters.status</code>。<br/>
+      · 两个 UUID 输入收进 <b>「更多筛选」</b>，日常视图只留 3 个高频 chip，工具栏更干净；填入值后「更多筛选」显示数量徽标并激活。<br/>
+      · 点击任意 chip 可展开下拉；点击外部或按 <kbd>Esc</kbd> 关闭。
+    </div>
+  </div>
+
+<script>
+  // ---- Filter option definitions ----
+  const OPTIONS = {
+    status: [
+      { value: "open", label: "开放" },
+      { value: "resolved", label: "已处理" },
+      { value: "cancelled", label: "已取消" },
+      { value: "all", label: "所有" },
+    ],
+    type: [
+      { value: "all", label: "全部类型", def: true },
+      { value: "approval", label: "审批" },
+      { value: "project_decision", label: "项目决策" },
+    ],
+    risk: [
+      { value: "all", label: "全部风险", def: true },
+      { value: "blocked", label: "阻断" },
+      { value: "high", label: "高风险" },
+      { value: "medium", label: "中风险" },
+      { value: "low", label: "低风险" },
+    ],
+  };
+  const state = { status: "open", type: "all", risk: "all" };
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  // ---- Build menus ----
+  function buildMenus() {
+    for (const key of Object.keys(OPTIONS)) {
+      const menu = document.querySelector(`[data-menu="${key}"]`);
+      menu.innerHTML = "";
+      OPTIONS[key].forEach((opt) => {
+        const item = document.createElement("button");
+        item.className = "menu-item" + (state[key] === opt.value ? " selected" : "");
+        item.dataset.value = opt.value;
+        item.innerHTML = `<span>${opt.label}</span><svg class="tick" width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        item.addEventListener("click", () => {
+          state[key] = opt.value;
+          updateChip(key);
+          closeMenus();
+        });
+        menu.appendChild(item);
+      });
+    }
+  }
+
+  function updateChip(key) {
+    const chip = document.querySelector(`[data-chip="${key}"]`);
+    const label = chip.querySelector(".chip-label");
+    const opt = OPTIONS[key].find((o) => o.value === state[key]);
+    label.textContent = opt.label;
+    // 统一规则：中性态 = "all"，选中任意具体值（含 status=open）即点亮，all 则空心
+    const active = state[key] !== "all";
+    chip.classList.toggle("active", active);
+  }
+
+  // ---- Menu open/close ----
+  let openKey = null;
+  function closeMenus() {
+    document.querySelectorAll(".menu").forEach((m) => m.classList.remove("show"));
+    document.querySelectorAll(".chip").forEach((c) => c.classList.remove("open"));
+    openKey = null;
+  }
+  document.querySelectorAll(".chip").forEach((chip) => {
+    const key = chip.dataset.chip;
+    chip.addEventListener("click", (e) => {
+      // 点 ✕ 不展开菜单
+      if (e.target.closest(".clear")) {
+        e.stopPropagation();
+        state[key] = "all";
+        updateChip(key);
+        return;
+      }
+      const menu = document.querySelector(`[data-menu="${key}"]`);
+      const willOpen = openKey !== key;
+      closeMenus();
+      if (willOpen) {
+        menu.classList.add("show");
+        chip.classList.add("open");
+        openKey = key;
+      }
+    });
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".chip-wrap")) closeMenus();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
+
+  // ---- Tabs ----
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+    });
+  });
+
+  // ---- More button + UUID inputs ----
+  const moreBtn = document.getElementById("more-btn");
+  const advRow = document.getElementById("advanced-row");
+  const moreBadge = document.getElementById("more-badge");
+  moreBtn.addEventListener("click", () => {
+    const show = !advRow.classList.contains("show");
+    advRow.classList.toggle("show", show);
+    moreBtn.classList.toggle("active", show || hasUuid());
+  });
+
+  function hasUuid() {
+    return pid.value.trim() !== "" || tuid.value.trim() !== "";
+  }
+  const pid = document.getElementById("pid");
+  const tuid = document.getElementById("tuid");
+  const pidErr = document.getElementById("pid-err");
+  const tuidErr = document.getElementById("tuid-err");
+
+  function syncMore() {
+    const p = pid.value.trim(), t = tuid.value.trim();
+    const pOk = p === "" || UUID_RE.test(p);
+    const tOk = t === "" || UUID_RE.test(t);
+    pid.classList.toggle("invalid", !pOk);
+    tuid.classList.toggle("invalid", !tOk);
+    pidErr.style.display = pOk ? "none" : "block";
+    tuidErr.style.display = tOk ? "none" : "block";
+    const count = (p !== "" ? 1 : 0) + (t !== "" ? 1 : 0);
+    moreBadge.textContent = count;
+    moreBtn.classList.toggle("active", advRow.classList.contains("show") || count > 0);
+  }
+  pid.addEventListener("input", syncMore);
+  tuid.addEventListener("input", syncMore);
+
+  // ---- Reset ----
+  document.getElementById("reset-btn").addEventListener("click", () => {
+    state.status = "open"; state.type = "all"; state.risk = "all";
+    ["status", "type", "risk"].forEach(updateChip);
+    closeMenus();
+    pid.value = ""; tuid.value = "";
+    syncMore();
+    advRow.classList.remove("show");
+  });
+
+  // init
+  buildMenus();
+</script>
+</body>
+</html>

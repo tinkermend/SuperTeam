@@ -88,9 +88,6 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
               <p>当前楼层：{overview.floors.find((floor) => floor.floorId === activeFloorId)?.label}</p>
             </div>
             <RuntimeMapStage activeFloorId={activeFloorId} overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} onSelectEmployee={setSelectedEmployeeId} />
-            <p className="mt-3 text-sm text-v3-ink-2">
-              当前选择：{overview.employees.find((employee) => employee.employeeId === effectiveSelectedEmployeeId)?.name ?? "未选择"}
-            </p>
           </div>
           <RuntimeOverviewSidePanel overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} />
         </section>

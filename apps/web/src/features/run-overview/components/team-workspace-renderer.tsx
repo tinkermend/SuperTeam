@@ -20,7 +20,6 @@ export function TeamWorkspaceRenderer({
   workspace,
 }: TeamWorkspaceRendererProps) {
   const employeesBySeat = new Map(employees.map((employee) => [employee.seatId, employee]));
-  const idleSeats = workspace.seats.filter((seat) => !employeesBySeat.has(seat.seatId)).length;
   const selected = selectedTeamId === team.teamId;
   return (
     <div className="absolute inset-0">
@@ -33,7 +32,7 @@ export function TeamWorkspaceRenderer({
           <h3 className="min-w-0 text-sm font-semibold text-v3-ink">
             <span className="block truncate">{team.name}</span>
             <span className="mt-1 block text-xs font-medium text-v3-ink-2">
-              容量 {team.employeeCount}/{team.capacity}
+              工位 {team.capacityUsed}/{team.capacity}
             </span>
           </h3>
           {team.overCapacity ? <StatusPill tone="danger">超员</StatusPill> : <StatusPill tone="ok">正常</StatusPill>}
@@ -63,17 +62,6 @@ export function TeamWorkspaceRenderer({
           />
         );
       })}
-      {idleSeats > 0 ? (
-        <div
-          className="absolute z-30 rounded-full border border-v3-line bg-white px-3 py-1 text-xs font-semibold text-v3-ink-2 shadow-sm"
-          style={{
-            left: Math.max(...workspace.polygon.map((point) => point.x)) - 110,
-            top: Math.max(...workspace.polygon.map((point) => point.y)) + 10,
-          }}
-        >
-          +{idleSeats} 空闲
-        </div>
-      ) : null}
     </div>
   );
 }

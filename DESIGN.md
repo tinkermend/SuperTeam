@@ -8,11 +8,11 @@
 
 ## 项目定位
 
-SuperTeam Web 是企业级控制台，用于管理、观察、审批和验收 AI 执行能力、流程状态调度、人类审批、上下文、工件和审计。
+SuperTeam Web 是企业级平台，用于管理、观察、审批和验收 AI 执行能力、流程状态调度、人类审批、上下文、工件和审计。
 
-设计目标是：克制配色、清晰层级、稳定布局、高信息密度和可审计的操作反馈。视觉可以有科技感，但必须优先服务任务流、审批、运行状态、工件和审计等后台工作场景。
+设计目标是：清晰层级、稳定布局、较高信息密度和可审计的操作反馈。视觉可以有科技感，但必须优先服务任务流、审批、运行状态、工件和审计等后台工作场景。
 
-## 当前目标风格（v3 · Soft-Flat）
+## 当前目标风格
 
 SuperTeam Web 的目标风格为 **“软扁平 + 蓝色主强调 + 一套语言两种容器 + 统一语义状态 + 矩枢视觉母题”**：近白冷灰打底、大圆角白卡、极淡弥散阴影、黑色粗体大数字配灰色小标签，通过节点、网络、中枢、调度的细线/网格语言形成平台识别。整体明亮、克制、扁平、有质感，但不做高饱和、强霓虹、营销页或纯装饰界面。
 
@@ -33,7 +33,7 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 一套设计语言，两种容器，按“是否需要逐行扫读与比较”二选一，二者共用同一套 token、同一个蓝、同一组语义状态色：
 
-- **柔和卡片（Soft Card）**——用于页面外壳、概览指标、实体目录（项目 / 数字员工 / 技能）、详情头卡、signature 强调。圆角白卡 + 弥散阴影，自带“状态 + 关键指标 + 一个主操作”。
+- **柔和卡片（Soft Card）**——用于页面外壳、概览指标、有稳定身份的实体目录、详情头卡、signature 强调。圆角白卡 + 弥散阴影，自带“状态 + 关键指标 + 一个主操作”。
 - **脆数据面（Work Surface / 密集表格）**——用于需要逐行扫读比较的数据本体（任务表、审计流水、日志、证据、diff）。实底高对比、不透明、不模糊、`tabular-nums`、等宽 UUID/路径、sticky 表头、危险行左侧实色 accent bar，配密度切换。
 
 融合方式：**密集表格被装进同一张柔和白卡里 = 软壳装脆数据**。外壳负责层级与质感，一旦进入逐行内容，背景必须实底高对比。详见 `docs/design-system/surfaces.md` 与 `docs/design-system/data-display.md`。
@@ -69,6 +69,16 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 - **彩色文字只保留两种**：链接/主操作（brand）与 danger 警示。时间、结果等元信息一律灰阶文字 + 前置语义色圆点（如"上次运行成功 · 7 小时前"），不用绿字/橙字直接写正文；soft 底上的文字必须用对应 `--v3-*-text` 层（≥4.5:1），不得直接用 solid。一行或一卡最多 1 个语义色状态编码，同屏指标/图标带最多 2 种非灰色调。
 - **长内容列内消化**：标题、摘要、ID、路径、错误信息、来源对象和时间等字段必须有换行、截断、两行 clamp、等宽断行、展开详情或 tooltip 策略。除日志、代码、diff、宽矩阵等天然横向内容外，不应让用户横向滚动才能读完一列信息。
 
+## 身份型实体目录
+
+身份型实体目录用于展示具有稳定身份、状态、归属和操作入口的对象集合。它仍是工作台，不是展示页；当主要任务是逐行比较、审计、批量处理或读取长字段时，应回到脆数据面。
+
+- **识别优先**：卡片首屏先给头像、图标或实体标识，再给名称、类型、归属和主状态。不要让用户先读多行字段才能识别对象。
+- **轻量指标带**：目录顶部可以放少量真实计数指标，保持白底、细边框、粗体数字、小标签和小面积 accent；没有历史数据时不伪造趋势线，用真实计数或分布表达即可。
+- **卡片网格 + 上下文导轨**：集合区用可选中卡片网格承载扫读；侧边或下方上下文区只放选中对象摘要、待处理事项、最近事件和一个主入口，不膨胀成完整详情页。
+- **紧凑事实行**：单张卡只保留 2-4 条高频判断信息，使用小字号、左右对齐和明确截断；低频字段进入详情、抽屉或上下文区。
+- **克制状态与选中态**：状态用文字 pill 加小圆点、角标或细条双编码；选中态用品牌色边框、浅品牌底、左侧 accent bar 或 focus ring 表达，hover / focus / selected 不改变卡片尺寸。
+
 ## Token 落地策略
 
 v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
@@ -94,59 +104,6 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 
 最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/v3-components.tsx` 为准，文案 / 数据来自当前业务）：
 
-```tsx
-import { Link } from "@tanstack/react-router";
-import {
-  V3PageHeader, V3MetricCard, WorkSurface,
-  V3Table, V3Th, V3Td, V3Tr, V3Button, V3StateSurface, StatusPill,
-} from "@/components/superteam";
-
-<div className="flex min-w-0 flex-col gap-6">
-  <V3PageHeader
-    icon={<Blocks />}
-    iconTone="artifact"
-    title="技能市场"
-    subtitle="发现、查看并治理技能档案"
-    actions={
-      <V3Button asChild>
-        <Link to="/skills/upload">上传技能</Link>
-      </V3Button>
-    }
-  />
-
-  <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <V3MetricCard icon={<Boxes />} label="技能总数" value={total} />
-  </section>
-
-  <WorkSurface>
-    <V3StateSurface
-      isLoading={query.isPending}
-      isError={query.isError}
-      error={query.error}
-      empty={rows.length === 0}
-    >
-      <V3Table>
-        <thead>
-          <tr>
-            <V3Th>名称</V3Th>
-            <V3Th>状态</V3Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <V3Tr key={row.id} tone={row.risk === "high" ? "danger" : undefined}>
-              <V3Td>{row.name}</V3Td>
-              <V3Td>
-                <StatusPill tone="ok">已通过</StatusPill>
-              </V3Td>
-            </V3Tr>
-          ))}
-        </tbody>
-      </V3Table>
-    </V3StateSurface>
-  </WorkSurface>
-</div>
-```
 
 ## 落地策略
 

@@ -168,10 +168,13 @@ func listItemsRequestFromQuery(w http.ResponseWriter, r *http.Request, tenantID,
 		TenantID:    tenantID,
 		ActorUserID: actorID,
 		View:        View(query.Get("view")),
-		Status:      Status(query.Get("status")),
 	}
 	// Team view stays disabled until ListItems authorizes the tenant-level team read.
 	req.TeamViewAllowed = false
+	if raw := query.Get("status"); raw != "" && raw != "all" {
+		status := Status(raw)
+		req.Status = &status
+	}
 	if raw := query.Get("item_type"); raw != "" {
 		itemType := ItemType(raw)
 		req.ItemType = &itemType

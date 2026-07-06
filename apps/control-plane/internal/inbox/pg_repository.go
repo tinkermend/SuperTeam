@@ -59,7 +59,7 @@ func (r *PgRepository) GetItem(ctx context.Context, tenantID, itemID uuid.UUID) 
 func (r *PgRepository) ListItems(ctx context.Context, req ListItemsRequest) ([]Item, error) {
 	rows, err := r.q.ListInboxItems(ctx, queries.ListInboxItemsParams{
 		TenantID:        req.TenantID,
-		Status:          string(req.Status),
+		Status:          textFromStatusPtr(req.Status),
 		TargetUserID:    nullUUID(req.TargetUserID),
 		ItemType:        textFromItemType(req.ItemType),
 		RiskLevel:       textFromStringPtr(req.RiskLevel),
@@ -84,7 +84,7 @@ func (r *PgRepository) ListItems(ctx context.Context, req ListItemsRequest) ([]I
 func (r *PgRepository) CountOpenItems(ctx context.Context, tenantID uuid.UUID, targetUserID *uuid.UUID) (int64, error) {
 	return r.q.CountInboxItems(ctx, queries.CountInboxItemsParams{
 		TenantID:        tenantID,
-		Status:          string(StatusOpen),
+		Status:          textFromString(string(StatusOpen)),
 		TargetUserID:    nullUUID(targetUserID),
 		ItemType:        pgtype.Text{},
 		RiskLevel:       pgtype.Text{},
@@ -296,6 +296,13 @@ func textFromStringPtr(value *string) pgtype.Text {
 }
 
 func textFromItemType(value *ItemType) pgtype.Text {
+	if value == nil {
+		return pgtype.Text{}
+	}
+	return textFromString(string(*value))
+}
+
+func textFromStatusPtr(value *Status) pgtype.Text {
 	if value == nil {
 		return pgtype.Text{}
 	}

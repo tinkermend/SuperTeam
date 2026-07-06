@@ -162,11 +162,12 @@ func TestServiceRejectsInvalidListStatus(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 
+	archivedStatus := Status("archived")
 	_, err = service.ListItems(context.Background(), ListItemsRequest{
 		TenantID:    uuid.New(),
 		ActorUserID: uuid.New(),
 		View:        ViewMine,
-		Status:      Status("archived"),
+		Status:      &archivedStatus,
 	})
 	if !errors.Is(err, ErrInvalidItem) {
 		t.Fatalf("expected invalid item, got %v", err)
@@ -794,6 +795,7 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 		TenantID:    tenantID,
 		ActorUserID: actorUserID,
 		View:        ViewMine,
+		Status:      ptrStatus(StatusOpen),
 	})
 	if err != nil {
 		t.Fatalf("list mine: %v", err)
@@ -810,6 +812,7 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 		ActorUserID:     actorUserID,
 		View:            ViewTeam,
 		TeamViewAllowed: true,
+		Status:          ptrStatus(StatusOpen),
 	})
 	if err != nil {
 		t.Fatalf("list team: %v", err)
@@ -822,6 +825,52 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	}
 	if team.OpenCount != 2 || team.HighRiskCount != 2 {
 		t.Fatalf("expected team counts open=2 high=2, got open=%d high=%d", team.OpenCount, team.HighRiskCount)
+	}
+}
+
+func TestServiceListItemsNilStatusReturnsAllStatuses(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	baseTime := time.Now().UTC().Add(-time.Hour)
+
+	for _, status := range []Status{StatusOpen, StatusResolved, StatusCancelled} {
+		resolvedAt := baseTime.Add(4 * time.Minute)
+		req := UpsertItemRequest{
+			TenantID:       tenantID,
+			TargetUserID:   actorUserID,
+			Scope:          "personal",
+			ItemType:       ItemTypeApproval,
+			SourceType:     SourceTypeApprovalRequest,
+			SourceID:       uuid.New(),
+			Title:          "item-" + string(status),
+			Status:         status,
+			LastActivityAt: baseTime.Add(time.Minute),
+		}
+		if status == StatusOpen {
+			req.ResolvedAt = nil
+		} else {
+			req.ResolvedAt = &resolvedAt
+		}
+		if _, err := service.UpsertItem(context.Background(), req); err != nil {
+			t.Fatalf("upsert %s: %v", status, err)
+		}
+	}
+
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+	})
+	if err != nil {
+		t.Fatalf("list with nil status: %v", err)
+	}
+	if len(result.Items) != 3 {
+		t.Fatalf("expected 3 items (all statuses) when status is nil, got %d", len(result.Items))
 	}
 }
 
@@ -1049,7 +1098,10 @@ func applyUpsert(item Item, req UpsertItemRequest) Item {
 }
 
 func matchesListRequest(item Item, req ListItemsRequest) bool {
-	if item.TenantID != req.TenantID || item.Status != req.Status {
+	if item.TenantID != req.TenantID {
+		return false
+	}
+	if req.Status != nil && item.Status != *req.Status {
 		return false
 	}
 	if req.TargetUserID != nil && item.TargetUserID != *req.TargetUserID {
@@ -1070,6 +1122,8 @@ func matchesListRequest(item Item, req ListItemsRequest) bool {
 func sourceKey(tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) string {
 	return tenantID.String() + ":" + string(sourceType) + ":" + sourceID.String()
 }
+
+func ptrStatus(s Status) *Status { return &s }
 
 type fakeApprovalResolver struct {
 	calls     int
