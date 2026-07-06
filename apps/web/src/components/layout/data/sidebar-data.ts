@@ -159,22 +159,9 @@ export function buildSidebarData({
           },
           {
             title: "日志管理",
+            url: "/logs",
             icon: ScrollText,
             iconTone: "neutral",
-            items: [
-              {
-                title: "登录日志",
-                url: "/logs/login",
-              },
-              {
-                title: "操作日志",
-                url: "/logs/operation",
-              },
-              {
-                title: "平台事件",
-                url: "/logs/runtime",
-              },
-            ],
           },
         ],
       },
