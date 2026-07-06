@@ -358,7 +358,6 @@ function RiverLane({
       aria-label={instance.title}
       className={cn(
         "flex cursor-pointer items-stretch border-b border-v3-line transition-colors last:border-b-0 hover:bg-v3-card-inner",
-        category === "attention" && "bg-v3-danger-soft/30",
       )}
       onClick={() =>
         void navigate({

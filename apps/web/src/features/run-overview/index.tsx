@@ -35,33 +35,25 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
   }, [activeFloorId, employees.data, teams.data]);
   const error = employees.error ?? teams.error;
   const effectiveSelectedEmployeeId = selectedEmployeeId ?? overview?.selectedEmployeeId;
+  const handleRefresh = () => {
+    void employees.refetch();
+    void teams.refetch();
+  };
 
   return (
-    <Main className="min-w-0">
+    <>
       <ShellPageHeader
         icon={<Activity className="size-4" />}
         title="运行总览"
         subtitle="按楼层展示团队运行态、数字员工状态和容量占用。"
-        actions={
-          <V3Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void employees.refetch();
-              void teams.refetch();
-            }}
-          >
-            <RefreshCw className="size-4" />
-            刷新
-          </V3Button>
-        }
       />
+      <Main className="min-w-0">
       {employees.isPending || teams.isPending ? <V3LoadingState label="正在加载运行总览" /> : null}
       {error ? <V3ErrorState title="运行总览加载失败" description={error.message} /> : null}
       {overview ? (
         <section aria-label="运行总览地图" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0">
-            <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
                   全部重点
@@ -80,6 +72,10 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
                   异常优先
                 </span>
               </div>
+              <V3Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
+                <RefreshCw className="size-4" />
+                刷新
+              </V3Button>
               <StatusLegend className="ml-auto" />
             </div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-v3-ink-2">
@@ -94,7 +90,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
           <RuntimeOverviewSidePanel overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} />
         </section>
       ) : null}
-    </Main>
+      </Main>
+    </>
   );
 }
 

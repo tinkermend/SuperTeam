@@ -5,7 +5,7 @@ import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main data-testid="run-overview-main">{children}</main>,
 }));
 
 vi.mock("@/components/layout/shell-page-header", () => ({
@@ -18,10 +18,10 @@ vi.mock("@/components/layout/shell-page-header", () => ({
     subtitle?: ReactNode;
     title: ReactNode;
   }) => (
-    <header>
+    <header data-testid="run-overview-shell-header">
       <h1>{title}</h1>
       {subtitle ? <p>{subtitle}</p> : null}
-      {actions}
+      {actions ? <div data-testid="run-overview-shell-header-actions">{actions}</div> : null}
     </header>
   ),
 }));
@@ -80,6 +80,23 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("容量 3/10").first()).toBeVisible();
     expect(requests.some((request) => request.pathname === "/api/v1/digital-employees/overview")).toBe(true);
     expect(requests.some((request) => request.pathname === "/api/v1/teams")).toBe(true);
+  });
+
+  it("keeps shell header outside the page content and page actions inside the map toolbar", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "运行总览" })).toBeVisible();
+    const main = screen.container.querySelector<HTMLElement>("[data-testid='run-overview-main']");
+    const shellHeader = screen.container.querySelector<HTMLElement>("[data-testid='run-overview-shell-header']");
+    const shellHeaderActions = screen.container.querySelector<HTMLElement>("[data-testid='run-overview-shell-header-actions']");
+    expect(main).not.toBeNull();
+    expect(shellHeader).not.toBeNull();
+    expect(shellHeaderActions).toBeNull();
+    expect(main?.contains(shellHeader)).toBe(false);
+    await expect.element(screen.getByRole("button", { name: "1层" })).toBeVisible();
+    expect(main?.querySelector("[data-runtime-overview-toolbar]")).not.toBeNull();
+    expect(main?.querySelector("button[aria-label='刷新运行总览']")).not.toBeNull();
   });
 
   it("switches floors without refetching layout data", async () => {
