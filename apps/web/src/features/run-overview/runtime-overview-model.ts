@@ -1,6 +1,6 @@
 import type { DigitalEmployeeOperationalStatus } from "@/lib/api/employees";
 
-export const TEAM_SEAT_CAPACITY = 10 as const;
+export type RuntimeOverviewWorkspaceCapacity = 3 | 4 | 6 | 8 | 10;
 
 export type RuntimeOverviewFloorId = "floor-1" | "floor-2" | "floor-3";
 
@@ -27,8 +27,10 @@ export type RuntimeOverviewSeat = {
 
 export type RuntimeOverviewTeamWorkspace = {
   teamId: string;
+  capacity: RuntimeOverviewWorkspaceCapacity;
   polygon: Array<{ x: number; y: number }>;
   cardAnchor: { x: number; y: number };
+  calloutTarget: { x: number; y: number };
   seats: RuntimeOverviewSeat[];
   decorationVariant: "standard" | "lab" | "ops" | "review" | "data";
 };
@@ -62,7 +64,7 @@ export type RuntimeOverviewTeam = {
   teamId: string;
   floorId: RuntimeOverviewFloorId;
   name: string;
-  capacity: typeof TEAM_SEAT_CAPACITY;
+  capacity: RuntimeOverviewWorkspaceCapacity;
   employeeCount: number;
   workingCount: number;
   idleCount: number;

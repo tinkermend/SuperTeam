@@ -1,8 +1,8 @@
 import {
-  TEAM_SEAT_CAPACITY,
   type RuntimeOverviewFloor,
   type RuntimeOverviewFloorId,
   type RuntimeOverviewTeamWorkspace,
+  type RuntimeOverviewWorkspaceCapacity,
 } from "./runtime-overview-model";
 
 export const RUNTIME_OVERVIEW_CANVAS = {
@@ -11,30 +11,41 @@ export const RUNTIME_OVERVIEW_CANVAS = {
 };
 
 const floorBackgrounds: Record<RuntimeOverviewFloorId, string> = {
-  "floor-1": "/images/run-overview/floor-1-office.png",
-  "floor-2": "/images/run-overview/floor-2-office.png",
-  "floor-3": "/images/run-overview/floor-3-office.png",
+  "floor-1": "/images/run-overview/floor-1-office-v4.png",
+  "floor-2": "/images/run-overview/floor-2-office-v4.png",
+  "floor-3": "/images/run-overview/floor-3-office-v4.png",
 };
 
-const floorTeamSlots: Record<RuntimeOverviewFloorId, Array<Omit<RuntimeOverviewTeamWorkspace, "teamId" | "seats">>> = {
+const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> = {
   "floor-1": [
-    workspace([100, 150, 575, 150, 575, 355, 100, 355], 360, 28, "standard"),
-    workspace([615, 150, 1080, 150, 1080, 355, 615, 355], 875, 28, "lab"),
-    workspace([1095, 150, 1550, 150, 1550, 355, 1095, 355], 1390, 28, "ops"),
-    workspace([70, 450, 540, 450, 540, 720, 70, 720], 350, 330, "review"),
-    workspace([600, 450, 1080, 450, 1080, 720, 600, 720], 875, 330, "standard"),
-    workspace([1120, 450, 1600, 450, 1600, 720, 1120, 720], 1400, 330, "data"),
+    workspace([180, 250, 420, 250, 420, 360, 180, 360], 190, 118, "standard", 3, { x: 210, y: 308, dx: 80, dy: 0 }),
+    workspace([600, 245, 910, 245, 910, 360, 600, 360], 625, 112, "lab", 4, { x: 640, y: 304, dx: 76, dy: 0 }),
+    workspace([1080, 245, 1510, 245, 1510, 360, 1080, 360], 1130, 112, "ops", 6, { x: 1120, y: 304, dx: 74, dy: 0 }),
+    workspace([160, 455, 520, 455, 520, 570, 160, 570], 205, 322, "review", 4, { x: 205, y: 514, dx: 80, dy: 0 }),
+    workspace([600, 445, 1070, 445, 1070, 575, 600, 575], 680, 312, "standard", 6, { x: 655, y: 510, dx: 76, dy: 0 }),
+    workspace([1180, 445, 1470, 445, 1470, 575, 1180, 575], 1195, 312, "data", 3, { x: 1225, y: 510, dx: 76, dy: 0 }),
+    workspace([175, 645, 555, 645, 555, 760, 175, 760], 220, 512, "ops", 4, { x: 230, y: 704, dx: 78, dy: 0 }),
+    workspace([620, 635, 1085, 635, 1085, 800, 620, 800], 690, 502, "lab", 10, { x: 680, y: 690, dx: 76, dy: 64, columns: 5 }),
   ],
   "floor-2": [
-    workspace([190, 155, 735, 155, 735, 392, 190, 392], 500, 24, "lab"),
-    workspace([940, 155, 1485, 155, 1485, 392, 940, 392], 1240, 24, "standard"),
-    workspace([160, 480, 720, 480, 720, 752, 160, 752], 500, 330, "ops"),
-    workspace([950, 480, 1515, 480, 1515, 752, 950, 752], 1240, 330, "review"),
+    workspace([210, 205, 530, 205, 530, 330, 210, 330], 235, 72, "lab", 4, { x: 250, y: 268, dx: 78, dy: 0 }),
+    workspace([660, 270, 940, 270, 940, 390, 660, 390], 690, 138, "standard", 3, { x: 705, y: 332, dx: 80, dy: 0 }),
+    workspace([1100, 275, 1480, 275, 1480, 395, 1100, 395], 1140, 142, "ops", 6, { x: 1145, y: 336, dx: 72, dy: 0 }),
+    workspace([180, 470, 520, 470, 520, 585, 180, 585], 220, 338, "review", 4, { x: 220, y: 528, dx: 78, dy: 0 }),
+    workspace([610, 460, 1085, 460, 1085, 625, 610, 625], 690, 328, "data", 10, { x: 665, y: 512, dx: 72, dy: 64, columns: 5 }),
+    workspace([1210, 470, 1495, 470, 1495, 590, 1210, 590], 1215, 338, "standard", 3, { x: 1252, y: 532, dx: 78, dy: 0 }),
+    workspace([235, 675, 510, 675, 510, 785, 235, 785], 245, 542, "ops", 3, { x: 270, y: 732, dx: 78, dy: 0 }),
+    workspace([1210, 675, 1495, 675, 1495, 785, 1210, 785], 1220, 542, "lab", 3, { x: 1250, y: 732, dx: 78, dy: 0 }),
   ],
   "floor-3": [
-    workspace([185, 150, 700, 105, 720, 470, 120, 500], 480, 28, "data"),
-    workspace([900, 105, 1470, 145, 1535, 420, 850, 465], 1250, 28, "standard"),
-    workspace([790, 555, 1425, 485, 1545, 790, 745, 850], 1190, 390, "lab"),
+    workspace([210, 245, 535, 245, 535, 360, 210, 360], 240, 112, "data", 4, { x: 250, y: 306, dx: 76, dy: 0 }),
+    workspace([710, 245, 955, 245, 955, 360, 710, 360], 705, 112, "standard", 3, { x: 735, y: 306, dx: 78, dy: 0 }),
+    workspace([1070, 245, 1505, 245, 1505, 360, 1070, 360], 1125, 112, "ops", 6, { x: 1115, y: 306, dx: 72, dy: 0 }),
+    workspace([185, 455, 520, 455, 520, 570, 185, 570], 220, 322, "review", 4, { x: 225, y: 514, dx: 78, dy: 0 }),
+    workspace([620, 455, 1090, 455, 1090, 585, 620, 585], 700, 322, "standard", 6, { x: 675, y: 520, dx: 74, dy: 0 }),
+    workspace([1210, 455, 1490, 455, 1490, 570, 1210, 570], 1215, 322, "lab", 3, { x: 1250, y: 514, dx: 78, dy: 0 }),
+    workspace([225, 675, 500, 675, 500, 790, 225, 790], 235, 542, "data", 3, { x: 260, y: 732, dx: 78, dy: 0 }),
+    workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 700, 507, "lab", 10, { x: 690, y: 694, dx: 76, dy: 64, columns: 5 }),
   ],
 };
 
@@ -61,38 +72,25 @@ const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["
   "floor-3": [],
 };
 
-const seatAnchors: Record<RuntimeOverviewFloorId, Array<{ x: number; y: number; dx: number; dy: number; rotation?: number }>> = {
-  "floor-1": [
-    { x: 150, y: 208, dx: 85, dy: 102, rotation: 0 },
-    { x: 665, y: 208, dx: 86, dy: 102, rotation: 0 },
-    { x: 1150, y: 208, dx: 82, dy: 102, rotation: 0 },
-    { x: 125, y: 510, dx: 83, dy: 105, rotation: 0 },
-    { x: 655, y: 510, dx: 83, dy: 105, rotation: 0 },
-    { x: 1170, y: 510, dx: 84, dy: 105, rotation: 0 },
-  ],
-  "floor-2": [
-    { x: 248, y: 202, dx: 92, dy: 110, rotation: 0 },
-    { x: 1010, y: 202, dx: 92, dy: 110, rotation: 0 },
-    { x: 245, y: 520, dx: 92, dy: 125, rotation: 0 },
-    { x: 1015, y: 520, dx: 92, dy: 125, rotation: 0 },
-  ],
-  "floor-3": [
-    { x: 260, y: 205, dx: 95, dy: 102, rotation: -10 },
-    { x: 995, y: 205, dx: 95, dy: 102, rotation: 10 },
-    { x: 905, y: 585, dx: 93, dy: 104, rotation: -8 },
-  ],
-};
+type SeatGrid = { x: number; y: number; dx: number; dy: number; columns?: number; rotation?: number };
+type RuntimeOverviewTeamSlot = Omit<RuntimeOverviewTeamWorkspace, "teamId" | "seats"> & { seatGrid: SeatGrid };
 
 function workspace(
   polygonValues: number[],
   cardX: number,
   cardY: number,
   decorationVariant: RuntimeOverviewTeamWorkspace["decorationVariant"],
+  capacity: RuntimeOverviewWorkspaceCapacity,
+  seatGrid: SeatGrid,
 ) {
+  const polygon = toPoints(polygonValues);
   return {
-    polygon: toPoints(polygonValues),
+    capacity,
+    polygon,
     cardAnchor: { x: cardX, y: cardY },
+    calloutTarget: centroid(polygon),
     decorationVariant,
+    seatGrid,
   };
 }
 
@@ -104,16 +102,27 @@ function toPoints(values: number[]) {
   return points;
 }
 
-function buildSeats(floorId: RuntimeOverviewFloorId, teamId: string, slotIndex: number): RuntimeOverviewTeamWorkspace["seats"] {
-  const anchor = seatAnchors[floorId][slotIndex] ?? seatAnchors[floorId][0];
-  return Array.from({ length: TEAM_SEAT_CAPACITY }, (_, index) => {
-    const column = index % 5;
-    const row = Math.floor(index / 5);
+function centroid(points: Array<{ x: number; y: number }>) {
+  return {
+    x: Math.round(points.reduce((sum, point) => sum + point.x, 0) / points.length),
+    y: Math.round(points.reduce((sum, point) => sum + point.y, 0) / points.length),
+  };
+}
+
+function buildSeats(
+  teamId: string,
+  capacity: RuntimeOverviewWorkspaceCapacity,
+  seatGrid: SeatGrid,
+): RuntimeOverviewTeamWorkspace["seats"] {
+  const columns = seatGrid.columns ?? capacity;
+  return Array.from({ length: capacity }, (_, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
     return {
       seatId: `${teamId}-seat-${index + 1}`,
-      x: anchor.x + column * anchor.dx,
-      y: anchor.y + row * anchor.dy,
-      rotation: anchor.rotation ?? 0,
+      x: seatGrid.x + column * seatGrid.dx,
+      y: seatGrid.y + row * seatGrid.dy,
+      rotation: seatGrid.rotation ?? 0,
     };
   });
 }
@@ -122,11 +131,14 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
   return (Object.keys(floorTeamSlots) as RuntimeOverviewFloorId[]).map((floorId, floorIndex) => {
     const teamIds = teamIdsByFloor[floorId] ?? [];
     const slots = floorTeamSlots[floorId];
-    const workspaces = teamIds.slice(0, slots.length).map((teamId, index) => ({
-      ...slots[index],
-      teamId,
-      seats: buildSeats(floorId, teamId, index),
-    }));
+    const workspaces: RuntimeOverviewTeamWorkspace[] = teamIds.slice(0, slots.length).map((teamId, index) => {
+      const { seatGrid, ...slot } = slots[index];
+      return {
+        ...slot,
+        teamId,
+        seats: buildSeats(teamId, slot.capacity, seatGrid),
+      };
+    });
     return {
       floorId,
       label: `${floorIndex + 1}层`,
@@ -135,7 +147,7 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
         teamCount: teamIds.length,
         errorCount: 0,
         capacityUsed: 0,
-        capacityTotal: teamIds.length * TEAM_SEAT_CAPACITY,
+        capacityTotal: workspaces.reduce((sum, workspace) => sum + workspace.capacity, 0),
       },
       layout: {
         backgroundImageUrl: floorBackgrounds[floorId],

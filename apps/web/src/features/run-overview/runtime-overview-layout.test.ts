@@ -9,14 +9,33 @@ const teamIdsByFloor: Record<RuntimeOverviewFloorId, string[]> = {
 };
 
 describe("runtime overview floor layout", () => {
-  it("places team summary cards away from the first employee avatar lane", () => {
+  it("uses office-zone capacities instead of fixed ten-seat workspaces", () => {
+    const layouts = buildFloorLayouts(teamIdsByFloor);
+    const allowedCapacities = new Set([3, 4, 6, 8, 10]);
+
+    for (const floor of layouts) {
+      for (const workspace of floor.layout.teamWorkspaces) {
+        expect(allowedCapacities.has(workspace.capacity)).toBe(true);
+        expect(workspace.capacity).toBe(workspace.seats.length);
+        expect(workspace.capacity).toBeGreaterThanOrEqual(3);
+      }
+    }
+
+    const capacities = layouts.flatMap((floor) => floor.layout.teamWorkspaces.map((workspace) => workspace.capacity));
+    expect(capacities).toContain(3);
+    expect(capacities.filter((capacity) => capacity === 10).length).toBeLessThanOrEqual(3);
+  });
+
+  it("keeps team summary callouts outside office zones and points them back to the workspace", () => {
     const layouts = buildFloorLayouts(teamIdsByFloor);
 
     for (const floor of layouts) {
       for (const workspace of floor.layout.teamWorkspaces) {
-        const firstSeat = workspace.seats[0];
-
-        expect(workspace.cardAnchor.x).toBeGreaterThanOrEqual(firstSeat.x + 180);
+        expect(workspace.cardAnchor.y).toBeLessThanOrEqual(Math.min(...workspace.polygon.map((point) => point.y)) - 24);
+        expect(workspace.calloutTarget.x).toBeGreaterThanOrEqual(Math.min(...workspace.polygon.map((point) => point.x)));
+        expect(workspace.calloutTarget.x).toBeLessThanOrEqual(Math.max(...workspace.polygon.map((point) => point.x)));
+        expect(workspace.calloutTarget.y).toBeGreaterThanOrEqual(Math.min(...workspace.polygon.map((point) => point.y)));
+        expect(workspace.calloutTarget.y).toBeLessThanOrEqual(Math.max(...workspace.polygon.map((point) => point.y)));
       }
     }
   });

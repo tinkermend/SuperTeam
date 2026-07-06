@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DigitalEmployeeOverview } from "@/lib/api/employees";
 import type { TeamListItem } from "@/lib/api/teams";
-import { TEAM_SEAT_CAPACITY, buildRuntimeOverview } from "./runtime-overview-adapter";
+import { buildRuntimeOverview } from "./runtime-overview-adapter";
 
 const teams: TeamListItem[] = [
   {
@@ -154,7 +154,7 @@ function employee(
 }
 
 describe("buildRuntimeOverview", () => {
-  it("maps existing Control Plane read models into fixed-capacity floor workspaces", () => {
+  it("maps existing Control Plane read models into office-zone capacity workspaces", () => {
     const overview = buildRuntimeOverview({
       activeFloorId: "floor-1",
       employees,
@@ -163,33 +163,36 @@ describe("buildRuntimeOverview", () => {
     });
 
     expect(overview.summary.employeeCount).toBe(5);
-    expect(overview.summary.capacityTotal).toBe(teams.length * TEAM_SEAT_CAPACITY);
+    expect(overview.summary.capacityTotal).toBe(7);
     expect(overview.summary.workingCount).toBe(2);
     expect(overview.floors).toHaveLength(3);
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.employeeCount).toBe(2);
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.overCapacity).toBe(false);
-    expect(overview.floors[0].layout.teamWorkspaces[0].seats).toHaveLength(TEAM_SEAT_CAPACITY);
+    expect(overview.teams.find((team) => team.teamId === "team-dev")?.capacity).toBe(3);
+    expect(overview.teams.find((team) => team.teamId === "team-ops")?.capacity).toBe(4);
+    expect(overview.floors[0].layout.teamWorkspaces[0].seats).toHaveLength(3);
+    expect(overview.floors[0].layout.teamWorkspaces[1].seats).toHaveLength(4);
     expect(overview.employees.find((item) => item.employeeId === "emp-1")?.seatId).toBe("team-ops-seat-1");
   });
 
-  it("does not assign a map seat beyond the tenth employee in a team", () => {
-    const elevenOps = Array.from({ length: 11 }, (_, index) =>
+  it("does not assign a map seat beyond the office-zone capacity", () => {
+    const fiveOps = Array.from({ length: 5 }, (_, index) =>
       employee(`ops-${index + 1}`, `运维 ${index + 1}`, "运维工程师 AI", "team-ops", "运维团队", "idle"),
     );
     const overview = buildRuntimeOverview({
       activeFloorId: "floor-1",
-      employees: { ...employees, items: elevenOps, pagination: { limit: 100, offset: 0, total_count: 11 } },
+      employees: { ...employees, items: fiveOps, pagination: { limit: 100, offset: 0, total_count: 5 } },
       generatedAt: "2026-07-05T10:00:00Z",
       teams,
     });
 
-    expect(overview.employees.filter((item) => item.teamId === "team-ops" && item.seatId).length).toBe(10);
-    expect(overview.employees.find((item) => item.employeeId === "ops-11")?.seatId).toBeUndefined();
+    expect(overview.employees.filter((item) => item.teamId === "team-ops" && item.seatId).length).toBe(4);
+    expect(overview.employees.find((item) => item.employeeId === "ops-5")?.seatId).toBeUndefined();
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.overCapacity).toBe(true);
   });
 
   it("keeps teams beyond floor slots on floor three without assigning a workspace", () => {
-    const manyTeams = Array.from({ length: 14 }, (_, index): TeamListItem => ({
+    const manyTeams = Array.from({ length: 25 }, (_, index): TeamListItem => ({
       id: `team-${index + 1}`,
       tenant_id: "tenant-1",
       slug: `team-${index + 1}`,
@@ -202,7 +205,7 @@ describe("buildRuntimeOverview", () => {
       pending_draft_count: 0,
       risk_summary: "normal",
     }));
-    const overflowEmployee = employee("overflow-1", "周越", "协作工程师 AI", "team-14", "团队 14", "working");
+    const overflowEmployee = employee("overflow-1", "周越", "协作工程师 AI", "team-25", "团队 25", "working");
 
     const overview = buildRuntimeOverview({
       activeFloorId: "floor-3",
@@ -211,11 +214,39 @@ describe("buildRuntimeOverview", () => {
       teams: manyTeams,
     });
 
-    expect(overview.floors.find((floor) => floor.floorId === "floor-3")?.teamIds).toContain("team-14");
-    expect(overview.floors.find((floor) => floor.floorId === "floor-3")?.layout.teamWorkspaces).toHaveLength(3);
-    expect(overview.teams.find((team) => team.teamId === "team-14")?.floorId).toBe("floor-3");
+    expect(overview.floors.find((floor) => floor.floorId === "floor-3")?.teamIds).toContain("team-25");
+    expect(overview.floors.find((floor) => floor.floorId === "floor-3")?.layout.teamWorkspaces).toHaveLength(8);
+    expect(overview.teams.find((team) => team.teamId === "team-25")?.floorId).toBe("floor-3");
     expect(overview.employees.find((item) => item.employeeId === "overflow-1")?.floorId).toBe("floor-3");
     expect(overview.employees.find((item) => item.employeeId === "overflow-1")?.seatId).toBeUndefined();
+  });
+
+  it("fills eight office zones per floor before assigning teams to the next floor", () => {
+    const manyTeams = Array.from({ length: 16 }, (_, index): TeamListItem => ({
+      id: `team-${index + 1}`,
+      tenant_id: "tenant-1",
+      slug: `team-${index + 1}`,
+      name: `团队 ${index + 1}`,
+      status: "active",
+      member_count: 0,
+      digital_employee_count: 0,
+      capability_count: 0,
+      governance_status: "active",
+      pending_draft_count: 0,
+      risk_summary: "normal",
+    }));
+
+    const overview = buildRuntimeOverview({
+      activeFloorId: "floor-1",
+      employees: { ...employees, items: [], pagination: { limit: 100, offset: 0, total_count: 0 } },
+      generatedAt: "2026-07-05T10:00:00Z",
+      teams: manyTeams,
+    });
+
+    expect(overview.floors.find((floor) => floor.floorId === "floor-1")?.teamIds).toHaveLength(8);
+    expect(overview.floors.find((floor) => floor.floorId === "floor-2")?.teamIds).toHaveLength(8);
+    expect(overview.floors.find((floor) => floor.floorId === "floor-3")?.teamIds).toHaveLength(0);
+    expect(overview.teams.find((team) => team.teamId === "team-9")?.floorId).toBe("floor-2");
   });
 
   it("uses team counts for zero-fetched teams when computing capacity usage", () => {
@@ -232,6 +263,7 @@ describe("buildRuntimeOverview", () => {
 
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.employeeCount).toBe(11);
     expect(overview.summary.capacityUsed).toBe(14);
+    expect(overview.summary.capacityTotal).toBe(7);
   });
 
   it("assigns seats by API item order instead of operational status", () => {

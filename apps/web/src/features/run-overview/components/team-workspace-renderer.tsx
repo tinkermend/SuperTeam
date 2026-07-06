@@ -21,16 +21,20 @@ export function TeamWorkspaceRenderer({
 }: TeamWorkspaceRendererProps) {
   const employeesBySeat = new Map(employees.map((employee) => [employee.seatId, employee]));
   const idleSeats = workspace.seats.filter((seat) => !employeesBySeat.has(seat.seatId)).length;
+  const selected = selectedTeamId === team.teamId;
   return (
     <div className="absolute inset-0">
       <article
-        className={`absolute z-30 w-[196px] rounded-[14px] border bg-white/96 p-3 shadow-v3 backdrop-blur ${selectedTeamId === team.teamId ? "border-v3-brand ring-2 ring-v3-brand/20" : "border-v3-line"}`}
+        data-runtime-team-callout={team.teamId}
+        className={`absolute z-30 w-[196px] rounded-[14px] border bg-white/94 p-3 shadow-v3 backdrop-blur transition ${selected ? "border-v3-brand ring-2 ring-v3-brand/20" : "border-v3-line opacity-88"}`}
         style={{ left: workspace.cardAnchor.x, top: workspace.cardAnchor.y }}
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="min-w-0 text-sm font-semibold text-v3-ink">
             <span className="block truncate">{team.name}</span>
-            <span className="mt-1 block text-xs font-medium text-v3-ink-2">容量 {team.employeeCount}/10</span>
+            <span className="mt-1 block text-xs font-medium text-v3-ink-2">
+              容量 {team.employeeCount}/{team.capacity}
+            </span>
           </h3>
           {team.overCapacity ? <StatusPill tone="danger">超员</StatusPill> : <StatusPill tone="ok">正常</StatusPill>}
         </div>

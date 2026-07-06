@@ -110,7 +110,7 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("开发团队").first()).toBeVisible();
     await expect.element(screen.getByText("运维团队").first()).toBeVisible();
     await expect.element(screen.getByText("高秀英").first()).toBeVisible();
-    await expect.element(screen.getByText("容量 3/10").first()).toBeVisible();
+    await expect.element(screen.getByText("容量 3/3").first()).toBeVisible();
     expect(requests.some((request) => request.pathname === "/api/v1/digital-employees/overview")).toBe(true);
     expect(requests.some((request) => request.pathname === "/api/v1/teams")).toBe(true);
   });
@@ -142,13 +142,15 @@ describe("RunOverviewView", () => {
     expect(requests.filter((request) => request.pathname === "/api/v1/digital-employees/overview").length).toBe(1);
   });
 
-  it("renders fixed ten-seat team workspaces and selectable employee avatars", async () => {
+  it("renders office-zone capacity workspaces and selectable employee avatars", async () => {
     const { fetcher } = createFetcher();
     const screen = await renderPage(fetcher);
 
     await expect.element(screen.getByLabelText("运行总览地图画布")).toBeVisible();
-    expect(screen.container.querySelectorAll("[data-runtime-seat='team-dev']").length).toBe(10);
-    expect(screen.container.querySelectorAll("[data-runtime-seat='team-ops']").length).toBe(10);
+    expect(screen.container.querySelectorAll("[data-runtime-seat='team-dev']").length).toBe(3);
+    expect(screen.container.querySelectorAll("[data-runtime-seat='team-ops']").length).toBe(4);
+    expect(screen.container.querySelectorAll("[data-runtime-team-callout='team-dev']").length).toBe(1);
+    expect(screen.container.querySelectorAll("[data-runtime-team-callout-link='team-dev']").length).toBe(1);
 
     await userEvent.click(screen.getByRole("button", { name: /高秀英/ }));
     await expect.element(screen.getByText("当前选择：高秀英")).toBeVisible();

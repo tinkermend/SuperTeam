@@ -1,0 +1,2008 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>收件箱 · 决策工作台原型</title>
+    <style>
+      :root {
+        --bg: #f7f8fb;
+        --shell: #eef2f7;
+        --card: #ffffff;
+        --card-soft: #f5f7fa;
+        --card-inner: #fbfcfd;
+        --ink: #0b0d12;
+        --ink-2: #485365;
+        --ink-3: #6f7886;
+        --line: #e9edf3;
+        --line-strong: #d9e0ea;
+        --brand: #2f5fff;
+        --brand-deep: #2348e0;
+        --brand-soft: #e9efff;
+        --info: #0094b7;
+        --info-text: #00617d;
+        --info-soft: #def8fe;
+        --ok: #009a60;
+        --ok-text: #006639;
+        --ok-soft: #e3f9ec;
+        --warn: #bb6900;
+        --warn-text: #7f3f00;
+        --warn-soft: #ffefdf;
+        --danger: #d14647;
+        --danger-text: #8a2f2d;
+        --danger-soft: #ffece9;
+        --artifact: #9565c7;
+        --artifact-text: #633d89;
+        --artifact-soft: #f7eeff;
+        --mute: #64748b;
+        --mute-text: #4d586b;
+        --mute-soft: #eef1f4;
+        --r-card: 22px;
+        --r-inner: 14px;
+        --r-control: 12px;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 18px 42px rgba(16, 24, 40, 0.07);
+        --shadow-hover: 0 2px 4px rgba(16, 24, 40, 0.05), 0 22px 54px rgba(31, 46, 80, 0.1);
+        --ease: cubic-bezier(0.32, 0.72, 0, 1);
+        --sans: "Geist", "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        --mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
+        background: var(--bg);
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 320px),
+          radial-gradient(circle at 8% 0%, rgba(47, 95, 255, 0.1), transparent 320px),
+          radial-gradient(circle at 92% 12%, rgba(0, 148, 183, 0.08), transparent 330px),
+          linear-gradient(135deg, #f7f8fb 0%, #f1f4f8 48%, #f8fafc 100%);
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        opacity: 0.32;
+        background-image:
+          linear-gradient(rgba(35, 72, 224, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(35, 72, 224, 0.035) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: linear-gradient(180deg, black, transparent 82%);
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0.04;
+        background-image:
+          radial-gradient(circle at 20% 30%, #000 0 1px, transparent 1px),
+          radial-gradient(circle at 70% 80%, #000 0 1px, transparent 1px);
+        background-size: 5px 5px, 7px 7px;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .prototype {
+        position: relative;
+        z-index: 3;
+        display: grid;
+        grid-template-columns: 246px minmax(0, 1fr);
+        min-height: 100dvh;
+      }
+
+      .side-shell {
+        position: sticky;
+        top: 0;
+        height: 100dvh;
+        padding: 18px 14px;
+      }
+
+      .side {
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        border: 1px solid rgba(126, 143, 172, 0.22);
+        border-radius: 26px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 249, 252, 0.92));
+        box-shadow: var(--shadow);
+        padding: 10px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 10px 16px;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #5e86ff, var(--brand) 58%, var(--brand-deep));
+        box-shadow: 0 12px 24px rgba(47, 95, 255, 0.24);
+        color: #fff;
+        font-size: 18px;
+        font-weight: 850;
+      }
+
+      .brand-name {
+        font-size: 16px;
+        font-weight: 820;
+        letter-spacing: 0;
+      }
+
+      .brand-caption {
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 650;
+      }
+
+      .nav-group {
+        margin-top: 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .nav-label {
+        margin: 0 10px 8px;
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.08em;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 38px;
+        padding: 0 10px;
+        border-radius: 13px;
+        color: var(--ink-2);
+        font-weight: 720;
+        transition:
+          transform 420ms var(--ease),
+          background 420ms var(--ease),
+          color 420ms var(--ease);
+      }
+
+      .nav-item svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 1.6;
+      }
+
+      .nav-item:hover {
+        background: var(--card);
+        color: var(--ink);
+        transform: translateX(2px);
+      }
+
+      .nav-item.active {
+        background: var(--brand-soft);
+        color: var(--brand-deep);
+        box-shadow: inset 0 0 0 1px rgba(47, 95, 255, 0.12);
+      }
+
+      .nav-badge {
+        margin-left: auto;
+        border-radius: 8px;
+        background: var(--card);
+        color: var(--brand-deep);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 850;
+        padding: 2px 7px;
+      }
+
+      .side-footer {
+        margin-top: auto;
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: inset 0 0 0 1px var(--line);
+        padding: 14px;
+      }
+
+      .side-footer strong {
+        display: block;
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .side-footer span {
+        display: block;
+        margin-top: 4px;
+        color: var(--ink-3);
+        font-size: 11px;
+      }
+
+      .workspace {
+        min-width: 0;
+        padding: 20px 24px 40px 0;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 14px;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        width: calc(100% - 24px);
+        min-height: 58px;
+        margin: 0 0 18px 0;
+        border: 1px solid rgba(126, 143, 172, 0.22);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px) saturate(1.2);
+        padding: 8px 10px 8px 18px;
+      }
+
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .breadcrumb svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.7;
+      }
+
+      .topbar-title {
+        color: var(--ink);
+        font-weight: 820;
+      }
+
+      .command {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: min(540px, 42vw);
+        height: 40px;
+        margin-left: auto;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: var(--card);
+        padding: 0 12px;
+        color: var(--ink-3);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+
+      .command svg {
+        width: 17px;
+        height: 17px;
+        stroke-width: 1.7;
+      }
+
+      .command input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .keycap {
+        border-radius: 7px;
+        background: var(--card-soft);
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 760;
+        padding: 2px 6px;
+      }
+
+      .avatar {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 14px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .page {
+        width: calc(100% - 24px);
+      }
+
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 18px;
+        flex-wrap: wrap;
+      }
+
+      .segmented {
+        display: inline-flex;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: var(--card-soft);
+        padding: 4px;
+      }
+
+      .segmented button,
+      .chip,
+      .density button {
+        border: 0;
+        border-radius: 11px;
+        background: transparent;
+        color: var(--ink-2);
+        font-weight: 760;
+        padding: 8px 12px;
+        transition:
+          transform 420ms var(--ease),
+          background 420ms var(--ease),
+          color 420ms var(--ease),
+          box-shadow 420ms var(--ease);
+      }
+
+      .segmented button:hover,
+      .chip:hover,
+      .density button:hover {
+        transform: translateY(-1px);
+      }
+
+      .segmented button.active,
+      .density button.active {
+        background: var(--card);
+        color: var(--brand-deep);
+        box-shadow: var(--shadow);
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--ink-2);
+        box-shadow: var(--shadow);
+      }
+
+      .chip svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.7;
+      }
+
+      .density {
+        display: inline-flex;
+        margin-left: auto;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: var(--card-soft);
+        padding: 4px;
+      }
+
+      .console {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.86fr) minmax(430px, 1.08fr) minmax(300px, 0.74fr);
+        gap: 16px;
+        align-items: start;
+      }
+
+      .panel {
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.62);
+        box-shadow: var(--shadow);
+        padding: 6px;
+      }
+
+      .panel-core {
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 22px;
+        background: var(--card);
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.84);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 54px;
+        border-bottom: 1px solid var(--line);
+        background: var(--card-soft);
+        padding: 0 16px;
+      }
+
+      .panel-title {
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .panel-meta {
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 760;
+      }
+
+      .queue {
+        max-height: 760px;
+        overflow-y: auto;
+        background: var(--card);
+      }
+
+      .queue-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        width: 100%;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--card);
+        text-align: left;
+        padding: 14px 16px;
+        transition:
+          transform 420ms var(--ease),
+          background 420ms var(--ease),
+          box-shadow 420ms var(--ease);
+      }
+
+      .queue-row::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: var(--line-strong);
+      }
+
+      .queue-row[data-risk="blocked"]::before,
+      .queue-row[data-risk="high"]::before {
+        background: var(--danger);
+      }
+
+      .queue-row[data-risk="medium"]::before {
+        background: var(--warn);
+      }
+
+      .queue-row:hover {
+        z-index: 1;
+        background: var(--card-inner);
+        box-shadow: 0 12px 24px rgba(31, 46, 80, 0.08);
+        transform: translateY(-1px);
+      }
+
+      .queue-row.active {
+        background: var(--brand-soft);
+        box-shadow: inset 3px 0 0 var(--brand);
+      }
+
+      .icon-tile {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 12px;
+        background: var(--mute-soft);
+        color: var(--mute-text);
+      }
+
+      .icon-tile svg {
+        width: 17px;
+        height: 17px;
+        stroke-width: 1.7;
+      }
+
+      .queue-row[data-type="approval"] .icon-tile {
+        background: var(--info-soft);
+        color: var(--info-text);
+      }
+
+      .queue-row[data-type="project_decision"] .icon-tile {
+        background: var(--artifact-soft);
+        color: var(--artifact-text);
+      }
+
+      .queue-row[data-risk="blocked"] .icon-tile,
+      .queue-row[data-risk="high"] .icon-tile {
+        background: var(--danger-soft);
+        color: var(--danger-text);
+      }
+
+      .queue-titleline {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .queue-title {
+        min-width: 0;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 830;
+        line-height: 1.38;
+      }
+
+      .queue-row.active .queue-title {
+        color: var(--brand-deep);
+      }
+
+      .queue-summary {
+        display: -webkit-box;
+        margin: 5px 0 0;
+        overflow: hidden;
+        color: var(--ink-2);
+        font-size: 12px;
+        line-height: 1.55;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+
+      .queue-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 9px;
+        color: var(--ink-3);
+        font-size: 11px;
+        flex-wrap: wrap;
+      }
+
+      .mono {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 22px;
+        border-radius: 8px;
+        font-size: 10.5px;
+        font-weight: 820;
+        line-height: 1;
+        padding: 0 8px;
+        white-space: nowrap;
+      }
+
+      .pill::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .pill.brand {
+        background: var(--brand-soft);
+        color: var(--brand-deep);
+      }
+
+      .pill.info {
+        background: var(--info-soft);
+        color: var(--info-text);
+      }
+
+      .pill.ok {
+        background: var(--ok-soft);
+        color: var(--ok-text);
+      }
+
+      .pill.warn {
+        background: var(--warn-soft);
+        color: var(--warn-text);
+      }
+
+      .pill.danger {
+        background: var(--danger-soft);
+        color: var(--danger-text);
+      }
+
+      .pill.artifact {
+        background: var(--artifact-soft);
+        color: var(--artifact-text);
+      }
+
+      .pill.mute {
+        background: var(--mute-soft);
+        color: var(--mute-text);
+      }
+
+      .pill.no-dot::before {
+        display: none;
+      }
+
+      .detail {
+        display: flex;
+        min-height: 760px;
+        flex-direction: column;
+      }
+
+      .detail-hero {
+        border-bottom: 1px solid var(--line);
+        background:
+          linear-gradient(135deg, rgba(47, 95, 255, 0.08), transparent 34%),
+          var(--card);
+        padding: 22px 24px 18px;
+      }
+
+      .detail-kicker {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--brand-deep);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 820;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .detail h2 {
+        margin: 12px 0 12px;
+        font-size: clamp(24px, 2.3vw, 36px);
+        font-weight: 880;
+        letter-spacing: 0;
+        line-height: 1.14;
+        text-wrap: balance;
+      }
+
+      .detail-pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .detail-section {
+        border-bottom: 1px solid var(--line);
+        padding: 18px 24px;
+      }
+
+      .detail-section:last-child {
+        border-bottom: 0;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 12px;
+        font-size: 12px;
+        font-weight: 860;
+      }
+
+      .section-title span {
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 760;
+      }
+
+      .summary-box {
+        border-radius: 16px;
+        background: var(--card-soft);
+        color: var(--ink-2);
+        font-size: 13px;
+        line-height: 1.72;
+        padding: 14px 16px;
+      }
+
+      .context-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .context-item {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--card-inner);
+        padding: 12px;
+      }
+
+      .context-label {
+        color: var(--ink-3);
+        font-size: 11px;
+        font-weight: 730;
+      }
+
+      .context-value {
+        margin-top: 5px;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 780;
+        word-break: break-word;
+      }
+
+      .evidence-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .evidence {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--card-inner);
+        padding: 12px;
+        transition:
+          transform 420ms var(--ease),
+          border 420ms var(--ease),
+          background 420ms var(--ease);
+      }
+
+      .evidence:hover {
+        border-color: rgba(47, 95, 255, 0.28);
+        background: var(--card);
+        transform: translateY(-1px);
+      }
+
+      .evidence-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 12px;
+        background: var(--artifact-soft);
+        color: var(--artifact-text);
+        flex: 0 0 auto;
+      }
+
+      .evidence-icon svg {
+        width: 17px;
+        height: 17px;
+        stroke-width: 1.65;
+      }
+
+      .evidence strong {
+        display: block;
+        overflow: hidden;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 810;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .evidence span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 0;
+      }
+
+      .timeline-item {
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        padding: 0 0 15px;
+      }
+
+      .timeline-item:last-child {
+        padding-bottom: 0;
+      }
+
+      .timeline-item::before {
+        content: "";
+        position: absolute;
+        left: 13px;
+        top: 26px;
+        bottom: 0;
+        width: 2px;
+        background: var(--line);
+      }
+
+      .timeline-item:last-child::before {
+        display: none;
+      }
+
+      .timeline-dot {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 999px;
+        background: var(--card);
+        box-shadow: inset 0 0 0 2px var(--line-strong);
+        color: var(--ink-3);
+      }
+
+      .timeline-dot svg {
+        width: 14px;
+        height: 14px;
+        stroke-width: 1.7;
+      }
+
+      .timeline-item.done .timeline-dot {
+        background: var(--ok-soft);
+        box-shadow: inset 0 0 0 2px var(--ok);
+        color: var(--ok-text);
+      }
+
+      .timeline-item.current .timeline-dot {
+        background: var(--brand);
+        box-shadow: 0 0 0 5px var(--brand-soft);
+        color: #fff;
+      }
+
+      .timeline-title {
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 810;
+      }
+
+      .timeline-desc {
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .timeline-time {
+        margin-top: 3px;
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .ops {
+        position: sticky;
+        top: 92px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .ops-card {
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.62);
+        box-shadow: var(--shadow);
+        padding: 6px;
+      }
+
+      .ops-core {
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.84);
+      }
+
+      .ops-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--card-soft);
+        padding: 13px 15px;
+        font-size: 12px;
+        font-weight: 840;
+      }
+
+      .ops-head svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.7;
+      }
+
+      .ops-body {
+        padding: 14px;
+      }
+
+      .sla {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        border-radius: 17px;
+        background: linear-gradient(135deg, var(--danger-soft), var(--card));
+        box-shadow: inset 0 0 0 1px rgba(209, 70, 71, 0.14);
+        padding: 12px;
+      }
+
+      .sla-ring {
+        display: grid;
+        width: 60px;
+        height: 60px;
+        place-items: center;
+        border-radius: 999px;
+        background: conic-gradient(var(--danger) 0 86deg, rgba(209, 70, 71, 0.14) 86deg);
+        position: relative;
+      }
+
+      .sla-ring::before {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border-radius: inherit;
+        background: var(--card);
+      }
+
+      .sla-ring span {
+        position: relative;
+        color: var(--danger-text);
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 860;
+      }
+
+      .sla-label {
+        color: var(--danger-text);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 820;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .sla-value {
+        margin-top: 3px;
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 880;
+        line-height: 1.1;
+      }
+
+      .sla-copy {
+        margin-top: 4px;
+        color: var(--ink-3);
+        font-size: 11px;
+      }
+
+      .action-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .action-button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--line-strong);
+        border-radius: 15px;
+        background: var(--card);
+        color: var(--ink);
+        padding: 0 10px 0 13px;
+        font-size: 13px;
+        font-weight: 790;
+        transition:
+          transform 420ms var(--ease),
+          border 420ms var(--ease),
+          background 420ms var(--ease),
+          color 420ms var(--ease);
+      }
+
+      .action-button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(47, 95, 255, 0.26);
+        color: var(--brand-deep);
+      }
+
+      .action-button.primary {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .action-button.warn {
+        border-color: rgba(187, 105, 0, 0.32);
+        color: var(--warn-text);
+      }
+
+      .action-button.danger {
+        border-color: rgba(209, 70, 71, 0.32);
+        color: var(--danger-text);
+      }
+
+      .action-orb {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 999px;
+        background: var(--card-soft);
+        transition: transform 420ms var(--ease), background 420ms var(--ease);
+      }
+
+      .action-button.primary .action-orb {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      .action-button:hover .action-orb {
+        transform: translate(2px, -1px);
+      }
+
+      .action-orb svg {
+        width: 15px;
+        height: 15px;
+        stroke-width: 1.8;
+      }
+
+      .comment {
+        width: 100%;
+        min-height: 94px;
+        resize: vertical;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        outline: 0;
+        background: var(--card-soft);
+        color: var(--ink);
+        padding: 11px 12px;
+        font-size: 13px;
+        line-height: 1.55;
+        transition: border 420ms var(--ease), background 420ms var(--ease), box-shadow 420ms var(--ease);
+      }
+
+      .comment:focus {
+        border-color: rgba(47, 95, 255, 0.54);
+        background: var(--card);
+        box-shadow: 0 0 0 4px rgba(47, 95, 255, 0.1);
+      }
+
+      .quick-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .quick-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 40px;
+        border-radius: 14px;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-weight: 760;
+        text-decoration: none;
+        padding: 0 10px;
+        transition:
+          transform 420ms var(--ease),
+          background 420ms var(--ease),
+          color 420ms var(--ease);
+      }
+
+      .quick-link:hover {
+        transform: translateX(2px);
+        background: var(--card-soft);
+        color: var(--brand-deep);
+      }
+
+      .quick-link svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.7;
+      }
+
+      .quick-link .arrow {
+        margin-left: auto;
+      }
+
+      .audit-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .audit {
+        display: grid;
+        grid-template-columns: 8px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .audit-dot {
+        width: 8px;
+        height: 8px;
+        margin-top: 6px;
+        border-radius: 999px;
+        background: var(--line-strong);
+      }
+
+      .audit.current .audit-dot {
+        background: var(--brand);
+        box-shadow: 0 0 0 5px var(--brand-soft);
+      }
+
+      .audit strong {
+        display: block;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .audit span {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-3);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .empty-state {
+        display: grid;
+        place-items: center;
+        min-height: 260px;
+        padding: 28px;
+        text-align: center;
+      }
+
+      .empty-icon {
+        display: grid;
+        width: 62px;
+        height: 62px;
+        place-items: center;
+        border-radius: 20px;
+        background: var(--card-soft);
+        color: var(--ink-3);
+        margin: 0 auto 16px;
+      }
+
+      .empty-icon svg {
+        width: 28px;
+        height: 28px;
+        stroke-width: 1.55;
+      }
+
+      .empty-state h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .empty-state p {
+        max-width: 360px;
+        margin: 0;
+        color: var(--ink-3);
+      }
+
+      .toast {
+        position: fixed;
+        right: 26px;
+        bottom: 26px;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: min(420px, calc(100vw - 32px));
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--ink);
+        color: #fff;
+        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.24);
+        padding: 14px 16px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(14px);
+        transition: opacity 420ms var(--ease), transform 420ms var(--ease);
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .toast svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 1.8;
+      }
+
+      .toast strong {
+        display: block;
+        font-size: 12px;
+      }
+
+      .toast span {
+        display: block;
+        margin-top: 2px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 11px;
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(16px);
+        animation: reveal 900ms var(--ease) forwards;
+      }
+
+      .reveal:nth-child(2) {
+        animation-delay: 80ms;
+      }
+
+      .reveal:nth-child(3) {
+        animation-delay: 140ms;
+      }
+
+      @keyframes reveal {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1320px) {
+        .prototype {
+          grid-template-columns: 82px minmax(0, 1fr);
+        }
+
+        .side {
+          align-items: center;
+        }
+
+        .brand-copy,
+        .nav-label,
+        .nav-item span,
+        .side-footer {
+          display: none;
+        }
+
+        .nav-item {
+          justify-content: center;
+          padding: 0;
+          width: 44px;
+        }
+
+        .nav-badge {
+          position: absolute;
+          margin-left: 26px;
+          margin-top: -22px;
+        }
+
+        .console {
+          grid-template-columns: minmax(340px, 0.8fr) minmax(500px, 1.2fr);
+        }
+
+        .ops {
+          position: static;
+          grid-column: 1 / -1;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 980px) {
+        .prototype {
+          display: block;
+        }
+
+        .side-shell {
+          display: none;
+        }
+
+        .workspace {
+          padding: 14px;
+        }
+
+        .topbar,
+        .page {
+          width: 100%;
+        }
+
+        .command {
+          display: none;
+        }
+
+        .console,
+        .ops,
+        .context-grid,
+        .evidence-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .detail {
+          min-height: auto;
+        }
+
+        .density {
+          margin-left: 0;
+        }
+      }
+
+      @media (max-width: 720px) {
+        body {
+          background: var(--bg);
+        }
+
+        .workspace {
+          padding: 10px;
+        }
+
+        .topbar {
+          top: 8px;
+          border-radius: 20px;
+        }
+
+        .breadcrumb {
+          font-size: 11px;
+        }
+
+        .avatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 12px;
+        }
+
+        .filters {
+          align-items: stretch;
+        }
+
+        .segmented,
+        .chip,
+        .density {
+          width: 100%;
+        }
+
+        .segmented button,
+        .density button {
+          flex: 1;
+        }
+
+        .queue-row {
+          grid-template-columns: 30px minmax(0, 1fr);
+          padding: 13px 14px;
+        }
+
+        .panel,
+        .ops-card {
+          border-radius: 22px;
+          padding: 4px;
+        }
+
+        .panel-core,
+        .ops-core {
+          border-radius: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="prototype">
+      <aside class="side-shell" aria-label="原型侧边导航">
+        <div class="side">
+          <div class="brand">
+            <div class="brand-mark">S</div>
+            <div class="brand-copy">
+              <div class="brand-name">SuperTeam</div>
+              <div class="brand-caption">控制平面</div>
+            </div>
+          </div>
+
+          <div class="nav-group">
+            <div class="nav-label">WORK</div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/><path d="M9 5v14"/></svg>
+              <span>工作台</span>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19V5h16v14"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
+              <span>项目</span>
+            </div>
+            <div class="nav-item active">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg>
+              <span>收件箱</span>
+              <em class="nav-badge">8</em>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18"/><path d="M4 8h16"/><path d="M6 16h12"/></svg>
+              <span>流程编排</span>
+            </div>
+          </div>
+
+          <div class="nav-group">
+            <div class="nav-label">GOVERN</div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7z"/></svg>
+              <span>权限治理</span>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h4"/></svg>
+              <span>审计</span>
+            </div>
+          </div>
+
+          <div class="side-footer">
+            <strong>队列策略</strong>
+            <span>阻断、高风险、等待最久的事项会进入首屏聚焦。</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="breadcrumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v16H4z"/><path d="M8 9h8"/><path d="M8 15h5"/></svg>
+            <span>控制台</span>
+            <span>/</span>
+            <span class="topbar-title">收件箱</span>
+          </div>
+          <label class="command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.2-4.2"/></svg>
+            <input type="search" placeholder="搜索事项、项目、审批或数字员工" />
+            <span class="keycap">⌘K</span>
+          </label>
+          <div class="avatar" aria-label="当前用户">林</div>
+        </header>
+
+        <div class="page">
+          <section class="filters reveal" aria-label="收件箱筛选">
+            <div class="segmented" role="tablist" aria-label="视图">
+              <button class="active" type="button">我的待办 <span class="mono">8</span></button>
+              <button type="button">团队待办 <span class="mono">17</span></button>
+            </div>
+            <button class="chip" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+              风险：全部
+            </button>
+            <button class="chip" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h5"/></svg>
+              类型：审批与项目决策
+            </button>
+            <button class="chip" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>
+              等待最久优先
+            </button>
+            <div class="density" aria-label="密度">
+              <button class="active" type="button">舒适</button>
+              <button type="button">紧凑</button>
+            </div>
+          </section>
+
+          <section class="console reveal" aria-label="收件箱决策工作台">
+            <div class="panel">
+              <div class="panel-core">
+                <div class="panel-head">
+                  <div>
+                    <div class="panel-title">待处理事项</div>
+                    <div class="panel-meta">items[] · 按风险与等待时长排序</div>
+                  </div>
+                  <span class="pill danger">3 高风险</span>
+                </div>
+                <div class="queue" id="queue"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-core detail" id="detail"></div>
+            </div>
+
+            <aside class="ops" aria-label="操作面板">
+              <div class="ops-card">
+                <div class="ops-core">
+                  <div class="ops-head">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>
+                    SLA 与优先级
+                  </div>
+                  <div class="ops-body">
+                    <div class="sla">
+                      <div class="sla-ring"><span data-sla-ring>23%</span></div>
+                      <div>
+                        <div class="sla-label">Time waiting</div>
+                        <div class="sla-value" data-wait>2 小时 48 分</div>
+                        <div class="sla-copy" data-sla-copy>超过审批建议时限前仍可处理。</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ops-card">
+                <div class="ops-core">
+                  <div class="ops-head">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+                    可执行动作
+                  </div>
+                  <div class="ops-body">
+                    <div class="action-stack" id="actions"></div>
+                    <textarea class="comment" placeholder="补充处理意见，会写入该事项的审计记录。"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ops-card">
+                <div class="ops-core">
+                  <div class="ops-head">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+                    快速跳转
+                  </div>
+                  <div class="ops-body">
+                    <div class="quick-list" id="quickLinks"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ops-card">
+                <div class="ops-core">
+                  <div class="ops-head">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h4"/></svg>
+                    审计预览
+                  </div>
+                  <div class="ops-body">
+                    <div class="audit-list" id="audit"></div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 6 9 17l-5-5"/></svg>
+      <div>
+        <strong>原型交互</strong>
+        <span id="toastText">已完成。</span>
+      </div>
+    </div>
+
+    <script>
+      const items = [
+        {
+          id: "ki-2049",
+          type: "approval",
+          typeLabel: "审批",
+          title: "支付网关变更需要人工批准",
+          summary: "Codex 运行完成灰度方案，但生产支付路由切换属于高风险写入，需要负责人确认窗口和回滚条件。",
+          risk: "high",
+          riskLabel: "高风险",
+          riskTone: "danger",
+          wait: "2 小时 48 分",
+          ring: "23%",
+          project: "订单中台稳定性修复",
+          source: "approval_request",
+          sourceId: "apr_91c7",
+          task: "ptask_gateway_cutover",
+          owner: "林知远",
+          node: "人工批准",
+          last: "今天 15:42",
+          focusCopy: "高风险审批已等待 2 小时 48 分钟，关联项目和执行节点已准备好。",
+          actions: [
+            { label: "批准执行", tone: "primary" },
+            { label: "要求补证", tone: "warn" },
+            { label: "驳回", tone: "danger" },
+          ],
+          context: [
+            ["项目", "订单中台稳定性修复"],
+            ["来源", "approval_request · apr_91c7"],
+            ["执行节点", "gateway-cutover"],
+            ["目标用户", "林知远"],
+          ],
+          evidence: [
+            ["灰度方案", "artifact:cutover-plan.md"],
+            ["测试记录", "run:control-plane-smoke"],
+            ["回滚脚本", "artifact:rollback.sql"],
+            ["风险说明", "audit:risk-eval-2049"],
+          ],
+        },
+        {
+          id: "ki-2042",
+          type: "project_decision",
+          typeLabel: "项目决策",
+          title: "库存同步异常阻断发布验收",
+          summary: "Runtime 回传显示 3 个仓库的库存快照不同步，需要决定是延后发布还是拆分非库存功能先上线。",
+          risk: "blocked",
+          riskLabel: "阻断",
+          riskTone: "danger",
+          wait: "5 小时 12 分",
+          ring: "64%",
+          project: "多仓库存联调",
+          source: "project_decision_request",
+          sourceId: "pdr_64b2",
+          task: "ptask_inventory_acceptance",
+          owner: "周宁",
+          node: "验收判断",
+          last: "今天 14:18",
+          focusCopy: "项目验收被库存差异阻断，必须选择延后发布或拆分上线路径。",
+          actions: [
+            { label: "延后发布", tone: "danger" },
+            { label: "拆分上线", tone: "primary" },
+            { label: "要求复测", tone: "warn" },
+          ],
+          context: [
+            ["项目", "多仓库存联调"],
+            ["来源", "project_decision_request · pdr_64b2"],
+            ["执行节点", "release-acceptance"],
+            ["负责人", "周宁"],
+          ],
+          evidence: [
+            ["差异明细", "artifact:stock-diff.csv"],
+            ["Runtime 日志", "runtime:warehouse-sync"],
+            ["验收清单", "artifact:acceptance.md"],
+            ["复测建议", "audit:retest-plan"],
+          ],
+        },
+        {
+          id: "ki-2037",
+          type: "approval",
+          typeLabel: "审批",
+          title: "客服知识库批量写入申请",
+          summary: "数字员工已生成 47 条知识库修订，涉及用户退款口径，需要人工确认后才能批量写入。",
+          risk: "medium",
+          riskLabel: "中风险",
+          riskTone: "warn",
+          wait: "1 小时 06 分",
+          ring: "14%",
+          project: "售后知识库治理",
+          source: "approval_request",
+          sourceId: "apr_77a1",
+          task: "ptask_kb_patch",
+          owner: "陈蔚",
+          node: "内容批准",
+          last: "今天 16:03",
+          focusCopy: "知识库批量写入涉及退款口径，建议抽查差异和引用来源。",
+          actions: [
+            { label: "批准写入", tone: "primary" },
+            { label: "抽查样本", tone: "warn" },
+            { label: "退回修改", tone: "danger" },
+          ],
+          context: [
+            ["项目", "售后知识库治理"],
+            ["来源", "approval_request · apr_77a1"],
+            ["执行节点", "knowledge-writeback"],
+            ["负责人", "陈蔚"],
+          ],
+          evidence: [
+            ["修订预览", "artifact:kb-preview.html"],
+            ["引用来源", "artifact:sources.json"],
+            ["差异报告", "artifact:kb-diff.md"],
+            ["策略检查", "audit:refund-policy"],
+          ],
+        },
+        {
+          id: "ki-2028",
+          type: "project_decision",
+          typeLabel: "项目决策",
+          title: "新建项目资料不足，需确认业务负责人",
+          summary: "项目画像缺少固定 human_owner，协调线程无法进入分派阶段，需要选择负责人或退回补齐信息。",
+          risk: "medium",
+          riskLabel: "中风险",
+          riskTone: "warn",
+          wait: "42 分钟",
+          ring: "8%",
+          project: "发票识别自动化",
+          source: "project_decision_request",
+          sourceId: "pdr_51de",
+          task: "ptask_project_profile",
+          owner: "未绑定",
+          node: "负责人确认",
+          last: "今天 16:27",
+          focusCopy: "项目资料缺少 human_owner，确认负责人后才能继续调度。",
+          actions: [
+            { label: "指定负责人", tone: "primary" },
+            { label: "退回补齐", tone: "warn" },
+          ],
+          context: [
+            ["项目", "发票识别自动化"],
+            ["来源", "project_decision_request · pdr_51de"],
+            ["执行节点", "project-profile"],
+            ["负责人", "未绑定"],
+          ],
+          evidence: [
+            ["项目画像", "artifact:project-profile.json"],
+            ["缺失字段", "human_owner_user_id"],
+            ["候选成员", "artifact:candidates.json"],
+            ["创建记录", "audit:create-project"],
+          ],
+        },
+        {
+          id: "ki-2019",
+          type: "approval",
+          typeLabel: "审批",
+          title: "Runtime 节点扩容请求",
+          summary: "当前执行槽位排队超过阈值，系统建议临时扩容 2 个 Codex Provider 槽位，需确认预算。",
+          risk: "low",
+          riskLabel: "低风险",
+          riskTone: "mute",
+          wait: "18 分钟",
+          ring: "4%",
+          project: "运行容量治理",
+          source: "approval_request",
+          sourceId: "apr_2ad9",
+          task: "ptask_runtime_capacity",
+          owner: "林知远",
+          node: "预算确认",
+          last: "今天 16:48",
+          focusCopy: "Runtime 槽位排队超过阈值，扩容会影响本日预算。",
+          actions: [
+            { label: "批准扩容", tone: "primary" },
+            { label: "保持队列", tone: "warn" },
+          ],
+          context: [
+            ["项目", "运行容量治理"],
+            ["来源", "approval_request · apr_2ad9"],
+            ["执行节点", "runtime-capacity"],
+            ["预算影响", "预计 +¥37.20"],
+          ],
+          evidence: [
+            ["排队快照", "artifact:queue-snapshot.json"],
+            ["预算估算", "artifact:cost-estimate.md"],
+            ["节点状态", "runtime:nodes"],
+            ["历史趋势", "audit:capacity-history"],
+          ],
+        },
+      ];
+
+      const icons = {
+        approval: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 12l2 2 4-5"/><path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7z"/></svg>',
+        project_decision: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v4"/><path d="M5 8l3 3"/><path d="M19 8l-3 3"/><path d="M8 21h8"/><path d="M9 17h6"/><path d="M12 7a5 5 0 0 0-3 9h6a5 5 0 0 0-3-9z"/></svg>',
+        arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>',
+      };
+
+      let selectedId = items[0].id;
+      const queue = document.getElementById("queue");
+      const detail = document.getElementById("detail");
+      const actions = document.getElementById("actions");
+      const quickLinks = document.getElementById("quickLinks");
+      const audit = document.getElementById("audit");
+      const toast = document.getElementById("toast");
+      const toastText = document.getElementById("toastText");
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function showToast(message) {
+        toastText.textContent = message;
+        toast.classList.add("show");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 2200);
+      }
+
+      function renderQueue() {
+        queue.innerHTML = items
+          .map((item) => {
+            const active = item.id === selectedId ? " active" : "";
+            return `
+              <button class="queue-row${active}" data-id="${item.id}" data-risk="${item.risk}" data-type="${item.type}" type="button">
+                <span class="icon-tile">${icons[item.type]}</span>
+                <span>
+                  <span class="queue-titleline">
+                    <span class="queue-title">${escapeHtml(item.title)}</span>
+                    <span class="pill ${item.riskTone}">${escapeHtml(item.riskLabel)}</span>
+                  </span>
+                  <span class="queue-summary">${escapeHtml(item.summary)}</span>
+                  <span class="queue-meta">
+                    <span class="pill ${item.type === "approval" ? "info" : "artifact"} no-dot">${escapeHtml(item.typeLabel)}</span>
+                    <span class="mono">${escapeHtml(item.sourceId)}</span>
+                    <span>${escapeHtml(item.node)}</span>
+                    <span class="mono">${escapeHtml(item.last)}</span>
+                  </span>
+                </span>
+              </button>
+            `;
+          })
+          .join("");
+
+        queue.querySelectorAll(".queue-row").forEach((row) => {
+          row.addEventListener("click", () => {
+            selectedId = row.dataset.id;
+            renderAll();
+          });
+        });
+      }
+
+      function renderDetail(item) {
+        detail.innerHTML = `
+          <div class="detail-hero">
+            <div class="detail-kicker">
+              <span>${escapeHtml(item.id)} · ${escapeHtml(item.source)}</span>
+              <span>${escapeHtml(item.wait)}</span>
+            </div>
+            <h2>${escapeHtml(item.title)}</h2>
+            <div class="detail-pills">
+              <span class="pill ${item.type === "approval" ? "info" : "artifact"}">${escapeHtml(item.typeLabel)}</span>
+              <span class="pill ${item.riskTone}">${escapeHtml(item.riskLabel)}</span>
+              <span class="pill brand">等待人工判断</span>
+            </div>
+          </div>
+
+          <section class="detail-section">
+            <h3 class="section-title">为什么需要处理 <span>reason</span></h3>
+            <div class="summary-box">${escapeHtml(item.summary)}</div>
+          </section>
+
+          <section class="detail-section">
+            <h3 class="section-title">上下文切片 <span>context{}</span></h3>
+            <div class="context-grid">
+              ${item.context
+                .map(
+                  ([label, value]) => `
+                    <div class="context-item">
+                      <div class="context-label">${escapeHtml(label)}</div>
+                      <div class="context-value ${String(value).includes("_") || String(value).includes("·") ? "mono" : ""}">${escapeHtml(value)}</div>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+          </section>
+
+          <section class="detail-section">
+            <h3 class="section-title">证据与工件 <span>deep_link{}</span></h3>
+            <div class="evidence-grid">
+              ${item.evidence
+                .map(
+                  ([label, meta]) => `
+                    <div class="evidence">
+                      <span class="evidence-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></span>
+                      <span style="min-width:0">
+                        <strong>${escapeHtml(label)}</strong>
+                        <span>${escapeHtml(meta)}</span>
+                      </span>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+          </section>
+
+          <section class="detail-section">
+            <h3 class="section-title">过程记录 <span>timeline</span></h3>
+            <div class="timeline">
+              <div class="timeline-item done">
+                <span class="timeline-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 12 4 4L19 6"/></svg></span>
+                <span>
+                  <span class="timeline-title">数字员工完成执行并提交结果</span>
+                  <span class="timeline-desc">结果已写入控制平面，等待人类负责人确认后推进。</span>
+                  <span class="timeline-time">${escapeHtml(item.last)}</span>
+                </span>
+              </div>
+              <div class="timeline-item current">
+                <span class="timeline-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span>
+                <span>
+                  <span class="timeline-title">${escapeHtml(item.node)}</span>
+                  <span class="timeline-desc">动作会回写 inbox item，并同步源对象状态。</span>
+                  <span class="timeline-time">当前节点</span>
+                </span>
+              </div>
+              <div class="timeline-item">
+                <span class="timeline-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></span>
+                <span>
+                  <span class="timeline-title">协调线程继续分派下一步</span>
+                  <span class="timeline-desc">通过后，Temporal 协调线程会接收 signal 并串行处理下一步。</span>
+                  <span class="timeline-time">等待决策结果</span>
+                </span>
+              </div>
+            </div>
+          </section>
+        `;
+      }
+
+      function renderActions(item) {
+        actions.innerHTML = item.actions
+          .map((action, index) => {
+            const toneClass = action.tone === "primary" ? " primary" : action.tone === "danger" ? " danger" : action.tone === "warn" ? " warn" : "";
+            return `
+              <button class="action-button${toneClass}" type="button" data-action="${escapeHtml(action.label)}">
+                <span>${escapeHtml(action.label)}</span>
+                <span class="action-orb">${icons.arrow}</span>
+              </button>
+            `;
+          })
+          .join("");
+
+        actions.querySelectorAll(".action-button").forEach((button) => {
+          button.addEventListener("click", () => showToast(`已选择「${button.dataset.action}」，真实落地时会打开确认对话框。`));
+        });
+
+        quickLinks.innerHTML = [
+          ["查看项目", item.project],
+          ["查看源对象", item.sourceId],
+          ["打开任务", item.task],
+        ]
+          .map(
+            ([label, value]) => `
+              <a class="quick-link" href="#" data-value="${escapeHtml(value)}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+                <span>${escapeHtml(label)}</span>
+                <span class="mono">${escapeHtml(value)}</span>
+                <span class="arrow">${icons.arrow}</span>
+              </a>
+            `,
+          )
+          .join("");
+
+        quickLinks.querySelectorAll(".quick-link").forEach((link) => {
+          link.addEventListener("click", (event) => {
+            event.preventDefault();
+            showToast(`原型跳转：${link.dataset.value}`);
+          });
+        });
+
+        audit.innerHTML = `
+          <div class="audit">
+            <span class="audit-dot"></span>
+            <span><strong>事项创建</strong><span>${escapeHtml(item.source)} · ${escapeHtml(item.sourceId)}</span></span>
+          </div>
+          <div class="audit current">
+            <span class="audit-dot"></span>
+            <span><strong>等待 ${escapeHtml(item.owner)} 处理</strong><span>${escapeHtml(item.wait)} · ${escapeHtml(item.node)}</span></span>
+          </div>
+          <div class="audit">
+            <span class="audit-dot"></span>
+            <span><strong>动作后写入审计</strong><span>POST /api/v1/inbox/items/{id}/actions</span></span>
+          </div>
+        `;
+      }
+
+      function renderMeta(item) {
+        document.querySelector("[data-wait]").textContent = item.wait;
+        document.querySelector("[data-sla-ring]").textContent = item.ring;
+        document.querySelector("[data-sla-copy]").textContent =
+          item.risk === "blocked" ? "该事项阻断后续调度，需要先做判断。" : "超过审批建议时限前仍可处理。";
+      }
+
+      function renderAll() {
+        const item = items.find((entry) => entry.id === selectedId) || items[0];
+        renderQueue();
+        renderDetail(item);
+        renderActions(item);
+        renderMeta(item);
+      }
+
+      document.querySelectorAll(".segmented button, .density button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const group = button.parentElement;
+          group.querySelectorAll("button").forEach((entry) => entry.classList.remove("active"));
+          button.classList.add("active");
+        });
+      });
+
+      renderAll();
+    </script>
+  </body>
+</html>

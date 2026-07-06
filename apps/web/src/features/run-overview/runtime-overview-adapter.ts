@@ -5,16 +5,16 @@ import type {
 } from "@/lib/api/employees";
 import type { TeamListItem } from "@/lib/api/teams";
 import {
-  TEAM_SEAT_CAPACITY,
   type RuntimeOverviewDTO,
   type RuntimeOverviewEmployee,
   type RuntimeOverviewFloor,
   type RuntimeOverviewFloorId,
   type RuntimeOverviewTeam,
+  type RuntimeOverviewWorkspaceCapacity,
 } from "./runtime-overview-model";
 import { buildFloorLayouts } from "./runtime-overview-layout";
 
-export { TEAM_SEAT_CAPACITY } from "./runtime-overview-model";
+const FALLBACK_TEAM_CAPACITY: RuntimeOverviewWorkspaceCapacity = 10;
 
 type BuildRuntimeOverviewInput = {
   activeFloorId: RuntimeOverviewFloorId;
@@ -39,18 +39,19 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
   const overviewTeams = activeTeams.map((team): RuntimeOverviewTeam => {
     const items = employeesByTeam.get(team.id) ?? [];
     const employeeCount = items.length || team.digital_employee_count;
+    const capacity = workspaceByTeamId.get(team.id)?.workspace.capacity ?? FALLBACK_TEAM_CAPACITY;
     return {
       teamId: team.id,
       floorId: floorIdByTeamId.get(team.id) ?? "floor-1",
       name: team.name,
-      capacity: TEAM_SEAT_CAPACITY,
+      capacity,
       employeeCount,
       workingCount: countStatus(items, "working"),
       idleCount: countStatus(items, "idle"),
       waitingHumanCount: countStatus(items, "waiting_human"),
       queuedCount: countStatus(items, "queued"),
       errorCount: countStatus(items, "error"),
-      overCapacity: employeeCount > TEAM_SEAT_CAPACITY,
+      overCapacity: employeeCount > capacity,
     };
   });
   const overviewEmployees = input.employees.items.map((item): RuntimeOverviewEmployee => {
@@ -59,10 +60,11 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
     const floorId = floorIdByTeamId.get(teamId) ?? workspace?.floorId ?? "floor-1";
     const teamItems = employeesByTeam.get(teamId) ?? [];
     const seatIndex = teamItems.findIndex((employee) => employee.identity_summary.id === item.identity_summary.id);
-    const seat = seatIndex >= 0 && seatIndex < TEAM_SEAT_CAPACITY ? workspace?.workspace.seats[seatIndex] : undefined;
+    const seat = seatIndex >= 0 ? workspace?.workspace.seats[seatIndex] : undefined;
     return employeePresenceFromItem(item, floorId, seat?.seatId);
   });
   const capacityUsed = overviewTeams.reduce((sum, team) => sum + team.employeeCount, 0);
+  const capacityTotal = overviewTeams.reduce((sum, team) => sum + team.capacity, 0);
 
   return {
     activeFloorId: input.activeFloorId,
@@ -74,7 +76,7 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
       teamCount: activeTeams.length,
       employeeCount: input.employees.pagination.total_count,
       capacityUsed,
-      capacityTotal: activeTeams.length * TEAM_SEAT_CAPACITY,
+      capacityTotal,
       workingCount: input.employees.summary.operational_status_counts.working ?? countEmployees(overviewEmployees, "working"),
       idleCount: input.employees.summary.operational_status_counts.idle ?? countEmployees(overviewEmployees, "idle"),
       waitingHumanCount:
@@ -90,7 +92,7 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
 function distributeTeamsByFloor(teams: TeamListItem[]): Record<RuntimeOverviewFloorId, string[]> {
   const floors: Record<RuntimeOverviewFloorId, string[]> = { "floor-1": [], "floor-2": [], "floor-3": [] };
   teams.forEach((team, index) => {
-    const floorId: RuntimeOverviewFloorId = index < 6 ? "floor-1" : index < 10 ? "floor-2" : "floor-3";
+    const floorId: RuntimeOverviewFloorId = index < 8 ? "floor-1" : index < 16 ? "floor-2" : "floor-3";
     floors[floorId].push(team.id);
   });
   return floors;
@@ -156,7 +158,7 @@ function enrichFloorSummaries(floors: RuntimeOverviewFloor[], teams: RuntimeOver
         teamCount: floorTeams.length,
         errorCount: floorTeams.reduce((sum, team) => sum + team.errorCount, 0),
         capacityUsed: floorTeams.reduce((sum, team) => sum + team.employeeCount, 0),
-        capacityTotal: floorTeams.length * TEAM_SEAT_CAPACITY,
+        capacityTotal: floorTeams.reduce((sum, team) => sum + team.capacity, 0),
       },
     };
   });

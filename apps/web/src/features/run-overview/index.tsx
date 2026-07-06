@@ -86,7 +86,6 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
             </div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-v3-ink-2">
               <p>当前楼层：{overview.floors.find((floor) => floor.floorId === activeFloorId)?.label}</p>
-              <p className="text-xs">每层最多显示 6 个团队</p>
             </div>
             <RuntimeMapStage activeFloorId={activeFloorId} overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} onSelectEmployee={setSelectedEmployeeId} />
             <p className="mt-3 text-sm text-v3-ink-2">
