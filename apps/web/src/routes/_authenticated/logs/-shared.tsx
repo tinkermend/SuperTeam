@@ -176,3 +176,36 @@ export function LogPagination({
     </div>
   );
 }
+
+export function LogChips({
+  onValueChange,
+  options,
+  value,
+}: {
+  onValueChange: (value: string | undefined) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string | undefined;
+}) {
+  const all = { label: "全部", value: "__all__" };
+  const current = value ?? "__all__";
+
+  return (
+    <div className="flex flex-wrap gap-1.5 px-5 pt-4">
+      {[all, ...options].map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onValueChange(opt.value === "__all__" ? undefined : opt.value)}
+          className={[
+            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+            current === opt.value
+              ? "border-v3-brand bg-v3-brand-soft text-v3-brand-deep"
+              : "border-v3-line bg-v3-card text-v3-ink-2 hover:border-v3-line-strong hover:text-v3-ink",
+          ].join(" ")}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
