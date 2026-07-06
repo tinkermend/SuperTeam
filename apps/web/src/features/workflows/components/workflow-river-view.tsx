@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Activity, AlertTriangle, CheckCircle2, Clock3, GitBranch, Timer } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock3, Gauge, GitBranch, Timer } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
@@ -168,7 +168,7 @@ export function WorkflowRiverView({
           value={metrics.done}
         />
         <V3MetricCard
-          icon={<AlertTriangle />}
+          icon={<Gauge />}
           iconTone="danger"
           label="SLA 超时"
           loud={metrics.slaBreached > 0}

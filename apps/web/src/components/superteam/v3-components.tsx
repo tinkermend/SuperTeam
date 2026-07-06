@@ -128,7 +128,26 @@ function StatusPill({
   );
 }
 
-/** 概览指标卡：图标芯片 + 标签 + 黑色粗体大数字 + 辅助行。loud=需人介入时点亮。 */
+/**
+ * tone → 顶部色条渐变（对齐 TrendStatCard 的 accentGradient 语言）。
+ * loud 时强制用 warn 渐变；mute 保持低调双灰。
+ */
+const toneAccentGradient: Record<V3Tone, string> = {
+  brand:    "from-v3-brand    to-v3-brand/40",
+  info:     "from-v3-info     to-v3-info/40",
+  ok:       "from-v3-ok       to-v3-ok/40",
+  warn:     "from-v3-warn     to-v3-warn/40",
+  danger:   "from-v3-danger   to-v3-danger/40",
+  mute:     "from-v3-mute/50  to-v3-mute/10",
+  artifact: "from-v3-artifact to-v3-artifact/40",
+};
+
+/**
+ * 概览指标卡。动效对齐数字员工 TrendStatCard：
+ * shadow-v3 基础阴影 → hover shadow-v3-pop（可感知的深度变化）+ -translate-y-0.5 上浮 + 200ms。
+ * 顶部 3px 色条作为视觉锚，与员工卡片保持同一设计语言。
+ * loud=需人介入时，色条和数值切换为 warn 色。
+ */
 function V3MetricCard({
   className,
   icon,
@@ -148,34 +167,57 @@ function V3MetricCard({
   loud?: boolean;
   action?: ReactNode;
 }) {
+  const accentTone = loud ? "warn" : iconTone;
   return (
-    <SoftCard
-      interactive
+    // 裸 div：不走 SoftCard，避免其 shadow-sm 与 shadow-v3 并存导致 tailwind-merge
+    // 无法解决冲突（自定义 shadow token 不在 merge 内置组）。
+    // 完整基础类手动对齐 SoftCard：rounded-v3-card bg-v3-card border border-v3-line。
+    <div
+      data-slot="v3-metric-card"
       className={cn(
-        "p-5",
+        "group relative cursor-pointer overflow-hidden",
+        "rounded-v3-card border border-v3-line bg-v3-card text-v3-ink",
+        // shadow-v3 起步，hover → shadow-v3-pop，与 TrendStatCard 完全一致
+        "shadow-v3",
+        "px-4 py-4",
+        "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-v3-pop active:scale-[0.98]",
         loud && "bg-gradient-to-b from-v3-warn-soft to-v3-card",
         className,
       )}
     >
-      <div className="mb-2.5 flex items-center gap-2">
+      {/* 顶部色条：与员工卡片 TrendStatCard 同语言，3px 渐变线 */}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r",
+          toneAccentGradient[accentTone],
+        )}
+      />
+
+      {/* 顶行：图标 + 标签 + 可选操作 */}
+      <div className="mb-2 flex items-center gap-1.5">
         {icon ? (
-          <IconTile tone={loud ? "warn" : iconTone} size="default">
+          <IconTile tone={accentTone} size="sm">
             {icon}
           </IconTile>
         ) : null}
-        {action ? <div className="ml-auto">{action}</div> : null}
+        <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-v3-ink-2">{label}</p>
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
-      <p className="text-[13px] text-v3-ink-2">{label}</p>
+
+      {/* 主数值：truncate 防止长字符串（如"5天10小时"）折行 */}
       <p
         className={cn(
-          "mt-1 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums",
+          "truncate text-[1.875rem] font-bold leading-none tracking-tight tabular-nums",
           loud && "text-v3-warn",
         )}
       >
         {value}
       </p>
-      {meta ? <p className="mt-1.5 text-xs text-v3-ink-3">{meta}</p> : null}
-    </SoftCard>
+
+      {/* 补注行 */}
+      {meta ? <p className="mt-1.5 text-[11px] text-v3-ink-3">{meta}</p> : null}
+    </div>
   );
 }
 
