@@ -1,38 +1,266 @@
-/* 任务发起页 · 极光对角玻璃背景（实验性，仅本页作用域）
+/* 任务发起页 · 沉浸玻璃画布 · 极光青紫（背景变体A）
  *
- * 应用方式：给页面 Main 容器加 className="tl-aurora-surface"。
- * 这是普通文档流背景（不依赖负 z-index 堆叠技巧），保证可见，
- * 且只作用于任务发起页，随路由卸载自然消失，不会泄漏到全局。
+ * 一比一复刻自 docs/prototypes/task-launch-glass-canvas-bg-aurora.html。
+ * 这是「沉浸极光玻璃」受控特例风格，只允许用于 DESIGN.md 定义的 Tier A 入口/创建画布，
+ * 禁止用于密集数据、表格、监控、治理与审计页。所有颜色/圆角均来自 theme.css 的
+ * `--v3-aurora-*` token（浅/深色自动切换），本文件只承载该风格的结构与作用域，不再自定义色值。
  *
- * 视觉参考：docs/prototypes/task-launch-glass-bg-aurora.html
- *   - 两束低透明对角色晕（左上品牌蓝 / 右下紫）+ 中性冷灰底 #f2f4fa
- *   - 极淡点阵结构纹理（::before，带 mask 渐隐，位于内容之下）
- *
- * 回退：删除 task-launch-shell.tsx 中 <Main> 的 className="tl-aurora-surface" 即可。
+ * 作用域：本文件只承载 Tier A 沉浸玻璃卡/hero（`.tl-*`）；全局极光背景底与半透明侧栏由
+ * `<AuroraBackground />` + `apps/web/src/styles/index.css` 统一提供，本文件不再处理 shell 背景。
  */
 
-.tl-aurora-surface {
+.tl-aurora {
   position: relative;
-  background-color: #f2f4fa;
-  background-image:
-    radial-gradient(760px 620px at 8% 2%, rgba(47, 95, 255, 0.16), transparent 60%),
-    radial-gradient(720px 600px at 98% 100%, rgba(124, 92, 255, 0.12), transparent 60%);
+  isolation: isolate;
+  overflow: hidden;
+  min-height: calc(100dvh - 3.5rem);
+  padding: 40px 20px 64px;
+  color: var(--v3-aurora-ink);
+  /* 极光背景底由全局 <AuroraBackground /> 承载，本内容区自身透明。 */
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
 }
 
-.tl-aurora-surface::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(rgba(47, 95, 255, 0.09) 1px, transparent 1.4px);
-  background-size: 22px 22px;
-  -webkit-mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
-  mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
-}
-
-/* 内容始终位于点阵纹理之上，避免纹理压在表单之上 */
-.tl-aurora-surface > * {
+.tl-stage {
   position: relative;
   z-index: 1;
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+/* Hero */
+.tl-hero { text-align: center; margin-bottom: 30px; }
+.tl-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v3-brand-deep);
+  background: var(--v3-aurora-panel);
+  border: 1px solid var(--v3-aurora-accent-line);
+  padding: 7px 15px;
+  border-radius: 100px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px -10px rgba(47, 95, 255, 0.5);
+}
+.tl-title {
+  font-size: clamp(30px, 4.5vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 18px 0 10px;
+  background: var(--v3-aurora-title);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.tl-sub {
+  color: var(--v3-aurora-ink-2);
+  font-size: 15px;
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* 玻璃外壳 */
+.tl-glass {
+  background: var(--v3-aurora-glass);
+  border: 1px solid var(--v3-aurora-glass-border);
+  border-radius: var(--v3-aurora-r-card);
+  backdrop-filter: blur(22px) saturate(140%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 30px 70px -28px rgba(36, 58, 140, 0.45);
+  overflow: hidden;
+}
+
+/* 中枢指令区 */
+.tl-cmd {
+  position: relative;
+  margin: 26px;
+  border-radius: var(--v3-aurora-r-inner);
+  background: var(--v3-aurora-panel);
+  border: 1px solid var(--v3-aurora-panel-border);
+  box-shadow: 0 12px 40px -22px rgba(47, 95, 255, 0.5);
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+.tl-cmd:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 50px -22px rgba(47, 95, 255, 0.6);
+}
+.tl-cmd:focus-within {
+  border-color: rgba(47, 95, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(47, 95, 255, 0.12), 0 24px 60px -24px rgba(47, 95, 255, 0.7);
+}
+.tl-cmd-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 12px;
+}
+.tl-cmd-t { display: flex; align-items: center; font-size: 16px; font-weight: 700; }
+.tl-req { color: var(--v3-aurora-req); margin-left: 4px; }
+.tl-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v3-brand-deep);
+  background: var(--v3-aurora-accent-soft);
+  padding: 4px 12px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.tl-textarea {
+  width: 100%;
+  min-height: 210px;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--v3-aurora-ink);
+  padding: 4px 24px 18px;
+}
+.tl-textarea::placeholder { color: var(--v3-aurora-ink-3); }
+.tl-cmd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--v3-aurora-hairline);
+}
+.tl-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--v3-aurora-accent-soft);
+  border: 1px solid var(--v3-aurora-accent-line);
+  color: var(--v3-brand-deep);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.tl-ghost:hover { filter: brightness(0.97); }
+.tl-counter {
+  font-size: 12px;
+  color: var(--v3-aurora-ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 编排参数 —— 浮动 chip */
+.tl-params {
+  padding: 6px 26px 30px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.tl-chip {
+  background: var(--v3-aurora-chip);
+  border: 1px solid var(--v3-aurora-chip-border);
+  border-radius: var(--v3-aurora-r-inner);
+  padding: 16px;
+  box-shadow: 0 10px 30px -20px rgba(36, 58, 140, 0.5);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.tl-chip:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -22px rgba(36, 58, 140, 0.6);
+}
+.tl-chip-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v3-aurora-ink-2);
+  margin-bottom: 12px;
+}
+.tl-chip-label > svg { width: 16px; height: 16px; color: var(--v3-brand); }
+.tl-chip-label .tl-req { margin-left: 2px; }
+
+/* chip 内的 Radix Select 触发器，视觉对齐原型 native select */
+.tl-chip-select {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--v3-aurora-field-border);
+  background: var(--v3-aurora-field);
+  color: var(--v3-aurora-ink);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 11px 12px;
+  border-radius: 11px;
+  box-shadow: none;
+}
+.tl-chip-select:focus,
+.tl-chip-select[data-state="open"] {
+  outline: none;
+  border-color: var(--v3-brand);
+  box-shadow: 0 0 0 3px rgba(47, 95, 255, 0.15);
+}
+
+.tl-err {
+  margin: 0 26px 22px;
+  color: var(--v3-danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 操作栏 */
+.tl-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 26px;
+  border-top: 1px solid var(--v3-aurora-actions-line);
+  background: var(--v3-aurora-actions-bg);
+}
+.tl-btn-draft {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--v3-aurora-panel);
+  border: 1px solid var(--v3-aurora-field-border);
+  color: var(--v3-aurora-ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 13px 22px;
+  border-radius: 13px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.tl-btn-draft:hover { color: var(--v3-aurora-ink); }
+.tl-btn-send {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--v3-aurora-send);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 30px;
+  border: 0;
+  border-radius: 13px;
+  cursor: pointer;
+  box-shadow: 0 14px 34px -10px rgba(47, 95, 255, 0.65);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.tl-btn-send:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 44px -10px rgba(47, 95, 255, 0.8);
+}
+.tl-btn-send:disabled { opacity: 0.6; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .tl-params { grid-template-columns: 1fr; }
+  .tl-actions { flex-wrap: wrap; }
+  .tl-btn-send, .tl-btn-draft { width: 100%; justify-content: center; }
+  .tl-btn-send { margin-left: 0; }
 }

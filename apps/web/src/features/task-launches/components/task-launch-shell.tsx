@@ -23,10 +23,8 @@ export function TaskLaunchShell({
         subtitle={description}
         title={title}
       />
-      <Main className="tl-aurora-surface">
-        <div className="flex flex-col gap-5">
-          {children}
-        </div>
+      <Main className="tl-aurora p-0">
+        <div className="tl-stage">{children}</div>
       </Main>
     </>
   );

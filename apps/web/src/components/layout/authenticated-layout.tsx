@@ -6,6 +6,7 @@ import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { AuroraBackground } from '@/components/layout/aurora-background'
 import { SkipToMain } from '@/components/skip-to-main'
 
 type AuthenticatedLayoutProps = {
@@ -43,6 +44,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
           defaultOpen={defaultOpen}
           className='text-v3-ink'
         >
+          <AuroraBackground />
           <SkipToMain />
           <AppSidebar />
           <SidebarInset

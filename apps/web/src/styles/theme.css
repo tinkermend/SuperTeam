@@ -98,6 +98,37 @@
   --v3-r-inner: 0.875rem;
   --v3-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
   --v3-shadow-pop: 0 10px 44px rgba(16, 24, 40, 0.12);
+  /* 沉浸极光玻璃（受控特例风格，仅用于 Tier A 入口/创建画布，禁止用于密集数据/审计页）。
+     适用与禁用边界见 DESIGN.md「沉浸极光玻璃（受控特例）」。 */
+  --v3-aurora-bg-color: #eaf2ff;
+  --v3-aurora-bg:
+    radial-gradient(680px 520px at 8% 6%, rgba(95, 214, 200, 0.28), transparent 60%),
+    radial-gradient(620px 520px at 92% 16%, rgba(167, 139, 250, 0.26), transparent 60%),
+    radial-gradient(760px 600px at 72% 98%, rgba(99, 140, 255, 0.24), transparent 62%),
+    linear-gradient(160deg, #eafcfb 0%, #f1edff 50%, #eaf2ff 100%);
+  --v3-aurora-ink: #0f1b3d;
+  --v3-aurora-ink-2: #4a5a82;
+  --v3-aurora-ink-3: #8a98b8;
+  --v3-aurora-title: linear-gradient(180deg, #16235a, #2f5fff);
+  --v3-aurora-glass: rgba(255, 255, 255, 0.55);
+  --v3-aurora-glass-border: rgba(255, 255, 255, 0.8);
+  --v3-aurora-panel: rgba(255, 255, 255, 0.7);
+  --v3-aurora-panel-border: rgba(47, 95, 255, 0.18);
+  --v3-aurora-chip: rgba(255, 255, 255, 0.66);
+  --v3-aurora-chip-border: rgba(255, 255, 255, 0.9);
+  --v3-aurora-field: rgba(255, 255, 255, 0.9);
+  --v3-aurora-field-border: rgba(15, 27, 61, 0.12);
+  --v3-aurora-sidebar: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.18) 100%);
+  --v3-aurora-sidebar-border: rgba(255, 255, 255, 0.55);
+  --v3-aurora-accent-soft: rgba(47, 95, 255, 0.1);
+  --v3-aurora-accent-line: rgba(47, 95, 255, 0.2);
+  --v3-aurora-hairline: rgba(15, 27, 61, 0.08);
+  --v3-aurora-actions-line: rgba(255, 255, 255, 0.7);
+  --v3-aurora-actions-bg: rgba(255, 255, 255, 0.4);
+  --v3-aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
+  --v3-aurora-req: #ff4d5e;
+  --v3-aurora-r-card: 24px;
+  --v3-aurora-r-inner: 16px;
 }
 
 .dark {
@@ -187,6 +218,36 @@
   --v3-mute-soft: rgba(148, 163, 184, 0.14);
   --v3-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.4);
   --v3-shadow-pop: 0 14px 48px rgba(0, 0, 0, 0.5);
+  /* 沉浸极光玻璃 · 深色端（受控特例，见 DESIGN.md）。 */
+  --v3-aurora-bg-color: #0b1426;
+  --v3-aurora-bg:
+    radial-gradient(680px 520px at 8% 6%, rgba(95, 214, 200, 0.16), transparent 60%),
+    radial-gradient(620px 520px at 92% 16%, rgba(167, 139, 250, 0.16), transparent 60%),
+    radial-gradient(760px 600px at 72% 98%, rgba(99, 140, 255, 0.14), transparent 62%),
+    linear-gradient(160deg, #0a1120 0%, #121026 50%, #0b1426 100%);
+  --v3-aurora-ink: #eaf0ff;
+  --v3-aurora-ink-2: #a9b6d6;
+  --v3-aurora-ink-3: #7c88a8;
+  --v3-aurora-title: linear-gradient(180deg, #cfe0ff, #6f9bff);
+  --v3-aurora-glass: rgba(22, 28, 44, 0.55);
+  --v3-aurora-glass-border: rgba(120, 150, 255, 0.16);
+  --v3-aurora-panel: rgba(18, 24, 40, 0.6);
+  --v3-aurora-panel-border: rgba(120, 150, 255, 0.2);
+  --v3-aurora-chip: rgba(24, 30, 46, 0.6);
+  --v3-aurora-chip-border: rgba(120, 150, 255, 0.14);
+  --v3-aurora-field: rgba(14, 19, 32, 0.85);
+  --v3-aurora-field-border: rgba(120, 150, 255, 0.2);
+  --v3-aurora-sidebar: linear-gradient(180deg, rgba(24, 30, 46, 0.55) 0%, rgba(18, 24, 40, 0.35) 100%);
+  --v3-aurora-sidebar-border: rgba(120, 150, 255, 0.16);
+  --v3-aurora-accent-soft: rgba(120, 150, 255, 0.14);
+  --v3-aurora-accent-line: rgba(120, 150, 255, 0.24);
+  --v3-aurora-hairline: rgba(255, 255, 255, 0.08);
+  --v3-aurora-actions-line: rgba(255, 255, 255, 0.08);
+  --v3-aurora-actions-bg: rgba(255, 255, 255, 0.03);
+  --v3-aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
+  --v3-aurora-req: #ff6b78;
+  --v3-aurora-r-card: 24px;
+  --v3-aurora-r-inner: 16px;
 }
 
 @theme inline {

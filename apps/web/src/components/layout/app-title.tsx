@@ -6,9 +6,9 @@ export function AppTitle() {
       <div
         aria-label="炬枢平台 - 新炬网络"
         data-testid="app-title-brand-lockup"
-        className="flex min-h-20 min-w-0 items-center gap-3 rounded-[18px] border border-[var(--v3-shell-glass-border)] bg-[linear-gradient(135deg,rgba(255,255,255,0.54),rgba(233,239,255,0.30))] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_8px_20px_rgba(47,95,255,0.045)] group-data-[collapsible=icon]:min-h-12 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:shadow-none"
+        className="flex min-h-16 min-w-0 items-center gap-3 px-1 py-2 group-data-[collapsible=icon]:min-h-12 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
       >
-        <span className="flex size-[54px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] border border-[rgba(47,95,255,0.12)] bg-[rgba(255,255,255,0.44)] shadow-[inset_0_1px_0_rgba(255,255,255,0.62)] group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none">
+        <span className="flex size-[52px] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/55 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] backdrop-blur-md dark:border-white/12 dark:bg-white/[0.06] group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none group-data-[collapsible=icon]:backdrop-blur-none">
           <img
             src={BRAND_MARK_SRC}
             alt=""

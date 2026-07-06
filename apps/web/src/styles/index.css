@@ -70,6 +70,17 @@
     box-shadow: none;
   }
 
+  /* 全局沉浸极光背景底：由 <AuroraBackground /> 渲染，铺满视口、置于内容之下。
+     浅/深色由 --v3-aurora-* token 自动切换。见 DESIGN.md「沉浸极光玻璃」。 */
+  .v3-aurora-background {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--v3-aurora-bg-color);
+    background-image: var(--v3-aurora-bg);
+  }
+
   [data-slot='sidebar-container'] {
     border-inline-end: 1px solid var(--v3-shell-glass-border);
     box-shadow: 12px 0 32px rgba(16, 24, 40, 0.045);
@@ -79,31 +90,22 @@
     border-inline-end: 0;
   }
 
+  /* 侧栏改为半透明玻璃，让全局极光背景底透过导航区延伸（token 驱动）。 */
   [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background:
-      radial-gradient(circle at 18% 0%, rgba(47, 95, 255, 0.055), transparent 34%),
-      radial-gradient(circle at 90% 18%, rgba(21, 160, 107, 0.045), transparent 32%),
-      linear-gradient(180deg, #fbfcff 0%, #f1f5fb 48%, var(--v3-shell-glass) 100%);
-    background-color: var(--v3-shell-glass);
+    background: var(--v3-aurora-sidebar);
+    background-color: transparent;
     backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
-    box-shadow:
-      inset 1px 0 0 rgba(255, 255, 255, 0.78),
-      12px 0 32px rgba(16, 24, 40, 0.045);
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.5);
   }
 
   [data-variant='floating'] [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     overflow: hidden;
-    border: 1px solid var(--v3-shell-glass-border) !important;
+    border: 1px solid var(--v3-aurora-sidebar-border) !important;
     border-radius: 1.625rem;
-    background:
-      radial-gradient(circle at 18% 0%, rgba(47, 95, 255, 0.055), transparent 34%),
-      radial-gradient(circle at 90% 18%, rgba(21, 160, 107, 0.045), transparent 32%),
-      linear-gradient(180deg, var(--v3-shell-glass-strong) 0%, #f1f5fb 48%, var(--v3-shell-glass) 100%);
-    background-color: var(--v3-shell-glass-strong);
-    box-shadow:
-      inset 1px 0 0 rgba(255, 255, 255, 0.78),
-      12px 0 32px rgba(16, 24, 40, 0.045);
+    background: var(--v3-aurora-sidebar);
+    background-color: transparent;
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.5);
   }
 
   [data-slot='v3-shell-header'] {
@@ -296,16 +298,15 @@
 
   .dark [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background: var(--v3-shell-glass);
-    background-color: var(--v3-shell-glass);
-    box-shadow: none;
+    background: var(--v3-aurora-sidebar);
+    background-color: transparent;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
   .dark [data-variant='floating'] [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
-    border: 1px solid var(--v3-shell-glass-border);
-    background:
-      radial-gradient(circle at 18% 6%, rgba(91, 139, 255, 0.13), transparent 34%),
-      linear-gradient(180deg, rgba(23, 27, 34, 0.78), rgba(23, 27, 34, 0.62));
+    border: 1px solid var(--v3-aurora-sidebar-border);
+    background: var(--v3-aurora-sidebar);
+    background-color: transparent;
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
   }
 

@@ -406,10 +406,10 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => expect(getByText("中枢指令区")).toBeTruthy());
 
+    expect(getByText("提出任务")).toBeTruthy();
+    expect(getByText("提交后由协调线程动态编排")).toBeTruthy();
     expect(getByText("中枢指令区")).toBeTruthy();
     expect(getByText("命令中心")).toBeTruthy();
-    expect(getByText("编排参数")).toBeTruthy();
-    expect(getByText("项目路由")).toBeTruthy();
     expect(getByText("保存草稿")).toBeTruthy();
     expect(getByLabelText("项目")).toBeTruthy();
     expect(() => getByLabelText("审核人")).toThrow();
@@ -417,8 +417,8 @@ describe("TaskLaunchView", () => {
     expect(getByLabelText("优先级")).toBeTruthy();
     expect(getByLabelText("风险级别")).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
-    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-button"]').length).toBeGreaterThan(0);
+    expect(document.querySelector(".tl-glass")).toBeTruthy();
+    expect(document.querySelector(".tl-btn-send")).toBeTruthy();
 
     expect(queryByText("Command Center")).toBeNull();
     expect(queryByText("Project routing")).toBeNull();
