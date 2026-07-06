@@ -758,13 +758,13 @@ function riverEventSummary(instance: WorkflowInstanceSummary): { text: string | 
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "—";
   const totalMin = Math.round(ms / MS_MIN);
-  if (totalMin < 1) return "<1m";
-  if (totalMin < 60) return `${totalMin}m`;
+  if (totalMin < 1) return "<1分钟";
+  if (totalMin < 60) return `${totalMin}分钟`;
   const hours = Math.floor(totalMin / 60);
   const mins = totalMin % 60;
-  if (hours < 24) return mins > 0 ? `${hours}h${String(mins).padStart(2, "0")}m` : `${hours}h`;
+  if (hours < 24) return mins > 0 ? `${hours}小时${String(mins).padStart(2, "0")}分` : `${hours}小时`;
   const days = Math.floor(hours / 24);
-  return `${days}d${hours % 24}h`;
+  return `${days}天${hours % 24}小时`;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -772,9 +772,9 @@ function formatRelativeTime(iso: string): string {
   if (Number.isNaN(ts)) return "";
   const diff = Date.now() - ts;
   if (diff < MS_MIN) return "刚刚";
-  if (diff < MS_HOUR) return `${Math.round(diff / MS_MIN)}m前`;
-  if (diff < 24 * MS_HOUR) return `${Math.round(diff / MS_HOUR)}h前`;
-  return `${Math.round(diff / (24 * MS_HOUR))}d前`;
+  if (diff < MS_HOUR) return `${Math.round(diff / MS_MIN)}分钟前`;
+  if (diff < 24 * MS_HOUR) return `${Math.round(diff / MS_HOUR)}小时前`;
+  return `${Math.round(diff / (24 * MS_HOUR))}天前`;
 }
 
 function formatTime(iso: string): string {
