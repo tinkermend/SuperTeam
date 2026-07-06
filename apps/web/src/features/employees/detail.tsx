@@ -13,6 +13,7 @@ import {
   getCurrentDigitalEmployeeEffectiveConfig,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
+  getDigitalEmployeeSchedulingReadiness,
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
@@ -30,6 +31,7 @@ import { EmployeeDetailHeader } from "./components/employee-detail-header";
 import { EmployeeMetricsStrip } from "./components/employee-metrics-strip";
 import { EmployeeRunHistoryTable } from "./components/employee-run-history-table";
 import { RunDetailDrawer } from "./components/run-detail-drawer";
+import { SchedulingReadinessPanel } from "./components/scheduling-readiness-panel";
 import { StartTaskDrawer } from "./components/start-task-drawer";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>([
@@ -68,6 +70,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const instance = useQuery({
     queryKey: ["digital-employee-execution-instance", employeeId],
     queryFn: () => getDigitalEmployeeExecutionInstance(apiOptions, employeeId),
+    retry: false,
+  });
+  const schedulingReadiness = useQuery({
+    queryKey: ["digital-employee-scheduling-readiness", employeeId],
+    queryFn: () => getDigitalEmployeeSchedulingReadiness(apiOptions, employeeId),
     retry: false,
   });
   const runStats = useQuery({
@@ -150,7 +157,9 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   if (hasActiveRun) disabledReasons.push("当前已有活跃运行");
   if (!executionInstanceCanRun && instance.isSuccess) disabledReasons.push("执行实例当前不可执行");
   if (runtimeCommandChannelDisconnected) disabledReasons.push("Runtime 命令通道未连接，暂不能开始任务");
-  if (instanceNotFound) disabledReasons.push("未绑定 Runtime，暂不能开始任务");
+  if (instanceNotFound) {
+    disabledReasons.push("项目运行时就绪度会决定 Runtime 节点，当前不能从员工详情直接开始任务");
+  }
   if (runs.isError) disabledReasons.push("运行列表加载失败，暂不能开始新任务");
 
   const refreshRunFacts = async () => {
@@ -224,38 +233,46 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                 result={runs.data}
                 statusFilter={statusFilter}
               />
-              <EffectiveContextPanel
-                effectiveConfig={{
-                  isLoading: effectiveConfigQuery.isLoading,
-                  isError: effectiveConfigQuery.isError && !noApprovedConfig,
-                  noApprovedConfig,
-                }}
-                employee={employee.data}
-                employeeId={employeeId}
-                envVars={{
-                  isLoading: envVarsQuery.isLoading,
-                  isError: envVarsQuery.isError,
-                  configuredCount: configuredEnvCount,
-                  totalCount: envVarsQuery.data?.length ?? 0,
-                  missingNames: missingEnvVars.map((item) => item.name),
-                }}
-                executionInstance={instance.data}
-                mcp={{
-                  isLoading: mcpQuery.isLoading,
-                  isError: mcpQuery.isError,
-                  personalCount: personalMcpCount,
-                  inheritedCount: inheritedMcpCount,
-                  totalCount: mcpQuery.data?.length ?? 0,
-                }}
-                onManageCapabilities={() => setCapabilitiesOpen(true)}
-                skills={{
-                  isLoading: skillsQuery.isLoading,
-                  isError: skillsQuery.isError,
-                  personalCount: personalSkillCount,
-                  inheritedCount: inheritedSkillCount,
-                  totalCount: skillsQuery.data?.length ?? 0,
-                }}
-              />
+              <div className="flex flex-col gap-4">
+                <SchedulingReadinessPanel
+                  isError={schedulingReadiness.isError}
+                  isLoading={schedulingReadiness.isLoading}
+                  onRetry={() => schedulingReadiness.refetch()}
+                  readiness={schedulingReadiness.data}
+                />
+                <EffectiveContextPanel
+                  effectiveConfig={{
+                    isLoading: effectiveConfigQuery.isLoading,
+                    isError: effectiveConfigQuery.isError && !noApprovedConfig,
+                    noApprovedConfig,
+                  }}
+                  employee={employee.data}
+                  employeeId={employeeId}
+                  envVars={{
+                    isLoading: envVarsQuery.isLoading,
+                    isError: envVarsQuery.isError,
+                    configuredCount: configuredEnvCount,
+                    totalCount: envVarsQuery.data?.length ?? 0,
+                    missingNames: missingEnvVars.map((item) => item.name),
+                  }}
+                  executionInstance={instance.data}
+                  mcp={{
+                    isLoading: mcpQuery.isLoading,
+                    isError: mcpQuery.isError,
+                    personalCount: personalMcpCount,
+                    inheritedCount: inheritedMcpCount,
+                    totalCount: mcpQuery.data?.length ?? 0,
+                  }}
+                  onManageCapabilities={() => setCapabilitiesOpen(true)}
+                  skills={{
+                    isLoading: skillsQuery.isLoading,
+                    isError: skillsQuery.isError,
+                    personalCount: personalSkillCount,
+                    inheritedCount: inheritedSkillCount,
+                    totalCount: skillsQuery.data?.length ?? 0,
+                  }}
+                />
+              </div>
             </section>
 
             <ContextInjectionChain

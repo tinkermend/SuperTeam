@@ -91,6 +91,42 @@ const runStats = {
   prev_7d_count: 3,
 };
 
+const schedulingReadiness = {
+  employee_id: employee.id,
+  status: "active",
+  ready_for_project_scheduling: true,
+  project_execution_source: "project_runtime_readiness",
+  checks: [
+    {
+      code: "effective_config",
+      status: "passed",
+      label: "生效配置",
+      message: "已批准，可用于项目调度",
+    },
+    {
+      code: "runtime_source",
+      status: "info",
+      label: "执行来源",
+      message: "Runtime 节点由项目运行时就绪度决定",
+    },
+  ],
+  capabilities: {
+    skills: {
+      personal_count: 2,
+      inherited_count: 1,
+      missing_required: [],
+    },
+    mcp_servers: {
+      personal_count: 1,
+      inherited_count: 1,
+    },
+    environment_variables: {
+      configured_count: 3,
+      missing_names: [],
+    },
+  },
+};
+
 function runFixture(overrides: Record<string, unknown> = {}) {
   return {
     id: "44444444-4444-4444-8444-444444444444",
@@ -149,6 +185,8 @@ function createDetailFetcher({
   eventsByRunId,
   executionInstanceStatus = 200,
   runsStatus = 200,
+  readiness = schedulingReadiness,
+  readinessStatus = 200,
   runtimeOverview = {
     summary: {
       online_nodes: 1,
@@ -180,6 +218,8 @@ function createDetailFetcher({
   eventsByRunId?: Record<string, Array<Record<string, unknown>>>;
   executionInstanceStatus?: number;
   runsStatus?: number;
+  readiness?: Record<string, unknown>;
+  readinessStatus?: number;
   runtimeOverview?: Record<string, unknown>;
 } = {}) {
   let currentRun = run;
@@ -198,6 +238,13 @@ function createDetailFetcher({
         return jsonResponse({ error: "execution instance failed" }, executionInstanceStatus);
       }
       return jsonResponse(executionInstance);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}/scheduling-readiness` && method === "GET") {
+      if (readinessStatus !== 200) {
+        return jsonResponse({ error: "readiness failed" }, readinessStatus);
+      }
+      return jsonResponse(readiness);
     }
 
     if (path === `/api/v1/digital-employees/${employee.id}/run-stats` && method === "GET") {
@@ -360,6 +407,41 @@ describe("EmployeeDetailView", () => {
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "POST")).toBe(1);
   });
 
+  it("shows scheduling readiness and links project scheduling next action to projects", async () => {
+    const fetcher = createDetailFetcher({
+      run: runFixture({ status: "completed" }),
+      readiness: {
+        ...schedulingReadiness,
+        capabilities: {
+          skills: {
+            personal_count: 2,
+            inherited_count: 1,
+            missing_required: ["risk-review"],
+          },
+          mcp_servers: {
+            personal_count: 1,
+            inherited_count: 1,
+          },
+          environment_variables: {
+            configured_count: 3,
+            missing_names: ["OPENAI_API_KEY"],
+          },
+        },
+      },
+    });
+    const screen = await renderEmployeeDetail(fetcher);
+
+    await expect.element(screen.getByRole("heading", { level: 2, name: "项目调度就绪度" })).toBeVisible();
+    await expect.element(screen.getByText("可进入项目调度池")).toBeVisible();
+    await expect.element(screen.getByText("Runtime 节点由项目运行时就绪度决定")).toBeVisible();
+    await expect.element(screen.getByText("技能 3")).toBeVisible();
+    await expect.element(screen.getByText("MCP 2")).toBeVisible();
+    await expect.element(screen.getByText("环境变量 3")).toBeVisible();
+    await expect.element(screen.getByText("OPENAI_API_KEY")).toBeVisible();
+    await expect.element(screen.getByText("risk-review")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "进入项目" })).toHaveAttribute("href", "/projects");
+  });
+
   it("keeps start submit disabled when runtime command channel is disconnected", async () => {
     const fetcher = createDetailFetcher({
       events: [],
@@ -488,7 +570,9 @@ describe("EmployeeDetailView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
 
-    await expect.element(screen.getByText("未绑定 Runtime，暂不能开始任务")).toBeVisible();
+    await expect
+      .element(screen.getByText("项目运行时就绪度会决定 Runtime 节点，当前不能从员工详情直接开始任务"))
+      .toBeVisible();
     await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
 

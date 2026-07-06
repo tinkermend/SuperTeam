@@ -32,7 +32,10 @@ describe("EmployeeDetailHeader", () => {
 
     await expect.element(screen.getByRole("heading", { level: 2, name: "后端实现员" })).toBeVisible();
     await expect.element(screen.getByText("active")).toBeVisible();
-    await screen.getByRole("button", { name: "开始任务" }).click();
+    const startButton = screen.getByRole("button", { name: "开始任务" });
+    await expect.element(startButton).toHaveAttribute("data-variant", "outline");
+
+    await startButton.click();
     expect(onStartTask).toHaveBeenCalledTimes(1);
   });
 });

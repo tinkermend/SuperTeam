@@ -80,7 +80,7 @@ export function EmployeeDetailHeader({
             查看审计
           </Link>
         </V3Button>
-        <V3Button onClick={onStartTask} type="button" variant="primary">
+        <V3Button onClick={onStartTask} type="button" variant="outline">
           <Play className="size-4" />
           开始任务
         </V3Button>
