@@ -1335,6 +1335,12 @@ impl RuntimeCommandWritebackSink {
         record: &RunEventRecord,
         provider_session_id: Option<&str>,
     ) -> anyhow::Result<()> {
+        if let ProviderEvent::TurnCompleted { usage: Some(usage), .. } = &record.event {
+            if usage.total_tokens > 0 {
+                self.usage_tokens
+                    .fetch_add(usage.total_tokens, Ordering::Relaxed);
+            }
+        }
         self.client
             .record_runtime_command_event(
                 &self.command_id,
