@@ -1400,7 +1400,7 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("renders the project homepage as a full-width operational queue", async () => {
+  it("renders the project homepage as a project-first master-detail triage queue", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
@@ -1408,23 +1408,22 @@ describe("ProjectsView", () => {
     expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
       "客户接入验收",
     );
-    await expect.element(screen.getByLabelText("项目风险汇总（当前页）")).toBeInTheDocument();
-    await expect.element(screen.getByLabelText("选中项目上下文")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("主要风险")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
-    await expect.element(screen.getByText("最后事件")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("最后运行时间")).toBeInTheDocument();
-    await expect.element(screen.getByText("补充上线验收说明")).toBeInTheDocument();
-    await expect.element(screen.getByText("人工: 负责人确认")).toBeInTheDocument();
-    await expect.element(screen.getByText("分析生产接口 5xx 激增原因并输出处置建议")).toBeInTheDocument();
-    await expect.element(screen.getByText("数据源: 日志检索")).toBeInTheDocument();
+    // Portfolio truth bar (loaded-list scope), not the old page-scoped risk metric bar.
+    await expect.element(screen.getByLabelText("项目组合概览（已加载列表）")).toBeInTheDocument();
+    // Selected-context panel is present but empty until a project is selected.
+    await expect.element(screen.getByLabelText("选中项目上下文")).toBeInTheDocument();
+    await expect.element(screen.getByText("选择项目查看待办")).toBeInTheDocument();
+    // Project-first columns surface owner name, risk label and current handler.
+    await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
+    await expect.element(screen.getByText("等待人工决策").first()).toBeInTheDocument();
     await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
     await expect.element(screen.getByText("运维检索员工")).toBeInTheDocument();
-    expect(screen.getByTestId("project-risk-queue").element().textContent).not.toContain("de-1");
-    expect(screen.getByTestId("project-risk-queue").element().textContent).not.toContain("de-ops-1");
-    await expect
-      .element(screen.getByRole("link", { name: "进入流程编排 客户接入验收" }))
-      .toHaveAttribute("href", "/workflows/demand-1");
+    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    // Raw workflow/task detail no longer clutters the row; it moves to project detail.
+    expect(queueText).not.toContain("需要负责人确认");
+    expect(queueText).not.toContain("数据源: 日志检索");
+    expect(queueText).not.toContain("de-1");
+    expect(queueText).not.toContain("de-ops-1");
 
     expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("路由决策");
@@ -1508,11 +1507,9 @@ describe("ProjectsView", () => {
     );
     expect(headers).toEqual([
       "项目",
-      "当前任务",
-      "当前节点/能力",
+      "待处理",
       "当前处理者",
-      "执行状态",
-      "最后运行时间",
+      "最近活动",
       "操作",
     ]);
 
@@ -1521,10 +1518,8 @@ describe("ProjectsView", () => {
     const columns = Array.from(table?.querySelectorAll("colgroup col") ?? []);
     expect(columns.map((column) => column.getAttribute("data-column"))).toEqual([
       "project",
-      "task",
-      "node",
+      "pending",
       "handler",
-      "status",
       "last-run",
       "action",
     ]);
@@ -1534,12 +1529,9 @@ describe("ProjectsView", () => {
     expect(projectTitle?.className).toContain("line-clamp-2");
     expect(projectTitle?.className).toContain("break-words");
     expect(projectTitle?.className).toContain("max-h-10");
-    const taskTitle = listSurface?.querySelector(
-      '[data-testid="project-queue-current-task"]',
-    );
-    expect(taskTitle?.className).toContain("line-clamp-2");
-    expect(taskTitle?.className).toContain("break-words");
-    expect(taskTitle?.className).toContain("max-h-10");
+    expect(
+      listSurface?.querySelector('[data-testid="project-queue-pending"]'),
+    ).toBeTruthy();
     const handler = listSurface?.querySelector(
       '[data-testid="project-queue-current-handler"]',
     );
@@ -1548,15 +1540,31 @@ describe("ProjectsView", () => {
     expect(handler?.className).toContain("max-h-10");
   });
 
-  it("keeps the projects index queue-dominant instead of splitting the page evenly", async () => {
+  it("splits the projects index into a queue and a selected-context triage panel", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
 
     const layout = screen.getByTestId("projects-risk-home-layout").element();
-    expect(layout.className).not.toContain("xl:grid-cols-[minmax(0,1fr)_360px]");
-    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
+    expect(layout.className).toContain("xl:grid-cols-[minmax(0,1fr)_420px]");
+    expect(
+      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
+    ).toBeTruthy();
+
+    // Selecting the top queue row (project-1) populates the panel with deep-link actions,
+    // reusing the already-fetched page risk signals (no extra requests).
+    await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+
+    const panel = screen.getByTestId("project-selected-context-panel").element();
+    await vi.waitFor(() => {
+      expect(panel.textContent).toContain("客户接入验收");
+      expect(panel.textContent).toContain("处理决策");
+    });
+    const decisionAction = Array.from(panel.querySelectorAll("a")).find((anchor) =>
+      anchor.textContent?.includes("处理决策"),
+    );
+    expect(decisionAction?.getAttribute("href")).toContain("tab=approval");
   });
 
   it("keeps the project detail route full-width for the plan graph", async () => {
@@ -2283,13 +2291,17 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ project2OverviewGate });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
+    await expect.element(screen.getByText("生产巡检整改")).toBeInTheDocument();
+    // The lightweight triage panel is present, but it must not mount the full
+    // operational detail: no per-project overview fetch, no archive action.
     expect(
       fetchCalls(fetcher).some(([url]) =>
         String(url).includes("/api/v1/projects/project-2/overview"),
       ),
     ).toBe(false);
-    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
+    expect(
+      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
+    ).toBeTruthy();
     releaseProject2Overview();
 
     await expect
@@ -2313,7 +2325,7 @@ describe("ProjectsView", () => {
     expect(queueText).toContain("执行失败");
   });
 
-  it("keeps the homepage risk summary in a loading state until current-page risk signals settle", async () => {
+  it("keeps the queue in a risk-identifying state until current-page risk signals settle", async () => {
     const project2RiskGate = makeDeferred<void>();
     const fetcher = createProjectFetcher({
       project2RiskSignalGate: project2RiskGate.promise,
@@ -2321,25 +2333,24 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await expect.element(screen.getByText("风险识别中")).toBeVisible();
+    // Portfolio bar is derived from cheap loaded-list fields, so it shows immediately.
+    await expect.element(screen.getByLabelText("项目组合概览（已加载列表）")).toBeVisible();
 
-    const summary = screen.getByLabelText("项目风险汇总（当前页）").element();
-    expect(summary.textContent).toContain("正在读取当前页项目的任务、决策和证据信号");
-    expect(summary.textContent).not.toContain("阻塞项目");
-    expect(summary.textContent).not.toContain("人工决策");
     const pendingQueue = screen.getByTestId("project-risk-queue").element();
-    const pendingQueueText = pendingQueue.textContent ?? "";
     const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
-    expect(pendingQueueText).toContain("正在识别风险");
+    expect(pendingQueue.textContent).toContain("正在识别风险");
+    expect(pendingRowsText).toContain("识别中");
     expect(pendingRowsText).not.toContain("等待人工决策");
-    expect(pendingRowsText).toContain("失败");
+    expect(pendingRowsText).not.toContain("执行失败");
 
     project2RiskGate.resolve();
 
     await vi.waitFor(() => {
-      expect(summary.textContent).toContain("阻塞项目");
-      expect(summary.textContent).toContain("人工决策");
-      expect(summary.textContent).not.toContain("风险识别中");
+      const settledQueue = screen.getByTestId("project-risk-queue").element();
+      const settledRowsText = settledQueue.querySelector("tbody")?.textContent ?? "";
+      expect(settledRowsText).toContain("执行失败");
+      expect(settledRowsText).toContain("等待人工决策");
+      expect(settledQueue.textContent).not.toContain("正在识别风险");
     });
   });
 
@@ -2367,15 +2378,17 @@ describe("ProjectsView", () => {
     ).toBe(true);
   });
 
-  it("keeps workflow orchestration as the project index row action", async () => {
+  it("makes project detail the primary row action and workflow orchestration secondary", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
     await expect
-      .element(screen.getByRole("link", { name: "进入流程编排 生产巡检整改" }))
-      .toHaveAttribute("href", "/workflows/demand-2");
-    expect(screen.container.querySelector('[data-testid="project-selected-context-panel"]')).toBeNull();
+      .element(screen.getByRole("link", { name: "进入项目 生产巡检整改" }))
+      .toHaveAttribute("href", "/projects/project-2");
+    expect(
+      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
+    ).toBeTruthy();
   });
 
   it("keeps the full operational detail on project detail routes", async () => {
@@ -2402,7 +2415,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("生产巡检整改")).toBeVisible();
     await expect.element(screen.getByText("风险待确认")).toBeVisible();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    expect(queueText).toContain("进入流程编排");
+    expect(queueText).toContain("进入项目");
   });
 
   it("renders the project index with the compact control surface structure", async () => {

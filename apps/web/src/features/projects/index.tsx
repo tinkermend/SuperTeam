@@ -72,6 +72,7 @@ import {
 } from "@/components/layout/shell-page-header";
 import {
   V3Button,
+  V3EmptyState,
   V3ErrorState,
   V3LoadingState,
   WorkSurface,
@@ -82,11 +83,13 @@ import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
 import {
-  ProjectHomeRiskSummaryBar,
+  ProjectPortfolioSummaryBar,
   ProjectRiskQueue,
+  ProjectTriagePanel,
 } from "./components/project-risk-home";
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
 import {
+  buildProjectPortfolioCounts,
   emptyProjectRiskSummary,
   type ProjectRiskFilter,
   type ProjectRiskSummaryMap,
@@ -243,9 +246,10 @@ export function ProjectsView({
     status: "all",
   });
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
+  const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
   const [projectListPage, setProjectListPage] = useState(1);
-  const [projectListPageSize, setProjectListPageSize] = useState(10);
+  const [projectListPageSize, setProjectListPageSize] = useState(5);
 
   const listFilters = useMemo<ListProjectsFilters>(() => {
     const request: ListProjectsFilters = { limit: 50, offset: 0 };
@@ -303,6 +307,23 @@ export function ProjectsView({
   useEffect(() => {
     setProjectListPage(1);
   }, [filters.q, filters.risk, filters.status]);
+
+  const portfolioCounts = useMemo(
+    () => buildProjectPortfolioCounts(projects),
+    [projects],
+  );
+  const selectedQueueProject = pagedProjects.find(
+    (project) => project.id === selectedQueueProjectId,
+  );
+  const selectedQueueSummary = selectedQueueProject
+    ? displayedRiskSummaries[selectedQueueProject.id]
+    : undefined;
+  const isProjectPortfolioEmpty =
+    !routeProjectId &&
+    projects.length === 0 &&
+    filters.q.trim() === "" &&
+    filters.status === "all" &&
+    filters.risk === "all";
 
   const effectiveProjectId = routeProjectId;
   const selectedProjectFromList = effectiveProjectId
@@ -805,12 +826,6 @@ export function ProjectsView({
       />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
-          {projectCreateAction ? (
-            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-              {projectCreateAction}
-            </div>
-          ) : null}
-
           {isInitialLoading ? (
             <WorkSurface>
               <V3LoadingState label="加载项目列表…" />
@@ -823,6 +838,22 @@ export function ProjectsView({
                 onRetry={() => void projectsQuery.refetch()}
               />
             </WorkSurface>
+          ) : isProjectPortfolioEmpty ? (
+            <WorkSurface className="p-8">
+              <V3EmptyState
+                action={
+                  <V3Button asChild className="h-11 px-5">
+                    <Link to="/projects/new">
+                      <Plus data-icon="inline-start" />
+                      新建首个项目
+                    </Link>
+                  </V3Button>
+                }
+                description="项目是目标、负责人、任务、证据、预算和验收结论的业务闭环容器。创建后可在此队列按需要介入程度巡检推进。"
+                icon={<FolderKanban />}
+                title="还没有项目"
+              />
+            </WorkSurface>
           ) : (
             <div
               className={
@@ -833,23 +864,21 @@ export function ProjectsView({
               data-testid={routeProjectId ? undefined : "projects-compact-control-surface"}
             >
               {!routeProjectId ? (
-                <ProjectHomeRiskSummaryBar
-                  isLoading={isCurrentPageRiskSettling}
-                  riskSummaries={displayedRiskSummaries}
-                />
+                <ProjectPortfolioSummaryBar portfolioCounts={portfolioCounts} />
               ) : null}
 
               <div
                 className={
                   routeProjectId
                     ? "grid min-w-0 items-start gap-5"
-                    : "grid min-w-0 items-start gap-5"
+                    : "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]"
                 }
                 data-testid="projects-risk-home-layout"
               >
                 {!routeProjectId ? (
                   <ProjectRiskQueue
                     activePage={activeProjectListPage}
+                    createAction={projectCreateAction}
                     filters={filters}
                     isFetching={
                       projectsQuery.isFetching ||
@@ -862,12 +891,20 @@ export function ProjectsView({
                       setProjectListPageSize(size);
                       setProjectListPage(1);
                     }}
+                    onSelectProject={setSelectedQueueProjectId}
                     pageCount={projectListPageCount}
                     pageSize={projectListPageSize}
                     projects={pagedProjects}
                     riskSummaries={displayedRiskSummaries}
+                    selectedProjectId={selectedQueueProjectId}
                     total={projects.length}
                     workflowInstances={workflowInstancesQuery.data ?? []}
+                  />
+                ) : null}
+                {!routeProjectId ? (
+                  <ProjectTriagePanel
+                    project={selectedQueueProject}
+                    summary={selectedQueueSummary}
                   />
                 ) : null}
                 {routeProjectId ? (

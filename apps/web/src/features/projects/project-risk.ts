@@ -37,6 +37,7 @@ export type ProjectRiskSummary = {
   project: Project;
   level: ProjectRiskLevel;
   state: ProjectRiskSummaryState;
+  owner?: ProjectTaskHandler;
   currentHandler?: ProjectTaskHandler;
   currentTask?: ProjectTask;
   reasons: ProjectRiskReason[];
@@ -247,17 +248,16 @@ export function deriveProjectRiskSummary(
   const primaryReason = pickPrimaryReason(reasons);
   const level = primaryReason?.level ?? "none";
   const currentTask = selectCurrentTask(input.tasks ?? []);
-  const currentHandler = selectCurrentHandler(
-    project,
-    currentTask,
-    input.members ?? [],
-  );
+  const members = input.members ?? [];
+  const currentHandler = selectCurrentHandler(project, currentTask, members);
+  const owner = selectProjectOwner(project, members);
 
   return {
     projectId: project.id,
     project,
     level,
     state: options.state ?? "ready",
+    owner,
     currentHandler,
     currentTask,
     reasons,
@@ -303,6 +303,66 @@ export function buildRiskCounts(
     const reasonTypes = new Set(summary.reasons.map((reason) => reason.type));
     for (const reasonType of reasonTypes) {
       counts[reasonType] += 1;
+    }
+  }
+
+  return counts;
+}
+
+export type ProjectPortfolioCounts = {
+  total: number;
+  running: number;
+  acceptance: number;
+  paused: number;
+  configuring: number;
+  archived: number;
+  coordinationAnomaly: number;
+};
+
+/**
+ * 组合层可全量计算的项目组合真值：只读项目对象上的廉价字段（status /
+ * coordination_status），不做每项目 fan-out，因此可覆盖当前已加载的完整列表，
+ * 而不像逐项目风险信号那样只能覆盖当前页。
+ */
+export function buildProjectPortfolioCounts(
+  projects: Project[],
+): ProjectPortfolioCounts {
+  const counts: ProjectPortfolioCounts = {
+    total: projects.length,
+    running: 0,
+    acceptance: 0,
+    paused: 0,
+    configuring: 0,
+    archived: 0,
+    coordinationAnomaly: 0,
+  };
+
+  for (const project of projects) {
+    switch (project.status) {
+      case "running":
+        counts.running += 1;
+        break;
+      case "acceptance":
+        counts.acceptance += 1;
+        break;
+      case "paused":
+        counts.paused += 1;
+        break;
+      case "configuring":
+      case "draft":
+        counts.configuring += 1;
+        break;
+      case "archived":
+        counts.archived += 1;
+        break;
+      default:
+        break;
+    }
+    if (
+      project.status !== "archived" &&
+      !healthyCoordinationStatuses.has(normalize(project.coordination_status))
+    ) {
+      counts.coordinationAnomaly += 1;
     }
   }
 
@@ -448,6 +508,17 @@ function selectCurrentHandler(
   }
 
   return undefined;
+}
+
+function selectProjectOwner(
+  project: Project,
+  members: ProjectMember[],
+): ProjectTaskHandler | undefined {
+  const humanOwnerId = project.human_owner_user_id?.trim();
+  if (!humanOwnerId) {
+    return undefined;
+  }
+  return buildTaskHandler(humanOwnerId, "human_user", members);
 }
 
 function buildTaskHandler(
