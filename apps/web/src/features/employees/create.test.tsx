@@ -231,9 +231,9 @@ function createOptionsFixture({
       },
       {
         key: "runtime_provider",
-        label: "Runtime 调度预览",
+        label: "Provider 偏好预览",
         status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "warning",
-        message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度`,
+        message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个 Provider 候选当前在线；创建时不绑定 Runtime 节点`,
       },
       ...(includeCapabilityBoundaryBlock
         ? [
@@ -1018,8 +1018,33 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByLabelText("codex")).toBeChecked();
-    await expect.element(screen.getByText("2/2 个 Runtime 当前可调度")).toBeVisible();
+    await expect.element(screen.getByText("2 个 Runtime 节点候选会在项目运行准备中评估")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
+  });
+
+  it("describes provider choice as a preference without promising runtime binding", async () => {
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeCount: 2 }));
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("heading", { name: "Provider 偏好" })).toBeVisible();
+    expect(document.body.textContent).toContain("Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。");
+    expect(document.body.textContent).not.toContain("运行绑定");
+    expect(document.body.textContent).not.toContain("绑定到 Runtime");
+    expect(document.body.textContent).not.toContain("Runtime 当前可调度");
+    expect(document.body.textContent).not.toContain("Runtime placement");
+
+    await enterConfirmCreation(screen);
+    await expect.element(screen.getByText("Provider 偏好", { exact: true })).toBeVisible();
+    expect(document.body.textContent).toContain("Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。");
+    expect(document.body.textContent).not.toContain("运行绑定");
+    expect(document.body.textContent).not.toContain("绑定到 Runtime");
+    expect(document.body.textContent).not.toContain("Runtime 当前可调度");
+    expect(document.body.textContent).not.toContain("Runtime placement");
   });
 
   it("shows provider dispatch preview when only some runtimes are available", async () => {
@@ -1037,7 +1062,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("radio", { name: "codex" })).toBeChecked();
-    await expect.element(screen.getByText("1/2 个 Runtime 当前可调度")).toBeVisible();
+    await expect.element(screen.getByText("1/2 个 Runtime 节点当前在线，仅用于项目运行准备参考")).toBeVisible();
   });
 
   it("does not block configuration preflight when there are no bindable runtime provider options", async () => {
@@ -1047,8 +1072,10 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
-    await expect.element(screen.getByText("Runtime 调度预览", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("0/1 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度")).toBeVisible();
+    await expect.element(screen.getByText("Provider 偏好预览", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("0/1 个 Provider 候选当前在线；创建时不绑定 Runtime 节点"))
+      .toBeVisible();
     await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();

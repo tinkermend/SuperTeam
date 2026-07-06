@@ -61,7 +61,7 @@ import {
   templateSearchText,
 } from "./template-utils";
 
-const configSteps = ["身份", "能力", "治理", "执行器"] as const;
+const configSteps = ["身份", "能力", "治理", "Provider 偏好"] as const;
 type StepName = (typeof configSteps)[number];
 type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
 type CreationMode = "template" | "blank_custom";
@@ -335,7 +335,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function enterConfirmCreation() {
-    const nextErrors = validateStep("执行器", draft);
+    const nextErrors = validateStep("Provider 偏好", draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
       setFlowStep("confirm");
@@ -399,7 +399,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择模板，再分步完成预检、配置和确认。"
-          : "按模板默认值补齐职责画像、能力边界、治理策略和执行器。"
+          : "按模板默认值补齐职责画像、能力边界、治理策略和 Provider 偏好。"
         }
         actions={
           flowStep !== "template" ? (
@@ -483,7 +483,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   <div>
                     <h2 className="text-lg font-semibold">员工画像蓝图</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      按职责目标、可用能力、治理边界和执行器完成员工画像。
+                      按职责目标、可用能力、治理边界和 Provider 偏好完成员工画像。
                     </p>
                   </div>
                   <StepTabs currentStep={currentStep} />
@@ -529,7 +529,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       onUpdate={updateDraft}
                     />
                   ) : null}
-                  {!teams.isLoading && !createOptions.isLoading && currentStep === "执行器" ? (
+                  {!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 偏好" ? (
                     <ProviderStep
                       draft={draft}
                       error={errors.runtime}
@@ -619,7 +619,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
     { key: "template", title: "选择模板", description: "选择创建方式和专业模板" },
-    { key: "preflight", title: "配置预检", description: "检查治理策略和执行器候选" },
+    { key: "preflight", title: "配置预检", description: "检查治理策略和 Provider 偏好候选" },
     { key: "configure", title: "完成配置", description: "进入详细配置向导" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
@@ -675,7 +675,7 @@ function CreationPathPanel({
     },
     {
       title: "空白自定义",
-      description: "选择底层员工类型后，逐项手动配置职责、能力和执行器。",
+      description: "选择底层员工类型后，逐项手动配置职责、能力和 Provider 偏好。",
       icon: FileText,
       mode: "blank_custom" as const,
       badge: "可用",
@@ -1155,7 +1155,7 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
   return (
     <section className="rounded-md border bg-card/95 p-4 shadow-xs">
       <h2 className="text-base font-semibold">预检项目</h2>
-      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与执行器候选。</p>
+      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与 Provider 偏好候选。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
           <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
@@ -1203,7 +1203,7 @@ function PreflightStep({
         <div className="border-b p-4">
           <h2 className="text-lg font-semibold">配置预检</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和执行器候选，再进入详细配置。
+            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选，再进入详细配置。
           </p>
         </div>
         <div className="grid gap-4 p-4">
@@ -1218,7 +1218,7 @@ function PreflightStep({
           ) : (
             <Alert>
               <AlertTitle>预检通过</AlertTitle>
-              <AlertDescription>可以继续补充员工身份、能力、治理和执行器。</AlertDescription>
+              <AlertDescription>可以继续补充员工身份、能力、治理和 Provider 偏好。</AlertDescription>
             </Alert>
           )}
         </div>
@@ -1333,7 +1333,7 @@ function SelectedTemplateSummary({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {isBlankCustom
-              ? "能力、上下文覆盖、审批覆盖和执行器由你手动配置。"
+              ? "能力、上下文覆盖、审批覆盖和 Provider 偏好由你手动配置。"
               : selectedType?.description ?? "模板只作为初始草稿来源，Provider 在最后一步选择。"}
           </p>
         </div>
@@ -1435,8 +1435,9 @@ function CreationPreflightPanel({
         </div>
         <div className="grid gap-2">
           <div>1. 写入身份与初始配置修订</div>
-          <div>2. 记录 Provider，后续项目任务按 Runtime placement 调度</div>
-          <div>3. 进入 ready，等待任务调度</div>
+          <div>2. 记录 Provider 偏好</div>
+          <div>3. Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</div>
+          <div>4. 进入 ready，等待任务调度</div>
         </div>
       </section>
     </aside>
@@ -1487,13 +1488,14 @@ function ConfirmCreationStep({
         </section>
 
         <section className="rounded-md border bg-background p-4">
-          <h3 className="text-sm font-semibold">能力与执行器</h3>
+          <h3 className="text-sm font-semibold">能力与 Provider 偏好</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
             />
-            <InlineSummary label="Provider" value={draft.provider_type || "未选择"} />
+            <InlineSummary label="Provider 偏好" value={draft.provider_type || "未选择"} />
+            <InlineSummary label="Runtime 节点" value="会在项目运行准备中决定，不在创建时绑定到员工。" />
             <InlineSummary
               label="每日预算"
               value={draft.daily_token_limit.trim() ? `${draft.daily_token_limit.trim()} Token` : "无预算上限"}
@@ -1851,8 +1853,8 @@ function ProviderStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">执行器</h2>
-        <p className="text-sm text-muted-foreground">选择 Provider；Runtime 在线状态只作为后续项目任务调度预览。</p>
+        <h2 className="text-lg font-semibold">Provider 偏好</h2>
+        <p className="text-sm text-muted-foreground">Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
       </div>
       <RadioGroup onValueChange={onSelectProvider} value={draft.provider_type}>
         <div className="grid gap-3">
@@ -1965,8 +1967,10 @@ function ProviderOption({
         <span className="block font-medium">{providerType}</span>
         <span className="mt-1 block text-muted-foreground">
           {preview.availableCount > 0
-            ? `${preview.availableCount}/${preview.matchingCount} 个 Runtime 当前可调度`
-            : "当前没有在线 Runtime 支持该 Provider，创建后需要配置项目 Runtime placement"}
+            ? preview.availableCount === preview.matchingCount
+              ? `${preview.matchingCount} 个 Runtime 节点候选会在项目运行准备中评估`
+              : `${preview.availableCount}/${preview.matchingCount} 个 Runtime 节点当前在线，仅用于项目运行准备参考`
+            : "当前没有在线 Runtime 节点支持该 Provider；创建时仍只记录 Provider 偏好"}
         </span>
       </span>
     </label>
@@ -2060,7 +2064,7 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     }
     return errors;
   }
-  if (step === "执行器" && !draft.provider_type) {
+  if (step === "Provider 偏好" && !draft.provider_type) {
     return { runtime: "请选择 Provider" };
   }
   return {};
@@ -2070,7 +2074,7 @@ function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
   return {
     ...validateStep("身份", draft),
     ...validateStep("治理", draft),
-    ...validateStep("执行器", draft),
+    ...validateStep("Provider 偏好", draft),
   };
 }
 
