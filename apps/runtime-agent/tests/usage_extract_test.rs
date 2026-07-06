@@ -96,3 +96,20 @@ fn extract_usage_handles_null_usage_object() {
     let value = serde_json::json!({"usage": null});
     assert_eq!(extract_usage(&value), None);
 }
+
+#[test]
+fn extract_usage_parses_real_codex_turn_completed() {
+    let value = serde_json::json!({
+        "type": "turn.completed",
+        "usage": {
+            "input_tokens": 64511,
+            "cached_input_tokens": 25216,
+            "output_tokens": 398,
+            "reasoning_output_tokens": 225
+        }
+    });
+    let usage = extract_usage(&value).expect("usage");
+    assert_eq!(usage.total_tokens, 64511 + 398 + 25216 + 225);
+    assert_eq!(usage.input_tokens, Some(64511));
+    assert_eq!(usage.output_tokens, Some(398));
+}

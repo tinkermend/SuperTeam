@@ -24,16 +24,21 @@ fn parse_usage_object(value: &Value) -> Option<TurnUsage> {
     let output = value.get("output_tokens").and_then(|v| v.as_i64());
     let cache_read = value
         .get("cache_read_input_tokens")
+        .or_else(|| value.get("cached_input_tokens"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let cache_creation = value
         .get("cache_creation_input_tokens")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
+    let reasoning = value
+        .get("reasoning_output_tokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
     let total_tokens = match (total, input, output) {
         (Some(t), _, _) => Some(t),
-        (None, Some(i), Some(o)) => Some(i + o + cache_read + cache_creation),
+        (None, Some(i), Some(o)) => Some(i + o + cache_read + cache_creation + reasoning),
         _ => None,
     }?;
 
