@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -752,6 +753,89 @@ func (r *PgRepository) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Cont
 		return DigitalEmployeeEffectiveConfigRecord{}, mapNoRows(err)
 	}
 	return effectiveConfigRecordFromQuery(effectiveConfig)
+}
+
+func (r *PgRepository) GetSchedulingCapabilityFacts(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (SchedulingCapabilityFacts, error) {
+	skillCounts, err := r.q.GetDigitalEmployeeSchedulingSkillCounts(ctx, queries.GetDigitalEmployeeSchedulingSkillCountsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return SchedulingCapabilityFacts{}, mapNoRows(err)
+	}
+	mcpRows, err := r.q.ListEffectiveMCPBindingsV2ForEmployee(ctx, queries.ListEffectiveMCPBindingsV2ForEmployeeParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return SchedulingCapabilityFacts{}, err
+	}
+	configuredEnvVars, err := r.q.ListConfiguredEmployeeEnvVarNames(ctx, queries.ListConfiguredEmployeeEnvVarNamesParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return SchedulingCapabilityFacts{}, err
+	}
+
+	var personalMCPServerCount int
+	var inheritedMCPServerCount int
+	for _, row := range mcpRows {
+		switch row.SourceScope {
+		case "employee":
+			personalMCPServerCount++
+		case "team":
+			inheritedMCPServerCount++
+		}
+	}
+	configuredEnvVarCount, missingNames := schedulingCapabilityEnvFacts(mcpRows, configuredEnvVars)
+
+	return SchedulingCapabilityFacts{
+		PersonalSkillCount:      int(skillCounts.PersonalSkillCount),
+		InheritedSkillCount:     int(skillCounts.InheritedSkillCount),
+		MissingRequiredSkills:   []string{},
+		PersonalMCPServerCount:  personalMCPServerCount,
+		InheritedMCPServerCount: inheritedMCPServerCount,
+		ConfiguredEnvVarCount:   configuredEnvVarCount,
+		MissingEnvironmentNames: missingNames,
+	}, nil
+}
+
+func schedulingCapabilityEnvFacts(mcpRows []queries.ListEffectiveMCPBindingsV2ForEmployeeRow, configuredEnvVars []string) (int, []string) {
+	configured := make(map[string]struct{}, len(configuredEnvVars))
+	for _, name := range configuredEnvVars {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			configured[trimmed] = struct{}{}
+		}
+	}
+
+	missingEnvironmentNames := make(map[string]struct{})
+	for _, row := range mcpRows {
+		for _, name := range row.RequiredEnvVars {
+			addMissingSchedulingEnvName(missingEnvironmentNames, configured, name)
+		}
+		if row.CredentialEnvVar.Valid {
+			addMissingSchedulingEnvName(missingEnvironmentNames, configured, row.CredentialEnvVar.String)
+		}
+	}
+
+	missingNames := make([]string, 0, len(missingEnvironmentNames))
+	for name := range missingEnvironmentNames {
+		missingNames = append(missingNames, name)
+	}
+	sort.Strings(missingNames)
+	return len(configured), missingNames
+}
+
+func addMissingSchedulingEnvName(missing, configured map[string]struct{}, name string) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return
+	}
+	if _, ok := configured[trimmed]; !ok {
+		missing[trimmed] = struct{}{}
+	}
 }
 
 func (r *PgRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error) {

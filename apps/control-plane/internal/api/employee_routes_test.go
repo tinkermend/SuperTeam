@@ -361,6 +361,68 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if effectiveConfigRead.DigitalEmployeeID != employeeID || effectiveConfigRead.Status != string(employee.EffectiveConfigStatusApproved) {
 		t.Fatalf("unexpected get effective config response body: %#v", effectiveConfigRead)
 	}
+
+	readinessReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/scheduling-readiness", nil)
+	readinessReq.AddCookie(cookie)
+	readinessResp := httptest.NewRecorder()
+	server.ServeHTTP(readinessResp, readinessReq)
+	if readinessResp.Code != http.StatusOK {
+		t.Fatalf("expected get scheduling readiness to succeed, got %d: %s", readinessResp.Code, readinessResp.Body.String())
+	}
+	if !service.getSchedulingReadinessCalled || service.getSchedulingReadinessTenant != expectedTenantID || service.getSchedulingReadinessEmployeeID != employeeID {
+		t.Fatalf(
+			"unexpected scheduling readiness request mapping: called=%v tenant=%s employee=%s",
+			service.getSchedulingReadinessCalled,
+			service.getSchedulingReadinessTenant,
+			service.getSchedulingReadinessEmployeeID,
+		)
+	}
+	var readinessBody struct {
+		EmployeeID                uuid.UUID `json:"employee_id"`
+		ReadyForProjectScheduling bool      `json:"ready_for_project_scheduling"`
+		ProjectExecutionSource    string    `json:"project_execution_source"`
+		Checks                    []struct {
+			Code    string `json:"code"`
+			Status  string `json:"status"`
+			Label   string `json:"label"`
+			Message string `json:"message"`
+		} `json:"checks"`
+		Capabilities struct {
+			Skills struct {
+				PersonalCount   int      `json:"personal_count"`
+				InheritedCount  int      `json:"inherited_count"`
+				MissingRequired []string `json:"missing_required"`
+			} `json:"skills"`
+			MCPServers struct {
+				PersonalCount  int `json:"personal_count"`
+				InheritedCount int `json:"inherited_count"`
+			} `json:"mcp_servers"`
+			EnvironmentVariables struct {
+				ConfiguredCount int      `json:"configured_count"`
+				MissingNames    []string `json:"missing_names"`
+			} `json:"environment_variables"`
+		} `json:"capabilities"`
+	}
+	if err := json.NewDecoder(readinessResp.Body).Decode(&readinessBody); err != nil {
+		t.Fatalf("decode scheduling readiness response: %v", err)
+	}
+	if readinessBody.EmployeeID != employeeID || !readinessBody.ReadyForProjectScheduling || readinessBody.ProjectExecutionSource != "project_runtime_readiness" {
+		t.Fatalf("unexpected scheduling readiness response identity/status: %#v", readinessBody)
+	}
+	if len(readinessBody.Checks) != 1 || readinessBody.Checks[0].Code != "employee_status" || readinessBody.Checks[0].Status != string(employee.ReadinessCheckPassed) {
+		t.Fatalf("unexpected scheduling readiness checks: %#v", readinessBody.Checks)
+	}
+	if readinessBody.Capabilities.Skills.PersonalCount != 2 ||
+		readinessBody.Capabilities.Skills.InheritedCount != 3 ||
+		readinessBody.Capabilities.Skills.MissingRequired == nil ||
+		len(readinessBody.Capabilities.Skills.MissingRequired) != 0 ||
+		readinessBody.Capabilities.MCPServers.PersonalCount != 1 ||
+		readinessBody.Capabilities.MCPServers.InheritedCount != 2 ||
+		readinessBody.Capabilities.EnvironmentVariables.ConfiguredCount != 4 ||
+		len(readinessBody.Capabilities.EnvironmentVariables.MissingNames) != 1 ||
+		readinessBody.Capabilities.EnvironmentVariables.MissingNames[0] != "JIRA_TOKEN" {
+		t.Fatalf("unexpected scheduling readiness capabilities: %#v", readinessBody.Capabilities)
+	}
 }
 
 func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
@@ -983,6 +1045,39 @@ func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeSchedulingReadinessRouteRejectsNilServiceResponse(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeEmployeeService{returnNilSchedulingReadiness: true}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	employeeID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/scheduling-readiness", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected nil scheduling readiness to return 500, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "digital employee scheduling readiness unavailable") {
+		t.Fatalf("expected scheduling readiness unavailable error, got %s", resp.Body.String())
+	}
+}
+
 func TestEmployeeListAcceptsTeamFilter(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -1278,7 +1373,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	}
 }
 
-func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
+func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
@@ -1323,6 +1418,7 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`, action: authz.ActionEmployeeConfigPreview, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`, action: authz.ActionEmployeeConfigApprove, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get effective config", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/effective-config", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "get scheduling readiness", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/scheduling-readiness", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
 
 	for _, tt := range tests {
@@ -1523,39 +1619,43 @@ func TestDigitalEmployeeEnvironmentVariableRoutes(t *testing.T) {
 }
 
 type routeEmployeeService struct {
-	createOptionsReq          employee.CreateOptionsRequest
-	createOptions             *employee.CreateOptions
-	createReq                 employee.CreateDigitalEmployeeRequest
-	listReq                   employee.ListDigitalEmployeesRequest
-	overviewReq               employee.GetDigitalEmployeeOverviewRequest
-	listWorkspaceFilesReq     employee.ListWorkspaceFilesRequest
-	upsertWorkspaceFileReq    employee.UpsertWorkspaceFileRequest
-	listEnvReq                employee.ListEnvironmentVariablesRequest
-	upsertEnvReq              employee.UpsertEnvironmentVariableRequest
-	deleteEnvReq              employee.DeleteEnvironmentVariableRequest
-	bindReq                   employee.BindExecutionInstanceRequest
-	updateReq                 employee.UpdateStatusRequest
-	getTenantID               uuid.UUID
-	getInstanceTenantID       uuid.UUID
-	createCalled              bool
-	listCalled                bool
-	listWorkspaceFilesCalled  bool
-	upsertWorkspaceFileCalled bool
-	getCalled                 bool
-	updateCalled              bool
-	getInstanceCalled         bool
-	bindCalled                bool
-	configRevisionReq         employee.CreateDigitalEmployeeConfigRevisionRequest
-	previewReq                employee.PreviewEffectiveConfigByRevisionIDsRequest
-	approveReq                employee.ApproveEffectiveConfigRequest
-	configCalled              bool
-	previewCalled             bool
-	approveCalled             bool
-	getEffectiveConfigCalled  bool
-	getEffectiveConfigTenant  uuid.UUID
-	createdID                 uuid.UUID
-	listErr                   error
-	overviewErr               error
+	createOptionsReq                 employee.CreateOptionsRequest
+	createOptions                    *employee.CreateOptions
+	createReq                        employee.CreateDigitalEmployeeRequest
+	listReq                          employee.ListDigitalEmployeesRequest
+	overviewReq                      employee.GetDigitalEmployeeOverviewRequest
+	listWorkspaceFilesReq            employee.ListWorkspaceFilesRequest
+	upsertWorkspaceFileReq           employee.UpsertWorkspaceFileRequest
+	listEnvReq                       employee.ListEnvironmentVariablesRequest
+	upsertEnvReq                     employee.UpsertEnvironmentVariableRequest
+	deleteEnvReq                     employee.DeleteEnvironmentVariableRequest
+	bindReq                          employee.BindExecutionInstanceRequest
+	updateReq                        employee.UpdateStatusRequest
+	getTenantID                      uuid.UUID
+	getInstanceTenantID              uuid.UUID
+	createCalled                     bool
+	listCalled                       bool
+	listWorkspaceFilesCalled         bool
+	upsertWorkspaceFileCalled        bool
+	getCalled                        bool
+	updateCalled                     bool
+	getInstanceCalled                bool
+	bindCalled                       bool
+	configRevisionReq                employee.CreateDigitalEmployeeConfigRevisionRequest
+	previewReq                       employee.PreviewEffectiveConfigByRevisionIDsRequest
+	approveReq                       employee.ApproveEffectiveConfigRequest
+	configCalled                     bool
+	previewCalled                    bool
+	approveCalled                    bool
+	getEffectiveConfigCalled         bool
+	getEffectiveConfigTenant         uuid.UUID
+	getSchedulingReadinessCalled     bool
+	getSchedulingReadinessTenant     uuid.UUID
+	getSchedulingReadinessEmployeeID uuid.UUID
+	returnNilSchedulingReadiness     bool
+	createdID                        uuid.UUID
+	listErr                          error
+	overviewErr                      error
 }
 
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
@@ -1900,6 +2000,42 @@ func (s *routeEmployeeService) GetCurrentEffectiveConfig(ctx context.Context, te
 	}, nil
 }
 
+func (s *routeEmployeeService) GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeSchedulingReadiness, error) {
+	s.getSchedulingReadinessCalled = true
+	s.getSchedulingReadinessTenant = tenantID
+	s.getSchedulingReadinessEmployeeID = employeeID
+	if s.returnNilSchedulingReadiness {
+		return nil, nil
+	}
+	return &employee.DigitalEmployeeSchedulingReadiness{
+		EmployeeID:                employeeID,
+		Status:                    employee.DigitalEmployeeStatusReady,
+		ReadyForProjectScheduling: true,
+		ProjectExecutionSource:    "project_runtime_readiness",
+		Checks: []employee.SchedulingReadinessCheck{{
+			Code:    "employee_status",
+			Status:  employee.ReadinessCheckPassed,
+			Label:   "员工状态",
+			Message: "员工状态为 ready，可进入项目调度池。",
+		}},
+		Capabilities: employee.SchedulingReadinessCapabilities{
+			Skills: employee.SchedulingReadinessSkillSummary{
+				PersonalCount:   2,
+				InheritedCount:  3,
+				MissingRequired: []string{},
+			},
+			MCPServers: employee.SchedulingReadinessMCPSummary{
+				PersonalCount:  1,
+				InheritedCount: 2,
+			},
+			EnvironmentVariables: employee.SchedulingReadinessEnvironmentSummary{
+				ConfiguredCount: 4,
+				MissingNames:    []string{"JIRA_TOKEN"},
+			},
+		},
+	}, nil
+}
+
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
@@ -1912,7 +2048,8 @@ func (s *routeEmployeeService) called() bool {
 		s.configCalled ||
 		s.previewCalled ||
 		s.approveCalled ||
-		s.getEffectiveConfigCalled
+		s.getEffectiveConfigCalled ||
+		s.getSchedulingReadinessCalled
 }
 
 var _ employee.HandlerService = (*routeEmployeeService)(nil)

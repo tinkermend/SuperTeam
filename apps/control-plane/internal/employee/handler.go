@@ -33,6 +33,7 @@ type HandlerService interface {
 	PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req PreviewEffectiveConfigByRevisionIDsRequest) (*EffectiveConfigPreview, error)
 	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
 	GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeEffectiveConfig, error)
+	GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error)
 }
 
 type HTTPHandler struct {
@@ -262,6 +263,31 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
+}
+
+func (h *HTTPHandler) GetSchedulingReadiness(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee scheduling readiness read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	readiness, err := service.GetSchedulingReadiness(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if readiness == nil {
+		http.Error(w, "digital employee scheduling readiness unavailable", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, schedulingReadinessResponseFromDomain(readiness))
 }
 
 func (h *HTTPHandler) ListWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
@@ -1135,6 +1161,43 @@ type effectiveConfigResponse struct {
 	UpdatedAt                string                `json:"updated_at,omitempty"`
 }
 
+type schedulingReadinessResponse struct {
+	EmployeeID                string                                  `json:"employee_id"`
+	ReadyForProjectScheduling bool                                    `json:"ready_for_project_scheduling"`
+	ProjectExecutionSource    string                                  `json:"project_execution_source"`
+	Checks                    []schedulingReadinessCheckResponse      `json:"checks"`
+	Capabilities              schedulingReadinessCapabilitiesResponse `json:"capabilities"`
+}
+
+type schedulingReadinessCheckResponse struct {
+	Code    string               `json:"code"`
+	Status  ReadinessCheckStatus `json:"status"`
+	Label   string               `json:"label"`
+	Message string               `json:"message"`
+}
+
+type schedulingReadinessCapabilitiesResponse struct {
+	Skills               schedulingReadinessSkillSummaryResponse       `json:"skills"`
+	MCPServers           schedulingReadinessMCPSummaryResponse         `json:"mcp_servers"`
+	EnvironmentVariables schedulingReadinessEnvironmentSummaryResponse `json:"environment_variables"`
+}
+
+type schedulingReadinessSkillSummaryResponse struct {
+	PersonalCount   int      `json:"personal_count"`
+	InheritedCount  int      `json:"inherited_count"`
+	MissingRequired []string `json:"missing_required"`
+}
+
+type schedulingReadinessMCPSummaryResponse struct {
+	PersonalCount  int `json:"personal_count"`
+	InheritedCount int `json:"inherited_count"`
+}
+
+type schedulingReadinessEnvironmentSummaryResponse struct {
+	ConfiguredCount int      `json:"configured_count"`
+	MissingNames    []string `json:"missing_names"`
+}
+
 func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 	if err != nil || employeeID == uuid.Nil {
@@ -1196,6 +1259,39 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
 		CreatedAt:        timeString(employee.CreatedAt),
 		UpdatedAt:        timeString(employee.UpdatedAt),
+	}
+}
+
+func schedulingReadinessResponseFromDomain(readiness *DigitalEmployeeSchedulingReadiness) schedulingReadinessResponse {
+	checks := make([]schedulingReadinessCheckResponse, 0, len(readiness.Checks))
+	for _, check := range readiness.Checks {
+		checks = append(checks, schedulingReadinessCheckResponse{
+			Code:    check.Code,
+			Status:  check.Status,
+			Label:   check.Label,
+			Message: check.Message,
+		})
+	}
+	return schedulingReadinessResponse{
+		EmployeeID:                readiness.EmployeeID.String(),
+		ReadyForProjectScheduling: readiness.ReadyForProjectScheduling,
+		ProjectExecutionSource:    readiness.ProjectExecutionSource,
+		Checks:                    checks,
+		Capabilities: schedulingReadinessCapabilitiesResponse{
+			Skills: schedulingReadinessSkillSummaryResponse{
+				PersonalCount:   readiness.Capabilities.Skills.PersonalCount,
+				InheritedCount:  readiness.Capabilities.Skills.InheritedCount,
+				MissingRequired: stringSliceForJSON(readiness.Capabilities.Skills.MissingRequired),
+			},
+			MCPServers: schedulingReadinessMCPSummaryResponse{
+				PersonalCount:  readiness.Capabilities.MCPServers.PersonalCount,
+				InheritedCount: readiness.Capabilities.MCPServers.InheritedCount,
+			},
+			EnvironmentVariables: schedulingReadinessEnvironmentSummaryResponse{
+				ConfiguredCount: readiness.Capabilities.EnvironmentVariables.ConfiguredCount,
+				MissingNames:    stringSliceForJSON(readiness.Capabilities.EnvironmentVariables.MissingNames),
+			},
+		},
 	}
 }
 

@@ -31,6 +31,25 @@ func TestOverviewExecutionStatus(t *testing.T) {
 	require.Equal(t, OverviewExecutionStatusReady, overviewExecutionStatus("ready"))
 }
 
+func TestSchedulingCapabilityEnvFactsIncludesCredentialEnvVar(t *testing.T) {
+	configuredCount, missingNames := schedulingCapabilityEnvFacts([]queries.ListEffectiveMCPBindingsV2ForEmployeeRow{
+		{
+			RequiredEnvVars:  []string{" EXISTING_ENV ", "MISSING_REQUIRED", "DUPLICATE_MISSING"},
+			CredentialEnvVar: pgtype.Text{String: " BEARER_TOKEN ", Valid: true},
+		},
+		{
+			RequiredEnvVars:  []string{"", "DUPLICATE_MISSING"},
+			CredentialEnvVar: pgtype.Text{String: "DUPLICATE_MISSING", Valid: true},
+		},
+		{
+			CredentialEnvVar: pgtype.Text{String: "IGNORED_INVALID", Valid: false},
+		},
+	}, []string{"EXISTING_ENV", "  CONFIGURED_ONLY "})
+
+	require.Equal(t, 2, configuredCount)
+	require.Equal(t, []string{"BEARER_TOKEN", "DUPLICATE_MISSING", "MISSING_REQUIRED"}, missingNames)
+}
+
 func TestOverviewRunStatus(t *testing.T) {
 	require.Equal(t, OverviewRunStatusNone, overviewRunStatus(""))
 	require.Equal(t, OverviewRunStatusRunning, overviewRunStatus("running"))

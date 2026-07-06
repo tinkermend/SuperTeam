@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +36,9 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	cfg, ok := testConfig()
 	if !ok {
+		if shouldRunWithoutStorageQueryTestDB() {
+			os.Exit(m.Run())
+		}
 		fmt.Fprintln(os.Stderr, "skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL for a dedicated cleanable test environment")
 		os.Exit(0)
 	}
@@ -68,6 +73,27 @@ func TestMain(m *testing.M) {
 	testDB.Close()
 
 	os.Exit(code)
+}
+
+func shouldRunWithoutStorageQueryTestDB() bool {
+	const staticTestName = "TestGeneratedSchedulingSkillCountQueryMatchesEffectiveSkillPrecedence"
+	for i, arg := range os.Args {
+		var pattern string
+		switch {
+		case strings.HasPrefix(arg, "-test.run="):
+			pattern = strings.TrimPrefix(arg, "-test.run=")
+		case arg == "-test.run" && i+1 < len(os.Args):
+			pattern = os.Args[i+1]
+		}
+		if pattern == "" {
+			continue
+		}
+		matched, err := regexp.MatchString(pattern, staticTestName)
+		if err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func testConfig() (testenv.StorageQueryConfig, bool) {
@@ -1889,6 +1915,54 @@ func TestListRequiredToolsForNodeReturnsMountedSkillTools(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gh", "jq", "make"}, tools)
+}
+
+func TestGetDigitalEmployeeSchedulingSkillCountsUsesTeamPrecedence(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	db := newQueriesTestDB(t)
+	q := queries.New(db)
+	ctx := context.Background()
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "scheduling-skills", "Scheduling Skills")
+	ownerID := seedTestAuthUser(t, db, "scheduling-skill-owner")
+	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, ownerID, "Scheduling Skill Employee")
+
+	insertSkill := func(slug string) uuid.UUID {
+		t.Helper()
+		skillID := uuid.New()
+		_, err := db.Exec(ctx, `
+			INSERT INTO skills (
+				id, tenant_id, slug, name, description,
+				archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
+			) VALUES ($1, $2, $3, $3, '', 's3://skills/' || $3, $3 || '.zip', 1, repeat('a', 64), 1)
+		`, skillID, tenantID, slug)
+		require.NoError(t, err)
+		return skillID
+	}
+	duplicateSkillID := insertSkill("duplicate-scheduling-skill")
+	teamOnlySkillID := insertSkill("team-only-scheduling-skill")
+	personalOnlySkillID := insertSkill("personal-only-scheduling-skill")
+
+	_, err := db.Exec(ctx, `
+		INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+		VALUES ($1, $2, $4), ($1, $3, $4)
+	`, tenantID, duplicateSkillID, teamOnlySkillID, teamID)
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)
+		VALUES ($1, $2, $4, 'enabled'), ($1, $3, $4, 'enabled')
+	`, tenantID, duplicateSkillID, personalOnlySkillID, employeeID)
+	require.NoError(t, err)
+
+	counts, err := q.GetDigitalEmployeeSchedulingSkillCounts(ctx, queries.GetDigitalEmployeeSchedulingSkillCountsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), counts.PersonalSkillCount)
+	assert.Equal(t, int32(2), counts.InheritedSkillCount)
 }
 
 func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {

@@ -884,6 +884,67 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 	return i, err
 }
 
+const GetDigitalEmployeeSchedulingSkillCounts = `-- name: GetDigitalEmployeeSchedulingSkillCounts :one
+WITH target_employee AS (
+    SELECT tenant_id, id AS digital_employee_id, team_id
+    FROM digital_employees
+    WHERE tenant_id = $1::uuid
+      AND id = $2::uuid
+      AND deleted_at IS NULL
+),
+personal_skills AS (
+    SELECT sab.skill_id
+    FROM target_employee te
+    JOIN skill_agent_bindings sab
+      ON sab.tenant_id = te.tenant_id
+     AND sab.digital_employee_id = te.digital_employee_id
+     AND sab.status = 'enabled'
+    JOIN skills s
+      ON s.tenant_id = sab.tenant_id
+     AND s.id = sab.skill_id
+     AND s.deleted_at IS NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM skill_team_bindings inherited_binding
+        WHERE inherited_binding.tenant_id = te.tenant_id
+          AND inherited_binding.team_id = te.team_id
+          AND inherited_binding.skill_id = sab.skill_id
+    )
+),
+inherited_skills AS (
+    SELECT stb.skill_id
+    FROM target_employee te
+    JOIN skill_team_bindings stb
+      ON stb.tenant_id = te.tenant_id
+     AND stb.team_id = te.team_id
+    JOIN skills s
+      ON s.tenant_id = stb.tenant_id
+     AND s.id = stb.skill_id
+     AND s.deleted_at IS NULL
+)
+SELECT
+    COALESCE((SELECT COUNT(*) FROM personal_skills), 0)::int AS personal_skill_count,
+    COALESCE((SELECT COUNT(*) FROM inherited_skills), 0)::int AS inherited_skill_count
+FROM target_employee
+`
+
+type GetDigitalEmployeeSchedulingSkillCountsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type GetDigitalEmployeeSchedulingSkillCountsRow struct {
+	PersonalSkillCount  int32 `json:"personal_skill_count"`
+	InheritedSkillCount int32 `json:"inherited_skill_count"`
+}
+
+func (q *Queries) GetDigitalEmployeeSchedulingSkillCounts(ctx context.Context, arg GetDigitalEmployeeSchedulingSkillCountsParams) (GetDigitalEmployeeSchedulingSkillCountsRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeSchedulingSkillCounts, arg.TenantID, arg.DigitalEmployeeID)
+	var i GetDigitalEmployeeSchedulingSkillCountsRow
+	err := row.Scan(&i.PersonalSkillCount, &i.InheritedSkillCount)
+	return i, err
+}
+
 const GetProjectTaskRunPreflight = `-- name: GetProjectTaskRunPreflight :one
 SELECT
     de.tenant_id,

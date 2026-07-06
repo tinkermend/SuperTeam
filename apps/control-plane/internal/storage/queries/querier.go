@@ -179,6 +179,7 @@ type Querier interface {
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
 	GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error)
 	GetDigitalEmployeeRunStats(ctx context.Context, arg GetDigitalEmployeeRunStatsParams) (GetDigitalEmployeeRunStatsRow, error)
+	GetDigitalEmployeeSchedulingSkillCounts(ctx context.Context, arg GetDigitalEmployeeSchedulingSkillCountsParams) (GetDigitalEmployeeSchedulingSkillCountsRow, error)
 	GetDigitalEmployeeWorkspaceFileByPath(ctx context.Context, arg GetDigitalEmployeeWorkspaceFileByPathParams) (DigitalEmployeeWorkspaceFile, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
