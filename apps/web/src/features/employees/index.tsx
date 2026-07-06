@@ -83,21 +83,9 @@ const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3Tone> = 
   needs_configuration: "mute",
 };
 
-/** 状态环颜色（实色圆点，用于头像右下角）。 */
-const operationalStatusRingColor: Record<DigitalEmployeeOperationalStatus, string> = {
-  working: "bg-v3-info",
-  idle: "bg-v3-ok",
-  queued: "bg-v3-warn",
-  waiting_human: "bg-v3-warn",
-  error: "bg-v3-danger",
-  unavailable: "bg-v3-mute",
-  needs_configuration: "bg-v3-mute",
-};
-
 type OperationalStatusPresentation = {
   label: string;
   tone: V3Tone;
-  ringColor: string;
 };
 
 function operationalStatusPresentation(status?: string): OperationalStatusPresentation {
@@ -105,11 +93,10 @@ function operationalStatusPresentation(status?: string): OperationalStatusPresen
     return {
       label: operationalStatusLabel[status],
       tone: operationalStatusTone[status],
-      ringColor: operationalStatusRingColor[status],
     };
   }
 
-  return { label: "状态未知", tone: "mute", ringColor: "bg-v3-mute" };
+  return { label: "状态未知", tone: "mute" };
 }
 
 function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {
@@ -523,7 +510,7 @@ function GalleryFilterBar({
 
 /* ============================================================
  * 头像优先画廊卡（AvatarGalleryCard）
- * 方向 C：居中大头像 + 状态环 + 角色徽章 + 紧凑指标行
+ * 方向 C：居中大头像 + 角色徽章 + 紧凑指标行
  * ============================================================ */
 
 function AvatarGalleryCard({
@@ -558,17 +545,10 @@ function AvatarGalleryCard({
     >
       {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
 
-      {/* 头像区：居中 + 状态环 */}
+      {/* 头像区：居中 */}
       <div className="flex flex-col items-center gap-2 pb-3">
         <div className="relative">
           <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
-          <span
-            aria-hidden
-            className={cn(
-              "absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-v3-card",
-              operationalStatus.ringColor,
-            )}
-          />
         </div>
         <div className="w-full text-center">
           <p className="truncate text-[13.5px] font-bold text-v3-ink">{identity.name}</p>
@@ -731,7 +711,7 @@ function EmployeeCardPagination({
 
 /* ============================================================
  * 右侧栏（GalleryRail）
- * 方向 C：待处理队列 + 选中员工（大头像 + 状态环 + 事件流）
+ * 方向 C：待处理队列 + 选中员工（大头像 + 事件流）
  * ============================================================ */
 
 function GalleryRail({
@@ -828,13 +808,6 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
       <div className="flex flex-col items-center gap-2">
         <div className="relative">
           <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
-          <span
-            aria-hidden
-            className={cn(
-              "absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-v3-card",
-              operationalStatus.ringColor,
-            )}
-          />
         </div>
         <div className="text-center">
           <div className="flex items-center justify-center gap-2">
