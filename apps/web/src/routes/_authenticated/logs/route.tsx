@@ -1,8 +1,8 @@
-import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ScrollText } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   component: LogsLayout,
@@ -15,9 +15,8 @@ const tabItems = [
 ] as const;
 
 function LogsLayout() {
-  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const activeTab = tabItems.find((t) => pathname.startsWith(t.to))?.value ?? "login";
+  const activeValue = tabItems.find((t) => pathname.startsWith(t.to))?.value ?? "login";
 
   return (
     <>
@@ -29,26 +28,22 @@ function LogsLayout() {
       />
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
-          <Tabs
-            value={activeTab}
-            onValueChange={(v) => {
-              const tab = tabItems.find((t) => t.value === v);
-              if (tab) navigate({ to: tab.to });
-            }}
-            className="gap-4"
-          >
-            <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3">
-              {tabItems.map((tab) => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:ring-v3-brand/60 focus-visible:ring-offset-v3-bg data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-                >
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <nav className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 shadow-v3 flex">
+            {tabItems.map((tab) => (
+              <Link
+                key={tab.value}
+                to={tab.to}
+                className={cn(
+                  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
+                  activeValue === tab.value
+                    ? "bg-v3-brand-soft text-v3-brand-deep"
+                    : "text-v3-ink-2"
+                )}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
           <Outlet />
         </div>
       </Main>
