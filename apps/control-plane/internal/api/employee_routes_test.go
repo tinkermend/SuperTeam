@@ -379,6 +379,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	var readinessBody struct {
 		EmployeeID                uuid.UUID `json:"employee_id"`
+		Status                    string    `json:"status"`
 		ReadyForProjectScheduling bool      `json:"ready_for_project_scheduling"`
 		ProjectExecutionSource    string    `json:"project_execution_source"`
 		Checks                    []struct {
@@ -406,7 +407,10 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if err := json.NewDecoder(readinessResp.Body).Decode(&readinessBody); err != nil {
 		t.Fatalf("decode scheduling readiness response: %v", err)
 	}
-	if readinessBody.EmployeeID != employeeID || !readinessBody.ReadyForProjectScheduling || readinessBody.ProjectExecutionSource != "project_runtime_readiness" {
+	if readinessBody.EmployeeID != employeeID ||
+		readinessBody.Status != string(employee.DigitalEmployeeStatusReady) ||
+		!readinessBody.ReadyForProjectScheduling ||
+		readinessBody.ProjectExecutionSource != "project_runtime_readiness" {
 		t.Fatalf("unexpected scheduling readiness response identity/status: %#v", readinessBody)
 	}
 	if len(readinessBody.Checks) != 1 || readinessBody.Checks[0].Code != "employee_status" || readinessBody.Checks[0].Status != string(employee.ReadinessCheckPassed) {

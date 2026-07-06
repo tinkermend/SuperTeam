@@ -1163,6 +1163,7 @@ type effectiveConfigResponse struct {
 
 type schedulingReadinessResponse struct {
 	EmployeeID                string                                  `json:"employee_id"`
+	Status                    DigitalEmployeeStatus                   `json:"status"`
 	ReadyForProjectScheduling bool                                    `json:"ready_for_project_scheduling"`
 	ProjectExecutionSource    string                                  `json:"project_execution_source"`
 	Checks                    []schedulingReadinessCheckResponse      `json:"checks"`
@@ -1274,6 +1275,7 @@ func schedulingReadinessResponseFromDomain(readiness *DigitalEmployeeSchedulingR
 	}
 	return schedulingReadinessResponse{
 		EmployeeID:                readiness.EmployeeID.String(),
+		Status:                    readiness.Status,
 		ReadyForProjectScheduling: readiness.ReadyForProjectScheduling,
 		ProjectExecutionSource:    readiness.ProjectExecutionSource,
 		Checks:                    checks,
