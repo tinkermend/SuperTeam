@@ -9815,6 +9815,7 @@ components:
       type: object
       required:
         - employee_id
+        - status
         - ready_for_project_scheduling
         - project_execution_source
         - checks
@@ -9823,6 +9824,8 @@ components:
         employee_id:
           type: string
           format: uuid
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeStatus"
         ready_for_project_scheduling:
           type: boolean
         project_execution_source:

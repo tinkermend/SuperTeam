@@ -2798,6 +2798,7 @@ type DigitalEmployeeSchedulingReadiness struct {
 	EmployeeId                openapi_types.UUID              `json:"employee_id"`
 	ProjectExecutionSource    string                          `json:"project_execution_source"`
 	ReadyForProjectScheduling bool                            `json:"ready_for_project_scheduling"`
+	Status                    DigitalEmployeeStatus           `json:"status"`
 }
 
 // DigitalEmployeeStatus defines model for DigitalEmployeeStatus.

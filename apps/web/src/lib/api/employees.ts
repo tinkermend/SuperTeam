@@ -180,6 +180,7 @@ export type SchedulingReadinessCapabilities = {
 
 export type DigitalEmployeeSchedulingReadiness = {
   employee_id: string;
+  status: DigitalEmployeeStatus;
   ready_for_project_scheduling: boolean;
   project_execution_source: string;
   checks: SchedulingReadinessCheck[];
