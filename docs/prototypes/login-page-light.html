@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>炬枢平台 · 登录</title>
+<style>
+  :root {
+    --page-bg: #F2F6FB;
+    --blob: #E4EEFA;
+    --card-bg: #FFFFFF;
+    --border: #D3D1C7;
+    --border-input: #B4B2A9;
+    --brand: #378ADD;
+    --brand-dark: #185FA5;
+    --brand-deep: #0C447C;
+    --text-strong: #042C53;
+    --text: #444441;
+    --text-muted: #888780;
+    --hint: #B4B2A9;
+    --focus-ring: rgba(55, 138, 221, 0.18);
+    --radius-card: 16px;
+    --radius-field: 8px;
+    --font: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--page-bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ---------- Background decoration ---------- */
+  .bg-decor {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+  }
+  .bg-blob {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--blob);
+    filter: blur(2px);
+  }
+  .bg-blob--tl { width: 360px; height: 360px; top: -120px; left: -100px; }
+  .bg-blob--br { width: 440px; height: 440px; bottom: -160px; right: -140px; }
+  .bg-constellation { position: absolute; }
+  .bg-constellation--tr { top: 28px; right: 36px; }
+  .bg-constellation--bl { bottom: 28px; left: 36px; }
+
+  /* ---------- Login wrapper ---------- */
+  .login-wrap {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
+    padding: 24px;
+  }
+
+  .login-card {
+    background: var(--card-bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 36px 28px 32px;
+    width: 100%;
+  }
+
+  /* ---------- Brand header ---------- */
+  .brand {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .brand-logo {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 14px;
+    display: block;
+  }
+  .brand-title {
+    font-size: 19px;
+    font-weight: 500;
+    color: var(--text-strong);
+    margin: 0;
+    letter-spacing: 0.5px;
+  }
+  .brand-sub {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+  }
+
+  .divider {
+    height: 0.5px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ---------- Form ---------- */
+  .field { margin-bottom: 18px; }
+  .field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 7px;
+  }
+  .input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+    display: flex;
+  }
+  .input {
+    width: 100%;
+    height: 42px;
+    padding: 0 40px 0 34px;
+    font-family: var(--font);
+    font-size: 14px;
+    color: var(--text-strong);
+    background: var(--card-bg);
+    border: 0.5px solid var(--border-input);
+    border-radius: var(--radius-field);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .input::placeholder { color: var(--hint); }
+  .input:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  .input-icon--toggle {
+    position: absolute;
+    right: 10px;
+    left: auto;
+    background: none;
+    border: none;
+    padding: 4px;
+    margin: 0;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    border-radius: 6px;
+  }
+  .input-icon--toggle:hover { color: var(--brand); }
+  .input-icon--toggle:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  /* ---------- Remember / forgot ---------- */
+  .form-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 4px 0 20px;
+  }
+  .remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+  .remember input {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--brand);
+    margin: 0;
+    cursor: pointer;
+  }
+  .forgot {
+    font-size: 12px;
+    color: var(--brand);
+    text-decoration: none;
+  }
+  .forgot:hover { color: var(--brand-dark); text-decoration: underline; }
+  .forgot:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* ---------- Button ---------- */
+  .btn-login {
+    width: 100%;
+    height: 42px;
+    border: none;
+    border-radius: var(--radius-field);
+    background: var(--brand);
+    color: #FFFFFF;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 150ms ease, transform 150ms ease;
+  }
+  .btn-login:hover { background: var(--brand-dark); transform: translateY(-1px); }
+  .btn-login:active { transform: translateY(0); }
+  .btn-login:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 480px) {
+    .login-wrap { padding: 16px; max-width: 100%; }
+    .login-card { padding: 28px 20px 24px; }
+    .bg-constellation--tr { right: 12px; top: 12px; }
+    .bg-constellation--bl { left: 12px; bottom: 12px; }
+  }
+</style>
+</head>
+<body>
+  <!-- Background decoration -->
+  <div class="bg-decor" aria-hidden="true">
+    <div class="bg-blob bg-blob--tl"></div>
+    <div class="bg-blob bg-blob--br"></div>
+
+    <!-- Top-right constellation -->
+    <svg class="bg-constellation bg-constellation--tr" width="92" height="92" viewBox="0 0 92 92" fill="none">
+      <line x1="80" y1="12" x2="60" y2="34" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="60" y1="34" x2="86" y2="40" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="60" y1="34" x2="48" y2="62" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="60" y1="34" x2="78" y2="68" stroke="#C9DEF7" stroke-width="1"/>
+      <circle cx="80" cy="12" r="3" fill="#B5D4F4"/>
+      <circle cx="60" cy="34" r="3.5" fill="#B5D4F4"/>
+      <circle cx="86" cy="40" r="2.5" fill="#B5D4F4"/>
+      <circle cx="48" cy="62" r="2.5" fill="#B5D4F4"/>
+      <circle cx="78" cy="68" r="2" fill="#B5D4F4"/>
+    </svg>
+
+    <!-- Bottom-left constellation -->
+    <svg class="bg-constellation bg-constellation--bl" width="92" height="92" viewBox="0 0 92 92" fill="none">
+      <line x1="12" y1="80" x2="32" y2="58" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="32" y1="58" x2="6" y2="52" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="32" y1="58" x2="44" y2="30" stroke="#C9DEF7" stroke-width="1"/>
+      <line x1="32" y1="58" x2="14" y2="24" stroke="#C9DEF7" stroke-width="1"/>
+      <circle cx="12" cy="80" r="3" fill="#B5D4F4"/>
+      <circle cx="32" cy="58" r="3.5" fill="#B5D4F4"/>
+      <circle cx="6" cy="52" r="2.5" fill="#B5D4F4"/>
+      <circle cx="44" cy="30" r="2.5" fill="#B5D4F4"/>
+      <circle cx="14" cy="24" r="2" fill="#B5D4F4"/>
+    </svg>
+  </div>
+
+  <!-- Login card -->
+  <main class="login-wrap">
+    <section class="login-card" aria-label="账号登录">
+      <header class="brand">
+        <svg class="brand-logo" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+          <circle cx="28" cy="28" r="18" fill="#E6F1FB"/>
+          <line x1="28" y1="28" x2="14" y2="23" stroke="#378ADD" stroke-width="1.5"/>
+          <line x1="28" y1="28" x2="42" y2="23" stroke="#378ADD" stroke-width="1.5"/>
+          <line x1="28" y1="28" x2="14" y2="36" stroke="#378ADD" stroke-width="1.5"/>
+          <line x1="28" y1="28" x2="42" y2="36" stroke="#378ADD" stroke-width="1.5"/>
+          <circle cx="28" cy="28" r="4.5" fill="#378ADD"/>
+          <circle cx="14" cy="23" r="3" fill="#378ADD"/>
+          <circle cx="42" cy="23" r="3" fill="#378ADD"/>
+          <circle cx="14" cy="36" r="3" fill="#378ADD"/>
+          <circle cx="42" cy="36" r="3" fill="#378ADD"/>
+        </svg>
+        <h1 class="brand-title">炬枢平台</h1>
+        <p class="brand-sub">新炬网络</p>
+      </header>
+
+      <div class="divider"></div>
+
+      <form autocomplete="on" onsubmit="return false;">
+        <div class="field">
+          <label class="field-label" for="account">账号</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="5.5" r="3" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M2.5 13.5C3.5 10.5 12.5 10.5 13.5 13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <input class="input" id="account" name="account" type="text" placeholder="请输入账号" autocomplete="username" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="password">密码</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M5.5 7V5.2A2.5 2.5 0 0 1 10.5 5.2V7" stroke="currentColor" stroke-width="1.3"/>
+              </svg>
+            </span>
+            <input class="input" id="password" name="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
+            <button type="button" class="input-icon--toggle" id="togglePwd" aria-label="显示密码" aria-pressed="false">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+                <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="remember">
+            <input type="checkbox" name="remember" /> 记住我
+          </label>
+          <a class="forgot" href="#">忘记密码？</a>
+        </div>
+
+        <button class="btn-login" type="submit">登录</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('togglePwd');
+      var pwd = document.getElementById('password');
+      btn.addEventListener('click', function () {
+        var show = pwd.type === 'password';
+        pwd.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', String(show));
+        btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>平台事件 · 运维监控台（v3 Soft-Flat）</title>
+<style>
+  :root {
+    --v3-bg: #f8fafc; --v3-shell-bg: #f6f8fb; --v3-card: #ffffff; --v3-card-soft: #f7f8fa; --v3-card-inner: #fafbfc;
+    --v3-ink: #0b0d12; --v3-ink-2: #4d586b; --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4; --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff; --v3-brand-deep: #2348e0; --v3-brand-soft: #e9efff;
+    --v3-info: #0094b7; --v3-info-text: #00617d; --v3-info-soft: #def8fe;
+    --v3-ok: #009a60; --v3-ok-text: #006639; --v3-ok-soft: #e3f9ec;
+    --v3-warn: #bb6900; --v3-warn-text: #7f3f00; --v3-warn-soft: #ffefdf;
+    --v3-danger: #d14647; --v3-danger-text: #8a2f2d; --v3-danger-soft: #ffece9;
+    --v3-artifact: #9565c7; --v3-artifact-text: #633d89; --v3-artifact-soft: #f7eeff;
+    --v3-mute: #64748b; --v3-mute-text: #4d586b; --v3-mute-soft: #eef1f4;
+    --v3-r-card: 22px; --v3-r-inner: 14px; --v3-r-pill: 8px;
+    --v3-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+    --font-sans: 'Inter', system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: var(--v3-shell-bg); color: var(--v3-ink); -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.5; }
+  .page { display: flex; min-height: 100vh; }
+
+  .sidebar { width: 232px; flex-shrink: 0; background: var(--v3-card); border-right: 1px solid var(--v3-line); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 16px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; box-shadow: 0 4px 10px rgba(47,95,255,0.3); }
+  .brand-name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+  .nav-section { margin-top: 10px; }
+  .nav-label { font-size: 11px; font-weight: 700; color: var(--v3-ink-3); padding: 10px 10px 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; color: var(--v3-ink-2); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+  .nav-item:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .nav-item.active { background: var(--v3-brand-soft); color: var(--v3-brand-deep); font-weight: 600; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .nav-item .count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; }
+  .nav-sub { padding-left: 26px; }
+  .nav-sub .nav-item { font-size: 13px; padding: 6px 10px; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 60px; border-bottom: 1px solid var(--v3-line); background: rgba(255,255,255,0.78); backdrop-filter: blur(20px); display: flex; align-items: center; gap: 14px; padding: 0 28px; position: sticky; top: 0; z-index: 20; }
+  .crumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--v3-ink-3); }
+  .crumb b { color: var(--v3-ink); font-weight: 700; }
+  .crumb svg { width: 13px; height: 13px; opacity: 0.5; }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--v3-line-strong); background: var(--v3-card); display: grid; place-items: center; cursor: pointer; color: var(--v3-ink-2); }
+  .icon-btn:hover { color: var(--v3-brand-deep); border-color: var(--v3-brand); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .avatar-chip { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 3px; border: 1px solid var(--v3-line-strong); border-radius: 999px; background: var(--v3-card); }
+  .avatar-chip .av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#e9efff,#c7d4ff); display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--v3-brand-deep); }
+  .avatar-chip span { font-size: 12.5px; font-weight: 600; }
+
+  .content { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1640px; width: 100%; }
+
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all .15s ease; white-space: nowrap; }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--v3-brand); color: #fff; box-shadow: 0 2px 6px rgba(47,95,255,0.22); }
+  .btn-primary:hover { background: var(--v3-brand-deep); }
+  .btn-ghost { background: transparent; color: var(--v3-ink-2); }
+  .btn-ghost:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .btn-outline { background: var(--v3-card); color: var(--v3-ink); border-color: var(--v3-line-strong); }
+  .btn-outline:hover { border-color: var(--v3-brand); color: var(--v3-brand-deep); }
+  .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .page-head-left { display: flex; align-items: center; gap: 12px; }
+  .head-icon { width: 38px; height: 38px; border-radius: 11px; background: var(--v3-mute-soft); display: grid; place-items: center; color: var(--v3-ink-2); flex-shrink: 0; }
+  .head-icon svg { width: 19px; height: 19px; }
+  .page-head h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -0.02em; }
+  .page-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--v3-ink-2); }
+  .page-head-actions { display: flex; align-items: center; gap: 8px; }
+  .live-dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--v3-ok-text); padding: 0 11px; height: 28px; border-radius: 999px; background: var(--v3-ok-soft); }
+  .live-dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--v3-ok); box-shadow: 0 0 0 3px rgba(0,154,96,0.2); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Severity distribution strip */
+  .sev-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .sev-card { background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: var(--v3-r-inner); padding: 13px 15px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 2px rgba(16,24,40,0.03); position: relative; overflow: hidden; cursor: pointer; transition: all .15s ease; }
+  .sev-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,24,40,0.08); }
+  .sev-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .sev-card.info::before { background: var(--v3-info); }
+  .sev-card.ok::before { background: var(--v3-ok); }
+  .sev-card.warn::before { background: var(--v3-warn); }
+  .sev-card.danger::before { background: var(--v3-danger); }
+  .sev-card.warn { background: linear-gradient(180deg, var(--v3-warn-soft) 0%, var(--v3-card) 70%); border-color: rgba(187,105,0,0.18); }
+  .sev-card.danger { background: linear-gradient(180deg, var(--v3-danger-soft) 0%, var(--v3-card) 70%); border-color: rgba(209,70,71,0.18); }
+  .sev-card.active { box-shadow: 0 0 0 2px var(--v3-brand), 0 4px 12px rgba(47,95,255,0.15); }
+  .sev-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
+  .sev-icon svg { width: 17px; height: 17px; }
+  .sev-icon.info { background: var(--v3-info-soft); color: var(--v3-info-text); }
+  .sev-icon.ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); }
+  .sev-icon.warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); }
+  .sev-icon.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); }
+  .sev-body { min-width: 0; flex: 1; }
+  .sev-label { font-size: 11.5px; color: var(--v3-ink-3); font-weight: 600; }
+  .sev-value { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .sev-value.danger { color: var(--v3-danger-text); }
+  .sev-value.warn { color: var(--v3-warn-text); }
+  .sev-sub { font-size: 11px; color: var(--v3-ink-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .sev-bar { height: 4px; border-radius: 2px; background: var(--v3-line); margin-top: 6px; overflow: hidden; }
+  .sev-bar > i { display: block; height: 100%; border-radius: 2px; }
+
+  .surface { background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow); overflow: hidden; }
+
+  .filter-bar { border-bottom: 1px solid var(--v3-line); padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip-label { font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin-right: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: var(--v3-r-pill); border: 1px solid var(--v3-line-strong); background: var(--v3-card); font-size: 12.5px; font-weight: 600; color: var(--v3-ink-2); cursor: pointer; transition: all .15s ease; }
+  .chip:hover { border-color: var(--v3-brand); color: var(--v3-brand-deep); }
+  .chip.active { background: var(--v3-brand); color: #fff; border-color: var(--v3-brand); box-shadow: 0 2px 5px rgba(47,95,255,0.25); }
+  .chip .badge { font-size: 10.5px; font-weight: 700; background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+  .chip.active .badge { background: rgba(255,255,255,0.22); }
+  .chip.danger { color: var(--v3-danger-text); border-color: rgba(209,70,71,0.25); }
+  .chip.danger.active { background: var(--v3-danger); border-color: var(--v3-danger); color: #fff; }
+  .chip.warn { color: var(--v3-warn-text); border-color: rgba(187,105,0,0.25); }
+  .chip.warn.active { background: var(--v3-warn); border-color: var(--v3-warn); color: #fff; }
+  .chip.ok { color: var(--v3-ok-text); border-color: rgba(0,154,96,0.25); }
+  .chip.ok.active { background: var(--v3-ok); border-color: var(--v3-ok); color: #fff; }
+  .chip.info { color: var(--v3-info-text); border-color: rgba(0,148,183,0.25); }
+  .chip.info.active { background: var(--v3-info); border-color: var(--v3-info); color: #fff; }
+  .filter-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; font-weight: 700; color: var(--v3-ink-2); }
+  .field .ctrl { height: 32px; padding: 0 11px; border: 1px solid var(--v3-line-strong); border-radius: 9px; background: var(--v3-card); font-family: inherit; font-size: 13px; color: var(--v3-ink); min-width: 130px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .field .ctrl.mono { font-family: var(--font-mono); font-size: 12px; }
+  .field .ctrl svg { width: 13px; height: 13px; color: var(--v3-ink-3); margin-left: auto; }
+  .filter-spacer { flex: 1; }
+
+  .md-layout { display: grid; grid-template-columns: 1fr 400px; min-height: 540px; }
+  .md-list { min-width: 0; border-right: 1px solid var(--v3-line); display: flex; flex-direction: column; }
+  .md-detail { background: var(--v3-card-inner); display: flex; flex-direction: column; }
+
+  .table-wrap { overflow-x: auto; flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { position: sticky; top: 0; background: var(--v3-card-soft); text-align: left; font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.03em; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--v3-line-strong); white-space: nowrap; z-index: 2; }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--v3-line); vertical-align: middle; }
+  tbody tr { cursor: pointer; transition: background .12s ease; position: relative; }
+  tbody tr:hover { background: var(--v3-card-soft); }
+  tbody tr.selected { background: var(--v3-brand-soft); }
+  tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--v3-brand); }
+  tbody tr.danger-row td:first-child { box-shadow: inset 3px 0 0 var(--v3-danger); }
+  tbody tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--v3-warn); }
+  tbody tr.danger-row.selected td:first-child { box-shadow: inset 3px 0 0 var(--v3-brand); }
+  tbody tr.warn-row.selected td:first-child { box-shadow: inset 3px 0 0 var(--v3-brand); }
+  tbody tr:last-child td { border-bottom: none; }
+  .t-time { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .t-time .rel { display: block; font-size: 11px; color: var(--v3-ink-3); font-weight: 500; }
+  .t-mono { font-family: var(--font-mono); font-size: 12px; color: var(--v3-ink-2); }
+  .t-truncate { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-title { font-weight: 600; font-size: 12.5px; }
+  .t-desc { font-size: 11px; color: var(--v3-ink-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+  .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .pill.ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); } .pill.ok::before { background: var(--v3-ok); }
+  .pill.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); } .pill.danger::before { background: var(--v3-danger); }
+  .pill.mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); } .pill.mute::before { background: var(--v3-mute); }
+  .pill.info { background: var(--v3-info-soft); color: var(--v3-info-text); } .pill.info::before { background: var(--v3-info); }
+  .pill.warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); } .pill.warn::before { background: var(--v3-warn); }
+  .pill.artifact { background: var(--v3-artifact-soft); color: var(--v3-artifact-text); } .pill.artifact::before { background: var(--v3-artifact); }
+
+  .src-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--v3-ink-2); }
+  .src-tag svg { width: 12px; height: 12px; color: var(--v3-ink-3); }
+
+  .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 18px; border-top: 1px solid var(--v3-line); }
+  .pagination .info { font-size: 12px; color: var(--v3-ink-2); font-variant-numeric: tabular-nums; }
+  .pagination .nav { display: flex; gap: 6px; }
+
+  .detail-head { padding: 16px 18px; border-bottom: 1px solid var(--v3-line); display: flex; align-items: flex-start; gap: 12px; }
+  .detail-head .ic-lg { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; }
+  .detail-head .ic-lg.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); }
+  .detail-head .ic-lg svg { width: 19px; height: 19px; }
+  .detail-head .meta { min-width: 0; flex: 1; }
+  .detail-head .meta h3 { margin: 0; font-size: 15px; font-weight: 800; line-height: 1.3; }
+  .detail-head .meta .sub { font-size: 12px; color: var(--v3-ink-3); margin-top: 3px; font-family: var(--font-mono); }
+  .detail-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .detail-section { padding: 14px 18px; border-bottom: 1px solid var(--v3-line); }
+  .detail-section:last-child { border-bottom: none; }
+  .detail-section h4 { margin: 0 0 10px; font-size: 11px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+  .kv { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+  .kv .k { color: var(--v3-ink-3); width: 92px; flex-shrink: 0; font-weight: 600; }
+  .kv .v { color: var(--v3-ink); font-weight: 500; word-break: break-all; }
+  .kv .v.mono { font-family: var(--font-mono); font-size: 12px; }
+  .kv .v.copy { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .kv .v.copy:hover { color: var(--v3-brand-deep); }
+  .kv .v.copy svg { width: 12px; height: 12px; opacity: 0.5; }
+  .alert-box { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; background: var(--v3-danger-soft); border: 1px solid rgba(209,70,71,0.2); border-radius: 10px; }
+  .alert-box svg { width: 16px; height: 16px; color: var(--v3-danger); flex-shrink: 0; margin-top: 1px; }
+  .alert-body b { color: var(--v3-danger-text); display: block; margin-bottom: 2px; font-size: 12.5px; }
+  .alert-body span { color: var(--v3-danger-text); font-size: 12.5px; }
+  .node-card { display: flex; align-items: center; gap: 10px; padding: 11px 13px; background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: 10px; }
+  .node-card .nc-ic { width: 32px; height: 32px; border-radius: 9px; background: var(--v3-mute-soft); color: var(--v3-ink-2); display: grid; place-items: center; flex-shrink: 0; }
+  .node-card .nc-ic svg { width: 16px; height: 16px; }
+  .node-card .nc-body { min-width: 0; flex: 1; }
+  .node-card .nc-type { font-size: 11px; font-weight: 700; color: var(--v3-ink-3); text-transform: uppercase; letter-spacing: 0.04em; }
+  .node-card .nc-id { font-family: var(--font-mono); font-size: 12px; color: var(--v3-ink); font-weight: 600; margin-top: 1px; }
+  .corr-box { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--v3-card-soft); border: 1px solid var(--v3-line); border-radius: 9px; }
+  .corr-box .ct { font-size: 11px; font-weight: 700; color: var(--v3-artifact-text); text-transform: uppercase; }
+  .corr-box .cid { font-family: var(--font-mono); font-size: 12px; color: var(--v3-ink-2); }
+  .corr-box .copy-ic { margin-left: auto; cursor: pointer; color: var(--v3-ink-3); }
+  .corr-box .copy-ic:hover { color: var(--v3-brand-deep); }
+  .corr-box .copy-ic svg { width: 13px; height: 13px; }
+  .payload-box { background: #0d1014; border-radius: 9px; padding: 12px 14px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: #c8d3e0; overflow-x: auto; }
+  .payload-box .k { color: #8ab4ff; }
+  .payload-box .s { color: #7ee2a8; }
+  .payload-box .n { color: #ffb37e; }
+  .payload-box .p { color: #6d7580; }
+  .related-list { display: flex; flex-direction: column; gap: 6px; }
+  .related-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: 8px; cursor: pointer; transition: all .12s ease; }
+  .related-item:hover { border-color: var(--v3-brand); background: var(--v3-brand-soft); }
+  .related-item .ri-time { font-size: 11.5px; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; width: 100px; flex-shrink: 0; }
+  .related-item .ri-event { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--v3-ink-2); }
+
+  .legend { display: flex; align-items: center; gap: 14px; font-size: 11.5px; color: var(--v3-ink-3); padding: 0 18px 10px; flex-wrap: wrap; }
+  .legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .lg .bar { width: 3px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">ST</div><div class="brand-name">SuperTeam</div></div>
+    <div class="nav-section">
+      <div class="nav-label">工作区</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>任务中枢</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/></svg>收件箱<span class="count">3</span></div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>项目管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/></svg>数字员工</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">平台管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>权限中心</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 10-16 0"/></svg>用户管理</div>
+      <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>日志管理</div>
+      <div class="nav-sub">
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>登录日志</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg>操作日志</div>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>平台事件</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">平台管理 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg> 日志管理 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg> <b>平台事件</b></div>
+      <div class="topbar-right">
+        <span class="live-dot">实时</span>
+        <button class="icon-btn" title="刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></button>
+        <div class="avatar-chip"><div class="av">管</div><span>管理员</span></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <div class="page-head-left">
+          <div class="head-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg></div>
+          <div><h1>平台事件</h1><p>Runtime 节点上线 / 掉线、能力降级与平台服务异常事件 · 用于运维监控</p></div>
+        </div>
+        <div class="page-head-actions">
+          <button class="btn btn-outline btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>导出 CSV</button>
+          <button class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>刷新</button>
+        </div>
+      </div>
+
+      <!-- Severity Distribution Strip -->
+      <div class="sev-strip">
+        <div class="sev-card info">
+          <div class="sev-icon info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+          <div class="sev-body"><div class="sev-label">信息 info</div><div class="sev-value">86</div><div class="sev-sub">24h · 占 72%</div><div class="sev-bar"><i style="width:72%;background:var(--v3-info)"></i></div></div>
+        </div>
+        <div class="sev-card ok">
+          <div class="sev-icon ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+          <div class="sev-body"><div class="sev-label">成功 success</div><div class="sev-value">24</div><div class="sev-sub">24h · 占 20%</div><div class="sev-bar"><i style="width:20%;background:var(--v3-ok)"></i></div></div>
+        </div>
+        <div class="sev-card warn">
+          <div class="sev-icon warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+          <div class="sev-body"><div class="sev-label">预警 warning</div><div class="sev-value warn">6</div><div class="sev-sub">24h · 需关注</div><div class="sev-bar"><i style="width:5%;background:var(--v3-warn)"></i></div></div>
+        </div>
+        <div class="sev-card danger active">
+          <div class="sev-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div>
+          <div class="sev-body"><div class="sev-label">错误 error</div><div class="sev-value danger">3</div><div class="sev-sub">24h · 需处置</div><div class="sev-bar"><i style="width:3%;background:var(--v3-danger)"></i></div></div>
+        </div>
+      </div>
+
+      <div class="surface">
+        <div class="filter-bar">
+          <div class="chip-row">
+            <span class="chip-label">级别</span>
+            <div class="chip active">全部 <span class="badge">119</span></div>
+            <div class="chip danger">错误 <span class="badge">3</span></div>
+            <div class="chip warn">预警 <span class="badge">6</span></div>
+            <div class="chip ok">成功 <span class="badge">24</span></div>
+            <div class="chip info">信息 <span class="badge">86</span></div>
+          </div>
+          <div class="filter-row">
+            <div class="field"><label>级别</label><div class="ctrl">错误 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="field"><label>事件类型</label><div class="ctrl mono" style="color:var(--v3-ink-3)">如 node_offline</div></div>
+            <div class="field"><label>节点</label><div class="ctrl mono" style="color:var(--v3-ink-3)">node_id</div></div>
+            <div class="field"><label>Provider</label><div class="ctrl">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="field"><label>时间范围</label><div class="ctrl">近 24 小时 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="filter-spacer"></div>
+            <button class="btn btn-ghost btn-sm">重置</button>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="lg"><span class="bar" style="background:var(--v3-danger)"></span>错误（左侧警示条）</span>
+          <span class="lg"><span class="bar" style="background:var(--v3-warn)"></span>预警（左侧警示条）</span>
+          <span class="lg"><span class="bar" style="background:var(--v3-brand)"></span>当前选中</span>
+          <span style="margin-left:auto">点击任意行查看节点、关联与 Payload</span>
+        </div>
+
+        <div class="md-layout">
+          <div class="md-list">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>时间</th><th>级别</th><th>事件类型</th><th>来源</th><th>节点</th><th>标题</th></tr></thead>
+                <tbody>
+                  <tr class="danger-row selected">
+                    <td class="t-time">15:21:52<span class="rel">4 分钟前</span></td>
+                    <td><span class="pill danger">错误</span></td>
+                    <td class="t-mono">provider.crashed</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-prod-03</td>
+                    <td><div class="t-title">Provider 进程异常退出</div><div class="t-desc">claude-code provider 在执行任务时 SIGSEGV 退出</div></td>
+                  </tr>
+                  <tr class="danger-row">
+                    <td class="t-time">15:08:14<span class="rel">17 分钟前</span></td>
+                    <td><span class="pill danger">错误</span></td>
+                    <td class="t-mono">node_offline</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-dev-02</td>
+                    <td><div class="t-title">Runtime 节点掉线</div><div class="t-desc">心跳超时 90s，节点被标记为 offline</div></td>
+                  </tr>
+                  <tr class="warn-row">
+                    <td class="t-time">14:52:33<span class="rel">33 分钟前</span></td>
+                    <td><span class="pill warn">预警</span></td>
+                    <td class="t-mono">capability.degraded</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-prod-01</td>
+                    <td><div class="t-title">节点负载过高，能力降级</div><div class="t-desc">当前负载 92%，已暂停接新任务</div></td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">14:40:09<span class="rel">45 分钟前</span></td>
+                    <td><span class="pill info">信息</span></td>
+                    <td class="t-mono">node_online</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-prod-03</td>
+                    <td><div class="t-title">Runtime 节点上线</div><div class="t-desc">节点注册成功，支持 3 个 provider</div></td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">14:25:47<span class="rel">1 小时前</span></td>
+                    <td><span class="pill ok">成功</span></td>
+                    <td class="t-mono">provider.recovered</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-dev-01</td>
+                    <td><div class="t-title">Provider 恢复正常</div><div class="t-desc">opencode provider 重启后恢复健康</div></td>
+                  </tr>
+                  <tr class="warn-row">
+                    <td class="t-time">13:58:21<span class="rel">1 小时前</span></td>
+                    <td><span class="pill warn">预警</span></td>
+                    <td class="t-mono">heartbeat.late</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-dev-02</td>
+                    <td><div class="t-title">节点心跳延迟</div><div class="t-desc">心跳间隔 45s，超过阈值 30s</div></td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">13:30:12<span class="rel">2 小时前</span></td>
+                    <td><span class="pill info">信息</span></td>
+                    <td class="t-mono">slot.released</td>
+                    <td><span class="src-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>runtime</span></td>
+                    <td class="t-mono">node-prod-01</td>
+                    <td><div class="t-title">执行槽位释放</div><div class="t-desc">任务 t_9f2a 完成，释放 1 个槽位</div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <div class="info">第 1 页 · 本页 20 条 · 共 119 条</div>
+              <div class="nav">
+                <button class="btn btn-outline btn-sm" disabled style="opacity:.5">上一页</button>
+                <button class="btn btn-outline btn-sm">下一页</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="md-detail">
+            <div class="detail-head">
+              <div class="ic-lg danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div>
+              <div class="meta"><h3>Provider 进程异常退出</h3><div class="sub">event · ev_c3f8a91b</div></div>
+              <span class="pill danger">错误</span>
+            </div>
+            <div class="detail-body">
+              <div class="detail-section">
+                <h4>事件摘要</h4>
+                <div class="kv"><div class="k">事件类型</div><div class="v mono">provider.crashed</div></div>
+                <div class="kv"><div class="k">发生时间</div><div class="v mono">2026-07-06 15:21:52</div></div>
+                <div class="kv"><div class="k">级别</div><div class="v"><span class="pill danger">错误</span></div></div>
+                <div class="kv"><div class="k">来源</div><div class="v">runtime</div></div>
+              </div>
+              <div class="detail-section">
+                <div class="alert-box">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                  <div class="alert-body"><b>claude-code provider SIGSEGV 退出</b><span>该节点近 1 小时已发生 2 次同类事件，建议检查 provider 版本或重启节点。</span></div>
+                </div>
+              </div>
+              <div class="detail-section">
+                <h4>节点信息</h4>
+                <div class="node-card">
+                  <div class="nc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg></div>
+                  <div class="nc-body"><div class="nc-type">runtime_node</div><div class="nc-id">node-prod-03</div></div>
+                  <span class="pill danger" style="margin-left:auto">offline</span>
+                </div>
+                <div class="kv" style="margin-top:8px"><div class="k">provider</div><div class="v mono">claude-code</div></div>
+                <div class="kv"><div class="k">runtime_node_id</div><div class="v mono">rn_8e2f1c4d</div></div>
+              </div>
+              <div class="detail-section">
+                <h4>关联追踪</h4>
+                <div class="corr-box"><span class="ct">task</span><span class="cid">t_9f2a3b1c</span><span class="copy-ic" title="复制"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></div>
+                <div class="kv" style="margin-top:8px"><div class="k">说明</div><div class="v" style="font-size:12px;color:var(--v3-ink-3)">该事件关联到任务 t_9f2a3b1c，可跳转查看任务执行链路。</div></div>
+              </div>
+              <div class="detail-section">
+                <h4>Payload</h4>
+                <div class="payload-box">{
+  <span class="k">"node_id"</span>: <span class="s">"node-prod-03"</span>,
+  <span class="k">"provider_type"</span>: <span class="s">"claude-code"</span>,
+  <span class="k">"signal"</span>: <span class="s">"SIGSEGV"</span>,
+  <span class="k">"exit_code"</span>: <span class="n">139</span>,
+  <span class="k">"task_id"</span>: <span class="s">"t_9f2a3b1c"</span>,
+  <span class="k">"uptime_seconds"</span>: <span class="n">842</span>,
+  <span class="k">"restart_attempt"</span>: <span class="n">2</span>,
+  <span class="k">"stack_trace_tail"</span>: <span class="p">"...truncated..."</span>
+}</div>
+              </div>
+              <div class="detail-section">
+                <h4>同节点近 1 小时</h4>
+                <div class="related-list">
+                  <div class="related-item"><span class="ri-time">15:21:52</span><span class="pill danger" style="height:18px;font-size:10px">错误</span><span class="ri-event">provider.crashed</span></div>
+                  <div class="related-item"><span class="ri-time">14:40:09</span><span class="pill info" style="height:18px;font-size:10px">信息</span><span class="ri-event">node_online</span></div>
+                  <div class="related-item"><span class="ri-time">14:12:33</span><span class="pill warn" style="height:18px;font-size:10px">预警</span><span class="ri-event">heartbeat.late</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

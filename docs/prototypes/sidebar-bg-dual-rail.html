@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>背景方案H · 双栏图标+标签 — 左侧菜单栏</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #f8fafc; }
+
+    /* ===== 双栏结构：图标栏 + 标签栏 ===== */
+    .sidebar-wrap { display: flex; }
+
+    /* 第一栏：图标栏（深色，56px） */
+    .icon-rail {
+      width: 56px;
+      background: linear-gradient(180deg, #131820 0%, #0d1014 100%);
+      display: flex; flex-direction: column;
+      align-items: center;
+      padding: 16px 0 14px;
+      gap: 4px;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .icon-rail .brand-mark {
+      width: 32px; height: 32px;
+      background: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+      border-radius: 9px;
+      box-shadow: 0 0 14px rgba(91, 139, 255, 0.4);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 13px;
+      font-family: 'Manrope', sans-serif;
+      margin-bottom: 10px;
+    }
+    .icon-rail .rail-divider {
+      width: 24px; height: 1px;
+      background: rgba(255,255,255,0.1);
+      margin: 4px 0 8px;
+    }
+    .rail-icon {
+      width: 38px; height: 38px;
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.15s ease;
+      color: #8b95a3;
+      position: relative;
+    }
+    .rail-icon:hover {
+      background: rgba(255,255,255,0.06);
+      color: #f3f5f8;
+    }
+    .rail-icon.active {
+      background: linear-gradient(135deg, rgba(47, 95, 255, 0.3), rgba(35, 72, 224, 0.2));
+      color: #93b4ff;
+      box-shadow: inset 0 0 0 1px rgba(91, 139, 255, 0.3);
+    }
+    .rail-icon.active::before {
+      content: '';
+      position: absolute;
+      left: -8px; top: 50%; transform: translateY(-50%);
+      width: 3px; height: 18px;
+      background: #5b8bff;
+      border-radius: 0 3px 3px 0;
+      box-shadow: 0 0 8px rgba(91, 139, 255, 0.8);
+    }
+    .rail-icon svg {
+      width: 18px; height: 18px;
+      stroke: currentColor; stroke-width: 2; fill: none;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .rail-icon .dot-badge {
+      position: absolute;
+      top: 6px; right: 6px;
+      width: 7px; height: 7px;
+      background: #d14647;
+      border-radius: 50%;
+      border: 1.5px solid #131820;
+    }
+    .rail-bottom {
+      margin-top: auto;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+    }
+    .rail-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, #2F5FFF, #60a5fa);
+      color: white; font-size: 10px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+
+    /* 第二栏：标签栏（浅色，208px） */
+    .label-pane {
+      width: 208px;
+      background: #ffffff;
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+      border-right: 1px solid #eef1f4;
+      flex-shrink: 0;
+    }
+    .label-pane::-webkit-scrollbar { width: 3px; }
+    .label-pane::-webkit-scrollbar-thumb { background: #dfe4ea; border-radius: 3px; }
+
+    .pane-header {
+      padding: 18px 16px 14px;
+      border-bottom: 1px solid #eef1f4;
+    }
+    .pane-title { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; color: #0b0d12; }
+    .pane-sub { font-size: 11px; color: #6d7580; margin-top: 2px; }
+
+    .pane-content { padding: 10px 10px 14px; flex: 1; }
+
+    .section-label {
+      font-size: 10.5px; font-weight: 700;
+      color: #6d7580;
+      padding: 12px 8px 6px;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .section-label:first-child { padding-top: 6px; }
+
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      cursor: pointer; transition: all 0.15s ease;
+      margin-bottom: 1px;
+      font-size: 13px; font-weight: 500;
+      color: #4d586b;
+      text-decoration: none;
+      position: relative;
+    }
+    .nav-item:hover {
+      background: #e9efff;
+      color: #2348E0;
+    }
+    .nav-item.active {
+      background: #2F5FFF;
+      color: white;
+      font-weight: 600;
+    }
+    .nav-item svg {
+      width: 15px; height: 15px; flex-shrink: 0;
+      stroke: currentColor; stroke-width: 2; fill: none;
+      stroke-linecap: round; stroke-linejoin: round;
+      opacity: 0.85;
+    }
+    .nav-item .badge {
+      margin-left: auto; font-size: 10.5px; font-weight: 700;
+      background: rgba(47, 95, 255, 0.12); color: #2348E0;
+      padding: 1px 6px; border-radius: 9px; min-width: 18px; text-align: center;
+    }
+    .nav-item.active .badge { background: rgba(255,255,255,0.28); color: white; }
+
+    .content { flex: 1; padding: 32px 40px; overflow-y: auto; color: #0b0d12; }
+    .content h1 { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 26px; margin-bottom: 10px; }
+    .content p { color: #4d586b; font-size: 14.5px; line-height: 1.65; max-width: 580px; }
+  </style>
+</head>
+<body>
+  <div class="sidebar-wrap">
+    <!-- 第一栏：图标栏 -->
+    <nav class="icon-rail">
+      <div class="brand-mark">矩</div>
+      <div class="rail-divider"></div>
+      <div class="rail-icon active" title="任务中枢"><svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg></div>
+      <div class="rail-icon" title="收件箱">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>
+        <span class="dot-badge"></span>
+      </div>
+      <div class="rail-icon" title="项目管理"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+      <div class="rail-icon" title="数字员工"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <div class="rail-icon" title="技能管理"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+      <div class="rail-icon" title="团队管理"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></div>
+      <div class="rail-divider"></div>
+      <div class="rail-icon" title="流程编排"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+      <div class="rail-icon" title="自动化任务"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+      <div class="rail-icon" title="外部能力"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg></div>
+      <div class="rail-icon" title="MCP管理"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+      <div class="rail-icon" title="协作集成"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <div class="rail-icon" title="审批中心"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+      <div class="rail-icon" title="Runtime节点"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></div>
+      <div class="rail-divider"></div>
+      <div class="rail-icon" title="运行总览"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg></div>
+      <div class="rail-icon" title="权限中心"><svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/></svg></div>
+      <div class="rail-icon" title="成本管理"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div>
+      <div class="rail-icon" title="审计中心"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div class="rail-icon" title="日志管理"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div class="rail-bottom">
+        <div class="rail-avatar">T</div>
+      </div>
+    </nav>
+
+    <!-- 第二栏：标签栏 -->
+    <nav class="label-pane">
+      <div class="pane-header">
+        <div class="pane-title">工作区</div>
+        <div class="pane-sub">任务中枢 · 13 项待处理</div>
+      </div>
+      <div class="pane-content">
+        <div class="section-label">工作区</div>
+        <a class="nav-item active" href="#"><svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>任务中枢</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>收件箱<span class="badge">13</span></a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>项目管理</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>数字员工</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>技能管理</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>团队管理</a>
+
+        <div class="section-label">核心导航</div>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>流程编排</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>自动化任务</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>外部能力</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>MCP 管理</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>协作集成</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>审批中心</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>Runtime 节点</a>
+
+        <div class="section-label">平台管理</div>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>运行总览</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/></svg>权限中心</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>成本管理</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>审计中心</a>
+        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>日志管理</a>
+      </div>
+    </nav>
+  </div>
+
+  <main class="content">
+    <h1>背景方案H · 双栏图标+标签</h1>
+    <p>布局结构突破：第一栏深色图标栏（56px，所有图标常驻可见，点击切换分组），第二栏浅色标签栏（208px，显示当前分组的文字菜单）。图标栏选中态品牌色发光竖线，标签栏选中态品牌色填充。灵感来自 VS Code、Figma、Slack 的双栏结构。图标栏提供快速跳转，标签栏提供详细导航，信息密度高且层次清晰。</p>
+    <p style="margin-top:10px;font-size:13px;color:#6d7580;">结构：深色图标栏56px + 浅色标签栏208px · 图标常驻 · 气质：专业工具感、高密度、层次清晰</p>
+  </main>
+</body>
+</html>

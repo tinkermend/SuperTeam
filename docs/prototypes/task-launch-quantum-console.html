@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务发起 · 量子指挥台</title>
+<style>
+  :root {
+    --bg-0: #070b14;
+    --bg-1: #0b1120;
+    --bg-2: #0f1729;
+    --panel: rgba(20, 30, 50, 0.72);
+    --panel-edge: rgba(99, 138, 226, 0.22);
+    --line: rgba(120, 150, 220, 0.14);
+    --text-1: #eef3ff;
+    --text-2: #9fb0d0;
+    --text-3: #5e6f93;
+    --brand: #3d7bff;
+    --brand-glow: #4f8cff;
+    --brand-soft: rgba(61, 123, 255, 0.12);
+    --ok: #2dd4a7;
+    --warn: #f5a623;
+    --danger: #ff5d6c;
+    --radius-card: 20px;
+    --radius-inner: 13px;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background:
+      radial-gradient(900px 600px at 78% -8%, rgba(61,123,255,0.16), transparent 60%),
+      radial-gradient(700px 500px at 8% 108%, rgba(45,212,167,0.08), transparent 55%),
+      var(--bg-0);
+    color: var(--text-1);
+    min-height: 100vh;
+    padding: 32px 20px 56px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* faint grid overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(120,150,220,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120,150,220,0.045) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(circle at 50% 40%, black, transparent 85%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .stage {
+    position: relative;
+    z-index: 1;
+    max-width: 1080px;
+    margin: 0 auto;
+  }
+
+  /* top status strip */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+    padding: 0 6px 18px;
+  }
+  .statusbar .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ok);
+  }
+  .statusbar .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 0 rgba(45,212,167,0.6);
+    animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(45,212,167,0.5); }
+    70% { box-shadow: 0 0 0 7px rgba(45,212,167,0); }
+    100% { box-shadow: 0 0 0 0 rgba(45,212,167,0); }
+  }
+
+  /* hero header */
+  .hero {
+    margin-bottom: 26px;
+    padding-left: 6px;
+  }
+  .hero .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brand-glow);
+    border: 1px solid var(--panel-edge);
+    background: var(--brand-soft);
+    padding: 6px 12px;
+    border-radius: 100px;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 16px 0 8px;
+  }
+  .hero h1 .glow {
+    background: linear-gradient(180deg, #cfe0ff, #6ea0ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p {
+    color: var(--text-2);
+    font-size: 15px;
+    max-width: 560px;
+  }
+
+  /* main console card */
+  .console {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius-card);
+    backdrop-filter: blur(14px);
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 30px 80px -30px rgba(0,0,0,0.8);
+  }
+
+  /* section label bar */
+  .section-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .section-bar .tag {
+    margin-left: auto;
+    color: var(--brand-glow);
+    border: 1px solid var(--panel-edge);
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+  }
+
+  .console-body { padding: 26px; }
+
+  /* command core textarea */
+  .core-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .core-label .t {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-1);
+  }
+  .core-label .req { color: var(--danger); margin-left: 4px; }
+  .core-label .hint { font-size: 12px; color: var(--text-3); font-family: var(--mono); }
+
+  .core {
+    position: relative;
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius-inner);
+    background:
+      radial-gradient(120% 120% at 50% 0%, rgba(61,123,255,0.08), transparent 70%),
+      rgba(8, 13, 26, 0.6);
+    transition: border-color .25s, box-shadow .25s;
+  }
+  .core::before {
+    content: "";
+    position: absolute;
+    left: 16px; top: 16px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--brand-glow);
+    box-shadow: 0 0 12px 2px rgba(79,140,255,0.7);
+  }
+  .core:focus-within {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 4px rgba(61,123,255,0.16), 0 0 40px -8px rgba(61,123,255,0.5);
+  }
+  .core textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.7;
+    padding: 26px 22px 18px;
+  }
+  .core textarea::placeholder { color: var(--text-3); }
+  .core-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-top: 1px solid var(--line);
+  }
+  .ghost-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    color: var(--brand-glow);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 13px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+  }
+  .ghost-btn:hover { background: var(--brand-soft); border-color: var(--brand); }
+  .counter { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+
+  /* params grid */
+  .params-title {
+    margin: 30px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .params {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 16px;
+  }
+  .param {
+    background: rgba(12, 19, 35, 0.55);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    padding: 16px 16px 4px;
+    transition: border-color .2s, transform .2s;
+  }
+  .param:hover { border-color: var(--panel-edge); transform: translateY(-2px); }
+  .param .pl {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 12px;
+  }
+  .param .pl svg { width: 16px; height: 16px; color: var(--brand-glow); }
+  .param .pl .req { color: var(--danger); }
+  .param select {
+    width: 100%;
+    background: rgba(8,13,26,0.6);
+    border: 1px solid var(--panel-edge);
+    color: var(--text-1);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 11px 12px;
+    border-radius: 9px;
+    margin-bottom: 16px;
+    appearance: none;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%239fb0d0' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .param select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(61,123,255,0.18); }
+
+  .err {
+    margin-top: 18px;
+    color: var(--danger);
+    font-size: 13px;
+    font-family: var(--mono);
+    display: none;
+  }
+
+  /* footer launch bar */
+  .launch-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 26px;
+    border-top: 1px solid var(--line);
+    background: rgba(8, 13, 26, 0.5);
+  }
+  .btn-draft {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 20px;
+    border-radius: 11px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-draft:hover { color: var(--text-1); border-color: var(--text-3); }
+  .btn-launch {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(180deg, #4f8cff, #2f5fff);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 13px 28px;
+    border: 0;
+    border-radius: 11px;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(79,140,255,0.5), 0 12px 30px -8px rgba(47,95,255,0.7);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn-launch:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(79,140,255,0.6), 0 18px 40px -8px rgba(47,95,255,0.85); }
+  .btn-launch:active { transform: translateY(0); }
+
+  @media (max-width: 760px) {
+    .params { grid-template-columns: 1fr; }
+    .launch-bar { flex-wrap: wrap; }
+    .btn-launch { margin-left: 0; width: 100%; justify-content: center; }
+    .btn-draft { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="statusbar">
+      <span>SUPERTEAM · CONTROL PLANE</span>
+      <span class="live"><span class="dot"></span> 协调线程在线</span>
+    </div>
+
+    <div class="hero">
+      <span class="eyebrow">◆ 提交后由协调线程动态编排</span>
+      <h1>提出<span class="glow">任务</span></h1>
+      <p>先把目标说清楚，编排、上下文切片与执行分派会在提交后由系统完成。</p>
+    </div>
+
+    <div class="console">
+      <div class="section-bar">
+        中枢指令区 · COMMAND CORE
+        <span class="tag">命令中心</span>
+      </div>
+
+      <div class="console-body">
+        <div class="core-label">
+          <div class="t">需求描述<span class="req">*</span></div>
+          <div class="hint">// 描述你希望协调线程处理的目标或问题场景</div>
+        </div>
+
+        <div class="core">
+          <textarea placeholder="描述你希望项目协调线程处理的目标或问题场景"></textarea>
+          <div class="core-foot">
+            <button class="ghost-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 10l-5.8 1.9L12 18l-1.9-5.8L5 10l5.8-1.9z"/></svg>
+              浏览模板库
+            </button>
+            <span class="counter">0 / 5000</span>
+          </div>
+        </div>
+
+        <div class="params-title">— 编排参数 · ORCHESTRATION</div>
+        <div class="params">
+          <div class="param">
+            <div class="pl">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              项目<span class="req">*</span>
+            </div>
+            <select>
+              <option>支付对账自动化项目</option>
+              <option>客户画像数据中台</option>
+              <option>风控规则引擎升级</option>
+            </select>
+          </div>
+          <div class="param">
+            <div class="pl">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6M18 6c0 6-12 3-12 9"/></svg>
+              优先级<span class="req">*</span>
+            </div>
+            <select>
+              <option>高</option>
+              <option>中</option>
+              <option>低</option>
+            </select>
+          </div>
+          <div class="param">
+            <div class="pl">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+              风险级别<span class="req">*</span>
+            </div>
+            <select>
+              <option>中风险</option>
+              <option>低风险</option>
+              <option>高风险</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="err">⚠ 需求描述不能为空</div>
+      </div>
+
+      <div class="launch-bar">
+        <button class="btn-draft">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          保存草稿
+        </button>
+        <button class="btn-launch">
+          提交任务
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

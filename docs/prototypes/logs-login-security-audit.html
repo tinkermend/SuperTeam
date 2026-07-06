@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>登录日志 · 安全审计台（v3 Soft-Flat）</title>
+<style>
+  :root {
+    --v3-bg: #f8fafc; --v3-shell-bg: #f6f8fb; --v3-card: #ffffff; --v3-card-soft: #f7f8fa; --v3-card-inner: #fafbfc;
+    --v3-ink: #0b0d12; --v3-ink-2: #4d586b; --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4; --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff; --v3-brand-deep: #2348e0; --v3-brand-soft: #e9efff;
+    --v3-info: #0094b7; --v3-info-text: #00617d; --v3-info-soft: #def8fe;
+    --v3-ok: #009a60; --v3-ok-text: #006639; --v3-ok-soft: #e3f9ec;
+    --v3-warn: #bb6900; --v3-warn-text: #7f3f00; --v3-warn-soft: #ffefdf;
+    --v3-danger: #d14647; --v3-danger-text: #8a2f2d; --v3-danger-soft: #ffece9;
+    --v3-mute: #64748b; --v3-mute-text: #4d586b; --v3-mute-soft: #eef1f4;
+    --v3-r-card: 22px; --v3-r-inner: 14px; --v3-r-pill: 8px;
+    --v3-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+    --font-sans: 'Inter', system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: var(--v3-shell-bg); color: var(--v3-ink); -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.5; }
+  .page { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar { width: 232px; flex-shrink: 0; background: var(--v3-card); border-right: 1px solid var(--v3-line); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 16px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; box-shadow: 0 4px 10px rgba(47,95,255,0.3); }
+  .brand-name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+  .nav-section { margin-top: 10px; }
+  .nav-label { font-size: 11px; font-weight: 700; color: var(--v3-ink-3); padding: 10px 10px 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; color: var(--v3-ink-2); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+  .nav-item:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .nav-item.active { background: var(--v3-brand-soft); color: var(--v3-brand-deep); font-weight: 600; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .nav-item .count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; }
+  .nav-sub { padding-left: 26px; }
+  .nav-sub .nav-item { font-size: 13px; padding: 6px 10px; }
+
+  /* Main */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 60px; border-bottom: 1px solid var(--v3-line); background: rgba(255,255,255,0.78); backdrop-filter: blur(20px); display: flex; align-items: center; gap: 14px; padding: 0 28px; position: sticky; top: 0; z-index: 20; }
+  .crumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--v3-ink-3); }
+  .crumb b { color: var(--v3-ink); font-weight: 700; }
+  .crumb svg { width: 13px; height: 13px; opacity: 0.5; }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--v3-line-strong); background: var(--v3-card); display: grid; place-items: center; cursor: pointer; color: var(--v3-ink-2); }
+  .icon-btn:hover { color: var(--v3-brand-deep); border-color: var(--v3-brand); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .avatar-chip { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 3px; border: 1px solid var(--v3-line-strong); border-radius: 999px; background: var(--v3-card); }
+  .avatar-chip .av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#e9efff,#c7d4ff); display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--v3-brand-deep); }
+  .avatar-chip span { font-size: 12.5px; font-weight: 600; }
+
+  .content { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1640px; width: 100%; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all .15s ease; white-space: nowrap; }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--v3-brand); color: #fff; box-shadow: 0 2px 6px rgba(47,95,255,0.22); }
+  .btn-primary:hover { background: var(--v3-brand-deep); }
+  .btn-ghost { background: transparent; color: var(--v3-ink-2); }
+  .btn-ghost:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .btn-outline { background: var(--v3-card); color: var(--v3-ink); border-color: var(--v3-line-strong); }
+  .btn-outline:hover { border-color: var(--v3-brand); color: var(--v3-brand-deep); }
+  .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+  /* Page Head */
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .page-head-left { display: flex; align-items: center; gap: 12px; }
+  .head-icon { width: 38px; height: 38px; border-radius: 11px; background: var(--v3-mute-soft); display: grid; place-items: center; color: var(--v3-ink-2); flex-shrink: 0; }
+  .head-icon svg { width: 19px; height: 19px; }
+  .page-head h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -0.02em; }
+  .page-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--v3-ink-2); }
+  .page-head-actions { display: flex; align-items: center; gap: 8px; }
+
+  /* Metric Strip */
+  .metric-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .metric-card { background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: var(--v3-r-inner); padding: 12px 14px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 2px rgba(16,24,40,0.03); position: relative; overflow: hidden; }
+  .metric-card.danger { background: linear-gradient(180deg, var(--v3-danger-soft) 0%, var(--v3-card) 70%); border-color: rgba(209,70,71,0.18); }
+  .metric-card.danger::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--v3-danger); }
+  .metric-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
+  .metric-icon svg { width: 16px; height: 16px; }
+  .metric-icon.brand { background: var(--v3-brand-soft); color: var(--v3-brand-deep); }
+  .metric-icon.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); }
+  .metric-icon.mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); }
+  .metric-icon.warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); }
+  .metric-body { min-width: 0; }
+  .metric-label { font-size: 11.5px; color: var(--v3-ink-3); font-weight: 600; }
+  .metric-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .metric-value.danger { color: var(--v3-danger-text); }
+  .metric-sub { font-size: 11px; color: var(--v3-ink-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .metric-trend { font-weight: 600; }
+  .metric-trend.up { color: var(--v3-danger-text); }
+  .metric-trend.down { color: var(--v3-ok-text); }
+
+  /* Work Surface */
+  .surface { background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow); overflow: hidden; }
+
+  /* Filter Bar */
+  .filter-bar { border-bottom: 1px solid var(--v3-line); padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip-label { font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin-right: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: var(--v3-r-pill); border: 1px solid var(--v3-line-strong); background: var(--v3-card); font-size: 12.5px; font-weight: 600; color: var(--v3-ink-2); cursor: pointer; transition: all .15s ease; }
+  .chip:hover { border-color: var(--v3-brand); color: var(--v3-brand-deep); }
+  .chip.active { background: var(--v3-brand); color: #fff; border-color: var(--v3-brand); box-shadow: 0 2px 5px rgba(47,95,255,0.25); }
+  .chip .badge { font-size: 10.5px; font-weight: 700; background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+  .chip.active .badge { background: rgba(255,255,255,0.22); }
+  .chip.danger { color: var(--v3-danger-text); border-color: rgba(209,70,71,0.25); }
+  .chip.danger.active { background: var(--v3-danger); border-color: var(--v3-danger); color: #fff; }
+  .filter-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; font-weight: 700; color: var(--v3-ink-2); }
+  .field .ctrl { height: 32px; padding: 0 11px; border: 1px solid var(--v3-line-strong); border-radius: 9px; background: var(--v3-card); font-family: inherit; font-size: 13px; color: var(--v3-ink); min-width: 130px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .field .ctrl.mono { font-family: var(--font-mono); font-size: 12px; }
+  .field .ctrl svg { width: 13px; height: 13px; color: var(--v3-ink-3); margin-left: auto; }
+  .filter-spacer { flex: 1; }
+  .filter-aux { display: flex; align-items: center; gap: 8px; color: var(--v3-ink-3); font-size: 12px; }
+
+  /* Master-Detail */
+  .md-layout { display: grid; grid-template-columns: 1fr 380px; min-height: 540px; }
+  .md-list { min-width: 0; border-right: 1px solid var(--v3-line); display: flex; flex-direction: column; }
+  .md-detail { background: var(--v3-card-inner); display: flex; flex-direction: column; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { position: sticky; top: 0; background: var(--v3-card-soft); text-align: left; font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.03em; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--v3-line-strong); white-space: nowrap; z-index: 2; }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--v3-line); vertical-align: middle; }
+  tbody tr { cursor: pointer; transition: background .12s ease; position: relative; }
+  tbody tr:hover { background: var(--v3-card-soft); }
+  tbody tr.selected { background: var(--v3-brand-soft); }
+  tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--v3-brand); }
+  tbody tr.danger-row td:first-child { box-shadow: inset 3px 0 0 var(--v3-danger); }
+  tbody tr.danger-row.selected td:first-child { box-shadow: inset 3px 0 0 var(--v3-brand); }
+  tbody tr:last-child td { border-bottom: none; }
+  .t-time { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .t-time .rel { display: block; font-size: 11px; color: var(--v3-ink-3); font-weight: 500; }
+  .t-mono { font-family: var(--font-mono); font-size: 12px; color: var(--v3-ink-2); }
+  .t-truncate { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-user { display: flex; align-items: center; gap: 8px; }
+  .t-user .av { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+  .t-user .name { font-weight: 600; font-size: 12.5px; }
+  .t-user .sub { font-size: 11px; color: var(--v3-ink-3); }
+
+  /* Status Pill */
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+  .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .pill.ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); } .pill.ok::before { background: var(--v3-ok); }
+  .pill.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); } .pill.danger::before { background: var(--v3-danger); }
+  .pill.mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); } .pill.mute::before { background: var(--v3-mute); }
+
+  /* Pagination */
+  .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 18px; border-top: 1px solid var(--v3-line); }
+  .pagination .info { font-size: 12px; color: var(--v3-ink-2); font-variant-numeric: tabular-nums; }
+  .pagination .nav { display: flex; gap: 6px; }
+
+  /* Detail Panel */
+  .detail-head { padding: 16px 18px; border-bottom: 1px solid var(--v3-line); display: flex; align-items: flex-start; gap: 12px; }
+  .detail-head .av-lg { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+  .detail-head .meta { min-width: 0; flex: 1; }
+  .detail-head .meta h3 { margin: 0; font-size: 15px; font-weight: 800; }
+  .detail-head .meta .sub { font-size: 12px; color: var(--v3-ink-3); margin-top: 2px; font-family: var(--font-mono); }
+  .detail-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .detail-section { padding: 14px 18px; border-bottom: 1px solid var(--v3-line); }
+  .detail-section:last-child { border-bottom: none; }
+  .detail-section h4 { margin: 0 0 10px; font-size: 11px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+  .kv { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+  .kv .k { color: var(--v3-ink-3); width: 88px; flex-shrink: 0; font-weight: 600; }
+  .kv .v { color: var(--v3-ink); font-weight: 500; word-break: break-all; }
+  .kv .v.mono { font-family: var(--font-mono); font-size: 12px; }
+  .alert-box { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; background: var(--v3-danger-soft); border: 1px solid rgba(209,70,71,0.2); border-radius: 10px; }
+  .alert-box svg { width: 16px; height: 16px; color: var(--v3-danger); flex-shrink: 0; margin-top: 1px; }
+  .alert-box .alert-body { font-size: 12.5px; }
+  .alert-box .alert-body b { color: var(--v3-danger-text); display: block; margin-bottom: 2px; }
+  .alert-box .alert-body span { color: var(--v3-danger-text); }
+  .ua-box { background: var(--v3-card-soft); border: 1px solid var(--v3-line); border-radius: 9px; padding: 10px 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--v3-ink-2); line-height: 1.6; word-break: break-all; }
+  .related-list { display: flex; flex-direction: column; gap: 6px; }
+  .related-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; background: var(--v3-card); border: 1px solid var(--v3-line); border-radius: 8px; cursor: pointer; transition: all .12s ease; }
+  .related-item:hover { border-color: var(--v3-brand); background: var(--v3-brand-soft); }
+  .related-item .ri-time { font-size: 11.5px; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; width: 100px; flex-shrink: 0; }
+  .related-item .ri-event { font-size: 12px; font-weight: 600; }
+
+  .legend { display: flex; align-items: center; gap: 14px; font-size: 11.5px; color: var(--v3-ink-3); padding: 0 18px 10px; }
+  .legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .lg .bar { width: 3px; height: 12px; border-radius: 2px; }
+
+  .av-zh { background: linear-gradient(135deg,#e9efff,#c7d4ff); color: var(--v3-brand-deep); }
+  .av-lin { background: linear-gradient(135deg,#def8fe,#b8e8f3); color: var(--v3-info-text); }
+  .av-adm { background: linear-gradient(135deg,#ffefdf,#ffd9a8); color: var(--v3-warn-text); }
+  .av-wang { background: linear-gradient(135deg,#e3f9ec,#b8ecc9); color: var(--v3-ok-text); }
+  .av-unk { background: linear-gradient(135deg,#ffece9,#ffc7c4); color: var(--v3-danger-text); }
+</style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">ST</div><div class="brand-name">SuperTeam</div></div>
+    <div class="nav-section">
+      <div class="nav-label">工作区</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>任务中枢</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>收件箱<span class="count">3</span></div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>项目管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>数字员工</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">平台管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>权限中心</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 10-16 0"/></svg>用户管理</div>
+      <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>日志管理</div>
+      <div class="nav-sub">
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>登录日志</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg>操作日志</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>平台事件</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">平台管理 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg> 日志管理 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg> <b>登录日志</b></div>
+      <div class="topbar-right">
+        <button class="icon-btn" title="刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></button>
+        <div class="avatar-chip"><div class="av">管</div><span>管理员</span></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <div class="page-head-left">
+          <div class="head-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg></div>
+          <div><h1>登录日志</h1><p>控制台账号登录、登出与失败记录 · 用于安全审计与异常登录排查</p></div>
+        </div>
+        <div class="page-head-actions">
+          <button class="btn btn-outline btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>导出 CSV</button>
+          <button class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>刷新</button>
+        </div>
+      </div>
+
+      <div class="metric-strip">
+        <div class="metric-card">
+          <div class="metric-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg></div>
+          <div class="metric-body"><div class="metric-label">24h 登录次数</div><div class="metric-value">142</div><div class="metric-sub"><span class="metric-trend down">↓ 8%</span> 较昨日</div></div>
+        </div>
+        <div class="metric-card danger">
+          <div class="metric-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+          <div class="metric-body"><div class="metric-label">24h 登录失败</div><div class="metric-value danger">7</div><div class="metric-sub"><span class="metric-trend up">↑ 3</span> 需关注</div></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+          <div class="metric-body"><div class="metric-label">24h 独立 IP</div><div class="metric-value">38</div><div class="metric-sub">5 个新 IP</div></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+          <div class="metric-body"><div class="metric-label">最近异常</div><div class="metric-value" style="font-size:15px;line-height:1.3">3 分钟前</div><div class="metric-sub">zhanghua · 密码错误</div></div>
+        </div>
+      </div>
+
+      <div class="surface">
+        <div class="filter-bar">
+          <div class="chip-row">
+            <span class="chip-label">事件</span>
+            <div class="chip active">全部 <span class="badge">149</span></div>
+            <div class="chip">登录成功 <span class="badge">128</span></div>
+            <div class="chip danger">登录失败 <span class="badge">7</span></div>
+            <div class="chip">登出成功 <span class="badge">14</span></div>
+            <div style="flex:1"></div>
+            <div class="filter-aux"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>关键字：用户名 / IP</div>
+          </div>
+          <div class="filter-row">
+            <div class="field"><label>事件类型</label><div class="ctrl">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="field"><label>结果</label><div class="ctrl">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="field"><label>用户名</label><div class="ctrl mono" style="color:var(--v3-ink-3)">输入后回车…</div></div>
+            <div class="field"><label>来源 IP</label><div class="ctrl mono" style="color:var(--v3-ink-3)">如 10.0.0.x</div></div>
+            <div class="field"><label>时间范围</label><div class="ctrl">近 24 小时 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="filter-spacer"></div>
+            <button class="btn btn-ghost btn-sm">重置</button>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="lg"><span class="bar" style="background:var(--v3-danger)"></span>失败登录（左侧警示条）</span>
+          <span class="lg"><span class="bar" style="background:var(--v3-brand)"></span>当前选中</span>
+          <span style="margin-left:auto">点击任意行查看登录详情、设备与会话信息</span>
+        </div>
+
+        <div class="md-layout">
+          <div class="md-list">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>时间</th><th>事件</th><th>结果</th><th>用户</th><th>来源 IP</th><th>设备 / UA</th><th>失败原因</th></tr></thead>
+                <tbody>
+                  <tr class="danger-row selected">
+                    <td class="t-time">15:22:04<span class="rel">3 分钟前</span></td>
+                    <td><span class="pill danger">登录失败</span></td>
+                    <td><span class="pill danger">失败</span></td>
+                    <td><div class="t-user"><div class="av av-unk">ZH</div><div><div class="name">zhanghua</div><div class="sub">u_2f8a…</div></div></div></td>
+                    <td class="t-mono">203.95.34.118</td>
+                    <td class="t-truncate">Chrome 120 · macOS</td>
+                    <td class="t-truncate" style="color:var(--v3-danger-text);font-weight:600">用户名或密码错误</td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">15:18:47<span class="rel">7 分钟前</span></td>
+                    <td><span class="pill ok">登录成功</span></td>
+                    <td><span class="pill ok">成功</span></td>
+                    <td><div class="t-user"><div class="av av-adm">管</div><div><div class="name">admin</div><div class="sub">u_0001</div></div></div></td>
+                    <td class="t-mono">10.0.1.24</td>
+                    <td class="t-truncate">Chrome 120 · Windows</td>
+                    <td class="t-mono" style="color:var(--v3-ink-3)">—</td>
+                  </tr>
+                  <tr class="danger-row">
+                    <td class="t-time">15:09:12<span class="rel">16 分钟前</span></td>
+                    <td><span class="pill danger">登录失败</span></td>
+                    <td><span class="pill danger">失败</span></td>
+                    <td><div class="t-user"><div class="av av-unk">ZH</div><div><div class="name">zhanghua</div><div class="sub">u_2f8a…</div></div></div></td>
+                    <td class="t-mono">203.95.34.118</td>
+                    <td class="t-truncate">Chrome 120 · macOS</td>
+                    <td class="t-truncate" style="color:var(--v3-danger-text);font-weight:600">用户名或密码错误</td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">14:55:30<span class="rel">30 分钟前</span></td>
+                    <td><span class="pill mute">登出成功</span></td>
+                    <td><span class="pill ok">成功</span></td>
+                    <td><div class="t-user"><div class="av av-lin">LJ</div><div><div class="name">linjie</div><div class="sub">u_1a3c</div></div></div></td>
+                    <td class="t-mono">10.0.2.51</td>
+                    <td class="t-truncate">Safari 17 · macOS</td>
+                    <td class="t-mono" style="color:var(--v3-ink-3)">—</td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">14:41:08<span class="rel">44 分钟前</span></td>
+                    <td><span class="pill ok">登录成功</span></td>
+                    <td><span class="pill ok">成功</span></td>
+                    <td><div class="t-user"><div class="av av-wang">WL</div><div><div class="name">wangli</div><div class="sub">u_3b7e</div></div></div></td>
+                    <td class="t-mono">10.0.1.88</td>
+                    <td class="t-truncate">Edge 120 · Windows</td>
+                    <td class="t-mono" style="color:var(--v3-ink-3)">—</td>
+                  </tr>
+                  <tr class="danger-row">
+                    <td class="t-time">13:58:21<span class="rel">1 小时前</span></td>
+                    <td><span class="pill danger">登录失败</span></td>
+                    <td><span class="pill danger">失败</span></td>
+                    <td><div class="t-user"><div class="av av-unk">??</div><div><div class="name">root</div><div class="sub">用户不存在</div></div></div></td>
+                    <td class="t-mono">45.83.12.9</td>
+                    <td class="t-truncate">curl/8.4.0 · 命令行</td>
+                    <td class="t-truncate" style="color:var(--v3-danger-text);font-weight:600">账号不存在</td>
+                  </tr>
+                  <tr>
+                    <td class="t-time">13:40:12<span class="rel">1 小时前</span></td>
+                    <td><span class="pill ok">登录成功</span></td>
+                    <td><span class="pill ok">成功</span></td>
+                    <td><div class="t-user"><div class="av av-adm">管</div><div><div class="name">admin</div><div class="sub">u_0001</div></div></div></td>
+                    <td class="t-mono">10.0.1.24</td>
+                    <td class="t-truncate">Chrome 120 · Windows</td>
+                    <td class="t-mono" style="color:var(--v3-ink-3)">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <div class="info">第 1 页 · 本页 20 条 · 共 149 条</div>
+              <div class="nav">
+                <button class="btn btn-outline btn-sm" disabled style="opacity:.5">上一页</button>
+                <button class="btn btn-outline btn-sm">下一页</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="md-detail">
+            <div class="detail-head">
+              <div class="av-lg av-unk">ZH</div>
+              <div class="meta"><h3>zhanghua</h3><div class="sub">login_log · lg_a8f3c1e2</div></div>
+              <span class="pill danger">失败</span>
+            </div>
+            <div class="detail-body">
+              <div class="detail-section">
+                <h4>事件</h4>
+                <div class="kv"><div class="k">事件类型</div><div class="v"><span class="pill danger">登录失败</span></div></div>
+                <div class="kv"><div class="k">发生时间</div><div class="v mono">2026-07-06 15:22:04</div></div>
+                <div class="kv"><div class="k">结果</div><div class="v" style="color:var(--v3-danger-text);font-weight:600">失败</div></div>
+              </div>
+              <div class="detail-section">
+                <div class="alert-box">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                  <div class="alert-body"><b>用户名或密码错误</b><span>同一 IP 在 13 分钟内失败 2 次，建议关注是否为暴力破解。</span></div>
+                </div>
+              </div>
+              <div class="detail-section">
+                <h4>来源信息</h4>
+                <div class="kv"><div class="k">来源 IP</div><div class="v mono">203.95.34.118</div></div>
+                <div class="kv"><div class="k">归属</div><div class="v">境外 · 香港（推测）</div></div>
+                <div class="kv"><div class="k">会话 ID</div><div class="v mono">sess_3f9a2b1c</div></div>
+                <div class="kv"><div class="k">User-Agent</div><div class="v">见下方</div></div>
+                <div class="ua-box" style="margin-top:8px">Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36</div>
+              </div>
+              <div class="detail-section">
+                <h4>账号信息</h4>
+                <div class="kv"><div class="k">用户名</div><div class="v">zhanghua</div></div>
+                <div class="kv"><div class="k">user_id</div><div class="v mono">u_2f8a91c4</div></div>
+                <div class="kv"><div class="k">账号状态</div><div class="v"><span class="pill ok">活跃</span></div></div>
+              </div>
+              <div class="detail-section">
+                <h4>同 IP 近 1 小时</h4>
+                <div class="related-list">
+                  <div class="related-item"><span class="ri-time">15:22:04</span><span class="pill danger" style="height:18px;font-size:10px">失败</span><span class="ri-event">登录失败 · 密码错误</span></div>
+                  <div class="related-item"><span class="ri-time">15:09:12</span><span class="pill danger" style="height:18px;font-size:10px">失败</span><span class="ri-event">登录失败 · 密码错误</span></div>
+                  <div class="related-item"><span class="ri-time">14:48:30</span><span class="pill ok" style="height:18px;font-size:10px">成功</span><span class="ri-event">登录成功</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -13,12 +13,6 @@ import {
   WorkSurface,
 } from "@/components/superteam";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   listLoginLogs,
   type LoginLogEventType,
   type LoginLogRecord,
@@ -64,7 +58,6 @@ function LoginLogsRoute() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const [filters, setFilters] = useState<LoginLogFilters>({});
   const [offset, setOffset] = useState(0);
-  const [selectedRecord, setSelectedRecord] = useState<LoginLogRecord | null>(null);
 
   const logsQuery = useQuery({
     queryKey: ["web-login-logs", filters, offset],
@@ -129,11 +122,7 @@ function LoginLogsRoute() {
             </thead>
             <tbody>
               {records.map((record: LoginLogRecord) => (
-                <V3Tr
-                  key={record.id}
-                  className="cursor-pointer"
-                  onClick={() => setSelectedRecord(record)}
-                >
+                <V3Tr key={record.id}>
                   <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
                     {formatLogDateTime(record.created_at)}
                   </V3Td>
@@ -164,40 +153,6 @@ function LoginLogsRoute() {
           pageSize={LOG_PAGE_SIZE}
         />
       </WorkSurface>
-
-      <Sheet open={selectedRecord !== null} onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}>
-        <SheetContent side="right" className="w-[420px] max-w-[45vw]">
-          {selectedRecord && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-base font-semibold text-v3-ink">
-                  {eventTypeLabel[selectedRecord.event_type] ?? selectedRecord.event_type}
-                </SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 flex flex-col gap-3 text-sm">
-                <DetailRow label="结果">
-                  <StatusPill tone={selectedRecord.result === "succeeded" ? "ok" : "danger"}>
-                    {selectedRecord.result === "succeeded" ? "成功" : "失败"}
-                  </StatusPill>
-                </DetailRow>
-                <DetailRow label="用户名">{selectedRecord.username || "—"}</DetailRow>
-                <DetailRow label="来源 IP">{selectedRecord.client_ip || "—"}</DetailRow>
-                <DetailRow label="失败原因">{selectedRecord.failure_reason || "—"}</DetailRow>
-                <DetailRow label="时间">{formatLogDateTime(selectedRecord.created_at)}</DetailRow>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
     </>
-  );
-}
-
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="w-20 shrink-0 text-xs text-v3-ink-2">{label}</span>
-      <span className="min-w-0 break-all text-v3-ink">{children}</span>
-    </div>
   );
 }

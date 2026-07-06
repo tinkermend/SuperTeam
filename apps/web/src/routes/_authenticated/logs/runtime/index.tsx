@@ -190,49 +190,64 @@ function RuntimeEventLogsRoute() {
           if (!open) setSelectedEvent(null);
         }}
       >
-        <SheetContent side="right" className="w-[420px] max-w-[45vw] overflow-y-auto">
+        <SheetContent side="right" className="w-[480px] max-w-[50vw] overflow-y-auto p-0">
           {selectedEvent && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-base font-semibold text-v3-ink">
-                  {selectedEvent.event_type}
-                </SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 flex flex-col gap-3 text-sm">
-                <DetailRow label="级别">
+            <div className="flex h-full flex-col">
+              {/* Header */}
+              <div className="border-b border-v3-line px-5 py-4">
+                <div className="mb-2 flex items-center gap-2">
                   <StatusPill tone={severityTone[selectedEvent.severity] ?? "mute"}>
                     {severityLabel[selectedEvent.severity] ?? selectedEvent.severity}
                   </StatusPill>
-                </DetailRow>
-                <DetailRow label="标题">{selectedEvent.title}</DetailRow>
+                  <span className="font-mono text-xs text-v3-ink-3">{selectedEvent.event_type}</span>
+                </div>
+                <h3 className="text-sm font-semibold text-v3-ink leading-snug">{selectedEvent.title}</h3>
                 {selectedEvent.description && (
-                  <DetailRow label="描述">{selectedEvent.description}</DetailRow>
-                )}
-                <DetailRow label="节点">{selectedEvent.node_id || "—"}</DetailRow>
-                <DetailRow label="来源">{selectedEvent.source || "—"}</DetailRow>
-                {selectedEvent.provider_type && (
-                  <DetailRow label="Provider">{selectedEvent.provider_type}</DetailRow>
-                )}
-                {selectedEvent.correlation_id && (
-                  <DetailRow label="关联 ID">
-                    <span className="font-mono text-xs">
-                      {selectedEvent.correlation_type
-                        ? `${selectedEvent.correlation_type}:${selectedEvent.correlation_id}`
-                        : selectedEvent.correlation_id}
-                    </span>
-                  </DetailRow>
-                )}
-                <DetailRow label="时间">{formatLogDateTime(selectedEvent.created_at)}</DetailRow>
-                {selectedEvent.payload && (
-                  <div className="mt-2">
-                    <div className="text-xs text-v3-ink-2 mb-1">Payload</div>
-                    <pre className="rounded-md bg-v3-card-soft p-2 text-xs text-v3-ink overflow-x-auto">
-                      {JSON.stringify(selectedEvent.payload, null, 2)}
-                    </pre>
-                  </div>
+                  <p className="mt-1 text-xs text-v3-ink-2 leading-relaxed">{selectedEvent.description}</p>
                 )}
               </div>
-            </>
+
+              {/* Event Info */}
+              <div className="border-b border-v3-line px-5 py-4">
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">事件信息</div>
+                <div className="flex flex-col gap-2.5">
+                  <InfoRow label="来源">{selectedEvent.source}</InfoRow>
+                  <InfoRow label="时间">{formatLogDateTime(selectedEvent.created_at)}</InfoRow>
+                  {selectedEvent.provider_type && (
+                    <InfoRow label="Provider">{selectedEvent.provider_type}</InfoRow>
+                  )}
+                  {selectedEvent.correlation_id && (
+                    <InfoRow label="关联 ID">
+                      <span className="font-mono text-xs">
+                        {selectedEvent.correlation_type
+                          ? `${selectedEvent.correlation_type}:${selectedEvent.correlation_id}`
+                          : selectedEvent.correlation_id}
+                      </span>
+                    </InfoRow>
+                  )}
+                </div>
+              </div>
+
+              {/* Node Info */}
+              {selectedEvent.node_id && (
+                <div className="border-b border-v3-line px-5 py-4">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">节点</div>
+                  <div className="flex items-center gap-2 rounded-lg bg-v3-card-soft px-3 py-2">
+                    <span className="font-mono text-xs text-v3-ink">{selectedEvent.node_id}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Payload */}
+              {selectedEvent.payload && (
+                <div className="flex-1 px-5 py-4">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">Payload</div>
+                  <pre className="max-h-64 overflow-auto rounded-lg bg-v3-card-soft p-3 text-[11px] leading-relaxed text-v3-ink">
+                    {JSON.stringify(selectedEvent.payload, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
           )}
         </SheetContent>
       </Sheet>
@@ -240,11 +255,11 @@ function RuntimeEventLogsRoute() {
   );
 }
 
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="w-20 shrink-0 text-xs text-v3-ink-2">{label}</span>
-      <span className="min-w-0 break-all text-v3-ink">{children}</span>
+      <span className="w-16 shrink-0 text-xs text-v3-ink-2">{label}</span>
+      <span className="min-w-0 break-all text-xs text-v3-ink">{children}</span>
     </div>
   );
 }

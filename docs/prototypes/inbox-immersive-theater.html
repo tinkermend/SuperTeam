@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>收件箱 · 沉浸式决策剧场 · SuperTeam</title>
+<style>
+/* ============================================================
+   风格五 · 沉浸式决策剧场（Immersive Decision Theater）
+   贴合项目真实 shell：左侧分组导航 + 顶栏（trigger/搜索/主题/通知/用户）
+   + ShellPageHeader + 指标卡 + 视图/筛选卡 + 三栏内容（列表/聚光详情/操作 dock）
+   数据源：InboxListResponse(items + summary + pagination)
+   ============================================================ */
+:root{
+  --v3-bg:#f8fafc; --v3-shell-bg:#f6f8fb; --v3-card:#ffffff; --v3-card-soft:#f7f8fa; --v3-card-inner:#fafbfc;
+  --v3-ink:#0b0d12; --v3-ink-2:#4d586b; --v3-ink-3:#6d7580;
+  --v3-line:#eef1f4; --v3-line-strong:#dfe4ea;
+  --v3-brand:#2f5fff; --v3-brand-deep:#2348e0; --v3-brand-soft:#e9efff;
+  --v3-info:#0094b7; --v3-info-text:#00617d; --v3-info-soft:#def8fe;
+  --v3-ok:#009a60; --v3-ok-text:#006639; --v3-ok-soft:#e3f9ec;
+  --v3-warn:#bb6900; --v3-warn-text:#7f3f00; --v3-warn-soft:#ffefdf;
+  --v3-danger:#d14647; --v3-danger-text:#8a2f2d; --v3-danger-soft:#ffece9;
+  --v3-artifact:#9565c7; --v3-artifact-text:#633d89; --v3-artifact-soft:#f7eeff;
+  --v3-mute:#64748b; --v3-mute-soft:#eef1f4;
+  --v3-shell-glass:rgba(248,250,252,0.86);
+  --v3-shell-glass-border:#e7ebf0;
+  --v3-shell-control:#ffffff;
+  --v3-shell-control-border:#e7ebf0;
+  --v3-shell-control-hover:#f4f6fa;
+  --v3-shell-search:#ffffff;
+  --v3-shell-search-border:#e7ebf0;
+  --v3-shell-search-shadow:0 1px 2px rgba(16,24,40,0.04), 0 4px 12px rgba(16,24,40,0.05);
+  --r-card:1.375rem; --r-inner:0.875rem;
+  --shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+  --shadow-pop:0 10px 44px rgba(16,24,40,0.12);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:radial-gradient(ellipse at 18% -5%,rgba(47,95,255,0.05),transparent 45%),var(--v3-bg);color:var(--v3-ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;overflow:hidden;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--v3-line-strong);border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:#c8cfd9;}
+
+/* ===== App frame: full-width header on top, sidebar + content below ===== */
+.app{display:flex;flex-direction:column;height:100vh;}
+.body{display:grid;grid-template-columns:232px 1fr;flex:1;min-height:0;}
+
+/* ===== Sidebar ===== */
+.sidebar{background:var(--v3-card);border-right:1px solid var(--v3-line);display:flex;flex-direction:column;overflow-y:auto;padding-top:8px;}
+.brand{display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.brand .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 4px 14px rgba(47,95,255,0.3);}
+.brand .nm{font-size:14.5px;font-weight:750;letter-spacing:-0.01em;white-space:nowrap;}
+.nav-group{padding:10px 10px 6px;}
+.nav-label{font-size:10.5px;font-weight:700;color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:0.07em;padding:8px 10px 6px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13px;font-weight:550;color:var(--v3-ink-2);cursor:pointer;transition:.12s;}
+.nav-item:hover{background:var(--v3-card-soft);color:var(--v3-ink);}
+.nav-item.active{background:var(--v3-brand-soft);color:var(--v3-brand-deep);font-weight:650;}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;color:var(--v3-ink-3);}
+.nav-item.active svg{color:var(--v3-brand);}
+.nav-item .badge{margin-left:auto;font-size:10px;font-weight:700;font-family:var(--mono);padding:1px 6px;border-radius:6px;background:var(--v3-danger);color:#fff;}
+.nav-sub{padding-left:26px;}
+.nav-sub .nav-item{font-size:12.5px;padding:6px 10px;}
+
+/* ===== Full-width header (top) ===== */
+.topbar{height:56px;flex-shrink:0;display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:14px;padding:8px 20px;border-bottom:1px solid var(--v3-line);background:var(--v3-shell-glass);backdrop-filter:blur(18px) saturate(1.3);}
+.content-col{display:flex;flex-direction:column;min-width:0;min-height:0;}
+.trigger{width:36px;height:36px;border-radius:10px;border:1px solid var(--v3-shell-control-border);background:var(--v3-shell-control);display:grid;place-items:center;color:var(--v3-ink-2);cursor:pointer;}
+.trigger svg{width:18px;height:18px;}
+.search{display:flex;align-items:center;gap:9px;height:40px;padding:0 16px;border-radius:999px;background:var(--v3-shell-search);border:1px solid var(--v3-shell-search-border);box-shadow:var(--v3-shell-search-shadow);color:var(--v3-ink-3);font-size:12.5px;max-width:560px;width:100%;}
+.search svg{width:15px;height:15px;}
+.search .kbd{margin-left:auto;font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:5px;background:var(--v3-card-soft);border:1px solid var(--v3-line);color:var(--v3-ink-3);}
+.top-right{display:flex;align-items:center;gap:8px;}
+.tbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--v3-shell-control-border);background:var(--v3-shell-control);display:grid;place-items:center;color:var(--v3-ink-2);cursor:pointer;position:relative;}
+.tbtn:hover{background:var(--v3-shell-control-hover);color:var(--v3-brand-deep);}
+.tbtn svg{width:18px;height:18px;}
+.tbtn .dot{position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--v3-artifact);border:1.5px solid #fff;}
+.theme-seg{display:inline-flex;gap:2px;padding:3px;border-radius:11px;border:1px solid var(--v3-shell-control-border);background:var(--v3-shell-control);}
+.theme-seg button{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--v3-ink-3);cursor:pointer;display:grid;place-items:center;}
+.theme-seg button.on{background:var(--v3-brand-soft);color:var(--v3-brand-deep);}
+.theme-seg svg{width:15px;height:15px;}
+.ubtn{display:flex;align-items:center;gap:8px;height:40px;padding:3px 12px 3px 3px;border-radius:999px;border:1px solid var(--v3-shell-control-border);background:var(--v3-shell-control);cursor:pointer;}
+.ubtn .pic{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+.ubtn .nm{font-size:12.5px;font-weight:650;}
+
+/* ===== Content scroll area ===== */
+.content{flex:1;overflow-y:auto;padding:22px 24px 40px;}
+.pagehead{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+.pagehead .ic{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;color:#fff;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 8px 22px rgba(47,95,255,0.28);flex-shrink:0;}
+.pagehead .ic svg{width:22px;height:22px;}
+.pagehead h1{font-size:23px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;}
+.pagehead .sub{font-size:13px;color:var(--v3-ink-2);margin-top:4px;}
+
+/* ===== Situation ribbon (replaces 4 metric cards) ===== */
+.ribbon{display:flex;align-items:stretch;gap:0;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;}
+.rstat{display:flex;align-items:center;gap:10px;padding:14px 18px;border-right:1px solid var(--v3-line);flex:1;min-width:0;}
+.rstat:last-child{border-right:none;}
+.rstat .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.rstat .dot.brand{background:var(--v3-brand);} .rstat .dot.danger{background:var(--v3-danger);} .rstat .dot.warn{background:var(--v3-warn);} .rstat .dot.mute{background:var(--v3-mute);}
+.rstat .n{font-size:22px;font-weight:800;letter-spacing:-0.03em;line-height:1;}
+.rstat .n.danger{color:var(--v3-danger);} .rstat .n.warn{color:var(--v3-warn);} .rstat .n.brand{color:var(--v3-brand);}
+.rstat .l{font-size:11px;color:var(--v3-ink-2);font-weight:600;line-height:1.3;}
+.rstat .m{font-size:10px;color:var(--v3-ink-3);margin-top:1px;}
+.urgency{display:flex;align-items:center;gap:12px;padding:12px 18px;background:linear-gradient(90deg,var(--v3-danger-soft),transparent);min-width:200px;}
+.urgency .ring{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;position:relative;flex-shrink:0;color:var(--v3-danger);}
+.urgency .ring::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--v3-card);}
+.urgency .ring span{position:relative;z-index:1;}
+.urgency .ut{font-size:11px;font-weight:700;color:var(--v3-danger-text);text-transform:uppercase;letter-spacing:0.05em;}
+.urgency .ub{font-size:15px;font-weight:800;color:var(--v3-ink);margin-top:1px;}
+
+/* ===== Command bar (replaces big filter card) ===== */
+.cmdbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.viewseg{display:inline-flex;gap:3px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:11px;padding:3px;}
+.viewseg button{padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;border:none;background:transparent;}
+.viewseg button.on{background:var(--v3-card);color:var(--v3-brand-deep);box-shadow:var(--shadow);}
+.viewseg button .ct{font-size:10px;font-family:var(--mono);margin-left:5px;padding:1px 5px;border-radius:4px;background:var(--v3-brand-soft);color:var(--v3-brand-deep);}
+.fchip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;background:var(--v3-card);border:1px solid var(--v3-line-strong);font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;box-shadow:var(--shadow);}
+.fchip:hover{border-color:var(--v3-brand);color:var(--v3-ink);}
+.fchip .v{color:var(--v3-ink);font-weight:650;}
+.fchip svg{width:13px;height:13px;color:var(--v3-ink-3);}
+
+/* ===== Buttons ===== */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:11px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;border:1px solid transparent;font-family:inherit;height:40px;}
+.btn svg{width:15px;height:15px;}
+.btn.primary{background:var(--v3-brand);color:#fff;box-shadow:0 8px 22px rgba(47,95,255,0.22);}
+.btn.primary:hover{background:var(--v3-brand-deep);}
+.btn.outline{background:var(--v3-card);color:var(--v3-ink);border-color:var(--v3-line-strong);box-shadow:var(--shadow);}
+.btn.outline:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.btn.danger{background:var(--v3-danger);color:#fff;}
+.btn.danger:hover{background:#bb3839;}
+.btn.ghost{background:transparent;color:var(--v3-ink-2);}
+.btn.ghost:hover{background:var(--v3-card-soft);color:var(--v3-ink);}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px;height:auto;}
+.btn.lg{padding:13px 22px;font-size:14.5px;border-radius:13px;height:auto;font-weight:700;}
+
+/* ===== Decision Focus Cockpit ===== */
+.cockpit{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;align-items:start;}
+
+/* Hero decision card — one decision dominates */
+.hero{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;position:relative;}
+.hero-band{position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--v3-danger);}
+.hero-band.warn{background:var(--v3-warn);} .hero-band.brand{background:var(--v3-brand);} .hero-band.mute{background:var(--v3-line-strong);}
+.hero-top{display:flex;align-items:flex-start;gap:16px;padding:24px 26px 18px 32px;}
+.hero-top .hmain{flex:1;min-width:0;}
+.hero-eyebrow{display:flex;align-items:center;gap:10px;font-size:11px;font-family:var(--mono);color:var(--v3-brand-deep);text-transform:uppercase;letter-spacing:0.1em;font-weight:700;margin-bottom:10px;}
+.hero-eyebrow .pulse{width:8px;height:8px;border-radius:50%;background:var(--v3-brand);box-shadow:0 0 0 0 rgba(47,95,255,0.4);animation:pulse 2s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,95,255,0.4);}70%{box-shadow:0 0 0 8px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+.hero h2{font-size:30px;font-weight:800;letter-spacing:-0.025em;line-height:1.15;}
+.hero .hsum{font-size:14px;color:var(--v3-ink-2);line-height:1.65;margin-top:12px;}
+.hero-risk{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;}
+.rpill{font-size:10px;font-weight:800;padding:4px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:0.05em;}
+.rpill.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.rpill.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.rpill.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.waitbadge{font-size:11px;color:var(--v3-ink-3);font-family:var(--mono);}
+.waitbadge b{color:var(--v3-warn);font-size:13px;}
+
+/* context grid + process tracker inside hero */
+.hero-body{padding:0 26px 18px 32px;display:flex;flex-direction:column;gap:18px;}
+.section-h{font-size:11px;font-weight:700;color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:0.06em;display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.section-h .meta{font-size:10px;color:var(--v3-ink-3);font-family:var(--mono);font-weight:600;text-transform:none;letter-spacing:0;}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.fact{background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:var(--r-inner);padding:11px 12px;}
+.fact .lab{font-size:10px;font-family:var(--mono);color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px;}
+.fact .val{font-size:12.5px;font-weight:700;color:var(--v3-ink);word-break:break-all;}
+.fact .val.id{font-family:var(--mono);font-size:11px;font-weight:600;}
+.fact .val a{color:var(--v3-brand);text-decoration:none;}
+.fact .val a:hover{text-decoration:underline;}
+.tl-track{display:flex;align-items:center;gap:0;position:relative;padding:6px 0 26px;}
+.tl-line{flex:1;height:3px;background:var(--v3-line);border-radius:2px;}
+.tl-line .fill{height:100%;background:var(--v3-brand);border-radius:2px;width:60%;}
+.tl-node{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;}
+.tl-node .d{width:14px;height:14px;border-radius:50%;background:var(--v3-card);border:3px solid var(--v3-line);}
+.tl-node.active .d{border-color:var(--v3-brand);background:var(--v3-brand);box-shadow:0 0 0 4px var(--v3-brand-soft);}
+.tl-node.done .d{border-color:var(--v3-ok);background:var(--v3-ok);}
+.tl-node .label{font-size:10.5px;color:var(--v3-ink-3);position:absolute;top:22px;white-space:nowrap;}
+.tl-node.active .label{color:var(--v3-brand-deep);font-weight:700;}
+.ref-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-inner);border:1px solid var(--v3-line);background:var(--v3-card-soft);font-size:12.5px;cursor:pointer;transition:.15s;}
+.ref-row:hover{border-color:var(--v3-brand);background:var(--v3-card);}
+.ref-row .ico{color:var(--v3-ink-3);flex-shrink:0;}
+.ref-row .ico svg{width:16px;height:16px;}
+.ref-row .t{flex:1;min-width:0;font-weight:600;color:var(--v3-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ref-row .m{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);flex-shrink:0;}
+.ref-grid{display:grid;gap:8px;}
+
+/* inline action footer in hero */
+.hero-actions{display:flex;align-items:center;gap:10px;padding:16px 26px 18px 32px;border-top:1px solid var(--v3-line);background:var(--v3-card-soft);}
+.hero-actions .note{font-size:11px;color:var(--v3-ink-3);margin-left:auto;display:flex;align-items:center;gap:6px;}
+.hero-actions .note svg{width:13px;height:13px;}
+
+/* Queue rail — compact clickable items that swap the hero */
+.queue{background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;position:sticky;top:0;}
+.queue-hd{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid var(--v3-line);background:var(--v3-card-soft);}
+.queue-hd .ttl{font-size:13px;font-weight:700;}
+.queue-hd .cnt{font-size:10.5px;color:var(--v3-ink-3);font-family:var(--mono);}
+.queue-body{display:flex;flex-direction:column;gap:6px;padding:8px;max-height:680px;overflow-y:auto;}
+.qcard{display:flex;gap:10px;padding:11px 12px;border-radius:var(--r-inner);cursor:pointer;transition:.15s;position:relative;border:1px solid transparent;}
+.qcard:hover{background:var(--v3-card-soft);}
+.qcard.sel{background:var(--v3-brand-soft);border-color:var(--v3-brand-soft);}
+.qcard .qd{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0;}
+.qcard .qd.danger{background:var(--v3-danger);} .qcard .qd.warn{background:var(--v3-warn);} .qcard .qd.info{background:var(--v3-brand);} .qcard .qd.mute{background:var(--v3-line-strong);}
+.qcard .qc{flex:1;min-width:0;}
+.qcard .qt{font-size:12.5px;font-weight:700;line-height:1.35;color:var(--v3-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qcard.sel .qt{color:var(--v3-brand-deep);}
+.qcard .qm{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10px;color:var(--v3-ink-3);font-family:var(--mono);}
+.qcard .qm .pill{font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:0.04em;}
+.qcard .qm .pill.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.qcard .qm .pill.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.qcard .qm .pill.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+
+/* up-next filmstrip below hero */
+.upnext{margin-top:14px;}
+.upnext-hd{font-size:11px;font-weight:700;color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.upnext-hd .meta{font-size:10px;color:var(--v3-ink-3);font-family:var(--mono);font-weight:600;text-transform:none;}
+.filmstrip{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;}
+.thumb{flex:0 0 220px;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:var(--r-inner);padding:12px 13px;cursor:pointer;transition:.15s;position:relative;border-top:3px solid var(--v3-line-strong);}
+.thumb:hover{border-color:var(--v3-brand);transform:translateY(-2px);box-shadow:var(--shadow);}
+.thumb.danger{border-top-color:var(--v3-danger);}
+.thumb.warn{border-top-color:var(--v3-warn);}
+.thumb.brand{border-top-color:var(--v3-brand);}
+.thumb .tt{font-size:12.5px;font-weight:700;line-height:1.35;color:var(--v3-ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.thumb .tm{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:10px;color:var(--v3-ink-3);font-family:var(--mono);}
+.thumb .tm .pill{font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:3px;text-transform:uppercase;}
+.thumb .tm .pill.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.thumb .tm .pill.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.thumb .tm .pill.info{background:var(--v3-brand-soft);color:var(--v3-brand);}
+
+@media (max-width:1200px){.cockpit{grid-template-columns:1fr;}.queue{position:static;max-height:none;}}
+@media (max-width:900px){.body{grid-template-columns:1fr;}.sidebar{display:none;}.ribbon{flex-wrap:wrap;}.urgency{min-width:100%;}.facts{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== Full-width header (top) ===== -->
+  <header class="topbar">
+    <button class="trigger" aria-label="折叠侧边栏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <div class="brand">
+      <div class="mk">矩</div>
+      <div class="nm">矩枢平台</div>
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      搜索任务、数字员工、能力、文档…
+      <span class="kbd">⌘K</span>
+    </div>
+    <div class="top-right">
+      <div class="theme-seg">
+        <button class="on" title="浅色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+        <button title="深色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+        <button title="跟随系统"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+      </div>
+      <button class="tbtn" aria-label="通知"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+      <button class="ubtn"><div class="pic">开</div><div class="nm">开发管理员</div></button>
+    </div>
+  </header>
+
+  <!-- ===== Body: left menu + right content ===== -->
+  <div class="body">
+  <aside class="sidebar">
+    <div class="nav-group">
+      <div class="nav-label">工作区</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>任务中枢</div>
+      <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>收件箱 <span class="badge">11</span></div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>项目管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>数字员工</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>技能管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>团队管理</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">核心导航</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M18 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M15 9v3a2 2 0 0 1-2 2h-1"/></svg>流程编排</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>自动化任务</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.498.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>外部能力</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6"/><rect x="2" y="9" width="6" height="6"/><rect x="16" y="9" width="6" height="6"/><rect x="9" y="16" width="6" height="6"/></svg>MCP 管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v3z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>协作集成</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>审批中心</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Runtime 节点</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">平台管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M2 22a10 10 0 0 1 20 0"/></svg>运行总览</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>权限中心</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/></svg>成本管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>用户管理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>审计中心</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12h6"/><path d="M15 6h6"/><path d="M15 18h6"/><path d="M3 12h.01"/><path d="M3 6h.01"/><path d="M3 18h.01"/></svg>日志管理</div>
+    </div>
+  </aside>
+
+  <!-- ===== Right content column ===== -->
+  <div class="content-col">
+    <div class="content">
+      <!-- ShellPageHeader -->
+      <div class="pagehead">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+        <div>
+          <h1>收件箱</h1>
+          <div class="sub">需要你处理、确认或继续追踪的事项。高风险与阻断项优先处理。</div>
+        </div>
+      </div>
+
+      <!-- ===== Situation ribbon (replaces 4 metric cards) ===== -->
+      <div class="ribbon">
+        <div class="rstat"><span class="dot brand"></span><div><div class="n brand">13</div><div class="l">待处理</div><div class="m">我的队列</div></div></div>
+        <div class="rstat"><span class="dot danger"></span><div><div class="n danger">8</div><div class="l">高风险</div><div class="m">需优先确认</div></div></div>
+        <div class="rstat"><span class="dot warn"></span><div><div class="n warn">0</div><div class="l">阻断</div><div class="m">等待判断</div></div></div>
+        <div class="rstat"><span class="dot mute"></span><div><div class="n">120h</div><div class="l">等待最久</div><div class="m">基于 created_at</div></div></div>
+        <div class="urgency">
+          <div class="ring" id="ribbonRing" style="background:conic-gradient(var(--v3-danger) 78%, var(--v3-danger-soft) 0);"><span>8</span></div>
+          <div><div class="ut">需优先处置</div><div class="ub">8 / 13 高风险</div></div>
+        </div>
+      </div>
+
+      <!-- ===== Command bar (replaces big filter card) ===== -->
+      <div class="cmdbar">
+        <div class="viewseg">
+          <button class="on">我的待办 <span class="ct">11</span></button>
+          <button>团队待办 <span class="ct">2</span></button>
+        </div>
+        <div class="fchip">状态 <span class="v">开放</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+        <div class="fchip">类型 <span class="v" style="color:var(--v3-ink-3)">全部</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+        <div class="fchip">风险 <span class="v" style="color:var(--v3-ink-3)">全部</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+        <div class="fchip">项目 ID <span class="v" style="color:var(--v3-ink-3)">精确</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+        <button class="btn ghost sm" style="margin-left:auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>重置</button>
+      </div>
+
+      <!-- ===== Decision Focus Cockpit ===== -->
+      <div class="cockpit">
+        <!-- Hero decision card: one decision dominates the screen -->
+        <section class="hero" id="hero">
+          <div class="hero-band" id="heroBand"></div>
+          <div class="hero-top">
+            <div class="hmain">
+              <div class="hero-eyebrow"><span class="pulse"></span> <span id="spotKi">PROJECT_DECISION · 10a86c3c</span></div>
+              <h2 id="spotTitle">主机操作系统健康检查</h2>
+              <div class="hsum" id="spotSummary">该项目任务执行失败，需要人类判断：是要求补证、重新执行，还是直接驳回？当前节点处于项目决策状态，关联任务与运行记录已聚合到下方。</div>
+            </div>
+            <div class="hero-risk">
+              <span class="rpill" id="heroRiskPill" style="background:var(--v3-danger-soft);color:var(--v3-danger);">高风险</span>
+              <span class="waitbadge">已等待 <b id="waitBig">34h 1m</b></span>
+            </div>
+          </div>
+
+          <div class="hero-body">
+            <div>
+              <div class="section-h">为什么需要你处理</div>
+              <div class="facts">
+                <div class="fact"><div class="lab">关联项目</div><div class="val id"><a href="#" id="spotProject">10a86c3c-2d64…</a></div></div>
+                <div class="fact"><div class="lab">当前节点</div><div class="val" id="spotNode">项目决策</div></div>
+                <div class="fact"><div class="lab">发起来源</div><div class="val" id="spotSource">项目决策请求</div></div>
+                <div class="fact"><div class="lab">更新时间</div><div class="val" id="spotTime">07/05 04:30</div></div>
+                <div class="fact"><div class="lab">关联任务</div><div class="val id" id="spotTask">d4e4e4c5-9ad6…</div></div>
+                <div class="fact"><div class="lab">风险等级</div><div class="val" style="color:var(--v3-danger)" id="spotRisk">高风险</div></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="section-h">过程记录 <span class="meta">2 时间点 · 进行中</span></div>
+              <div class="tl-track">
+                <div class="tl-node done"><div class="d"></div><div class="label">事项已创建</div></div>
+                <div class="tl-line"><div class="fill"></div></div>
+                <div class="tl-node done"><div class="d"></div><div class="label">最近活动</div></div>
+                <div class="tl-line"><div class="fill"></div></div>
+                <div class="tl-node active"><div class="d"></div><div class="label">等待人类决策</div></div>
+                <div class="tl-line"><div class="fill" style="width:0%"></div></div>
+                <div class="tl-node"><div class="d"></div><div class="label">进入下一步</div></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="section-h">关联引用 <span class="meta">4 项 · 跳转</span></div>
+              <div class="ref-grid">
+                <div class="ref-row"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></span><span class="t">关联项目 · 10a86c3c…</span><span class="m">source_project_id ↗</span></div>
+                <div class="ref-row"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span><span class="t">关联任务 d4e4e4c5-9ad6…</span><span class="m">source_task_id ↗</span></div>
+                <div class="ref-row"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span class="t">操作将写入审计日志</span><span class="m">审计</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- inline actions live IN the hero, not a separate panel -->
+          <div class="hero-actions">
+            <button class="btn primary lg">同意</button>
+            <button class="btn outline lg">驳回</button>
+            <button class="btn danger lg">要求补证</button>
+            <span class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>动作写入审计日志，推动流程进入下一节点</span>
+          </div>
+        </section>
+
+        <!-- Queue rail: compact items that swap the hero -->
+        <aside class="queue">
+          <div class="queue-hd">
+            <div class="ttl">决策队列</div>
+            <div class="cnt">13 项 · 按风险/等待</div>
+          </div>
+          <div class="queue-body" id="queueBody"></div>
+        </aside>
+      </div>
+
+      <!-- Up-next filmstrip -->
+      <div class="upnext">
+        <div class="upnext-hd">接下来处理 <span class="meta">横向滑动查看更多</span></div>
+        <div class="filmstrip" id="filmstrip"></div>
+      </div>
+
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+const items = [
+  { ki:"PROJECT_DECISION · 10a86c3c", title:"主机操作系统健康检查", summary:"该项目任务执行失败，需要人类判断：是要求补证、重新执行，还是直接驳回？当前节点处于项目决策状态，关联任务与运行记录已聚合到下方。", project:"10a86c3c-2d64…", node:"项目决策", source:"项目决策请求", time:"07/05 04:30", task:"d4e4e4c5-9ad6…", risk:"高风险", riskColor:"var(--v3-danger)", wait:"34h 1m", waitShort:"34h", waitPct:60, waitColor:"var(--v3-danger)", waitSoft:"var(--v3-danger-soft)", waitText:"var(--v3-danger-text)", urgent:true },
+  { ki:"APPROVAL · 3e7f332c", title:"验收项目交付", summary:"项目已到达交付节点，需要人类确认需求是否已完成并满足验收标准。可查看关联工件与测试报告后决定通过或驳回。", project:"3e7f332c-1e42…", node:"交付验收", source:"审批请求", time:"07/04 16:00", task:"a9b8c7d6-1234…", risk:"中风险", riskColor:"var(--v3-warn)", wait:"23h", waitShort:"23h", waitPct:55, waitColor:"var(--v3-warn)", waitSoft:"var(--v3-warn-soft)", waitText:"var(--v3-warn-text)", urgent:false },
+  { ki:"PROJECT_DECISION · 10a86c3c", title:"处理项目任务失败", summary:"任务执行失败，错误信息已聚合。当前需要判断：是否为临时故障可重试，还是需要人工介入修复配置或依赖。", project:"10a86c3c-2d64…", node:"失败处置", source:"项目决策请求", time:"07/02 12:20", task:"b2c3d4e5-6789…", risk:"高风险", riskColor:"var(--v3-danger)", wait:"4天", waitShort:"96h", waitPct:100, waitColor:"var(--v3-danger)", waitSoft:"var(--v3-danger-soft)", waitText:"var(--v3-danger-text)", urgent:true },
+  { ki:"PROJECT_DECISION · 19d6112d", title:"网络健康检查", summary:"网络健康检查触发告警，需要人工确认是否为真实故障。当前节点等待确认是否进入修复流程或标记为误报。", project:"19d6112d-05bb…", node:"告警确认", source:"项目决策请求", time:"07/05 06:00", task:"c3d4e5f6-7890…", risk:"中风险", riskColor:"var(--v3-warn)", wait:"1天", waitShort:"24h", waitPct:60, waitColor:"var(--v3-warn)", waitSoft:"var(--v3-warn-soft)", waitText:"var(--v3-warn-text)", urgent:false },
+  { ki:"PROJECT_DECISION · 8f2c8a5c", title:"Verify Runtime Heartbeat (main)", summary:"验证 Runtime 心跳任务需要确认节点在线状态。当前为低风险例行确认，可直接同意或查看节点详情。", project:"8f2c8a5c-3e3b…", node:"节点确认", source:"项目决策请求", time:"06/28 09:15", task:"d4e5f6a7-8901…", risk:"低风险", riskColor:"var(--v3-brand)", wait:"9天", waitShort:"9d", waitPct:100, waitColor:"var(--v3-brand)", waitSoft:"var(--v3-brand-soft)", waitText:"var(--v3-brand-deep)", urgent:false },
+  { ki:"PROJECT_DECISION · 7a1b9d4e", title:"验证 Runtime 心跳", summary:"例行 Runtime 心跳验证，确认节点健康状态。无需复杂判断，可直接通过。", project:"7a1b9d4e-5f6c…", node:"节点确认", source:"项目决策请求", time:"07/03 11:30", task:"e5f6a7b8-9012…", risk:"低风险", riskColor:"var(--v3-brand)", wait:"2天", waitShort:"2d", waitPct:100, waitColor:"var(--v3-brand)", waitSoft:"var(--v3-brand-soft)", waitText:"var(--v3-brand-deep)", urgent:false }
+];
+
+const els = {
+  ki: document.getElementById('spotKi'),
+  title: document.getElementById('spotTitle'),
+  summary: document.getElementById('spotSummary'),
+  project: document.getElementById('spotProject'),
+  node: document.getElementById('spotNode'),
+  source: document.getElementById('spotSource'),
+  time: document.getElementById('spotTime'),
+  task: document.getElementById('spotTask'),
+  risk: document.getElementById('spotRisk'),
+  waitBig: document.getElementById('waitBig'),
+  band: document.getElementById('heroBand'),
+  pill: document.getElementById('heroRiskPill'),
+  ribbonRing: document.getElementById('ribbonRing'),
+  queueBody: document.getElementById('queueBody'),
+  filmstrip: document.getElementById('filmstrip'),
+};
+
+const toneByKey = { high:"danger", medium:"warn", low:"info" };
+function toneFor(d){ return d.urgent ? "danger" : (d.riskColor.includes("warn") ? "warn" : (d.riskColor.includes("brand") ? "info" : "mute")); }
+function bandClass(d){ return d.urgent ? "" : (d.riskColor.includes("warn") ? "warn" : (d.riskColor.includes("brand") ? "brand" : "mute")); }
+
+// Build queue rail
+els.queueBody.innerHTML = items.map((d, i) => `
+  <div class="qcard ${i===0?'sel':''}" data-index="${i}">
+    <span class="qd ${toneFor(d)}"></span>
+    <div class="qc">
+      <div class="qt">${d.title}</div>
+      <div class="qm"><span class="pill ${toneFor(d)}">${d.risk}</span> ${d.ki.split(' · ')[0]} · 等待 ${d.wait}</div>
+    </div>
+  </div>`).join('');
+
+// Build filmstrip
+els.filmstrip.innerHTML = items.map((d, i) => `
+  <div class="thumb ${toneFor(d)==='mute'?'brand':toneFor(d)}" data-index="${i}">
+    <div class="tt">${d.title}</div>
+    <div class="qm"><span class="pill ${toneFor(d)}">${d.risk}</span> 等待 ${d.wait}</div>
+  </div>`).join('');
+
+function render(index) {
+  const d = items[index];
+  els.ki.textContent = d.ki;
+  els.title.textContent = d.title;
+  els.summary.textContent = d.summary;
+  els.project.textContent = d.project;
+  els.node.textContent = d.node;
+  els.source.textContent = d.source;
+  els.time.textContent = d.time;
+  els.task.textContent = d.task;
+  els.risk.textContent = d.risk;
+  els.risk.style.color = d.riskColor;
+  els.waitBig.textContent = d.wait;
+  // hero band + risk pill follow the selected item's tone
+  els.band.className = 'hero-band ' + bandClass(d);
+  els.pill.style.background = d.waitSoft;
+  els.pill.style.color = d.riskColor;
+  els.pill.textContent = d.risk;
+  // queue selection
+  document.querySelectorAll('.qcard').forEach(el => el.classList.remove('sel'));
+  const sel = document.querySelector(`.qcard[data-index="${index}"]`);
+  if (sel) sel.classList.add('sel');
+}
+
+document.querySelectorAll('.qcard').forEach(el => {
+  el.addEventListener('click', () => render(Number(el.dataset.index)));
+});
+document.querySelectorAll('.thumb').forEach(el => {
+  el.addEventListener('click', () => render(Number(el.dataset.index)));
+});
+
+render(0);
+</script>
+</body>
+</html>

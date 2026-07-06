@@ -18,6 +18,7 @@ import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
+import { Route as AuthenticatedLogsRouteRouteImport } from './routes/_authenticated/logs/route'
 import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedTeamsIndexRouteImport } from './routes/_authenticated/teams/index'
@@ -29,6 +30,7 @@ import { Route as AuthenticatedRunOverviewIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
 import { Route as AuthenticatedMcpIndexRouteImport } from './routes/_authenticated/mcp/index'
+import { Route as AuthenticatedLogsIndexRouteImport } from './routes/_authenticated/logs/index'
 import { Route as AuthenticatedInboxIndexRouteImport } from './routes/_authenticated/inbox/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
 import { Route as AuthenticatedCostsIndexRouteImport } from './routes/_authenticated/costs/index'
@@ -101,6 +103,11 @@ const authLoginRoute = authLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedLogsRouteRoute = AuthenticatedLogsRouteRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedWorkflowsIndexRoute =
   AuthenticatedWorkflowsIndexRouteImport.update({
     id: '/workflows/',
@@ -162,6 +169,11 @@ const AuthenticatedMcpIndexRoute = AuthenticatedMcpIndexRouteImport.update({
   id: '/mcp/',
   path: '/mcp/',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedLogsIndexRoute = AuthenticatedLogsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedLogsRouteRoute,
 } as any)
 const AuthenticatedInboxIndexRoute = AuthenticatedInboxIndexRouteImport.update({
   id: '/inbox/',
@@ -281,21 +293,21 @@ const AuthenticatedEmployeesEmployeeIdRoute =
   } as any)
 const AuthenticatedLogsRuntimeIndexRoute =
   AuthenticatedLogsRuntimeIndexRouteImport.update({
-    id: '/logs/runtime/',
-    path: '/logs/runtime/',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/runtime/',
+    path: '/runtime/',
+    getParentRoute: () => AuthenticatedLogsRouteRoute,
   } as any)
 const AuthenticatedLogsOperationIndexRoute =
   AuthenticatedLogsOperationIndexRouteImport.update({
-    id: '/logs/operation/',
-    path: '/logs/operation/',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/operation/',
+    path: '/operation/',
+    getParentRoute: () => AuthenticatedLogsRouteRoute,
   } as any)
 const AuthenticatedLogsLoginIndexRoute =
   AuthenticatedLogsLoginIndexRouteImport.update({
-    id: '/logs/login/',
-    path: '/logs/login/',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/login/',
+    path: '/login/',
+    getParentRoute: () => AuthenticatedLogsRouteRoute,
   } as any)
 const AuthenticatedEmployeesTemplatesIndexRoute =
   AuthenticatedEmployeesTemplatesIndexRouteImport.update({
@@ -324,6 +336,7 @@ const AuthenticatedEmployeesEmployeeIdConfigRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/logs': typeof AuthenticatedLogsRouteRouteWithChildren
   '/login': typeof authLoginRoute
   '/sign-in': typeof authSignInRoute
   '/401': typeof errors401Route
@@ -351,6 +364,7 @@ export interface FileRoutesByFullPath {
   '/costs/': typeof AuthenticatedCostsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/inbox/': typeof AuthenticatedInboxIndexRoute
+  '/logs/': typeof AuthenticatedLogsIndexRoute
   '/mcp/': typeof AuthenticatedMcpIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -399,6 +413,7 @@ export interface FileRoutesByTo {
   '/costs': typeof AuthenticatedCostsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/inbox': typeof AuthenticatedInboxIndexRoute
+  '/logs': typeof AuthenticatedLogsIndexRoute
   '/mcp': typeof AuthenticatedMcpIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
@@ -421,6 +436,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/_authenticated/logs': typeof AuthenticatedLogsRouteRouteWithChildren
   '/(auth)/login': typeof authLoginRoute
   '/(auth)/sign-in': typeof authSignInRoute
   '/(errors)/401': typeof errors401Route
@@ -449,6 +465,7 @@ export interface FileRoutesById {
   '/_authenticated/costs/': typeof AuthenticatedCostsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/inbox/': typeof AuthenticatedInboxIndexRoute
+  '/_authenticated/logs/': typeof AuthenticatedLogsIndexRoute
   '/_authenticated/mcp/': typeof AuthenticatedMcpIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -472,6 +489,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/logs'
     | '/login'
     | '/sign-in'
     | '/401'
@@ -499,6 +517,7 @@ export interface FileRouteTypes {
     | '/costs/'
     | '/employees/'
     | '/inbox/'
+    | '/logs/'
     | '/mcp/'
     | '/permissions/'
     | '/projects/'
@@ -547,6 +566,7 @@ export interface FileRouteTypes {
     | '/costs'
     | '/employees'
     | '/inbox'
+    | '/logs'
     | '/mcp'
     | '/permissions'
     | '/projects'
@@ -568,6 +588,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/_authenticated/logs'
     | '/(auth)/login'
     | '/(auth)/sign-in'
     | '/(errors)/401'
@@ -596,6 +617,7 @@ export interface FileRouteTypes {
     | '/_authenticated/costs/'
     | '/_authenticated/employees/'
     | '/_authenticated/inbox/'
+    | '/_authenticated/logs/'
     | '/_authenticated/mcp/'
     | '/_authenticated/permissions/'
     | '/_authenticated/projects/'
@@ -692,6 +714,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/logs': {
+      id: '/_authenticated/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof AuthenticatedLogsRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/workflows/': {
       id: '/_authenticated/workflows/'
       path: '/workflows'
@@ -768,6 +797,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/mcp/'
       preLoaderRoute: typeof AuthenticatedMcpIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/logs/': {
+      id: '/_authenticated/logs/'
+      path: '/'
+      fullPath: '/logs/'
+      preLoaderRoute: typeof AuthenticatedLogsIndexRouteImport
+      parentRoute: typeof AuthenticatedLogsRouteRoute
     }
     '/_authenticated/inbox/': {
       id: '/_authenticated/inbox/'
@@ -911,24 +947,24 @@ declare module '@tanstack/react-router' {
     }
     '/_authenticated/logs/runtime/': {
       id: '/_authenticated/logs/runtime/'
-      path: '/logs/runtime'
+      path: '/runtime'
       fullPath: '/logs/runtime/'
       preLoaderRoute: typeof AuthenticatedLogsRuntimeIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedLogsRouteRoute
     }
     '/_authenticated/logs/operation/': {
       id: '/_authenticated/logs/operation/'
-      path: '/logs/operation'
+      path: '/operation'
       fullPath: '/logs/operation/'
       preLoaderRoute: typeof AuthenticatedLogsOperationIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedLogsRouteRoute
     }
     '/_authenticated/logs/login/': {
       id: '/_authenticated/logs/login/'
-      path: '/logs/login'
+      path: '/login'
       fullPath: '/logs/login/'
       preLoaderRoute: typeof AuthenticatedLogsLoginIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedLogsRouteRoute
     }
     '/_authenticated/employees/templates/': {
       id: '/_authenticated/employees/templates/'
@@ -961,6 +997,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedLogsRouteRouteChildren {
+  AuthenticatedLogsIndexRoute: typeof AuthenticatedLogsIndexRoute
+  AuthenticatedLogsLoginIndexRoute: typeof AuthenticatedLogsLoginIndexRoute
+  AuthenticatedLogsOperationIndexRoute: typeof AuthenticatedLogsOperationIndexRoute
+  AuthenticatedLogsRuntimeIndexRoute: typeof AuthenticatedLogsRuntimeIndexRoute
+}
+
+const AuthenticatedLogsRouteRouteChildren: AuthenticatedLogsRouteRouteChildren =
+  {
+    AuthenticatedLogsIndexRoute: AuthenticatedLogsIndexRoute,
+    AuthenticatedLogsLoginIndexRoute: AuthenticatedLogsLoginIndexRoute,
+    AuthenticatedLogsOperationIndexRoute: AuthenticatedLogsOperationIndexRoute,
+    AuthenticatedLogsRuntimeIndexRoute: AuthenticatedLogsRuntimeIndexRoute,
+  }
+
+const AuthenticatedLogsRouteRouteWithChildren =
+  AuthenticatedLogsRouteRoute._addFileChildren(
+    AuthenticatedLogsRouteRouteChildren,
+  )
+
 interface AuthenticatedEmployeesEmployeeIdRouteChildren {
   AuthenticatedEmployeesEmployeeIdConfigRoute: typeof AuthenticatedEmployeesEmployeeIdConfigRoute
 }
@@ -992,6 +1048,7 @@ const AuthenticatedProjectsProjectIdRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedLogsRouteRoute: typeof AuthenticatedLogsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedEmployeesEmployeeIdRoute: typeof AuthenticatedEmployeesEmployeeIdRouteWithChildren
   AuthenticatedEmployeesNewRoute: typeof AuthenticatedEmployeesNewRoute
@@ -1026,12 +1083,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedEmployeesTemplatesTemplateTypeRoute: typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   AuthenticatedEmployeesTemplatesIndexRoute: typeof AuthenticatedEmployeesTemplatesIndexRoute
-  AuthenticatedLogsLoginIndexRoute: typeof AuthenticatedLogsLoginIndexRoute
-  AuthenticatedLogsOperationIndexRoute: typeof AuthenticatedLogsOperationIndexRoute
-  AuthenticatedLogsRuntimeIndexRoute: typeof AuthenticatedLogsRuntimeIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedLogsRouteRoute: AuthenticatedLogsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedEmployeesEmployeeIdRoute:
     AuthenticatedEmployeesEmployeeIdRouteWithChildren,
@@ -1071,9 +1126,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedEmployeesTemplatesTemplateTypeRoute,
   AuthenticatedEmployeesTemplatesIndexRoute:
     AuthenticatedEmployeesTemplatesIndexRoute,
-  AuthenticatedLogsLoginIndexRoute: AuthenticatedLogsLoginIndexRoute,
-  AuthenticatedLogsOperationIndexRoute: AuthenticatedLogsOperationIndexRoute,
-  AuthenticatedLogsRuntimeIndexRoute: AuthenticatedLogsRuntimeIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

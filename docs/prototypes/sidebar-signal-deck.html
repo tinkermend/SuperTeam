@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>编排信号台 · 左侧菜单栏 — UI Designer 原创</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #f1f3f6; }
+
+    /* ========================================
+       编排信号台 · Signal Deck
+       设计理念：菜单栏 = 系统状态镜像
+       ======================================== */
+
+    .sidebar {
+      width: 252px;
+      background:
+        linear-gradient(180deg, #f8f9fb 0%, #f4f6f9 100%);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+      position: relative;
+      border-right: 1px solid #e3e7ed;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: #d4d9e0; border-radius: 3px; }
+
+    /* 顶部品牌色信号线 —— 控制台"在线"的视觉锚 */
+    .sidebar::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, #2f5fff 0%, #00b8d4 50%, #2f5fff 100%);
+      background-size: 200% 100%;
+      animation: signalFlow 8s linear infinite;
+    }
+    @keyframes signalFlow {
+      0% { background-position: 0% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    /* 底部极淡点阵 —— 编排/节点的视觉母题 */
+    .sidebar::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 180px;
+      background-image: radial-gradient(rgba(47, 95, 255, 0.06) 1px, transparent 1px);
+      background-size: 12px 12px;
+      pointer-events: none;
+      mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+    }
+
+    /* ===== 品牌区：字标 + 在线脉冲 ===== */
+    .brand {
+      padding: 18px 16px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid #e8ebf0;
+      position: relative; z-index: 1;
+    }
+    .brand-name {
+      font-weight: 700; font-size: 15px; color: #1a1f2e;
+      letter-spacing: -0.01em;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .brand-mark {
+      width: 22px; height: 22px;
+      background: #1a1f2e;
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      color: #2f5fff; font-weight: 700; font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .brand-status {
+      display: flex; align-items: center; gap: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; font-weight: 500;
+      color: #00875a;
+      letter-spacing: 0.02em;
+    }
+    .pulse-dot {
+      width: 7px; height: 7px;
+      background: #00b884;
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(0, 184, 132, 0.6);
+      animation: pulse 2s ease-out infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(0, 184, 132, 0.6); }
+      70% { box-shadow: 0 0 0 6px rgba(0, 184, 132, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 184, 132, 0); }
+    }
+
+    /* ===== 频道（分组）===== */
+    .channel { position: relative; z-index: 1; padding: 10px 0; }
+    .channel + .channel { border-top: 1px solid #edf0f4; }
+
+    .channel-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 16px 8px;
+      font-size: 10px; font-weight: 600;
+      color: #8a92a0;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .channel-bar {
+      width: 2px; height: 11px; border-radius: 1px;
+    }
+    .channel-bar.work { background: #2f5fff; }
+    .channel-bar.flow { background: #00b8d4; }
+    .channel-bar.platform { background: #8a92a0; }
+
+    /* ===== 菜单项：图标 + 文字 + 状态信号 ===== */
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 14px 6px 16px;
+      margin: 1px 8px;
+      border-radius: 7px;
+      cursor: pointer; transition: background 0.12s ease, color 0.12s ease;
+      font-size: 13px; font-weight: 500;
+      color: #4a5160;
+      text-decoration: none;
+      position: relative;
+      line-height: 1.4;
+    }
+    .nav-item:hover {
+      background: rgba(47, 95, 255, 0.06);
+      color: #1a1f2e;
+    }
+    .nav-item.active {
+      background: rgba(47, 95, 255, 0.08);
+      color: #1a1f2e;
+      font-weight: 600;
+    }
+    .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: -8px; top: 50%; transform: translateY(-50%);
+      width: 3px; height: 18px;
+      background: #2f5fff;
+      border-radius: 0 2px 2px 0;
+    }
+    .nav-item svg {
+      width: 15px; height: 15px; flex-shrink: 0;
+      stroke: currentColor; stroke-width: 1.8; fill: none;
+      stroke-linecap: round; stroke-linejoin: round;
+      opacity: 0.8;
+    }
+    .nav-item.active svg { opacity: 1; color: #2f5fff; }
+    .nav-label { flex: 1; }
+
+    /* 状态信号区 —— 菜单栏作为状态镜像的核心 */
+    .signal {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; font-weight: 500;
+      display: flex; align-items: center; gap: 5px;
+      flex-shrink: 0;
+    }
+    /* 运行中：脉冲点 + 数字 */
+    .signal.running { color: #2f5fff; }
+    .signal.running .run-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #2f5fff;
+      animation: runPulse 1.6s ease-in-out infinite;
+    }
+    @keyframes runPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.75); }
+    }
+    /* 待审批：数字徽章（橙红） */
+    .signal.pending {
+      background: #fff0eb; color: #c4380a;
+      padding: 1px 6px; border-radius: 4px;
+      font-weight: 600;
+    }
+    /* 在线计数：小灰字（节点/员工在线数） */
+    .signal.count { color: #8a92a0; font-weight: 500; }
+    .signal.count .live-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: #00b884;
+    }
+
+    /* ===== 底部：系统健康度迷你指示器 ===== */
+    .deck-footer {
+      margin-top: auto;
+      padding: 12px 16px 14px;
+      border-top: 1px solid #e8ebf0;
+      position: relative; z-index: 1;
+      background: rgba(248, 249, 251, 0.6);
+      backdrop-filter: blur(8px);
+    }
+    .footer-title {
+      font-size: 9.5px; font-weight: 600;
+      color: #8a92a0;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex; justify-content: space-between;
+    }
+    .footer-title .ts {
+      font-family: 'JetBrains Mono', monospace;
+      color: #b0b6c0; font-weight: 500;
+    }
+    .meter {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .meter-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px;
+    }
+    .meter-label {
+      color: #6a7180; width: 56px; flex-shrink: 0;
+      font-weight: 500;
+    }
+    .meter-bar {
+      flex: 1; height: 4px;
+      background: #e3e7ed; border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+    .meter-fill {
+      height: 100%; border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+    .meter-fill.task { background: linear-gradient(90deg, #2f5fff, #00b8d4); width: 62%; }
+    .meter-fill.queue { background: linear-gradient(90deg, #00b884, #2f5fff); width: 34%; }
+    .meter-fill.err { background: #c4380a; width: 8%; }
+    .meter-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; font-weight: 600;
+      color: #4a5160; width: 38px; text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ===== 内容区（占位）===== */
+    .content { flex: 1; padding: 36px 44px; overflow-y: auto; color: #1a1f2e; }
+    .content h1 { font-weight: 700; font-size: 26px; margin-bottom: 12px; letter-spacing: -0.02em; }
+    .content p { color: #5a6270; font-size: 14.5px; line-height: 1.7; max-width: 620px; }
+    .content .principle {
+      margin-top: 20px; padding: 18px 20px;
+      background: #fff; border: 1px solid #e3e7ed; border-radius: 10px;
+      border-left: 3px solid #2f5fff;
+    }
+    .content .principle h3 { font-size: 13px; font-weight: 600; color: #1a1f2e; margin-bottom: 8px; }
+    .content .principle p { font-size: 13.5px; color: #5a6270; }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <!-- 品牌区：字标 + 在线状态 -->
+    <div class="brand">
+      <div class="brand-name">
+        <span class="brand-mark">矩</span>
+        矩枢
+      </div>
+      <div class="brand-status">
+        <span class="pulse-dot"></span>
+        ONLINE
+      </div>
+    </div>
+
+    <!-- 频道1：工作区（品牌蓝标识） -->
+    <div class="channel">
+      <div class="channel-head"><span class="channel-bar work"></span>工作区</div>
+      <a class="nav-item active" href="#">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+        <span class="nav-label">任务中枢</span>
+        <span class="signal running"><span class="run-dot"></span>3</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>
+        <span class="nav-label">收件箱</span>
+        <span class="signal pending">13</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span class="nav-label">项目管理</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        <span class="nav-label">数字员工</span>
+        <span class="signal count"><span class="live-dot"></span>8</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span class="nav-label">技能管理</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <span class="nav-label">团队管理</span>
+      </a>
+    </div>
+
+    <!-- 频道2：核心导航（青色标识） -->
+    <div class="channel">
+      <div class="channel-head"><span class="channel-bar flow"></span>核心导航</div>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span class="nav-label">流程编排</span>
+        <span class="signal running"><span class="run-dot"></span>2</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span class="nav-label">自动化任务</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+        <span class="nav-label">外部能力</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span class="nav-label">MCP 管理</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <span class="nav-label">协作集成</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="nav-label">审批中心</span>
+        <span class="signal pending">5</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+        <span class="nav-label">Runtime 节点</span>
+        <span class="signal count"><span class="live-dot"></span>3/4</span>
+      </a>
+    </div>
+
+    <!-- 频道3：平台管理（灰色标识） -->
+    <div class="channel">
+      <div class="channel-head"><span class="channel-bar platform"></span>平台管理</div>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
+        <span class="nav-label">运行总览</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/></svg>
+        <span class="nav-label">权限中心</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+        <span class="nav-label">成本管理</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="nav-label">审计中心</span>
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="nav-label">日志管理</span>
+      </a>
+    </div>
+
+    <!-- 底部：系统健康度迷你指示器 -->
+    <div class="deck-footer">
+      <div class="footer-title">
+        <span>系统状态</span>
+        <span class="ts">14:19</span>
+      </div>
+      <div class="meter">
+        <div class="meter-row">
+          <span class="meter-label">活跃任务</span>
+          <span class="meter-bar"><span class="meter-fill task"></span></span>
+          <span class="meter-val">62%</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-label">队列</span>
+          <span class="meter-bar"><span class="meter-fill queue"></span></span>
+          <span class="meter-val">34%</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-label">异常</span>
+          <span class="meter-bar"><span class="meter-fill err"></span></span>
+          <span class="meter-val">8%</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <h1>编排信号台 · Signal Deck</h1>
+    <p>抛开 v3 Soft-Flat 规范，从 SuperTeam 的本质出发——这是一个 AI 编排控制平面。我让菜单栏不再只是导航容器，而是<strong>系统状态的第一层镜像</strong>。</p>
+
+    <div class="principle">
+      <h3>设计理念</h3>
+      <p>每个菜单项携带实时运行信号：运行中的任务显示蓝色脉冲点+数字（任务中枢 3、流程编排 2），待审批显示橙红徽章（收件箱 13、审批中心 5），在线资源显示灰字计数（数字员工 8、Runtime 节点 3/4）。导航本身即仪表盘。</p>
+    </div>
+
+    <div class="principle" style="border-left-color:#00b8d4;margin-top:14px;">
+      <h3>关键设计决策</h3>
+      <p>① 顶部品牌色流动信号线——控制台"在线"的视觉锚；② 频道分组用彩色标识线区分职责域（蓝=工作区/青=编排/灰=平台）；③ 选中态用竖线+淡背景+深字，克制不抢信号；④ 数字与状态用 JetBrains Mono，强化数据感；⑤ 底部系统健康度迷你条，让菜单栏底部也成为信息载体。</p>
+    </div>
+  </main>
+</body>
+</html>

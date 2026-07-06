@@ -13,12 +13,6 @@ import {
   WorkSurface,
 } from "@/components/superteam";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   listOperationLogs,
   type OperationLogRecord,
   type OperationLogResult,
@@ -61,7 +55,6 @@ function OperationLogsRoute() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const [filters, setFilters] = useState<OperationLogFilters>({});
   const [offset, setOffset] = useState(0);
-  const [selectedRecord, setSelectedRecord] = useState<OperationLogRecord | null>(null);
 
   const logsQuery = useQuery({
     queryKey: ["web-operation-logs", filters, offset],
@@ -134,11 +127,7 @@ function OperationLogsRoute() {
             </thead>
             <tbody>
               {records.map((record: OperationLogRecord) => (
-                <V3Tr
-                  key={record.id}
-                  className="cursor-pointer"
-                  onClick={() => setSelectedRecord(record)}
-                >
+                <V3Tr key={record.id}>
                   <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
                     {formatLogDateTime(record.created_at)}
                   </V3Td>
@@ -168,44 +157,6 @@ function OperationLogsRoute() {
           pageSize={LOG_PAGE_SIZE}
         />
       </WorkSurface>
-
-      <Sheet open={selectedRecord !== null} onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}>
-        <SheetContent side="right" className="w-[420px] max-w-[45vw]">
-          {selectedRecord && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-base font-semibold text-v3-ink">
-                  {selectedRecord.module} · {selectedRecord.action}
-                </SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 flex flex-col gap-3 text-sm">
-                <DetailRow label="结果">
-                  <StatusPill tone={selectedRecord.result === "succeeded" ? "ok" : "danger"}>
-                    {selectedRecord.result === "succeeded" ? "成功" : "失败"}
-                  </StatusPill>
-                </DetailRow>
-                <DetailRow label="操作者">{selectedRecord.username || "—"}</DetailRow>
-                <DetailRow label="资源">
-                  {selectedRecord.resource_type
-                    ? `${selectedRecord.resource_type}:${selectedRecord.resource_id || "-"}`
-                    : "—"}
-                </DetailRow>
-                <DetailRow label="来源 IP">{selectedRecord.client_ip || "—"}</DetailRow>
-                <DetailRow label="时间">{formatLogDateTime(selectedRecord.created_at)}</DetailRow>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
     </>
-  );
-}
-
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="w-20 shrink-0 text-xs text-v3-ink-2">{label}</span>
-      <span className="min-w-0 break-all text-v3-ink">{children}</span>
-    </div>
   );
 }
