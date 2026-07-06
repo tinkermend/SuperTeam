@@ -114,10 +114,13 @@ const overview: ProjectOverview = {
 
 const demands: ProjectDemand[] = [
   {
+    attachments: [],
     content: "补充上线验收说明",
-    created_at: "2026-07-06T09:00:00Z",
     id: "demand-1",
     project_id: "project-1",
+    reviewer: null,
+    source_refs: {},
+    source_type: "manual",
     status: "submitted",
     submitted_by_user_id: "human-owner-1",
     tenant_id: "tenant-1",
@@ -127,16 +130,15 @@ const demands: ProjectDemand[] = [
 
 const decisionRequests: ProjectDecisionRequest[] = [
   {
-    created_at: "2026-07-06T09:30:00Z",
+    approval_request_id: "approval-1",
     decision_type: "risk_review",
     id: "decision-1",
     project_id: "project-1",
-    requested_by: "system",
     status_snapshot: "pending",
     summary_snapshot: "需要确认上线风险",
+    target_user_id: "human-owner-1",
     tenant_id: "tenant-1",
     title_snapshot: "确认上线风险",
-    updated_at: "2026-07-06T09:30:00Z",
   },
 ];
 

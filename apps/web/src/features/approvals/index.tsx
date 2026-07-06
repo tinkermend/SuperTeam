@@ -10,7 +10,6 @@ import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
-  SoftCard,
   StatusPill,
   V3Button,
   V3EmptyState,
