@@ -1,31 +1,38 @@
 /* 任务发起页 · 极光对角玻璃背景（实验性，仅本页作用域）
  *
- * 视觉参考：docs/prototypes/task-launch-glass-bg-aurora.html
- * 设计意图：玻璃外壳 + 实体内核（glass shell / solid core）。
- *   - 背景为两束低透明对角色晕（左上品牌蓝 / 右下紫）+ 中性冷灰底 + 极淡点阵结构纹理。
- *   - 该样式只作用于任务发起页，随组件卸载自动移除，不会泄漏到全局。
+ * 应用方式：给页面 Main 容器加 className="tl-aurora-surface"。
+ * 这是普通文档流背景（不依赖负 z-index 堆叠技巧），保证可见，
+ * 且只作用于任务发起页，随路由卸载自然消失，不会泄漏到全局。
  *
- * 回退方式：删除 task-launch-form.tsx 顶部的 `import "./task-launch-aurora.css";`
- * 以及该文件中的 <div className="tl-aurora-bg" /> 即可恢复中性基线。
+ * 视觉参考：docs/prototypes/task-launch-glass-bg-aurora.html
+ *   - 两束低透明对角色晕（左上品牌蓝 / 右下紫）+ 中性冷灰底 #f2f4fa
+ *   - 极淡点阵结构纹理（::before，带 mask 渐隐，位于内容之下）
+ *
+ * 回退：删除 task-launch-shell.tsx 中 <Main> 的 className="tl-aurora-surface" 即可。
  */
 
-.tl-aurora-bg {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
+.tl-aurora-surface {
+  position: relative;
+  background-color: #f2f4fa;
+  background-image:
     radial-gradient(760px 620px at 8% 2%, rgba(47, 95, 255, 0.16), transparent 60%),
-    radial-gradient(720px 600px at 98% 100%, rgba(124, 92, 255, 0.12), transparent 60%),
-    #f2f4fa;
+    radial-gradient(720px 600px at 98% 100%, rgba(124, 92, 255, 0.12), transparent 60%);
 }
 
-.tl-aurora-bg::before {
+.tl-aurora-surface::before {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background-image: radial-gradient(rgba(47, 95, 255, 0.09) 1px, transparent 1.4px);
   background-size: 22px 22px;
   -webkit-mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
   mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
+}
+
+/* 内容始终位于点阵纹理之上，避免纹理压在表单之上 */
+.tl-aurora-surface > * {
+  position: relative;
+  z-index: 1;
 }

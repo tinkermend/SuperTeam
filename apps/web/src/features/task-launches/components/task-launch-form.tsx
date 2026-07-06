@@ -1,6 +1,5 @@
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import "./task-launch-aurora.css";
 import {
   CircleAlert,
   FolderOpen,
@@ -131,14 +130,12 @@ export function TaskLaunchForm({
   }
 
   return (
-    <>
-      <div className="tl-aurora-bg" aria-hidden="true" />
-      <SoftCard
-        className="mx-auto w-full max-w-[1120px] overflow-hidden p-0"
-        style={auroraShellStyle}
-      >
-        <div style={auroraCoreStyle}>
-          <div className="grid gap-6 p-4 sm:p-6 xl:p-7">
+    <SoftCard
+      className="mx-auto w-full max-w-[1120px] overflow-hidden p-0"
+      style={auroraShellStyle}
+    >
+      <div style={auroraCoreStyle}>
+        <div className="grid gap-6 p-4 sm:p-6 xl:p-7">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-bold text-v3-brand-deep">
             <Sparkles className="size-4" />
@@ -291,7 +288,6 @@ export function TaskLaunchForm({
         onInsert={handleInsertTemplate}
       />
     </SoftCard>
-    </>
   );
 }
 function LaunchSelect({

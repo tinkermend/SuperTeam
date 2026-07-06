@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { SendHorizontal } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
+import "./task-launch-aurora.css";
 
 type TaskLaunchShellProps = {
   children: ReactNode;
@@ -22,7 +23,7 @@ export function TaskLaunchShell({
         subtitle={description}
         title={title}
       />
-      <Main>
+      <Main className="tl-aurora-surface">
         <div className="flex flex-col gap-5">
           {children}
         </div>
