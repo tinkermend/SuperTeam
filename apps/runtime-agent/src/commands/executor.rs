@@ -1103,7 +1103,7 @@ fn spawn_project_task_budget_heartbeat(
             tokio::select! {
                 _ = child_stop.cancelled() => break,
                 _ = tokio::time::sleep(interval) => {
-                    match writeback.record_budget_heartbeat(started_at.elapsed(), 0).await {
+                    match writeback.record_budget_heartbeat(started_at.elapsed()).await {
                         Ok(true) => {
                             let reason = "wall_clock_exceeded";
                             let _ = handle.cancel().await;
@@ -1401,12 +1401,16 @@ impl RuntimeCommandWritebackSink {
     async fn record_budget_heartbeat(
         &self,
         elapsed: Duration,
-        consumed_tokens: i32,
     ) -> anyhow::Result<bool> {
-        let Some(project_task) = &self.project_task else {
-            return Ok(false);
+        let project_task = match &self.project_task {
+            Some(project_task) => project_task,
+            None => return Ok(false),
         };
         let elapsed_sec = elapsed.as_secs().min(i32::MAX as u64) as i32;
+        let consumed_tokens = self
+            .usage_tokens
+            .load(Ordering::Relaxed)
+            .min(i32::MAX as i64) as i32;
         let body =
             project_task_budget_heartbeat_writeback(project_task, elapsed_sec, consumed_tokens);
         let response = self
@@ -3564,5 +3568,16 @@ mod tests {
         let result = terminal.result.expect("result map");
         assert!(result.get("summary").is_none());
         assert_eq!(result["usage"]["total_tokens"], serde_json::json!(42));
+    }
+
+    #[test]
+    fn record_budget_heartbeat_saturates_accumulator_to_i32_max() {
+        let huge: i64 = (i32::MAX as i64) + 1000;
+        let saturated = huge.min(i32::MAX as i64) as i32;
+        assert_eq!(saturated, i32::MAX);
+
+        let normal: i64 = 12345;
+        let saturated_normal = normal.min(i32::MAX as i64) as i32;
+        assert_eq!(saturated_normal, 12345);
     }
 }
