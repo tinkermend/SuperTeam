@@ -403,7 +403,7 @@ function RiverLane({
             {isClosed ? `运行 ${formatDuration(duration)} · 已结束` : `已持续 ${formatDuration(duration)}`}
           </span>
           <span className="text-v3-ink-4">·</span>
-          <span>created {formatTime(instance.created_at)}</span>
+          <span>创建 {formatTime(instance.created_at)}</span>
           {sla ? (
             <span
               className={cn(
@@ -433,7 +433,7 @@ function RiverLane({
                 style={{ left: `${nowPct}%` }}
               >
                 <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-v3-brand px-1 py-px font-mono text-[8.5px] font-bold text-white shadow-sm">
-                  NOW
+                  当前
                 </span>
               </span>
             ) : null}
