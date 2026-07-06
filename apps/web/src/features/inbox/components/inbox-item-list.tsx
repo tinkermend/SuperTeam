@@ -200,8 +200,16 @@ export function readContextText(context: Record<string, unknown>, keys: string[]
 export function resolveInboxHref(item: InboxItem) {
   const route = typeof item.deep_link.route === "string" ? item.deep_link.route : undefined;
   const anchor = typeof item.deep_link.anchor === "string" ? item.deep_link.anchor : undefined;
-  const path = resolveSafeInboxPath(route, item.source_project_id);
+  const projectDecisionPath = resolveProjectDecisionPath(item, route);
+  if (projectDecisionPath) {
+    return projectDecisionPath;
+  }
 
+  if (route && isSafeAppPath(route)) {
+    return anchor ? `${route}#${encodeURIComponent(anchor)}` : route;
+  }
+
+  const path = resolveSafeInboxPath(undefined, item.source_project_id);
   return anchor ? `${path}#${encodeURIComponent(anchor)}` : path;
 }
 
@@ -215,6 +223,31 @@ export function resolveSafeInboxPath(route: string | undefined, sourceProjectId:
   }
 
   return "/inbox";
+}
+
+function resolveProjectDecisionPath(item: InboxItem, route?: string) {
+  if (item.item_type !== "project_decision" || !item.source_project_id || !item.source_id) {
+    return undefined;
+  }
+
+  if (route && isSafeAppPath(route) && !isProjectDeepLink(route, item.source_project_id)) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams();
+  params.set("tab", "approval");
+  params.set("focus", item.source_id);
+  return `/projects/${encodeURIComponent(item.source_project_id)}?${params.toString()}`;
+}
+
+function isProjectDeepLink(route: string, projectId: string) {
+  try {
+    const parsed = new URL(route, "http://superteam.local");
+    const expectedPath = `/projects/${encodeURIComponent(projectId)}`;
+    return parsed.origin === "http://superteam.local" && parsed.pathname === expectedPath;
+  } catch {
+    return false;
+  }
 }
 
 export function isSafeAppPath(route: string) {

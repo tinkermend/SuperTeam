@@ -6,6 +6,17 @@ import { userEvent } from "vitest/browser";
 import { RuntimeNodesView } from "@/features/runtime";
 import type { RuntimeOverview } from "@/lib/api/runtime";
 
+let routerSearch: Record<string, string | undefined> = {};
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a data-router-link="true" href={to}>
+      {children}
+    </a>
+  ),
+  useSearch: () => routerSearch,
+}));
+
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
 }));
@@ -197,7 +208,11 @@ function createRuntimeFetcher() {
   return { fetcher, requests };
 }
 
-async function renderRuntimeNodesView(fetcher = createRuntimeFetcher().fetcher) {
+async function renderRuntimeNodesView(
+  fetcher = createRuntimeFetcher().fetcher,
+  search: Record<string, string | undefined> = {},
+) {
+  routerSearch = search;
   return await render(
     <QueryClientProvider client={createQueryClient()}>
       <RuntimeNodesView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />
@@ -216,6 +231,52 @@ describe("RuntimeNodesView", () => {
     await expect.element(screen.getByText("节点 ID：prod-runtime-shanghai-01")).toBeVisible();
     await expect.element(screen.getByText("Provider：claude-code").first()).toBeVisible();
     await expect.element(screen.getByText("Runtime command completed")).toBeVisible();
+  });
+
+  it("applies node query as the initial Runtime node filter", async () => {
+    const { fetcher, requests } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher, { node: "prod-runtime-shanghai-01" });
+
+    await expect.element(screen.getByRole("heading", { name: "Runtime 节点" })).toBeVisible();
+    await userEvent.click(screen.getByRole("tab", { name: "事件审计" }));
+    await expect
+      .element(screen.getByRole("combobox", { name: "Runtime 节点" }))
+      .toHaveTextContent("prod-runtime-shanghai-01");
+    expect(
+      requests.some(
+        (request) =>
+          request.pathname === "/api/v1/runtime/events" &&
+          request.search.includes("node_id=prod-runtime-shanghai-01"),
+      ),
+    ).toBe(true);
+  });
+
+  it("updates the Runtime event filter when the node query changes", async () => {
+    const { fetcher, requests } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher, { node: "prod-runtime-shanghai-01" });
+
+    await expect.element(screen.getByRole("heading", { name: "Runtime 节点" })).toBeVisible();
+
+    routerSearch = { node: "pending-node-beyond-overview-cap" };
+    await screen.rerender(
+      <QueryClientProvider client={createQueryClient()}>
+        <RuntimeNodesView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "事件审计" }));
+    await expect
+      .element(screen.getByRole("combobox", { name: "Runtime 节点" }))
+      .toHaveTextContent("pending-node-beyond-overview-cap");
+    await vi.waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.pathname === "/api/v1/runtime/events" &&
+            request.search.includes("node_id=pending-node-beyond-overview-cap"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("renders runtime management with v3 soft-flat surfaces", async () => {

@@ -1,5 +1,6 @@
 import {
   StatusPill,
+  V3Button,
   V3Chip,
   V3Pagination,
   V3StateSurface,
@@ -11,8 +12,10 @@ import {
   type V3Tone,
 } from "@/components/superteam";
 import type { DigitalEmployeeRunListItem, DigitalEmployeeRunListResult, DigitalEmployeeRunStatus } from "@/lib/api/employees";
+import { Link } from "@tanstack/react-router";
 
 type EmployeeRunHistoryTableProps = {
+  employeeId: string;
   result: DigitalEmployeeRunListResult | undefined;
   isLoading?: boolean;
   isError?: boolean;
@@ -38,6 +41,7 @@ const runStatusTone: Record<DigitalEmployeeRunStatus, V3Tone> = {
 };
 
 export function EmployeeRunHistoryTable({
+  employeeId,
   result,
   isLoading,
   isError,
@@ -56,20 +60,27 @@ export function EmployeeRunHistoryTable({
 
   return (
     <WorkSurface>
-      <div className="flex flex-wrap items-center gap-2 border-b border-v3-line px-4 py-3">
-        <V3Chip active={statusFilter === undefined} onClick={() => onStatusFilterChange(undefined)} type="button">
-          全部状态
-        </V3Chip>
-        {result?.filters.statuses.map((option) => (
-          <V3Chip
-            active={statusFilter === option.value}
-            key={option.value}
-            onClick={() => onStatusFilterChange(option.value as DigitalEmployeeRunStatus)}
-            type="button"
-          >
-            {option.label}
+      <div className="flex flex-col gap-3 border-b border-v3-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <V3Chip active={statusFilter === undefined} onClick={() => onStatusFilterChange(undefined)} type="button">
+            全部状态
           </V3Chip>
-        ))}
+          {result?.filters.statuses.map((option) => (
+            <V3Chip
+              active={statusFilter === option.value}
+              key={option.value}
+              onClick={() => onStatusFilterChange(option.value as DigitalEmployeeRunStatus)}
+              type="button"
+            >
+              {option.label}
+            </V3Chip>
+          ))}
+        </div>
+        <V3Button asChild size="sm" variant="outline">
+          <Link search={{ employee: employeeId }} to="/run-overview">
+            在运行总览查看
+          </Link>
+        </V3Button>
       </div>
       <V3StateSurface empty={items.length === 0} error={error} isError={isError} isLoading={isLoading} onRetry={onRetry}>
         <V3Table>

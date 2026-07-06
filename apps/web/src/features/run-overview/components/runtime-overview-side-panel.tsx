@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { SoftCard, StatusPill } from "@/components/superteam";
 import type { RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
 
@@ -126,6 +127,24 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
             <p className="mt-1 text-sm text-v3-ink-2">
               {selected.runtime?.nodeId ?? "未绑定节点"} · {selected.runtime?.providerType ?? "未配置 Provider"}
             </p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              className="inline-flex h-9 items-center rounded-v3-button border border-v3-line bg-white px-3 text-xs font-semibold text-v3-ink shadow-sm transition-colors hover:bg-v3-card-soft"
+              params={{ employeeId: selected.employeeId }}
+              to="/employees/$employeeId"
+            >
+              查看员工详情
+            </Link>
+            {selected.runtime?.nodeId ? (
+              <Link
+                className="inline-flex h-9 items-center rounded-v3-button border border-v3-line bg-white px-3 text-xs font-semibold text-v3-ink shadow-sm transition-colors hover:bg-v3-card-soft"
+                search={{ node: selected.runtime.nodeId }}
+                to="/runtime"
+              >
+                查看 Runtime 节点
+              </Link>
+            ) : null}
           </div>
           <div className="mt-5">
             <div className="text-xs font-semibold text-v3-ink-2">命令 / 日志</div>

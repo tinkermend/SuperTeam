@@ -22,7 +22,20 @@ vi.mock("@/components/theme-switch", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    search,
+    to,
+  }: {
+    children: ReactNode;
+    search?: Record<string, string | undefined>;
+    to: string;
+  }) => {
+    const query = search
+      ? `?${new URLSearchParams(Object.entries(search).filter((entry): entry is [string, string] => Boolean(entry[1]))).toString()}`
+      : "";
+    return <a href={`${to}${query}`}>{children}</a>;
+  },
 }));
 
 function createQueryClient() {
@@ -305,6 +318,10 @@ describe("EmployeeDetailView", () => {
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { level: 1, name: "需求分析员工" })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "在运行总览查看" })).toHaveAttribute(
+      "href",
+      "/run-overview?employee=11111111-1111-4111-8111-111111111111",
+    );
     // Rows are plain <tr> elements with onClick; click by row text rather than role.
     await userEvent.click(screen.getByText("需求梳理任务"));
 

@@ -1,8 +1,36 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
+
+let routerSearch: Record<string, string | undefined> = {};
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    params,
+    search,
+    to,
+  }: {
+    children: ReactNode;
+    params?: Record<string, string>;
+    search?: Record<string, string | undefined>;
+    to: string;
+  }) => {
+    let href = to;
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        href = href.replace(`$${key}`, encodeURIComponent(value));
+      }
+    }
+    const query = search
+      ? `?${new URLSearchParams(Object.entries(search).filter((entry): entry is [string, string] => Boolean(entry[1]))).toString()}`
+      : "";
+    return <a href={`${href}${query}`}>{children}</a>;
+  },
+  useSearch: () => routerSearch,
+}));
 
 vi.mock("@/components/layout/main", () => ({
   Main: ({ children }: { children: ReactNode }) => <main data-testid="run-overview-main">{children}</main>,
@@ -60,7 +88,8 @@ function queryClient() {
   });
 }
 
-async function renderPage(fetcher: typeof fetch) {
+async function renderPage(fetcher: typeof fetch, search: Record<string, string | undefined> = {}) {
+  routerSearch = search;
   return await render(
     <QueryClientProvider client={queryClient()}>
       <RunOverviewView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />
@@ -69,6 +98,10 @@ async function renderPage(fetcher: typeof fetch) {
 }
 
 describe("RunOverviewView", () => {
+  afterEach(() => {
+    routerSearch = {};
+  });
+
   it("renders the runtime overview map from existing Control Plane read APIs", async () => {
     const { fetcher, requests } = createFetcher();
     const screen = await renderPage(fetcher);
@@ -172,5 +205,36 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("排查线上告警并生成修复计划")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "表格视图" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("table", { name: "运行总览表格" })).not.toBeInTheDocument();
+  });
+
+  it("deep-links to employees and runtime nodes from the selected employee panel", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-dev-1" });
+
+    await expect.element(screen.getByText("当前选择：陆一鸣")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看员工详情" })).toHaveAttribute(
+      "href",
+      "/employees/emp-dev-1",
+    );
+    await expect.element(screen.getByRole("link", { name: "查看 Runtime 节点" })).toHaveAttribute(
+      "href",
+      "/runtime?node=local-dev-node",
+    );
+  });
+
+  it("lets employee query changes override the previous local selection", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-dev-1" });
+
+    await expect.element(screen.getByText("当前选择：陆一鸣")).toBeVisible();
+
+    routerSearch = { employee: "emp-ops-1" };
+    await screen.rerender(
+      <QueryClientProvider client={queryClient()}>
+        <RunOverviewView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("当前选择：高秀英")).toBeVisible();
   });
 });

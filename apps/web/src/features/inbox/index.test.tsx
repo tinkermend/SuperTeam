@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { InboxView } from "@/features/inbox";
+import { resolveInboxHref } from "@/features/inbox/components/inbox-item-list";
 import type { InboxItem, InboxListResponse } from "@/lib/api/inbox";
 
 vi.mock("@/components/layout/header", () => ({
@@ -218,6 +219,35 @@ async function renderInboxView(fetcher = createInboxFetcher()) {
 }
 
 describe("InboxView", () => {
+  it("builds project approval focus links when no safe deep link route is provided", () => {
+    expect(
+      resolveInboxHref(
+        makeInboxItem({
+          deep_link: {},
+          item_type: "project_decision",
+          source_id: "decision-1",
+          source_project_id: "project-1",
+        }),
+      ),
+    ).toBe("/projects/project-1?tab=approval&focus=decision-1");
+  });
+
+  it("normalizes project decision deep links to the project approval tab and focus query", () => {
+    expect(
+      resolveInboxHref(
+        makeInboxItem({
+          deep_link: {
+            anchor: "decision-1",
+            route: "/projects/project-1",
+          },
+          item_type: "project_decision",
+          source_id: "decision-1",
+          source_project_id: "project-1",
+        }),
+      ),
+    ).toBe("/projects/project-1?tab=approval&focus=decision-1");
+  });
+
   it("renders mine inbox by default", async () => {
     const screen = await renderInboxView();
 
@@ -467,7 +497,16 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByRole("dialog")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
-    await expect.element(screen.getByText("上游审批服务暂时不可用")).toBeVisible();
+    const dialog = screen.getByRole("dialog");
+    await expect.element(dialog.getByText("风险等级")).toBeVisible();
+    await expect.element(dialog.getByText("高风险")).toBeVisible();
+    await expect.element(dialog.getByText("来源项目")).toBeVisible();
+    await expect.element(dialog.getByText("project-1")).toBeVisible();
+    await expect.element(dialog.getByText("来源任务")).toBeVisible();
+    await expect.element(dialog.getByText("task-1")).toBeVisible();
+    await expect.element(dialog.getByText("上下文摘要")).toBeVisible();
+    await expect.element(dialog.getByText("客户接入项目")).toBeVisible();
+    await expect.element(dialog.getByText("上游审批服务暂时不可用")).toBeVisible();
   });
 
   it("guards rapid duplicate action submissions", async () => {

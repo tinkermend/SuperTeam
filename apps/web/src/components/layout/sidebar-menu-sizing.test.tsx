@@ -80,7 +80,7 @@ describe('sidebar menu sizing', () => {
     expect(firstLabelStyle.marginBlockStart).toBe('0px')
     expect(labelStyle.height).toBe('24px')
     expect(labelStyle.marginBlockStart).toBe('6px')
-    expect(labelStyle.color).toBe('rgb(154, 164, 178)')
+    expect(labelStyle.color).toBe('rgb(109, 117, 128)')
     expect(labelStyle.fontSize).toBe('12px')
     expect(labelStyle.fontWeight).toBe('500')
   })

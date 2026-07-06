@@ -751,18 +751,21 @@ function GalleryRail({
           action="绑定"
           label="待绑定 Runtime"
           tone="warn"
+          to="/runtime"
           value={overview.queue_summary.pending_runtime_binding_count}
         />
         <QueueRow
           action="审批"
           label="配置过期"
           tone="artifact"
+          to="/approvals"
           value={overview.queue_summary.stale_config_count}
         />
         <QueueRow
           action="查看"
           label="最近运行失败"
           tone="danger"
+          to="/run-overview"
           value={overview.queue_summary.failed_recent_run_count}
         />
       </SoftCard>
@@ -781,11 +784,13 @@ function QueueRow({
   action,
   label,
   tone,
+  to,
   value,
 }: {
   action: string;
   label: string;
   tone: V3Tone;
+  to: string;
   value: number;
 }) {
   return (
@@ -797,9 +802,15 @@ function QueueRow({
         </div>
         <p className="text-xs text-muted-foreground">{formatNumber(value)} 个数字员工</p>
       </div>
-      <Button size="sm" type="button" variant="outline">
-        {action}
-      </Button>
+      {value > 0 ? (
+        <Button asChild size="sm" variant="outline">
+          <Link to={to}>{action}</Link>
+        </Button>
+      ) : (
+        <Button disabled size="sm" type="button" variant="outline">
+          {action}
+        </Button>
+      )}
     </div>
   );
 }
@@ -872,8 +883,10 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
           </ol>
         )}
       </div>
-      <V3Button className="w-full" type="button" variant="outline">
-        查看审计
+      <V3Button asChild className="w-full" variant="outline">
+        <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
+          查看详情
+        </Link>
       </V3Button>
     </div>
   );

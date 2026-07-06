@@ -22,9 +22,15 @@ vi.mock("@/components/theme-switch", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, params, to }: { children: ReactNode; params?: Record<string, string>; to: string }) => (
-    <a href={params?.employeeId ? to.replace("$employeeId", encodeURIComponent(params.employeeId)) : to}>{children}</a>
-  ),
+  Link: ({ children, params, to }: { children: ReactNode; params?: Record<string, string>; to: string }) => {
+    let href = to;
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        href = href.replace(`$${key}`, encodeURIComponent(value));
+      }
+    }
+    return <a href={href}>{children}</a>;
+  },
 }));
 
 function createQueryClient() {
@@ -44,6 +50,11 @@ type EmployeesFetcherOptions = {
   omitOperationalState?: boolean;
   operationalStatus?: string;
   projectAcceptancePendingOnly?: boolean;
+  queueSummary?: {
+    failed_recent_run_count: number;
+    pending_runtime_binding_count: number;
+    stale_config_count: number;
+  };
   totalCount?: number;
 };
 
@@ -54,6 +65,11 @@ function createEmployeesFetcher({
   omitOperationalState = false,
   operationalStatus = "idle",
   projectAcceptancePendingOnly = false,
+  queueSummary = {
+    failed_recent_run_count: 1,
+    pending_runtime_binding_count: 2,
+    stale_config_count: 4,
+  },
   totalCount = 18,
 }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -213,9 +229,9 @@ function createEmployeesFetcher({
       return new Response(
         JSON.stringify({
           queue_summary: {
-            pending_runtime_binding_count: 2,
-            stale_config_count: 4,
-            failed_recent_run_count: 1,
+            pending_runtime_binding_count: queueSummary.pending_runtime_binding_count,
+            stale_config_count: queueSummary.stale_config_count,
+            failed_recent_run_count: queueSummary.failed_recent_run_count,
           },
           summary: {
             total_count: totalCount,
@@ -225,9 +241,9 @@ function createEmployeesFetcher({
             error_count: 1,
             high_risk_count: 3,
             ready_count: 14,
-            pending_runtime_binding_count: 2,
-            pending_config_approval_count: 4,
-            failed_recent_run_count: 1,
+            pending_runtime_binding_count: queueSummary.pending_runtime_binding_count,
+            pending_config_approval_count: queueSummary.stale_config_count,
+            failed_recent_run_count: queueSummary.failed_recent_run_count,
             operational_status_counts: {
               working: operationalStatus === "working" ? 1 : 0,
               idle: operationalStatus === "idle" ? 1 : 0,
@@ -318,10 +334,16 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("无预算上限")).toBeVisible();
     await expect.element(screen.getByText("待处理队列")).toBeVisible();
     await expect.element(screen.getByText("最近运行失败")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "绑定" })).toHaveAttribute("href", "/runtime");
+    await expect.element(screen.getByRole("link", { name: "审批" })).toHaveAttribute("href", "/approvals");
+    await expect.element(screen.getByRole("link", { exact: true, name: "查看" })).toHaveAttribute("href", "/run-overview");
     await expect.element(screen.getByText("命令已下发")).toBeVisible();
     await expect.element(screen.getByText("配置 v2 已审批 · skills 8 · MCP 3").first()).toBeVisible();
     await expect
-      .element(screen.getByRole("link", { name: "详情" }))
+      .element(screen.getByRole("link", { exact: true, name: "详情" }))
+      .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");
+    await expect
+      .element(screen.getByRole("link", { name: "查看详情" }))
       .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");
     await expect.element(screen.getByText("执行实例 ready")).not.toBeInTheDocument();
     await expect.element(screen.getByText("Server")).not.toBeInTheDocument();
@@ -342,6 +364,22 @@ describe("EmployeesView", () => {
     await expect
       .element(screen.getByRole("link", { name: "模板管理" }))
       .toHaveAttribute("href", "/employees/templates");
+  });
+
+  it("disables queue actions that have no actionable items", async () => {
+    const screen = await renderEmployeesView(
+      createEmployeesFetcher({
+        queueSummary: {
+          failed_recent_run_count: 0,
+          pending_runtime_binding_count: 0,
+          stale_config_count: 0,
+        },
+      }),
+    );
+
+    await expect.element(screen.getByRole("button", { name: "绑定" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "审批" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "查看" })).toBeDisabled();
   });
 
   it("keeps employee creation actions in the page content instead of the shell header", async () => {
