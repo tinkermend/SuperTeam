@@ -73,6 +73,9 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if !status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
 	}
+	if len(req.InitialDigitalEmployeeIDs) > MaxDigitalEmployeesPerTeam {
+		return nil, fmt.Errorf("%w: digital employee capacity exceeded", ErrInvalidInput)
+	}
 	initialMembers, err := normalizeInitialMembers(req.HumanOwnerUserIDs, req.InitialMembers)
 	if err != nil {
 		return nil, err
@@ -218,12 +221,12 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 		}
 	}
 	record, err := s.repository.UpdateTeam(ctx, UpdateTeamParams{
-		TenantID:         req.TenantID,
-		TeamID:           req.TeamID,
-		Slug:             slug,
-		Name:             name,
+		TenantID:          req.TenantID,
+		TeamID:            req.TeamID,
+		Slug:              slug,
+		Name:              name,
 		HumanOwnerUserIDs: humanOwnerUserIDs,
-		Metadata:         metadata,
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("update team: %w", err)

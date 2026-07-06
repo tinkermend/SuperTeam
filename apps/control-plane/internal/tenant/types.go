@@ -75,6 +75,8 @@ const (
 	TeamRoleViewer   = "viewer"
 )
 
+const MaxDigitalEmployeesPerTeam = 10
+
 type TeamMemberRoleRequestStatus string
 
 const (
@@ -109,16 +111,16 @@ type GovernanceDiffSummary struct {
 }
 
 type Team struct {
-	ID               uuid.UUID
-	TenantID         uuid.UUID
-	Slug             string
-	Name             string
-	Status           TeamStatus
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	Slug              string
+	Name              string
+	Status            TeamStatus
 	HumanOwnerUserIDs []uuid.UUID
-	HumanOwners      []TeamHumanOwner
-	Metadata         map[string]any
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	HumanOwners       []TeamHumanOwner
+	Metadata          map[string]any
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type TeamHumanOwner struct {
@@ -212,12 +214,12 @@ type TeamMemberRoleRequest struct {
 }
 
 type CreateTeamRequest struct {
-	TenantID         uuid.UUID
-	ActorUserID      uuid.UUID
-	Slug             string
-	Name             string
-	Status           TeamStatus
-	HumanOwnerUserIDs []uuid.UUID
+	TenantID                  uuid.UUID
+	ActorUserID               uuid.UUID
+	Slug                      string
+	Name                      string
+	Status                    TeamStatus
+	HumanOwnerUserIDs         []uuid.UUID
 	InitialMembers            []InitialTeamMemberInput
 	InitialDigitalEmployeeIDs []uuid.UUID
 	Metadata                  map[string]any
@@ -238,12 +240,12 @@ type ListTeamsRequest struct {
 }
 
 type UpdateTeamRequest struct {
-	TenantID         uuid.UUID
-	TeamID           uuid.UUID
-	Name             string
-	Slug             string
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	Name              string
+	Slug              string
 	HumanOwnerUserIDs []uuid.UUID
-	Metadata         map[string]any
+	Metadata          map[string]any
 }
 
 type ChangeTeamStatusRequest struct {

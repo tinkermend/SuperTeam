@@ -560,6 +560,33 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigWithoutRuntim
 	}
 }
 
+func TestCreateDigitalEmployeeRejectsTeamOverCapacityBeforeTransaction(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.digitalEmployeeOverview = &DigitalEmployeeOverview{
+		Items:      []DigitalEmployeeOverviewItem{},
+		Filters:    DigitalEmployeeOverviewFilters{},
+		Pagination: OverviewPagination{Limit: 1, Offset: 0, TotalCount: 10},
+	}
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "digital employee capacity") {
+		t.Fatalf("expected digital employee capacity error, got %v", err)
+	}
+	if repo.lastOverviewRequest.TeamID == nil || *repo.lastOverviewRequest.TeamID != *req.TeamID {
+		t.Fatalf("expected capacity check to query target team overview, got %#v", repo.lastOverviewRequest)
+	}
+	if repo.createdEmployeeCount != 0 || repo.transactionCount != 0 {
+		t.Fatalf("expected rejection before create/transaction, created=%d tx=%d", repo.createdEmployeeCount, repo.transactionCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected no runtime dispatch, got %#v", dispatcher.commands)
+	}
+}
+
 func TestCreateDigitalEmployeeSupportsTeamLessCreation(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
 	req.TeamID = nil
@@ -2451,6 +2478,8 @@ type memoryRepository struct {
 	createdConfigRevision    CreateConfigRevisionParams
 	createdEffectiveConfig   CreateEffectiveConfigParams
 	createEffectiveConfigErr error
+	digitalEmployeeOverview  *DigitalEmployeeOverview
+	lastOverviewRequest      GetDigitalEmployeeOverviewRequest
 	waitHook                 func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
 	transactionCount         int
 	transactionCommitCount   int
@@ -2571,6 +2600,10 @@ func (r *memoryRepository) GetDigitalEmployee(_ context.Context, tenantID, emplo
 }
 
 func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
+	r.lastOverviewRequest = req
+	if r.digitalEmployeeOverview != nil {
+		return r.digitalEmployeeOverview, nil
+	}
 	return &DigitalEmployeeOverview{
 		Summary:    DigitalEmployeeOverviewSummary{},
 		Items:      []DigitalEmployeeOverviewItem{},
