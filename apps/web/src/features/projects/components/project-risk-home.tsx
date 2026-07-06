@@ -1,13 +1,17 @@
+import type { KeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
+  ArrowRight,
   Clock3,
   FileWarning,
   FolderKanban,
-  GitBranch,
+  Inbox,
   PlayCircle,
-  ShieldAlert,
+  ShieldCheck,
   UserCheck,
+  UserRound,
 } from "lucide-react";
 import {
   IconTile,
@@ -30,10 +34,6 @@ import type {
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
 import {
-  workflowStatusLabel,
-  workflowStatusTone,
-} from "@/features/workflows/workflow-status";
-import {
   buildRiskCounts,
   emptyProjectRiskSummary,
   matchesProjectRiskFilter,
@@ -41,8 +41,11 @@ import {
   projectRiskLevelLabel,
   projectRiskLevelTone,
   sortProjectsByRisk,
+  type ProjectPortfolioCounts,
   type ProjectRiskCounts,
   type ProjectRiskFilter,
+  type ProjectRiskReason,
+  type ProjectRiskReasonType,
   type ProjectRiskSummary,
   type ProjectRiskSummaryMap,
 } from "../project-risk";
@@ -55,117 +58,116 @@ export type ProjectRiskQueueFilters = {
 
 export type ProjectRiskQueueProps = {
   activePage: number;
+  /** Optional action slot rendered right-aligned in the queue header (e.g. 新建项目). */
+  createAction?: React.ReactNode;
   filters: ProjectRiskQueueFilters;
   isFetching: boolean;
   onFiltersChange: (filters: ProjectRiskQueueFilters) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  onSelectProject: (projectId: string) => void;
   pageCount: number;
   pageSize: number;
   /** Unsorted current server page; this queue owns risk sorting and risk-chip filtering within that page. */
   projects: Project[];
   riskSummaries: ProjectRiskSummaryMap;
+  selectedProjectId?: string;
   total: number;
   workflowInstances: WorkflowInstanceSummary[];
 };
 
-export function ProjectHomeRiskSummaryBar({
-  isLoading,
-  riskSummaries,
-}: {
-  isLoading?: boolean;
-  riskSummaries: ProjectRiskSummaryMap;
-}) {
-  const counts = buildRiskCounts(Object.values(riskSummaries));
-  const items = [
-    {
-      icon: ShieldAlert,
-      label: "阻塞项目",
-      tone: "danger",
-      value: counts.blocked,
-    },
-    {
-      icon: UserCheck,
-      label: "人工决策",
-      tone: "warn",
-      value: counts.human_decision,
-    },
-    {
-      icon: AlertTriangle,
-      label: "执行失败",
-      tone: "danger",
-      value: counts.execution_failed,
-    },
-    {
-      icon: FileWarning,
-      label: "证据待补",
-      tone: "warn",
-      value: counts.evidence_required,
-    },
-    {
-      icon: Clock3,
-      label: "等待超时",
-      tone: "warn",
-      value: counts.sla_waiting,
-    },
-    {
-      icon: PlayCircle,
-      label: "协调异常",
-      tone: "info",
-      value: counts.runtime_or_coordination,
-    },
-  ] satisfies Array<{
-    icon: typeof ShieldAlert;
-    label: string;
-    tone: V3Tone;
-    value: number;
-  }>;
+/** KPI 卡语义映射：icon 圆底色 / 数字色 / 顶部装饰条实色。 */
+const kpiSoftBg: Record<V3Tone, string> = {
+  brand: "bg-v3-brand-soft",
+  info: "bg-v3-info-soft",
+  ok: "bg-v3-ok-soft",
+  warn: "bg-v3-warn-soft",
+  danger: "bg-v3-danger-soft",
+  mute: "bg-v3-mute-soft",
+  artifact: "bg-v3-artifact-soft",
+};
 
-  if (isLoading) {
-    return (
-      <section
-        aria-label="项目风险汇总（当前页）"
-        className="grid gap-3 rounded-[14px] border border-v3-line bg-v3-card p-3 shadow-sm sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
-      >
-        <IconTile tone="info" size="sm">
-          <ShieldAlert />
-        </IconTile>
-        <div className="min-w-0">
-          <StatusPill tone="info">风险识别中</StatusPill>
-          <p className="mt-2 text-sm font-semibold leading-6 text-v3-ink">
-            正在读取当前页项目的任务、决策和证据信号
-          </p>
-          <p className="mt-1 text-[12px] leading-5 text-v3-ink-3">
-            摘要将在当前页风险信号稳定后一次性展示，避免首开半成品计数跳动。
-          </p>
-        </div>
-      </section>
-    );
-  }
+const kpiNumText: Record<V3Tone, string> = {
+  brand: "text-v3-brand-deep",
+  info: "text-v3-info-text",
+  ok: "text-v3-ok-text",
+  warn: "text-v3-warn-text",
+  danger: "text-v3-danger-text",
+  mute: "text-v3-mute-text",
+  artifact: "text-v3-artifact-text",
+};
+
+const kpiAccentBar: Record<V3Tone, string> = {
+  brand: "bg-v3-brand",
+  info: "bg-v3-info",
+  ok: "bg-v3-ok",
+  warn: "bg-v3-warn",
+  danger: "bg-v3-danger",
+  mute: "bg-v3-mute",
+  artifact: "bg-v3-artifact",
+};
+
+/**
+ * 项目组合真值条：只用完整已加载列表上的廉价字段（status / coordination_status），
+ * 覆盖整个已加载列表而非当前页。逐项目风险（人工决策 / 执行失败 / 证据待补）是页级派生，
+ * 保留在下方队列表头与筛选 chip 中，避免把页级计数伪装成全平台真值。
+ */
+export function ProjectPortfolioSummaryBar({
+  portfolioCounts,
+}: {
+  portfolioCounts: ProjectPortfolioCounts;
+}) {
+  const items = [
+    { icon: FolderKanban, label: "已加载项目", tone: "brand" as V3Tone, value: portfolioCounts.total },
+    { icon: PlayCircle, label: "运行中", tone: "ok" as V3Tone, value: portfolioCounts.running },
+    { icon: ShieldCheck, label: "验收中", tone: "info" as V3Tone, value: portfolioCounts.acceptance },
+    { icon: AlertTriangle, label: "协调异常", tone: "danger" as V3Tone, value: portfolioCounts.coordinationAnomaly },
+  ];
 
   return (
     <section
-      aria-label="项目风险汇总（当前页）"
-      className="grid gap-2 rounded-[14px] border border-v3-line bg-v3-card p-3 shadow-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      aria-label="项目组合概览（已加载列表）"
+      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
     >
       {items.map((item) => {
         const Icon = item.icon;
         return (
           <div
             key={item.label}
-            className="flex min-w-0 items-center gap-2.5 rounded-[10px] bg-v3-card-soft/70 px-3 py-2"
+            className="relative flex flex-col gap-2 overflow-hidden rounded-v3-card border border-v3-line bg-v3-card px-4 py-3.5 shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop"
           >
-            <IconTile tone={item.tone} size="sm">
-              <Icon />
-            </IconTile>
-            <div className="min-w-0">
-              <div className="truncate text-[12px] font-semibold text-v3-ink-2">
-                {item.label}
-                <span className="sr-only">（当前页）</span>
-              </div>
-              <div className="text-xl font-extrabold tabular-nums text-v3-ink">
-                {item.value}
-              </div>
+            {/* tone accent bar — mirrors the selected-state left bar in employee gallery */}
+            <span
+              aria-hidden
+              className={cn("absolute inset-x-0 top-0 h-0.5", kpiAccentBar[item.tone])}
+            />
+
+            {/* icon in soft circle */}
+            <div
+              className={cn(
+                "flex size-8 items-center justify-center rounded-full",
+                kpiSoftBg[item.tone],
+              )}
+            >
+              <Icon
+                aria-hidden
+                className={cn("size-[15px]", kpiNumText[item.tone])}
+              />
+            </div>
+
+            {/* number */}
+            <div
+              className={cn(
+                "text-2xl font-extrabold leading-none tabular-nums",
+                kpiNumText[item.tone],
+              )}
+            >
+              {item.value}
+            </div>
+
+            {/* label */}
+            <div className="text-[11.5px] font-medium leading-none text-v3-ink-3">
+              {item.label}
             </div>
           </div>
         );
@@ -210,9 +212,12 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
               </StatusPill>
             </div>
             <p className="mt-1 text-[11px] leading-5 text-v3-ink-3">
-              按需要介入程度排序；风险识别基于当前页，筛选仅过滤当前页项目，分页仍对应完整项目列表。
+              按需要介入程度排序；选中项目在右侧查看待办与直达动作。风险识别基于当前页，筛选仅过滤当前页项目，分页仍对应完整项目列表。
             </p>
           </div>
+          {props.createAction ? (
+            <div className="shrink-0 lg:pt-0.5">{props.createAction}</div>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-col gap-2 border-b border-v3-line bg-v3-card-soft/45 px-3 py-3">
@@ -269,31 +274,29 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           </div>
         </div>
 
-        <V3Table className="min-w-[72rem] table-fixed text-[12px]">
+        <V3Table className="min-w-[46rem] table-fixed text-[12px]">
           <colgroup>
-            <col className="w-[21%]" data-column="project" />
-            <col className="w-[22%]" data-column="task" />
-            <col className="w-[17%]" data-column="node" />
-            <col className="w-[12%]" data-column="handler" />
-            <col className="w-[9%]" data-column="status" />
-            <col className="w-[9%]" data-column="last-run" />
-            <col className="w-[10%]" data-column="action" />
+            <col className="w-[30%]" data-column="project" />
+            <col className="w-[26%]" data-column="pending" />
+            <col className="w-[16%]" data-column="handler" />
+            <col className="w-[12%]" data-column="last-run" />
+            <col className="w-[16%]" data-column="action" />
           </colgroup>
           <thead>
             <tr>
               <V3Th className="px-3 py-2">项目</V3Th>
-              <V3Th className="px-3 py-2">当前任务</V3Th>
-              <V3Th className="px-3 py-2">当前节点/能力</V3Th>
+              <V3Th className="px-3 py-2">待处理</V3Th>
               <V3Th className="px-3 py-2">当前处理者</V3Th>
-              <V3Th className="px-3 py-2">执行状态</V3Th>
-              <V3Th className="px-3 py-2">最后运行时间</V3Th>
+              <V3Th className="px-3 py-2">最近活动</V3Th>
               <V3Th className="px-3 py-2 text-right">操作</V3Th>
             </tr>
           </thead>
           <tbody>
             {sortedProjects.map((project) => (
               <ProjectRiskQueueRow
+                isSelected={props.selectedProjectId === project.id}
                 key={project.id}
+                onSelect={props.onSelectProject}
                 project={project}
                 riskSummary={props.riskSummaries[project.id]}
                 workflow={workflowByProjectId.get(project.id)}
@@ -301,7 +304,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             ))}
             {sortedProjects.length === 0 ? (
               <tr>
-                <V3Td className="px-3 py-3" colSpan={7}>
+                <V3Td className="px-3 py-3" colSpan={5}>
                   <V3EmptyState
                     description="调整风险筛选、搜索关键词或项目状态后重试。"
                     icon={<FolderKanban />}
@@ -328,29 +331,51 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
 }
 
 function ProjectRiskQueueRow({
+  isSelected,
+  onSelect,
   project,
   riskSummary,
   workflow,
 }: {
+  isSelected: boolean;
+  onSelect: (projectId: string) => void;
   project: Project;
   riskSummary?: ProjectRiskSummary;
   workflow?: WorkflowInstanceSummary;
 }) {
   const summary = riskSummary ?? emptyProjectRiskSummary(project);
-  const currentTask = summary.currentTask;
-  const taskTitle = workflow?.title ?? currentTask?.summary ?? currentTask?.title;
-  const nodeTitle = currentTask?.title ?? currentTask?.task_kind;
+  const pendingCount = summary.reasons.length;
+  const ownerLabel = summary.owner?.label ?? project.human_owner_user_id ?? "未设置";
   const handler = summary.currentHandler?.label;
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(project.id);
+    }
+  };
 
   return (
     <V3Tr
-      className={
+      aria-selected={isSelected}
+      className={[
+        "cursor-pointer",
+        isSelected ? "bg-v3-brand-soft/85" : "hover:bg-v3-card-soft/60",
         summary.level === "danger"
           ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]"
           : summary.level === "warn"
             ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]"
-            : undefined
-      }
+            : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-selected={isSelected}
+      onClick={() => onSelect(project.id)}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
     >
       <V3Td className="whitespace-normal px-3 py-2">
         <div className="flex min-w-0 items-start gap-2.5">
@@ -364,43 +389,25 @@ function ProjectRiskQueueRow({
             >
               {project.name}
             </span>
-            <span className="mt-0.5 block min-w-0 max-w-full truncate font-mono text-[12px] text-v3-ink-3">
-              {project.id}
+            <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 truncate text-[12px] text-v3-ink-3">
+              <UserRound aria-hidden className="size-3 shrink-0" />
+              <span className="truncate">{ownerLabel}</span>
             </span>
-            <span className="mt-1 block min-w-0 max-w-full truncate text-[12px] text-v3-ink-3">
-              负责人{" "}
-              <span className="font-mono">
-                {project.human_owner_user_id || "未设置"}
-              </span>
-            </span>
-            <span className="mt-1.5 block">
-              <StatusPill tone={projectRiskLevelTone(summary.level)}>
-                {projectRiskLevelLabel(summary)}
+            <span className="mt-1.5 flex flex-wrap items-center gap-1">
+              <StatusPill tone={projectStatusTone(project.status)}>
+                {projectStatusLabel(project.status)}
               </StatusPill>
             </span>
           </span>
         </div>
       </V3Td>
       <V3Td className="whitespace-normal px-3 py-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span
-            className="max-h-10 line-clamp-2 break-words text-[13px] font-bold leading-5 text-v3-ink"
-            data-testid="project-queue-current-task"
-          >
-            {taskTitle ?? "暂无任务发起记录"}
-          </span>
-          <span className="block min-w-0 max-w-full truncate text-[12px] text-v3-ink-3">
-            {workflow ? `需求 ${workflow.demand_id}` : project.goal}
-          </span>
-        </div>
-      </V3Td>
-      <V3Td className="whitespace-normal px-3 py-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="line-clamp-2 break-words text-[13px] font-semibold leading-5 text-v3-ink">
-            {nodeTitle ?? "暂无执行节点"}
-          </span>
-          <span className="block min-w-0 max-w-full truncate font-mono text-[11px] text-v3-ink-3">
-            {currentTask?.task_kind ?? currentTask?.planned_task_key ?? "未登记能力"}
+        <div className="flex min-w-0 flex-col gap-1" data-testid="project-queue-pending">
+          <StatusPill tone={projectRiskLevelTone(summary.level)}>
+            {projectRiskLevelLabel(summary)}
+          </StatusPill>
+          <span className="block min-w-0 max-w-full text-[12px] text-v3-ink-3">
+            {pendingCount > 0 ? `${pendingCount} 项待处理` : "无待处理项"}
           </span>
         </div>
       </V3Td>
@@ -412,49 +419,181 @@ function ProjectRiskQueueRow({
           {handler ?? "待调度"}
         </span>
       </V3Td>
-      <V3Td className="whitespace-normal px-3 py-2">
-        <div className="flex min-w-0 flex-col items-start gap-1">
-          <StatusPill
-            tone={workflow ? workflowStatusTone(workflow.status) : projectStatusTone(project.status)}
-          >
-            {workflow ? workflowStatusLabel(workflow.status) : projectStatusLabel(project.status)}
-          </StatusPill>
-          {workflow?.status_reason ? (
-            <span className="line-clamp-1 max-w-full break-words text-[11px] text-v3-ink-3">
-              {workflow.status_reason}
-            </span>
-          ) : null}
-        </div>
-      </V3Td>
       <V3Td className="whitespace-nowrap px-3 py-2">
         <span className="block min-w-0 max-w-full truncate font-mono text-[12px] text-v3-ink-2">
           {workflow ? formatRunTime(workflow.updated_at) : "暂无运行记录"}
         </span>
       </V3Td>
       <V3Td className="whitespace-nowrap px-3 py-2 text-right">
-        <div className="flex min-w-0 justify-end gap-2">
-          {workflow ? (
-            <V3Button asChild className="max-w-full" size="sm" variant="outline">
-              <Link
-                aria-label={`进入流程编排 ${project.name}`}
-                params={{ demandId: workflow.demand_id }}
-                to="/workflows/$demandId"
-              >
-                <GitBranch data-icon="inline-start" />
-                进入流程编排
-              </Link>
-            </V3Button>
-          ) : (
-            <V3Button asChild className="max-w-full" size="sm" variant="ghost">
-              <Link aria-label={`进入流程编排 ${project.name}`} to="/workflows">
-                <GitBranch data-icon="inline-start" />
-                进入流程编排
-              </Link>
-            </V3Button>
-          )}
+        <div
+          className="flex min-w-0 flex-col items-stretch justify-end gap-1.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <V3Button asChild className="max-w-full justify-center" size="sm">
+            <Link
+              aria-label={`进入项目 ${project.name}`}
+              params={{ projectId: project.id }}
+              to="/projects/$projectId"
+            >
+              进入项目
+              <ArrowRight data-icon="inline-end" />
+            </Link>
+          </V3Button>
         </div>
       </V3Td>
     </V3Tr>
+  );
+}
+
+const REASON_META: Record<
+  ProjectRiskReasonType,
+  { icon: typeof UserCheck; tab: string; action: string }
+> = {
+  human_decision: { icon: UserCheck, tab: "approval", action: "处理决策" },
+  execution_failed: { icon: AlertTriangle, tab: "tasks", action: "查看失败任务" },
+  runtime_or_coordination: { icon: PlayCircle, tab: "overview", action: "查看协调状态" },
+  evidence_required: { icon: FileWarning, tab: "acceptance", action: "补充证据" },
+  sla_waiting: { icon: Clock3, tab: "overview", action: "查看等待原因" },
+};
+
+/**
+ * 选中项目上下文（主从详情的从属侧）：复用队列已计算的风险摘要，零额外请求。
+ * 未选中时给出安静空态；选中后给出主阻塞、逐条待办与直达动作，动作深链到项目详情对应 Tab。
+ */
+export function ProjectTriagePanel({
+  project,
+  summary,
+}: {
+  project?: Project;
+  summary?: ProjectRiskSummary;
+}) {
+  if (!project) {
+    return (
+      <aside
+        aria-label="选中项目上下文"
+        className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
+        data-testid="project-selected-context-panel"
+      >
+        <V3EmptyState
+          description="从左侧队列选择一个项目，这里会显示它的待办、当前处理者和直达动作。"
+          icon={<Inbox />}
+          title="选择项目查看待办"
+        />
+      </aside>
+    );
+  }
+
+  const resolvedSummary = summary ?? emptyProjectRiskSummary(project);
+  const reasons = resolvedSummary.reasons;
+  const ownerLabel =
+    resolvedSummary.owner?.label ?? project.human_owner_user_id ?? "未设置";
+
+  return (
+    <aside
+      aria-label="选中项目上下文"
+      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
+      data-testid="project-selected-context-panel"
+    >
+      <div className="flex min-w-0 items-start gap-2.5">
+        <IconTile tone={projectStatusTone(project.status)} size="sm">
+          <FolderKanban />
+        </IconTile>
+        <div className="min-w-0 flex-1">
+          <h3 className="min-w-0 break-words text-sm font-extrabold leading-5 text-v3-ink">
+            {project.name}
+          </h3>
+          {project.goal ? (
+            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-[1.45] text-v3-ink-3">
+              {project.goal}
+            </p>
+          ) : null}
+          <p className="mt-1 flex min-w-0 items-center gap-1 truncate text-[12px] text-v3-ink-3">
+            <UserRound aria-hidden className="size-3 shrink-0" />
+            负责人 <span className="truncate font-medium text-v3-ink-2">{ownerLabel}</span>
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <StatusPill tone={projectStatusTone(project.status)}>
+              {projectStatusLabel(project.status)}
+            </StatusPill>
+            <StatusPill tone={projectRiskLevelTone(resolvedSummary.level)}>
+              {projectRiskLevelLabel(resolvedSummary)}
+            </StatusPill>
+          </div>
+        </div>
+      </div>
+
+      <div className="min-w-0 rounded-[10px] bg-v3-card-soft/60 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-v3-ink-3">
+          待办 {reasons.length > 0 ? `· ${reasons.length}` : ""}
+        </div>
+        {reasons.length === 0 ? (
+          <p className="mt-1.5 text-[12px] leading-5 text-v3-ink-2">
+            该项目当前没有需要人工介入的阻塞。{" "}
+            <Link
+              className="text-v3-brand underline underline-offset-2 hover:opacity-75"
+              params={{ projectId: project.id }}
+              to="/projects/$projectId"
+            >
+              进入项目
+            </Link>{" "}
+            可查看任务、证据与验收进度。
+          </p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-2">
+            {reasons.map((reason) => (
+              <ProjectTriageReasonRow
+                key={reason.id}
+                projectId={project.id}
+                reason={reason}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      </aside>
+    );
+  }
+
+function ProjectTriageReasonRow({
+  projectId,
+  reason,
+}: {
+  projectId: string;
+  reason: ProjectRiskReason;
+}) {
+  const meta = REASON_META[reason.type];
+  const Icon = meta.icon;
+  const focus =
+    reason.type === "human_decision" && reason.source === "decisions"
+      ? reason.sourceId
+      : undefined;
+
+  return (
+    <li className="flex min-w-0 items-start gap-2 rounded-[8px] bg-v3-card px-2.5 py-2">
+      <IconTile tone={projectRiskLevelTone(reason.level)} size="sm">
+        <Icon />
+      </IconTile>
+      <div className="min-w-0 flex-1">
+        <p className="min-w-0 break-words text-[12px] font-semibold leading-5 text-v3-ink">
+          {reason.title}
+        </p>
+        {reason.detail ? (
+          <p className="mt-0.5 min-w-0 truncate font-mono text-[11px] text-v3-ink-3">
+            {reason.detail}
+          </p>
+        ) : null}
+      </div>
+      <V3Button asChild className="shrink-0" size="sm" variant="outline">
+        <Link
+          params={{ projectId }}
+          search={focus ? { focus, tab: meta.tab } : { tab: meta.tab }}
+          to="/projects/$projectId"
+        >
+          {meta.action}
+        </Link>
+      </V3Button>
+    </li>
   );
 }
 
@@ -494,7 +633,8 @@ function projectStatusLabel(status: ProjectStatus | string) {
 function projectStatusTone(status: ProjectStatus | string): V3Tone {
   if (status === "running") return "ok";
   if (status === "archived") return "mute";
-  if (status === "paused" || status === "acceptance") return "warn";
+  if (status === "acceptance") return "brand";
+  if (status === "paused") return "mute";
   if (status === "configuring" || status === "draft") return "info";
   return "mute";
 }
