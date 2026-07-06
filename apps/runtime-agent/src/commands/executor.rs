@@ -1249,12 +1249,24 @@ fn install_skills_failed_terminal(error_message: String) -> RuntimeCommandTermin
 fn command_completed_terminal(
     summary: Option<String>,
     provider_session_id: Option<String>,
+    total_tokens: i64,
 ) -> RuntimeCommandTerminalWriteback {
     let mut result = HashMap::new();
     if let Some(summary) = summary.as_ref().filter(|value| !value.trim().is_empty()) {
         result.insert(
             "summary".to_string(),
             serde_json::Value::String(summary.clone()),
+        );
+    }
+    if total_tokens > 0 {
+        let mut usage = serde_json::Map::new();
+        usage.insert(
+            "total_tokens".to_string(),
+            serde_json::Value::Number(total_tokens.into()),
+        );
+        result.insert(
+            "usage".to_string(),
+            serde_json::Value::Object(usage),
         );
     }
 
@@ -1403,10 +1415,15 @@ impl RuntimeCommandWritebackSink {
         summary: Option<String>,
         provider_session_id: Option<String>,
     ) -> anyhow::Result<()> {
+        let total_tokens = self.usage_tokens.load(Ordering::Relaxed);
         self.client
             .complete_runtime_command(
                 &self.command_id,
-                &command_completed_terminal(summary.clone(), provider_session_id.clone()),
+                &command_completed_terminal(
+                    summary.clone(),
+                    provider_session_id.clone(),
+                    total_tokens,
+                ),
             )
             .await?;
         if let Some(project_task) = &self.project_task {
@@ -3512,5 +3529,34 @@ mod tests {
         assert_eq!(body.project_task_id, "55555555-5555-4555-8555-555555555555");
         assert_eq!(body.consumed_wall_clock_sec, 42);
         assert_eq!(body.consumed_tokens, 0);
+    }
+
+    #[test]
+    fn command_completed_terminal_with_positive_tokens_writes_usage() {
+        let terminal = command_completed_terminal(Some("done".to_string()), None, 1500);
+
+        assert_eq!(terminal.status, "completed");
+        let result = terminal.result.expect("result map");
+        let usage = result.get("usage").expect("usage field");
+        assert_eq!(usage["total_tokens"], serde_json::json!(1500));
+        assert_eq!(result["summary"], serde_json::json!("done"));
+    }
+
+    #[test]
+    fn command_completed_terminal_with_zero_tokens_omits_usage() {
+        let terminal = command_completed_terminal(Some("done".to_string()), None, 0);
+
+        let result = terminal.result.expect("result map");
+        assert!(result.get("usage").is_none());
+        assert_eq!(result["summary"], serde_json::json!("done"));
+    }
+
+    #[test]
+    fn command_completed_terminal_without_summary_omits_summary_and_writes_usage() {
+        let terminal = command_completed_terminal(None, Some("sess-1".to_string()), 42);
+
+        let result = terminal.result.expect("result map");
+        assert!(result.get("summary").is_none());
+        assert_eq!(result["usage"]["total_tokens"], serde_json::json!(42));
     }
 }
