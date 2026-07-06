@@ -127,7 +127,7 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
     ) {
         return Ok(Some(ProviderEvent::TurnCompleted {
             summary: extract_summary(&event),
-            usage: None,
+            usage: crate::providers::usage::extract_usage(&event),
         }));
     }
 

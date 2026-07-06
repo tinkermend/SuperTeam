@@ -1,4 +1,5 @@
 use superteam_runtime_agent::events::ProviderEvent;
+use superteam_runtime_agent::events::TurnUsage;
 use superteam_runtime_agent::providers::claude::parse_claude_event;
 use superteam_runtime_agent::providers::codex::parse_codex_event;
 use superteam_runtime_agent::providers::opencode::parse_opencode_event;
@@ -143,5 +144,83 @@ fn parses_codex_realistic_thread_item_and_turn_events() {
             },
             ProviderEvent::TurnCompleted { summary: None, usage: None },
         ]
+    );
+}
+
+#[test]
+fn parses_claude_result_event_with_usage() {
+    let completed = parse_claude_event(
+        r#"{"type":"result","result":"done","usage":{"total_tokens":1500,"input_tokens":200,"output_tokens":1300}}"#,
+    )
+    .expect("valid json")
+    .expect("event");
+
+    assert_eq!(
+        completed,
+        ProviderEvent::TurnCompleted {
+            summary: Some("done".to_string()),
+            usage: Some(TurnUsage {
+                total_tokens: 1500,
+                input_tokens: Some(200),
+                output_tokens: Some(1300),
+            }),
+        }
+    );
+}
+
+#[test]
+fn parses_claude_result_event_without_usage_keeps_usage_none() {
+    let completed = parse_claude_event(r#"{"type":"result","result":"done"}"#)
+        .expect("valid json")
+        .expect("event");
+
+    assert_eq!(
+        completed,
+        ProviderEvent::TurnCompleted {
+            summary: Some("done".to_string()),
+            usage: None,
+        }
+    );
+}
+
+#[test]
+fn parses_codex_turn_completed_with_usage() {
+    let completed = parse_codex_event(
+        r#"{"type":"turn.completed","summary":"done","usage":{"input_tokens":400,"output_tokens":600}}"#,
+    )
+    .expect("valid json")
+    .expect("event");
+
+    assert_eq!(
+        completed,
+        ProviderEvent::TurnCompleted {
+            summary: Some("done".to_string()),
+            usage: Some(TurnUsage {
+                total_tokens: 1000,
+                input_tokens: Some(400),
+                output_tokens: Some(600),
+            }),
+        }
+    );
+}
+
+#[test]
+fn parses_opencode_turn_completed_with_usage() {
+    let completed = parse_opencode_event(
+        r#"{"type":"turn.completed","usage":{"total_tokens":77}}"#,
+    )
+    .expect("valid json")
+    .expect("event");
+
+    assert_eq!(
+        completed,
+        ProviderEvent::TurnCompleted {
+            summary: None,
+            usage: Some(TurnUsage {
+                total_tokens: 77,
+                input_tokens: None,
+                output_tokens: None,
+            }),
+        }
     );
 }
