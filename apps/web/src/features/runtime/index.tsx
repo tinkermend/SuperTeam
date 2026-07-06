@@ -1,5 +1,6 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
@@ -135,7 +136,11 @@ type RuntimeNodesViewProps = {
 
 export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps) {
   const queryClient = useQueryClient();
-  const [eventFilters, setEventFilters] = useState<RuntimeEventFilters>(defaultEventFilters);
+  const search = useSearch({ strict: false }) as { node?: string };
+  const [eventFilters, setEventFilters] = useState<RuntimeEventFilters>(() => ({
+    ...defaultEventFilters,
+    node_id: search.node || undefined,
+  }));
   const [approveTarget, setApproveTarget] = useState<RuntimeEnrollment | null>(null);
   const [rejectTarget, setRejectTarget] = useState<RuntimeEnrollment | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -154,6 +159,20 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
     queryKey: ["runtime-enrollments"],
     queryFn: () => listRuntimeEnrollments({ baseUrl: apiBaseUrl, fetcher }),
   });
+
+  useEffect(() => {
+    setEventFilters((current) => {
+      const nextNodeId = search.node || undefined;
+      if (current.node_id === nextNodeId) {
+        return current;
+      }
+      return {
+        ...current,
+        node_id: nextNodeId,
+        offset: 0,
+      };
+    });
+  }, [search.node]);
 
   const invalidateRuntimeQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ["runtime-overview"] });
@@ -195,6 +214,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
     const overviewData = overview.data;
     const eventItems = events.data?.items ?? [];
     const nodes = uniqueStrings([
+      eventFilters.node_id,
       ...(overviewData?.nodes.map((node) => node.node_id) ?? []),
       ...eventItems.map((event) => event.node_id).filter(Boolean),
     ]);
@@ -818,7 +838,11 @@ function RuntimeSelectFilter({
         {label}
       </Label>
       <Select value={value ?? "all"} onValueChange={(nextValue) => onValueChange(nextValue === "all" ? undefined : nextValue)}>
-        <SelectTrigger id={id} className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none">
+        <SelectTrigger
+          aria-label={label}
+          id={id}
+          className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none"
+        >
           <SelectValue placeholder="全部" />
         </SelectTrigger>
         <SelectContent>

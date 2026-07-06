@@ -2,18 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { buildSidebarData, sidebarData } from './data/sidebar-data'
 
 describe('sidebarData', () => {
-  it('uses task hub as the homepage and removes the duplicate task launch menu item', () => {
+  it('groups daily workbench navigation without exposing the unfinished tasks route', () => {
     const workspaceItems = sidebarData.navGroups.find(
-      (group) => group.title === '工作区'
+      (group) => group.title === '工作台'
     )?.items
 
     expect(workspaceItems?.map((item) => item.title)).toEqual([
       '任务中枢',
       '收件箱',
-      '项目管理',
-      '数字员工',
-      '技能管理',
-      '团队管理',
+      '运行总览',
     ])
     expect(workspaceItems?.[0]).toMatchObject({
       title: '任务中枢',
@@ -26,21 +23,40 @@ describe('sidebarData', () => {
       iconTone: 'neutral',
     })
     expect(workspaceItems?.[2]).toMatchObject({
+      title: '运行总览',
+      url: '/run-overview',
+      iconTone: 'neutral',
+    })
+    expect(workspaceItems?.some((item) => item.url === '/tasks')).toBe(false)
+    expect(workspaceItems?.some((item) => item.title === '任务发起')).toBe(false)
+  })
+
+  it('groups collaboration objects separately from workflow capabilities', () => {
+    const objectItems = sidebarData.navGroups.find(
+      (group) => group.title === '协作对象'
+    )?.items
+
+    expect(objectItems?.map((item) => item.title)).toEqual([
+      '项目管理',
+      '数字员工',
+      '技能管理',
+      '团队管理',
+    ])
+    expect(objectItems?.[0]).toMatchObject({
       title: '项目管理',
       url: '/projects',
       iconTone: 'neutral',
     })
-    expect(workspaceItems?.[5]).toMatchObject({
+    expect(objectItems?.[3]).toMatchObject({
       title: '团队管理',
       url: '/teams',
       iconTone: 'neutral',
     })
-    expect(workspaceItems?.some((item) => item.title === '任务发起')).toBe(false)
   })
 
-  it('places automation tasks between workflows and external capabilities in the core navigation group', () => {
+  it('places automation tasks between workflows and external capabilities in the workflow capability group', () => {
     const coreItems = sidebarData.navGroups.find(
-      (group) => group.title === '核心导航'
+      (group) => group.title === '流程能力'
     )?.items
 
     expect(coreItems?.map((item) => item.title)).toEqual([
@@ -49,8 +65,6 @@ describe('sidebarData', () => {
       '外部能力',
       'MCP 管理',
       '协作集成',
-      '审批中心',
-      'Runtime 节点',
     ])
     expect(coreItems?.[1]).toMatchObject({
       title: '自动化任务',
@@ -76,11 +90,11 @@ describe('sidebarData', () => {
 
   it('adds the inbox badge only when one is provided', () => {
     const workspaceItems = buildSidebarData({ inboxBadge: '12' }).navGroups.find(
-      (group) => group.title === '工作区'
+      (group) => group.title === '工作台'
     )?.items
     const inboxItem = workspaceItems?.find((item) => item.title === '收件箱')
     const defaultInboxItem = sidebarData.navGroups
-      .find((group) => group.title === '工作区')
+      .find((group) => group.title === '工作台')
       ?.items.find((item) => item.title === '收件箱')
 
     expect(inboxItem).toMatchObject({
@@ -90,13 +104,14 @@ describe('sidebarData', () => {
     expect(defaultInboxItem).not.toHaveProperty('badge')
   })
 
-  it('places cost management in the platform management group', () => {
+  it('places governance and operations entries in the governance platform group', () => {
     const platformItems = sidebarData.navGroups.find(
-      (group) => group.title === '平台管理'
+      (group) => group.title === '治理平台'
     )?.items
 
     expect(platformItems?.map((item) => item.title)).toEqual([
-      '运行总览',
+      '审批中心',
+      'Runtime 节点',
       '权限中心',
       '成本管理',
       '用户管理',
@@ -104,11 +119,11 @@ describe('sidebarData', () => {
       '日志管理',
     ])
     expect(platformItems?.[0]).toMatchObject({
-      title: '运行总览',
-      url: '/run-overview',
+      title: '审批中心',
+      url: '/approvals',
       iconTone: 'neutral',
     })
-    expect(platformItems?.[2]).toMatchObject({
+    expect(platformItems?.[3]).toMatchObject({
       title: '成本管理',
       url: '/costs',
       iconTone: 'neutral',
@@ -117,7 +132,7 @@ describe('sidebarData', () => {
 
   it('nests platform log pages under the 日志管理 collapsible menu', () => {
     const platformItems = sidebarData.navGroups.find(
-      (group) => group.title === '平台管理'
+      (group) => group.title === '治理平台'
     )?.items
 
     const logMenu = platformItems?.find((item) => item.title === '日志管理')

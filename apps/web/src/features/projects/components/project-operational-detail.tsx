@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -25,8 +25,14 @@ import {
   SoftCard,
   StatusPill,
   V3Button,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type {
   Project,
@@ -88,6 +94,8 @@ type ProjectOperationalDetailProps = {
   executionTraceIsError?: boolean;
   executionTraceIsLoading?: boolean;
   executionSummaries: ProjectExecutionSummary[];
+  focusDecisionId?: string;
+  initialTab?: ProjectOperationalTab;
   isArchived?: boolean;
   onArchiveProject: () => void;
   onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
@@ -111,6 +119,18 @@ type ProjectOperationalDetailProps = {
   transferRequests: ProjectTransferRequest[];
 };
 
+type ProjectOperationalTab =
+  | "overview"
+  | "tasks"
+  | "artifacts"
+  | "approval"
+  | "budget"
+  | "acceptance"
+  | "config";
+
+const projectTabTriggerClass =
+  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-v3-card-soft data-[state=inactive]:hover:text-v3-ink";
+
 export function ProjectOperationalDetail({
   acceptance,
   archivePreview,
@@ -130,6 +150,8 @@ export function ProjectOperationalDetail({
   executionTraceIsError,
   executionTraceIsLoading,
   executionSummaries,
+  focusDecisionId,
+  initialTab = "overview",
   isArchived,
   onArchiveProject,
   onCreateAcceptance,
@@ -150,6 +172,11 @@ export function ProjectOperationalDetail({
   transferRequests,
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProjectOperationalTab>(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, focusDecisionId]);
 
   if (!project) {
     return (
@@ -208,6 +235,12 @@ export function ProjectOperationalDetail({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <V3Button asChild variant="outline">
+              <Link search={{ project: project.id }} to="/run-overview">
+                <Activity data-icon="inline-start" />
+                在运行总览查看
+              </Link>
+            </V3Button>
             <V3Button
               disabled={isArchived}
               type="button"
@@ -252,20 +285,55 @@ export function ProjectOperationalDetail({
         </div>
       </SoftCard>
 
-      {runtimePlacementPanel}
+      <Tabs
+        className="grid min-w-0 gap-4"
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as ProjectOperationalTab)}
+      >
+        <div className="min-w-0 overflow-x-auto pb-1">
+          <TabsList
+            aria-label="项目工作中枢"
+            className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3 sm:min-w-0"
+          >
+            <TabsTrigger className={projectTabTriggerClass} value="overview">
+              概览
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="tasks">
+              任务
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="artifacts">
+              工件
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="approval">
+              审批
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="budget">
+              预算
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="acceptance">
+              验收
+            </TabsTrigger>
+            <TabsTrigger className={projectTabTriggerClass} value="config">
+              配置
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      {taskGraph && taskGraph.nodes.length > 0 ? (
-        <section className="grid gap-2" data-testid="project-plan-graph-section">
-          <div className="flex items-center gap-2 px-1">
-            <ClipboardList className="size-4 text-v3-ink-2" />
-            <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
-            <StatusPill tone="mute">
-              {planTaskGraphSummaryLabel(taskGraph)}
-            </StatusPill>
-          </div>
-          <PlanGraphCanvas graph={taskGraph} />
-        </section>
-      ) : null}
+        <TabsContent className="m-0 grid min-w-0 gap-4" value="overview">
+          {runtimePlacementPanel}
+
+          {taskGraph && taskGraph.nodes.length > 0 ? (
+            <section className="grid gap-2" data-testid="project-plan-graph-section">
+              <div className="flex items-center gap-2 px-1">
+                <ClipboardList className="size-4 text-v3-ink-2" />
+                <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
+                <StatusPill tone="mute">
+                  {planTaskGraphSummaryLabel(taskGraph)}
+                </StatusPill>
+              </div>
+              <PlanGraphCanvas graph={taskGraph} />
+            </section>
+          ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="grid min-w-0 gap-4">
@@ -277,7 +345,7 @@ export function ProjectOperationalDetail({
             />
             {latestDemand ? (
               <div className="grid gap-2 p-4">
-                <p className="text-sm font-semibold text-v3-ink">{latestDemand.title}</p>
+                <DemandTitle demand={latestDemand} />
                 <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
                   {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
                 </p>
@@ -422,9 +490,7 @@ export function ProjectOperationalDetail({
                   activeTasks.slice(0, 6).map((task) => (
                     <div className="grid gap-1 p-4" key={task.id}>
                       <div className="flex items-center justify-between gap-3">
-                        <p className="min-w-0 truncate text-sm font-medium">
-                          {task.title}
-                        </p>
+                        <ProjectTaskLink task={task} />
                         <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
                       </div>
                       <p className="line-clamp-2 text-xs text-v3-ink-2">
@@ -645,6 +711,108 @@ export function ProjectOperationalDetail({
           </CollapsibleContent>
         </div>
       </Collapsible>
+        </TabsContent>
+
+        <TabsContent className="m-0" value="tasks">
+          <ProjectTasksPanel tasks={activeTasks} />
+        </TabsContent>
+
+        <TabsContent className="m-0" value="artifacts">
+          <ProjectGovernanceTabs
+            acceptance={acceptance}
+            archivePreview={archivePreview}
+            archiveSnapshots={archiveSnapshots}
+            artifacts={artifacts}
+            budgetLedger={budgetLedger}
+            budgetSummary={budgetSummary}
+            decisionRequestCount={decisionRequests.length}
+            demandCount={demands.length}
+            evidence={evidence}
+            executionSummaryCount={executionSummaries.length}
+            initialTab="artifacts"
+            onCreateAcceptance={onCreateAcceptance}
+            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+            onCreateEvidence={onCreateEvidence}
+            onPatchEvidence={onPatchEvidence}
+            reports={reports}
+            routeDecisionCount={routeDecisions.length}
+            taskCount={tasks.length}
+          />
+        </TabsContent>
+
+        <TabsContent className="m-0" value="approval">
+          <ProjectApprovalPanel
+            decisionRequests={decisionRequests}
+            focusDecisionId={focusDecisionId}
+            onResolveDecision={onResolveDecision}
+          />
+        </TabsContent>
+
+        <TabsContent className="m-0" value="budget">
+          <ProjectGovernanceTabs
+            acceptance={acceptance}
+            archivePreview={archivePreview}
+            archiveSnapshots={archiveSnapshots}
+            artifacts={artifacts}
+            budgetLedger={budgetLedger}
+            budgetSummary={budgetSummary}
+            decisionRequestCount={decisionRequests.length}
+            demandCount={demands.length}
+            evidence={evidence}
+            executionSummaryCount={executionSummaries.length}
+            initialTab="budget"
+            onCreateAcceptance={onCreateAcceptance}
+            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+            onCreateEvidence={onCreateEvidence}
+            onPatchEvidence={onPatchEvidence}
+            reports={reports}
+            routeDecisionCount={routeDecisions.length}
+            taskCount={tasks.length}
+          />
+        </TabsContent>
+
+        <TabsContent className="m-0" value="acceptance">
+          <ProjectGovernanceTabs
+            acceptance={acceptance}
+            archivePreview={archivePreview}
+            archiveSnapshots={archiveSnapshots}
+            artifacts={artifacts}
+            budgetLedger={budgetLedger}
+            budgetSummary={budgetSummary}
+            decisionRequestCount={decisionRequests.length}
+            demandCount={demands.length}
+            evidence={evidence}
+            executionSummaryCount={executionSummaries.length}
+            initialTab="acceptance"
+            onCreateAcceptance={onCreateAcceptance}
+            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+            onCreateEvidence={onCreateEvidence}
+            onPatchEvidence={onPatchEvidence}
+            reports={reports}
+            routeDecisionCount={routeDecisions.length}
+            taskCount={tasks.length}
+          />
+        </TabsContent>
+
+        <TabsContent className="m-0" value="config">
+          <SoftCard className="p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-v3-ink">项目配置</h3>
+                <p className="mt-1 text-sm text-v3-ink-2">
+                  配置表单仍保留在独立页面，避免在工作中枢内重复复杂写入面。
+                </p>
+              </div>
+              <V3Button asChild variant="outline">
+                <Link params={{ projectId: project.id }} to="/projects/$projectId/config">
+                  <Settings2 data-icon="inline-start" />
+                  打开配置页
+                </Link>
+              </V3Button>
+            </div>
+          </SoftCard>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -984,22 +1152,237 @@ function MemberPanel({
         {members.length === 0 ? (
           <EmptyLine label={emptyLabel} />
         ) : (
-          members.slice(0, 6).map((member) => (
-            <div className="flex items-center justify-between gap-3 p-4" key={member.id}>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-v3-ink">
-                  {member.display_name_snapshot || member.principal_id}
-                </p>
-                <p className="truncate text-xs text-v3-ink-2">
-                  {projectMemberBusinessLabel(member)}
-                </p>
+          members.slice(0, 6).map((member) => <MemberRow key={member.id} member={member} />)
+        )}
+      </div>
+    </SoftCard>
+  );
+}
+
+function MemberRow({ member }: { member: ProjectMember }) {
+  const content = (
+    <>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-v3-ink">
+          {member.display_name_snapshot || member.principal_id}
+        </p>
+        <p className="truncate text-xs text-v3-ink-2">
+          {projectMemberBusinessLabel(member)}
+        </p>
+      </div>
+      <ExternalLink className="size-3.5 text-v3-ink-2" />
+    </>
+  );
+  const href = projectMemberHref(member);
+
+  if (!href) {
+    return <div className="flex items-center justify-between gap-3 p-4">{content}</div>;
+  }
+
+  return (
+    <Link className="flex items-center justify-between gap-3 p-4 hover:bg-v3-card-soft" to={href}>
+      {content}
+    </Link>
+  );
+}
+
+function DemandTitle({ demand }: { demand: ProjectDemand }) {
+  if (!demand.id) {
+    return <p className="text-sm font-semibold text-v3-ink">{demand.title}</p>;
+  }
+
+  return (
+    <Link
+      className="text-sm font-semibold text-v3-brand-deep hover:text-v3-brand"
+      params={{ demandId: demand.id }}
+      to="/workflows/$demandId"
+    >
+      {demand.title}
+    </Link>
+  );
+}
+
+function ProjectTaskLink({ task }: { task: ProjectTask }) {
+  if (task.assigned_digital_employee_id) {
+    return (
+      <Link
+        className="min-w-0 truncate text-sm font-medium text-v3-brand-deep hover:text-v3-brand"
+        params={{ employeeId: task.assigned_digital_employee_id }}
+        to="/employees/$employeeId"
+      >
+        {task.title}
+      </Link>
+    );
+  }
+
+  return <p className="min-w-0 truncate text-sm font-medium">{task.title}</p>;
+}
+
+function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [employeeFilter, setEmployeeFilter] = useState("all");
+  const employeeIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tasks
+            .map((task) => task.assigned_digital_employee_id)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    [tasks],
+  );
+  const statuses = useMemo(
+    () => Array.from(new Set(tasks.map((task) => task.status))).filter(Boolean),
+    [tasks],
+  );
+  const filteredTasks = tasks.filter((task) => {
+    return (
+      (statusFilter === "all" || task.status === statusFilter) &&
+      (employeeFilter === "all" || task.assigned_digital_employee_id === employeeFilter)
+    );
+  });
+
+  return (
+    <WorkSurface className="min-w-0">
+      <div className="flex flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-v3-ink">项目任务</h3>
+          <p className="mt-1 text-xs text-v3-ink-2">
+            基于当前 project tasks 数据展示状态、员工和项目上下文。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <select
+            aria-label="任务状态"
+            className="h-9 rounded-v3-inner border border-v3-line bg-v3-card px-3 text-xs font-semibold text-v3-ink"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="all">全部状态</option>
+            {statuses.map((status) => (
+              <option key={status} value={status}>
+                {taskStatusLabel(status)}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="执行员工"
+            className="h-9 rounded-v3-inner border border-v3-line bg-v3-card px-3 text-xs font-semibold text-v3-ink"
+            value={employeeFilter}
+            onChange={(event) => setEmployeeFilter(event.target.value)}
+          >
+            <option value="all">全部员工</option>
+            {employeeIds.map((employeeId) => (
+              <option key={employeeId} value={employeeId}>
+                {employeeId}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th className="min-w-[220px]">任务</V3Th>
+            <V3Th>状态</V3Th>
+            <V3Th>员工</V3Th>
+            <V3Th>项目上下文</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredTasks.length === 0 ? (
+            <V3Tr>
+              <V3Td colSpan={4}>
+                <EmptyLine label="当前筛选下没有项目任务" />
+              </V3Td>
+            </V3Tr>
+          ) : (
+            filteredTasks.map((task) => (
+              <V3Tr key={task.id}>
+                <V3Td className="min-w-[220px]">
+                  <ProjectTaskLink task={task} />
+                  {task.summary ? (
+                    <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">{task.summary}</p>
+                  ) : null}
+                </V3Td>
+                <V3Td>
+                  <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
+                </V3Td>
+                <V3Td className="font-mono text-xs text-v3-ink-2">
+                  {task.assigned_digital_employee_id ? (
+                    <Link
+                      className="text-v3-brand-deep hover:text-v3-brand"
+                      params={{ employeeId: task.assigned_digital_employee_id }}
+                      to="/employees/$employeeId"
+                    >
+                      {task.assigned_digital_employee_id}
+                    </Link>
+                  ) : (
+                    "未分派"
+                  )}
+                </V3Td>
+                <V3Td className="font-mono text-xs text-v3-ink-2">{task.project_id}</V3Td>
+              </V3Tr>
+            ))
+          )}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
+  );
+}
+
+function ProjectApprovalPanel({
+  decisionRequests,
+  focusDecisionId,
+  onResolveDecision,
+}: {
+  decisionRequests: ProjectDecisionRequest[];
+  focusDecisionId?: string;
+  onResolveDecision: (decisionId: string, decision: string) => void;
+}) {
+  return (
+    <WorkSurface className="min-w-0">
+      <div className="border-b border-v3-line p-4">
+        <h3 className="text-sm font-semibold text-v3-ink">项目审批</h3>
+        <p className="mt-1 text-xs text-v3-ink-2">
+          聚合当前项目 decision requests，并在项目内处理负责人决策。
+        </p>
+      </div>
+      <div className="divide-y divide-v3-line">
+        {decisionRequests.length === 0 ? (
+          <EmptyLine label="当前项目没有审批或决策事项" />
+        ) : (
+          decisionRequests.map((decision) => (
+            <div
+              className={cn(
+                "grid gap-3 p-4",
+                decision.id === focusDecisionId && "bg-v3-brand-soft shadow-[inset_3px_0_0_var(--v3-brand)]",
+              )}
+              data-focused-decision={decision.id === focusDecisionId ? "true" : undefined}
+              id={`decision-${decision.id}`}
+              key={decision.id}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-v3-ink">{decision.title_snapshot}</p>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-v3-ink-2">
+                    {decision.summary_snapshot && decision.summary_snapshot !== decision.title_snapshot
+                      ? decision.summary_snapshot
+                      : "等待负责人处理"}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-v3-ink-3">{decision.id}</p>
+                </div>
+                <StatusPill tone={decisionTone(decision.status_snapshot)}>
+                  {decisionStatusLabel(decision.status_snapshot)}
+                </StatusPill>
               </div>
-              <ExternalLink className="size-3.5 text-v3-ink-2" />
+              <DecisionRequestActions decision={decision} onResolveDecision={onResolveDecision} />
             </div>
           ))
         )}
       </div>
-    </SoftCard>
+    </WorkSurface>
   );
 }
 
@@ -1032,9 +1415,9 @@ function DecisionRequestActions({
   }
 
   const actions = [
-    { ariaLabel: `批准：${decision.title_snapshot}`, label: "批准", value: "approved" },
+    { ariaLabel: `批准 ${decision.title_snapshot}`, label: "批准", value: "approved" },
     {
-      ariaLabel: `要求补证：${decision.title_snapshot}`,
+      ariaLabel: `要求补证 ${decision.title_snapshot}`,
       label: "要求补证",
       value: "needs_more_evidence",
     },
@@ -1071,6 +1454,16 @@ function projectMemberBusinessLabel(member: ProjectMember) {
     return "项目负责人";
   }
   return "项目参与人";
+}
+
+function projectMemberHref(member: ProjectMember) {
+  if (member.principal_type === "digital_employee") {
+    return `/employees/${encodeURIComponent(member.principal_id)}`;
+  }
+  if (member.principal_type === "human_user") {
+    return "/users";
+  }
+  return undefined;
 }
 
 function projectEventDisplay(event: ProjectEvent) {

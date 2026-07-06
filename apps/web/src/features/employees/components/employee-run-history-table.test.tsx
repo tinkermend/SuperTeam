@@ -1,8 +1,31 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { EmployeeRunHistoryTable } from "./employee-run-history-table";
 import type { DigitalEmployeeRunListResult } from "@/lib/api/employees";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    search,
+    to,
+    ...props
+  }: {
+    children: ReactNode;
+    search?: Record<string, string | undefined>;
+    to: string;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+    const query = search
+      ? `?${new URLSearchParams(Object.entries(search).filter((entry): entry is [string, string] => Boolean(entry[1]))).toString()}`
+      : "";
+    return (
+      <a href={`${to}${query}`} {...props}>
+        {children}
+      </a>
+    );
+  },
+}));
 
 const result: DigitalEmployeeRunListResult = {
   items: [
@@ -41,6 +64,7 @@ describe("EmployeeRunHistoryTable", () => {
     const onRowClick = vi.fn();
     const screen = await render(
       <EmployeeRunHistoryTable
+        employeeId="employee-1"
         onPageChange={vi.fn()}
         onRetry={vi.fn()}
         onRowClick={onRowClick}
@@ -55,6 +79,10 @@ describe("EmployeeRunHistoryTable", () => {
     await expect.element(screen.getByText("数据库迁移脚本校验")).toBeVisible();
     await expect.element(screen.getByText("数据库平台")).toBeVisible();
     await expect.element(screen.getByText("已完成")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "在运行总览查看" })).toHaveAttribute(
+      "href",
+      "/run-overview?employee=employee-1",
+    );
     await userEvent.click(screen.getByText("数据库迁移脚本校验"));
     expect(onRowClick).toHaveBeenCalledWith(result.items[0]);
   });
@@ -62,6 +90,7 @@ describe("EmployeeRunHistoryTable", () => {
   it("shows empty state when there are no runs", async () => {
     const screen = await render(
       <EmployeeRunHistoryTable
+        employeeId="employee-1"
         onPageChange={vi.fn()}
         onRetry={vi.fn()}
         onRowClick={vi.fn()}

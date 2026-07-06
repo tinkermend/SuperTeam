@@ -34,6 +34,7 @@ type ProjectGovernanceTabsProps = {
   demandCount: number;
   evidence?: ProjectEvidenceRef[];
   executionSummaryCount: number;
+  initialTab?: "evidence" | "artifacts" | "budget" | "acceptance" | "archive";
   onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
@@ -57,6 +58,7 @@ export function ProjectGovernanceTabs({
   demandCount,
   evidence = [],
   executionSummaryCount,
+  initialTab = "evidence",
   onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -68,7 +70,7 @@ export function ProjectGovernanceTabs({
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
   return (
-    <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue="evidence">
+    <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
         <TabsList
           aria-label="项目详情治理视图"

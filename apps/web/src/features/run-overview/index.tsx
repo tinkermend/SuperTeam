@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import { Activity, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -17,6 +18,7 @@ export function RunOverviewPage() {
 }
 
 export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; fetcher?: typeof fetch }) {
+  const search = useSearch({ strict: false }) as { employee?: string; project?: string };
   const [activeFloorId, setActiveFloorId] = useState<RuntimeOverviewFloorId>("floor-1");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
   const employees = useQuery({
@@ -34,7 +36,11 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
     return buildRuntimeOverview({ activeFloorId, employees: employees.data, generatedAt: new Date().toISOString(), teams: teams.data });
   }, [activeFloorId, employees.data, teams.data]);
   const error = employees.error ?? teams.error;
-  const effectiveSelectedEmployeeId = selectedEmployeeId ?? overview?.selectedEmployeeId;
+  const searchEmployeeId =
+    search.employee && overview?.employees.some((employee) => employee.employeeId === search.employee)
+      ? search.employee
+      : undefined;
+  const effectiveSelectedEmployeeId = searchEmployeeId ?? selectedEmployeeId ?? overview?.selectedEmployeeId;
   const handleRefresh = () => {
     void employees.refetch();
     void teams.refetch();

@@ -205,6 +205,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
               <EmployeeRunHistoryTable
+                employeeId={employeeId}
                 error={runs.error}
                 isError={runs.isError}
                 isLoading={runs.isLoading}

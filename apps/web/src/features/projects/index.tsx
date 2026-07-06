@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   FolderKanban,
   Plus,
@@ -232,6 +232,7 @@ export function ProjectsView({
   routeProjectId,
 }: ProjectsViewProps) {
   const queryClient = useQueryClient();
+  const search = useSearch({ strict: false }) as { focus?: string; tab?: string };
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
@@ -889,6 +890,8 @@ export function ProjectsView({
                     executionTraceIsError={projectExecutionTraceIsError}
                     executionTraceIsLoading={projectExecutionTraceIsLoading}
                     executionSummaries={projectExecutionSummaries}
+                    focusDecisionId={search.focus}
+                    initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
                     isArchived={isArchived}
                     onArchiveProject={() => {
                       if (effectiveProjectId) {
@@ -979,6 +982,20 @@ function queryErrorMessage(error: unknown) {
     return error.message;
   }
   return "执行证据链加载失败";
+}
+
+function isProjectOperationalTab(value: string | undefined): value is NonNullable<
+  React.ComponentProps<typeof ProjectOperationalDetail>["initialTab"]
+> {
+  return (
+    value === "overview" ||
+    value === "tasks" ||
+    value === "artifacts" ||
+    value === "approval" ||
+    value === "budget" ||
+    value === "acceptance" ||
+    value === "config"
+  );
 }
 
 function selectDispatchGateTask({

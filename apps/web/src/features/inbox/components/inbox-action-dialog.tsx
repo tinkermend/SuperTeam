@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { formatInboxActionLabel } from "./action-format";
+import { riskLabel } from "./inbox-item-list";
 
 type InboxActionDialogProps = {
   action: InboxAction | null;
@@ -71,6 +72,7 @@ export function InboxActionDialog({
           <DialogTitle>{action ? formatInboxActionLabel(action) : "处理事项"}</DialogTitle>
           <DialogDescription>{item?.title ?? "确认本次收件箱处理动作。"}</DialogDescription>
         </DialogHeader>
+        {item ? <InboxActionContextSummary item={item} /> : null}
         {submitError ? (
           <V3ErrorState title="操作未完成" description={submitError} className="py-4" />
         ) : null}
@@ -102,4 +104,71 @@ export function InboxActionDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function InboxActionContextSummary({ item }: { item: InboxItem }) {
+  const contextRows = readableContextRows(item.context);
+
+  return (
+    <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+      <div className="grid gap-2 text-xs sm:grid-cols-2">
+        {item.risk_level ? (
+          <ContextPair label="风险等级" value={riskLabel[item.risk_level] ?? item.risk_level} />
+        ) : null}
+        {item.source_project_id ? <ContextPair label="来源项目" value={item.source_project_id} /> : null}
+        {item.source_task_id ? <ContextPair label="来源任务" value={item.source_task_id} /> : null}
+        {item.source_approval_request_id ? (
+          <ContextPair label="审批请求" value={item.source_approval_request_id} />
+        ) : null}
+      </div>
+      {item.summary ? (
+        <div className="mt-3 border-t border-v3-line pt-3">
+          <div className="text-xs font-semibold text-v3-ink-2">摘要</div>
+          <p className="mt-1 text-sm leading-5 text-v3-ink">{item.summary}</p>
+        </div>
+      ) : null}
+      {contextRows.length > 0 ? (
+        <div className="mt-3 border-t border-v3-line pt-3">
+          <div className="text-xs font-semibold text-v3-ink-2">上下文摘要</div>
+          <div className="mt-2 grid gap-1.5">
+            {contextRows.map((row) => (
+              <ContextPair key={row.label} label={row.label} value={row.value} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContextPair({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-start justify-between gap-3">
+      <span className="shrink-0 font-semibold text-v3-ink-2">{label}</span>
+      <span className="min-w-0 break-words text-right font-medium text-v3-ink">{value}</span>
+    </div>
+  );
+}
+
+function readableContextRows(context: Record<string, unknown>) {
+  const preferredLabels: Record<string, string> = {
+    approval_title: "审批标题",
+    current_node: "当前节点",
+    decision_type: "决策类型",
+    node_title: "节点",
+    project_name: "项目名称",
+    project_title: "项目",
+    source_title: "来源事项",
+    stage: "阶段",
+    task_title: "任务",
+    workflow_node: "流程节点",
+  };
+
+  return Object.entries(context)
+    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+    .slice(0, 6)
+    .map(([key, value]) => ({
+      label: preferredLabels[key] ?? key,
+      value: String(value).trim(),
+    }));
 }

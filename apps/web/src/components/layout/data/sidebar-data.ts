@@ -34,7 +34,7 @@ export function buildSidebarData({
   return {
     navGroups: [
       {
-        title: "工作区",
+        title: "工作台",
         items: [
           {
             title: "任务中枢",
@@ -49,6 +49,17 @@ export function buildSidebarData({
             iconTone: "neutral",
             ...(inboxBadge ? { badge: inboxBadge } : {}),
           },
+          {
+            title: "运行总览",
+            url: "/run-overview",
+            icon: Gauge,
+            iconTone: "neutral",
+          },
+        ],
+      },
+      {
+        title: "协作对象",
+        items: [
           {
             title: "项目管理",
             url: "/projects",
@@ -76,7 +87,7 @@ export function buildSidebarData({
         ],
       },
       {
-        title: "核心导航",
+        title: "流程能力",
         items: [
           {
             title: "流程编排",
@@ -108,6 +119,11 @@ export function buildSidebarData({
             icon: MessagesSquare,
             iconTone: "neutral",
           },
+        ],
+      },
+      {
+        title: "治理平台",
+        items: [
           {
             title: "审批中心",
             url: "/approvals",
@@ -118,17 +134,6 @@ export function buildSidebarData({
             title: "Runtime 节点",
             url: "/runtime",
             icon: Server,
-            iconTone: "neutral",
-          },
-        ],
-      },
-      {
-        title: "平台管理",
-        items: [
-          {
-            title: "运行总览",
-            url: "/run-overview",
-            icon: Gauge,
             iconTone: "neutral",
           },
           {

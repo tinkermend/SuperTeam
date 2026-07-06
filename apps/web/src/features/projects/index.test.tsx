@@ -68,6 +68,7 @@ vi.mock("@tanstack/react-router", () => {
   return {
     Link,
     useNavigate: () => routerMock.navigate,
+    useSearch: () => ({}),
   };
 });
 
@@ -2256,7 +2257,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("转派请求")).toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("button", { name: "批准：需要负责人确认" }),
+      screen.getByRole("button", { name: "批准 需要负责人确认" }),
     );
 
     await vi.waitFor(() => {
