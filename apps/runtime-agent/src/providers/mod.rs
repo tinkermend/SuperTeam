@@ -2,6 +2,7 @@ pub mod catalog;
 pub mod claude;
 pub mod codex;
 pub mod opencode;
+pub mod usage;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
