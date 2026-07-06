@@ -68,7 +68,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
                 text: "hello from claude".to_string()
             },
             ProviderEvent::TurnCompleted {
-                summary: Some("done".to_string())
+                summary: Some("done".to_string()),
+                usage: None,
             },
         ]
     );
@@ -106,7 +107,7 @@ printf '%s\n' '{"type":"turn.completed"}'
             ProviderEvent::TextDelta {
                 text: "hello from opencode".to_string()
             },
-            ProviderEvent::TurnCompleted { summary: None },
+            ProviderEvent::TurnCompleted { summary: None, usage: None },
         ]
     );
 }
@@ -144,7 +145,8 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
                 text: "hello from codex".to_string()
             },
             ProviderEvent::TurnCompleted {
-                summary: Some("done".to_string())
+                summary: Some("done".to_string()),
+                usage: None,
             },
         ]
     );

@@ -104,7 +104,7 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>
             }
         }
         "turn.completed" | "session.idle" => {
-            Ok(Some(ProviderEvent::TurnCompleted { summary: None }))
+            Ok(Some(ProviderEvent::TurnCompleted { summary: None, usage: None }))
         }
         _ => Ok(None),
     }

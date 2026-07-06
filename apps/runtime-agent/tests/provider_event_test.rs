@@ -33,7 +33,8 @@ fn parses_claude_session_and_text_and_completion_events() {
     assert_eq!(
         completed,
         ProviderEvent::TurnCompleted {
-            summary: Some("done".to_string())
+            summary: Some("done".to_string()),
+            usage: None,
         }
     );
 }
@@ -63,7 +64,7 @@ fn parses_opencode_session_text_and_completion_events() {
             text: "hello".to_string()
         }
     );
-    assert_eq!(completed, ProviderEvent::TurnCompleted { summary: None });
+    assert_eq!(completed, ProviderEvent::TurnCompleted { summary: None, usage: None });
 }
 
 #[test]
@@ -94,7 +95,8 @@ fn parses_codex_session_text_and_completion_events() {
     assert_eq!(
         completed,
         ProviderEvent::TurnCompleted {
-            summary: Some("done".to_string())
+            summary: Some("done".to_string()),
+            usage: None,
         }
     );
 }
@@ -139,7 +141,7 @@ fn parses_codex_realistic_thread_item_and_turn_events() {
             ProviderEvent::TextDelta {
                 text: "OK".to_string()
             },
-            ProviderEvent::TurnCompleted { summary: None },
+            ProviderEvent::TurnCompleted { summary: None, usage: None },
         ]
     );
 }

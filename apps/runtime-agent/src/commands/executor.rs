@@ -84,7 +84,7 @@ impl ProviderTerminalWritebackState {
                 }
                 None
             }
-            ProviderEvent::TurnCompleted { summary } => {
+            ProviderEvent::TurnCompleted { summary, .. } => {
                 if !self.failed {
                     let summary = summary
                         .as_deref()
@@ -1500,7 +1500,7 @@ fn runtime_event_writeback(
             );
             ("tool_completed".to_string(), payload)
         }
-        ProviderEvent::TurnCompleted { summary } => {
+        ProviderEvent::TurnCompleted { summary, .. } => {
             let mut payload = HashMap::new();
             if let Some(summary) = summary {
                 payload.insert(
@@ -2861,6 +2861,7 @@ mod tests {
         let action = state.observe_event(
             &ProviderEvent::TurnCompleted {
                 summary: Some("looks successful".to_string()),
+                usage: None,
             },
             Some("provider-session-1"),
         );
@@ -2893,7 +2894,7 @@ mod tests {
         assert!(
             state
                 .observe_event(
-                    &ProviderEvent::TurnCompleted { summary: None },
+                    &ProviderEvent::TurnCompleted { summary: None, usage: None },
                     Some("provider-session-1")
                 )
                 .is_none()
@@ -3374,6 +3375,7 @@ mod tests {
                 .observe_event(
                     &ProviderEvent::TurnCompleted {
                         summary: Some("API Error: 529 provider overloaded".to_string()),
+                        usage: None,
                     },
                     Some("provider-session-1"),
                 )

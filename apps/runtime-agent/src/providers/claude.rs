@@ -120,6 +120,7 @@ pub fn parse_claude_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> 
                 .get("result")
                 .and_then(|v| v.as_str())
                 .map(ToString::to_string),
+            usage: None,
         })),
         _ => Ok(None),
     }

@@ -54,6 +54,7 @@ async fn store_records_provider_session_events_and_replays_them() {
             &run.id,
             ProviderEvent::TurnCompleted {
                 summary: Some("done".to_string()),
+                usage: None,
             },
         )
         .await
@@ -206,6 +207,7 @@ async fn store_does_not_cancel_completed_runs() {
             &run.id,
             ProviderEvent::TurnCompleted {
                 summary: Some("done".to_string()),
+                usage: None,
             },
         )
         .await
