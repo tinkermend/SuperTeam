@@ -2961,6 +2961,23 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployee"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/scheduling-readiness:
+    get:
+      operationId: getDigitalEmployeeSchedulingReadiness
+      summary: Get digital employee scheduling readiness
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Digital employee scheduling readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeSchedulingReadiness"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/workspace-files:
     get:
       operationId: listEmployeeWorkspaceFiles
@@ -9794,6 +9811,103 @@ components:
         updated_at:
           type: string
           format: date-time
+    DigitalEmployeeSchedulingReadiness:
+      type: object
+      required:
+        - employee_id
+        - ready_for_project_scheduling
+        - project_execution_source
+        - checks
+        - capabilities
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        ready_for_project_scheduling:
+          type: boolean
+        project_execution_source:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SchedulingReadinessCheck"
+        capabilities:
+          $ref: "#/components/schemas/SchedulingReadinessCapabilities"
+    SchedulingReadinessCheck:
+      type: object
+      required:
+        - code
+        - status
+        - label
+        - message
+      properties:
+        code:
+          type: string
+        status:
+          type: string
+          enum:
+            - passed
+            - warning
+            - blocked
+        label:
+          type: string
+        message:
+          type: string
+    SchedulingReadinessCapabilities:
+      type: object
+      required:
+        - skills
+        - mcp_servers
+        - environment_variables
+      properties:
+        skills:
+          $ref: "#/components/schemas/SchedulingReadinessSkillSummary"
+        mcp_servers:
+          $ref: "#/components/schemas/SchedulingReadinessMcpSummary"
+        environment_variables:
+          $ref: "#/components/schemas/SchedulingReadinessEnvironmentSummary"
+    SchedulingReadinessSkillSummary:
+      type: object
+      required:
+        - personal_count
+        - inherited_count
+        - missing_required
+      properties:
+        personal_count:
+          type: integer
+          format: int32
+        inherited_count:
+          type: integer
+          format: int32
+        missing_required:
+          type: array
+          items:
+            type: string
+    SchedulingReadinessMcpSummary:
+      type: object
+      required:
+        - personal_count
+        - inherited_count
+      properties:
+        personal_count:
+          type: integer
+          format: int32
+        inherited_count:
+          type: integer
+          format: int32
+    SchedulingReadinessEnvironmentSummary:
+      type: object
+      required:
+        - configured_count
+        - missing_names
+      properties:
+        configured_count:
+          type: integer
+          format: int32
+        missing_names:
+          type: array
+          items:
+            type: string
     DigitalEmployeeAvatarAsset:
       type: object
       required:

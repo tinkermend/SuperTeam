@@ -149,6 +149,43 @@ export type DigitalEmployeeExecutionInstance = {
   updated_at?: string;
 };
 
+export type SchedulingReadinessCheck = {
+  code: string;
+  status: "passed" | "warning" | "blocked";
+  label: string;
+  message: string;
+};
+
+export type SchedulingReadinessSkillSummary = {
+  personal_count: number;
+  inherited_count: number;
+  missing_required: string[];
+};
+
+export type SchedulingReadinessMcpSummary = {
+  personal_count: number;
+  inherited_count: number;
+};
+
+export type SchedulingReadinessEnvironmentSummary = {
+  configured_count: number;
+  missing_names: string[];
+};
+
+export type SchedulingReadinessCapabilities = {
+  skills: SchedulingReadinessSkillSummary;
+  mcp_servers: SchedulingReadinessMcpSummary;
+  environment_variables: SchedulingReadinessEnvironmentSummary;
+};
+
+export type DigitalEmployeeSchedulingReadiness = {
+  employee_id: string;
+  ready_for_project_scheduling: boolean;
+  project_execution_source: string;
+  checks: SchedulingReadinessCheck[];
+  capabilities: SchedulingReadinessCapabilities;
+};
+
 export type DigitalEmployeeRunStatus =
   | "queued"
   | "dispatching"
@@ -728,6 +765,19 @@ export async function getDigitalEmployeeExecutionInstance(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`,
     "digital employee execution instance",
+  );
+}
+
+export function getDigitalEmployeeSchedulingReadiness(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployeeSchedulingReadiness> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<DigitalEmployeeSchedulingReadiness>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/scheduling-readiness`,
+    "digital employee scheduling readiness",
   );
 }
 

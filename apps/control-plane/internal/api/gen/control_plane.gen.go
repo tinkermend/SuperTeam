@@ -1407,6 +1407,27 @@ func (e RuntimeNodeStatus) Valid() bool {
 	}
 }
 
+// Defines values for SchedulingReadinessCheckStatus.
+const (
+	SchedulingReadinessCheckStatusBlocked SchedulingReadinessCheckStatus = "blocked"
+	SchedulingReadinessCheckStatusPassed  SchedulingReadinessCheckStatus = "passed"
+	SchedulingReadinessCheckStatusWarning SchedulingReadinessCheckStatus = "warning"
+)
+
+// Valid indicates whether the value is a known member of the SchedulingReadinessCheckStatus enum.
+func (e SchedulingReadinessCheckStatus) Valid() bool {
+	switch e {
+	case SchedulingReadinessCheckStatusBlocked:
+		return true
+	case SchedulingReadinessCheckStatusPassed:
+		return true
+	case SchedulingReadinessCheckStatusWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkillInstallationProviderType.
 const (
 	ClaudeCode SkillInstallationProviderType = "claude-code"
@@ -1853,19 +1874,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	Cancelled ListInboxItemsParamsStatus = "cancelled"
-	Open      ListInboxItemsParamsStatus = "open"
-	Resolved  ListInboxItemsParamsStatus = "resolved"
+	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
+	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
+	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case ListInboxItemsParamsStatusCancelled:
 		return true
-	case Open:
+	case ListInboxItemsParamsStatusOpen:
 		return true
-	case Resolved:
+	case ListInboxItemsParamsStatusResolved:
 		return true
 	default:
 		return false
@@ -2768,6 +2789,15 @@ type DigitalEmployeeRuntimeProviderOption struct {
 	RuntimeName           string             `json:"runtime_name"`
 	RuntimeNodeId         openapi_types.UUID `json:"runtime_node_id"`
 	RuntimeStatus         string             `json:"runtime_status"`
+}
+
+// DigitalEmployeeSchedulingReadiness defines model for DigitalEmployeeSchedulingReadiness.
+type DigitalEmployeeSchedulingReadiness struct {
+	Capabilities              SchedulingReadinessCapabilities `json:"capabilities"`
+	Checks                    []SchedulingReadinessCheck      `json:"checks"`
+	EmployeeId                openapi_types.UUID              `json:"employee_id"`
+	ProjectExecutionSource    string                          `json:"project_execution_source"`
+	ReadyForProjectScheduling bool                            `json:"ready_for_project_scheduling"`
 }
 
 // DigitalEmployeeStatus defines model for DigitalEmployeeStatus.
@@ -4327,6 +4357,43 @@ type RuntimeSession struct {
 	RuntimeNodeId openapi_types.UUID  `json:"runtime_node_id"`
 	TenantId      openapi_types.UUID  `json:"tenant_id"`
 	UpdatedAt     time.Time           `json:"updated_at"`
+}
+
+// SchedulingReadinessCapabilities defines model for SchedulingReadinessCapabilities.
+type SchedulingReadinessCapabilities struct {
+	EnvironmentVariables SchedulingReadinessEnvironmentSummary `json:"environment_variables"`
+	McpServers           SchedulingReadinessMcpSummary         `json:"mcp_servers"`
+	Skills               SchedulingReadinessSkillSummary       `json:"skills"`
+}
+
+// SchedulingReadinessCheck defines model for SchedulingReadinessCheck.
+type SchedulingReadinessCheck struct {
+	Code    string                         `json:"code"`
+	Label   string                         `json:"label"`
+	Message string                         `json:"message"`
+	Status  SchedulingReadinessCheckStatus `json:"status"`
+}
+
+// SchedulingReadinessCheckStatus defines model for SchedulingReadinessCheck.Status.
+type SchedulingReadinessCheckStatus string
+
+// SchedulingReadinessEnvironmentSummary defines model for SchedulingReadinessEnvironmentSummary.
+type SchedulingReadinessEnvironmentSummary struct {
+	ConfiguredCount int32    `json:"configured_count"`
+	MissingNames    []string `json:"missing_names"`
+}
+
+// SchedulingReadinessMcpSummary defines model for SchedulingReadinessMcpSummary.
+type SchedulingReadinessMcpSummary struct {
+	InheritedCount int32 `json:"inherited_count"`
+	PersonalCount  int32 `json:"personal_count"`
+}
+
+// SchedulingReadinessSkillSummary defines model for SchedulingReadinessSkillSummary.
+type SchedulingReadinessSkillSummary struct {
+	InheritedCount  int32    `json:"inherited_count"`
+	MissingRequired []string `json:"missing_required"`
+	PersonalCount   int32    `json:"personal_count"`
 }
 
 // Skill defines model for Skill.
@@ -6177,6 +6244,9 @@ type ServerInterface interface {
 	// Stop an active digital employee run
 	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop)
 	StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
+	// Get digital employee scheduling readiness
+	// (GET /api/v1/digital-employees/{employeeId}/scheduling-readiness)
+	GetDigitalEmployeeSchedulingReadiness(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List effective employee skills
 	// (GET /api/v1/digital-employees/{employeeId}/skills)
 	ListEmployeeSkills(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -6837,6 +6907,12 @@ func (_ Unimplemented) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *ht
 // Stop an active digital employee run
 // (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop)
 func (_ Unimplemented) StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get digital employee scheduling readiness
+// (GET /api/v1/digital-employees/{employeeId}/scheduling-readiness)
+func (_ Unimplemented) GetDigitalEmployeeSchedulingReadiness(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9016,6 +9092,32 @@ func (siw *ServerInterfaceWrapper) StopDigitalEmployeeRun(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StopDigitalEmployeeRun(w, r, employeeId, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDigitalEmployeeSchedulingReadiness operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeSchedulingReadiness(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeSchedulingReadiness(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14908,6 +15010,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/stop", wrapper.StopDigitalEmployeeRun)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/scheduling-readiness", wrapper.GetDigitalEmployeeSchedulingReadiness)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/skills", wrapper.ListEmployeeSkills)
