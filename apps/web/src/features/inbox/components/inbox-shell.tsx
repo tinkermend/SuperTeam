@@ -21,7 +21,6 @@ import {
   SoftCard,
   StatusPill,
   V3Button,
-  V3MetricCard,
   V3StateSurface,
   V3Tabs,
   V3Tab,
@@ -143,120 +142,237 @@ export function InboxShell({
         icon={<Inbox />}
         iconTone="brand"
       />
-      <Main className="space-y-5 text-v3-ink">
-        {data ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <V3MetricCard
-              icon={<Inbox />}
-              iconTone="info"
-              label="开放事项"
-              value={data.summary.open_count}
-              meta={view === "mine" ? "我的待处理队列" : "团队待处理队列"}
-            />
-            <V3MetricCard
-              icon={<AlertTriangle />}
-              iconTone="danger"
-              label="高风险"
-              value={data.summary.high_risk_count}
-              meta="需优先确认"
-            />
-            <V3MetricCard
-              icon={<ShieldCheck />}
-              iconTone="warn"
-              label="阻断"
-              value={data.summary.blocked_count}
-              meta="等待人工判断"
-            />
-            <V3MetricCard
-              icon={<Clock />}
-              iconTone="mute"
-              label="等待最久"
-              value={maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—"}
-              meta="基于 created_at 计算"
-            />
-          </div>
-        ) : null}
-
-        <SoftCard className="flex flex-col gap-4 p-4">
-          <V3Tabs role="tablist" aria-label="收件箱视图">
-            <V3Tab
-              type="button"
-              role="tab"
-              active={view === "mine"}
-              aria-selected={view === "mine"}
-              onClick={() => onViewChange("mine")}
-            >
-              我的待办
-            </V3Tab>
-            <V3Tab
-              type="button"
-              role="tab"
-              active={view === "team"}
-              aria-selected={view === "team"}
-              onClick={() => onViewChange("team")}
-            >
-              团队待办
-            </V3Tab>
-          </V3Tabs>
-          <InboxFilters
-            filters={filters}
-            onFilterChange={onFilterChange}
-            onReset={onResetFilters}
-            uuidFilterDrafts={uuidFilterDrafts}
-            uuidFilterErrors={uuidFilterErrors}
-          />
-        </SoftCard>
+      <Main fixed className="flex min-h-0 flex-col gap-3 py-4 text-v3-ink">
+        {/* 顶部：4 张对等小卡概览 + 视图分段 + 筛选工具条 */}
+        <InboxSummaryCards summary={data?.summary} maxWaitMs={maxWaitMs} />
+        <InboxToolbar
+          view={view}
+          onViewChange={onViewChange}
+          filters={filters}
+          onFilterChange={onFilterChange}
+          onResetFilters={onResetFilters}
+          uuidFilterDrafts={uuidFilterDrafts}
+          uuidFilterErrors={uuidFilterErrors}
+        />
 
         {mutationError ? (
-          <div className="rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger" role="alert">
+          <div
+            className="shrink-0 rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger"
+            role="alert"
+          >
             <p className="font-bold">操作未完成</p>
             <p className="mt-1 text-v3-ink-2">{mutationError.message}</p>
           </div>
         ) : null}
 
         {isFetching && hasItems ? (
-          <StatusPill tone="info" className="w-fit">正在刷新</StatusPill>
+          <StatusPill tone="info" className="w-fit shrink-0">正在刷新</StatusPill>
         ) : null}
 
-        <V3StateSurface
-          isLoading={isLoading && !data}
-          isError={Boolean(error && !data)}
-          error={error}
-          empty={Boolean(data && !hasItems)}
-          onRetry={onRetry}
-          emptyState={
-            <SoftCard>
-              <div className="px-6 py-12 text-center text-sm text-v3-ink-2">
-                当前没有需要处理的事项。
+        {/* 工作台：三栏在桌面端填满视口，各自内部滚动；移动端整列纵向滚动 */}
+        <div className="min-h-0 flex-1 overflow-y-auto xl:overflow-hidden">
+          <V3StateSurface
+            isLoading={isLoading && !data}
+            isError={Boolean(error && !data)}
+            error={error}
+            empty={Boolean(data && !hasItems)}
+            onRetry={onRetry}
+            emptyState={
+              <SoftCard>
+                <div className="px-6 py-12 text-center text-sm text-v3-ink-2">
+                  当前没有需要处理的事项。
+                </div>
+              </SoftCard>
+            }
+          >
+            {data && hasItems ? (
+              <div className="grid min-h-0 gap-3 xl:h-full xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_300px]">
+                {/* 左栏：紧凑列表 */}
+                <InboxItemList
+                  items={data.items}
+                  onSelect={(item) => setSelectedItemId(item.id)}
+                  selectedItemId={selectedItemId}
+                />
+                {/* 中栏：详情 */}
+                <InboxDetailPanel data={data} item={selectedItem} view={view} />
+                {/* 右栏：操作面板 */}
+                <InboxActionPanel item={selectedItem} onAction={onAction} view={view} />
               </div>
-            </SoftCard>
-          }
-        >
-          {data && hasItems ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_290px]">
-              {/* 左栏：紧凑列表 */}
-              <InboxItemList
-                items={data.items}
-                onSelect={(item) => setSelectedItemId(item.id)}
-                selectedItemId={selectedItemId}
-              />
-              {/* 中栏：详情 */}
-              <InboxDetailPanel
-                data={data}
-                item={selectedItem}
-                view={view}
-              />
-              {/* 右栏：操作面板 */}
-              <InboxActionPanel
-                item={selectedItem}
-                onAction={onAction}
-                view={view}
-              />
-            </div>
-          ) : null}
-        </V3StateSurface>
+            ) : null}
+          </V3StateSurface>
+        </div>
       </Main>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 顶部概览：4 张对等小卡（照搬项目管理 KPI 卡：语义色 + 图标圆底 + 顶条 + hover 上浮）
+// ---------------------------------------------------------------------------
+
+type InboxSummaryTone = "brand" | "danger" | "warn" | "info" | "mute";
+
+const summaryCardSoftBg: Record<InboxSummaryTone, string> = {
+  brand: "bg-v3-brand-soft",
+  danger: "bg-v3-danger-soft",
+  warn: "bg-v3-warn-soft",
+  info: "bg-v3-info-soft",
+  mute: "bg-v3-mute-soft",
+};
+
+// 与项目管理 KPI 卡一致：语义 text 层做数字与图标色（过 AA），保持色彩搭配
+const summaryCardNumText: Record<InboxSummaryTone, string> = {
+  brand: "text-v3-brand-deep",
+  danger: "text-v3-danger-text",
+  warn: "text-v3-warn-text",
+  info: "text-v3-info-text",
+  mute: "text-v3-mute-text",
+};
+
+const summaryCardAccent: Record<InboxSummaryTone, string> = {
+  brand: "bg-v3-brand",
+  danger: "bg-v3-danger",
+  warn: "bg-v3-warn",
+  info: "bg-v3-info",
+  mute: "bg-v3-line-strong",
+};
+
+function InboxSummaryCards({
+  summary,
+  maxWaitMs,
+}: {
+  summary?: InboxListResponse["summary"];
+  maxWaitMs: number;
+}) {
+  const highRisk = summary?.high_risk_count ?? 0;
+  const blocked = summary?.blocked_count ?? 0;
+  const cards: Array<{
+    icon: typeof Inbox;
+    label: string;
+    value: React.ReactNode;
+    tone: InboxSummaryTone;
+  }> = [
+    {
+      icon: Inbox,
+      label: "开放事项",
+      value: summary ? summary.open_count : "—",
+      tone: "brand",
+    },
+    {
+      icon: AlertTriangle,
+      label: "高风险",
+      value: summary ? highRisk : "—",
+      // 语义色只在需要人工介入（>0）时点亮，0 保持灰阶（对齐 DESIGN.md）
+      tone: highRisk > 0 ? "danger" : "mute",
+    },
+    {
+      icon: ShieldCheck,
+      label: "阻断",
+      value: summary ? blocked : "—",
+      tone: blocked > 0 ? "warn" : "mute",
+    },
+    {
+      icon: Clock,
+      label: "等待最久",
+      value: maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—",
+      tone: "info",
+    },
+  ];
+
+  return (
+    <section
+      aria-label="收件箱概览"
+      className="grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4"
+    >
+      {cards.map((card) => {
+        const Icon = card.icon;
+        return (
+          <SoftCard
+            key={card.label}
+            className="group relative flex flex-col gap-2 overflow-hidden px-4 py-3.5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop"
+          >
+            <span
+              aria-hidden
+              className={cn("absolute inset-x-0 top-0 h-0.5", summaryCardAccent[card.tone])}
+            />
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-full transition-transform duration-200 ease-out group-hover:scale-110",
+                summaryCardSoftBg[card.tone],
+              )}
+            >
+              <Icon aria-hidden className={cn("size-[15px]", summaryCardNumText[card.tone])} />
+            </span>
+            <span
+              className={cn(
+                "text-2xl font-extrabold leading-none tabular-nums",
+                summaryCardNumText[card.tone],
+              )}
+            >
+              {card.value}
+            </span>
+            <p className="text-[11.5px] font-medium leading-none text-v3-ink-3">{card.label}</p>
+          </SoftCard>
+        );
+      })}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 顶部工具条：视图分段 + 紧凑筛选
+// ---------------------------------------------------------------------------
+
+type InboxToolbarProps = {
+  view: InboxViewMode;
+  onViewChange: (view: InboxViewMode) => void;
+  filters: InboxListFilters;
+  onFilterChange: InboxFilterChangeHandler;
+  onResetFilters: () => void;
+  uuidFilterDrafts: InboxUuidFilterDrafts;
+  uuidFilterErrors: InboxUuidFilterErrors;
+};
+
+function InboxToolbar({
+  view,
+  onViewChange,
+  filters,
+  onFilterChange,
+  onResetFilters,
+  uuidFilterDrafts,
+  uuidFilterErrors,
+}: InboxToolbarProps) {
+  return (
+    <SoftCard className="flex shrink-0 flex-wrap items-center gap-2 p-3">
+      <V3Tabs role="tablist" aria-label="收件箱视图">
+        <V3Tab
+          type="button"
+          role="tab"
+          active={view === "mine"}
+          aria-selected={view === "mine"}
+          onClick={() => onViewChange("mine")}
+        >
+          我的待办
+        </V3Tab>
+        <V3Tab
+          type="button"
+          role="tab"
+          active={view === "team"}
+          aria-selected={view === "team"}
+          onClick={() => onViewChange("team")}
+        >
+          团队待办
+        </V3Tab>
+      </V3Tabs>
+      <span aria-hidden className="hidden h-6 w-px bg-v3-line sm:block" />
+      <InboxFilters
+        filters={filters}
+        onFilterChange={onFilterChange}
+        onReset={onResetFilters}
+        uuidFilterDrafts={uuidFilterDrafts}
+        uuidFilterErrors={uuidFilterErrors}
+      />
+    </SoftCard>
   );
 }
 
@@ -276,13 +392,18 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
   }
 
   return (
-    <SoftCard className="overflow-hidden">
-      {/* 详情头：KI 编号 + 标题 + pills */}
-      <div className="border-b border-v3-line px-5 py-4">
+    <SoftCard className="flex min-h-0 flex-col overflow-hidden xl:h-full">
+      {/* 详情头：KI 编号 + 更新时间 kicker + 标题 + pills（固定，不随正文滚动） */}
+      <div className="shrink-0 border-b border-v3-line px-5 py-4">
         {/* 数据真实性修正 #2：KI 编号 = item_type + source_id 前 8 位 */}
-        <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-wider text-v3-brand-deep">
-          {formatKiNumber(item)}
-        </p>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-v3-brand-deep">
+            {formatKiNumber(item)}
+          </p>
+          <p className="shrink-0 font-mono text-[11px] text-v3-ink-3">
+            更新 {formatRelativeTime(item.last_activity_at)}
+          </p>
+        </div>
         <h2 className="text-lg font-extrabold leading-tight text-v3-ink">{item.title}</h2>
         <div className="mt-2.5 flex flex-wrap gap-2">
           <StatusPill tone={item.item_type === "approval" ? "info" : "artifact"}>
@@ -299,6 +420,8 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
         </div>
       </div>
 
+      {/* 正文：内部滚动 */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
       {/* 为什么需要你处理 */}
       <section className="border-b border-v3-line px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-v3-ink">为什么需要你处理</h3>
@@ -370,6 +493,7 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           ))}
         </div>
       </section>
+      </div>
     </SoftCard>
   );
 }
@@ -517,7 +641,7 @@ const actionToneClass: Record<string, string> = {
 function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
   if (!item) {
     return (
-      <div className="flex flex-col gap-3 xl:sticky xl:top-[78px]">
+      <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
         <SoftCard className="px-5 py-8 text-center">
           <Sparkles aria-hidden className="mx-auto mb-3 size-8 text-v3-ink-3" />
           <p className="text-sm font-bold text-v3-ink">选择事项后可操作</p>
@@ -534,7 +658,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
   const waitMs = computeWaitMs(item);
 
   return (
-    <div className="flex flex-col gap-3 xl:sticky xl:top-[78px]">
+    <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
       {/* 已等待时长 — 数据真实性修正 #5：前端基于 created_at 计算，非 SLA 超时倒计时 */}
       <SoftCard className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
@@ -683,7 +807,7 @@ function QuickLink({
 
 function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
   return (
-    <SoftCard className="overflow-hidden">
+    <SoftCard className="min-h-0 overflow-y-auto xl:h-full">
       <div className="border-b border-v3-line px-5 py-5">
         <h2 className="text-lg font-extrabold text-v3-ink">选择一条事项查看详情</h2>
         <p className="mt-2 text-[13px] leading-5 text-v3-ink-2">
@@ -842,53 +966,49 @@ function InboxFilters({
   );
 
   return (
-    <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-      <div className="flex flex-1 flex-col gap-2">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <FilterSelect
-            label="状态"
-            options={statusOptions}
-            value={filters.status ?? "open"}
-            onValueChange={(value) => onFilterChange("status", value)}
-          />
-          <FilterSelect
-            label="事项类型"
-            options={itemTypeOptions}
-            value={filters.item_type ?? "all"}
-            onValueChange={(value) => onFilterChange("item_type", value)}
-          />
-          <FilterSelect
-            label="风险等级"
-            options={riskOptions}
-            value={filters.risk_level ?? "all"}
-            onValueChange={(value) => onFilterChange("risk_level", value)}
-          />
-          <FilterInput
-            invalid={Boolean(uuidFilterErrors.project_id)}
-            label="项目 ID"
-            placeholder="精确匹配"
-            value={uuidFilterDrafts.project_id}
-            onValueChange={(value) => onFilterChange("project_id", value)}
-          />
-          <FilterInput
-            invalid={Boolean(uuidFilterErrors.target_user_id)}
-            label="目标用户 ID"
-            placeholder="精确匹配"
-            value={uuidFilterDrafts.target_user_id}
-            onValueChange={(value) => onFilterChange("target_user_id", value)}
-          />
-        </div>
-        {hasUuidFilterError ? (
-          <p className="text-xs font-semibold text-v3-danger" role="alert">
-            请输入有效 UUID
-          </p>
-        ) : null}
-      </div>
+    <div className="flex flex-1 flex-wrap items-center gap-2">
+      <FilterSelect
+        label="状态"
+        options={statusOptions}
+        value={filters.status ?? "open"}
+        onValueChange={(value) => onFilterChange("status", value)}
+      />
+      <FilterSelect
+        label="事项类型"
+        options={itemTypeOptions}
+        value={filters.item_type ?? "all"}
+        onValueChange={(value) => onFilterChange("item_type", value)}
+      />
+      <FilterSelect
+        label="风险等级"
+        options={riskOptions}
+        value={filters.risk_level ?? "all"}
+        onValueChange={(value) => onFilterChange("risk_level", value)}
+      />
+      <FilterInput
+        invalid={Boolean(uuidFilterErrors.project_id)}
+        label="项目 ID"
+        placeholder="项目 ID"
+        value={uuidFilterDrafts.project_id}
+        onValueChange={(value) => onFilterChange("project_id", value)}
+      />
+      <FilterInput
+        invalid={Boolean(uuidFilterErrors.target_user_id)}
+        label="目标用户 ID"
+        placeholder="目标用户 ID"
+        value={uuidFilterDrafts.target_user_id}
+        onValueChange={(value) => onFilterChange("target_user_id", value)}
+      />
+      {hasUuidFilterError ? (
+        <p className="text-xs font-semibold text-v3-danger" role="alert">
+          请输入有效 UUID
+        </p>
+      ) : null}
       <V3Button
-        className="shrink-0"
+        className="ml-auto shrink-0"
         onClick={onReset}
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
       >
         <RotateCcw className="size-4" />
@@ -914,29 +1034,24 @@ function FilterSelect<Value extends string>({
   const selectId = `inbox-filter-${label}`;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="text-[13px] font-semibold text-v3-ink-2" htmlFor={selectId}>
-        {label}
-      </label>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger
-          id={selectId}
-          aria-label={label}
-          className="h-10 w-full rounded-xl border-v3-line bg-v3-card-soft text-v3-ink shadow-none"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </div>
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger
+        id={selectId}
+        aria-label={label}
+        className="h-9 w-auto min-w-[7rem] rounded-xl border-v3-line bg-v3-card-soft text-[13px] text-v3-ink shadow-none"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -952,18 +1067,14 @@ function FilterInput({ invalid = false, label, onValueChange, placeholder, value
   const inputId = `inbox-filter-${label}`;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="text-[13px] font-semibold text-v3-ink-2" htmlFor={inputId}>
-        {label}
-      </label>
-      <Input
-        aria-invalid={invalid || undefined}
-        id={inputId}
-        className="h-10 rounded-xl border-v3-line bg-v3-card-soft text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
-        onChange={(event) => onValueChange(event.target.value)}
-        placeholder={placeholder}
-        value={value}
-      />
-    </div>
+    <Input
+      aria-invalid={invalid || undefined}
+      aria-label={label}
+      id={inputId}
+      className="h-9 w-[10.5rem] rounded-xl border-v3-line bg-v3-card-soft text-[13px] text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
+      onChange={(event) => onValueChange(event.target.value)}
+      placeholder={placeholder}
+      value={value}
+    />
   );
 }

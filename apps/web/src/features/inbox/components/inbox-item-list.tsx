@@ -44,13 +44,24 @@ const sourceTypeLabel: Record<string, string> = {
  * 装入 WorkSurface 软壳，保持 v3 脆数据面容器语义。
  */
 export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemListProps) {
+  const highRiskCount = items.filter(
+    (item) => item.risk_level === "blocked" || item.risk_level === "high",
+  ).length;
+
   return (
-    <WorkSurface className="flex flex-col">
-      <div className="flex items-center justify-between border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
+    <WorkSurface className="flex min-h-0 flex-col xl:h-full">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
         <span className="text-sm font-bold text-v3-ink">待处理事项</span>
-        <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按风险排序</span>
+        <div className="flex items-center gap-2">
+          {highRiskCount > 0 ? (
+            <StatusPill tone="danger" showDot={false} className="px-2 py-0.5 text-[11px]">
+              {highRiskCount} 高风险
+            </StatusPill>
+          ) : null}
+          <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按风险排序</span>
+        </div>
       </div>
-      <div className="max-h-[680px] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {items.map((item) => {
           const isSelected = item.id === selectedItemId;
           const isHighRisk = item.risk_level === "blocked" || item.risk_level === "high";
