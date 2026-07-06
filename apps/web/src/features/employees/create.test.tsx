@@ -76,6 +76,7 @@ const avatarAsset = {
 };
 
 type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none";
+type ExpectedCreateBody = Record<string, unknown>;
 
 function createOptionsFixture({
   runtimeAvailability = "all",
@@ -83,12 +84,18 @@ function createOptionsFixture({
   sameRuntimeNodeProviders = false,
   includePolicyExcludedProvider = false,
   includeFrontendTemplate = false,
+  includeCapabilityBoundaryBlock = false,
+  capabilityBoundaryKey = "capability_policy",
+  includeOtherBlockedCheck = false,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
   includePolicyExcludedProvider?: boolean;
   includeFrontendTemplate?: boolean;
+  includeCapabilityBoundaryBlock?: boolean;
+  capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
+  includeOtherBlockedCheck?: boolean;
 } = {}) {
   const firstRuntimeAvailable = runtimeAvailability === "all";
   const secondRuntimeAvailable = runtimeAvailability !== "none";
@@ -228,6 +235,26 @@ function createOptionsFixture({
         status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "warning",
         message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度`,
       },
+      ...(includeCapabilityBoundaryBlock
+        ? [
+            {
+              key: capabilityBoundaryKey,
+              label: "能力边界",
+              status: "blocked",
+              message: "技能 0 · MCP 0 · 外部能力 0",
+            },
+          ]
+        : []),
+      ...(includeOtherBlockedCheck
+        ? [
+            {
+              key: "other_blocker",
+              label: "其他阻断",
+              status: "blocked",
+              message: "需要先完成外部前置条件",
+            },
+          ]
+        : []),
     ],
     policy_defaults: {
       permission_policy: { mode: "least_privilege" },
@@ -243,6 +270,7 @@ function createOptionsFixture({
 }
 
 function createWizardFetcher({
+  expectedCreateBody,
   expectedEnvironmentVariables,
   expectedProviderType = "codex",
   expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
@@ -253,8 +281,12 @@ function createWizardFetcher({
   sameRuntimeNodeProviders = false,
   includePolicyExcludedProvider = false,
   includeFrontendTemplate = false,
+  includeCapabilityBoundaryBlock = false,
+  capabilityBoundaryKey = "capability_policy",
+  includeOtherBlockedCheck = false,
   teams = [team],
 }: {
+  expectedCreateBody?: ExpectedCreateBody;
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
   expectedProviderType?: string;
   expectedRuntimeNodeId?: string;
@@ -265,6 +297,9 @@ function createWizardFetcher({
   sameRuntimeNodeProviders?: boolean;
   includePolicyExcludedProvider?: boolean;
   includeFrontendTemplate?: boolean;
+  includeCapabilityBoundaryBlock?: boolean;
+  capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
+  includeOtherBlockedCheck?: boolean;
   teams?: Array<typeof team>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -281,7 +316,10 @@ function createWizardFetcher({
       }
       return jsonResponse(
         createOptionsFixture({
+          capabilityBoundaryKey,
           includeFrontendTemplate,
+          includeCapabilityBoundaryBlock,
+          includeOtherBlockedCheck,
           includePolicyExcludedProvider,
           runtimeAvailability,
           runtimeCount,
@@ -297,7 +335,7 @@ function createWizardFetcher({
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
       const body = JSON.parse(String(init?.body));
       const { budget_policy: _budgetPolicy, ...bodyWithoutBudgetPolicy } = body;
-      expect(bodyWithoutBudgetPolicy).toEqual({
+      const defaultExpectedBody = {
         ...(expectedTeamId ? { team_id: expectedTeamId } : {}),
         employee_type: "database_admin",
         name: "数据库管理员工",
@@ -323,7 +361,8 @@ function createWizardFetcher({
         session_policy: { mode: "reuse_latest" },
         workspace_policy: {},
         environment_variables: expectedEnvironmentVariables ?? [],
-      });
+      };
+      expect(bodyWithoutBudgetPolicy).toEqual(expectedCreateBody ?? defaultExpectedBody);
 
       return jsonResponse(
         {
@@ -379,6 +418,17 @@ async function renderCreateEmployeeView(fetcher = createWizardFetcher(), routerS
 
 async function enterConfiguration(screen: Awaited<ReturnType<typeof renderCreateEmployeeView>>) {
   await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "进入配置预检" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+  await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
+  await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+}
+
+async function enterBlankCustomConfiguration(screen: Awaited<ReturnType<typeof renderCreateEmployeeView>>) {
+  await expect.element(screen.getByRole("button", { name: /^空白自定义/ })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
+  await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "进入配置预检" })).toBeEnabled();
   await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
   await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
@@ -444,16 +494,20 @@ describe("CreateEmployeeView", () => {
     expect(createOptionsCalls.every(([input]) => !new URL(String(input)).searchParams.has("team_id"))).toBe(true);
   });
 
-  it("marks unavailable creation paths and blank custom entry points as disabled", async () => {
+  it("opens the blank-custom employee type selector while keeping copy and clone disabled", async () => {
     const screen = await renderCreateEmployeeView();
 
     await expect.element(screen.getByRole("button", { name: /^从专业模板创建/ })).toBeEnabled();
+    await expect.element(screen.getByRole("button", { name: /^空白自定义/ })).toBeEnabled();
     await expect.element(screen.getByRole("button", { name: /^从团队角色复制/ })).toBeDisabled();
     await expect.element(screen.getByRole("button", { name: /^从历史员工克隆/ })).toBeDisabled();
-    await expect.element(screen.getByRole("button", { name: /^空白自定义/ })).toBeDisabled();
-    await expect.element(screen.getByRole("button", { name: /^选择空白自定义/ })).toBeDisabled();
 
-    await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
+
+    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
+    await expect.element(screen.getByText("员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "已选择数据库管理员类型" })).toBeVisible();
+    expect(document.body.textContent).not.toContain("选择内置模板");
     expect(document.body.textContent).not.toContain("员工画像蓝图");
   });
 
@@ -527,7 +581,7 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
 
     await expect.element(screen.getByText("已选模板")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: /更换模板/ })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /更换创建路径/ })).toBeVisible();
     expect(document.body.textContent).not.toContain("推荐起步画像");
     expect(document.body.textContent).not.toContain("从空白开始自定义");
     expect(document.body.textContent).not.toContain("模板只提供默认值和推荐能力");
@@ -548,9 +602,9 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+    await userEvent.click(screen.getByRole("button", { name: /更换创建路径/ }));
 
-    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
     await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
   });
@@ -561,9 +615,9 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+    await userEvent.click(screen.getByRole("button", { name: /更换创建路径/ }));
 
-    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
 
     await enterConfiguration(screen);
@@ -579,7 +633,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
-    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
     await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
   });
@@ -593,9 +647,22 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
-    expect(confirm).toHaveBeenCalledWith("更换模板会重置当前配置草稿，是否继续？");
+    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
     await expect.element(screen.getByLabelText("名称")).toHaveValue("");
+  });
+
+  it("returns blank-custom team changes to employee type selection after confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
+
+    await enterBlankCustomConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
+    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "选择数据库管理员类型" })).toBeVisible();
   });
 
   it("creates a ready digital employee through the four-step wizard", async () => {
@@ -627,6 +694,185 @@ describe("CreateEmployeeView", () => {
       params: { employeeId: "11111111-1111-4111-8111-111111111111" },
       to: "/employees/$employeeId",
     });
+  });
+
+  it("starts blank-custom configuration without template-injected capabilities", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterBlankCustomConfiguration(screen);
+
+    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
+    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
+    await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).not.toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).not.toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "postgres" })).not.toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
+  });
+
+  it("lets blank-custom continue through preflight when empty capability boundary is reported", async () => {
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
+
+    await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
+    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+
+    await expect.element(screen.getByText("能力边界", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("技能 0 · MCP 0 · 外部能力 0", { exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
+    await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+  });
+
+  it("also accepts the legacy capability boundary check key for blank-custom preflight", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        capabilityBoundaryKey: "capability_boundary",
+        includeCapabilityBoundaryBlock: true,
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
+    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
+  });
+
+  it("keeps blank-custom preflight blocked for non-capability blockers", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        includeCapabilityBoundaryBlock: true,
+        includeOtherBlockedCheck: true,
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
+    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+
+    await expect.element(screen.getByText("当前配置暂不能继续")).toBeVisible();
+    await expect.element(screen.getByText("其他阻断: 需要先完成外部前置条件")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeDisabled();
+  });
+
+  it("keeps template preflight blocked when capability boundary is reported as blocked", async () => {
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
+
+    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+
+    await expect.element(screen.getByText("当前配置暂不能继续")).toBeVisible();
+    await expect.element(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeDisabled();
+  });
+
+  it("shows blank-custom source on the selected summary and confirm step", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterBlankCustomConfiguration(screen);
+    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
+    await expect.element(screen.getByText(/底层类型：数据库管理员/)).toBeVisible();
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("codex"));
+    await enterConfirmCreation(screen);
+
+    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
+    await expect.element(screen.getByText("数据库管理员", { exact: true })).toBeVisible();
+  });
+
+  it("submits blank-custom creation without template-injected capabilities or policy overrides", async () => {
+    const fetcher = createWizardFetcher({
+      expectedCreateBody: {
+        employee_type: "database_admin",
+        name: "数据库管理员工",
+        role: "database_admin",
+        description: "负责生产数据库变更和恢复验证",
+        risk_level: "high",
+        avatar_asset_id: avatarAsset.id,
+        role_profile: {
+          employee_type: "database_admin",
+          role: "database_admin",
+          title: "数据库管理员",
+        },
+        capability_selection: {
+          enabled_skills: [],
+          enabled_mcp_servers: [],
+          enabled_external_capabilities: [],
+        },
+        context_policy_override: {},
+        approval_policy_override: {},
+        output_contract_addendum: {},
+        provider_type: "codex",
+        session_policy: { mode: "reuse_latest" },
+        workspace_policy: {},
+        environment_variables: [],
+        metadata: { creation_mode: "blank_custom" },
+      },
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterBlankCustomConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("codex"));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: [],
+      enabled_mcp_servers: [],
+      enabled_external_capabilities: [],
+    });
+    expect(body.context_policy_override).toEqual({});
+    expect(body.approval_policy_override).toEqual({});
+    expect(body.metadata).toEqual({ creation_mode: "blank_custom" });
+  });
+
+  it("keeps template creation seeded with template capability and policy defaults", async () => {
+    const fetcher = createWizardFetcher();
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "postgres" })).toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).toBeChecked();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: ["sql-review"],
+      enabled_mcp_servers: ["postgres"],
+      enabled_external_capabilities: ["jira.search"],
+    });
+    expect(body.context_policy_override).toEqual({ max_refs: 8 });
+    expect(body.approval_policy_override).toEqual({ min_risk_for_human: "high" });
+    expect(body.metadata).toBeUndefined();
   });
 
   it("supports creating a team-less digital employee when the user selects no team", async () => {

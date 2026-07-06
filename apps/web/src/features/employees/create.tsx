@@ -64,8 +64,10 @@ import {
 const configSteps = ["身份", "能力", "治理", "执行器"] as const;
 type StepName = (typeof configSteps)[number];
 type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
+type CreationMode = "template" | "blank_custom";
 
 type WizardDraft = {
+  creation_mode: CreationMode;
   capability_selection: {
     enabled_external_capabilities: string[];
     enabled_mcp_servers: string[];
@@ -108,6 +110,7 @@ type CreateEmployeeViewProps = {
 
 const emptyDraft: WizardDraft = {
   approval_policy_override: {},
+  creation_mode: "template",
   capability_selection: {
     enabled_external_capabilities: [],
     enabled_mcp_servers: [],
@@ -166,8 +169,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     () => createOptions.data?.employee_types.find((item) => item.type === draft.employee_type),
     [createOptions.data?.employee_types, draft.employee_type],
   );
+  const blankCustom = draft.creation_mode === "blank_custom";
 
   useEffect(() => {
+    if (draft.creation_mode !== "template") return;
     const optionsData = createOptions.data;
     const employeeTypes = optionsData?.employee_types ?? [];
     const firstType = firstPreferredEmployeeType(employeeTypes);
@@ -175,16 +180,17 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     if (!draft.employee_type || !employeeTypes.some((item) => item.type === draft.employee_type)) {
       setDraft((current) => applyTypeDefaults(current, firstType));
     }
-  }, [createOptions.data, draft.employee_type]);
+  }, [createOptions.data, draft.creation_mode, draft.employee_type]);
 
   useEffect(() => {
+    if (draft.creation_mode !== "template") return;
     const optionsData = createOptions.data;
     if (!requestedTemplate || !optionsData || templateQueryHandled === requestedTemplate) return;
     const requestedType = findTemplateByType(optionsData, requestedTemplate);
     setTemplateQueryHandled(requestedTemplate);
     if (!requestedType) return;
     setDraft((current) => applyTypeDefaults(current, requestedType));
-  }, [createOptions.data, requestedTemplate, templateQueryHandled]);
+  }, [createOptions.data, draft.creation_mode, requestedTemplate, templateQueryHandled]);
 
   useEffect(() => {
     const firstAvatar = avatarAssets.data?.find((asset) => asset.status === "active");
@@ -232,6 +238,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             role: draft.role.trim(),
             title: selectedType?.label ?? draft.employee_type,
           },
+          ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
           capability_selection: draft.capability_selection,
           context_policy_override: draft.context_policy_override,
           approval_policy_override: draft.approval_policy_override,
@@ -274,7 +281,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       updateDraft({ employee_type: typeValue });
       return;
     }
-    setDraft((current) => applyTypeDefaults(current, nextType));
+    setDraft((current) =>
+      current.creation_mode === "blank_custom"
+        ? applyBlankTypeDefaults(current, nextType)
+        : applyTypeDefaults(current, nextType),
+    );
   }
 
   function selectProvider(providerType: string) {
@@ -331,18 +342,34 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
   }
 
-  function resetDraftForTeam(teamId: string) {
+  function resetDraftForTeam(teamId: string, creationMode: CreationMode = draft.creation_mode) {
     setErrors({});
     setStepIndex(0);
     setDraftTouched(false);
-    setDraft({ ...emptyDraft, team_id: teamId });
+    setDraft({ ...emptyDraft, creation_mode: creationMode, team_id: teamId });
+  }
+
+  function requestCreationModeChange(nextMode: CreationMode) {
+    if (nextMode === draft.creation_mode) {
+      return;
+    }
+    if (draftTouched && !window.confirm("更换创建路径会重置当前配置草稿，是否继续？")) {
+      return;
+    }
+    setErrors({});
+    setStepIndex(0);
+    setDraftTouched(false);
+    setFlowStep("template");
+    const nextDraft = { ...emptyDraft, creation_mode: nextMode, team_id: draft.team_id };
+    const firstType = firstPreferredEmployeeType(createOptions.data?.employee_types ?? []);
+    setDraft(nextMode === "blank_custom" && firstType ? applyBlankTypeDefaults(nextDraft, firstType) : nextDraft);
   }
 
   function requestTemplateChange() {
-    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+    if (draftTouched && !window.confirm("更换创建路径会重置当前配置草稿，是否继续？")) {
       return;
     }
-    resetDraftForTeam(draft.team_id);
+    resetDraftForTeam(draft.team_id, draft.creation_mode);
     setFlowStep("template");
   }
 
@@ -350,10 +377,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     if (nextTeamId === draft.team_id) {
       return;
     }
-    if (draftTouched && !window.confirm("更换模板会重置当前配置草稿，是否继续？")) {
+    if (draftTouched && !window.confirm("更换团队会重置当前配置草稿，是否继续？")) {
       return;
     }
-    resetDraftForTeam(nextTeamId);
+    resetDraftForTeam(nextTeamId, draft.creation_mode);
+    if (draft.creation_mode === "blank_custom") {
+      setFlowStep("template");
+    }
   }
 
   return (
@@ -410,16 +440,27 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
         {flowStep === "template" ? (
           <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[260px_minmax(0,1fr)]">
-            <CreationPathPanel />
+            <CreationPathPanel creationMode={draft.creation_mode} onSelectMode={requestCreationModeChange} />
 
-            <TemplateSelectionPanel
-              draft={draft}
-              options={createOptions.data}
-              selectedTeamName={selectedTeam?.name}
-              selectedType={selectedType}
-              onEnterPreflight={enterPreflight}
-              onSelectType={selectType}
-            />
+            {draft.creation_mode === "template" ? (
+              <TemplateSelectionPanel
+                draft={draft}
+                options={createOptions.data}
+                selectedTeamName={selectedTeam?.name}
+                selectedType={selectedType}
+                onEnterPreflight={enterPreflight}
+                onSelectType={selectType}
+              />
+            ) : (
+              <BlankCustomSelectionPanel
+                draft={draft}
+                options={createOptions.data}
+                selectedTeamName={selectedTeam?.name}
+                selectedType={selectedType}
+                onEnterPreflight={enterPreflight}
+                onSelectType={selectType}
+              />
+            )}
           </div>
         ) : null}
 
@@ -616,21 +657,35 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   );
 }
 
-function CreationPathPanel() {
+function CreationPathPanel({
+  creationMode,
+  onSelectMode,
+}: {
+  creationMode: CreationMode;
+  onSelectMode: (mode: CreationMode) => void;
+}) {
   const paths = [
     {
       title: "从专业模板创建",
       description: "按职责模板带出默认角色、能力建议和治理策略。",
       icon: Sparkles,
-      active: true,
+      mode: "template" as const,
       badge: "推荐",
+      disabled: false,
+    },
+    {
+      title: "空白自定义",
+      description: "选择底层员工类型后，逐项手动配置职责、能力和执行器。",
+      icon: FileText,
+      mode: "blank_custom" as const,
+      badge: "可用",
       disabled: false,
     },
     {
       title: "从团队角色复制",
       description: "复用团队内已验证的角色画像和能力边界。",
       icon: ClipboardCheck,
-      active: false,
+      mode: undefined,
       badge: "暂未开放",
       disabled: true,
     },
@@ -638,15 +693,7 @@ function CreationPathPanel() {
       title: "从历史员工克隆",
       description: "基于已有员工配置生成新草稿，保留审计来源。",
       icon: GitBranch,
-      active: false,
-      badge: "暂未开放",
-      disabled: true,
-    },
-    {
-      title: "空白自定义",
-      description: "从空白身份开始逐项配置职责、能力和执行器。",
-      icon: FileText,
-      active: false,
+      mode: undefined,
       badge: "暂未开放",
       disabled: true,
     },
@@ -666,25 +713,31 @@ function CreationPathPanel() {
       <div className="grid gap-2">
         {paths.map((path) => {
           const Icon = path.icon;
+          const active = path.mode === creationMode;
           return (
             <button
-              aria-pressed={path.active}
+              aria-pressed={active}
               className={cn(
                 "rounded-md border p-3 text-left transition",
-                path.active
+                active
                   ? "border-primary/40 bg-primary/10 text-foreground shadow-xs"
                   : "border-border/70 bg-background/80 text-muted-foreground",
                 path.disabled ? "cursor-not-allowed opacity-65" : "hover:border-primary/30 hover:bg-primary/5",
               )}
               disabled={path.disabled}
               key={path.title}
+              onClick={() => {
+                if (path.mode) {
+                  onSelectMode(path.mode);
+                }
+              }}
               type="button"
             >
               <span className="flex items-start gap-2">
                 <span
                   className={cn(
                     "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
-                    path.active ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                    active ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
                   )}
                 >
                   <Icon className="size-4" />
@@ -692,7 +745,7 @@ function CreationPathPanel() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">{path.title}</span>
-                    <Badge variant={path.active ? "default" : "secondary"}>{path.badge}</Badge>
+                    <Badge variant={active ? "default" : "secondary"}>{path.badge}</Badge>
                   </span>
                   <span className="mt-1 block text-xs leading-5">{path.description}</span>
                 </span>
@@ -935,6 +988,167 @@ function TemplateTableRow({
   );
 }
 
+function BlankCustomSelectionPanel({
+  draft,
+  options,
+  selectedTeamName,
+  selectedType,
+  onEnterPreflight,
+  onSelectType,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedTeamName?: string;
+  selectedType?: DigitalEmployeeTypeOption;
+  onEnterPreflight: () => void;
+  onSelectType: (value: string) => void;
+}) {
+  const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
+
+  return (
+    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
+      <div className="border-b p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">选择员工类型</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。
+            </p>
+          </div>
+          <Badge variant="secondary">{employeeTypes.length} 个类型</Badge>
+        </div>
+      </div>
+      {employeeTypes.length === 0 ? (
+        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+          当前团队治理配置未返回可用员工类型。
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 p-4">
+          <div className="h-full overflow-hidden rounded-md border bg-background">
+            <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
+              <table className="w-full min-w-[760px] border-collapse text-sm">
+                <thead className="sticky top-0 z-10 border-b bg-muted text-xs font-medium text-muted-foreground">
+                  <tr>
+                    <th className="w-[30%] px-3 py-2 text-left">员工类型</th>
+                    <th className="w-[22%] px-3 py-2 text-left">类型标识</th>
+                    <th className="w-[18%] px-3 py-2 text-left">默认角色</th>
+                    <th className="w-[18%] px-3 py-2 text-left">风险建议</th>
+                    <th className="w-[12%] px-3 py-2 text-right">选择</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employeeTypes.map((typeOption) => (
+                    <EmployeeTypeTableRow
+                      key={typeOption.type}
+                      selected={typeOption.type === draft.employee_type}
+                      typeOption={typeOption}
+                      onSelect={() => onSelectType(typeOption.type)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="border-t bg-card/95 px-4 py-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium text-foreground">空白草稿摘要</span>
+              <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
+              <Badge variant="secondary">类型 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
+              <Badge variant="secondary">角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
+              <Badge variant="secondary">能力手动配置</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">空白自定义草稿不会带入模板推荐技能、MCP 或外部能力。</p>
+          </div>
+          <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
+            进入配置预检
+            <ChevronRight data-icon="inline-end" />
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EmployeeTypeTableRow({
+  selected,
+  typeOption,
+  onSelect,
+}: {
+  selected: boolean;
+  typeOption: DigitalEmployeeTypeOption;
+  onSelect: () => void;
+}) {
+  const risk = templateRisk(typeOption);
+
+  return (
+    <tr
+      className={cn(
+        "border-b transition last:border-b-0 hover:bg-muted/30",
+        selected ? "bg-primary/5 [box-shadow:inset_3px_0_0_var(--v3-brand)]" : "",
+      )}
+    >
+      <td className="px-3 py-3 align-top">
+        <div className="flex min-w-0 gap-3">
+          <span
+            className={cn(
+              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border",
+              selected ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+            )}
+          >
+            <FileText className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="font-semibold">{typeOption.label}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{typeOption.description}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+          {typeOption.type}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+          {typeOption.default_role || typeOption.type}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">风险</span>
+          <Badge
+            className={cn(
+              "font-mono",
+              risk === "high" || risk === "critical" ? "bg-amber-100 text-amber-800" : "",
+              risk === "low" || risk === "medium" ? "bg-emerald-100 text-emerald-800" : "",
+            )}
+            variant="secondary"
+          >
+            {risk}
+          </Badge>
+        </div>
+      </td>
+      <td className="px-3 py-3 text-right align-top">
+        <Button
+          aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}类型`}
+          aria-pressed={selected}
+          onClick={onSelect}
+          size="sm"
+          type="button"
+          variant={selected ? "default" : "outline"}
+        >
+          {selected ? <Check data-icon="inline-start" /> : null}
+          {selected ? "已选" : "选择"}
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
 function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions }) {
   const checks = options?.creation_checks ?? [];
 
@@ -977,7 +1191,10 @@ function PreflightStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const blockedChecks = (options?.creation_checks ?? []).filter((check) => check.status === "blocked");
+  const isBlankCustom = draft.creation_mode === "blank_custom";
+  const blockedChecks = (options?.creation_checks ?? []).filter(
+    (check) => check.status === "blocked" && !(isBlankCustom && isCapabilityPolicyCheck(check)),
+  );
   const hasBlockedChecks = blockedChecks.length > 0;
 
   return (
@@ -986,7 +1203,7 @@ function PreflightStep({
         <div className="border-b p-4">
           <h2 className="text-lg font-semibold">配置预检</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            先确认后端创建候选返回的治理策略、模板和执行器候选，再进入详细配置。
+            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和执行器候选，再进入详细配置。
           </p>
         </div>
         <div className="grid gap-4 p-4">
@@ -1008,7 +1225,7 @@ function PreflightStep({
         <div className="flex justify-between gap-3 border-t p-4">
           <Button onClick={onBack} type="button" variant="outline">
             <ChevronLeft data-icon="inline-start" />
-            返回选择模板
+            {isBlankCustom ? "返回选择类型" : "返回选择模板"}
           </Button>
           <Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
             预检通过，继续配置
@@ -1020,10 +1237,16 @@ function PreflightStep({
       <aside className="grid content-start gap-4">
         <section className="rounded-md border bg-card/95 p-4 shadow-xs">
           <h2 className="text-base font-semibold">本次草稿</h2>
-          <p className="mt-1 text-xs text-muted-foreground">模板默认值将在配置页继续编辑。</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isBlankCustom ? "能力和治理覆盖将在配置页手动补齐。" : "模板默认值将在配置页继续编辑。"}
+          </p>
           <div className="mt-4 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-            <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? "空白自定义" : "专业模板"} />
+            <InlineSummary
+              label={draft.creation_mode === "blank_custom" ? "底层类型" : "专业模板"}
+              value={selectedType?.label ?? (draft.employee_type || "未选择")}
+            />
             <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
             <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
             <InlineSummary
@@ -1035,6 +1258,10 @@ function PreflightStep({
       </aside>
     </div>
   );
+}
+
+function isCapabilityPolicyCheck(check: { key: string }) {
+  return check.key === "capability_policy" || check.key === "capability_boundary";
 }
 
 function InlineSummary({ label, value }: { label: string; value: string }) {
@@ -1090,25 +1317,44 @@ function SelectedTemplateSummary({
   selectedType?: DigitalEmployeeTypeOption;
   onChangeTemplate: () => void;
 }) {
+  const isBlankCustom = draft.creation_mode === "blank_custom";
+
   return (
     <section className="rounded-md border bg-background p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">已选模板</p>
-          <h2 className="mt-1 text-lg font-semibold">{selectedType?.label ?? (draft.employee_type || "未选择模板")}</h2>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {isBlankCustom ? "空白自定义草稿" : "已选模板"}
+          </p>
+          <h2 className="mt-1 text-lg font-semibold">
+            {isBlankCustom
+              ? `底层类型：${selectedType?.label ?? draft.employee_type ?? "未选择类型"}`
+              : selectedType?.label ?? (draft.employee_type || "未选择模板")}
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {selectedType?.description ?? "模板只作为初始草稿来源，Provider 在最后一步选择。"}
+            {isBlankCustom
+              ? "能力、上下文覆盖、审批覆盖和执行器由你手动配置。"
+              : selectedType?.description ?? "模板只作为初始草稿来源，Provider 在最后一步选择。"}
           </p>
         </div>
         <Button onClick={onChangeTemplate} type="button" variant="outline">
           <ArrowLeft data-icon="inline-start" />
-          更换模板
+          更换创建路径
         </Button>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Badge variant="secondary">默认角色 {selectedType?.default_role || draft.role || "未生成"}</Badge>
-        <Badge variant="secondary">技能 {selectedType?.recommended_skills?.length ?? 0}</Badge>
-        <Badge variant="secondary">MCP {selectedType?.recommended_mcp_servers?.length ?? 0}</Badge>
+        {isBlankCustom ? (
+          <>
+            <Badge variant="secondary">能力手动配置</Badge>
+            <Badge variant="secondary">治理覆盖 0</Badge>
+          </>
+        ) : (
+          <>
+            <Badge variant="secondary">技能 {selectedType?.recommended_skills?.length ?? 0}</Badge>
+            <Badge variant="secondary">MCP {selectedType?.recommended_mcp_servers?.length ?? 0}</Badge>
+          </>
+        )}
       </div>
     </section>
   );
@@ -1229,7 +1475,11 @@ function ConfirmCreationStep({
           <h3 className="text-sm font-semibold">身份与模板</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-            <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? "空白自定义草稿" : "专业模板"} />
+            <InlineSummary
+              label={draft.creation_mode === "blank_custom" ? "底层类型" : "专业模板"}
+              value={selectedType?.label ?? (draft.employee_type || "未选择")}
+            />
             <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
             <InlineSummary label="角色" value={draft.role || "未填写"} />
             <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
@@ -1290,6 +1540,8 @@ function IdentityStep({
   onSelectAvatar: (value: string) => void;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
+  const isBlankCustom = draft.creation_mode === "blank_custom";
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -1328,7 +1580,11 @@ function IdentityStep({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-muted-foreground">如需切换模板，请使用上方“更换模板”并重新生成配置草稿。</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isBlankCustom
+              ? "如需切换创建路径或员工类型，请使用上方“更换创建路径”并重新生成配置草稿。"
+              : "如需切换模板，请使用上方“更换创建路径”并重新生成配置草稿。"}
+          </p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input
@@ -1762,6 +2018,23 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
       enabled_skills: stringList(defaultCapabilitySelection.enabled_skills),
     },
     context_policy_override: typeOption.default_context_policy_override ?? {},
+    employee_type: typeOption.type,
+    risk_level: stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium",
+    role: typeOption.default_role || typeOption.type,
+  };
+}
+
+function applyBlankTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
+  return {
+    ...current,
+    creation_mode: "blank_custom",
+    approval_policy_override: {},
+    capability_selection: {
+      enabled_external_capabilities: [],
+      enabled_mcp_servers: [],
+      enabled_skills: [],
+    },
+    context_policy_override: {},
     employee_type: typeOption.type,
     risk_level: stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium",
     role: typeOption.default_role || typeOption.type,
