@@ -9852,6 +9852,7 @@ components:
             - passed
             - warning
             - blocked
+            - info
         label:
           type: string
         message:

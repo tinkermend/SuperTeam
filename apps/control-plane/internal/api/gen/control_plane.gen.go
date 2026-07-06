@@ -1410,6 +1410,7 @@ func (e RuntimeNodeStatus) Valid() bool {
 // Defines values for SchedulingReadinessCheckStatus.
 const (
 	SchedulingReadinessCheckStatusBlocked SchedulingReadinessCheckStatus = "blocked"
+	SchedulingReadinessCheckStatusInfo    SchedulingReadinessCheckStatus = "info"
 	SchedulingReadinessCheckStatusPassed  SchedulingReadinessCheckStatus = "passed"
 	SchedulingReadinessCheckStatusWarning SchedulingReadinessCheckStatus = "warning"
 )
@@ -1418,6 +1419,8 @@ const (
 func (e SchedulingReadinessCheckStatus) Valid() bool {
 	switch e {
 	case SchedulingReadinessCheckStatusBlocked:
+		return true
+	case SchedulingReadinessCheckStatusInfo:
 		return true
 	case SchedulingReadinessCheckStatusPassed:
 		return true

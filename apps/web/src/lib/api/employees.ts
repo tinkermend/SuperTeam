@@ -151,7 +151,7 @@ export type DigitalEmployeeExecutionInstance = {
 
 export type SchedulingReadinessCheck = {
   code: string;
-  status: "passed" | "warning" | "blocked";
+  status: "passed" | "warning" | "blocked" | "info";
   label: string;
   message: string;
 };
