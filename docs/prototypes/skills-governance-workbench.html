@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>技能市场 · 治理工作台（主从详情风）</title>
+<style>
+  :root {
+    --v3-bg: #f8fafc;
+    --v3-shell-bg: #f6f8fb;
+    --v3-card: #ffffff;
+    --v3-card-soft: #f7f8fa;
+    --v3-card-inner: #fafbfc;
+    --v3-ink: #0b0d12;
+    --v3-ink-2: #4d586b;
+    --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4;
+    --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff;
+    --v3-brand-deep: #2348e0;
+    --v3-brand-soft: #e9efff;
+    --v3-info: #0094b7;
+    --v3-info-text: #00617d;
+    --v3-info-soft: #def8fe;
+    --v3-ok: #009a60;
+    --v3-ok-text: #006639;
+    --v3-ok-soft: #e3f9ec;
+    --v3-warn: #bb6900;
+    --v3-warn-text: #7f3f00;
+    --v3-warn-soft: #ffefdf;
+    --v3-danger: #d14647;
+    --v3-danger-text: #8a2f2d;
+    --v3-danger-soft: #ffece9;
+    --v3-artifact: #9565c7;
+    --v3-artifact-text: #633d89;
+    --v3-artifact-soft: #f7eeff;
+    --v3-mute: #64748b;
+    --v3-mute-text: #4d586b;
+    --v3-mute-soft: #eef1f4;
+    --v3-r-card: 22px;
+    --v3-r-inner: 14px;
+    --v3-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+    --v3-shadow-pop: 0 10px 44px rgba(16,24,40,0.12);
+    --font-sans: 'Inter', system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: var(--v3-shell-bg); color: var(--v3-ink); -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.5; }
+  .page { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; flex-shrink: 0; background: var(--v3-card); border-right: 1px solid var(--v3-line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--v3-brand); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+  .brand-name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+  .nav-section { margin-top: 12px; }
+  .nav-label { font-size: 11px; font-weight: 600; color: var(--v3-ink-3); padding: 8px 10px 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--v3-ink-2); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+  .nav-item:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .nav-item.active { background: var(--v3-brand-soft); color: var(--v3-brand-deep); font-weight: 600; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .nav-item .count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 60px; border-bottom: 1px solid var(--v3-line); background: rgba(255,255,255,0.72); backdrop-filter: blur(20px); display: flex; align-items: center; gap: 16px; padding: 0 28px; position: sticky; top: 0; z-index: 20; }
+  .crumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--v3-ink-3); }
+  .crumb b { color: var(--v3-ink); font-weight: 700; }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all .15s ease; white-space: nowrap; }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--v3-brand); color: #fff; }
+  .btn-primary:hover { background: var(--v3-brand-deep); }
+  .btn-ghost { background: transparent; color: var(--v3-ink-2); }
+  .btn-ghost:hover { background: var(--v3-card-soft); color: var(--v3-ink); }
+  .btn-outline { background: var(--v3-card); color: var(--v3-ink); border-color: var(--v3-line-strong); }
+  .btn-outline:hover { border-color: var(--v3-brand); color: var(--v3-brand-deep); }
+  .btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
+  .btn-icon { width: 34px; padding: 0; justify-content: center; }
+
+  .content { padding: 18px 24px 28px; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+
+  /* signature 区 */
+  .signature {
+    display: grid; grid-template-columns: 1.1fr 1.6fr 1fr; gap: 14px;
+  }
+  .sig-card {
+    background: var(--v3-card); border: 1px solid var(--v3-line);
+    border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow);
+    padding: 18px 20px; position: relative; overflow: hidden;
+  }
+  .sig-hero {
+    background: linear-gradient(135deg, var(--v3-brand-soft) 0%, var(--v3-card) 60%);
+    border-color: rgba(47,95,255,0.18);
+  }
+  .sig-hero::after { content: ""; position: absolute; right: -20px; top: -20px; width: 120px; height: 120px; background: radial-gradient(circle, rgba(47,95,255,0.10), transparent 70%); pointer-events: none; }
+  .sig-hero .label { font-size: 11.5px; font-weight: 700; color: var(--v3-brand-deep); letter-spacing: 0.04em; text-transform: uppercase; }
+  .sig-hero .big { font-size: 44px; font-weight: 800; color: var(--v3-ink); line-height: 1; margin-top: 6px; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+  .sig-hero .sub { font-size: 12.5px; color: var(--v3-ink-2); margin-top: 6px; }
+  .sig-hero .sub b { color: var(--v3-ink); font-weight: 700; }
+
+  .sig-dist { display: flex; flex-direction: column; }
+  .sig-dist .label { font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .sig-dist .title { font-size: 14px; font-weight: 700; color: var(--v3-ink); margin-top: 2px; }
+  .bar-stack { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 14px; background: var(--v3-mute-soft); }
+  .bar-seg { height: 100%; transition: all .2s; }
+  .bar-seg.low { background: var(--v3-ok); }
+  .bar-seg.med { background: var(--v3-warn); }
+  .bar-seg.high { background: var(--v3-danger); }
+  .dist-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12.5px; }
+  .dist-legend .item { display: flex; align-items: center; gap: 6px; color: var(--v3-ink-2); }
+  .dist-legend .item b { color: var(--v3-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+  .dist-legend .dot { width: 9px; height: 9px; border-radius: 3px; }
+
+  .sig-alert { background: var(--v3-danger-soft); border-color: rgba(209,70,71,0.25); }
+  .sig-alert::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--v3-danger); }
+  .sig-alert .label { font-size: 11.5px; font-weight: 700; color: var(--v3-danger-text); letter-spacing: 0.04em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .sig-alert .big { font-size: 32px; font-weight: 800; color: var(--v3-danger-text); line-height: 1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .sig-alert .sub { font-size: 12px; color: var(--v3-danger-text); margin-top: 8px; line-height: 1.5; }
+  .sig-alert .alert-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; color: var(--v3-ink); border-top: 1px solid rgba(209,70,71,0.15); margin-top: 8px; }
+  .sig-alert .alert-item .name { font-weight: 700; }
+  .sig-alert .alert-item .ver { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--v3-ink-3); margin-left: auto; }
+
+  /* 工作台三栏 */
+  .workbench { display: grid; grid-template-columns: 208px minmax(340px, 1fr) minmax(420px, 1.4fr); gap: 14px; flex: 1; min-height: 540px; }
+
+  /* 左筛选边栏 */
+  .filter-rail {
+    background: var(--v3-card); border: 1px solid var(--v3-line);
+    border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow);
+    padding: 14px; overflow-y: auto;
+  }
+  .rail-search { position: relative; margin-bottom: 14px; }
+  .rail-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--v3-ink-3); }
+  .rail-search input { width: 100%; height: 32px; border-radius: 8px; border: 1px solid var(--v3-line-strong); background: var(--v3-card-soft); padding: 0 10px 0 30px; font-family: inherit; font-size: 12.5px; color: var(--v3-ink); outline: none; transition: all .15s; }
+  .rail-search input:focus { border-color: var(--v3-brand); background: var(--v3-card); box-shadow: 0 0 0 3px rgba(47,95,255,0.12); }
+  .filter-group { margin-bottom: 16px; }
+  .filter-group:last-child { margin-bottom: 0; }
+  .filter-group .fg-label { font-size: 11px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
+  .check-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--v3-ink-2); transition: background .12s; }
+  .check-row:hover { background: var(--v3-card-soft); }
+  .check-row .ck { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--v3-line-strong); display: grid; place-items: center; flex-shrink: 0; transition: all .12s; }
+  .check-row.checked .ck { background: var(--v3-brand); border-color: var(--v3-brand); }
+  .check-row.checked .ck::after { content: ""; width: 8px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px,-1px); }
+  .check-row .ck-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .check-row .cnt { margin-left: auto; font-size: 11px; color: var(--v3-ink-3); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .check-row.checked { color: var(--v3-ink); font-weight: 600; }
+  .tag-cloud { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag-chip { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--v3-mute-soft); color: var(--v3-ink-2); font-weight: 500; cursor: pointer; border: 1px solid var(--v3-line); transition: all .12s; }
+  .tag-chip:hover { border-color: var(--v3-brand); color: var(--v3-ink); }
+  .tag-chip.active { background: var(--v3-brand-soft); border-color: var(--v3-brand); color: var(--v3-brand-deep); font-weight: 600; }
+
+  /* 中列表 */
+  .list-pane {
+    background: var(--v3-card); border: 1px solid var(--v3-line);
+    border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .list-head { padding: 12px 14px; border-bottom: 1px solid var(--v3-line); display: flex; align-items: center; justify-content: space-between; }
+  .list-head .title { font-size: 13px; font-weight: 700; color: var(--v3-ink); }
+  .list-head .cnt { font-size: 11.5px; color: var(--v3-ink-3); font-variant-numeric: tabular-nums; }
+  .list-body { flex: 1; overflow-y: auto; }
+  .list-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--v3-line); cursor: pointer; transition: background .12s;
+    position: relative;
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row:hover { background: var(--v3-card-soft); }
+  .list-row.selected { background: var(--v3-brand-soft); }
+  .list-row.selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--v3-brand); }
+  .list-row.danger::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--v3-danger); }
+  .list-row.selected.danger::before { background: var(--v3-danger); }
+  .icon-tile { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid var(--v3-line); }
+  .icon-tile svg { width: 16px; height: 16px; }
+  .icon-tile.tone-brand { background: var(--v3-brand-soft); color: var(--v3-brand-deep); border-color: rgba(47,95,255,0.18); }
+  .icon-tile.tone-ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); border-color: rgba(0,154,96,0.18); }
+  .icon-tile.tone-info { background: var(--v3-info-soft); color: var(--v3-info-text); border-color: rgba(0,148,183,0.18); }
+  .icon-tile.tone-artifact { background: var(--v3-artifact-soft); color: var(--v3-artifact-text); border-color: rgba(149,101,199,0.18); }
+  .lr-meta { flex: 1; min-width: 0; }
+  .lr-name { font-weight: 700; color: var(--v3-ink); font-size: 13.5px; display: flex; align-items: center; gap: 7px; }
+  .lr-ver { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--v3-ink-3); font-weight: 500; }
+  .lr-sub { font-size: 11.5px; color: var(--v3-ink-3); margin-top: 1px; display: flex; align-items: center; gap: 8px; }
+  .lr-sub .b { color: var(--v3-ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lr-pills { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .pill .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .pill-ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); }
+  .pill-ok .dot { background: var(--v3-ok); }
+  .pill-warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); }
+  .pill-warn .dot { background: var(--v3-warn); }
+  .pill-danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); }
+  .pill-danger .dot { background: var(--v3-danger); }
+  .pill-info { background: var(--v3-info-soft); color: var(--v3-info-text); }
+  .pill-info .dot { background: var(--v3-info); }
+  .pill-mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); }
+
+  /* 右详情面板 */
+  .detail-pane {
+    background: var(--v3-card); border: 1px solid var(--v3-line);
+    border-radius: var(--v3-r-card); box-shadow: var(--v3-shadow);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .detail-head { padding: 16px 20px; border-bottom: 1px solid var(--v3-line); display: flex; align-items: flex-start; gap: 13px; }
+  .detail-head .meta { flex: 1; min-width: 0; }
+  .detail-head h2 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.015em; }
+  .detail-head .sub { margin-top: 5px; font-size: 12.5px; color: var(--v3-ink-2); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .detail-head .sub .mono { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--v3-ink-3); }
+  .detail-head .actions { display: flex; gap: 7px; }
+  .tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--v3-line); }
+  .tab { padding: 11px 12px; font-size: 13px; font-weight: 600; color: var(--v3-ink-3); cursor: pointer; border-bottom: 2px solid transparent; transition: all .12s; }
+  .tab:hover { color: var(--v3-ink); }
+  .tab.active { color: var(--v3-brand-deep); border-bottom-color: var(--v3-brand); }
+  .tab .cnt { font-size: 11px; color: var(--v3-ink-3); font-weight: 600; margin-left: 4px; }
+  .tab.active .cnt { color: var(--v3-brand); }
+  .detail-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+  .detail-section { margin-bottom: 22px; }
+  .detail-section:last-child { margin-bottom: 0; }
+  .detail-section h3 { margin: 0 0 11px; font-size: 11.5px; font-weight: 700; color: var(--v3-ink-3); letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .detail-section h3 .pill { font-size: 10.5px; height: 18px; padding: 0 7px; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 16px; }
+  .kv { display: flex; flex-direction: column; gap: 2px; }
+  .kv .k { font-size: 11px; color: var(--v3-ink-3); font-weight: 600; }
+  .kv .v { font-size: 13px; color: var(--v3-ink); font-weight: 600; }
+  .kv .v.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; }
+  .desc-box { background: var(--v3-card-inner); border: 1px solid var(--v3-line); border-radius: 10px; padding: 11px 13px; font-size: 13px; color: var(--v3-ink-2); line-height: 1.6; }
+  .dep-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 8px; background: var(--v3-info-soft); color: var(--v3-info-text); font-size: 12px; font-weight: 600; margin: 0 7px 7px 0; font-family: 'JetBrains Mono', monospace; }
+  .dep-chip.env { background: var(--v3-artifact-soft); color: var(--v3-artifact-text); }
+  .install-row { padding: 13px 0; border-bottom: 1px solid var(--v3-line); display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px 14px; }
+  .install-row:last-child { border-bottom: none; }
+  .install-row .t-name { font-weight: 700; color: var(--v3-ink); font-size: 13px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .install-row .t-node { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--v3-ink-2); }
+  .install-row .t-path { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--v3-ink-3); word-break: break-all; grid-column: 1 / -1; }
+  .install-row .t-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--v3-ink-3); }
+  .empty-install { padding: 28px 0; text-align: center; color: var(--v3-ink-3); font-size: 13px; }
+  .binding-block { margin-bottom: 14px; }
+  .binding-block:last-child { margin-bottom: 0; }
+  .binding-block .bb-title { font-size: 12px; font-weight: 700; color: var(--v3-ink-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .binding-block .bb-title svg { width: 13px; height: 13px; color: var(--v3-ink-3); }
+  .binding-list { display: flex; flex-direction: column; gap: 6px; }
+  .binding-item { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 9px; background: var(--v3-card-inner); border: 1px solid var(--v3-line); font-size: 12.5px; }
+  .binding-item .b-name { font-weight: 600; color: var(--v3-ink); }
+  .binding-item .b-id { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--v3-ink-3); margin-left: auto; }
+  .binding-item .b-status { font-size: 10.5px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
+  .binding-empty { padding: 14px; text-align: center; color: var(--v3-ink-3); font-size: 12.5px; background: var(--v3-card-inner); border-radius: 9px; border: 1px dashed var(--v3-line-strong); }
+
+  .foot-note { font-size: 11.5px; color: var(--v3-ink-3); padding: 0 4px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .foot-note span { display: inline-flex; align-items: center; gap: 6px; }
+  .foot-note .bar { width: 12px; height: 3px; border-radius: 2px; }
+
+  @media (max-width: 1280px) {
+    .workbench { grid-template-columns: 188px 320px 1fr; }
+    .signature { grid-template-columns: 1fr 1fr; }
+    .sig-card:nth-child(3) { grid-column: 1 / -1; }
+  }
+  @media (max-width: 1024px) {
+    .workbench { grid-template-columns: 1fr; }
+    .filter-rail { order: 2; }
+    .sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">ST</div><div class="brand-name">SuperTeam</div></div>
+    <div class="nav-section">
+      <div class="nav-label">控制台</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>项目</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>数字员工</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"/><path d="M9 21h6"/><path d="M12 17v4"/><rect x="5" y="7" width="14" height="10" rx="1"/></svg>流程编排</div>
+      <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>技能市场 <span class="count">9</span></div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>收件箱 <span class="count">3</span></div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">治理</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>审计流水</div>
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>审批中心</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb">控制台 / <b>技能市场</b></div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-icon" title="刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+        <button class="btn btn-primary btn-sm" onclick="alert('跳转上传技能页')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>上传技能</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- signature 区 -->
+      <div class="signature">
+        <div class="sig-card sig-hero">
+          <div class="label">技能市场总览</div>
+          <div class="big">9</div>
+          <div class="sub">个技能档案 · <b>5</b> 已绑定 · <b>2</b> 可绑定</div>
+        </div>
+        <div class="sig-card sig-dist">
+          <div class="label">风险等级分布</div>
+          <div class="title">9 个技能的风险构成</div>
+          <div class="bar-stack">
+            <div class="bar-seg low" style="width:55.6%" title="低风险 5"></div>
+            <div class="bar-seg med" style="width:33.3%" title="中风险 3"></div>
+            <div class="bar-seg high" style="width:11.1%" title="高风险 2"></div>
+          </div>
+          <div class="dist-legend">
+            <div class="item"><span class="dot" style="background:var(--v3-ok)"></span>低风险 <b>5</b></div>
+            <div class="item"><span class="dot" style="background:var(--v3-warn)"></span>中风险 <b>3</b></div>
+            <div class="item"><span class="dot" style="background:var(--v3-danger)"></span>高风险 <b>2</b></div>
+          </div>
+        </div>
+        <div class="sig-card sig-alert">
+          <div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>需审批 · 高风险</div>
+          <div class="big">2</div>
+          <div class="sub">高风险技能需人工审批后方可绑定</div>
+          <div class="alert-item"><span class="name">数据库迁移</span><span class="ver">v3.0.2</span></div>
+          <div class="alert-item"><span class="name">安全扫描</span><span class="ver">v1.4.7</span></div>
+        </div>
+      </div>
+
+      <!-- 三栏工作台 -->
+      <div class="workbench">
+        <!-- 左筛选边栏 -->
+        <aside class="filter-rail">
+          <div class="rail-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" placeholder="搜索技能…" />
+          </div>
+
+          <div class="filter-group">
+            <div class="fg-label">风险等级</div>
+            <div class="check-row"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-ok)"></span><span>低风险</span><span class="cnt">5</span></div>
+            <div class="check-row checked"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-warn)"></span><span>中风险</span><span class="cnt">3</span></div>
+            <div class="check-row checked"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-danger)"></span><span>高风险</span><span class="cnt">2</span></div>
+          </div>
+
+          <div class="filter-group">
+            <div class="fg-label">绑定状态</div>
+            <div class="check-row checked"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-ok)"></span><span>已绑定</span><span class="cnt">5</span></div>
+            <div class="check-row"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-info)"></span><span>可绑定</span><span class="cnt">2</span></div>
+            <div class="check-row checked"><span class="ck"></span><span class="ck-dot" style="background:var(--v3-danger)"></span><span>需审批</span><span class="cnt">2</span></div>
+          </div>
+
+          <div class="filter-group">
+            <div class="fg-label">绑定范围</div>
+            <div class="check-row"><span class="ck"></span><span>团队绑定</span><span class="cnt">7</span></div>
+            <div class="check-row"><span class="ck"></span><span>员工绑定</span><span class="cnt">7</span></div>
+            <div class="check-row"><span class="ck"></span><span>未绑定</span><span class="cnt">2</span></div>
+          </div>
+
+          <div class="filter-group">
+            <div class="fg-label">运行依赖</div>
+            <div class="check-row"><span class="ck"></span><span>有依赖</span><span class="cnt">3</span></div>
+            <div class="check-row"><span class="ck"></span><span>无依赖</span><span class="cnt">6</span></div>
+          </div>
+
+          <div class="filter-group">
+            <div class="fg-label">标签</div>
+            <div class="tag-cloud">
+              <span class="tag-chip active">review</span>
+              <span class="tag-chip">test</span>
+              <span class="tag-chip">debug</span>
+              <span class="tag-chip">security</span>
+              <span class="tag-chip">database</span>
+              <span class="tag-chip">docs</span>
+              <span class="tag-chip">performance</span>
+              <span class="tag-chip">automation</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 中列表 -->
+        <section class="list-pane">
+          <div class="list-head">
+            <span class="title">技能列表</span>
+            <span class="cnt">9 条 · 按风险排序</span>
+          </div>
+          <div class="list-body" id="list-body"></div>
+        </section>
+
+        <!-- 右详情面板 -->
+        <section class="detail-pane">
+          <div class="detail-head">
+            <div class="icon-tile tone-info" id="d-icon"></div>
+            <div class="meta">
+              <h2 id="d-name">诊断探针</h2>
+              <div class="sub">
+                <span class="mono" id="d-version">v0.9.4</span>
+                <span>·</span>
+                <span id="d-source">runtime-diagnostic-probe</span>
+                <span>·</span>
+                <span id="d-created">由 张明 创建 · 2026-06-28</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-outline btn-sm" onclick="alert('查看详情页')">详情页</button>
+              <button class="btn btn-primary btn-sm" onclick="alert('安装技能')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>安装</button>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab active" onclick="switchTab('overview', this)">概览</div>
+            <div class="tab" onclick="switchTab('installations', this)">安装记录 <span class="cnt" id="tab-cnt-inst">3</span></div>
+            <div class="tab" onclick="switchTab('deps', this)">运行依赖</div>
+            <div class="tab" onclick="switchTab('bindings', this)">绑定范围 <span class="cnt" id="tab-cnt-bind">11</span></div>
+          </div>
+          <div class="detail-body" id="detail-body"></div>
+        </section>
+      </div>
+
+      <div class="foot-note">
+        <span><span class="bar" style="background:var(--v3-brand)"></span>选中技能</span>
+        <span><span class="bar" style="background:var(--v3-danger)"></span>需审批（高风险）</span>
+        <span>· 左侧筛选边栏可多维度组合，列表实时联动，详情面板常驻右侧</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const skills = [
+    { id:1, name:"代码审查助手", desc:"自动化 PR 代码审查与质量门禁检查，覆盖风格、安全、性能维度", risk:"medium", icon:"shield", tone:"ok", tags:["review","quality"], version:"v2.3.1", source:"code-review-skill", team:2, agent:5, deps:{tools:["grep","ripgrep"],env:["NODE_ENV"]}, status:"installed", created:"2026-06-15", creator:"张明", teamBindings:[{name:"研发效能组",id:"team-01"},{name:"算法组",id:"team-02"}], agentBindings:[{name:"代码守护者-01",id:"de-01",status:"active"},{name:"代码守护者-02",id:"de-02",status:"active"},{name:"质量门禁-01",id:"de-03",status:"active"},{name:"质量门禁-02",id:"de-04",status:"active"},{name:"算法评审-01",id:"de-05",status:"idle"}], installations:[
+      {name:"研发效能组 · 节点A", node:"node-cfg-01a · runtime-agent-7c2", provider:"opencode", path:"/opt/skills/code-review", time:"2026-07-05 14:32", sha:"a3f9...e21c"},
+      {name:"算法组 · 节点B", node:"node-cfg-03d · runtime-agent-9f1", provider:"codex", path:"/opt/skills/code-review", time:"2026-07-04 09:15", sha:"a3f9...e21c"}]},
+    { id:2, name:"测试生成器", desc:"基于变更自动生成单元测试用例与边界条件覆盖", risk:"low", icon:"flask", tone:"brand", tags:["test","generate"], version:"v1.8.0", source:"test-generator", team:1, agent:3, deps:null, status:"installed", created:"2026-06-20", creator:"李华", teamBindings:[{name:"平台组",id:"team-03"}], agentBindings:[{name:"测试工程师-01",id:"de-06",status:"active"},{name:"测试工程师-02",id:"de-07",status:"active"},{name:"回归验证-01",id:"de-08",status:"active"}], installations:[
+      {name:"平台组 · 节点C", node:"node-cfg-02b · runtime-agent-3e8", provider:"claude-code", path:"/opt/skills/test-gen", time:"2026-07-03 16:48", sha:"b7c1...4d9a"}]},
+    { id:3, name:"数据库迁移", desc:"结构化 schema 变更与回滚编排，支持多数据库方言", risk:"high", icon:"server", tone:"artifact", tags:["database","migration"], version:"v3.0.2", source:"db-migration-orchestrator", team:0, agent:0, deps:null, status:"approval", created:"2026-07-01", creator:"王强", teamBindings:[], agentBindings:[], installations:[]},
+    { id:4, name:"诊断探针", desc:"运行时诊断与调用链采样分析，定位性能与异常根因", risk:"medium", icon:"stethoscope", tone:"info", tags:["debug","runtime"], version:"v0.9.4", source:"runtime-diagnostic-probe", team:3, agent:8, deps:{tools:[],env:["DEBUG_PATH","TRACE_LEVEL"]}, status:"installed", created:"2026-06-28", creator:"张明", teamBindings:[{name:"研发效能组",id:"team-01"},{name:"算法组",id:"team-02"},{name:"平台组",id:"team-03"}], agentBindings:[{name:"诊断专家-01",id:"de-09",status:"active"},{name:"诊断专家-02",id:"de-10",status:"active"},{name:"性能值守-01",id:"de-11",status:"active"},{name:"性能值守-02",id:"de-12",status:"active"},{name:"算法排障-01",id:"de-13",status:"active"},{name:"算法排障-02",id:"de-14",status:"active"},{name:"平台巡检-01",id:"de-15",status:"active"},{name:"平台巡检-02",id:"de-16",status:"idle"}], installations:[
+      {name:"研发效能组 · 节点A", node:"node-cfg-01a · runtime-agent-7c2", provider:"opencode", path:"/opt/skills/diagnostic-probe", time:"2026-07-05 14:32", sha:"c2e8...1f7b"},
+      {name:"算法组 · 节点B", node:"node-cfg-03d · runtime-agent-9f1", provider:"codex", path:"/opt/skills/diagnostic-probe", time:"2026-07-04 09:15", sha:"c2e8...1f7b"},
+      {name:"平台组 · 节点C", node:"node-cfg-02b · runtime-agent-3e8", provider:"claude-code", path:"/opt/skills/diagnostic-probe", time:"2026-07-03 16:48", sha:"c2e8...1f7b"}]},
+    { id:5, name:"文档整理", desc:"API 文档结构化与碎片整理，自动同步变更到文档站", risk:"low", icon:"blocks", tone:"brand", tags:["docs","refactor"], version:"v2.1.0", source:"doc-tidy", team:4, agent:2, deps:null, status:"installed", created:"2026-06-10", creator:"陈静", teamBindings:[{name:"研发效能组",id:"team-01"},{name:"算法组",id:"team-02"},{name:"平台组",id:"team-03"},{name:"设计组",id:"team-04"}], agentBindings:[{name:"文档整理-01",id:"de-17",status:"active"},{name:"文档整理-02",id:"de-18",status:"active"}], installations:[
+      {name:"平台组 · 节点C", node:"node-cfg-02b · runtime-agent-3e8", provider:"opencode", path:"/opt/skills/doc-tidy", time:"2026-07-02 11:20", sha:"d9a4...6c3e"}]},
+    { id:6, name:"安全扫描", desc:"依赖与代码静态安全扫描，覆盖 CVE 与许可证合规", risk:"high", icon:"shield", tone:"brand", tags:["security","scan"], version:"v1.4.7", source:"security-scan", team:1, agent:1, deps:null, status:"approval", created:"2026-06-25", creator:"王强", teamBindings:[{name:"安全组",id:"team-05"}], agentBindings:[{name:"安全审计-01",id:"de-19",status:"active"}], installations:[]},
+    { id:7, name:"性能分析", desc:"性能瓶颈定位与火焰图生成，支持远程采样", risk:"medium", icon:"server", tone:"artifact", tags:["performance","trace"], version:"v0.6.2", source:"perf-profile", team:2, agent:4, deps:{tools:["perf"],env:["TRACE_LEVEL"]}, status:"installed", created:"2026-06-22", creator:"李华", teamBindings:[{name:"研发效能组",id:"team-01"},{name:"平台组",id:"team-03"}], agentBindings:[{name:"性能分析-01",id:"de-20",status:"active"},{name:"性能分析-02",id:"de-21",status:"active"},{name:"性能值守-03",id:"de-22",status:"active"},{name:"性能值守-04",id:"de-23",status:"idle"}], installations:[
+      {name:"研发效能组 · 节点A", node:"node-cfg-01a · runtime-agent-7c2", provider:"opencode", path:"/opt/skills/perf-profile", time:"2026-07-05 10:08", sha:"e5b2...8a1f"}]},
+    { id:8, name:"依赖更新", desc:"自动化依赖版本升级与冲突解决，生成变更摘要", risk:"low", icon:"flask", tone:"ok", tags:["deps","automation"], version:"v1.2.0", source:"dep-update", team:0, agent:0, deps:null, status:"available", created:"2026-07-02", creator:"陈静", teamBindings:[], agentBindings:[], installations:[]},
+    { id:9, name:"日志解析", desc:"非结构化日志模式提取与归因，输出结构化事件流", risk:"low", icon:"blocks", tone:"info", tags:["logs","parse"], version:"v0.5.1", source:"log-parser", team:0, agent:0, deps:null, status:"available", created:"2026-07-03", creator:"张明", teamBindings:[], agentBindings:[], installations:[]},
+  ];
+
+  const icons = {
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+    flask: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L5 19a2 2 0 0 0 1.7 3h10.6A2 2 0 0 0 19 19l-5-9.5V3"/></svg>',
+    server: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="8" rx="1"/><rect x="3" y="12" width="18" height="8" rx="1"/><line x1="7" y1="8" x2="7" y2="8"/><line x1="7" y1="16" x2="7" y2="16"/></svg>',
+    stethoscope: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v6a4 4 0 0 0 8 0V3"/><path d="M8 13v3a5 5 0 0 0 10 0v-2"/><circle cx="18" cy="12" r="2"/></svg>',
+    blocks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+  };
+
+  function riskPill(r){ if(r==="high")return '<span class="pill pill-danger"><span class="dot"></span>高风险</span>'; if(r==="medium")return '<span class="pill pill-warn"><span class="dot"></span>中风险</span>'; return '<span class="pill pill-ok"><span class="dot"></span>低风险</span>'; }
+  function statusPill(s){ if(s==="approval")return '<span class="pill pill-danger"><span class="dot"></span>需审批</span>'; if(s==="installed")return '<span class="pill pill-ok"><span class="dot"></span>已绑定</span>'; return '<span class="pill pill-info"><span class="dot"></span>可绑定</span>'; }
+  function providerPill(p){ if(p==="codex")return '<span class="pill" style="background:var(--v3-brand-soft);color:var(--v3-brand-deep);">codex</span>'; if(p==="claude-code")return '<span class="pill" style="background:var(--v3-artifact-soft);color:var(--v3-artifact-text);">claude-code</span>'; return '<span class="pill pill-info">opencode</span>'; }
+
+  let selectedId = 4;
+  let activeTab = "overview";
+
+  function renderList() {
+    document.getElementById('list-body').innerHTML = skills.map(s => {
+      const sel = s.id === selectedId ? "selected" : "";
+      const danger = s.status === "approval" ? "danger" : "";
+      const depN = s.deps ? (s.deps.tools?.length||0)+(s.deps.env?.length||0) : 0;
+      return `<div class="list-row ${sel} ${danger}" onclick="selectSkill(${s.id})">
+        <div class="icon-tile tone-${s.tone}">${icons[s.icon]}</div>
+        <div class="lr-meta">
+          <div class="lr-name">${s.name} <span class="lr-ver">${s.version}</span></div>
+          <div class="lr-sub">
+            <span class="b">${s.team}</span>团队 ·
+            <span class="b">${s.agent}</span>员工${depN>0?` · <span class="b">${depN}</span>依赖`:''}
+          </div>
+        </div>
+        <div class="lr-pills">
+          ${riskPill(s.risk)}
+          ${statusPill(s.status)}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function selectSkill(id) {
+    selectedId = id;
+    activeTab = "overview";
+    document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===0));
+    renderList();
+    renderDetail();
+  }
+
+  function switchTab(tab, el) {
+    activeTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    renderDetail();
+  }
+
+  function renderDetail() {
+    const s = skills.find(x => x.id === selectedId);
+    document.getElementById('d-name').textContent = s.name;
+    document.getElementById('d-version').textContent = s.version;
+    document.getElementById('d-source').textContent = s.source;
+    document.getElementById('d-created').textContent = `由 ${s.creator} 创建 · ${s.created}`;
+    document.getElementById('d-icon').className = `icon-tile tone-${s.tone}`;
+    document.getElementById('d-icon').innerHTML = icons[s.icon];
+    document.getElementById('tab-cnt-inst').textContent = s.installations.length;
+    document.getElementById('tab-cnt-bind').textContent = s.teamBindings.length + s.agentBindings.length;
+
+    const body = document.getElementById('detail-body');
+    const depTotal = s.deps ? (s.deps.tools?.length||0)+(s.deps.env?.length||0) : 0;
+
+    if (activeTab === "overview") {
+      body.innerHTML = `
+        <div class="detail-section">
+          <h3>描述</h3>
+          <div class="desc-box">${s.desc}</div>
+        </div>
+        <div class="detail-section">
+          <h3>基础信息</h3>
+          <div class="kv-grid">
+            <div class="kv"><span class="k">风险等级</span><span class="v">${riskPill(s.risk)}</span></div>
+            <div class="kv"><span class="k">绑定状态</span><span class="v">${statusPill(s.status)}</span></div>
+            <div class="kv"><span class="k">版本</span><span class="v mono">${s.version}</span></div>
+            <div class="kv"><span class="k">来源标识</span><span class="v mono">${s.source}</span></div>
+            <div class="kv"><span class="k">创建人</span><span class="v">${s.creator}</span></div>
+            <div class="kv"><span class="k">创建时间</span><span class="v mono">${s.created}</span></div>
+            <div class="kv"><span class="k">团队绑定数</span><span class="v">${s.teamBindings.length} 个</span></div>
+            <div class="kv"><span class="k">数字员工绑定数</span><span class="v">${s.agentBindings.length} 个</span></div>
+            <div class="kv"><span class="k">安装目标数</span><span class="v">${s.installations.length} 个</span></div>
+            <div class="kv"><span class="k">运行依赖数</span><span class="v">${depTotal} 项</span></div>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h3>标签</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">${s.tags.map(t=>`<span class="tag-chip active" style="cursor:default;">${t}</span>`).join('')}</div>
+        </div>`;
+    } else if (activeTab === "installations") {
+      body.innerHTML = `
+        <div class="detail-section">
+          <h3>物理安装记录 <span class="pill pill-mute">${s.installations.length} 个目标</span></h3>
+          ${s.installations.length===0
+            ? '<div class="empty-install">暂无安装记录<br><span style="font-size:11.5px;">成功安装到运行节点后会显示物理安装事实（路径、节点、checksum、时间）</span></div>'
+            : s.installations.map(i=>`<div class="install-row"><div><div class="t-name">${i.name} ${providerPill(i.provider)}</div><div class="t-time">${i.time}</div></div><div><div class="t-node">${i.node}</div><div class="t-node" style="color:var(--v3-ink-3);margin-top:2px;">sha256: ${i.sha}</div></div><div class="t-path">${i.path}</div></div>`).join('')}
+        </div>`;
+    } else if (activeTab === "deps") {
+      const depHtml = (!s.deps || depTotal===0)
+        ? '<div class="empty-install">无运行依赖<br><span style="font-size:11.5px;">该技能不需要额外的工具或环境变量即可在 Runtime 节点执行</span></div>'
+        : `<div>${(s.deps.tools||[]).map(t=>`<span class="dep-chip">tool: ${t}</span>`).join('')}${(s.deps.env||[]).map(e=>`<span class="dep-chip env">env: ${e}</span>`).join('')}</div>
+           <div style="font-size:12px;color:var(--v3-ink-3);margin-top:10px;line-height:1.6;">运行依赖由技能档案声明，Runtime Agent 在安装前会校验节点是否满足这些依赖；缺失将阻断安装并记录原因。</div>`;
+      body.innerHTML = `<div class="detail-section"><h3>运行依赖 <span class="pill pill-mute">${depTotal} 项</span></h3>${depHtml}</div>`;
+    } else if (activeTab === "bindings") {
+      body.innerHTML = `
+        <div class="detail-section">
+          <h3>团队绑定 <span class="pill pill-mute">${s.teamBindings.length}</span></h3>
+          ${s.teamBindings.length===0
+            ? '<div class="binding-empty">未绑定到任何团队</div>'
+            : `<div class="binding-list">${s.teamBindings.map(t=>`<div class="binding-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--v3-ink-3)"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="b-name">${t.name}</span><span class="b-id">${t.id}</span></div>`).join('')}</div>`}
+        </div>
+        <div class="detail-section">
+          <h3>数字员工绑定 <span class="pill pill-mute">${s.agentBindings.length}</span></h3>
+          ${s.agentBindings.length===0
+            ? '<div class="binding-empty">未绑定到任何数字员工</div>'
+            : `<div class="binding-list">${s.agentBindings.map(a=>`<div class="binding-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--v3-ink-3)"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg><span class="b-name">${a.name}</span><span class="b-status" style="background:${a.status==='active'?'var(--v3-ok-soft)':'var(--v3-mute-soft)'};color:${a.status==='active'?'var(--v3-ok-text)':'var(--v3-mute-text)'}">${a.status==='active'?'运行中':'空闲'}</span><span class="b-id">${a.id}</span></div>`).join('')}</div>`}
+        </div>`;
+    }
+  }
+
+  // 复选框交互
+  document.querySelectorAll('.check-row').forEach(r => r.addEventListener('click', () => r.classList.toggle('checked')));
+  document.querySelectorAll('.tag-chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('active')));
+
+  renderList();
+  renderDetail();
+</script>
+</body>
+</html>

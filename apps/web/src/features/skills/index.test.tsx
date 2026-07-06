@@ -504,11 +504,9 @@ describe("SkillsView", () => {
     await expect.element(metrics.getByText("需审批")).toBeVisible();
     await expect.element(metrics.getByText("团队绑定")).toBeVisible();
     await expect.element(metrics.getByText("数字员工绑定")).toBeVisible();
-    await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
-    await expect.element(screen.getByRole("columnheader", { name: "风险" })).toBeVisible();
-    const detailLink = screen.getByRole("link", { name: "查看详情" }).first();
-    await expect.element(detailLink).toHaveAttribute("href", "/skills/skill-requirement");
-    await expect.element(detailLink).toHaveAttribute("data-router-link", "true");
+    await expect.element(screen.getByRole("button", { name: "选中 需求澄清助手" })).toBeVisible();
+    await expect.element(screen.getByText("接口文档生成")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
   });
 
@@ -516,13 +514,14 @@ describe("SkillsView", () => {
     const screen = await renderSkillsView();
 
     await expect.element(screen.getByText("接口文档生成")).toBeVisible();
-    const skillRow = document.body.querySelector('button[aria-label="选中 接口文档生成"]')?.closest("tr");
-    expect(skillRow).not.toBeNull();
-    expect(skillRow?.textContent).toContain("可绑定");
+    const skillCard = document.body.querySelector('[role="button"][aria-label="选中 接口文档生成"]');
+    expect(skillCard).not.toBeNull();
+    expect(skillCard?.textContent).toContain("可绑定");
+    expect(skillCard?.textContent).toContain("中风险");
     expect(document.body.textContent).not.toContain("需补全依赖");
   });
 
-  it("uses shared v3 controls for the primary action and view switcher", async () => {
+  it("uses shared v3 controls for the primary action", async () => {
     const screen = await renderSkillsView();
 
     expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
@@ -531,9 +530,6 @@ describe("SkillsView", () => {
     const uploadLink = screen.getByRole("link", { name: "上传技能" });
     await expect.element(uploadLink).toHaveAttribute("data-slot", "v3-button");
     await expect.element(uploadLink).toHaveAttribute("data-variant", "primary");
-
-    const viewSwitcher = document.body.querySelector('[data-slot="v3-segmented"][aria-label="技能视图"]');
-    expect(viewSwitcher).not.toBeNull();
   });
 
   it("keeps the skill upload action in the page content instead of the shell header", async () => {
@@ -572,7 +568,7 @@ describe("SkillsView", () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("filters the market by search text while keeping the table chrome visible", async () => {
+  it("filters the market by search text while keeping the skill grid visible", async () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
@@ -582,8 +578,7 @@ describe("SkillsView", () => {
       "http://control-plane.local/api/v1/skills?q=%E6%96%87%E6%A1%A3",
       expect.objectContaining({ method: "GET" }),
     );
-    await expect.element(screen.getByRole("columnheader", { name: "技能" })).toBeVisible();
-    await expect.element(screen.getByRole("table").getByText("接口文档生成")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "选中 接口文档生成" })).toBeVisible();
   });
 
   it("loads installation records when selecting a skill detail in the current page", async () => {
