@@ -300,7 +300,7 @@ const groupDotClass = {
 /* ------------------------------------------------------------------ */
 
 function RiverTimeAxis({ maxMs }: { maxMs: number }) {
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+  const ticks = [0, 0.25, 0.5, 0.75].map((ratio) => ({
     label: ratio === 0 ? "开始" : formatDuration(maxMs * ratio),
     left: `${ratio * 100}%`,
   }));
