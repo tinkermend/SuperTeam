@@ -1,5 +1,6 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import "./task-launch-aurora.css";
 import {
   CircleAlert,
   FolderOpen,
@@ -37,6 +38,31 @@ type TaskLaunchFormProps = {
 function deriveTitle(content: string): string {
   return content.trim().split(/\n+/)[0]?.slice(0, 80) ?? "";
 }
+
+/**
+ * 玻璃外壳：半透明 + 背景模糊，承载页面层级与质感（backdrop-filter 只作用在
+ * 这一层，数据区域使用下方实体内核，避免逐行阅读区产生模糊开销）。
+ * 用内联 style 覆盖 SoftCard 的实底基类（bg-v3-card 等），保证可逆。
+ */
+const auroraShellStyle: CSSProperties = {
+  background: "rgba(255, 255, 255, 0.5)",
+  backdropFilter: "blur(20px) saturate(135%)",
+  WebkitBackdropFilter: "blur(20px) saturate(135%)",
+  border: "1px solid rgba(255, 255, 255, 0.85)",
+  borderRadius: "24px",
+  boxShadow:
+    "0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 28px 64px -30px rgba(36, 58, 140, 0.45)",
+};
+
+/** 实体内核：不透明白底，承载所有逐行可读数据，保证高对比与可访问性。 */
+const auroraCoreStyle: CSSProperties = {
+  margin: "24px",
+  background: "#ffffff",
+  border: "1px solid var(--v3-line-strong)",
+  borderRadius: "14px",
+  overflow: "hidden",
+  boxShadow: "0 10px 30px -22px rgba(36, 58, 140, 0.4)",
+};
 
 export function TaskLaunchForm({
   isSubmitting = false,
@@ -105,8 +131,14 @@ export function TaskLaunchForm({
   }
 
   return (
-    <SoftCard className="mx-auto w-full max-w-[1120px] overflow-hidden p-0">
-      <div className="grid gap-6 p-4 sm:p-6 xl:p-7">
+    <>
+      <div className="tl-aurora-bg" aria-hidden="true" />
+      <SoftCard
+        className="mx-auto w-full max-w-[1120px] overflow-hidden p-0"
+        style={auroraShellStyle}
+      >
+        <div style={auroraCoreStyle}>
+          <div className="grid gap-6 p-4 sm:p-6 xl:p-7">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-bold text-v3-brand-deep">
             <Sparkles className="size-4" />
@@ -252,12 +284,14 @@ export function TaskLaunchForm({
           提交任务
         </V3Button>
       </div>
+      </div>
       <PromptTemplateDialog
         open={templateDialogOpen}
         onOpenChange={setTemplateDialogOpen}
         onInsert={handleInsertTemplate}
       />
     </SoftCard>
+    </>
   );
 }
 function LaunchSelect({

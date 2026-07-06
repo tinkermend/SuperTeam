@@ -1,0 +1,31 @@
+/* 任务发起页 · 极光对角玻璃背景（实验性，仅本页作用域）
+ *
+ * 视觉参考：docs/prototypes/task-launch-glass-bg-aurora.html
+ * 设计意图：玻璃外壳 + 实体内核（glass shell / solid core）。
+ *   - 背景为两束低透明对角色晕（左上品牌蓝 / 右下紫）+ 中性冷灰底 + 极淡点阵结构纹理。
+ *   - 该样式只作用于任务发起页，随组件卸载自动移除，不会泄漏到全局。
+ *
+ * 回退方式：删除 task-launch-form.tsx 顶部的 `import "./task-launch-aurora.css";`
+ * 以及该文件中的 <div className="tl-aurora-bg" /> 即可恢复中性基线。
+ */
+
+.tl-aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(760px 620px at 8% 2%, rgba(47, 95, 255, 0.16), transparent 60%),
+    radial-gradient(720px 600px at 98% 100%, rgba(124, 92, 255, 0.12), transparent 60%),
+    #f2f4fa;
+}
+
+.tl-aurora-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(47, 95, 255, 0.09) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 32%, #000, transparent 80%);
+}
