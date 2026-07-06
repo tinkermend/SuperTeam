@@ -59,7 +59,7 @@ export function WorkflowNodeInspector({
               </V3Button>
             ) : null
           }
-          label="Run"
+          label="运行"
           value={
             run
               ? [runStatusLabel(run.status), run.provider_type, run.runtime_node_summary]
