@@ -190,7 +190,7 @@ function RuntimeEventLogsRoute() {
           if (!open) setSelectedEvent(null);
         }}
       >
-        <SheetContent side="right" className="w-[420px] max-w-[45vw]">
+        <SheetContent side="right" className="w-[420px] max-w-[45vw] overflow-y-auto">
           {selectedEvent && (
             <>
               <SheetHeader>
@@ -223,6 +223,14 @@ function RuntimeEventLogsRoute() {
                   </DetailRow>
                 )}
                 <DetailRow label="时间">{formatLogDateTime(selectedEvent.created_at)}</DetailRow>
+                {selectedEvent.payload && (
+                  <div className="mt-2">
+                    <div className="text-xs text-v3-ink-2 mb-1">Payload</div>
+                    <pre className="rounded-md bg-v3-card-soft p-2 text-xs text-v3-ink overflow-x-auto">
+                      {JSON.stringify(selectedEvent.payload, null, 2)}
+                    </pre>
+                  </div>
+                )}
               </div>
             </>
           )}
