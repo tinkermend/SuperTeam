@@ -5,15 +5,15 @@ use crate::events::TurnUsage;
 /// Best-effort 解析 Provider 事件中的 token 用量。
 /// 找不到或字段非数字时返回 None，不抛错。
 pub fn extract_usage(value: &Value) -> Option<TurnUsage> {
-    if let Some(usage) = value.get("usage") {
-        if let Some(parsed) = parse_usage_object(usage) {
-            return Some(parsed);
-        }
+    if let Some(usage) = value.get("usage")
+        && let Some(parsed) = parse_usage_object(usage)
+    {
+        return Some(parsed);
     }
-    if let Some(usage) = value.get("token_usage") {
-        if let Some(parsed) = parse_usage_object(usage) {
-            return Some(parsed);
-        }
+    if let Some(usage) = value.get("token_usage")
+        && let Some(parsed) = parse_usage_object(usage)
+    {
+        return Some(parsed);
     }
     parse_usage_object(value)
 }
@@ -36,11 +36,6 @@ fn parse_usage_object(value: &Value) -> Option<TurnUsage> {
         (None, Some(i), Some(o)) => Some(i + o + cache_read + cache_creation),
         _ => None,
     }?;
-
-    // 至少要有可识别的 token 字段，避免把无关对象误判成 usage
-    if total.is_none() && input.is_none() && output.is_none() {
-        return None;
-    }
 
     Some(TurnUsage {
         total_tokens,
