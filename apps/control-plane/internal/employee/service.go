@@ -1556,6 +1556,101 @@ func (s *Service) GetCurrentEffectiveConfig(ctx context.Context, tenantID, digit
 	return effectiveConfigFromRecord(record), nil
 }
 
+func (s *Service) GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
+	}
+	employee, err := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee: %w", err)
+	}
+	facts, err := s.repository.GetSchedulingCapabilityFacts(ctx, tenantID, employeeID)
+	if err != nil {
+		return nil, fmt.Errorf("get scheduling capability facts: %w", err)
+	}
+
+	checks := make([]SchedulingReadinessCheck, 0, 4)
+	checks = append(checks, employeeStatusReadinessCheck(employee.Status))
+
+	if _, err := s.repository.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, employeeID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			checks = append(checks, SchedulingReadinessCheck{
+				Code:    "effective_config",
+				Status:  ReadinessCheckBlocked,
+				Label:   "有效配置",
+				Message: "尚无已批准的有效配置，不能进入项目调度池。",
+			})
+		} else {
+			return nil, fmt.Errorf("get current effective config: %w", err)
+		}
+	} else {
+		checks = append(checks, SchedulingReadinessCheck{
+			Code:    "effective_config",
+			Status:  ReadinessCheckPassed,
+			Label:   "有效配置",
+			Message: "已存在已批准的有效配置。",
+		})
+	}
+
+	checks = append(checks, SchedulingReadinessCheck{
+		Code:    "project_runtime",
+		Status:  ReadinessCheckInfo,
+		Label:   "项目运行准备",
+		Message: "真实 Runtime/Provider 可执行性由项目运行准备检查判断。",
+	})
+
+	ready := true
+	for _, check := range checks {
+		if check.Status == ReadinessCheckBlocked {
+			ready = false
+			break
+		}
+	}
+
+	return &DigitalEmployeeSchedulingReadiness{
+		EmployeeID:                employee.ID,
+		Status:                    employee.Status,
+		ReadyForProjectScheduling: ready,
+		Checks:                    checks,
+		Capabilities: SchedulingReadinessCapabilities{
+			Skills: SchedulingReadinessSkillSummary{
+				PersonalCount:   facts.PersonalSkillCount,
+				InheritedCount:  facts.InheritedSkillCount,
+				MissingRequired: append([]string(nil), facts.MissingRequiredSkills...),
+			},
+			MCPServers: SchedulingReadinessMCPSummary{
+				PersonalCount:  facts.PersonalMCPServerCount,
+				InheritedCount: facts.InheritedMCPServerCount,
+			},
+			EnvironmentVariables: SchedulingReadinessEnvironmentSummary{
+				ConfiguredCount: facts.ConfiguredEnvVarCount,
+				MissingNames:    append([]string(nil), facts.MissingEnvironmentNames...),
+			},
+		},
+		ProjectExecutionSource: "project_runtime_readiness",
+	}, nil
+}
+
+func employeeStatusReadinessCheck(status DigitalEmployeeStatus) SchedulingReadinessCheck {
+	if status == DigitalEmployeeStatusReady || status == DigitalEmployeeStatusActive {
+		return SchedulingReadinessCheck{
+			Code:    "employee_status",
+			Status:  ReadinessCheckPassed,
+			Label:   "员工状态",
+			Message: fmt.Sprintf("员工状态为 %s，可进入项目调度池。", status),
+		}
+	}
+	return SchedulingReadinessCheck{
+		Code:    "employee_status",
+		Status:  ReadinessCheckBlocked,
+		Label:   "员工状态",
+		Message: fmt.Sprintf("员工状态为 %s，不能进入项目调度池。", status),
+	}
+}
+
 func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffectiveConfigRequest) (*EffectiveConfigPreview, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

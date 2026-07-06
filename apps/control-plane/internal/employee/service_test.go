@@ -2179,6 +2179,149 @@ func TestGetCurrentEffectiveConfigRejectsMissingIdentifiers(t *testing.T) {
 	}
 }
 
+func TestGetSchedulingReadinessPassesForReadyEmployeeWithApprovedConfig(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	effectiveConfigID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		TeamID:       &teamID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "requirements_analyst",
+		Name:         "需求分析员工",
+		Role:         "requirements_analyst",
+		Status:       DigitalEmployeeStatusReady,
+	}
+	repo.effectiveConfigs[effectiveConfigID] = DigitalEmployeeEffectiveConfigRecord{
+		ID:                effectiveConfigID,
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            EffectiveConfigStatusApproved,
+	}
+	repo.schedulingCapabilityFacts = SchedulingCapabilityFacts{
+		PersonalSkillCount:      1,
+		InheritedSkillCount:     2,
+		MissingRequiredSkills:   []string{"incident-review"},
+		PersonalMCPServerCount:  1,
+		InheritedMCPServerCount: 1,
+		ConfiguredEnvVarCount:   2,
+		MissingEnvironmentNames: []string{"OPENAI_API_KEY"},
+	}
+
+	readiness, err := svc.GetSchedulingReadiness(context.Background(), tenantID, employeeID)
+	if err != nil {
+		t.Fatalf("get scheduling readiness: %v", err)
+	}
+	if !readiness.ReadyForProjectScheduling {
+		t.Fatalf("expected employee to be schedulable, got %#v", readiness)
+	}
+	assertReadinessCheck(t, readiness, "employee_status", ReadinessCheckPassed)
+	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckPassed)
+	assertReadinessCheck(t, readiness, "project_runtime", ReadinessCheckInfo)
+	if readiness.Capabilities.Skills.PersonalCount != 1 || readiness.Capabilities.Skills.InheritedCount != 2 {
+		t.Fatalf("unexpected skill counts: %#v", readiness.Capabilities.Skills)
+	}
+	if !stringSlicesEqual(readiness.Capabilities.Skills.MissingRequired, []string{"incident-review"}) {
+		t.Fatalf("unexpected missing required skills: %#v", readiness.Capabilities.Skills.MissingRequired)
+	}
+	if readiness.Capabilities.MCPServers.PersonalCount != 1 || readiness.Capabilities.MCPServers.InheritedCount != 1 {
+		t.Fatalf("unexpected MCP server counts: %#v", readiness.Capabilities.MCPServers)
+	}
+	if readiness.Capabilities.EnvironmentVariables.ConfiguredCount != 2 {
+		t.Fatalf("unexpected configured env var count: %#v", readiness.Capabilities.EnvironmentVariables)
+	}
+	if !stringSlicesEqual(readiness.Capabilities.EnvironmentVariables.MissingNames, []string{"OPENAI_API_KEY"}) {
+		t.Fatalf("unexpected missing environment names: %#v", readiness.Capabilities.EnvironmentVariables.MissingNames)
+	}
+	if readiness.ProjectExecutionSource != "project_runtime_readiness" {
+		t.Fatalf("expected project runtime readiness source, got %q", readiness.ProjectExecutionSource)
+	}
+}
+
+func TestGetSchedulingReadinessBlocksWhenEmployeeStatusIsNotRunnable(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	effectiveConfigID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "requirements_analyst",
+		Name:         "需求分析员工",
+		Role:         "requirements_analyst",
+		Status:       DigitalEmployeeStatusDisabled,
+	}
+	repo.effectiveConfigs[effectiveConfigID] = DigitalEmployeeEffectiveConfigRecord{
+		ID:                effectiveConfigID,
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            EffectiveConfigStatusApproved,
+	}
+
+	readiness, err := svc.GetSchedulingReadiness(context.Background(), tenantID, employeeID)
+	if err != nil {
+		t.Fatalf("get scheduling readiness: %v", err)
+	}
+	if readiness.ReadyForProjectScheduling {
+		t.Fatalf("expected disabled employee to be blocked, got %#v", readiness)
+	}
+	assertReadinessCheck(t, readiness, "employee_status", ReadinessCheckBlocked)
+	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckPassed)
+}
+
+func TestGetSchedulingReadinessBlocksWhenEffectiveConfigMissing(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "requirements_analyst",
+		Name:         "需求分析员工",
+		Role:         "requirements_analyst",
+		Status:       DigitalEmployeeStatusReady,
+	}
+
+	readiness, err := svc.GetSchedulingReadiness(context.Background(), tenantID, employeeID)
+	if err != nil {
+		t.Fatalf("get scheduling readiness: %v", err)
+	}
+	if readiness.ReadyForProjectScheduling {
+		t.Fatalf("expected missing effective config to block readiness, got %#v", readiness)
+	}
+	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckBlocked)
+}
+
+func assertReadinessCheck(t *testing.T, readiness *DigitalEmployeeSchedulingReadiness, code string, status ReadinessCheckStatus) {
+	t.Helper()
+	for _, check := range readiness.Checks {
+		if check.Code == code {
+			if check.Status != status {
+				t.Fatalf("expected check %s status %s, got %#v", code, status, check)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing readiness check %s in %#v", code, readiness.Checks)
+}
+
 func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
 	_, err := jsonbFromMap(map[string]any{"bad": func() {}}, "metadata")
 	if err == nil {
@@ -2455,36 +2598,37 @@ func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID
 }
 
 type memoryRepository struct {
-	teams                    map[uuid.UUID]uuid.UUID
-	employees                map[uuid.UUID]DigitalEmployeeRecord
-	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
-	preflight                RuntimeProvisioningPreflight
-	preflightErr             error
-	commandReceipts          map[string]*RuntimeCommandReceipt
-	waitStatus               string
-	waitErr                  error
-	abortReasons             []string
-	abortContextErrors       []error
-	createdEmployeeCount     int
-	teamConfigs              map[uuid.UUID]TeamConfigInput
-	currentTeamConfigByTeam  map[uuid.UUID]uuid.UUID
-	runtimeProviderOptions   []RuntimeProviderOption
-	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
-	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
-	envVars                  map[string]EnvironmentVariableRecord
-	workspaceFiles           []WorkspaceFileRecord
-	workspaceFileRevisions   []WorkspaceFileRevisionRecord
-	nextConfigRevisionNumber int32
-	createdConfigRevision    CreateConfigRevisionParams
-	createdEffectiveConfig   CreateEffectiveConfigParams
-	createEffectiveConfigErr error
-	digitalEmployeeOverview  *DigitalEmployeeOverview
-	lastOverviewRequest      GetDigitalEmployeeOverviewRequest
-	waitHook                 func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
-	transactionCount         int
-	transactionCommitCount   int
-	transactionRollbackCount int
-	inTransaction            bool
+	teams                     map[uuid.UUID]uuid.UUID
+	employees                 map[uuid.UUID]DigitalEmployeeRecord
+	instances                 map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
+	preflight                 RuntimeProvisioningPreflight
+	preflightErr              error
+	commandReceipts           map[string]*RuntimeCommandReceipt
+	waitStatus                string
+	waitErr                   error
+	abortReasons              []string
+	abortContextErrors        []error
+	createdEmployeeCount      int
+	teamConfigs               map[uuid.UUID]TeamConfigInput
+	currentTeamConfigByTeam   map[uuid.UUID]uuid.UUID
+	runtimeProviderOptions    []RuntimeProviderOption
+	employeeConfigs           map[uuid.UUID]EmployeeConfigInput
+	effectiveConfigs          map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	schedulingCapabilityFacts SchedulingCapabilityFacts
+	envVars                   map[string]EnvironmentVariableRecord
+	workspaceFiles            []WorkspaceFileRecord
+	workspaceFileRevisions    []WorkspaceFileRevisionRecord
+	nextConfigRevisionNumber  int32
+	createdConfigRevision     CreateConfigRevisionParams
+	createdEffectiveConfig    CreateEffectiveConfigParams
+	createEffectiveConfigErr  error
+	digitalEmployeeOverview   *DigitalEmployeeOverview
+	lastOverviewRequest       GetDigitalEmployeeOverviewRequest
+	waitHook                  func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
+	transactionCount          int
+	transactionCommitCount    int
+	transactionRollbackCount  int
+	inTransaction             bool
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -2942,6 +3086,16 @@ func (r *memoryRepository) GetCurrentDigitalEmployeeEffectiveConfig(_ context.Co
 		return record, nil
 	}
 	return DigitalEmployeeEffectiveConfigRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetSchedulingCapabilityFacts(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (SchedulingCapabilityFacts, error) {
+	if _, ok := r.employees[digitalEmployeeID]; !ok {
+		return SchedulingCapabilityFacts{}, ErrNotFound
+	}
+	if r.employees[digitalEmployeeID].TenantID != tenantID {
+		return SchedulingCapabilityFacts{}, ErrNotFound
+	}
+	return r.schedulingCapabilityFacts, nil
 }
 
 func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {

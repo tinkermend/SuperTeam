@@ -88,6 +88,63 @@ type EffectiveConfigValidation struct {
 	Warnings       []ValidationIssue `json:"warnings"`
 }
 
+type ReadinessCheckStatus string
+
+const (
+	ReadinessCheckPassed  ReadinessCheckStatus = "passed"
+	ReadinessCheckWarning ReadinessCheckStatus = "warning"
+	ReadinessCheckBlocked ReadinessCheckStatus = "blocked"
+	ReadinessCheckInfo    ReadinessCheckStatus = "info"
+)
+
+type SchedulingReadinessCheck struct {
+	Code    string
+	Status  ReadinessCheckStatus
+	Label   string
+	Message string
+}
+
+type SchedulingReadinessSkillSummary struct {
+	PersonalCount   int
+	InheritedCount  int
+	MissingRequired []string
+}
+
+type SchedulingReadinessMCPSummary struct {
+	PersonalCount  int
+	InheritedCount int
+}
+
+type SchedulingReadinessEnvironmentSummary struct {
+	ConfiguredCount int
+	MissingNames    []string
+}
+
+type SchedulingReadinessCapabilities struct {
+	Skills               SchedulingReadinessSkillSummary
+	MCPServers           SchedulingReadinessMCPSummary
+	EnvironmentVariables SchedulingReadinessEnvironmentSummary
+}
+
+type DigitalEmployeeSchedulingReadiness struct {
+	EmployeeID                uuid.UUID
+	Status                    DigitalEmployeeStatus
+	ReadyForProjectScheduling bool
+	Checks                    []SchedulingReadinessCheck
+	Capabilities              SchedulingReadinessCapabilities
+	ProjectExecutionSource    string
+}
+
+type SchedulingCapabilityFacts struct {
+	PersonalSkillCount      int
+	InheritedSkillCount     int
+	MissingRequiredSkills   []string
+	PersonalMCPServerCount  int
+	InheritedMCPServerCount int
+	ConfiguredEnvVarCount   int
+	MissingEnvironmentNames []string
+}
+
 type DigitalEmployee struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
