@@ -80,6 +80,33 @@ describe('UserAuthForm', () => {
     })
   })
 
+  it('does not render captcha controls before the server captcha state is known', async () => {
+    let resolveCaptcha!: (value: typeof defaultCaptcha) => void
+    getLoginCaptcha.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCaptcha = resolve
+      })
+    )
+
+    const screen = await render(<UserAuthForm />)
+
+    await expect
+      .element(screen.getByRole('textbox', { name: /^图形验证码$/i }))
+      .not.toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('button', { name: /^刷新验证码$/i }))
+      .not.toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('button', { name: /^登录$/i }))
+      .toBeDisabled()
+
+    resolveCaptcha(defaultCaptcha)
+
+    await expect
+      .element(screen.getByRole('textbox', { name: /^图形验证码$/i }))
+      .toBeVisible()
+  })
+
   it('shows a stable captcha failure state and keeps refresh usable', async () => {
     const refreshedCaptcha = {
       enabled: true,

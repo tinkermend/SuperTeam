@@ -1,0 +1,152 @@
+import type { DigitalEmployeeOverview } from "@/lib/api/employees";
+import type { TeamListItem } from "@/lib/api/teams";
+
+export const teamListFixture: TeamListItem[] = [
+  {
+    id: "team-dev",
+    tenant_id: "tenant-1",
+    slug: "dev",
+    name: "开发团队",
+    status: "active",
+    member_count: 2,
+    digital_employee_count: 3,
+    capability_count: 3,
+    governance_status: "active",
+    pending_draft_count: 0,
+    risk_summary: "normal",
+  },
+  {
+    id: "team-ops",
+    tenant_id: "tenant-1",
+    slug: "ops",
+    name: "运维团队",
+    status: "active",
+    member_count: 2,
+    digital_employee_count: 2,
+    capability_count: 4,
+    governance_status: "active",
+    pending_draft_count: 0,
+    risk_summary: "normal",
+  },
+];
+
+export const digitalEmployeeOverviewFixture: DigitalEmployeeOverview = {
+  summary: {
+    total_count: 5,
+    runnable_count: 5,
+    running_count: 2,
+    waiting_runtime_count: 0,
+    error_count: 0,
+    high_risk_count: 1,
+    ready_count: 5,
+    pending_runtime_binding_count: 0,
+    pending_config_approval_count: 0,
+    failed_recent_run_count: 0,
+    operational_status_counts: {
+      working: 2,
+      idle: 2,
+      waiting_human: 1,
+    },
+  },
+  queue_summary: {
+    pending_runtime_binding_count: 0,
+    stale_config_count: 0,
+    failed_recent_run_count: 0,
+  },
+  filters: {
+    teams: [],
+    employee_types: [],
+    statuses: [],
+    providers: [],
+    runtime_nodes: [],
+    risk_levels: [],
+    execution_statuses: [],
+    run_statuses: [],
+  },
+  pagination: { limit: 100, offset: 0, total_count: 5 },
+  items: [
+    employee("emp-ops-1", "高秀英", "运维工程师 AI", "team-ops", "运维团队", "working", "排查线上告警并生成修复计划"),
+    employee("emp-ops-2", "罗明", "发布工程师 AI", "team-ops", "运维团队", "waiting_human", "等待发布窗口确认"),
+    employee("emp-dev-1", "陆一鸣", "前端工程师 AI", "team-dev", "开发团队", "working", "实现运行态组件"),
+    employee("emp-dev-2", "沈嘉", "后端工程师 AI", "team-dev", "开发团队", "idle"),
+    employee("emp-dev-3", "许静", "数据工程师 AI", "team-dev", "开发团队", "idle"),
+  ],
+};
+
+function employee(
+  id: string,
+  name: string,
+  role: string,
+  teamId: string,
+  teamName: string,
+  status: DigitalEmployeeOverview["items"][number]["operational_state"]["status"],
+  title = "",
+): DigitalEmployeeOverview["items"][number] {
+  return {
+    identity_summary: {
+      id,
+      tenant_id: "tenant-1",
+      team_id: teamId,
+      team_name: teamName,
+      owner_user_id: "owner-1",
+      owner_display_name: "Owner",
+      employee_type: "engineer",
+      employee_type_label: "工程师",
+      name,
+      role,
+      status: "ready",
+      risk_level: status === "waiting_human" ? "high" : "medium",
+      avatar_asset: {
+        id: `${id}-avatar`,
+        label: name,
+        gender: "unknown",
+        age_range: "adult",
+        style: "2.5d",
+        image_url: `https://example.com/${id}.png`,
+        thumbnail_url: `https://example.com/${id}-thumb.png`,
+        source: "fixture",
+        license: "internal",
+        status: "active",
+      },
+    },
+    execution_summary: {
+      execution_instance_id: `${id}-instance`,
+      status: "ready",
+      runtime_node_id: "local-dev-node",
+      node_id: "local-dev-node",
+      runtime_name: "local-dev-node",
+      runtime_status: "online",
+      provider_type: "codex",
+      provider_status: "healthy",
+      health_status: "healthy",
+      agent_home_dir_available: true,
+    },
+    workbench_status: "ready",
+    operational_state: { status, reasons: [], can_dispatch: status !== "waiting_human" },
+    recent_events: [{ label: title ? "已领取任务" : "暂无任务", status, occurred_at: "2026-07-05T10:00:00Z" }],
+    latest_run_summary: title
+      ? {
+          run_id: `${id}-run`,
+          task_id: `${id}-task`,
+          status: status === "working" ? "running" : "none",
+          title,
+          error_message: "",
+          token_usage: 128,
+        }
+      : null,
+    governance_summary: {
+      status: "active",
+      skills_count: 1,
+      mcp_servers_count: 1,
+      constitution_ref: "team",
+    },
+    budget_summary: {
+      run_count_30d: 1,
+      currency: "CNY",
+      source: "runtime",
+      usage_tokens_today: 128,
+      daily_token_limit: 10000,
+      limit_exceeded: false,
+    },
+  };
+}

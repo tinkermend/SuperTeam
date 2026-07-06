@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-06 00:09：运行总览落地为真实数据驱动的三层地图：Web 通过现有数字员工 overview 与团队列表接口轮询渲染 2.5D 团队办公区、固定 10 工位、数字员工头像、楼层切换、侧栏详情和表格视图；Control Plane 在团队创建初始数字员工和数字员工创建入队时增加每团队 10 人服务层容量守卫。验证：`corepack pnpm --filter ./apps/web run test -- run-overview runtime-overview-adapter`、`corepack pnpm --filter ./apps/web run typecheck`、`go test ./apps/control-plane/internal/tenant ./apps/control-plane/internal/employee`、`git diff --check` 通过；真实 Chrome 连接当前 worktree Web(:3000)+Control Plane(:8081) 打开 `/run-overview`，确认真实接口数据渲染 6 个团队 workspace、60 个工位和员工头像，页面不是占位页。
 - 2026-07-05 22:34：项目管理页面改为更紧凑的企业级控制面风格：首页保留真实项目队列与风险识别逻辑，压缩风险汇总、筛选条和表格行距，风险行改为左侧语义条而非整行大面积染色；新建项目页改为“新建项目工作台”，步骤条和主表单收紧，创建前审阅改为字段表格。验证：`corepack pnpm --filter ./apps/web run test -- src/features/projects/index.test.tsx`、`git diff --check` 通过；真实浏览器连接 Web(:3000)+Control Plane(:8081) 打开 `/projects` 与 `/projects/new`，确认紧凑队列、审阅表、真实接口数据加载正常，新建页不渲染项目队列。
 - 2026-07-05 21:27：项目管理首页队列表格补充固定列宽与长文本溢出策略：表格改为 `table-fixed` + 7 列 `colgroup`，项目名称、当前任务、当前处理者最多两行换行截断，UUID/需求 ID/能力 key/时间使用省略或稳定不换行，避免长项目名和长数字员工名称撑宽首页队列。验证：`corepack pnpm --filter ./apps/web run test -- src/features/projects/index.test.tsx`、`git diff --check` 通过；真实 Chrome 打开 `/projects` 复测 table 从 1893px 收敛到 1454px，与容器同宽，页面无横向溢出。
 - 2026-07-05 16:02：项目管理首页队列的“当前处理者”改为从项目成员快照解析显示名：当前任务分配数字员工时优先展示对应数字员工名称，人类待处理任务优先展示负责人名称，缺少成员快照时才回退内部 ID；风险信号读取补充项目成员接口，首页仍不拉取详情 overview/events。验证：`corepack pnpm --filter ./apps/web run test -- src/features/projects/index.test.tsx` 通过。

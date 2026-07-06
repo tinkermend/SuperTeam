@@ -49,7 +49,8 @@ export function UserAuthForm({
   const submitInFlightRef = useRef(false)
   const navigate = useNavigate()
   const { apiBaseUrl, login } = useAuth()
-  const isCaptchaEnabled = captcha?.enabled !== false
+  const isCaptchaUnavailable = captcha === null && !isCaptchaLoading
+  const isCaptchaEnabled = captcha?.enabled === true
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(baseFormSchema),
@@ -107,7 +108,7 @@ export function UserAuthForm({
     if (submitInFlightRef.current) {
       return
     }
-    if (!captcha && isCaptchaEnabled) {
+    if (isCaptchaUnavailable) {
       setCaptchaError('验证码加载失败，请刷新重试')
       return
     }
@@ -192,7 +193,7 @@ export function UserAuthForm({
             </FormItem>
           )}
         />
-        {isCaptchaEnabled ? (
+        {isCaptchaEnabled || captchaError ? (
           <FormField
             control={form.control}
             name='captcha_code'
@@ -266,7 +267,7 @@ export function UserAuthForm({
         ) : null}
         <V3Button
           className='mt-1 h-12 text-base'
-          disabled={isLoading || isCaptchaLoading || (!captcha && isCaptchaEnabled)}
+          disabled={isLoading || isCaptchaLoading || isCaptchaUnavailable}
           type='submit'
         >
           {isLoading ? (

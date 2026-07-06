@@ -21,6 +21,15 @@
 - Web tests must run through `corepack pnpm --filter ./apps/web run test`, not direct `npx vitest`.
 - Visible UI completion requires Chrome/browser verification against the actual app route. If the app is wired to real APIs, verify Web talks to current Control Plane; mock-only evidence is not real-chain proof.
 
+## Known Boundaries (First Pass)
+
+These are accepted limitations of this pass. Do not silently "fix" them mid-implementation; if one becomes blocking, surface it to the human owner.
+
+- **Capacity guard is service-level, not a DB constraint.** It is a read-then-check before write: concurrent creations can still race past 10, and assignment paths outside `CreateTeam` / `CreateDigitalEmployee` (for example the in-progress team-lending flows, or direct repository-level assignment) are not guarded. State this in the PR description.
+- **Overview query uses `limit=100`.** Tenants with more than 100 digital employees get truncated map data: seat assignment, `overCapacity`, and `capacityUsed` are computed from fetched items only (`employeeCount: items.length || team.digital_employee_count` falls back to the team count only when a team has zero fetched items). Acceptable for current dev-scale data.
+- **Floor slots support at most 13 teams (6 + 4 + 3).** Teams beyond the 13th are appended to floor-3's `teamIds` but get no workspace, so their employees do not appear on the map. The table view remains complete.
+- **Seat assignment is stable by API item order.** The adapter must not sort employees by status when assigning seats, otherwise avatars jump between desks on every poll; status is shown on the avatar badge only.
+
 ## File Structure
 
 ### Web Feature
@@ -515,16 +524,6 @@ type BuildRuntimeOverviewInput = {
   teams: TeamListItem[];
 };
 
-const statusOrder: DigitalEmployeeOperationalStatus[] = [
-  "error",
-  "working",
-  "waiting_human",
-  "queued",
-  "idle",
-  "unavailable",
-  "needs_configuration",
-];
-
 export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeOverviewDTO {
   const activeTeams = input.teams.filter((team) => team.status === "active");
   const teamIdsByFloor = distributeTeamsByFloor(activeTeams);
@@ -591,13 +590,15 @@ function distributeTeamsByFloor(teams: TeamListItem[]): Record<RuntimeOverviewFl
   return floors;
 }
 
+// Seat assignment must stay stable across polls: keep API item order and never
+// sort by status, otherwise avatars jump between desks whenever a status changes.
+// Status is reflected on the avatar badge only.
 function groupEmployeesByTeam(items: DigitalEmployeeOverviewItem[]) {
   const grouped = new Map<string, DigitalEmployeeOverviewItem[]>();
   for (const item of items) {
     const teamId = item.identity_summary.team_id ?? "unassigned";
     const current = grouped.get(teamId) ?? [];
     current.push(item);
-    current.sort((left, right) => statusOrder.indexOf(left.operational_state.status) - statusOrder.indexOf(right.operational_state.status));
     grouped.set(teamId, current);
   }
   return grouped;
@@ -745,10 +746,12 @@ describe("RunOverviewView", () => {
     const screen = await renderPage(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "运行总览" })).toBeVisible();
-    await expect.element(screen.getByText("开发团队")).toBeVisible();
-    await expect.element(screen.getByText("运维团队")).toBeVisible();
-    await expect.element(screen.getByText("高秀英")).toBeVisible();
-    await expect.element(screen.getByText("容量 2/10")).toBeVisible();
+    // Task 3/4 会在地图卡片、工位 sr-only 文本等多处渲染团队名与容量文案，
+    // 统一用 .first() 让这些断言在后续任务阶段保持稳定。
+    await expect.element(screen.getByText("开发团队").first()).toBeVisible();
+    await expect.element(screen.getByText("运维团队").first()).toBeVisible();
+    await expect.element(screen.getByText("高秀英").first()).toBeVisible();
+    await expect.element(screen.getByText("容量 2/10").first()).toBeVisible();
     expect(requests.some((request) => request.pathname === "/api/v1/digital-employees/overview")).toBe(true);
     expect(requests.some((request) => request.pathname === "/api/v1/teams")).toBe(true);
   });
@@ -781,7 +784,7 @@ export const teamListFixture: TeamListItem[] = [
     name: "开发团队",
     status: "active",
     member_count: 2,
-    digital_employee_count: 2,
+    digital_employee_count: 3,
     capability_count: 3,
     governance_status: "active",
     pending_draft_count: 0,
@@ -802,21 +805,23 @@ export const teamListFixture: TeamListItem[] = [
   },
 ];
 
+// 两个团队的员工数刻意不同（dev=3、ops=2），保证“容量 x/10”之类的文案
+// 在页面上不会出现完全相同的重复文本，避免 locator 严格模式多匹配。
 export const digitalEmployeeOverviewFixture: DigitalEmployeeOverview = {
   summary: {
-    total_count: 4,
-    runnable_count: 4,
+    total_count: 5,
+    runnable_count: 5,
     running_count: 2,
     waiting_runtime_count: 0,
     error_count: 0,
     high_risk_count: 1,
-    ready_count: 4,
+    ready_count: 5,
     pending_runtime_binding_count: 0,
     pending_config_approval_count: 0,
     failed_recent_run_count: 0,
     operational_status_counts: {
       working: 2,
-      idle: 1,
+      idle: 2,
       waiting_human: 1,
     },
   },
@@ -835,12 +840,13 @@ export const digitalEmployeeOverviewFixture: DigitalEmployeeOverview = {
     execution_statuses: [],
     run_statuses: [],
   },
-  pagination: { limit: 100, offset: 0, total_count: 4 },
+  pagination: { limit: 100, offset: 0, total_count: 5 },
   items: [
     employee("emp-ops-1", "高秀英", "运维工程师 AI", "team-ops", "运维团队", "working", "排查线上告警并生成修复计划"),
     employee("emp-ops-2", "罗明", "发布工程师 AI", "team-ops", "运维团队", "waiting_human", "等待发布窗口确认"),
     employee("emp-dev-1", "陆一鸣", "前端工程师 AI", "team-dev", "开发团队", "working", "实现运行态组件"),
     employee("emp-dev-2", "沈嘉", "后端工程师 AI", "team-dev", "开发团队", "idle"),
+    employee("emp-dev-3", "许静", "数据工程师 AI", "team-dev", "开发团队", "idle"),
   ],
 };
 
@@ -894,7 +900,9 @@ function employee(
     },
     workbench_status: "ready",
     operational_state: { status, reasons: [], can_dispatch: status !== "waiting_human" },
-    recent_events: [{ label: title || "暂无任务", status, occurred_at: "2026-07-05T10:00:00Z" }],
+    // 事件标签刻意与任务标题不同：侧栏会同时渲染“当前任务”和事件列表，
+    // 两处出现相同文本会触发 locator 严格模式多匹配。
+    recent_events: [{ label: title ? "已领取任务" : "暂无任务", status, occurred_at: "2026-07-05T10:00:00Z" }],
     latest_run_summary: title ? {
       run_id: `${id}-run`,
       task_id: `${id}-task`,
@@ -1321,7 +1329,9 @@ export function RuntimeMapStage({ activeFloorId, onSelectEmployee, overview, sel
     <section className="overflow-hidden rounded-[22px] border border-v3-line bg-[#f8fafc] shadow-v3-card" aria-label="运行总览地图画布">
       <div ref={containerRef} className="relative aspect-[1200/760] min-h-[520px] w-full">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,#ffffff_0%,#f4f7fb_55%,#eef3f8_100%)]" />
-        <RuntimeMapSvgLayer floor={floor} selectedTeamId={selectedEmployee?.teamId} />
+        {/* SVG 层必须与 HTML 工位层同处一个被缩放的 wrapper 内，共用同一 transform。
+            若 SVG 单独随容器 viewBox 缩放而 HTML 层被 clamp，两层在容器宽度
+            超出 [696, 1200] 区间时会错位。 */}
         <div
           className="absolute left-1/2 top-1/2 origin-center"
           style={{
@@ -1330,6 +1340,7 @@ export function RuntimeMapStage({ activeFloorId, onSelectEmployee, overview, sel
             transform: `translate(-50%, -50%) scale(${scale})`,
           }}
         >
+          <RuntimeMapSvgLayer floor={floor} selectedTeamId={selectedEmployee?.teamId} />
           {floor.layout.teamWorkspaces.map((workspace) => {
             const team = overview.teams.find((item) => item.teamId === workspace.teamId);
             if (!team) return null;
@@ -1405,8 +1416,10 @@ Add to `apps/web/src/features/run-overview/index.test.tsx`:
     await expect.element(screen.getByText("排查线上告警并生成修复计划")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "表格视图" }));
-    await expect.element(screen.getByRole("table", { name: "运行总览表格" })).toBeVisible();
-    await expect.element(screen.getByText("运维工程师 AI")).toBeVisible();
+    const table = screen.getByRole("table", { name: "运行总览表格" });
+    await expect.element(table).toBeVisible();
+    // 侧栏同时显示选中员工的角色文案，作用域限定到表格内避免多匹配。
+    await expect.element(table.getByText("运维工程师 AI")).toBeVisible();
   });
 ```
 
@@ -1699,7 +1712,7 @@ func TestCreateDigitalEmployeeRejectsFullTeam(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
 	repo.overviewTotalCountByTeam[*req.TeamID] = maxDigitalEmployeesPerTeam
 
-	_, err = svc.CreateDigitalEmployee(context.Background(), CreateDigitalEmployeeRequest{
+	_, err := svc.CreateDigitalEmployee(context.Background(), CreateDigitalEmployeeRequest{
 		TenantID:      req.TenantID,
 		TeamID:        req.TeamID,
 		OwnerUserID:   req.OwnerUserID,
@@ -1725,21 +1738,22 @@ Extend the existing `memoryRepository` test fixture in the same file:
 ```go
 type memoryRepository struct {
 	// existing fields...
-	overviewTotalCountByTeam map[uuid.UUID]int
+	// int32 匹配 OverviewPagination.TotalCount 的字段类型，避免赋值时的类型转换。
+	overviewTotalCountByTeam map[uuid.UUID]int32
 }
 ```
 
 Initialize it in `newMemoryRepository`:
 
 ```go
-overviewTotalCountByTeam: make(map[uuid.UUID]int),
+overviewTotalCountByTeam: make(map[uuid.UUID]int32),
 ```
 
 Update the existing `GetDigitalEmployeeOverview` method on `memoryRepository`:
 
 ```go
 func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
-	totalCount := 0
+	var totalCount int32
 	if req.TeamID != nil {
 		totalCount = r.overviewTotalCountByTeam[*req.TeamID]
 	}

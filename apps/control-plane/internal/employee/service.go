@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/skill"
+	"github.com/superteam/control-plane/internal/tenant"
 )
 
 type SkillLister interface {
@@ -482,6 +483,9 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		if err := s.repository.EnsureTeamExists(ctx, normalized.TenantID, teamID); err != nil {
 			return nil, fmt.Errorf("get team: %w", err)
 		}
+		if err := s.ensureTeamDigitalEmployeeCapacity(ctx, normalized.TenantID, teamID); err != nil {
+			return nil, err
+		}
 		loaded, err := s.repository.GetCurrentTeamConfigRevision(ctx, normalized.TenantID, teamID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
@@ -514,6 +518,21 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 	}
 
 	return employeeFromRecord(record), nil
+}
+
+func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantID, teamID uuid.UUID) error {
+	overview, err := s.repository.GetDigitalEmployeeOverview(ctx, GetDigitalEmployeeOverviewRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Limit:    1,
+	})
+	if err != nil {
+		return fmt.Errorf("get digital employee overview: %w", err)
+	}
+	if overview.Pagination.TotalCount >= tenant.MaxDigitalEmployeesPerTeam {
+		return fmt.Errorf("%w: digital employee capacity exceeded", ErrInvalidInput)
+	}
+	return nil
 }
 
 func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (CreateDigitalEmployeeRequest, EmployeeTypeDefinition, error) {
