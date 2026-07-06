@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>数字员工 · 沉浸画廊 · SuperTeam</title>
+<style>
+/* ============================================================
+   方向 C · 沉浸画廊（Immersive Gallery · Figma/Airbnb 风）
+   玻璃化状态带 + 浮动玻璃筛选 + 4 列头像优先卡 + 侧滑抽屉
+   适合：强调数字员工"身份感"与品牌识别
+   数据源：DigitalEmployeeOverview
+   ============================================================ */
+:root{
+  --v3-bg:#f8fafc; --v3-card:#ffffff; --v3-card-soft:#f7f8fa; --v3-card-inner:#fafbfc;
+  --v3-ink:#0b0d12; --v3-ink-2:#4d586b; --v3-ink-3:#6d7580;
+  --v3-line:#eef1f4; --v3-line-strong:#dfe4ea;
+  --v3-brand:#2f5fff; --v3-brand-deep:#2348e0; --v3-brand-soft:#e9efff;
+  --v3-info:#0094b7; --v3-info-text:#00617d; --v3-info-soft:#def8fe;
+  --v3-ok:#009a60; --v3-ok-text:#006639; --v3-ok-soft:#e3f9ec;
+  --v3-warn:#bb6900; --v3-warn-text:#7f3f00; --v3-warn-soft:#ffefdf;
+  --v3-danger:#d14647; --v3-danger-text:#8a2f2d; --v3-danger-soft:#ffece9;
+  --v3-artifact:#9565c7; --v3-artifact-text:#633d89; --v3-artifact-soft:#f7eeff;
+  --v3-mute:#64748b; --v3-mute-text:#4d586b; --v3-mute-soft:#eef1f4;
+  --r-card:1.375rem; --r-inner:0.875rem;
+  --shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+  --shadow-pop:0 10px 44px rgba(16,24,40,0.12);
+  --shadow-drawer:0 24px 60px rgba(16,24,40,0.18), 0 2px 6px rgba(16,24,40,0.08);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--v3-bg);color:var(--v3-ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;
+  background-image:radial-gradient(circle at 12% 8%,rgba(91,139,255,.05),transparent 35%),radial-gradient(circle at 88% 4%,rgba(149,101,199,.04),transparent 32%);
+  background-attachment:fixed;min-height:100vh;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--v3-line-strong);border-radius:6px;}
+button{font-family:inherit;}
+
+/* Topbar - 玻璃态 */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;padding:12px 28px;background:rgba(248,250,252,.78);backdrop-filter:blur(22px) saturate(1.4);border-bottom:1px solid rgba(126,143,172,.16);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14.5px;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 4px 14px rgba(47,95,255,.3);}
+.nav{display:flex;gap:3px;margin-left:14px;}
+.nav a{padding:7px 12px;border-radius:9px;color:var(--v3-ink-2);font-size:13px;font-weight:550;text-decoration:none;cursor:pointer;}
+.nav a.on{color:var(--v3-brand-deep);background:var(--v3-brand-soft);font-weight:650;}
+.grow{flex:1;}
+.globalsearch{display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.7);border:1px solid rgba(126,143,172,.18);min-width:240px;color:var(--v3-ink-3);font-size:12.5px;box-shadow:0 2px 10px rgba(16,24,40,.04);}
+.globalsearch svg{width:15px;height:15px;}
+.globalsearch .kbd{margin-left:auto;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.6);border:1px solid rgba(126,143,172,.18);font-family:var(--mono);font-size:10.5px;color:var(--v3-ink-3);}
+.me{display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:13px;background:rgba(255,255,255,.7);box-shadow:0 2px 10px rgba(16,24,40,.04);border:1px solid rgba(126,143,172,.18);}
+.me .pic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+
+/* Wrap */
+.wrap{max-width:1480px;margin:0 auto;padding:24px 28px 60px;}
+
+/* Page Head - 大尺寸视觉感 */
+.pagehead{display:flex;align-items:flex-start;gap:18px;margin-bottom:24px;flex-wrap:wrap;}
+.pagehead .ic{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;color:#fff;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 10px 24px rgba(47,95,255,.3);}
+.pagehead .ic svg{width:24px;height:24px;}
+.pagehead h1{font-size:26px;font-weight:800;letter-spacing:-.025em;line-height:1.15;}
+.pagehead .sub{font-size:13px;color:var(--v3-ink-2);margin-top:5px;}
+.pagehead .actions{margin-left:auto;display:flex;gap:10px;align-items:center;}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:inherit;}
+.btn.primary{background:var(--v3-brand);color:#fff;box-shadow:0 4px 14px rgba(47,95,255,.28);}
+.btn.primary:hover{background:var(--v3-brand-deep);box-shadow:0 6px 18px rgba(47,95,255,.36);}
+.btn.outline{background:rgba(255,255,255,.8);color:var(--v3-ink);border-color:var(--v3-line-strong);box-shadow:var(--shadow);}
+.btn.outline:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.btn svg{width:15px;height:15px;}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px;}
+
+/* === 视觉化状态带（带 sparkline 迷你趋势） === */
+.trend-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
+.trend-card{position:relative;padding:15px 18px;background:rgba(255,255,255,.78);backdrop-filter:blur(14px) saturate(1.2);border:1px solid rgba(126,143,172,.16);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;cursor:pointer;transition:all .2s;}
+.trend-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);border-color:rgba(47,95,255,.32);}
+.trend-card .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.trend-card .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;}
+.trend-card .ic.ok{background:var(--v3-ok-soft);color:var(--v3-ok);}
+.trend-card .ic.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.trend-card .ic.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.trend-card .ic.artifact{background:var(--v3-artifact-soft);color:var(--v3-artifact);}
+.trend-card .ic.brand{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.trend-card .ic svg{width:15px;height:15px;}
+.trend-card .badge{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--v3-ok-soft);color:var(--v3-ok-text);}
+.trend-card .badge.warn{background:var(--v3-warn-soft);color:var(--v3-warn-text);}
+.trend-card .badge.danger{background:var(--v3-danger-soft);color:var(--v3-danger-text);}
+.trend-card .n{font-size:24px;font-weight:800;letter-spacing:-.025em;line-height:1;font-variant-numeric:tabular-nums;color:var(--v3-ink);}
+.trend-card .n.danger{color:var(--v3-danger);}
+.trend-card .n.warn{color:var(--v3-warn);}
+.trend-card .l{font-size:11.5px;color:var(--v3-ink-2);font-weight:600;margin-top:4px;}
+.trend-card .spark{margin-top:8px;height:18px;}
+.trend-card .spark svg{width:100%;height:100%;display:block;}
+@media(max-width:1100px){.trend-strip{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:680px){.trend-strip{grid-template-columns:repeat(2,1fr);}}
+
+/* === 浮动玻璃筛选 === */
+.filter-glass{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;padding:14px 16px;background:rgba(255,255,255,.7);backdrop-filter:blur(18px) saturate(1.3);border:1px solid rgba(126,143,172,.18);border-radius:16px;box-shadow:0 4px 20px rgba(16,24,40,.05);}
+.search-input{position:relative;flex:1.4;min-width:240px;}
+.search-input svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--v3-ink-3);pointer-events:none;}
+.search-input input{width:100%;padding:10px 14px 10px 34px;border-radius:11px;border:1px solid rgba(126,143,172,.2);background:rgba(255,255,255,.85);font-size:13px;color:var(--v3-ink);font-family:inherit;outline:none;transition:all .18s;}
+.search-input input:focus{border-color:var(--v3-brand);background:#fff;box-shadow:0 0 0 4px rgba(47,95,255,.12);}
+.search-input input::placeholder{color:var(--v3-ink-3);}
+.seg-tabs{display:inline-flex;gap:2px;background:rgba(247,248,250,.8);border:1px solid rgba(126,143,172,.16);border-radius:10px;padding:3px;}
+.seg-tabs button{padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;border:none;background:transparent;transition:all .15s;display:flex;align-items:center;gap:5px;}
+.seg-tabs button.on{background:#fff;color:var(--v3-brand-deep);box-shadow:0 1px 4px rgba(16,24,40,.08);}
+.seg-tabs .ct{font-family:var(--mono);font-size:10.5px;padding:1px 5px;border-radius:4px;background:rgba(47,95,255,.12);color:var(--v3-brand-deep);}
+.seg-tabs button.on .ct{background:rgba(47,95,255,.2);}
+.divider{width:1px;height:24px;background:rgba(126,143,172,.18);margin:0 4px;}
+.glass-chip{display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:9px;background:rgba(255,255,255,.6);border:1px solid rgba(126,143,172,.18);font-size:12.5px;color:var(--v3-ink-2);cursor:pointer;font-weight:550;transition:all .15s;}
+.glass-chip:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);background:rgba(255,255,255,.9);}
+.glass-chip.on{background:var(--v3-brand-soft);border-color:var(--v3-brand);color:var(--v3-brand-deep);font-weight:650;}
+.glass-chip svg{width:13px;height:13px;}
+.sort-btn{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;background:rgba(255,255,255,.6);border:1px solid rgba(126,143,172,.18);font-size:12.5px;color:var(--v3-ink-2);cursor:pointer;font-weight:550;}
+.sort-btn:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.sort-btn svg{width:13px;height:13px;}
+
+/* === 网格 === */
+.grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:16px;}
+@media(min-width:640px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}}
+@media(min-width:1024px){.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}}
+@media(min-width:1280px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;}}
+@media(min-width:1536px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;}}
+
+/* === 头像优先卡 === */
+.card{position:relative;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:20px;padding:18px;cursor:pointer;transition:all .22s cubic-bezier(.4,0,.2,1);min-height:242px;display:flex;flex-direction:column;box-shadow:var(--shadow);overflow:hidden;}
+.card::before{content:"";position:absolute;inset:0;border-radius:20px;padding:1px;background:linear-gradient(140deg,rgba(91,139,255,0) 0%,rgba(91,139,255,.12) 50%,rgba(91,139,255,0) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .22s;pointer-events:none;}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow-pop);border-color:rgba(47,95,255,.32);}
+.card:hover::before{opacity:1;}
+.card.sel{border-color:var(--v3-brand);box-shadow:0 0 0 2px rgba(47,95,255,.18),var(--shadow-pop);}
+.card.sel::before{opacity:1;background:linear-gradient(140deg,rgba(91,139,255,.2) 0%,rgba(91,139,255,.35) 50%,rgba(91,139,255,.2) 100%);}
+
+.card-head{display:flex;flex-direction:column;align-items:center;gap:9px;margin-bottom:13px;padding-bottom:13px;border-bottom:1px solid var(--v3-line);}
+.avatar-wrap{position:relative;width:54px;height:54px;}
+.avatar{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 16px rgba(16,24,40,.12);}
+.avatar.a1{background:linear-gradient(140deg,#5b8bff,#2348e0);}
+.avatar.a2{background:linear-gradient(140deg,#7c5cff,#a78bfa);}
+.avatar.a3{background:linear-gradient(140deg,#00c2a8,#0094b7);}
+.avatar.a4{background:linear-gradient(140deg,#ff8a5b,#ff5b8a);}
+.avatar.a5{background:linear-gradient(140deg,#a8c060,#5a8a3a);}
+.status-ring{position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:3px solid var(--v3-card);display:grid;place-items:center;}
+.status-ring.ok{background:var(--v3-ok);}
+.status-ring.info{background:var(--v3-info);}
+.status-ring.warn{background:var(--v3-warn);}
+.status-ring.danger{background:var(--v3-danger);}
+.status-ring.mute{background:var(--v3-mute);}
+.card-name{text-align:center;width:100%;}
+.card-name .nm{font-size:14px;font-weight:700;color:var(--v3-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.role-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;background:var(--v3-card-soft);border:1px solid var(--v3-line);font-size:10.5px;font-weight:600;color:var(--v3-ink-2);margin-top:5px;}
+.role-badge svg{width:10px;height:10px;}
+
+.card-body{display:flex;flex-direction:column;gap:9px;flex:1;}
+.body-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;}
+.body-row .k{color:var(--v3-ink-3);font-weight:500;display:flex;align-items:center;gap:6px;font-size:11.5px;}
+.body-row .k svg{width:12px;height:12px;}
+.body-row .v{font-weight:600;color:var(--v3-ink);text-align:right;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.body-row .v.ok{color:var(--v3-ok-text);}
+.body-row .v.danger{color:var(--v3-danger-text);}
+.body-row .v.mono{font-family:var(--mono);font-size:11.5px;}
+
+.budget-section{margin-top:auto;padding-top:11px;border-top:1px solid var(--v3-line);}
+.budget-head{display:flex;justify-content:space-between;font-size:11px;color:var(--v3-ink-3);margin-bottom:5px;font-variant-numeric:tabular-nums;}
+.budget-head b{color:var(--v3-ink);font-weight:700;}
+.budget-bar{height:5px;border-radius:3px;background:var(--v3-line);overflow:hidden;position:relative;}
+.budget-bar .fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#5b8bff,#2f5fff);transition:width .3s;}
+.budget-bar .fill.warn{background:linear-gradient(90deg,#f0a64a,#bb6900);}
+.budget-bar .fill.danger{background:linear-gradient(90deg,#e88080,#d14647);}
+
+/* Pagination */
+.pager{display:flex;align-items:center;justify-content:space-between;margin-top:22px;padding:13px 17px;background:rgba(255,255,255,.78);backdrop-filter:blur(14px) saturate(1.2);border:1px solid rgba(126,143,172,.16);border-radius:14px;box-shadow:var(--shadow);flex-wrap:wrap;gap:10px;}
+.pager .info{font-size:12.5px;color:var(--v3-ink-2);}
+.pager .info b{color:var(--v3-ink);font-weight:700;font-variant-numeric:tabular-nums;}
+.pager .right{display:flex;align-items:center;gap:10px;}
+.pager .sz{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--v3-ink-3);}
+.pager .sz select{padding:6px 10px;border-radius:8px;border:1px solid var(--v3-line-strong);background:var(--v3-card);font-size:12.5px;font-weight:600;color:var(--v3-ink);cursor:pointer;}
+.pg-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--v3-line-strong);background:var(--v3-card);color:var(--v3-ink);cursor:pointer;display:grid;place-items:center;}
+.pg-btn:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.pg-btn:disabled{opacity:.4;cursor:not-allowed;}
+.pg-btn svg{width:14px;height:14px;}
+
+/* Hint banner */
+.hint{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;background:linear-gradient(135deg,rgba(233,239,255,.7),rgba(247,238,255,.5));color:var(--v3-brand-deep);font-size:12px;margin-bottom:18px;border:1px solid rgba(47,95,255,.16);}
+.hint svg{width:14px;height:14px;flex-shrink:0;}
+.hint b{font-weight:700;}
+
+/* Drawer */
+.drawer-mask{position:fixed;inset:0;background:rgba(11,13,18,.36);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .22s;z-index:80;}
+.drawer-mask.open{opacity:1;pointer-events:auto;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;background:var(--v3-card);box-shadow:var(--shadow-drawer);transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);z-index:90;display:flex;flex-direction:column;}
+.drawer.open{transform:translateX(0);}
+.drawer-head{display:flex;flex-direction:column;align-items:center;gap:10px;padding:24px 22px 18px;border-bottom:1px solid var(--v3-line);background:linear-gradient(180deg,rgba(233,239,255,.5),rgba(255,255,255,0));position:relative;}
+.drawer-close{position:absolute;top:14px;right:14px;padding:7px;border-radius:8px;border:none;background:rgba(255,255,255,.6);cursor:pointer;color:var(--v3-ink-3);}
+.drawer-close:hover{background:var(--v3-card-soft);color:var(--v3-ink);}
+.drawer-close svg{width:17px;height:17px;}
+.drawer-av-wrap{position:relative;}
+.drawer-av{width:64px;height:64px;border-radius:18px;display:grid;place-items:center;color:#fff;font-size:22px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2348e0);box-shadow:0 8px 22px rgba(47,95,255,.3);}
+.drawer-status-ring{position:absolute;bottom:-2px;right:-2px;width:22px;height:22px;border-radius:50%;border:4px solid var(--v3-card);background:var(--v3-ok);}
+.drawer-head .nm{font-size:18px;font-weight:800;}
+.drawer-head .rl{font-size:12.5px;color:var(--v3-ink-2);}
+.drawer-body{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:18px;}
+.dr-section h3{font-size:11px;font-weight:700;color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+.dr-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dr-meta-item{padding:12px 14px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:11px;}
+.dr-meta-item .k{font-size:11px;color:var(--v3-ink-3);font-weight:600;}
+.dr-meta-item .v{font-size:13.5px;font-weight:700;color:var(--v3-ink);margin-top:3px;}
+.dr-events{display:flex;flex-direction:column;gap:10px;}
+.dr-event{display:flex;gap:10px;align-items:flex-start;}
+.dr-event .dt{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+.dr-event .dt.ok{background:var(--v3-ok);}
+.dr-event .dt.brand{background:var(--v3-brand);}
+.dr-event .dt.danger{background:var(--v3-danger);}
+.dr-event .ct{flex:1;min-width:0;}
+.dr-event .lb{font-size:12.5px;color:var(--v3-ink);}
+.dr-event .tm{font-size:11px;color:var(--v3-ink-3);margin-top:2px;}
+.drawer-foot{padding:15px 22px;border-top:1px solid var(--v3-line);display:flex;gap:10px;}
+.drawer-foot .btn{flex:1;justify-content:center;}
+
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="mk">矩</div><span>SuperTeam</span></div>
+  <nav class="nav">
+    <a>项目</a><a>流程</a><a class="on">数字员工</a><a>技能</a><a>审批</a><a>审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="globalsearch">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <span>搜索员工、任务、项目…</span>
+    <span class="kbd">⌘K</span>
+  </div>
+  <div class="me"><div class="pic">T</div><span style="font-size:12.5px;font-weight:600;">Tinker</span></div>
+</div>
+
+<div class="wrap">
+
+  <!-- Page Head -->
+  <div class="pagehead">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></div>
+    <div>
+      <h1>数字员工</h1>
+      <div class="sub">业务身份、执行实例和运行状态 · 14 名员工 · 6 在线工作</div>
+    </div>
+    <div class="actions">
+      <button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>模板管理</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>创建数字员工</button>
+    </div>
+  </div>
+
+  <!-- 视觉化状态带 + sparkline -->
+  <div class="trend-strip">
+    <div class="trend-card">
+      <div class="top">
+        <div class="ic ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div class="badge">+2 本周</div>
+      </div>
+      <div class="n">8</div>
+      <div class="l">就绪</div>
+      <div class="spark"><svg viewBox="0 0 80 18" preserveAspectRatio="none"><polyline points="0,12 12,10 24,11 36,7 48,9 60,5 72,4 80,3" fill="none" stroke="#009a60" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="trend-card">
+      <div class="top">
+        <div class="ic warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 13a5 5 0 0 1 7-7"/><path d="M14 11a5 5 0 0 1-7 7"/><path d="M14 4v3h3M10 20v-3H7"/></svg></div>
+        <div class="badge warn">2 待处理</div>
+      </div>
+      <div class="n warn">2</div>
+      <div class="l">待绑定</div>
+      <div class="spark"><svg viewBox="0 0 80 18" preserveAspectRatio="none"><polyline points="0,14 12,12 24,13 36,10 48,8 60,7 72,5 80,4" fill="none" stroke="#bb6900" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="trend-card">
+      <div class="top">
+        <div class="ic danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        <div class="badge danger">需介入</div>
+      </div>
+      <div class="n danger">1</div>
+      <div class="l">异常</div>
+      <div class="spark"><svg viewBox="0 0 80 18" preserveAspectRatio="none"><polyline points="0,14 12,13 24,14 36,12 48,11 60,8 72,5 80,2" fill="none" stroke="#d14647" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="trend-card">
+      <div class="top">
+        <div class="ic artifact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <div class="badge">3 待审批</div>
+      </div>
+      <div class="n">3</div>
+      <div class="l">配置待审批</div>
+      <div class="spark"><svg viewBox="0 0 80 18" preserveAspectRatio="none"><polyline points="0,9 12,10 24,8 36,9 48,7 60,8 72,6 80,5" fill="none" stroke="#9565c7" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="trend-card">
+      <div class="top">
+        <div class="ic brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></div>
+        <div class="badge danger">需复盘</div>
+      </div>
+      <div class="n">2</div>
+      <div class="l">运行失败</div>
+      <div class="spark"><svg viewBox="0 0 80 18" preserveAspectRatio="none"><polyline points="0,10 12,9 24,11 36,8 48,9 60,7 72,6 80,5" fill="none" stroke="#2f5fff" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    </div>
+  </div>
+
+  <!-- 提示带 -->
+  <div class="hint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <span><b>方向 C · 沉浸画廊</b> · 玻璃化状态卡带 sparkline 趋势 + 浮动玻璃筛选面板 + 4 列头像优先卡（状态环 + 渐变边框），点击卡片右侧抽屉滑入。</span>
+  </div>
+
+  <!-- 浮动玻璃筛选 -->
+  <div class="filter-glass">
+    <div class="search-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input placeholder="搜索员工名称、角色、任务…" />
+    </div>
+    <div class="seg-tabs">
+      <button class="on">全部 <span class="ct">14</span></button>
+      <button>就绪 <span class="ct">8</span></button>
+      <button>工作中 <span class="ct">3</span></button>
+      <button>异常 <span class="ct">1</span></button>
+    </div>
+    <div class="divider"></div>
+    <div class="glass-chip on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>Provider</div>
+    <div class="glass-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>团队</div>
+    <div class="glass-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>风险</div>
+    <div class="divider"></div>
+    <button class="sort-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M7 12h10M11 18h2"/></svg>最近活动<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+  </div>
+
+  <!-- 网格 -->
+  <div class="grid">
+
+    <article class="card sel" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a1">研</div>
+          <div class="status-ring ok"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">研究分析师 · Lin</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>研究员 · 增长组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Claude Code</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v ok">成功 · 12 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v3 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>38.2K</b> / 200K · 19%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:19%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a2">代</div>
+          <div class="status-ring info"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">代码评审员 · Aria</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>评审员 · 平台组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Codex</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">进行中 · 3 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v7 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>124K</b> / 200K · 62%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:62%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a3">数</div>
+          <div class="status-ring warn"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">数据工程师 · Kai</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>工程师 · 数据组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">未绑定</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">—</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v1 · 待审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span>无上限</span></div>
+        <div class="budget-bar"><div class="fill" style="width:0%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a4">文</div>
+          <div class="status-ring danger"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">文档撰写员 · Mia</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>撰写员 · 内容组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">OpenCode</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v danger">失败 · 1 小时前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v2 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>187K</b> / 200K · 94%</span></div>
+        <div class="budget-bar"><div class="fill danger" style="width:94%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a5">测</div>
+          <div class="status-ring ok"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">测试工程师 · Bo</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>测试员 · 质量组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Claude Code</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v ok">成功 · 2 小时前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v5 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>42K</b> / 200K · 21%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:21%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a1">产</div>
+          <div class="status-ring info"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">产品分析师 · Zoe</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>分析师 · 增长组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Claude Code</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">进行中 · 7 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v4 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>78K</b> / 200K · 39%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:39%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a2">设</div>
+          <div class="status-ring mute"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">设计助手 · Ren</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>设计师 · 体验组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">未绑定</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">—</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v1 · 待配置</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span>无上限</span></div>
+        <div class="budget-bar"><div class="fill" style="width:0%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a3">运</div>
+          <div class="status-ring warn"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">运维巡检员 · Max</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>运维 · SRE 组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Codex</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">排队中 · 4 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v6 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>96K</b> / 200K · 48%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:48%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a4">安</div>
+          <div class="status-ring ok"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">安全审计员 · Ivy</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>审计员 · 安全组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Claude Code</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v ok">成功 · 30 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v8 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>54K</b> / 200K · 27%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:27%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a5">翻</div>
+          <div class="status-ring info"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">翻译专员 · Yan</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>翻译 · 内容组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">OpenCode</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">进行中 · 刚刚</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v3 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>112K</b> / 200K · 56%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:56%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a1">问</div>
+          <div class="status-ring warn"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">问答助理 · Eli</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>助理 · 服务组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Claude Code</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v">待确认 · 6 分钟前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v2 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>61K</b> / 200K · 31%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:31%"></div></div>
+      </div>
+    </article>
+
+    <article class="card" onclick="openDrawer(this)">
+      <div class="card-head">
+        <div class="avatar-wrap">
+          <div class="avatar a2">架</div>
+          <div class="status-ring ok"></div>
+        </div>
+        <div class="card-name">
+          <div class="nm">架构师 · Sam</div>
+          <div class="role-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>架构师 · 平台组</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Provider</span><span class="v">Codex</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>最近运行</span><span class="v ok">成功 · 4 小时前</span></div>
+        <div class="body-row"><span class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>配置</span><span class="v mono">v9 · 已审批</span></div>
+      </div>
+      <div class="budget-section">
+        <div class="budget-head"><span>Token 预算</span><span><b>23K</b> / 200K · 12%</span></div>
+        <div class="budget-bar"><div class="fill" style="width:12%"></div></div>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- 分页 -->
+  <div class="pager">
+    <div class="info">第 <b>1-12</b> 条，共 <b>14</b> 个</div>
+    <div class="right">
+      <div class="sz">每页 <select><option>12</option><option>24</option><option>48</option></select></div>
+      <button class="pg-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+      <button class="pg-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Drawer -->
+<div class="drawer-mask" id="mask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <button class="drawer-close" onclick="closeDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <div class="drawer-av-wrap">
+      <div class="drawer-av">研</div>
+      <div class="drawer-status-ring"></div>
+    </div>
+    <div class="nm">研究分析师 · Lin</div>
+    <div class="rl">研究员 · 增长组 · 空闲</div>
+  </div>
+  <div class="drawer-body">
+    <div class="dr-section">
+      <h3>执行环境</h3>
+      <div class="dr-meta-grid">
+        <div class="dr-meta-item"><div class="k">Provider</div><div class="v">Claude Code</div></div>
+        <div class="dr-meta-item"><div class="k">Runtime</div><div class="v">dev-node-01</div></div>
+        <div class="dr-meta-item"><div class="k">工作台</div><div class="v">就绪</div></div>
+        <div class="dr-meta-item"><div class="k">配置版本</div><div class="v">v3 · 已审批</div></div>
+      </div>
+    </div>
+    <div class="dr-section">
+      <h3>预算与容量</h3>
+      <div class="dr-meta-grid">
+        <div class="dr-meta-item"><div class="k">今日 Token</div><div class="v">38.2K</div></div>
+        <div class="dr-meta-item"><div class="k">日上限</div><div class="v">200K</div></div>
+        <div class="dr-meta-item"><div class="k">Skills</div><div class="v">6 个</div></div>
+        <div class="dr-meta-item"><div class="k">MCP Servers</div><div class="v">2 个</div></div>
+      </div>
+    </div>
+    <div class="dr-section">
+      <h3>最近事件</h3>
+      <div class="dr-events">
+        <div class="dr-event"><div class="dt ok"></div><div class="ct"><div class="lb">任务 #4821 完成</div><div class="tm">12 分钟前</div></div></div>
+        <div class="dr-event"><div class="dt brand"></div><div class="ct"><div class="lb">开始任务 #4821：竞品分析报告</div><div class="tm">28 分钟前</div></div></div>
+        <div class="dr-event"><div class="dt ok"></div><div class="ct"><div class="lb">任务 #4820 完成</div><div class="tm">1 小时前</div></div></div>
+        <div class="dr-event"><div class="dt danger"></div><div class="ct"><div class="lb">Token 使用接近上限告警</div><div class="tm">2 小时前</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn outline">查看审计</button>
+    <button class="btn primary">查看详情</button>
+  </div>
+</aside>
+
+<script>
+function openDrawer(card){
+  document.querySelectorAll('.card').forEach(x=>x.classList.remove('sel'));
+  if(card) card.classList.add('sel');
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('mask').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('mask').classList.remove('open');
+}
+document.querySelectorAll('.seg-tabs button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.seg-tabs button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  });
+});
+document.querySelectorAll('.glass-chip').forEach(c=>{
+  c.addEventListener('click',()=>{
+    c.classList.toggle('on');
+  });
+});
+</script>
+</body>
+</html>

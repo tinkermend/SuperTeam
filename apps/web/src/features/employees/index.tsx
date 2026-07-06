@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Cpu,
   LayoutTemplate,
   Link as LinkIcon,
   Plus,
@@ -33,7 +34,6 @@ import {
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
-  V3MetricCard,
   type V3Tone,
 } from "@/components/superteam";
 import {
@@ -83,9 +83,21 @@ const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3Tone> = 
   needs_configuration: "mute",
 };
 
+/** 状态环颜色（实色圆点，用于头像右下角）。 */
+const operationalStatusRingColor: Record<DigitalEmployeeOperationalStatus, string> = {
+  working: "bg-v3-info",
+  idle: "bg-v3-ok",
+  queued: "bg-v3-warn",
+  waiting_human: "bg-v3-warn",
+  error: "bg-v3-danger",
+  unavailable: "bg-v3-mute",
+  needs_configuration: "bg-v3-mute",
+};
+
 type OperationalStatusPresentation = {
   label: string;
   tone: V3Tone;
+  ringColor: string;
 };
 
 function operationalStatusPresentation(status?: string): OperationalStatusPresentation {
@@ -93,10 +105,11 @@ function operationalStatusPresentation(status?: string): OperationalStatusPresen
     return {
       label: operationalStatusLabel[status],
       tone: operationalStatusTone[status],
+      ringColor: operationalStatusRingColor[status],
     };
   }
 
-  return { label: "状态未知", tone: "mute" };
+  return { label: "状态未知", tone: "mute", ringColor: "bg-v3-mute" };
 }
 
 function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {
@@ -197,12 +210,12 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
             </Button>
           </div>
 
-          {overview.data ? <WorkbenchMetrics overview={overview.data} /> : null}
+          {overview.data ? <GalleryTrendStrip overview={overview.data} /> : null}
 
           {overview.data ? (
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
               <div className="flex min-w-0 flex-col gap-4">
-                <EmployeeFilterPanel
+                <GalleryFilterBar
                   filters={filters}
                   filterOptions={filterOptions}
                   onFilterChange={handleFilterChange}
@@ -214,9 +227,9 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                   </SoftCard>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                    <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {items.map((item) => (
-                        <EmployeeWorkbenchCard
+                        <AvatarGalleryCard
                           key={item.identity_summary.id}
                           item={item}
                           selected={selectedItem?.identity_summary.id === item.identity_summary.id}
@@ -235,7 +248,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                 )}
               </div>
               <div className="min-w-0">
-                <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
+                <GalleryRail overview={overview.data} selectedItem={selectedItem} />
               </div>
             </div>
           ) : null}
@@ -252,6 +265,395 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
     </>
   );
 }
+
+/* ============================================================
+ * 趋势统计条（GalleryTrendStrip）
+ * 方向 C · 沉浸画廊：5 张统计卡 + 顶部品牌渐变 accent 条
+ * 不使用 sparkline（API 无历史数据源），改用 operational_status_counts
+ * 做轻量分布条。
+ * ============================================================ */
+
+function GalleryTrendStrip({ overview }: { overview: DigitalEmployeeOverview }) {
+  const statusCounts = overview.summary.operational_status_counts ?? {};
+  const totalForDistribution = Object.values(statusCounts).reduce((sum, n) => sum + (n ?? 0), 0);
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <TrendStatCard
+        icon={<Check />}
+        iconTone="ok"
+        label="就绪"
+        value={formatNumber(overview.summary.ready_count)}
+        accentGradient="from-emerald-400 to-emerald-600"
+      />
+      <TrendStatCard
+        icon={<LinkIcon />}
+        iconTone="warn"
+        label="待绑定"
+        value={formatNumber(overview.summary.pending_runtime_binding_count)}
+        accentGradient="from-amber-400 to-amber-600"
+      />
+      <TrendStatCard
+        icon={<AlertTriangle />}
+        iconTone="danger"
+        label="异常"
+        value={formatNumber(overview.summary.error_count)}
+        accentGradient="from-rose-400 to-rose-600"
+      />
+      <TrendStatCard
+        icon={<ClipboardCheck />}
+        iconTone="artifact"
+        label="配置待审批"
+        value={formatNumber(overview.summary.pending_config_approval_count)}
+        accentGradient="from-violet-400 to-violet-600"
+      />
+      <TrendStatCard
+        icon={<XCircle />}
+        iconTone="brand"
+        label="运行失败"
+        value={formatNumber(overview.summary.failed_recent_run_count)}
+        accentGradient="from-blue-400 to-blue-600"
+        distribution={
+          totalForDistribution > 0 ? (
+            <StatusDistributionBar counts={statusCounts} total={totalForDistribution} />
+          ) : null
+        }
+      />
+    </div>
+  );
+}
+
+/** 静态映射：避免 Tailwind JIT 无法识别动态拼接的 class。 */
+const toneIconText: Record<V3Tone, string> = {
+  brand: "text-v3-brand",
+  info: "text-v3-info",
+  ok: "text-v3-ok",
+  warn: "text-v3-warn",
+  danger: "text-v3-danger",
+  mute: "text-v3-mute",
+  artifact: "text-v3-artifact",
+};
+
+const toneIconSoftBg: Record<V3Tone, string> = {
+  brand: "bg-v3-brand-soft",
+  info: "bg-v3-info-soft",
+  ok: "bg-v3-ok-soft",
+  warn: "bg-v3-warn-soft",
+  danger: "bg-v3-danger-soft",
+  mute: "bg-v3-mute-soft",
+  artifact: "bg-v3-artifact-soft",
+};
+
+function TrendStatCard({
+  icon,
+  iconTone,
+  label,
+  value,
+  accentGradient,
+  distribution,
+}: {
+  icon: ReactNode;
+  iconTone: V3Tone;
+  label: string;
+  value: string;
+  accentGradient: string;
+  distribution?: ReactNode;
+}) {
+  return (
+    <div className="group relative overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-v3-pop">
+      <span
+        aria-hidden
+        className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", accentGradient)}
+      />
+      <div className="mb-2.5 flex items-center justify-between">
+        <span
+          className={cn(
+            "grid size-8 place-items-center rounded-[9px] [&_svg]:size-4",
+            toneIconText[iconTone],
+            toneIconSoftBg[iconTone],
+          )}
+        >
+          {icon}
+        </span>
+      </div>
+      <p className="text-[22px] font-extrabold leading-none tracking-tight tabular-nums text-v3-ink">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[12px] font-semibold text-v3-ink-2">{label}</p>
+      {distribution ? <div className="mt-2.5">{distribution}</div> : null}
+    </div>
+  );
+}
+
+function StatusDistributionBar({
+  counts,
+  total,
+}: {
+  counts: Partial<Record<DigitalEmployeeOperationalStatus, number>>;
+  total: number;
+}) {
+  const segments: Array<{ status: DigitalEmployeeOperationalStatus; count: number; color: string }> = [
+    { status: "idle", count: counts.idle ?? 0, color: "bg-v3-ok" },
+    { status: "working", count: counts.working ?? 0, color: "bg-v3-info" },
+    { status: "queued", count: counts.queued ?? 0, color: "bg-v3-warn" },
+    { status: "waiting_human", count: counts.waiting_human ?? 0, color: "bg-v3-warn" },
+    { status: "error", count: counts.error ?? 0, color: "bg-v3-danger" },
+    { status: "unavailable", count: counts.unavailable ?? 0, color: "bg-v3-mute" },
+    { status: "needs_configuration", count: counts.needs_configuration ?? 0, color: "bg-v3-mute" },
+  ];
+
+  const active = segments.filter((s) => s.count > 0);
+
+  if (active.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-1.5 items-center gap-0.5 overflow-hidden rounded-full">
+      {active.map((seg) => (
+        <div
+          key={seg.status}
+          className={cn("h-full rounded-full", seg.color)}
+          style={{ flexGrow: seg.count, flexBasis: 0 }}
+          title={`${operationalStatusLabel[seg.status]} ${seg.count}`}
+        />
+      ))}
+      <span className="ml-1.5 shrink-0 text-[10px] font-medium tabular-nums text-v3-ink-3">
+        {total}
+      </span>
+    </div>
+  );
+}
+
+/* ============================================================
+ * 筛选栏（GalleryFilterBar）
+ * 方向 C：更紧凑的单行筛选，次级筛选折叠
+ * ============================================================ */
+
+function GalleryFilterBar({
+  filters,
+  filterOptions,
+  onFilterChange,
+  onSearchChange,
+}: {
+  filters: DigitalEmployeeOverviewFilters;
+  filterOptions?: DigitalEmployeeOverview["filters"];
+  onFilterChange: (key: FilterKey) => (value: string) => void;
+  onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const [showMore, setShowMore] = useState(false);
+
+  return (
+    <SoftCard className="rounded-v3-card">
+      <div className="flex flex-col gap-3 p-3.5">
+        <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(200px,1.4fr)_repeat(3,minmax(120px,1fr))]">
+          <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+            搜索
+            <span className="relative">
+              <SearchIcon
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                className="h-9 pl-9"
+                value={filters.q ?? ""}
+                onChange={onSearchChange}
+                placeholder="名称、角色、任务"
+              />
+            </span>
+          </label>
+          <FilterSelect
+            label="状态"
+            value={filters.status ?? "all"}
+            options={filterOptions?.statuses ?? DEFAULT_STATUS_OPTIONS}
+            onValueChange={onFilterChange("status")}
+          />
+          <FilterSelect
+            label="Provider"
+            value={filters.provider_type ?? "all"}
+            options={filterOptions?.providers ?? []}
+            onValueChange={onFilterChange("provider_type")}
+          />
+          <FilterSelect
+            label="团队"
+            value={filters.team_id ?? "all"}
+            options={filterOptions?.teams ?? []}
+            onValueChange={onFilterChange("team_id")}
+          />
+        </div>
+        {showMore ? (
+          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
+            <FilterSelect
+              label="员工类型"
+              value={filters.employee_type ?? "all"}
+              options={filterOptions?.employee_types ?? []}
+              onValueChange={onFilterChange("employee_type")}
+            />
+            <FilterSelect
+              label="执行"
+              value={filters.execution_status ?? "all"}
+              options={filterOptions?.execution_statuses ?? []}
+              onValueChange={onFilterChange("execution_status")}
+            />
+            <FilterSelect
+              label="最近任务"
+              value={filters.run_status ?? "all"}
+              options={filterOptions?.run_statuses ?? []}
+              onValueChange={onFilterChange("run_status")}
+            />
+            <FilterSelect
+              label="风险"
+              value={filters.risk_level ?? "all"}
+              options={filterOptions?.risk_levels ?? []}
+              onValueChange={onFilterChange("risk_level")}
+            />
+          </div>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setShowMore((v) => !v)}
+          className="self-start text-xs font-semibold text-v3-brand transition-colors hover:text-v3-brand-deep"
+        >
+          {showMore ? "收起筛选" : "更多筛选"}
+        </button>
+      </div>
+    </SoftCard>
+  );
+}
+
+/* ============================================================
+ * 头像优先画廊卡（AvatarGalleryCard）
+ * 方向 C：居中大头像 + 状态环 + 角色徽章 + 紧凑指标行
+ * ============================================================ */
+
+function AvatarGalleryCard({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: DigitalEmployeeOverviewItem;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const identity = item.identity_summary;
+  const avatarAsset = overviewAvatarAsset(item);
+  const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
+
+  return (
+    <article
+      aria-label={`员工 ${identity.name}`}
+      aria-selected={selected}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.currentTarget === event.target && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      tabIndex={0}
+      className={cn(
+        "group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
+        selected && "border-v3-brand bg-v3-brand-soft/40 shadow-v3-pop ring-1 ring-v3-brand/20",
+      )}
+    >
+      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
+
+      {/* 头像区：居中 + 状态环 */}
+      <div className="flex flex-col items-center gap-2 pb-3">
+        <div className="relative">
+          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
+          <span
+            aria-hidden
+            className={cn(
+              "absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-v3-card",
+              operationalStatus.ringColor,
+            )}
+          />
+        </div>
+        <div className="w-full text-center">
+          <p className="truncate text-[13.5px] font-bold text-v3-ink">{identity.name}</p>
+          <p className="mt-0.5 truncate text-[11px] text-v3-ink-3">
+            {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
+          </p>
+        </div>
+        <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
+      </div>
+
+      {/* 指标行 */}
+      <div className="flex flex-col gap-1.5 border-t border-v3-line pt-2.5 text-[11.5px]">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1 text-v3-ink-3">
+            <Cpu className="size-3" aria-hidden />
+            Provider
+          </span>
+          <span className="truncate text-right font-semibold text-v3-ink">
+            {runtimeProviderLine(item)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-v3-ink-3">工作台：</span>
+          <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-v3-ink-3">最近运行</span>
+          <span className={cn("truncate text-right font-semibold", latestRunToneClass(item.latest_run_summary?.status))}>
+            {latestRunCompact(item)}
+          </span>
+        </div>
+        <p className="mt-1 text-[11px] text-v3-ink-3">{governanceLine(item)}</p>
+      </div>
+
+      {/* 预算条 */}
+      <BudgetBar summary={item.budget_summary} />
+
+      {/* 操作按钮 */}
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-v3-line pt-2.5">
+        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
+          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
+            详情
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
+          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId/config">
+            配置
+          </Link>
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function BudgetBar({ summary }: { summary: DigitalEmployeeOverviewItem["budget_summary"] }) {
+  if (!summary.daily_token_limit) {
+    return <p className="mt-2 text-[11px] text-v3-ink-3">Token 预算：无预算上限</p>;
+  }
+
+  const percent = Math.min(summary.usage_percent_today ?? 0, 100);
+
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2 text-[11px] text-v3-ink-3">
+        <span>Token 预算</span>
+        <span className="tabular-nums">
+          {formatNumber(summary.usage_tokens_today)} / {formatNumber(summary.daily_token_limit)}
+        </span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-v3-line">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            summary.limit_exceeded ? "bg-v3-danger" : "bg-v3-brand",
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+ * 分页
+ * ============================================================ */
 
 function EmployeeCardPagination({
   isFetching,
@@ -327,228 +729,51 @@ function EmployeeCardPagination({
   );
 }
 
-function EmployeeFilterPanel({
-  filters,
-  filterOptions,
-  onFilterChange,
-  onSearchChange,
+/* ============================================================
+ * 右侧栏（GalleryRail）
+ * 方向 C：待处理队列 + 选中员工（大头像 + 状态环 + 事件流）
+ * ============================================================ */
+
+function GalleryRail({
+  overview,
+  selectedItem,
 }: {
-  filters: DigitalEmployeeOverviewFilters;
-  filterOptions?: DigitalEmployeeOverview["filters"];
-  onFilterChange: (key: FilterKey) => (value: string) => void;
-  onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  overview: DigitalEmployeeOverview;
+  selectedItem?: DigitalEmployeeOverviewItem;
 }) {
   return (
-    <SoftCard className="rounded-v3-card">
-      <div className="flex flex-col gap-4 p-4">
-        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(132px,1fr))]">
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
-            搜索
-            <span className="relative">
-              <SearchIcon
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                className="pl-9"
-                value={filters.q ?? ""}
-                onChange={onSearchChange}
-                placeholder="名称、角色、任务"
-              />
-            </span>
-          </label>
-          <FilterSelect
-            label="状态"
-            value={filters.status ?? "all"}
-            options={filterOptions?.statuses ?? DEFAULT_STATUS_OPTIONS}
-            onValueChange={onFilterChange("status")}
-          />
-          <FilterSelect
-            label="团队"
-            value={filters.team_id ?? "all"}
-            options={filterOptions?.teams ?? []}
-            onValueChange={onFilterChange("team_id")}
-          />
-          <FilterSelect
-            label="Provider"
-            value={filters.provider_type ?? "all"}
-            options={filterOptions?.providers ?? []}
-            onValueChange={onFilterChange("provider_type")}
-          />
-          <FilterSelect
-            label="风险"
-            value={filters.risk_level ?? "all"}
-            options={filterOptions?.risk_levels ?? []}
-            onValueChange={onFilterChange("risk_level")}
-          />
+    <aside className="flex min-w-0 flex-col gap-4">
+      <SoftCard className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">待处理队列</h2>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <FilterSelect
-            label="员工类型"
-            value={filters.employee_type ?? "all"}
-            options={filterOptions?.employee_types ?? []}
-            onValueChange={onFilterChange("employee_type")}
-          />
-          <FilterSelect
-            label="执行"
-            value={filters.execution_status ?? "all"}
-            options={filterOptions?.execution_statuses ?? []}
-            onValueChange={onFilterChange("execution_status")}
-          />
-          <FilterSelect
-            label="最近任务"
-            value={filters.run_status ?? "all"}
-            options={filterOptions?.run_statuses ?? []}
-            onValueChange={onFilterChange("run_status")}
-          />
-        </div>
-      </div>
-    </SoftCard>
-  );
-}
-
-function WorkbenchMetrics({ overview }: { overview: DigitalEmployeeOverview }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      <V3MetricCard
-        label="就绪"
-        value={formatNumber(overview.summary.ready_count)}
-        icon={<Check />}
-        iconTone="ok"
-      />
-      <V3MetricCard
-        label="待绑定"
-        value={formatNumber(overview.summary.pending_runtime_binding_count)}
-        icon={<LinkIcon />}
-        iconTone="warn"
-      />
-      <V3MetricCard
-        label="异常"
-        value={formatNumber(overview.summary.error_count)}
-        icon={<AlertTriangle />}
-        iconTone="danger"
-      />
-      <V3MetricCard
-        label="配置待审批"
-        value={formatNumber(overview.summary.pending_config_approval_count)}
-        icon={<ClipboardCheck />}
-        iconTone="artifact"
-      />
-      <V3MetricCard
-        label="运行失败"
-        value={formatNumber(overview.summary.failed_recent_run_count)}
-        icon={<XCircle />}
-        iconTone="danger"
-      />
-    </div>
-  );
-}
-
-function EmployeeWorkbenchCard({
-  item,
-  selected,
-  onSelect,
-}: {
-  item: DigitalEmployeeOverviewItem;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const identity = item.identity_summary;
-  const avatarAsset = overviewAvatarAsset(item);
-  const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
-
-  return (
-    <article
-      aria-label={`员工 ${identity.name}`}
-      aria-selected={selected}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.currentTarget === event.target && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      tabIndex={0}
-      className={cn(
-        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/50 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
-        selected &&
-          "border-v3-brand bg-v3-brand-soft/45 shadow-v3-pop",
-      )}
-    >
-      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
-      <div className="flex items-start gap-3 pl-1">
-        <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-foreground">{identity.name}</p>
-              <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                <span className="truncate">{identity.employee_type_label || identity.role}</span>
-                <span className="shrink-0">·</span>
-                <span className="truncate">{identity.team_name || "未分组"}</span>
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-col gap-3 text-sm">
-        <div className="border-t pt-3">
-          <p className="font-medium text-foreground">{runtimeProviderLine(item)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">工作台：{workbenchStatusLabel(item.workbench_status)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">最近运行</p>
-          <p className={cn("mt-1 font-medium", latestRunToneClass(item.latest_run_summary?.status))}>
-            {latestRunCompact(item)}
-          </p>
-        </div>
-        <p className="text-xs text-muted-foreground">{governanceLine(item)}</p>
-        <BudgetBar summary={item.budget_summary} />
-      </div>
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t pt-3">
-        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
-          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
-            详情
-          </Link>
-        </Button>
-        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
-          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId/config">
-            配置
-          </Link>
-        </Button>
-      </div>
-    </article>
-  );
-}
-
-function BudgetBar({ summary }: { summary: DigitalEmployeeOverviewItem["budget_summary"] }) {
-  if (!summary.daily_token_limit) {
-    return <p className="text-xs text-muted-foreground">Token 预算：无预算上限</p>;
-  }
-
-  const percent = Math.min(summary.usage_percent_today ?? 0, 100);
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>Token 预算</span>
-        <span>
-          {formatNumber(summary.usage_tokens_today)} / {formatNumber(summary.daily_token_limit)}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            summary.limit_exceeded ? "bg-v3-danger" : "bg-v3-brand",
-          )}
-          style={{ width: `${percent}%` }}
+        <QueueRow
+          action="绑定"
+          label="待绑定 Runtime"
+          tone="warn"
+          value={overview.queue_summary.pending_runtime_binding_count}
         />
-      </div>
-    </div>
+        <QueueRow
+          action="审批"
+          label="配置过期"
+          tone="artifact"
+          value={overview.queue_summary.stale_config_count}
+        />
+        <QueueRow
+          action="查看"
+          label="最近运行失败"
+          tone="danger"
+          value={overview.queue_summary.failed_recent_run_count}
+        />
+      </SoftCard>
+      <SoftCard className="p-4">
+        {selectedItem ? (
+          <GallerySelectedPanel item={selectedItem} />
+        ) : (
+          <p className="text-sm text-muted-foreground">暂无选中员工</p>
+        )}
+      </SoftCard>
+    </aside>
   );
 }
 
@@ -564,7 +789,7 @@ function QueueRow({
   value: number;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t py-3 first:border-t-0 first:pt-0">
+    <div className="flex items-center justify-between gap-3 border-t py-2.5 first:border-t-0 first:pt-0">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <StatusPill tone={tone}>{formatNumber(value)}</StatusPill>
@@ -572,14 +797,14 @@ function QueueRow({
         </div>
         <p className="text-xs text-muted-foreground">{formatNumber(value)} 个数字员工</p>
       </div>
-      <Button size="sm" variant="outline" type="button">
+      <Button size="sm" type="button" variant="outline">
         {action}
       </Button>
     </div>
   );
 }
 
-function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) {
+function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
   const identity = item.identity_summary;
   const avatarAsset = overviewAvatarAsset(item);
   const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
@@ -589,29 +814,45 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
       <div>
         <h2 className="font-semibold">选中员工</h2>
       </div>
-      <div className="flex items-start gap-3">
-        <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col items-center gap-2">
+        <div className="relative">
+          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
+          <span
+            aria-hidden
+            className={cn(
+              "absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-v3-card",
+              operationalStatus.ringColor,
+            )}
+          />
+        </div>
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-2">
             <p className="truncate font-semibold">{identity.name}</p>
-            <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">工作台：{workbenchStatusLabel(item.workbench_status)}</p>
+          <div className="mt-2 flex justify-center">
+            <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
+          </div>
         </div>
       </div>
-      <div className="flex flex-col gap-1 text-sm">
-        <p className="text-xs text-muted-foreground">绑定</p>
-        <p className="font-medium">{runtimeProviderLine(item)}</p>
+      <div className="flex flex-col gap-1.5 text-xs">
+        <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
+          <span className="text-v3-ink-3">工作台</span>
+          <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
+        </div>
+        <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
+          <span className="text-v3-ink-3">绑定</span>
+          <span className="text-right font-semibold text-v3-ink">{runtimeProviderLine(item)}</span>
+        </div>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <p className="text-xs text-muted-foreground">最新事件</p>
         {item.recent_events.length === 0 ? (
           <p className="text-sm text-muted-foreground">暂无最近事件</p>
         ) : (
-          <ol className="flex flex-col gap-3">
+          <ol className="flex flex-col gap-2.5">
             {item.recent_events.map((event, index) => (
               <li className="flex items-start gap-3" key={`${event.label}-${event.occurred_at ?? index}`}>
                 <span
@@ -638,43 +879,9 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
   );
 }
 
-function WorkbenchRail({
-  overview,
-  selectedItem,
-}: {
-  overview: DigitalEmployeeOverview;
-  selectedItem?: DigitalEmployeeOverviewItem;
-}) {
-  return (
-    <aside className="flex min-w-0 flex-col gap-4">
-      <SoftCard className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">待处理队列</h2>
-        </div>
-        <QueueRow
-          label="待绑定 Runtime"
-          value={overview.queue_summary.pending_runtime_binding_count}
-          action="绑定"
-          tone="warn"
-        />
-        <QueueRow label="配置过期" value={overview.queue_summary.stale_config_count} action="审批" tone="artifact" />
-        <QueueRow
-          label="最近运行失败"
-          value={overview.queue_summary.failed_recent_run_count}
-          action="查看"
-          tone="danger"
-        />
-      </SoftCard>
-      <SoftCard className="p-4">
-        {selectedItem ? (
-          <SelectedEmployeePanel item={selectedItem} />
-        ) : (
-          <p className="text-sm text-muted-foreground">暂无选中员工</p>
-        )}
-      </SoftCard>
-    </aside>
-  );
-}
+/* ============================================================
+ * 筛选 Select
+ * ============================================================ */
 
 type FilterSelectProps = {
   label: string;
@@ -687,8 +894,8 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
   const selectId = `employees-filter-${label}`;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground" htmlFor={selectId}>
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-foreground" htmlFor={selectId}>
         {label}
       </label>
       <Select value={value} onValueChange={onValueChange}>
@@ -713,6 +920,10 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
     </div>
   );
 }
+
+/* ============================================================
+ * 工具函数（保持与原实现一致，确保测试通过）
+ * ============================================================ */
 
 function updateFilter(
   filters: DigitalEmployeeOverviewFilters,

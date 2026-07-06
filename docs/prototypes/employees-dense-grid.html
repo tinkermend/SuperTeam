@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>数字员工 · 高密度数据网格 · SuperTeam</title>
+<style>
+/* ============================================================
+   方向 A · 高密度数据网格（Dense Grid · Linear/Vercel 风）
+   紧凑顶部摘要带 + 单行命令栏 + 4 列密集卡 + 侧滑详情抽屉
+   适合：员工数量多、扫读优先、信息密度优先
+   数据源：DigitalEmployeeOverview
+   ============================================================ */
+:root{
+  --v3-bg:#f8fafc; --v3-card:#ffffff; --v3-card-soft:#f7f8fa; --v3-card-inner:#fafbfc;
+  --v3-ink:#0b0d12; --v3-ink-2:#4d586b; --v3-ink-3:#6d7580;
+  --v3-line:#eef1f4; --v3-line-strong:#dfe4ea;
+  --v3-brand:#2f5fff; --v3-brand-deep:#2348e0; --v3-brand-soft:#e9efff;
+  --v3-info:#0094b7; --v3-info-text:#00617d; --v3-info-soft:#def8fe;
+  --v3-ok:#009a60; --v3-ok-text:#006639; --v3-ok-soft:#e3f9ec;
+  --v3-warn:#bb6900; --v3-warn-text:#7f3f00; --v3-warn-soft:#ffefdf;
+  --v3-danger:#d14647; --v3-danger-text:#8a2f2d; --v3-danger-soft:#ffece9;
+  --v3-artifact:#9565c7; --v3-artifact-text:#633d89; --v3-artifact-soft:#f7eeff;
+  --v3-mute:#64748b; --v3-mute-text:#4d586b; --v3-mute-soft:#eef1f4;
+  --r-card:1.375rem; --r-inner:0.875rem;
+  --shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+  --shadow-pop:0 10px 44px rgba(16,24,40,0.12);
+  --shadow-drawer:0 24px 60px rgba(16,24,40,0.18), 0 2px 6px rgba(16,24,40,0.08);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--v3-bg);color:var(--v3-ink);-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5;}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--v3-line-strong);border-radius:6px;}
+button{font-family:inherit;}
+
+/* Topbar */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;padding:10px 28px;background:rgba(248,250,252,.86);backdrop-filter:blur(18px) saturate(1.3);border-bottom:1px solid var(--v3-line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14px;}
+.logo .mk{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 4px 12px rgba(47,95,255,.3);}
+.nav{display:flex;gap:2px;margin-left:12px;}
+.nav a{padding:6px 11px;border-radius:8px;color:var(--v3-ink-2);font-size:12.5px;font-weight:550;text-decoration:none;cursor:pointer;}
+.nav a.on{color:var(--v3-brand-deep);background:var(--v3-brand-soft);font-weight:650;}
+.grow{flex:1;}
+.globalsearch{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:9px;background:var(--v3-card);border:1px solid var(--v3-line-strong);min-width:240px;color:var(--v3-ink-3);font-size:12px;box-shadow:var(--shadow);}
+.globalsearch svg{width:14px;height:14px;}
+.globalsearch .kbd{margin-left:auto;padding:1px 6px;border-radius:4px;background:var(--v3-card-soft);border:1px solid var(--v3-line);font-family:var(--mono);font-size:10.5px;color:var(--v3-ink-3);}
+.me{display:flex;align-items:center;gap:8px;padding:4px 10px 4px 4px;border-radius:11px;background:var(--v3-card);box-shadow:var(--shadow);border:1px solid var(--v3-line);}
+.me .pic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+
+/* Wrap */
+.wrap{max-width:1480px;margin:0 auto;padding:18px 28px 60px;}
+
+/* Page Head */
+.pagehead{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
+.pagehead .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;color:#fff;background:linear-gradient(140deg,#5b8bff,#2f5fff 58%,#2348e0);box-shadow:0 6px 16px rgba(47,95,255,.26);}
+.pagehead .ic svg{width:20px;height:20px;}
+.pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;}
+.pagehead .sub{font-size:12.5px;color:var(--v3-ink-2);margin-top:4px;}
+.pagehead .actions{margin-left:auto;display:flex;gap:8px;align-items:center;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:inherit;}
+.btn.primary{background:var(--v3-brand);color:#fff;}
+.btn.primary:hover{background:var(--v3-brand-deep);}
+.btn.outline{background:var(--v3-card);color:var(--v3-ink);border-color:var(--v3-line-strong);box-shadow:var(--shadow);}
+.btn.outline:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.btn svg{width:14px;height:14px;}
+.btn.sm{padding:5px 9px;font-size:11.5px;border-radius:8px;}
+
+/* === 摘要带（紧凑横向，无卡片框） === */
+.summary-strip{display:flex;align-items:stretch;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px;}
+.sstat{flex:1;padding:12px 18px;display:flex;align-items:center;gap:12px;border-right:1px solid var(--v3-line);cursor:pointer;transition:background .15s;}
+.sstat:last-child{border-right:none;}
+.sstat:hover{background:var(--v3-card-soft);}
+.sstat .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:14px;flex-shrink:0;}
+.sstat .ic.ok{background:var(--v3-ok-soft);color:var(--v3-ok);}
+.sstat .ic.warn{background:var(--v3-warn-soft);color:var(--v3-warn);}
+.sstat .ic.danger{background:var(--v3-danger-soft);color:var(--v3-danger);}
+.sstat .ic.artifact{background:var(--v3-artifact-soft);color:var(--v3-artifact);}
+.sstat .ic.brand{background:var(--v3-brand-soft);color:var(--v3-brand);}
+.sstat .ic svg{width:16px;height:16px;}
+.sstat .col{display:flex;flex-direction:column;}
+.sstat .n{font-size:20px;font-weight:800;letter-spacing:-.025em;line-height:1;font-variant-numeric:tabular-nums;}
+.sstat .n.danger{color:var(--v3-danger);}
+.sstat .n.warn{color:var(--v3-warn);}
+.sstat .l{font-size:11.5px;color:var(--v3-ink-2);font-weight:600;margin-top:3px;}
+
+/* === 命令栏（单行筛选） === */
+.cmdbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.search-input{position:relative;flex:1.4;min-width:240px;}
+.search-input svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--v3-ink-3);pointer-events:none;}
+.search-input input{width:100%;padding:8px 12px 8px 32px;border-radius:10px;border:1px solid var(--v3-line-strong);background:var(--v3-card);font-size:12.5px;color:var(--v3-ink);font-family:inherit;box-shadow:var(--shadow);outline:none;}
+.search-input input:focus{border-color:var(--v3-brand);box-shadow:0 0 0 3px rgba(47,95,255,.12);}
+.search-input input::placeholder{color:var(--v3-ink-3);}
+.sel{position:relative;display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--v3-line-strong);background:var(--v3-card);font-size:12.5px;color:var(--v3-ink);cursor:pointer;box-shadow:var(--shadow);}
+.sel:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.sel .lbl{color:var(--v3-ink-3);font-weight:500;}
+.sel .val{font-weight:600;}
+.sel svg{width:12px;height:12px;color:var(--v3-ink-3);}
+.more-btn{display:flex;align-items:center;gap:5px;padding:8px 12px;border-radius:10px;border:1px solid var(--v3-line-strong);background:var(--v3-card);font-size:12.5px;color:var(--v3-ink-2);cursor:pointer;box-shadow:var(--shadow);}
+.more-btn:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.more-btn svg{width:13px;height:13px;}
+.cmdbar .spacer{flex:1;}
+.view-toggle{display:inline-flex;gap:2px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:9px;padding:3px;}
+.view-toggle button{padding:5px 9px;border-radius:6px;font-size:11.5px;font-weight:600;color:var(--v3-ink-2);cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:4px;}
+.view-toggle button.on{background:var(--v3-card);color:var(--v3-brand-deep);box-shadow:var(--shadow);}
+.view-toggle svg{width:13px;height:13px;}
+
+/* 展开的次级筛选 */
+.filter-extra{display:none;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;margin-bottom:14px;flex-wrap:wrap;gap:10px;align-items:center;}
+.filter-extra.open{display:flex;}
+.filter-extra .chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:7px;background:var(--v3-card-soft);border:1px solid var(--v3-line);font-size:11.5px;color:var(--v3-ink-2);cursor:pointer;}
+.filter-extra .chip:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.filter-extra .chip.on{background:var(--v3-brand-soft);border-color:var(--v3-brand);color:var(--v3-brand-deep);font-weight:600;}
+
+/* === 网格 === */
+.grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:12px;}
+@media(min-width:640px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}}
+@media(min-width:1024px){.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}}
+@media(min-width:1280px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}}
+@media(min-width:1536px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;}}
+
+/* === 紧凑卡片 === */
+.card{position:relative;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:14px;padding:13px;cursor:pointer;transition:all .18s;min-height:168px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow);}
+.card:hover{border-color:rgba(47,95,255,.45);box-shadow:var(--shadow-pop);transform:translateY(-1px);}
+.card.sel{border-color:var(--v3-brand);background:linear-gradient(180deg,rgba(233,239,255,.55),rgba(255,255,255,0) 60%);box-shadow:var(--shadow-pop);}
+.card.sel::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:0 3px 3px 0;background:var(--v3-brand);}
+.card-head{display:flex;align-items:flex-start;gap:10px;}
+.avatar{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0;}
+.avatar.a1{background:linear-gradient(140deg,#5b8bff,#2348e0);}
+.avatar.a2{background:linear-gradient(140deg,#7c5cff,#a78bfa);}
+.avatar.a3{background:linear-gradient(140deg,#00c2a8,#0094b7);}
+.avatar.a4{background:linear-gradient(140deg,#ff8a5b,#ff5b8a);}
+.avatar.a5{background:linear-gradient(140deg,#a8c060,#5a8a3a);}
+.card-name{flex:1;min-width:0;}
+.card-name .nm{font-size:13px;font-weight:700;color:var(--v3-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.card-name .rl{font-size:11px;color:var(--v3-ink-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:650;letter-spacing:.01em;flex-shrink:0;}
+.pill.ok{background:var(--v3-ok-soft);color:var(--v3-ok-text);}
+.pill.warn{background:var(--v3-warn-soft);color:var(--v3-warn-text);}
+.pill.danger{background:var(--v3-danger-soft);color:var(--v3-danger-text);}
+.pill.info{background:var(--v3-info-soft);color:var(--v3-info-text);}
+.pill.mute{background:var(--v3-mute-soft);color:var(--v3-mute-text);}
+.pill .dot{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.card-meta{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--v3-ink-2);padding-top:8px;border-top:1px solid var(--v3-line);}
+.card-meta .row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.card-meta .row .k{color:var(--v3-ink-3);font-weight:500;}
+.card-meta .row .v{font-weight:600;color:var(--v3-ink);text-align:right;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.card-meta .row .v.danger{color:var(--v3-danger);}
+.card-meta .row .v.ok{color:var(--v3-ok-text);}
+.budget{margin-top:auto;padding-top:8px;border-top:1px solid var(--v3-line);}
+.budget-head{display:flex;justify-content:space-between;font-size:10.5px;color:var(--v3-ink-3);margin-bottom:4px;font-variant-numeric:tabular-nums;}
+.budget-bar{height:4px;border-radius:3px;background:var(--v3-line);overflow:hidden;}
+.budget-bar .fill{height:100%;border-radius:3px;background:var(--v3-brand);}
+.budget-bar .fill.danger{background:var(--v3-danger);}
+
+/* Pagination */
+.pager{display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding:10px 14px;background:var(--v3-card);border:1px solid var(--v3-line);border-radius:12px;box-shadow:var(--shadow);flex-wrap:wrap;gap:10px;}
+.pager .info{font-size:12px;color:var(--v3-ink-2);}
+.pager .info b{color:var(--v3-ink);font-weight:700;font-variant-numeric:tabular-nums;}
+.pager .right{display:flex;align-items:center;gap:8px;}
+.pager .sz{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--v3-ink-3);}
+.pager .sz .sel-mini{padding:5px 9px;border-radius:7px;border:1px solid var(--v3-line-strong);background:var(--v3-card);font-size:12px;font-weight:600;color:var(--v3-ink);cursor:pointer;}
+.pg-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--v3-line-strong);background:var(--v3-card);color:var(--v3-ink);cursor:pointer;display:grid;place-items:center;}
+.pg-btn:hover{border-color:var(--v3-brand);color:var(--v3-brand-deep);}
+.pg-btn:disabled{opacity:.4;cursor:not-allowed;}
+.pg-btn svg{width:13px;height:13px;}
+
+/* === 右侧抽屉 === */
+.drawer-mask{position:fixed;inset:0;background:rgba(11,13,18,.32);opacity:0;pointer-events:none;transition:opacity .2s;z-index:80;}
+.drawer-mask.open{opacity:1;pointer-events:auto;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:380px;max-width:92vw;background:var(--v3-card);box-shadow:var(--shadow-drawer);transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:90;display:flex;flex-direction:column;}
+.drawer.open{transform:translateX(0);}
+.drawer-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px;border-bottom:1px solid var(--v3-line);}
+.drawer-head .av{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;color:#fff;font-size:16px;font-weight:700;background:linear-gradient(140deg,#5b8bff,#2348e0);}
+.drawer-head .ti{flex:1;min-width:0;}
+.drawer-head .ti .nm{font-size:16px;font-weight:800;}
+.drawer-head .ti .rl{font-size:12px;color:var(--v3-ink-2);margin-top:3px;}
+.drawer-close{padding:6px;border-radius:8px;border:none;background:transparent;cursor:pointer;color:var(--v3-ink-3);}
+.drawer-close:hover{background:var(--v3-card-soft);color:var(--v3-ink);}
+.drawer-close svg{width:16px;height:16px;}
+.drawer-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:16px;}
+.dr-section h3{font-size:11px;font-weight:700;color:var(--v3-ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.dr-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dr-meta-item{padding:10px 12px;background:var(--v3-card-soft);border:1px solid var(--v3-line);border-radius:10px;}
+.dr-meta-item .k{font-size:10.5px;color:var(--v3-ink-3);font-weight:600;}
+.dr-meta-item .v{font-size:13px;font-weight:700;color:var(--v3-ink);margin-top:3px;}
+.dr-events{display:flex;flex-direction:column;gap:9px;}
+.dr-event{display:flex;gap:9px;align-items:flex-start;}
+.dr-event .dt{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+.dr-event .dt.ok{background:var(--v3-ok);}
+.dr-event .dt.brand{background:var(--v3-brand);}
+.dr-event .dt.danger{background:var(--v3-danger);}
+.dr-event .ct{flex:1;min-width:0;}
+.dr-event .lb{font-size:12px;color:var(--v3-ink);}
+.dr-event .tm{font-size:11px;color:var(--v3-ink-3);margin-top:1px;}
+.drawer-foot{padding:14px 20px;border-top:1px solid var(--v3-line);display:flex;gap:8px;}
+.drawer-foot .btn{flex:1;justify-content:center;}
+
+/* Hint banner */
+.hint{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--v3-info-soft);color:var(--v3-info-text);font-size:11.5px;margin-bottom:14px;border:1px solid rgba(0,148,183,.2);}
+.hint svg{width:14px;height:14px;flex-shrink:0;}
+.hint b{font-weight:700;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="mk">矩</div><span>SuperTeam</span></div>
+  <nav class="nav">
+    <a>项目</a><a>流程</a><a class="on">数字员工</a><a>技能</a><a>审批</a><a>审计</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="globalsearch">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <span>搜索员工、任务、项目…</span>
+    <span class="kbd">⌘K</span>
+  </div>
+  <div class="me"><div class="pic">T</div><span style="font-size:12px;font-weight:600;">Tinker</span></div>
+</div>
+
+<div class="wrap">
+
+  <!-- Page Head -->
+  <div class="pagehead">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></div>
+    <div>
+      <h1>数字员工</h1>
+      <div class="sub">业务身份、执行实例和运行状态 · 14 名员工 · 6 在线工作</div>
+    </div>
+    <div class="actions">
+      <button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>模板管理</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>创建数字员工</button>
+    </div>
+  </div>
+
+  <!-- 摘要带 -->
+  <div class="summary-strip">
+    <div class="sstat">
+      <div class="ic ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div class="col"><div class="num n">8</div><div class="l">就绪</div></div>
+    </div>
+    <div class="sstat">
+      <div class="ic warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 13a5 5 0 0 1 7-7"/><path d="M14 11a5 5 0 0 1-7 7"/><path d="M14 4v3h3M10 20v-3H7"/></svg></div>
+      <div class="col"><div class="num n warn">2</div><div class="l">待绑定</div></div>
+    </div>
+    <div class="sstat">
+      <div class="ic danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div class="col"><div class="num n danger">1</div><div class="l">异常</div></div>
+    </div>
+    <div class="sstat">
+      <div class="ic artifact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+      <div class="col"><div class="num n">3</div><div class="l">配置待审批</div></div>
+    </div>
+    <div class="sstat">
+      <div class="ic brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></div>
+      <div class="col"><div class="num n">2</div><div class="l">运行失败</div></div>
+    </div>
+  </div>
+
+  <!-- 提示带 -->
+  <div class="hint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <span><b>提示</b> · 方向 A 高密度数据网格：4 列紧凑卡，点击任意卡片右侧滑出详情抽屉，主区域不被挤压。</span>
+  </div>
+
+  <!-- 命令栏 -->
+  <div class="cmdbar">
+    <div class="search-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input placeholder="搜索员工名称、角色、任务…" />
+    </div>
+    <div class="sel"><span class="lbl">状态</span><span class="val">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="sel"><span class="lbl">Provider</span><span class="val">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></div>
+    <div class="sel"><span class="lbl">团队</span><span class="val">全部</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></div>
+    <button class="more-btn" onclick="document.querySelector('.filter-extra').classList.toggle('open')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+      更多筛选
+    </button>
+    <div class="spacer"></div>
+    <div class="view-toggle">
+      <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>网格</button>
+      <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>列表</button>
+    </div>
+  </div>
+
+  <!-- 展开的次级筛选 -->
+  <div class="filter-extra">
+    <span style="font-size:11px;color:var(--v3-ink-3);font-weight:600;">员工类型</span>
+    <div class="chip on">全部</div>
+    <div class="chip">常驻型</div>
+    <div class="chip">任务型</div>
+    <div class="chip">临时型</div>
+    <div style="width:1px;height:18px;background:var(--v3-line);margin:0 4px;"></div>
+    <span style="font-size:11px;color:var(--v3-ink-3);font-weight:600;">执行</span>
+    <div class="chip on">全部</div>
+    <div class="chip">工作中</div>
+    <div class="chip">空闲</div>
+    <div class="chip">异常</div>
+    <div style="width:1px;height:18px;background:var(--v3-line);margin:0 4px;"></div>
+    <span style="font-size:11px;color:var(--v3-ink-3);font-weight:600;">风险</span>
+    <div class="chip on">全部</div>
+    <div class="chip">低</div>
+    <div class="chip">中</div>
+    <div class="chip">高</div>
+  </div>
+
+  <!-- 网格 -->
+  <div class="grid">
+
+    <!-- Card 1 -->
+    <article class="card sel" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a1">研</div>
+        <div class="card-name">
+          <div class="nm">研究分析师 · Lin</div>
+          <div class="rl">研究员 · 增长组</div>
+        </div>
+        <div class="pill ok"><span class="dot"></span>空闲</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v ok">成功 · 12 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v3 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>38.2K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:19%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 2 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a2">代</div>
+        <div class="card-name">
+          <div class="nm">代码评审员 · Aria</div>
+          <div class="rl">评审员 · 平台组</div>
+        </div>
+        <div class="pill info"><span class="dot"></span>工作中</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Codex</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">进行中 · 3 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v7 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>124K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:62%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 3 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a3">数</div>
+        <div class="card-name">
+          <div class="nm">数据工程师 · Kai</div>
+          <div class="rl">工程师 · 数据组</div>
+        </div>
+        <div class="pill warn"><span class="dot"></span>待绑定</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">未绑定</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">—</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v1 · 待审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>无上限</span></div>
+        <div class="budget-bar"><div class="fill" style="width:0%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 4 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a4">文</div>
+        <div class="card-name">
+          <div class="nm">文档撰写员 · Mia</div>
+          <div class="rl">撰写员 · 内容组</div>
+        </div>
+        <div class="pill danger"><span class="dot"></span>异常</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">OpenCode</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v danger">失败 · 1 小时前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v2 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>187K / 200K</span></div>
+        <div class="budget-bar"><div class="fill danger" style="width:94%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 5 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a5">测</div>
+        <div class="card-name">
+          <div class="nm">测试工程师 · Bo</div>
+          <div class="rl">测试员 · 质量组</div>
+        </div>
+        <div class="pill ok"><span class="dot"></span>空闲</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v ok">成功 · 2 小时前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v5 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>42K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:21%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 6 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a1">产</div>
+        <div class="card-name">
+          <div class="nm">产品分析师 · Zoe</div>
+          <div class="rl">分析师 · 增长组</div>
+        </div>
+        <div class="pill info"><span class="dot"></span>工作中</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">进行中 · 7 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v4 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>78K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:39%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 7 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a2">设</div>
+        <div class="card-name">
+          <div class="nm">设计助手 · Ren</div>
+          <div class="rl">设计师 · 体验组</div>
+        </div>
+        <div class="pill mute"><span class="dot"></span>不可用</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">未绑定</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">—</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v1 · 待配置</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>无上限</span></div>
+        <div class="budget-bar"><div class="fill" style="width:0%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 8 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a3">运</div>
+        <div class="card-name">
+          <div class="nm">运维巡检员 · Max</div>
+          <div class="rl">运维 · SRE 组</div>
+        </div>
+        <div class="pill warn"><span class="dot"></span>排队</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Codex</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">排队中 · 4 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v6 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>96K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:48%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 9 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a4">安</div>
+        <div class="card-name">
+          <div class="nm">安全审计员 · Ivy</div>
+          <div class="rl">审计员 · 安全组</div>
+        </div>
+        <div class="pill ok"><span class="dot"></span>空闲</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v ok">成功 · 30 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v8 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>54K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:27%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 10 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a5">翻</div>
+        <div class="card-name">
+          <div class="nm">翻译专员 · Yan</div>
+          <div class="rl">翻译 · 内容组</div>
+        </div>
+        <div class="pill info"><span class="dot"></span>工作中</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">OpenCode</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">进行中 · 刚刚</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v3 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>112K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:56%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 11 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a1">问</div>
+        <div class="card-name">
+          <div class="nm">问答助理 · Eli</div>
+          <div class="rl">助理 · 服务组</div>
+        </div>
+        <div class="pill warn"><span class="dot"></span>待人工确认</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v">待确认 · 6 分钟前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v2 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>61K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:31%"></div></div>
+      </div>
+    </article>
+
+    <!-- Card 12 -->
+    <article class="card" onclick="openDrawer()">
+      <div class="card-head">
+        <div class="avatar a2">架</div>
+        <div class="card-name">
+          <div class="nm">架构师 · Sam</div>
+          <div class="rl">架构师 · 平台组</div>
+        </div>
+        <div class="pill ok"><span class="dot"></span>空闲</div>
+      </div>
+      <div class="card-meta">
+        <div class="row"><span class="k">Provider</span><span class="v">Codex</span></div>
+        <div class="row"><span class="k">最近运行</span><span class="v ok">成功 · 4 小时前</span></div>
+        <div class="row"><span class="k">配置</span><span class="v">v9 · 已审批</span></div>
+      </div>
+      <div class="budget">
+        <div class="budget-head"><span>Token 预算</span><span>23K / 200K</span></div>
+        <div class="budget-bar"><div class="fill" style="width:12%"></div></div>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- 分页 -->
+  <div class="pager">
+    <div class="info">第 <b>1-12</b> 条，共 <b>14</b> 个</div>
+    <div class="right">
+      <div class="sz">每页 <select class="sel-mini"><option>12</option><option>24</option><option>48</option></select></div>
+      <button class="pg-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+      <button class="pg-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Drawer -->
+<div class="drawer-mask" id="mask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="av">研</div>
+    <div class="ti">
+      <div class="nm">研究分析师 · Lin</div>
+      <div class="rl">研究员 · 增长组 · 工作中</div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <div class="drawer-body">
+    <div class="dr-section">
+      <h3>执行环境</h3>
+      <div class="dr-meta-grid">
+        <div class="dr-meta-item"><div class="k">Provider</div><div class="v">Claude Code</div></div>
+        <div class="dr-meta-item"><div class="k">Runtime</div><div class="v">dev-node-01</div></div>
+        <div class="dr-meta-item"><div class="k">工作台</div><div class="v">就绪</div></div>
+        <div class="dr-meta-item"><div class="k">配置版本</div><div class="v">v3 · 已审批</div></div>
+      </div>
+    </div>
+    <div class="dr-section">
+      <h3>预算与容量</h3>
+      <div class="dr-meta-grid">
+        <div class="dr-meta-item"><div class="k">今日 Token</div><div class="v">38.2K</div></div>
+        <div class="dr-meta-item"><div class="k">日上限</div><div class="v">200K</div></div>
+        <div class="dr-meta-item"><div class="k">Skills</div><div class="v">6 个</div></div>
+        <div class="dr-meta-item"><div class="k">MCP Servers</div><div class="v">2 个</div></div>
+      </div>
+    </div>
+    <div class="dr-section">
+      <h3>最近事件</h3>
+      <div class="dr-events">
+        <div class="dr-event"><div class="dt ok"></div><div class="ct"><div class="lb">任务 #4821 完成</div><div class="tm">12 分钟前</div></div></div>
+        <div class="dr-event"><div class="dt brand"></div><div class="ct"><div class="lb">开始任务 #4821：竞品分析报告</div><div class="tm">28 分钟前</div></div></div>
+        <div class="dr-event"><div class="dt ok"></div><div class="ct"><div class="lb">任务 #4820 完成</div><div class="tm">1 小时前</div></div></div>
+        <div class="dr-event"><div class="dt danger"></div><div class="ct"><div class="lb">Token 使用接近上限告警</div><div class="tm">2 小时前</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn outline">查看审计</button>
+    <button class="btn primary">查看详情</button>
+  </div>
+</aside>
+
+<script>
+function openDrawer(){
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('mask').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('mask').classList.remove('open');
+}
+document.querySelectorAll('.card').forEach(c=>{
+  c.addEventListener('click',()=>{
+    document.querySelectorAll('.card').forEach(x=>x.classList.remove('sel'));
+    c.classList.add('sel');
+  });
+});
+</script>
+</body>
+</html>
