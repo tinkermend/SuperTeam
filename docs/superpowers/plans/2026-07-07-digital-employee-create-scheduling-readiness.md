@@ -48,7 +48,7 @@ Modify:
 - `apps/control-plane/internal/api/server.go`
   - Register `GET /digital-employees/{employeeId}/scheduling-readiness`.
 - `apps/control-plane/internal/employee/service_test.go`
-  - Add service tests for pass/blocking cases and memory repository support.
+  - Add service tests for passed/blocked cases and memory repository support.
 - `apps/control-plane/internal/api/employee_routes_test.go`
   - Add route mapping and JSON response assertions.
 - `apps/control-plane/internal/storage/queries/employee_execution.sql`

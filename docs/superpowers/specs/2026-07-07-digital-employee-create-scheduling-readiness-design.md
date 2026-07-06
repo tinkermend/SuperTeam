@@ -86,7 +86,7 @@ GET /api/v1/digital-employees/{employeeId}/scheduling-readiness
   "checks": [
     {
       "code": "employee_status",
-      "status": "pass",
+      "status": "passed",
       "label": "员工状态",
       "message": "员工状态为 ready"
     }
@@ -192,7 +192,7 @@ CreateEmployeeView
 
 后端测试：
 
-- 员工 `ready` 且存在有效配置时，scheduling readiness 返回 pass。
+- 员工 `ready` 且存在有效配置时，scheduling readiness 返回 passed。
 - 员工状态不是 `ready/active` 时，返回 blocked。
 - 缺少有效配置时，返回 blocked。
 - 技能、MCP、环境变量数量来自现有服务或 repository 聚合。
