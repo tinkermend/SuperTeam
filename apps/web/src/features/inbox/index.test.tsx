@@ -352,14 +352,14 @@ describe("InboxView", () => {
     expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
   });
 
-  it("requests open inbox by default", async () => {
+  it("requests all inbox by default", async () => {
     const fetcher = createInboxFetcher();
     const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
     const requestUrl = latestInboxRequestUrl(fetcher);
-    expect(requestUrl?.searchParams.get("status")).toBe("open");
+    expect(requestUrl?.searchParams.has("status")).toBe(false);
     expect(requestUrl?.searchParams.get("limit")).toBe("50");
     expect(requestUrl?.searchParams.get("offset")).toBe("0");
   });
@@ -431,19 +431,19 @@ describe("InboxView", () => {
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "重置筛选" }));
+    await userEvent.click(screen.getByRole("button", { name: "重置" }));
 
     await vi.waitFor(() => {
       const requestUrl = latestInboxRequestUrl(fetcher);
       expect(requestUrl?.searchParams.has("project_id")).toBe(false);
       expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
-      expect(requestUrl?.searchParams.get("status")).toBe("open");
+      expect(requestUrl?.searchParams.has("status")).toBe(false);
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
     await expect.element(screen.getByLabelText("项目 ID")).toHaveValue("");
     await expect.element(screen.getByLabelText("目标用户 ID")).toHaveValue("");
     await expect.element(screen.getByRole("button", { name: "状态" })).toHaveTextContent(
-      "开放",
+      "所有",
     );
   });
 

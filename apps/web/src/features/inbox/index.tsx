@@ -42,7 +42,6 @@ type SelectedAction = {
 const DEFAULT_INBOX_FILTERS = {
   limit: 50,
   offset: 0,
-  status: "open",
 } satisfies InboxListFilters;
 
 const EMPTY_UUID_FILTER_DRAFTS = {
