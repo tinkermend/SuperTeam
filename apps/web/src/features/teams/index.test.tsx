@@ -1246,7 +1246,29 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByText("新增硬性规则需要复核"))
       .toBeVisible();
+    await userEvent.click(
+      screen.getByRole("switch", { name: "启用审批策略" }),
+    );
+    await userEvent.click(screen.getByRole("combobox", { name: "风险阈值" }));
+    await userEvent.click(
+      screen.getByRole("option", { name: "high - 仅高风险触发" }),
+    );
+    await userEvent.fill(
+      screen.getByLabelText("必须审批的动作（每行一条）"),
+      "deploy\n delete ",
+    );
+    await userEvent.clear(screen.getByLabelText("最小审批人数"));
+    await userEvent.fill(screen.getByLabelText("最小审批人数"), "3");
     await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await expect
+      .poll(() =>
+        hasRequest(
+          fetcher,
+          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "PATCH",
+        ),
+      )
+      .toBe(true);
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
       expect.objectContaining({
@@ -1254,6 +1276,38 @@ describe("TeamDetailView", () => {
         method: "PATCH",
       }),
     );
+    expect(
+      requestBody(
+        fetcher,
+        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "PATCH",
+      ),
+    ).toEqual({
+      approval_policy: {
+        high_risk: "required",
+        enabled: true,
+        risk_threshold: "high",
+        required_actions: ["deploy", "delete"],
+        min_approvers: 3,
+      },
+      artifact_contract: {},
+      capability_policy: {
+        external_capability_bindings: ["告警系统"],
+        knowledge_base_bindings: ["运维知识库"],
+        mcp_bindings: ["ops-mcp-server"],
+        skill_bindings: ["incident-diagnosis"],
+      },
+      constitution: {
+        hard_rules: ["所有生产写操作必须审批"],
+        principles: ["安全优先，稳定可靠"],
+      },
+      context_policy: {},
+      human_owner_user_ids: ["human-owner-1"],
+      internal_collaboration_policy: {},
+      runtime_scope_policy: {
+        provider_types: ["codex"],
+      },
+    });
 
     await userEvent.click(
       screen.getByRole("button", { name: "提交负责人批准" }),
