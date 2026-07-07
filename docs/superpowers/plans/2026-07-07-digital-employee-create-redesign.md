@@ -138,6 +138,7 @@ func normalizeProviderType(value string) string {
 - Modify: `apps/control-plane/internal/employee/service_test.go`
 - Modify: `apps/control-plane/internal/employee/employee_types.go`
 - Modify: `apps/control-plane/internal/employee/service.go`
+- Modify: `apps/web/src/features/employees/template-utils.ts`
 
 **Interfaces:**
 - Consumes: existing `EmployeeTypeDefinitionByType`, `normalizeCreateDigitalEmployeeRequest`, `CreateDigitalEmployee`, `GetCreateOptions`.
@@ -319,15 +320,48 @@ go test ./apps/control-plane/internal/employee -run 'Test(CustomAgentEmployeeTyp
 
 Expected: PASS.
 
+- [ ] **Step 9.5: Filter system_type entries from orderedEmployeeTypes**
+
+`custom_agent` is now in `defaultEmployeeTypeDefinitions` and will appear in `create-options` `employee_types`. Without a filter it would show up in `TemplateSelectionPanel` and `BlankCustomSelectionPanel`. The `DigitalEmployeeTypeOption` type already carries `metadata?: Record<string, unknown>` so no type change is required.
+
+In `apps/web/src/features/employees/template-utils.ts`, replace:
+
+```ts
+export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
+  return [...employeeTypes].sort((left, right) => {
+```
+
+with:
+
+```ts
+export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
+  return [...employeeTypes]
+    .filter((item) => !item.metadata?.["system_type"])
+    .sort((left, right) => {
+```
+
+Leave the sort body and all other code in the function unchanged.
+
+Run:
+
+```bash
+corepack pnpm --filter ./apps/web run test -- src/features/employees/template-utils.test.ts 2>/dev/null || true
+corepack pnpm --filter ./apps/web run test -- src/features/employees/create.test.tsx -t "template" 2>/dev/null || true
+```
+
+If no dedicated `template-utils.test.ts` exists, the create-page tests in Step 10 of Task 4 will cover this path. No test needs to be added here; the filter is straightforward.
+
+Expected: `custom_agent` does not appear in template or blank-custom type picker lists.
+
 - [ ] **Step 10: Commit Task 1**
 
 ```bash
-git add apps/control-plane/internal/employee/employee_types.go apps/control-plane/internal/employee/service.go apps/control-plane/internal/employee/service_test.go
+git add apps/control-plane/internal/employee/employee_types.go apps/control-plane/internal/employee/service.go apps/control-plane/internal/employee/service_test.go apps/web/src/features/employees/template-utils.ts
 git diff --cached --check
 git commit -m "feat(employee): add custom agent type and provider normalization"
 ```
 
-Expected: commit contains only the three listed files.
+Expected: commit contains only the four listed files.
 
 ---
 
@@ -823,7 +857,7 @@ const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
 const BLANK_CUSTOM_TITLE = "自定义身份";
 ```
 
-Replace:
+**5a — Rename the step constant.** Replace:
 
 ```tsx
 const configSteps = ["身份", "能力", "治理", "Provider 偏好"] as const;
@@ -835,13 +869,55 @@ with:
 const configSteps = ["身份", "能力", "治理", "Provider 类型"] as const;
 ```
 
-Ensure `validateStep` uses:
+**5b — Fix the render guard.** The step component is conditionally rendered with a string equality check against `currentStep`. Find the block:
+
+```tsx
+{!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 偏好" ? (
+```
+
+and replace `"Provider 偏好"` with `"Provider 类型"`:
+
+```tsx
+{!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 类型" ? (
+```
+
+If this guard is missing the render component will silently disappear when the user reaches the Provider step.
+
+**5c — Fix validateStep call sites.** There are two call sites that pass the old step name as a string argument. Find and replace both:
+
+```tsx
+// call site 1 — inside the "next step" handler (validates before advancing)
+const nextErrors = validateStep("Provider 偏好", draft);
+```
+
+→
+
+```tsx
+const nextErrors = validateStep("Provider 类型", draft);
+```
+
+```tsx
+// call site 2 — inside validateStep itself
+if (step === "Provider 偏好" && !draft.provider_type) {
+  errors.runtime = "请选择 Provider 类型";
+}
+```
+
+→
 
 ```tsx
 if (step === "Provider 类型" && !draft.provider_type) {
   errors.runtime = "请选择 Provider 类型";
 }
 ```
+
+After these three targeted replacements, do a final scan for any remaining occurrences:
+
+```bash
+rg "Provider 偏好" apps/web/src/features/employees/create.tsx
+```
+
+Replace every remaining occurrence that is user-visible copy with `Provider 类型` or `执行器类型` per the spec. Non-copy occurrences (string literals used as step keys or condition values) must also be updated so they match the renamed constant.
 
 - [ ] **Step 6: Make blank custom skip employee type selection**
 

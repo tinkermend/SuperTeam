@@ -959,6 +959,29 @@ describe("TeamsView", () => {
 });
 
 describe("TeamDetailView", () => {
+  it("shows only overview, capabilities, and governance tabs on team detail", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect
+      .element(screen.getByRole("heading", { name: "运维团队" }))
+      .toBeVisible();
+    for (const tab of ["概览", "能力与知识", "治理策略"]) {
+      await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
+    }
+    await expect
+      .element(screen.getByRole("tab", { name: "借调" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("tab", { name: "审计记录" }))
+      .not.toBeInTheDocument();
+  });
+
   it("renders detail tabs for the team shell", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
