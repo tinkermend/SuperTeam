@@ -513,7 +513,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       avatarAssets={avatarAssets.data ?? []}
                       draft={draft}
                       errors={errors}
-                      options={createOptions.data}
                       selectedType={selectedType}
                       teamOptions={teamOptions}
                       onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
@@ -1254,7 +1253,6 @@ function IdentityStep({
   avatarAssets,
   draft,
   errors,
-  options,
   selectedType,
   teamOptions,
   onSelectTeam,
@@ -1264,7 +1262,6 @@ function IdentityStep({
   avatarAssets: DigitalEmployeeAvatarAsset[];
   draft: WizardDraft;
   errors: ValidationErrors;
-  options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
   teamOptions: Array<{ id: string; name: string }>;
   onSelectTeam: (value: string) => void;
