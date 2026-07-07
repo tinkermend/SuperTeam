@@ -4,6 +4,26 @@ import "strings"
 
 var defaultEmployeeTypeDefinitions = []EmployeeTypeDefinition{
 	{
+		Type:                  "custom_agent",
+		Label:                 "自定义数字员工",
+		Description:           "由用户直接定义职责定位、能力扩展、治理策略和执行器类型的自定义数字员工。",
+		DefaultRole:           "",
+		RecommendedSkills:     []string{},
+		RecommendedMCPServers: []string{},
+		RecommendedProviderTypes: []string{
+			"codex",
+			"opencode",
+			"claude-code",
+		},
+		DefaultCapabilitySelection:   map[string]any{},
+		DefaultContextPolicyOverride: map[string]any{},
+		DefaultApprovalPolicy:        map[string]any{},
+		Metadata: map[string]any{
+			"creation_mode": "blank_custom",
+			"system_type":   true,
+		},
+	},
+	{
 		Type:                     "database_admin",
 		Label:                    "数据库管理",
 		Description:              "负责数据库运行维护、性能诊断、备份恢复、变更执行和数据安全检查。",
