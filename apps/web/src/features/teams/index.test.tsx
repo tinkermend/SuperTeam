@@ -1228,6 +1228,51 @@ describe("TeamDetailView", () => {
       .toBe(true);
   });
 
+  it("shows MCP credential input only after selecting a registry MCP", async () => {
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/mcp-servers": [
+          {
+            id: "mcp-github",
+            tenant_id: "tenant-1",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
+            status: "active",
+          },
+        ],
+        "GET /api/v1/teams/team-1/mcp-bindings": [],
+        "GET /api/v1/skills": [],
+        "GET /api/v1/teams/team-1/skills": [],
+      },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
+
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .toBeVisible();
+  });
+
   it("renders governance editor with JSON preview and approval action", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(

@@ -199,7 +199,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
           tone="info"
         />
         <div className="flex flex-col gap-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-3">
             <div className="min-w-0 space-y-2">
               <Label htmlFor="team-mcp-server">注册表 MCP</Label>
               <Select
@@ -221,22 +221,28 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                 </SelectContent>
               </Select>
             </div>
-            <div className="min-w-0 space-y-2">
-              <Label htmlFor="team-mcp-credential-env">凭据环境变量（可选）</Label>
-              <Input
-                disabled={!canEdit || createMcpMutation.isPending}
-                id="team-mcp-credential-env"
-                onChange={(event) => setCredentialEnvVar(event.target.value)}
-                placeholder="例如 GITHUB_TOKEN"
-                value={credentialEnvVar}
-              />
-            </div>
-            <div className="flex min-w-0 items-end">
-              <V3Button className="w-full" disabled={!canCreateMcp} onClick={() => createMcpMutation.mutate()} type="button">
-                <Plus data-icon="inline-start" />
-                绑定公共 MCP
-              </V3Button>
-            </div>
+            {selectedServerId ? (
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="team-mcp-credential-env">凭据环境变量（可选）</Label>
+                <Input
+                  disabled={!canEdit || createMcpMutation.isPending}
+                  id="team-mcp-credential-env"
+                  onChange={(event) => setCredentialEnvVar(event.target.value)}
+                  placeholder="例如 GITHUB_TOKEN"
+                  value={credentialEnvVar}
+                />
+              </div>
+            ) : null}
+            <V3Button
+              className="w-full"
+              disabled={!canCreateMcp}
+              onClick={() => createMcpMutation.mutate()}
+              type="button"
+              variant="outline"
+            >
+              <Plus data-icon="inline-start" />
+              绑定公共 MCP
+            </V3Button>
           </div>
           {selectedDefinition && selectedDefinition.required_env_vars.length > 0 ? (
             <p className="text-xs text-muted-foreground">
@@ -418,7 +424,6 @@ function SkillTable({
       <thead>
         <tr>
           <V3Th>技能</V3Th>
-          <V3Th>版本</V3Th>
           <V3Th>风险</V3Th>
           <V3Th className="text-right">操作</V3Th>
         </tr>
@@ -465,13 +470,9 @@ function SkillRow({
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-v3-ink">{skill.name}</p>
             <p className="truncate text-xs text-v3-ink-2">{skill.description}</p>
+            <p className="mt-0.5 truncate text-xs text-v3-ink-3">v{skill.version}</p>
           </div>
         </div>
-      </V3Td>
-      <V3Td>
-        <StatusPill tone="mute" showDot={false}>
-          {skill.version}
-        </StatusPill>
       </V3Td>
       <V3Td>
         <StatusPill tone={skillRiskTone(skill.risk_level)}>
@@ -479,10 +480,30 @@ function SkillRow({
         </StatusPill>
       </V3Td>
       <V3Td className="text-right">
-        <V3Button disabled={!canEdit || pending} onClick={onAction} size="sm" type="button" variant={variant === "installed" ? "ghost" : "outline"}>
-          {variant === "installed" ? <Trash2 data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-          {actionLabel}
-        </V3Button>
+        {variant === "installed" ? (
+          <V3Button
+            aria-label={actionLabel}
+            disabled={!canEdit || pending}
+            onClick={onAction}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <Trash2 className="size-4" />
+            <span className="sr-only">{actionLabel}</span>
+          </V3Button>
+        ) : (
+          <V3Button
+            disabled={!canEdit || pending}
+            onClick={onAction}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Plus data-icon="inline-start" />
+            {actionLabel}
+          </V3Button>
+        )}
       </V3Td>
     </V3Tr>
   );
