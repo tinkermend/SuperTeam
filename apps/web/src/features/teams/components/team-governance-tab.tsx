@@ -81,7 +81,11 @@ function approvalPolicyObject(value: unknown): Record<string, unknown> {
 function serializeApprovalPolicy(
   form: ApprovalPolicyForm,
   sourcePolicy: unknown,
+  changed: boolean,
 ): Record<string, unknown> {
+  if (!changed) {
+    return approvalPolicyObject(sourcePolicy);
+  }
   return {
     ...approvalPolicyObject(sourcePolicy),
     enabled: form.enabled,
@@ -108,6 +112,7 @@ export function TeamGovernanceTab({
   const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
     parseApprovalPolicy(sourceRevision?.approval_policy),
   );
+  const [approvalPolicyChanged, setApprovalPolicyChanged] = useState(false);
 
   useEffect(() => {
     if (!sourceRevision) {
@@ -115,11 +120,16 @@ export function TeamGovernanceTab({
     }
     setHardRulesText(arrayText(sourceRevision.constitution.hard_rules));
     setApprovalPolicy(parseApprovalPolicy(sourceRevision.approval_policy));
+    setApprovalPolicyChanged(false);
   }, [sourceRevision]);
 
   const draftInput = useMemo<GovernanceDraftInput>(
     () => ({
-      approval_policy: serializeApprovalPolicy(approvalPolicy, sourceRevision?.approval_policy),
+      approval_policy: serializeApprovalPolicy(
+        approvalPolicy,
+        sourceRevision?.approval_policy,
+        approvalPolicyChanged,
+      ),
       artifact_contract: sourceRevision?.artifact_contract ?? {},
       capability_policy: sourceRevision?.capability_policy ?? {},
       constitution: {
@@ -131,7 +141,7 @@ export function TeamGovernanceTab({
       internal_collaboration_policy: sourceRevision?.internal_collaboration_policy ?? {},
       runtime_scope_policy: sourceRevision?.runtime_scope_policy ?? {},
     }),
-    [approvalPolicy, hardRulesText, sourceRevision],
+    [approvalPolicy, approvalPolicyChanged, hardRulesText, sourceRevision],
   );
   const preview = JSON.stringify(draftInput, null, 2);
   const saveMutation = useMutation({
@@ -178,7 +188,10 @@ export function TeamGovernanceTab({
           />
           <ApprovalPolicyEditor
             disabled={!canEdit}
-            onChange={setApprovalPolicy}
+            onChange={(next) => {
+              setApprovalPolicy(next);
+              setApprovalPolicyChanged(true);
+            }}
             value={approvalPolicy}
           />
         </CardContent>

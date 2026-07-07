@@ -1375,6 +1375,62 @@ describe("TeamDetailView", () => {
     );
   });
 
+  it("preserves untouched approval policy when saving hard rules only", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+    await userEvent.fill(
+      screen.getByLabelText("团队宪法"),
+      "所有生产写操作必须审批\n变更窗口必须登记",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await expect
+      .poll(() =>
+        hasRequest(
+          fetcher,
+          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "PATCH",
+        ),
+      )
+      .toBe(true);
+
+    expect(
+      requestBody(
+        fetcher,
+        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "PATCH",
+      ),
+    ).toEqual({
+      approval_policy: {
+        high_risk: "required",
+      },
+      artifact_contract: {},
+      capability_policy: {
+        external_capability_bindings: ["告警系统"],
+        knowledge_base_bindings: ["运维知识库"],
+        mcp_bindings: ["ops-mcp-server"],
+        skill_bindings: ["incident-diagnosis"],
+      },
+      constitution: {
+        hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
+        principles: ["安全优先，稳定可靠"],
+      },
+      context_policy: {},
+      human_owner_user_ids: ["human-owner-1"],
+      internal_collaboration_policy: {},
+      runtime_scope_policy: {
+        provider_types: ["codex"],
+      },
+    });
+  });
+
   it("uses a structured approval policy editor without principles or runtime fields", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView

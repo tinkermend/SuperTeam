@@ -80,7 +80,6 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
     onSuccess: refetchRoster,
   });
 
-  // Combine and sort
   const humanRoster = membersQuery.data ?? [];
   const digitalRoster = digitalEmployeesQuery.data ?? [];
   const existingUserIds = humanRoster.map((member) => member.user_id);
