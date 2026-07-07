@@ -959,6 +959,29 @@ describe("TeamsView", () => {
 });
 
 describe("TeamDetailView", () => {
+  it("shows only overview, capabilities, and governance tabs on team detail", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect
+      .element(screen.getByRole("heading", { name: "运维团队" }))
+      .toBeVisible();
+    for (const tab of ["概览", "能力与知识", "治理策略"]) {
+      await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
+    }
+    await expect
+      .element(screen.getByRole("tab", { name: "借调" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("tab", { name: "审计记录" }))
+      .not.toBeInTheDocument();
+  });
+
   it("renders detail tabs for the team shell", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -971,15 +994,12 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力与知识", "治理策略", "审计记录"]) {
+    for (const tab of ["概览", "能力与知识", "治理策略"]) {
       await expect
         .element(screen.getByRole("tab", { name: tab }))
         .toBeVisible();
     }
     await expect.element(screen.getByText("团队成员与代理")).toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "添加成员" }).first())
-      .toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "创建治理草案" }))
       .toBeVisible();
@@ -1373,54 +1393,5 @@ describe("TeamDetailView", () => {
         method: "GET",
       }),
     );
-  });
-
-  it("renders the team audit tab with summary, authorization action, and before after detail", async () => {
-    const fetcher = createTeamsFetcher();
-    const screen = await renderWithQueryClient(
-      <TeamDetailView
-        apiBaseUrl="http://control-plane.local"
-        fetcher={fetcher}
-        teamId="team-1"
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "审计记录" }));
-
-    await expect
-      .element(screen.getByText("Plan 4 会接入团队审计记录。"))
-      .not.toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("group", { name: "今日操作 0 24 小时内" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "成员变更 1 成员与角色" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "治理版本 1 草案与审批" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "能力绑定 1 外部能力" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "被拒绝 1 需复核" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("cell", { name: "授权动作" }))
-      .toBeVisible();
-    await expect.element(screen.getByText("team.create")).toBeVisible();
-    await expect.element(screen.getByText("创建团队“运维团队”")).toBeVisible();
-
-    await userEvent.click(screen.getByRole("row", { name: /添加成员 孙悦/ }));
-
-    await expect.element(screen.getByText("事件详情")).toBeVisible();
-    await expect
-      .element(screen.getByText("授权动作：team.member.add"))
-      .toBeVisible();
-    await expect
-      .element(screen.getByText("变更内容（前后对比）"))
-      .toBeVisible();
-    await expect.element(screen.getByText('"role": "-"')).toBeVisible();
-    await expect.element(screen.getByText('"role": "operator"')).toBeVisible();
   });
 });

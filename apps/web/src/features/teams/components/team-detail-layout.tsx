@@ -1,4 +1,4 @@
-import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UserPlus, UsersRound } from "lucide-react";
+import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { IconTile, StatusPill, V3Button, V3Tabs } from "@/components/superteam";
 import {
   AlertDialog,
@@ -14,10 +14,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
-import { TeamAuditTab } from "./team-audit-tab";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamGovernanceTab } from "./team-governance-tab";
-import { TeamLendingTab } from "./team-lending-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 function TeamStatusPill({ status }: { status: TeamStatus }) {
@@ -60,11 +58,8 @@ export function TeamDetailLayout({
 }: TeamDetailLayoutProps) {
   const team = overview.team;
   const isActive = team.status === "active";
-  const canAddMember = isActive && overview.allowed_actions.includes("team.member.add");
   const canCreateGovernance = isActive && overview.allowed_actions.includes("team.governance.edit");
   const canApproveGovernance = isActive && overview.allowed_actions.includes("team.governance.approve");
-  const canEditLending = isActive && overview.allowed_actions.includes("team.lending.policy.edit");
-  const canDecideLending = isActive && overview.allowed_actions.includes("team.lending.request.decide");
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
@@ -90,14 +85,8 @@ export function TeamDetailLayout({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canAddMember ? (
-            <V3Button disabled size="sm" variant="outline">
-              <UserPlus data-icon="inline-start" />
-              添加成员
-            </V3Button>
-          ) : null}
           {canCreateGovernance ? (
-            <V3Button disabled size="sm">
+            <V3Button disabled size="sm" variant="outline">
               <Plus data-icon="inline-start" />
               创建治理草案
             </V3Button>
@@ -168,18 +157,6 @@ export function TeamDetailLayout({
             >
               治理策略
             </TabsTrigger>
-            <TabsTrigger
-              className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-              value="lending"
-            >
-              借调
-            </TabsTrigger>
-            <TabsTrigger
-              className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-              value="audit"
-            >
-              审计记录
-            </TabsTrigger>
           </TabsList>
         </V3Tabs>
         <TabsContent className="mt-0" value="overview">
@@ -207,17 +184,6 @@ export function TeamDetailLayout({
             currentRevision={currentRevision ?? overview.current_revision}
             teamId={team.id}
           />
-        </TabsContent>
-        <TabsContent className="mt-0" value="lending">
-          <TeamLendingTab
-            apiOptions={apiOptions}
-            canDecide={canDecideLending}
-            canEdit={canEditLending}
-            teamId={team.id}
-          />
-        </TabsContent>
-        <TabsContent className="mt-0" value="audit">
-          <TeamAuditTab apiBaseUrl={apiOptions.baseUrl} fetcher={apiOptions.fetcher} teamId={team.id} />
         </TabsContent>
       </Tabs>
     </div>
