@@ -399,7 +399,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择模板，再分步完成预检、配置和确认。"
-          : "按模板默认值补齐职责画像、能力边界、治理策略和 Provider 偏好。"
+          : "按模板默认值补齐职责画像、能力选择、治理策略和 Provider 偏好。"
         }
         actions={
           flowStep !== "template" ? (
@@ -683,7 +683,7 @@ function CreationPathPanel({
     },
     {
       title: "从团队角色复制",
-      description: "复用团队内已验证的角色画像和能力边界。",
+      description: "复用团队内已验证的角色画像和能力配置。",
       icon: ClipboardCheck,
       mode: undefined,
       badge: "暂未开放",
@@ -1150,12 +1150,12 @@ function EmployeeTypeTableRow({
 }
 
 function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions }) {
-  const checks = options?.creation_checks ?? [];
+  const checks = displayablePreflightChecks(options?.creation_checks ?? []);
 
   return (
     <section className="rounded-md border bg-card/95 p-4 shadow-xs">
       <h2 className="text-base font-semibold">预检项目</h2>
-      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与 Provider 偏好候选。</p>
+      <p className="mt-1 text-xs text-muted-foreground">检查治理策略、模板与 Provider 偏好候选；能力选择在下一步配置。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
           <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
@@ -1192,8 +1192,8 @@ function PreflightStep({
   onContinue: () => void;
 }) {
   const isBlankCustom = draft.creation_mode === "blank_custom";
-  const blockedChecks = (options?.creation_checks ?? []).filter(
-    (check) => check.status === "blocked" && !(isBlankCustom && isCapabilityPolicyCheck(check)),
+  const blockedChecks = displayablePreflightChecks(options?.creation_checks ?? []).filter(
+    (check) => check.status === "blocked",
   );
   const hasBlockedChecks = blockedChecks.length > 0;
 
@@ -1203,7 +1203,7 @@ function PreflightStep({
         <div className="border-b p-4">
           <h2 className="text-lg font-semibold">配置预检</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选，再进入详细配置。
+            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选；技能、MCP 和外部能力在配置页选择。
           </p>
         </div>
         <div className="grid gap-4 p-4">
@@ -1262,6 +1262,10 @@ function PreflightStep({
 
 function isCapabilityPolicyCheck(check: { key: string }) {
   return check.key === "capability_policy" || check.key === "capability_boundary";
+}
+
+function displayablePreflightChecks<T extends { key: string }>(checks: T[]) {
+  return checks.filter((check) => !isCapabilityPolicyCheck(check));
 }
 
 function InlineSummary({ label, value }: { label: string; value: string }) {
@@ -1369,7 +1373,7 @@ function CreationPreflightPanel({
   options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
 }) {
-  const checks = options?.creation_checks ?? [];
+  const checks = displayablePreflightChecks(options?.creation_checks ?? []);
   const providers = providerCandidates(options);
 
   return (

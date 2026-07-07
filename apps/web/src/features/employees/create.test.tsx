@@ -714,7 +714,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
   });
 
-  it("lets blank-custom continue through preflight when empty capability boundary is reported", async () => {
+  it("does not show capability boundary as a blank-custom preflight blocker", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
@@ -722,14 +722,17 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
-    await expect.element(screen.getByText("能力边界", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("技能 0 · MCP 0 · 外部能力 0", { exact: true })).toBeVisible();
+    expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
+    expect(screen.getByText("技能 0 · MCP 0 · 外部能力 0", { exact: true }).query()).toBeNull();
     await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("名称"), "空白自定义员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
   });
 
-  it("also accepts the legacy capability boundary check key for blank-custom preflight", async () => {
+  it("also hides the legacy capability boundary check key from blank-custom preflight", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
         capabilityBoundaryKey: "capability_boundary",
@@ -741,6 +744,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
 
+    expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
     await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
   });
 
@@ -758,18 +762,26 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByText("当前配置暂不能继续")).toBeVisible();
     await expect.element(screen.getByText("其他阻断: 需要先完成外部前置条件")).toBeVisible();
+    expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
+    expect(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0").query()).toBeNull();
     await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeDisabled();
   });
 
-  it("keeps template preflight blocked when capability boundary is reported as blocked", async () => {
+  it("does not show capability boundary as a template preflight blocker", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
 
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
-    await expect.element(screen.getByText("当前配置暂不能继续")).toBeVisible();
-    await expect.element(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeDisabled();
+    expect(screen.getByText("当前配置暂不能继续").query()).toBeNull();
+    expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
+    expect(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0").query()).toBeNull();
+    await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
+    await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("名称"), "模板员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
   });
 
   it("shows blank-custom source on the selected summary and confirm step", async () => {
