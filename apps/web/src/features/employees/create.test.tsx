@@ -682,11 +682,11 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).toBeChecked();
 
     await enterConfirmCreation(screen);
     await expect.element(screen.getByText("数据库管理员工")).toBeVisible();
-    await expect.element(screen.getByText("codex")).toBeVisible();
+    await expect.element(screen.getByText("Codex")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
     expect(navigate).toHaveBeenCalledWith({
@@ -793,7 +793,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByLabelText("codex"));
+    await userEvent.click(screen.getByLabelText("Codex"));
     await enterConfirmCreation(screen);
 
     expect(document.body.textContent).toContain("自定义身份");
@@ -836,7 +836,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByLabelText("codex"));
+    await userEvent.click(screen.getByLabelText("Codex"));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -921,7 +921,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "12000");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).toBeChecked();
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -1021,7 +1021,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).toBeChecked();
     await expect.element(screen.getByText("2 个 Runtime 节点候选会在项目运行准备中评估")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
   });
@@ -1066,7 +1066,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByRole("radio", { name: "codex" })).toBeChecked();
+    await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeChecked();
     await expect.element(screen.getByText("1/2 个 Runtime 节点当前在线，仅用于项目运行准备参考")).toBeVisible();
   });
 
@@ -1096,7 +1096,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByLabelText("codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).toBeChecked();
     expect(document.body.textContent).not.toContain("claude_code");
   });
 
@@ -1112,7 +1112,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByLabelText("codex"));
+    await userEvent.click(screen.getByLabelText("Codex"));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -1172,7 +1172,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
-    await expect.element(screen.getByLabelText("codex")).not.toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).not.toBeChecked();
     await expect.element(screen.getByLabelText("Claude Code")).not.toBeChecked();
     expect(document.body.textContent).not.toContain("claude_code");
 
