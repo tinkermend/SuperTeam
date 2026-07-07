@@ -13,6 +13,7 @@ import {
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
+  isTeamGovernanceConfigRequiredError,
   previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
   upsertWorkspaceFile,
@@ -381,6 +382,40 @@ describe("digital employee API", () => {
       },
     );
     expect(createOptions.creation_checks[0].key).toBe("team_governance");
+  });
+
+  it("preserves structured create-options team governance error codes", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: "team_governance_config_required",
+          message: "employee effective config required: active team governance config is required",
+        }),
+        {
+          status: 422,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    const request = getDigitalEmployeeCreateOptions(
+      { baseUrl: "http://control-plane.local", fetcher: fetcher as typeof fetch },
+      "team-1",
+    );
+
+    await expect(
+      request,
+    ).rejects.toMatchObject({
+      name: "ApiRequestError",
+      status: 422,
+      code: "team_governance_config_required",
+      detail: "employee effective config required: active team governance config is required",
+    });
+
+    await request.catch((error: unknown) => {
+      expect(isTeamGovernanceConfigRequiredError(error)).toBe(true);
+    });
+    expect(isTeamGovernanceConfigRequiredError(new Error("different"))).toBe(false);
   });
 
   it("creates digital employee with ready creation body and cookie credentials", async () => {
