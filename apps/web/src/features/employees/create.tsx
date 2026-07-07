@@ -408,7 +408,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         iconTone="brand"
         title="创建数字员工"
         subtitle={flowStep === "template"
-          ? "先选择模板，再分步完成预检、配置和确认。"
+          ? "先选择创建方式，再完成配置并确认创建。"
           : "按职责定位、能力选择、治理策略和必选 Provider 类型完成员工画像。"
         }
         actions={

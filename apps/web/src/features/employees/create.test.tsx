@@ -664,7 +664,7 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("配置预检");
   });
 
-  it("creates a ready digital employee through the four-step wizard", async () => {
+  it("creates a ready digital employee through the streamlined wizard", async () => {
     const fetcher = createWizardFetcher({ expectedTeamId: team.id });
     const screen = await renderCreateEmployeeView(fetcher);
 
