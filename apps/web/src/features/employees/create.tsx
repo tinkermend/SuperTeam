@@ -119,6 +119,8 @@ type ValidationErrors = Partial<
 type CreateEmployeeViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
+  initialDraft?: WizardDraft;
+  initialFlowStep?: CreateFlowStep;
 };
 
 const emptyDraft: WizardDraft = {
@@ -150,15 +152,15 @@ export function CreateEmployeePage() {
   return <CreateEmployeeView apiBaseUrl={apiBaseUrl} />;
 }
 
-export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewProps) {
+export function CreateEmployeeView({ apiBaseUrl, fetcher, initialDraft, initialFlowStep }: CreateEmployeeViewProps) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false });
   const requestedTemplate =
     typeof search === "object" && search && "template" in search ? stringValue(search.template) : "";
-  const [flowStep, setFlowStep] = useState<CreateFlowStep>("template");
+  const [flowStep, setFlowStep] = useState<CreateFlowStep>(initialFlowStep ?? "template");
   const [draftTouched, setDraftTouched] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
-  const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
+  const [draft, setDraft] = useState<WizardDraft>(initialDraft ?? emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [templateQueryHandled, setTemplateQueryHandled] = useState("");
 
@@ -208,6 +210,14 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const visibleSkillKeys = useMemo(
     () => new Set((visibleSkills.data ?? []).map(skillKey).filter(Boolean)),
     [visibleSkills.data],
+  );
+  const teamPolicySkillKeys = useMemo(
+    () => new Set((createOptions.data?.capability_options.skills ?? []).filter(Boolean)),
+    [createOptions.data?.capability_options.skills],
+  );
+  const teamPolicyMcpKeys = useMemo(
+    () => new Set((createOptions.data?.capability_options.mcp_servers ?? []).filter(Boolean)),
+    [createOptions.data?.capability_options.mcp_servers],
   );
 
   const selectedType = useMemo(
@@ -289,9 +299,18 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             enabled_external_capabilities: draft.capability_selection.enabled_external_capabilities.filter((value) =>
               (createOptions.data?.capability_options.external_capabilities ?? []).includes(value),
             ),
-            enabled_mcp_servers: withoutInherited(draft.capability_selection.enabled_mcp_servers, inheritedMcpKeys),
+            enabled_mcp_servers: withoutInherited(
+              draft.capability_selection.enabled_mcp_servers.filter(
+                (value) => teamPolicyMcpKeys.size === 0 || teamPolicyMcpKeys.has(value),
+              ),
+              inheritedMcpKeys,
+            ),
             enabled_skills: withoutInherited(
-              draft.capability_selection.enabled_skills.filter((value) => visibleSkillKeys.size === 0 || visibleSkillKeys.has(value)),
+              draft.capability_selection.enabled_skills.filter(
+                (value) =>
+                  (visibleSkillKeys.size === 0 || visibleSkillKeys.has(value)) &&
+                  (teamPolicySkillKeys.size === 0 || teamPolicySkillKeys.has(value)),
+              ),
               inheritedSkillKeys,
             ),
           },

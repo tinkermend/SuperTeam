@@ -927,6 +927,83 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("Billing Admin");
   });
 
+  it("does not submit globally visible but team-policy-disallowed skills after team selection", async () => {
+    const fetcher = createWizardFetcher({
+      expectedTeamId: team.id,
+      expectedCreateBody: {
+        team_id: team.id,
+        employee_type: "custom_agent",
+        name: "自定义员工",
+        role: "负责跨系统问题诊断",
+        description: "直接定义身份",
+        risk_level: "medium",
+        avatar_asset_id: avatarAsset.id,
+        role_profile: {
+          employee_type: "custom_agent",
+          role: "负责跨系统问题诊断",
+          title: "自定义身份",
+        },
+        capability_selection: {
+          enabled_skills: [],
+          enabled_mcp_servers: [],
+          enabled_external_capabilities: [],
+        },
+        context_policy_override: {},
+        approval_policy_override: {},
+        output_contract_addendum: {},
+        provider_type: "codex",
+        session_policy: { mode: "reuse_latest" },
+        workspace_policy: {},
+        environment_variables: [],
+        metadata: { creation_mode: "blank_custom" },
+      },
+      extraVisibleSkill: { slug: "billing-admin", name: "Billing Admin" },
+    });
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <CreateEmployeeView
+          apiBaseUrl="http://control-plane.local"
+          fetcher={fetcher}
+          initialFlowStep="confirm"
+          initialDraft={{
+            creation_mode: "blank_custom",
+            team_id: team.id,
+            employee_type: "custom_agent",
+            daily_token_limit: "",
+            approval_policy_override: {},
+            context_policy_override: {},
+            name: "自定义员工",
+            risk_level: "medium",
+            role: "负责跨系统问题诊断",
+            description: "直接定义身份",
+            avatar_asset_id: avatarAsset.id,
+            runtime_binding: "",
+            runtime_node_id: "",
+            provider_type: "codex",
+            environment_variables: [],
+            capability_selection: {
+              enabled_skills: ["billing-admin"],
+              enabled_mcp_servers: ["postgres"],
+              enabled_external_capabilities: [],
+            },
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "确认创建" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: [],
+      enabled_mcp_servers: [],
+      enabled_external_capabilities: [],
+    });
+  });
+
   it("starts blank-custom configuration without template-injected capabilities", async () => {
     const screen = await renderCreateEmployeeView();
 
