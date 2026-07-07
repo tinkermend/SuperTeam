@@ -73,7 +73,7 @@ const BLANK_CUSTOM_TITLE = "自定义身份";
 
 const configSteps = ["身份", "能力", "治理", "Provider 类型"] as const;
 type StepName = (typeof configSteps)[number];
-type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
+type CreateFlowStep = "template" | "configure" | "confirm";
 type CreationMode = "template" | "blank_custom";
 
 type WizardDraft = {
@@ -331,12 +331,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
   }
 
-  function enterPreflight() {
-    setErrors({});
-    setFlowStep("preflight");
-  }
-
   function enterConfiguration() {
+    setErrors({});
     setFlowStep("configure");
     setStepIndex(0);
     setDraftTouched(false);
@@ -371,7 +367,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     const nextDraft = { ...emptyDraft, creation_mode: nextMode, team_id: draft.team_id };
     if (nextMode === "blank_custom") {
       setDraft(applyBlankCustomDefaults(nextDraft));
-      setFlowStep("preflight");
+      setFlowStep("configure");
+      setStepIndex(0);
       return;
     }
     setDraft(nextDraft);
@@ -395,7 +392,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
     resetDraftForTeam(nextTeamId, draft.creation_mode);
     if (draft.creation_mode === "blank_custom") {
-      setFlowStep("preflight");
+      setFlowStep("configure");
     }
   }
 
@@ -461,22 +458,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 options={createOptions.data}
                 selectedTeamName={selectedTeam?.name}
                 selectedType={selectedType}
-                onEnterPreflight={enterPreflight}
+                onEnterConfiguration={enterConfiguration}
                 onSelectType={selectType}
               />
             ) : null}
           </div>
-        ) : null}
-
-        {flowStep === "preflight" ? (
-          <PreflightStep
-            draft={draft}
-            options={createOptions.data}
-            selectedTeamName={selectedTeam?.name}
-            selectedType={selectedType}
-            onBack={() => setFlowStep("template")}
-            onContinue={enterConfiguration}
-          />
         ) : null}
 
         {flowStep === "configure" ? (
@@ -621,9 +607,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
 function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
-    { key: "template", title: "选择模板", description: "选择创建方式和专业模板" },
-    { key: "preflight", title: "配置预检", description: "检查治理策略和 Provider 类型候选" },
-    { key: "configure", title: "完成配置", description: "进入详细配置向导" },
+    { key: "template", title: "创建方式", description: "选择模板或自定义身份" },
+    { key: "configure", title: "完成配置", description: "补齐身份、能力、治理和 Provider" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
   const activeIndex = stages.findIndex((stage) => stage.key === flowStep);
@@ -631,7 +616,7 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
 
   return (
     <SoftCard className="mb-4 px-4 py-3.5">
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3">
         {stages.map((stage, index) => {
           const active = index === normalizedActiveIndex;
           const done = index < normalizedActiveIndex;
@@ -780,14 +765,14 @@ function TemplateSelectionPanel({
   options,
   selectedTeamName,
   selectedType,
-  onEnterPreflight,
+  onEnterConfiguration,
   onSelectType,
 }: {
   draft: WizardDraft;
   options?: DigitalEmployeeCreateOptions;
   selectedTeamName?: string;
   selectedType?: DigitalEmployeeTypeOption;
-  onEnterPreflight: () => void;
+  onEnterConfiguration: () => void;
   onSelectType: (value: string) => void;
 }) {
   const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
@@ -919,8 +904,8 @@ function TemplateSelectionPanel({
               </button>
             </p>
           </div>
-          <V3Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
-            进入配置预检
+          <V3Button disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
+            进入完成配置
             <ChevronRight className="size-4" />
           </V3Button>
         </div>
@@ -998,126 +983,6 @@ function TemplateTableRow({
         </V3Button>
       </td>
     </tr>
-  );
-}
-
-function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions }) {
-  const checks = displayablePreflightChecks(options?.creation_checks ?? []);
-
-  return (
-    <SoftCard className="p-4">
-      <h2 className="text-base font-semibold text-v3-ink">预检项目</h2>
-      <p className="mt-1 text-xs text-v3-ink-3">检查治理策略、模板与 Provider 类型候选；能力选择在下一步配置。</p>
-      <div className="mt-4 grid gap-2">
-        {checks.length === 0 ? (
-          <p className="rounded-[12px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
-        ) : (
-          checks.map((check) => (
-            <div
-              className="flex items-center gap-3 rounded-[12px] border border-v3-line bg-v3-card-inner p-3"
-              key={check.key}
-            >
-              <span className={cn("size-2 shrink-0 rounded-full", checkDotClassName(check.status))} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-v3-ink">{check.label}</span>
-                <span className="block truncate text-xs text-v3-ink-3">{check.message}</span>
-              </span>
-              <StatusPill tone={checkTone(check.status)}>{checkStatusLabel(check.status)}</StatusPill>
-            </div>
-          ))
-        )}
-      </div>
-    </SoftCard>
-  );
-}
-
-function PreflightStep({
-  draft,
-  options,
-  selectedTeamName,
-  selectedType,
-  onBack,
-  onContinue,
-}: {
-  draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
-  selectedTeamName?: string;
-  selectedType?: DigitalEmployeeTypeOption;
-  onBack: () => void;
-  onContinue: () => void;
-}) {
-  const isBlankCustom = draft.creation_mode === "blank_custom";
-  const blockedChecks = displayablePreflightChecks(options?.creation_checks ?? []).filter(
-    (check) => check.status === "blocked",
-  );
-  const hasBlockedChecks = blockedChecks.length > 0;
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <GlassCard className="flex min-w-0 flex-col">
-        <div className="border-b border-v3-line p-4">
-          <div className="flex items-center gap-2.5">
-            <IconTile tone="ok" size="sm">
-              <ShieldCheck />
-            </IconTile>
-            <div>
-              <h2 className="text-lg font-semibold text-v3-ink">配置预检</h2>
-              <p className="mt-0.5 text-sm text-v3-ink-3">
-                先确认后端创建候选返回的治理策略、{isBlankCustom ? BLANK_CUSTOM_TITLE : "模板"}和 Provider 类型候选；技能、MCP 和外部能力在配置页选择。
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 p-4">
-          <CheckListPanel options={options} />
-          {hasBlockedChecks ? (
-            <Alert variant="destructive">
-              <AlertTitle>当前配置暂不能继续</AlertTitle>
-              <AlertDescription>
-                {blockedChecks.map((check) => `${check.label}: ${check.message}`).join("；")}
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <Alert>
-              <AlertTitle>预检通过</AlertTitle>
-              <AlertDescription>可以继续补充员工身份、能力、治理和 Provider 类型。</AlertDescription>
-            </Alert>
-          )}
-        </div>
-        <div className="flex justify-between gap-3 border-t border-v3-line p-4">
-          <V3Button onClick={onBack} type="button" variant="glass">
-            <ChevronLeft className="size-4" />
-            返回创建路径
-          </V3Button>
-          <V3Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
-            预检通过，继续配置
-            <ChevronRight className="size-4" />
-          </V3Button>
-        </div>
-      </GlassCard>
-
-      <aside className="grid content-start gap-4">
-        <GlassCard className="p-4">
-          <h2 className="text-base font-semibold text-v3-ink">本次草稿</h2>
-          <p className="mt-1 text-xs text-v3-ink-3">
-            {isBlankCustom ? "能力和治理覆盖将在配置页手动补齐。" : "模板默认值将在配置页继续编辑。"}
-          </p>
-          <div className="mt-4 grid gap-2 text-sm">
-            <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : "专业模板"} />
-            {!isBlankCustom ? (
-              <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
-            ) : null}
-            <InlineSummary label="职责定位" value={draft.role || selectedType?.default_role || "未生成"} />
-            <InlineSummary label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
-            <InlineSummary
-              label="默认注入"
-              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
-            />
-          </div>
-        </GlassCard>
-      </aside>
-    </div>
   );
 }
 
