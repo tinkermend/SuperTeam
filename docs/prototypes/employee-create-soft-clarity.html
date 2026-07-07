@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>创建数字员工 · 柔和卡片版</title>
+<style>
+  :root {
+    /* v3 Soft-Flat tokens (from theme.css) */
+    --v3-bg: #f8fafc;
+    --v3-shell-bg: #f6f8fb;
+    --v3-card: #ffffff;
+    --v3-card-soft: #f7f8fa;
+    --v3-card-inner: #fafbfc;
+    --v3-ink: #0b0d12;
+    --v3-ink-2: #4d586b;
+    --v3-ink-3: #6d7580;
+    --v3-line: #eef1f4;
+    --v3-line-strong: #dfe4ea;
+    --v3-brand: #2f5fff;
+    --v3-brand-deep: #2348e0;
+    --v3-brand-soft: #e9efff;
+    --v3-brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+    --v3-signature-surface: #f8faff;
+    --v3-signature-wash: linear-gradient(135deg, rgba(47,95,255,0.08), rgba(248,250,255,0) 46%);
+    --v3-signature-grid: rgba(47,95,255,0.08);
+    --v3-signature-border: rgba(47,95,255,0.20);
+    --v3-ok: #009a60;
+    --v3-ok-text: #006639;
+    --v3-ok-soft: #e3f9ec;
+    --v3-warn: #cc572a;
+    --v3-warn-text: #893411;
+    --v3-warn-soft: #ffede5;
+    --v3-danger: #d14647;
+    --v3-danger-text: #8a2f2d;
+    --v3-danger-soft: #ffece9;
+    --v3-info: #0094b7;
+    --v3-info-text: #00617d;
+    --v3-info-soft: #def8fe;
+    --v3-mute: #64748b;
+    --v3-mute-text: #4d586b;
+    --v3-mute-soft: #eef1f4;
+    --v3-r-card: 1.375rem;
+    --v3-r-inner: 0.875rem;
+    --v3-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 12px 30px rgba(16,24,40,0.055);
+    --v3-shadow-pop: 0 10px 44px rgba(16,24,40,0.12);
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--v3-ink);
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 18% 14%, rgba(47,95,255,0.06), transparent 28%),
+      radial-gradient(circle at 88% 12%, rgba(21,160,107,0.04), transparent 30%),
+      linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+    -webkit-font-smoothing: antialiased;
+    padding: 32px 24px 80px;
+  }
+
+  .stage { max-width: 1180px; margin: 0 auto; }
+
+  /* Page header */
+  .page-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 28px; gap: 20px;
+  }
+  .page-header .left { display: flex; align-items: flex-start; gap: 16px; }
+  .page-header .icon-tile {
+    width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
+    background: var(--v3-brand-soft); border: 1px solid rgba(47,95,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .page-header .icon-tile svg { width: 22px; height: 22px; color: var(--v3-brand); }
+  .page-header h1 { font-size: 26px; font-weight: 800; color: var(--v3-ink); letter-spacing: -0.01em; }
+  .page-header .sub { font-size: 14px; color: var(--v3-ink-2); margin-top: 4px; }
+  .page-header .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; color: var(--v3-ink-2);
+    background: var(--v3-card); border: 1px solid var(--v3-line-strong);
+    padding: 9px 14px; border-radius: 10px; cursor: pointer;
+    box-shadow: var(--v3-shadow); transition: all 0.2s;
+  }
+  .page-header .back:hover { color: var(--v3-ink); border-color: var(--v3-brand); }
+  .page-header .back svg { width: 15px; height: 15px; }
+
+  /* Step progress — node line motif */
+  .step-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; margin: 0 auto 32px; max-width: 680px;
+  }
+  .step-item {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    position: relative; z-index: 2;
+  }
+  .step-item .node {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--v3-card); border: 2px solid var(--v3-line-strong);
+    color: var(--v3-ink-3); box-shadow: var(--v3-shadow);
+    transition: all 0.3s;
+  }
+  .step-item.done .node {
+    background: var(--v3-brand-soft); border-color: var(--v3-brand); color: var(--v3-brand-deep);
+  }
+  .step-item.active .node {
+    background: var(--v3-brand-grad); border-color: var(--v3-brand); color: #fff;
+    box-shadow: 0 0 0 4px rgba(47,95,255,0.12), 0 6px 16px -4px rgba(47,95,255,0.4);
+  }
+  .step-item .label { font-size: 13px; font-weight: 600; color: var(--v3-ink-3); white-space: nowrap; }
+  .step-item.active .label, .step-item.done .label { color: var(--v3-ink); }
+  .step-line {
+    flex: 1; height: 2px; background: var(--v3-line-strong);
+    margin: 0 -6px; position: relative; z-index: 1; margin-top: -18px;
+    border-radius: 1px;
+  }
+  .step-line.done { background: var(--v3-brand); }
+
+  /* Layout grid */
+  .create-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+  @media (max-width: 1000px) { .create-grid { grid-template-columns: 1fr; } }
+  .main-col { display: flex; flex-direction: column; gap: 20px; }
+  .side-col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* SoftCard */
+  .soft-card {
+    background: var(--v3-card); border-radius: var(--v3-r-card);
+    border: 1px solid var(--v3-line); box-shadow: var(--v3-shadow);
+    overflow: hidden; transition: all 0.3s;
+  }
+  .soft-card:hover { box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 16px 36px rgba(16,24,40,0.07); }
+
+  /* Card header */
+  .card-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 22px 26px 18px; border-bottom: 1px solid var(--v3-line);
+  }
+  .card-head .title-block { display: flex; align-items: flex-start; gap: 14px; }
+  .card-head .icon-tile {
+    width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--v3-brand-soft); border: 1px solid rgba(47,95,255,0.15);
+  }
+  .card-head .icon-tile svg { width: 18px; height: 18px; color: var(--v3-brand); }
+  .card-head .t { font-size: 18px; font-weight: 700; color: var(--v3-ink); }
+  .card-head .sub { font-size: 13px; color: var(--v3-ink-2); margin-top: 3px; }
+  .card-head .right { display: flex; align-items: center; gap: 8px; }
+
+  /* Card body */
+  .card-body { padding: 24px 26px; }
+
+  /* Form */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 7px; }
+  .form-field.full { grid-column: 1 / -1; }
+  .form-label {
+    font-size: 13px; font-weight: 600; color: var(--v3-ink-2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .form-label .req { color: var(--v3-danger); font-size: 11px; }
+  .form-input, .form-select, .form-textarea {
+    width: 100%; background: var(--v3-card); border: 1px solid var(--v3-line-strong);
+    color: var(--v3-ink); font-size: 14px; font-weight: 500;
+    padding: 11px 14px; border-radius: 10px;
+    font-family: var(--sans); outline: none; transition: all 0.2s;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    border-color: var(--v3-brand); box-shadow: 0 0 0 3px rgba(47,95,255,0.1);
+  }
+  .form-input.mono, .form-textarea.mono { font-family: var(--mono); font-size: 13px; }
+  .form-select {
+    appearance: none; cursor: pointer; padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%234d586b' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .form-hint { font-size: 12px; color: var(--v3-ink-3); }
+  .form-textarea { resize: vertical; min-height: 80px; }
+
+  /* Avatar picker — signature */
+  .avatar-area {
+    margin-top: 20px; padding: 20px;
+    background: var(--v3-signature-surface);
+    border: 1px solid var(--v3-signature-border);
+    border-radius: var(--v3-r-inner);
+    background-image: var(--v3-signature-wash);
+  }
+  .avatar-area .aa-head {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+  }
+  .avatar-area .aa-title {
+    font-size: 14px; font-weight: 700; color: var(--v3-ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .avatar-area .aa-title svg { width: 16px; height: 16px; color: var(--v3-brand); }
+  .avatar-area .aa-hint { font-size: 12px; color: var(--v3-ink-3); }
+  .avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 12px; }
+  .avatar-item {
+    aspect-ratio: 1; border-radius: 50%; cursor: pointer;
+    border: 2.5px solid var(--v3-line-strong); background: var(--v3-card);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.25s; position: relative;
+  }
+  .avatar-item:hover {
+    border-color: var(--v3-brand); transform: translateY(-2px);
+    box-shadow: 0 8px 20px -6px rgba(47,95,255,0.3);
+  }
+  .avatar-item.selected {
+    border-color: var(--v3-brand); background: var(--v3-brand-soft);
+    box-shadow: 0 0 0 3px rgba(47,95,255,0.12);
+  }
+  .avatar-item .emoji { font-size: 26px; }
+  .avatar-item.selected::after {
+    content: ""; position: absolute; bottom: -3px; right: -3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--v3-brand); border: 2.5px solid var(--v3-card);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='white' stroke-width='3' viewBox='0 0 24 24'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+  }
+
+  /* StatusPill */
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 100px;
+  }
+  .status-pill.ok { background: var(--v3-ok-soft); color: var(--v3-ok-text); }
+  .status-pill.warn { background: var(--v3-warn-soft); color: var(--v3-warn-text); }
+  .status-pill.danger { background: var(--v3-danger-soft); color: var(--v3-danger-text); }
+  .status-pill.brand { background: var(--v3-brand-soft); color: var(--v3-brand-deep); }
+  .status-pill.mute { background: var(--v3-mute-soft); color: var(--v3-mute-text); }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Config tabs */
+  .cfg-tabs {
+    display: flex; gap: 2px; padding: 0 26px;
+    border-bottom: 1px solid var(--v3-line);
+  }
+  .cfg-tab {
+    padding: 13px 18px; font-size: 13px; font-weight: 600; color: var(--v3-ink-3);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  .cfg-tab:hover { color: var(--v3-ink-2); }
+  .cfg-tab.active { color: var(--v3-brand-deep); border-bottom-color: var(--v3-brand); }
+
+  /* Capability chips */
+  .cap-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cap-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; padding: 7px 13px;
+    border-radius: 8px; cursor: pointer;
+    background: var(--v3-card-soft); border: 1px solid var(--v3-line-strong); color: var(--v3-ink-2);
+    transition: all 0.15s;
+  }
+  .cap-chip:hover { border-color: var(--v3-brand); color: var(--v3-ink); }
+  .cap-chip.active {
+    background: var(--v3-brand-soft); border-color: var(--v3-brand); color: var(--v3-brand-deep);
+  }
+  .cap-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--v3-ink-3); }
+  .cap-chip.active .dot { background: var(--v3-brand); }
+
+  /* Action bar */
+  .action-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 26px; border-top: 1px solid var(--v3-line);
+    background: var(--v3-card-soft);
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    padding: 11px 22px; border-radius: 10px; cursor: pointer;
+    border: none; transition: all 0.2s; white-space: nowrap;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-primary {
+    background: var(--v3-brand-grad); color: #fff;
+    box-shadow: 0 6px 16px -4px rgba(47,95,255,0.4);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -4px rgba(47,95,255,0.5); }
+  .btn-ghost {
+    background: var(--v3-card); color: var(--v3-ink-2);
+    border: 1px solid var(--v3-line-strong);
+  }
+  .btn-ghost:hover { color: var(--v3-ink); border-color: var(--v3-brand); background: var(--v3-brand-soft); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Sidebar cards */
+  .side-card {
+    background: var(--v3-card); border-radius: var(--v3-r-inner);
+    border: 1px solid var(--v3-line); box-shadow: var(--v3-shadow);
+    overflow: hidden;
+  }
+  .side-head {
+    padding: 16px 18px; border-bottom: 1px solid var(--v3-line);
+    font-size: 14px; font-weight: 700; color: var(--v3-ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .side-head svg { width: 16px; height: 16px; color: var(--v3-brand); }
+  .side-body { padding: 14px 18px; }
+  .side-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--v3-line);
+  }
+  .side-row:last-child { border-bottom: 0; }
+  .side-row .k { font-size: 13px; color: var(--v3-ink-3); }
+  .side-row .v { font-size: 13px; font-weight: 600; color: var(--v3-ink); font-variant-numeric: tabular-nums; }
+  .side-row .v.mono { font-family: var(--mono); font-size: 12px; }
+
+  /* Info note */
+  .info-note {
+    margin: 0 26px 20px; padding: 14px 18px;
+    background: var(--v3-brand-soft); border: 1px solid rgba(47,95,255,0.15);
+    border-radius: var(--v3-r-inner);
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .info-note svg { width: 18px; height: 18px; color: var(--v3-brand); flex-shrink: 0; margin-top: 1px; }
+  .info-note .txt { font-size: 13px; color: var(--v3-ink-2); line-height: 1.6; }
+  .info-note .txt strong { color: var(--v3-ink); }
+  .info-note .txt code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--v3-card); padding: 2px 6px; border-radius: 4px;
+    border: 1px solid var(--v3-line);
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <div class="left">
+      <div class="icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+      </div>
+      <div>
+        <h1>创建数字员工</h1>
+        <div class="sub">配置身份、能力和治理边界，生成可审计的配置版本</div>
+      </div>
+    </div>
+    <button class="back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      返回列表
+    </button>
+  </div>
+
+  <!-- Step progress -->
+  <div class="step-bar">
+    <div class="step-item done">
+      <div class="node">1</div>
+      <div class="label">选择模板</div>
+    </div>
+    <div class="step-line done"></div>
+    <div class="step-item done">
+      <div class="node">2</div>
+      <div class="label">配置预检</div>
+    </div>
+    <div class="step-line done"></div>
+    <div class="step-item active">
+      <div class="node">3</div>
+      <div class="label">完成配置</div>
+    </div>
+    <div class="step-line"></div>
+    <div class="step-item">
+      <div class="node">4</div>
+      <div class="label">确认创建</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="create-grid">
+    <div class="main-col">
+
+      <!-- Identity card -->
+      <div class="soft-card">
+        <div class="card-head">
+          <div class="title-block">
+            <div class="icon-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div>
+              <div class="t">身份画像</div>
+              <div class="sub">设定数字员工的基本身份和归属</div>
+            </div>
+          </div>
+          <div class="right">
+            <span class="status-pill brand"><span class="dot" style="background:var(--v3-brand)"></span>模板: 资深工程师</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-label">员工名称 <span class="req">*</span></label>
+              <input class="form-input" value="Atlas-Engineer-01" />
+              <span class="form-hint">用于识别和调用</span>
+            </div>
+            <div class="form-field">
+              <label class="form-label">默认角色 <span class="req">*</span></label>
+              <input class="form-input mono" value="senior_engineer" />
+              <span class="form-hint">由模板带入，可修改</span>
+            </div>
+            <div class="form-field">
+              <label class="form-label">归属团队 <span class="req">*</span></label>
+              <select class="form-select">
+                <option>平台工程组 (team-platform)</option>
+                <option>数据科学组 (team-data)</option>
+                <option>前端工程组 (team-frontend)</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-label">风险等级</label>
+              <select class="form-select">
+                <option>low — 低风险</option>
+                <option selected>medium — 中风险</option>
+                <option>high — 高风险</option>
+                <option>critical — 关键</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label class="form-label">员工描述</label>
+              <textarea class="form-textarea" rows="3">负责后端服务开发、代码审查和技术方案设计。擅长 Go、Rust 和分布式系统。</textarea>
+            </div>
+          </div>
+
+          <!-- Avatar picker -->
+          <div class="avatar-area">
+            <div class="aa-head">
+              <div class="aa-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                选择头像 <span style="color:var(--v3-danger);font-size:12px">*</span>
+              </div>
+              <span class="aa-hint">来自 listDigitalEmployeeAvatarAssets() · 12 个可用</span>
+            </div>
+            <div class="avatar-grid">
+              <div class="avatar-item selected"><span class="emoji">🤖</span></div>
+              <div class="avatar-item"><span class="emoji">👨‍💻</span></div>
+              <div class="avatar-item"><span class="emoji">👩‍💻</span></div>
+              <div class="avatar-item"><span class="emoji">🦾</span></div>
+              <div class="avatar-item"><span class="emoji">⚡</span></div>
+              <div class="avatar-item"><span class="emoji">🔧</span></div>
+              <div class="avatar-item"><span class="emoji">🧠</span></div>
+              <div class="avatar-item"><span class="emoji">🚀</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capability card -->
+      <div class="soft-card">
+        <div class="card-head">
+          <div class="title-block">
+            <div class="icon-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div>
+              <div class="t">能力与治理</div>
+              <div class="sub">配置技能、Provider 和策略覆盖</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cfg-tabs">
+          <div class="cfg-tab active">能力选择</div>
+          <div class="cfg-tab">上下文策略</div>
+          <div class="cfg-tab">审批策略</div>
+          <div class="cfg-tab">Provider</div>
+          <div class="cfg-tab">预算</div>
+        </div>
+
+        <div class="info-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <div class="txt">
+            <strong>模板已带入默认能力。</strong>技能来自 <code>recommended_skills</code>，MCP 来自 <code>recommended_mcp_servers</code>。团队治理 allow-list 会过滤不兼容项。
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="form-field" style="margin-bottom:20px">
+            <label class="form-label">技能 <span style="color:var(--v3-ink-3);font-weight:400">· 3/8 已选 · 来自 recommended_skills</span></label>
+            <div class="cap-chips">
+              <div class="cap-chip active"><span class="dot"></span>code-review</div>
+              <div class="cap-chip active"><span class="dot"></span>go-testing</div>
+              <div class="cap-chip active"><span class="dot"></span>rust-dev</div>
+              <div class="cap-chip"><span class="dot"></span>typescript</div>
+              <div class="cap-chip"><span class="dot"></span>python-ml</div>
+              <div class="cap-chip"><span class="dot"></span>sql-optimization</div>
+              <div class="cap-chip"><span class="dot"></span>k8s-ops</div>
+              <div class="cap-chip"><span class="dot"></span>docs-writing</div>
+            </div>
+          </div>
+
+          <div class="form-field" style="margin-bottom:20px">
+            <label class="form-label">MCP 服务 <span style="color:var(--v3-ink-3);font-weight:400">· 2/5 已选 · 来自 recommended_mcp_servers</span></label>
+            <div class="cap-chips">
+              <div class="cap-chip active"><span class="dot"></span>filesystem</div>
+              <div class="cap-chip active"><span class="dot"></span>git-operations</div>
+              <div class="cap-chip"><span class="dot"></span>web-search</div>
+              <div class="cap-chip"><span class="dot"></span>database-query</div>
+              <div class="cap-chip"><span class="dot"></span>slack-notify</div>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label">Provider 类型 <span class="req">*</span> <span style="color:var(--v3-ink-3);font-weight:400">· 来自 runtime_provider_options</span></label>
+            <select class="form-select">
+              <option selected>claude-code — Claude Code CLI</option>
+              <option>opencode — OpenCode</option>
+              <option>codex — Codex CLI</option>
+            </select>
+            <span class="form-hint">受 team_config.allowed_provider_types 约束</span>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            上一步
+          </button>
+          <button class="btn btn-primary">
+            下一步 · 确认创建
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sidebar -->
+    <div class="side-col">
+      <!-- Draft summary -->
+      <div class="side-card">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          本草药稿
+        </div>
+        <div class="side-body">
+          <div class="side-row"><span class="k">模板</span><span class="v">资深工程师</span></div>
+          <div class="side-row"><span class="k">员工类型</span><span class="v mono">senior_engineer</span></div>
+          <div class="side-row"><span class="k">风险等级</span><span class="status-pill warn"><span class="dot" style="background:var(--v3-warn)"></span>medium</span></div>
+          <div class="side-row"><span class="k">技能数</span><span class="v">3</span></div>
+          <div class="side-row"><span class="k">MCP 服务</span><span class="v">2</span></div>
+          <div class="side-row"><span class="k">Provider</span><span class="v mono">claude-code</span></div>
+          <div class="side-row"><span class="k">头像</span><span class="v">已选择</span></div>
+        </div>
+      </div>
+
+      <!-- Preflight -->
+      <div class="side-card">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+          预检状态
+        </div>
+        <div class="side-body">
+          <div class="side-row"><span class="k">团队治理</span><span class="status-pill ok"><span class="dot" style="background:var(--v3-ok)"></span>通过</span></div>
+          <div class="side-row"><span class="k">模板兼容</span><span class="status-pill ok"><span class="dot" style="background:var(--v3-ok)"></span>通过</span></div>
+          <div class="side-row"><span class="k">Runtime 调度</span><span class="status-pill warn"><span class="dot" style="background:var(--v3-warn)"></span>提醒</span></div>
+          <div class="side-row"><span class="k">预算策略</span><span class="status-pill mute"><span class="dot" style="background:var(--v3-mute)"></span>默认</span></div>
+        </div>
+      </div>
+
+      <!-- Next step -->
+      <div class="side-card">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          下一步
+        </div>
+        <div class="side-body">
+          <div style="font-size:13px;color:var(--v3-ink-2);line-height:1.7">
+            确认后将生成配置版本 <code style="font-family:var(--mono);font-size:12px;background:var(--v3-card-soft);padding:2px 6px;border-radius:4px;border:1px solid var(--v3-line)">rev-1</code>，进入审批流程。批准后状态变为 <code style="font-family:var(--mono);font-size:12px;background:var(--v3-card-soft);padding:2px 6px;border-radius:4px;border:1px solid var(--v3-line)">ready</code> 可被调度。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

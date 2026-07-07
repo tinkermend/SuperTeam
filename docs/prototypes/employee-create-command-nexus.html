@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>创建数字员工 · 指挥中枢版</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --panel: #131826;
+    --panel-2: #1a2033;
+    --panel-3: #222a3f;
+    --line: #2a3245;
+    --line-strong: #3a4258;
+    --ink: #e8ecf4;
+    --ink-2: #9ba5bc;
+    --ink-3: #6a7390;
+    --brand: #4f8cff;
+    --brand-deep: #2f5fff;
+    --brand-soft: rgba(79,140,255,0.12);
+    --ok: #34d399;
+    --ok-soft: rgba(52,211,153,0.12);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251,191,36,0.12);
+    --danger: #f87171;
+    --danger-soft: rgba(248,113,113,0.12);
+    --info: #38bdf8;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-pill: 100px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    min-height: 100vh;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(79,140,255,0.08), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(52,211,153,0.05), transparent 40%);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Grid background */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(79,140,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,140,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .stage { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 28px 24px 80px; }
+
+  /* Header bar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .topbar .left { display: flex; align-items: center; gap: 16px; }
+  .topbar .crumb { font-size: 13px; color: var(--ink-3); }
+  .topbar .crumb span { color: var(--ink-2); }
+  .topbar .title { font-size: 20px; font-weight: 700; color: var(--ink); }
+  .topbar .right { display: flex; align-items: center; gap: 12px; }
+  .topbar .session-id {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: var(--radius-sm);
+  }
+
+  /* Terminal-style step bar */
+  .term-steps {
+    display: flex; align-items: center; gap: 0;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 20px; margin-bottom: 24px;
+    font-family: var(--mono); font-size: 13px;
+  }
+  .term-step {
+    display: flex; align-items: center; gap: 10px; color: var(--ink-3);
+  }
+  .term-step .num {
+    width: 24px; height: 24px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--panel-2); border: 1px solid var(--line);
+  }
+  .term-step.done .num { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+  .term-step.done { color: var(--ink-2); }
+  .term-step.active .num {
+    background: var(--brand); border-color: var(--brand); color: #fff;
+    box-shadow: 0 0 0 3px rgba(79,140,255,0.2);
+  }
+  .term-step.active { color: var(--ink); font-weight: 600; }
+  .term-sep { flex: 1; height: 1px; background: var(--line); margin: 0 16px; min-width: 20px; }
+  .term-sep.done { background: linear-gradient(90deg, var(--brand), var(--line)); }
+
+  /* Layout */
+  .grid { display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+
+  .main-col { display: flex; flex-direction: column; gap: 20px; }
+  .side-col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Panel */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 22px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .panel-head .t {
+    font-size: 15px; font-weight: 700; color: var(--ink);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .panel-head .t .icon-tile {
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    background: var(--brand-soft); border: 1px solid rgba(79,140,255,0.2);
+  }
+  .panel-head .t .icon-tile svg { width: 16px; height: 16px; color: var(--brand); }
+  .panel-head .sub { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+  .panel-head .right { display: flex; align-items: center; gap: 8px; }
+
+  .panel-body { padding: 22px; }
+
+  /* Template table — high density */
+  .tpl-table { width: 100%; border-collapse: collapse; }
+  .tpl-table th {
+    text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600;
+    color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--line); background: var(--panel-2);
+    position: sticky; top: 0;
+  }
+  .tpl-table td {
+    padding: 14px 16px; font-size: 13px; color: var(--ink-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .tpl-table tr { transition: background 0.15s; cursor: pointer; }
+  .tpl-table tr:hover { background: var(--panel-2); }
+  .tpl-table tr.selected { background: var(--brand-soft); }
+  .tpl-table tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
+  .tpl-name { font-weight: 600; color: var(--ink); }
+  .tpl-mono { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+
+  /* Form */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field.full { grid-column: 1 / -1; }
+  .form-label {
+    font-size: 12px; font-weight: 600; color: var(--ink-2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .form-label .req { color: var(--danger); }
+  .form-input, .form-select {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--ink); font-size: 14px; font-weight: 500;
+    padding: 10px 14px; border-radius: var(--radius-sm);
+    font-family: var(--sans); outline: none; transition: all 0.2s;
+  }
+  .form-input:focus, .form-select:focus {
+    border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79,140,255,0.15);
+    background: var(--panel-3);
+  }
+  .form-input.mono { font-family: var(--mono); font-size: 13px; }
+  .form-select {
+    appearance: none; cursor: pointer; padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%239ba5bc' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .form-hint { font-size: 11px; color: var(--ink-3); }
+
+  /* Avatar grid */
+  .avatar-block {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 18px; margin-top: 16px;
+  }
+  .avatar-block .ab-head {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+  }
+  .avatar-block .ab-title { font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .avatar-block .ab-title svg { width: 15px; height: 15px; color: var(--brand); }
+  .avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 10px; }
+  .avatar-item {
+    aspect-ratio: 1; border-radius: 50%; cursor: pointer;
+    border: 2px solid var(--line); background: var(--panel-3);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; position: relative;
+  }
+  .avatar-item:hover { border-color: var(--brand); transform: scale(1.05); }
+  .avatar-item.selected {
+    border-color: var(--brand); background: var(--brand-soft);
+    box-shadow: 0 0 0 3px rgba(79,140,255,0.2);
+  }
+  .avatar-item .emoji { font-size: 24px; }
+  .avatar-item.selected::after {
+    content: ""; position: absolute; bottom: -2px; right: -2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--brand); border: 2px solid var(--bg);
+  }
+
+  /* Preflight checks */
+  .check-row {
+    display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); margin-bottom: 10px;
+  }
+  .check-row.passed { border-left: 3px solid var(--ok); }
+  .check-row.warning { border-left: 3px solid var(--warn); background: var(--warn-soft); }
+  .check-row.blocked { border-left: 3px solid var(--danger); background: var(--danger-soft); }
+  .check-icon {
+    width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .check-icon.passed { background: var(--ok-soft); color: var(--ok); }
+  .check-icon.warning { background: var(--warn-soft); color: var(--warn); }
+  .check-icon.blocked { background: var(--danger-soft); color: var(--danger); }
+  .check-icon svg { width: 14px; height: 14px; }
+  .check-body { flex: 1; min-width: 0; }
+  .check-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .check-msg { font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+  .check-key { font-size: 11px; color: var(--ink-3); font-family: var(--mono); margin-top: 4px; }
+
+  /* Capability chips */
+  .cap-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cap-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 6px 12px;
+    border-radius: var(--radius-sm); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2);
+    transition: all 0.15s;
+  }
+  .cap-chip:hover { border-color: var(--brand); color: var(--ink); }
+  .cap-chip.active {
+    background: var(--brand-soft); border-color: var(--brand); color: var(--brand);
+  }
+  .cap-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+  .cap-chip.active .dot { background: var(--brand); }
+
+  /* Status pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-pill);
+    font-family: var(--mono);
+  }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.danger { background: var(--danger-soft); color: var(--danger); }
+  .pill.brand { background: var(--brand-soft); color: var(--brand); }
+  .pill.mute { background: var(--panel-2); color: var(--ink-3); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Sidebar */
+  .side-panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .side-head {
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: 13px; font-weight: 700; color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .side-head svg { width: 15px; height: 15px; color: var(--brand); }
+  .side-body { padding: 16px 18px; }
+  .side-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--line);
+  }
+  .side-row:last-child { border-bottom: 0; }
+  .side-row .k { font-size: 12px; color: var(--ink-3); }
+  .side-row .v { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .side-row .v.mono { font-family: var(--mono); font-size: 12px; }
+
+  /* Config tabs */
+  .cfg-tabs {
+    display: flex; gap: 2px; padding: 0 22px;
+    border-bottom: 1px solid var(--line); background: var(--panel-2);
+  }
+  .cfg-tab {
+    padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--ink-3);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+    font-family: var(--mono);
+  }
+  .cfg-tab:hover { color: var(--ink-2); }
+  .cfg-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+
+  /* Action bar */
+  .action-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 22px; border-top: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    padding: 10px 20px; border-radius: var(--radius-sm); cursor: pointer;
+    border: none; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary {
+    background: var(--brand); color: #fff;
+    box-shadow: 0 4px 12px -4px rgba(79,140,255,0.5);
+  }
+  .btn-primary:hover { background: var(--brand-deep); transform: translateY(-1px); }
+  .btn-ghost {
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover { background: var(--panel-3); color: var(--ink); border-color: var(--line-strong); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Code block */
+  .code-block {
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 14px 16px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+    line-height: 1.7; overflow-x: auto;
+  }
+  .code-block .k { color: var(--info); }
+  .code-block .s { color: var(--ok); }
+  .code-block .c { color: var(--ink-3); }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="left">
+      <div>
+        <div class="crumb">数字员工 / <span>创建</span></div>
+        <div class="title">配置数字员工画像</div>
+      </div>
+    </div>
+    <div class="right">
+      <span class="session-id">session: emp-create-7f3a2b</span>
+    </div>
+  </div>
+
+  <!-- Terminal step bar -->
+  <div class="term-steps">
+    <div class="term-step done">
+      <div class="num">1</div>
+      <span>select_template</span>
+    </div>
+    <div class="term-sep done"></div>
+    <div class="term-step done">
+      <div class="num">2</div>
+      <span>preflight_check</span>
+    </div>
+    <div class="term-sep done"></div>
+    <div class="term-step active">
+      <div class="num">3</div>
+      <span>configure_profile</span>
+    </div>
+    <div class="term-sep"></div>
+    <div class="term-step">
+      <div class="num">4</div>
+      <span>confirm_create</span>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="grid">
+    <div class="main-col">
+
+      <!-- Identity panel -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="t">
+              <div class="icon-tile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              身份画像
+            </div>
+            <div class="sub">employee_type: senior_engineer · template: senior_engineer_v1</div>
+          </div>
+          <div class="right">
+            <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>TEMPLATE_APPLIED</span>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-label">name <span class="req">*</span></label>
+              <input class="form-input" value="Atlas-Engineer-01" />
+            </div>
+            <div class="form-field">
+              <label class="form-label">role <span class="req">*</span></label>
+              <input class="form-input mono" value="senior_engineer" />
+            </div>
+            <div class="form-field">
+              <label class="form-label">team_id <span class="req">*</span></label>
+              <select class="form-select">
+                <option value="team-platform">team-platform · 平台工程组</option>
+                <option value="team-data">team-data · 数据科学组</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-label">risk_level</label>
+              <select class="form-select">
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+                <option value="critical">critical</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label class="form-label">description</label>
+              <textarea class="form-input" rows="3" style="resize:vertical;min-height:72px">负责后端服务开发、代码审查和技术方案设计。擅长 Go、Rust 和分布式系统。</textarea>
+            </div>
+          </div>
+
+          <!-- Avatar picker -->
+          <div class="avatar-block">
+            <div class="ab-head">
+              <div class="ab-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                avatar_asset_id <span style="color:var(--danger)">*</span>
+              </div>
+              <span class="form-hint">source: listDigitalEmployeeAvatarAssets() · 12 available</span>
+            </div>
+            <div class="avatar-grid">
+              <div class="avatar-item selected"><span class="emoji">🤖</span></div>
+              <div class="avatar-item"><span class="emoji">👨‍💻</span></div>
+              <div class="avatar-item"><span class="emoji">👩‍💻</span></div>
+              <div class="avatar-item"><span class="emoji">🦾</span></div>
+              <div class="avatar-item"><span class="emoji">⚡</span></div>
+              <div class="avatar-item"><span class="emoji">🔧</span></div>
+              <div class="avatar-item"><span class="emoji">🧠</span></div>
+              <div class="avatar-item"><span class="emoji">🚀</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capability panel -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="t">
+              <div class="icon-tile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              能力配置
+            </div>
+            <div class="sub">capability_selection · context_policy · approval_policy</div>
+          </div>
+        </div>
+
+        <div class="cfg-tabs">
+          <div class="cfg-tab active">capabilities</div>
+          <div class="cfg-tab">context_policy</div>
+          <div class="cfg-tab">approval_policy</div>
+          <div class="cfg-tab">provider</div>
+          <div class="cfg-tab">budget</div>
+        </div>
+
+        <div class="panel-body">
+          <div class="form-field" style="margin-bottom:18px">
+            <label class="form-label">skills <span style="color:var(--ink-3);font-weight:400">· 3/8 selected · from recommended_skills</span></label>
+            <div class="cap-chips">
+              <div class="cap-chip active"><span class="dot"></span>code-review</div>
+              <div class="cap-chip active"><span class="dot"></span>go-testing</div>
+              <div class="cap-chip active"><span class="dot"></span>rust-dev</div>
+              <div class="cap-chip"><span class="dot"></span>typescript</div>
+              <div class="cap-chip"><span class="dot"></span>python-ml</div>
+              <div class="cap-chip"><span class="dot"></span>sql-optimization</div>
+              <div class="cap-chip"><span class="dot"></span>k8s-ops</div>
+              <div class="cap-chip"><span class="dot"></span>docs-writing</div>
+            </div>
+          </div>
+
+          <div class="form-field" style="margin-bottom:18px">
+            <label class="form-label">mcp_servers <span style="color:var(--ink-3);font-weight:400">· 2/5 selected · from recommended_mcp_servers</span></label>
+            <div class="cap-chips">
+              <div class="cap-chip active"><span class="dot"></span>filesystem</div>
+              <div class="cap-chip active"><span class="dot"></span>git-operations</div>
+              <div class="cap-chip"><span class="dot"></span>web-search</div>
+              <div class="cap-chip"><span class="dot"></span>database-query</div>
+              <div class="cap-chip"><span class="dot"></span>slack-notify</div>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label">provider_type <span class="req">*</span> <span style="color:var(--ink-3);font-weight:400">· from runtime_provider_options</span></label>
+            <select class="form-select">
+              <option value="claude-code" selected>claude-code — Claude Code CLI</option>
+              <option value="opencode">opencode — OpenCode</option>
+              <option value="codex">codex — Codex CLI</option>
+            </select>
+            <span class="form-hint">filtered by team_config.allowed_provider_types</span>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            上一步
+          </button>
+          <button class="btn btn-primary">
+            下一步 · 确认创建
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sidebar -->
+    <div class="side-col">
+
+      <!-- Draft summary -->
+      <div class="side-panel">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          draft_summary
+        </div>
+        <div class="side-body">
+          <div class="side-row">
+            <span class="k">employee_type</span>
+            <span class="v mono">senior_engineer</span>
+          </div>
+          <div class="side-row">
+            <span class="k">name</span>
+            <span class="v">Atlas-Engineer-01</span>
+          </div>
+          <div class="side-row">
+            <span class="k">risk_level</span>
+            <span class="pill warn"><span class="dot" style="background:var(--warn)"></span>medium</span>
+          </div>
+          <div class="side-row">
+            <span class="k">skills_count</span>
+            <span class="v">3</span>
+          </div>
+          <div class="side-row">
+            <span class="k">mcp_count</span>
+            <span class="v">2</span>
+          </div>
+          <div class="side-row">
+            <span class="k">provider_type</span>
+            <span class="v mono">claude-code</span>
+          </div>
+          <div class="side-row">
+            <span class="k">avatar</span>
+            <span class="v">selected</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preflight -->
+      <div class="side-panel">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+          preflight_status
+        </div>
+        <div class="side-body">
+          <div class="side-row">
+            <span class="k">team_governance</span>
+            <span class="pill ok"><span class="dot" style="background:var(--ok)"></span>PASSED</span>
+          </div>
+          <div class="side-row">
+            <span class="k">template_compat</span>
+            <span class="pill ok"><span class="dot" style="background:var(--ok)"></span>PASSED</span>
+          </div>
+          <div class="side-row">
+            <span class="k">runtime_schedule</span>
+            <span class="pill warn"><span class="dot" style="background:var(--warn)"></span>WARNING</span>
+          </div>
+          <div class="side-row">
+            <span class="k">budget_policy</span>
+            <span class="pill mute"><span class="dot" style="background:var(--ink-3)"></span>DEFAULT</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview JSON -->
+      <div class="side-panel">
+        <div class="side-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          create_payload_preview
+        </div>
+        <div class="side-body">
+          <div class="code-block">
+<span class="c">// POST /api/v1/digital-employees</span>
+{
+  <span class="k">"team_id"</span>: <span class="s">"team-platform"</span>,
+  <span class="k">"employee_type"</span>: <span class="s">"senior_engineer"</span>,
+  <span class="k">"name"</span>: <span class="s">"Atlas-Engineer-01"</span>,
+  <span class="k">"role"</span>: <span class="s">"senior_engineer"</span>,
+  <span class="k">"risk_level"</span>: <span class="s">"medium"</span>,
+  <span class="k">"avatar_asset_id"</span>: <span class="s">"avt_001"</span>,
+  <span class="k">"provider_type"</span>: <span class="s">"claude-code"</span>,
+  <span class="k">"capability_selection"</span>: {
+    <span class="k">"skills"</span>: [<span class="s">"code-review"</span>, ...],
+    <span class="k">"mcp_servers"</span>: [<span class="s">"filesystem"</span>, ...]
+  }
+}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

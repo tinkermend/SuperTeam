@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>创建数字员工 · 极光玻璃沉浸版</title>
+<style>
+  :root {
+    --brand: #2f5fff;
+    --brand-deep: #2348e0;
+    --ink: #0f1b3d;
+    --ink-2: #4a5a82;
+    --ink-3: #8a98b8;
+    --ok: #009a60;
+    --ok-text: #006639;
+    --warn: #cc572a;
+    --warn-text: #893411;
+    --danger: #d14647;
+    --danger-text: #8a2f2d;
+    --info: #0094b7;
+    --radius-card: 24px;
+    --radius-inner: 16px;
+    --radius-pill: 100px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 32px 20px 80px;
+    background:
+      radial-gradient(680px 520px at 8% 6%, rgba(95,214,200,0.28), transparent 60%),
+      radial-gradient(620px 520px at 92% 16%, rgba(167,139,250,0.26), transparent 60%),
+      radial-gradient(760px 600px at 72% 98%, rgba(99,140,255,0.24), transparent 62%),
+      linear-gradient(160deg, #eafcfb 0%, #f1edff 50%, #eaf2ff 100%);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .orb { position: fixed; border-radius: 50%; filter: blur(48px); opacity: 0.5; z-index: 0; pointer-events: none; }
+  .orb.a { width: 300px; height: 300px; background: #5fd6c8; top: -80px; left: -60px; }
+  .orb.b { width: 340px; height: 340px; background: #a78bfa; top: 35%; right: -100px; }
+  .orb.c { width: 280px; height: 280px; background: #7aa0ff; bottom: -80px; left: 30%; }
+
+  .stage { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; }
+
+  /* Hero */
+  .hero { text-align: center; margin-bottom: 28px; }
+  .hero .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: var(--brand-deep);
+    background: rgba(255,255,255,0.7); border: 1px solid rgba(47,95,255,0.25);
+    padding: 7px 16px; border-radius: var(--radius-pill); backdrop-filter: blur(8px);
+    box-shadow: 0 6px 18px -10px rgba(47,95,255,0.5);
+  }
+  .hero .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 8px rgba(47,95,255,0.6); }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em;
+    margin: 16px 0 8px;
+    background: linear-gradient(180deg, #16235a, #2f5fff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--ink-2); font-size: 15px; max-width: 520px; margin: 0 auto; line-height: 1.6; }
+
+  /* Step rail — node/network motif */
+  .step-rail {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; margin: 0 auto 32px; max-width: 720px;
+    position: relative;
+  }
+  .step-node {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    position: relative; z-index: 2;
+  }
+  .step-node .circle {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: rgba(255,255,255,0.7); border: 1.5px solid rgba(47,95,255,0.2);
+    color: var(--ink-3); backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+  }
+  .step-node.done .circle { background: rgba(47,95,255,0.12); border-color: var(--brand); color: var(--brand-deep); }
+  .step-node.active .circle {
+    background: linear-gradient(180deg, #4f8cff, #2f5fff);
+    border-color: var(--brand); color: #fff;
+    box-shadow: 0 0 0 4px rgba(47,95,255,0.15), 0 8px 20px -6px rgba(47,95,255,0.5);
+  }
+  .step-node .label { font-size: 12px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+  .step-node.active .label, .step-node.done .label { color: var(--ink); }
+  .step-link {
+    flex: 1; height: 2px; background: rgba(47,95,255,0.15);
+    margin: 0 -4px; position: relative; z-index: 1; margin-top: -20px;
+  }
+  .step-link.done { background: linear-gradient(90deg, var(--brand), rgba(47,95,255,0.3)); }
+
+  /* Glass panel */
+  .glass {
+    background: rgba(255,255,255,0.55);
+    border: 1px solid rgba(255,255,255,0.8);
+    border-radius: var(--radius-card);
+    backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset, 0 30px 70px -28px rgba(36,58,140,0.4);
+    overflow: hidden;
+  }
+  .glass-inner {
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(47,95,255,0.12);
+    border-radius: var(--radius-inner);
+  }
+
+  /* Layout grid */
+  .create-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+  @media (max-width: 900px) { .create-grid { grid-template-columns: 1fr; } }
+
+  .main-col { display: flex; flex-direction: column; gap: 20px; }
+  .side-col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Section header */
+  .sec-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 26px 16px; }
+  .sec-head .t { font-size: 17px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 10px; }
+  .sec-head .t svg { width: 18px; height: 18px; color: var(--brand); }
+  .sec-head .sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .sec-head .meta { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* Template grid cards */
+  .tpl-grid { padding: 0 26px 26px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (max-width: 600px) { .tpl-grid { grid-template-columns: 1fr; } }
+  .tpl-card {
+    background: rgba(255,255,255,0.66); border: 1.5px solid rgba(255,255,255,0.9);
+    border-radius: var(--radius-inner); padding: 18px;
+    cursor: pointer; transition: all 0.25s ease;
+    position: relative;
+  }
+  .tpl-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -22px rgba(36,58,140,0.5); border-color: rgba(47,95,255,0.3); }
+  .tpl-card.selected {
+    border-color: var(--brand); background: rgba(47,95,255,0.06);
+    box-shadow: 0 0 0 3px rgba(47,95,255,0.12), 0 16px 36px -20px rgba(47,95,255,0.5);
+  }
+  .tpl-card .tpl-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+  .tpl-card .tpl-icon {
+    width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+    background: rgba(47,95,255,0.1); border: 1px solid rgba(47,95,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tpl-card .tpl-icon svg { width: 18px; height: 18px; color: var(--brand); }
+  .tpl-card .tpl-name { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .tpl-card .tpl-role { font-size: 12px; color: var(--ink-3); margin-top: 2px; font-family: var(--mono); }
+  .tpl-card .tpl-desc { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-bottom: 12px; }
+  .tpl-card .tpl-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tpl-tag {
+    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill);
+    background: rgba(47,95,255,0.08); color: var(--brand-deep);
+  }
+  .tpl-tag.risk { background: rgba(204,87,42,0.1); color: var(--warn-text); }
+  .tpl-tag.cap { background: rgba(0,154,96,0.1); color: var(--ok-text); }
+
+  /* Form fields */
+  .form-section { padding: 0 26px 26px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+  .field-label .req { color: #ff4d5e; font-size: 11px; }
+  .field-input, .field-select {
+    width: 100%; border: 1px solid rgba(15,27,61,0.12); background: rgba(255,255,255,0.9);
+    color: var(--ink); font-size: 14px; font-weight: 500; padding: 11px 14px; border-radius: 12px;
+    font-family: var(--sans); transition: all 0.2s;
+    outline: none;
+  }
+  .field-input:focus, .field-select:focus {
+    border-color: var(--brand); box-shadow: 0 0 0 3px rgba(47,95,255,0.12);
+    background: #fff;
+  }
+  .field-select {
+    appearance: none; cursor: pointer; padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%234a5a82' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .field-hint { font-size: 12px; color: var(--ink-3); }
+
+  /* Avatar picker — signature focal area */
+  .avatar-section {
+    margin: 0 26px 26px; padding: 22px;
+    background: rgba(47,95,255,0.04); border: 1px dashed rgba(47,95,255,0.2);
+    border-radius: var(--radius-inner);
+  }
+  .avatar-section .as-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .avatar-section .as-title { font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .avatar-section .as-title svg { width: 16px; height: 16px; color: var(--brand); }
+  .avatar-section .as-hint { font-size: 12px; color: var(--ink-3); }
+  .avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px; }
+  .avatar-item {
+    aspect-ratio: 1; border-radius: 50%; cursor: pointer;
+    border: 2.5px solid transparent; position: relative;
+    transition: all 0.25s ease; overflow: hidden;
+    background: linear-gradient(135deg, #e9efff, #f1edff);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .avatar-item:hover { transform: scale(1.08); box-shadow: 0 8px 20px -6px rgba(47,95,255,0.4); }
+  .avatar-item.selected {
+    border-color: var(--brand); transform: scale(1.05);
+    box-shadow: 0 0 0 4px rgba(47,95,255,0.15), 0 10px 24px -8px rgba(47,95,255,0.5);
+  }
+  .avatar-item.selected::after {
+    content: ""; position: absolute; bottom: -2px; right: -2px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--brand); border: 2.5px solid #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='white' stroke-width='3' viewBox='0 0 24 24'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+  }
+  .avatar-item .av-emoji { font-size: 28px; }
+
+  /* Preflight checks */
+  .check-list { padding: 0 26px 26px; display: flex; flex-direction: column; gap: 10px; }
+  .check-item {
+    display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px;
+    background: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.8);
+    border-radius: var(--radius-inner); transition: all 0.2s;
+  }
+  .check-item:hover { background: rgba(255,255,255,0.75); }
+  .check-item.passed { border-left: 3px solid var(--ok); }
+  .check-item.warning { border-left: 3px solid var(--warn); background: rgba(255,237,229,0.4); }
+  .check-item.blocked { border-left: 3px solid var(--danger); background: rgba(255,236,233,0.4); }
+  .check-icon {
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .check-icon.passed { background: rgba(0,154,96,0.12); color: var(--ok); }
+  .check-icon.warning { background: rgba(204,87,42,0.12); color: var(--warn); }
+  .check-icon.blocked { background: rgba(209,70,71,0.12); color: var(--danger); }
+  .check-icon svg { width: 16px; height: 16px; }
+  .check-body { flex: 1; min-width: 0; }
+  .check-label { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .check-msg { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .check-key { font-size: 11px; color: var(--ink-3); font-family: var(--mono); margin-top: 4px; }
+
+  /* Summary sidebar */
+  .summary-card { padding: 22px; }
+  .summary-card h3 { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .summary-card h3 svg { width: 16px; height: 16px; color: var(--brand); }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(15,27,61,0.06); }
+  .summary-row:last-child { border-bottom: 0; }
+  .summary-row .k { font-size: 13px; color: var(--ink-3); }
+  .summary-row .v { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .summary-row .v.mono { font-family: var(--mono); font-size: 12px; }
+
+  /* Pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill);
+  }
+  .pill.ok { background: rgba(0,154,96,0.1); color: var(--ok-text); }
+  .pill.warn { background: rgba(204,87,42,0.1); color: var(--warn-text); }
+  .pill.danger { background: rgba(209,70,71,0.1); color: var(--danger-text); }
+  .pill.brand { background: rgba(47,95,255,0.1); color: var(--brand-deep); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Action bar */
+  .actions {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 26px; border-top: 1px solid rgba(15,27,61,0.08);
+    background: rgba(255,255,255,0.4);
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    padding: 11px 22px; border-radius: 12px; cursor: pointer;
+    border: none; transition: all 0.2s; white-space: nowrap;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-primary {
+    background: linear-gradient(180deg, #4f8cff, #2f5fff); color: #fff;
+    box-shadow: 0 8px 20px -6px rgba(47,95,255,0.5);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 28px -6px rgba(47,95,255,0.6); }
+  .btn-ghost {
+    background: rgba(47,95,255,0.08); color: var(--brand-deep);
+    border: 1px solid rgba(47,95,255,0.2);
+  }
+  .btn-ghost:hover { background: rgba(47,95,255,0.14); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Config tabs */
+  .cfg-tabs { display: flex; gap: 4px; padding: 0 26px; border-bottom: 1px solid rgba(15,27,61,0.08); margin-bottom: 18px; }
+  .cfg-tab {
+    padding: 12px 18px; font-size: 13px; font-weight: 600; color: var(--ink-3);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  .cfg-tab:hover { color: var(--ink); }
+  .cfg-tab.active { color: var(--brand-deep); border-bottom-color: var(--brand); }
+
+  .info-note {
+    margin: 0 26px 18px; padding: 14px 18px;
+    background: rgba(47,95,255,0.06); border: 1px solid rgba(47,95,255,0.15);
+    border-radius: var(--radius-inner);
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .info-note svg { width: 18px; height: 18px; color: var(--brand); flex-shrink: 0; margin-top: 1px; }
+  .info-note .txt { font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+  .info-note .txt strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="orb a"></div>
+<div class="orb b"></div>
+<div class="orb c"></div>
+
+<div class="stage">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="eyebrow">
+      <span class="dot"></span>
+      创建向导 · 第 3 步 / 共 4 步
+    </div>
+    <h1>配置数字员工画像</h1>
+    <p>为你的 AI 团队成员设定身份、能力和治理边界。所有配置将生成可审计的配置版本。</p>
+  </div>
+
+  <!-- Step rail with node/network motif -->
+  <div class="step-rail">
+    <div class="step-node done">
+      <div class="circle">1</div>
+      <div class="label">选择模板</div>
+    </div>
+    <div class="step-link done"></div>
+    <div class="step-node done">
+      <div class="circle">2</div>
+      <div class="label">配置预检</div>
+    </div>
+    <div class="step-link done"></div>
+    <div class="step-node active">
+      <div class="circle">3</div>
+      <div class="label">完成配置</div>
+    </div>
+    <div class="step-link"></div>
+    <div class="step-node">
+      <div class="circle">4</div>
+      <div class="label">确认创建</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="create-grid">
+    <div class="main-col">
+
+      <!-- Identity card -->
+      <div class="glass">
+        <div class="sec-head">
+          <div>
+            <div class="t">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              身份画像
+            </div>
+            <div class="sub">设定数字员工的基本身份和归属</div>
+          </div>
+          <div class="pill brand"><span class="dot" style="background:var(--brand)"></span>模板: 资深工程师</div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-row">
+            <div class="field">
+              <label class="field-label">员工名称 <span class="req">*</span></label>
+              <input class="field-input" value="Atlas-Engineer-01" />
+              <span class="field-hint">用于识别和调用，建议使用有意义的命名</span>
+            </div>
+            <div class="field">
+              <label class="field-label">默认角色 <span class="req">*</span></label>
+              <input class="field-input" value="senior_engineer" style="font-family:var(--mono)" />
+              <span class="field-hint">由模板带入，可修改</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="field">
+              <label class="field-label">归属团队 <span class="req">*</span></label>
+              <select class="field-select">
+                <option>平台工程组 (team-platform)</option>
+                <option>数据科学组 (team-data)</option>
+                <option>前端工程组 (team-frontend)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">风险等级</label>
+              <select class="field-select">
+                <option>low — 低风险</option>
+                <option selected>medium — 中风险</option>
+                <option>high — 高风险</option>
+                <option>critical — 关键</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom:0">
+            <label class="field-label">员工描述</label>
+            <textarea class="field-input" rows="3" style="resize:vertical;min-height:80px">负责后端服务开发、代码审查和技术方案设计。擅长 Go、Rust 和分布式系统。</textarea>
+          </div>
+        </div>
+
+        <!-- Avatar picker — signature focal -->
+        <div class="avatar-section">
+          <div class="as-head">
+            <div class="as-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              选择头像 <span style="color:#ff4d5e;font-size:12px">*</span>
+            </div>
+            <span class="as-hint">来自 avatar-assets 接口 · 共 12 个可用</span>
+          </div>
+          <div class="avatar-grid">
+            <div class="avatar-item selected"><span class="av-emoji">🤖</span></div>
+            <div class="avatar-item"><span class="av-emoji">👨‍💻</span></div>
+            <div class="avatar-item"><span class="av-emoji">👩‍💻</span></div>
+            <div class="avatar-item"><span class="av-emoji">🦾</span></div>
+            <div class="avatar-item"><span class="av-emoji">⚡</span></div>
+            <div class="avatar-item"><span class="av-emoji">🔧</span></div>
+            <div class="avatar-item"><span class="av-emoji">🧠</span></div>
+            <div class="avatar-item"><span class="av-emoji">🚀</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capability config -->
+      <div class="glass">
+        <div class="sec-head">
+          <div>
+            <div class="t">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              能力与治理
+            </div>
+            <div class="sub">配置技能、Provider 和策略覆盖</div>
+          </div>
+        </div>
+
+        <div class="cfg-tabs">
+          <div class="cfg-tab active">能力选择</div>
+          <div class="cfg-tab">上下文策略</div>
+          <div class="cfg-tab">审批策略</div>
+          <div class="cfg-tab">Provider</div>
+        </div>
+
+        <div class="info-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <div class="txt">
+            <strong>模板已带入默认能力。</strong>下方技能来自 <code style="font-family:var(--mono);font-size:12px">recommended_skills</code>，MCP 来自 <code style="font-family:var(--mono);font-size:12px">recommended_mcp_servers</code>。团队治理 allow-list 会过滤不兼容项。
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="field" style="margin-bottom:16px">
+            <label class="field-label">技能 (3 项已选 / 8 项可用)</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:rgba(255,255,255,0.6);border:1px solid rgba(15,27,61,0.12);border-radius:12px;min-height:56px">
+              <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>code-review</span>
+              <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>go-testing</span>
+              <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>rust-dev</span>
+              <span class="pill" style="background:rgba(15,27,61,0.06);color:var(--ink-3);cursor:pointer">+ 添加技能</span>
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom:16px">
+            <label class="field-label">MCP 服务 (2 项已选)</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:rgba(255,255,255,0.6);border:1px solid rgba(15,27,61,0.12);border-radius:12px;min-height:56px">
+              <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>filesystem</span>
+              <span class="pill brand"><span class="dot" style="background:var(--brand)"></span>git-operations</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Provider 类型 <span class="req">*</span></label>
+            <select class="field-select">
+              <option selected>claude-code (Claude Code CLI)</option>
+              <option>opencode (OpenCode)</option>
+              <option>codex (Codex CLI)</option>
+            </select>
+            <span class="field-hint">来自 runtime_provider_options，需团队 allow-list 允许</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            上一步
+          </button>
+          <button class="btn btn-primary">
+            下一步 · 确认创建
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sidebar -->
+    <div class="side-col">
+      <div class="glass glass-inner summary-card">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          本草药稿
+        </h3>
+        <div class="summary-row">
+          <span class="k">模板</span>
+          <span class="v">资深工程师</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">员工类型</span>
+          <span class="v mono">senior_engineer</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">风险等级</span>
+          <span class="pill warn"><span class="dot" style="background:var(--warn)"></span>medium</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">技能数</span>
+          <span class="v">3</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">MCP 服务</span>
+          <span class="v">2</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">Provider</span>
+          <span class="v mono">claude-code</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">头像</span>
+          <span class="v">已选择</span>
+        </div>
+      </div>
+
+      <div class="glass glass-inner summary-card">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+          预检状态
+        </h3>
+        <div class="summary-row">
+          <span class="k">团队治理</span>
+          <span class="pill ok"><span class="dot" style="background:var(--ok)"></span>通过</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">模板兼容</span>
+          <span class="pill ok"><span class="dot" style="background:var(--ok)"></span>通过</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">Runtime 调度</span>
+          <span class="pill warn"><span class="dot" style="background:var(--warn)"></span>提醒</span>
+        </div>
+        <div class="summary-row">
+          <span class="k">预算策略</span>
+          <span class="pill ok"><span class="dot" style="background:var(--ok)"></span>默认</span>
+        </div>
+      </div>
+
+      <div class="glass glass-inner summary-card">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          下一步
+        </h3>
+        <div style="font-size:13px;color:var(--ink-2);line-height:1.7">
+          确认后将生成配置版本 <code style="font-family:var(--mono);font-size:12px;background:rgba(47,95,255,0.08);padding:2px 6px;border-radius:4px">rev-1</code>，进入审批流程。批准后员工状态变为 <code style="font-family:var(--mono);font-size:12px;background:rgba(47,95,255,0.08);padding:2px 6px;border-radius:4px">ready</code> 可被调度。
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

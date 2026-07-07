@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>创建数字员工 · 蓝图构建器</title>
+<style>
+  :root {
+    --brand: #2f5fff;
+    --brand-deep: #2348e0;
+    --brand-soft: rgba(47,95,255,0.08);
+    --ink: #0f1b3d;
+    --ink-2: #4a5a82;
+    --ink-3: #8a98b8;
+    --line: rgba(15,27,61,0.08);
+    --line-strong: rgba(15,27,61,0.14);
+    --ok: #009a60;
+    --ok-text: #006639;
+    --ok-soft: rgba(0,154,96,0.08);
+    --warn: #cc572a;
+    --warn-text: #893411;
+    --warn-soft: rgba(204,87,42,0.08);
+    --danger: #d14647;
+    --danger-text: #8a2f2d;
+    --danger-soft: rgba(209,70,71,0.08);
+    --radius: 20px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --radius-pill: 100px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    min-height: 100vh;
+    background:
+      radial-gradient(600px 440px at 6% 4%, rgba(95,214,200,0.16), transparent 55%),
+      radial-gradient(560px 440px at 94% 12%, rgba(167,139,250,0.14), transparent 55%),
+      linear-gradient(170deg, #f4f7fc 0%, #eef2f8 100%);
+    -webkit-font-smoothing: antialiased;
+    padding: 16px 16px 48px;
+  }
+
+  .stage { max-width: 1320px; margin: 0 auto; }
+
+  /* Top bar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .topbar .left { display: flex; align-items: center; gap: 12px; }
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    background: #fff; border: 1px solid var(--line-strong);
+    padding: 7px 12px; border-radius: 9px; cursor: pointer; transition: all 0.2s;
+    font-family: var(--sans);
+  }
+  .back-btn:hover { color: var(--ink); border-color: var(--brand); }
+  .back-btn svg { width: 14px; height: 14px; }
+  .breadcrumb { font-size: 13px; color: var(--ink-3); }
+  .breadcrumb b { color: var(--ink); }
+
+  /* === MAIN LAYOUT: 3-zone single page === */
+  /* Zone 1 (top): Template selector strip — compact horizontal */
+  /* Zone 2 (left-center): Identity strip + Capability composition */
+  /* Zone 3 (right): Live blueprint card — always visible */
+
+  .builder-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1000px) { .builder-grid { grid-template-columns: 1fr; } }
+
+  .left-col { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Card */
+  .card {
+    background: #fff; border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+    box-shadow: 0 1px 3px rgba(16,24,40,0.04), 0 8px 24px -8px rgba(16,24,40,0.06);
+  }
+
+  /* === ZONE 1: Template selector — horizontal, non-blocking === */
+  .tpl-zone { padding: 16px 20px; }
+  .tpl-zone .tz-head {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+  }
+  .tpl-zone .tz-title { font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .tpl-zone .tz-title .num {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--brand-soft);
+    color: var(--brand-deep); font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tpl-zone .tz-hint { font-size: 12px; color: var(--ink-3); }
+  .tpl-zone .tz-hint b { color: var(--brand-deep); }
+
+  .tpl-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .tpl-pill {
+    flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: var(--radius-sm); cursor: pointer;
+    border: 1.5px solid var(--line-strong); background: #fff; transition: all 0.2s;
+    min-width: 0;
+  }
+  .tpl-pill:hover { border-color: var(--brand); }
+  .tpl-pill.active {
+    border-color: var(--brand); background: var(--brand-soft);
+    box-shadow: 0 0 0 2px rgba(47,95,255,0.08);
+  }
+  .tpl-pill .tp-icon { font-size: 18px; }
+  .tpl-pill .tp-info { min-width: 0; }
+  .tpl-pill .tp-name { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .tpl-pill .tp-meta { font-size: 10px; color: var(--ink-3); font-family: var(--mono); white-space: nowrap; }
+  .tpl-pill .tp-risk {
+    font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: var(--radius-pill);
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .tp-risk.low { background: var(--ok-soft); color: var(--ok-text); }
+  .tp-risk.medium { background: var(--warn-soft); color: var(--warn-text); }
+  .tp-risk.high { background: var(--danger-soft); color: var(--danger-text); }
+
+  .tpl-pill.blank { border-style: dashed; }
+
+  /* === ZONE 2a: Identity strip — single row, not a form block === */
+  .id-strip { padding: 14px 20px; }
+  .id-strip .is-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    font-size: 14px; font-weight: 700; color: var(--ink);
+  }
+  .id-strip .is-head .num {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--brand-soft);
+    color: var(--brand-deep); font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .id-row {
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.8fr auto;
+    gap: 10px; align-items: end;
+  }
+  @media (max-width: 700px) { .id-row { grid-template-columns: 1fr 1fr; } }
+
+  .id-field { display: flex; flex-direction: column; gap: 3px; }
+  .id-label { font-size: 11px; font-weight: 600; color: var(--ink-3); }
+  .id-label .req { color: var(--danger); }
+  .id-input, .id-select {
+    width: 100%; border: 1px solid var(--line-strong); background: #fff;
+    color: var(--ink); font-size: 13px; font-weight: 500; padding: 8px 10px;
+    border-radius: 8px; font-family: var(--sans); outline: none; transition: all 0.15s;
+  }
+  .id-input:focus, .id-select:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(47,95,255,0.1); }
+  .id-input.mono { font-family: var(--mono); font-size: 12px; }
+  .id-select {
+    appearance: none; cursor: pointer; padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238a98b8' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+  }
+
+  /* Avatar inline picker */
+  .avatar-inline { display: flex; flex-direction: column; gap: 3px; }
+  .avatar-inline .id-label { font-size: 11px; font-weight: 600; color: var(--ink-3); }
+  .avatar-inline .id-label .req { color: var(--danger); }
+  .avatar-pick {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .avatar-pick:hover { border-color: var(--brand); }
+  .avatar-pick .ap-current {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .avatar-pick .ap-label { font-size: 12px; color: var(--ink-2); }
+  .avatar-pick .ap-chev { width: 12px; height: 12px; color: var(--ink-3); }
+
+  /* === ZONE 2b: Capability composition — 3 columns, not tabs === */
+  .cap-zone { padding: 16px 20px; }
+  .cap-zone .cz-head {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+  }
+  .cap-zone .cz-title { font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .cap-zone .cz-title .num {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--brand-soft);
+    color: var(--brand-deep); font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cap-zone .cz-note { font-size: 12px; color: var(--ink-3); }
+  .cap-zone .cz-note b { color: var(--brand-deep); }
+
+  .cap-columns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .cap-columns { grid-template-columns: 1fr; } }
+
+  .cap-col {
+    border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;
+  }
+  .cap-col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; background: #f7f8fa; border-bottom: 1px solid var(--line);
+  }
+  .cap-col-head .cc-title { font-size: 12px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 5px; }
+  .cap-col-head .cc-title svg { width: 13px; height: 13px; color: var(--brand); }
+  .cap-col-head .cc-count {
+    font-size: 11px; font-weight: 600; color: var(--ink-3);
+    background: #fff; padding: 2px 7px; border-radius: var(--radius-pill);
+    border: 1px solid var(--line);
+  }
+  .cap-col-body { padding: 10px; display: flex; flex-direction: column; gap: 5px; max-height: 280px; overflow-y: auto; }
+
+  .cap-item {
+    display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+    border-radius: 7px; cursor: pointer; transition: all 0.12s;
+    border: 1px solid transparent;
+  }
+  .cap-item:hover { background: #f7f8fa; border-color: var(--line); }
+  .cap-item.selected { background: var(--brand-soft); border-color: rgba(47,95,255,0.15); }
+  .cap-item.blocked { opacity: 0.45; cursor: not-allowed; }
+  .cap-item.blocked .cap-name { text-decoration: line-through; }
+
+  .cap-check {
+    width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--line-strong);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .cap-item.selected .cap-check {
+    background: var(--brand); border-color: var(--brand);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='none' stroke='white' stroke-width='3' viewBox='0 0 24 24'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+  }
+  .cap-item.blocked .cap-check {
+    background: var(--danger-soft); border-color: var(--danger);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='none' stroke='%23d14647' stroke-width='3' viewBox='0 0 24 24'%3E%3Cpath d='M6 6l12 12M6 18L18 6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+  }
+
+  .cap-name { font-size: 12px; font-weight: 500; color: var(--ink); flex: 1; min-width: 0; }
+  .cap-item.selected .cap-name { color: var(--brand-deep); font-weight: 600; }
+  .cap-item.blocked .cap-name { color: var(--danger-text); }
+
+  .cap-tag {
+    font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.02em; flex-shrink: 0;
+  }
+  .cap-tag.tpl { background: var(--brand-soft); color: var(--brand-deep); }
+  .cap-tag.ok { background: var(--ok-soft); color: var(--ok-text); }
+  .cap-tag.warn { background: var(--danger-soft); color: var(--danger-text); }
+
+  /* === ZONE 2c: Advanced — collapsed by default === */
+  .adv-zone {
+    padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .adv-zone:hover { background: #fafbfc; }
+  .adv-zone .az-left { display: flex; align-items: center; gap: 8px; }
+  .adv-zone .az-title { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .adv-zone .az-chev { width: 16px; height: 16px; color: var(--ink-3); transition: transform 0.2s; }
+  .adv-zone.open .az-chev { transform: rotate(180deg); }
+  .adv-zone .az-badge { font-size: 10px; color: var(--ink-3); background: #f7f8fa; padding: 2px 8px; border-radius: var(--radius-pill); }
+  .adv-body { display: none; padding: 0 20px 16px; }
+  .adv-zone.open + .adv-body { display: block; }
+  .adv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  @media (max-width: 700px) { .adv-grid { grid-template-columns: 1fr; } }
+  .adv-field { display: flex; flex-direction: column; gap: 3px; }
+  .adv-label { font-size: 11px; font-weight: 600; color: var(--ink-3); }
+  .adv-input, .adv-select {
+    width: 100%; border: 1px solid var(--line-strong); background: #fff;
+    color: var(--ink); font-size: 13px; padding: 7px 10px; border-radius: 7px;
+    font-family: var(--sans); outline: none;
+  }
+  .adv-input:focus, .adv-select:focus { border-color: var(--brand); }
+  .adv-select { appearance: none; cursor: pointer; padding-right: 26px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238a98b8' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+  }
+
+  /* === ZONE 3: Blueprint card — always visible, IS the confirm === */
+  .blueprint {
+    position: sticky; top: 16px;
+    background: #fff; border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+    box-shadow: 0 1px 3px rgba(16,24,40,0.04), 0 12px 32px -8px rgba(16,24,40,0.08);
+  }
+  @media (max-width: 1000px) { .blueprint { position: static; } }
+
+  .bp-header {
+    padding: 20px; text-align: center;
+    background: linear-gradient(135deg, rgba(47,95,255,0.04), rgba(167,139,250,0.03));
+    border-bottom: 1px solid var(--line);
+  }
+  .bp-avatar {
+    width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 10px;
+    background: var(--brand-soft); border: 2px solid var(--brand);
+    display: flex; align-items: center; justify-content: center; font-size: 32px;
+    box-shadow: 0 4px 12px -2px rgba(47,95,255,0.25);
+  }
+  .bp-name { font-size: 18px; font-weight: 800; color: var(--ink); }
+  .bp-role { font-size: 12px; color: var(--ink-3); font-family: var(--mono); margin-top: 2px; }
+  .bp-badges { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+  .bp-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); }
+  .bp-badge.type { background: var(--brand-soft); color: var(--brand-deep); }
+  .bp-badge.risk { background: var(--warn-soft); color: var(--warn-text); }
+  .bp-badge.status { background: var(--ok-soft); color: var(--ok-text); }
+
+  .bp-section { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .bp-section:last-of-type { border-bottom: 0; }
+  .bp-sec-title {
+    font-size: 11px; font-weight: 700; color: var(--ink-3); text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 8px;
+  }
+  .bp-fact { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+  .bp-fact .k { font-size: 12px; color: var(--ink-3); }
+  .bp-fact .v { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .bp-fact .v.mono { font-family: var(--mono); font-size: 11px; }
+
+  .bp-caps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .bp-cap { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: #f7f8fa; color: var(--ink-2); border: 1px solid var(--line); }
+  .bp-cap.more { background: transparent; border-style: dashed; }
+
+  /* Governance summary */
+  .bp-gov { display: flex; align-items: center; gap: 6px; }
+  .bp-gov-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .bp-gov-dot.ok { background: var(--ok); }
+  .bp-gov-dot.warn { background: var(--warn); }
+  .bp-gov-text { font-size: 12px; }
+  .bp-gov-text.ok { color: var(--ok-text); font-weight: 600; }
+  .bp-gov-text.warn { color: var(--warn-text); font-weight: 600; }
+
+  /* Create button — always visible */
+  .bp-action { padding: 16px 18px; border-top: 1px solid var(--line); background: #f9fafe; }
+  .bp-ready {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+    font-size: 12px; color: var(--ok-text); font-weight: 600;
+  }
+  .bp-ready .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(0,154,96,0.15); }
+  .create-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    font-family: var(--sans); font-size: 15px; font-weight: 700;
+    padding: 13px; border-radius: var(--radius-sm); cursor: pointer; border: none;
+    background: linear-gradient(180deg, #4f8cff, #2f5fff); color: #fff;
+    box-shadow: 0 6px 16px -4px rgba(47,95,255,0.4); transition: all 0.2s;
+  }
+  .create-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -4px rgba(47,95,255,0.5); }
+  .create-btn svg { width: 18px; height: 18px; }
+  .save-link { display: block; text-align: center; margin-top: 8px; font-size: 12px; color: var(--ink-3); cursor: pointer; }
+  .save-link:hover { color: var(--brand-deep); }
+
+  /* Avatar popover */
+  .avatar-popover {
+    display: none; position: absolute; z-index: 50;
+    background: #fff; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+    box-shadow: 0 12px 32px -8px rgba(16,24,40,0.2); padding: 12px;
+    grid-template-columns: repeat(4, 1fr); gap: 8px;
+  }
+  .avatar-popover.show { display: grid; }
+  .ap-item {
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; background: #f7f8fa;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.15s;
+  }
+  .ap-item:hover { border-color: var(--brand); transform: scale(1.08); }
+  .ap-item.selected { border-color: var(--brand); background: var(--brand-soft); }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="left">
+      <button class="back-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回
+      </button>
+      <div class="breadcrumb">数字员工 / <b>创建</b></div>
+    </div>
+  </div>
+
+  <div class="builder-grid">
+
+    <!-- ===== LEFT: Configuration zones ===== -->
+    <div class="left-col">
+
+      <!-- ZONE 1: Template selector — horizontal, non-blocking -->
+      <div class="card tpl-zone">
+        <div class="tz-head">
+          <div class="tz-title">
+            <span class="num">1</span>
+            选择起点
+          </div>
+          <div class="tz-hint">已选 <b>资深工程师</b> · 点击切换，下方配置实时更新</div>
+        </div>
+        <div class="tpl-strip">
+          <div class="tpl-pill active" onclick="selectTpl(this)">
+            <span class="tp-icon">⚙️</span>
+            <div class="tp-info">
+              <div class="tp-name">资深工程师</div>
+              <div class="tp-meta">senior_engineer</div>
+            </div>
+            <span class="tp-risk medium">MED</span>
+          </div>
+          <div class="tpl-pill" onclick="selectTpl(this)">
+            <span class="tp-icon">🎨</span>
+            <div class="tp-info">
+              <div class="tp-name">前端开发</div>
+              <div class="tp-meta">frontend_dev</div>
+            </div>
+            <span class="tp-risk low">LOW</span>
+          </div>
+          <div class="tpl-pill" onclick="selectTpl(this)">
+            <span class="tp-icon">📊</span>
+            <div class="tp-info">
+              <div class="tp-name">数据分析师</div>
+              <div class="tp-meta">data_analyst</div>
+            </div>
+            <span class="tp-risk medium">MED</span>
+          </div>
+          <div class="tpl-pill" onclick="selectTpl(this)">
+            <span class="tp-icon">🧪</span>
+            <div class="tp-info">
+              <div class="tp-name">测试工程师</div>
+              <div class="tp-meta">qa_engineer</div>
+            </div>
+            <span class="tp-risk low">LOW</span>
+          </div>
+          <div class="tpl-pill" onclick="selectTpl(this)">
+            <span class="tp-icon">🚀</span>
+            <div class="tp-info">
+              <div class="tp-name">DevOps</div>
+              <div class="tp-meta">devops_engineer</div>
+            </div>
+            <span class="tp-risk high">HIGH</span>
+          </div>
+          <div class="tpl-pill blank" onclick="selectTpl(this)">
+            <span class="tp-icon">✨</span>
+            <div class="tp-info">
+              <div class="tp-name">空白自定义</div>
+              <div class="tp-meta">manual</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZONE 2a: Identity strip — single row -->
+      <div class="card id-strip">
+        <div class="is-head">
+          <span class="num">2</span>
+          身份信息
+          <span style="font-size:12px;color:var(--ink-3);font-weight:400;margin-left:8px">· 只需填名称和头像，其余由模板带入</span>
+        </div>
+        <div class="id-row">
+          <div class="id-field">
+            <label class="id-label">员工名称 <span class="req">*</span></label>
+            <input class="id-input" value="Atlas-Engineer-01" oninput="updateBlueprint()" />
+          </div>
+          <div class="id-field">
+            <label class="id-label">默认角色</label>
+            <input class="id-input mono" value="senior_engineer" />
+          </div>
+          <div class="id-field">
+            <label class="id-label">归属团队</label>
+            <select class="id-select">
+              <option>平台工程组</option>
+              <option>数据科学组</option>
+            </select>
+          </div>
+          <div class="id-field">
+            <label class="id-label">风险等级</label>
+            <select class="id-select">
+              <option>low</option>
+              <option selected>medium</option>
+              <option>high</option>
+            </select>
+          </div>
+          <div class="avatar-inline" style="position:relative">
+            <label class="id-label">头像 <span class="req">*</span></label>
+            <div class="avatar-pick" onclick="toggleAvatarPop(event)">
+              <div class="ap-current">🤖</div>
+              <span class="ap-label">已选择</span>
+              <svg class="ap-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="avatar-popover" id="avatarPop">
+              <div class="ap-item selected" onclick="pickAvatar(this,'🤖')">🤖</div>
+              <div class="ap-item" onclick="pickAvatar(this,'👨‍💻')">👨‍💻</div>
+              <div class="ap-item" onclick="pickAvatar(this,'👩‍💻')">👩‍💻</div>
+              <div class="ap-item" onclick="pickAvatar(this,'🦾')">🦾</div>
+              <div class="ap-item" onclick="pickAvatar(this,'⚡')">⚡</div>
+              <div class="ap-item" onclick="pickAvatar(this,'🔧')">🔧</div>
+              <div class="ap-item" onclick="pickAvatar(this,'🧠')">🧠</div>
+              <div class="ap-item" onclick="pickAvatar(this,'🚀')">🚀</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZONE 2b: Capability composition — 3 columns -->
+      <div class="card cap-zone">
+        <div class="cz-head">
+          <div class="cz-title">
+            <span class="num">3</span>
+            能力配置
+          </div>
+          <div class="cz-note">模板已预选 <b>5 项</b> · 点击调整 · 治理状态实时标注</div>
+        </div>
+        <div class="cap-columns">
+
+          <!-- Skills column -->
+          <div class="cap-col">
+            <div class="cap-col-head">
+              <div class="cc-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                技能
+              </div>
+              <span class="cc-count">3/8</span>
+            </div>
+            <div class="cap-col-body">
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">code-review</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">go-testing</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">rust-dev</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">typescript</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">python-ml</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">sql-optimization</span>
+              </div>
+              <div class="cap-item blocked">
+                <div class="cap-check"></div>
+                <span class="cap-name">slack-notify</span>
+                <span class="cap-tag warn">FILTERED</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">docs-writing</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP column -->
+          <div class="cap-col">
+            <div class="cap-col-head">
+              <div class="cc-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                MCP 服务
+              </div>
+              <span class="cc-count">2/5</span>
+            </div>
+            <div class="cap-col-body">
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">filesystem</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">git-operations</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">web-search</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">database-query</span>
+              </div>
+              <div class="cap-item blocked">
+                <div class="cap-check"></div>
+                <span class="cap-name">slack-notify</span>
+                <span class="cap-tag warn">FILTERED</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Provider column -->
+          <div class="cap-col">
+            <div class="cap-col-head">
+              <div class="cc-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                Provider
+              </div>
+              <span class="cc-count">1/3</span>
+            </div>
+            <div class="cap-col-body">
+              <div class="cap-item selected" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">claude-code</span>
+                <span class="cap-tag tpl">TPL</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">opencode</span>
+              </div>
+              <div class="cap-item" onclick="toggleCap(this)">
+                <div class="cap-check"></div>
+                <span class="cap-name">codex</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ZONE 2c: Advanced — collapsed -->
+      <div class="card">
+        <div class="adv-zone" id="advZone" onclick="toggleAdvanced()">
+          <div class="az-left">
+            <svg class="az-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <span class="az-title">高级策略</span>
+            <span class="az-badge">预算 · 审批 · 上下文 · 环境变量</span>
+          </div>
+          <span style="font-size:11px;color:var(--ink-3)">使用默认值，点击展开</span>
+        </div>
+        <div class="adv-body">
+          <div class="adv-grid">
+            <div class="adv-field">
+              <label class="adv-label">每日 Token 上限</label>
+              <input class="adv-input" placeholder="不限" />
+            </div>
+            <div class="adv-field">
+              <label class="adv-label">审批策略</label>
+              <select class="adv-select"><option>默认</option><option>严格</option></select>
+            </div>
+            <div class="adv-field">
+              <label class="adv-label">上下文策略</label>
+              <select class="adv-select"><option>默认</option><option>最小</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== RIGHT: Blueprint card — always visible ===== -->
+    <div class="blueprint">
+      <!-- Header: avatar + name + role -->
+      <div class="bp-header">
+        <div class="bp-avatar" id="bpAvatar">🤖</div>
+        <div class="bp-name" id="bpName">Atlas-Engineer-01</div>
+        <div class="bp-role">senior_engineer</div>
+        <div class="bp-badges">
+          <span class="bp-badge type">senior_engineer</span>
+          <span class="bp-badge risk">MEDIUM</span>
+          <span class="bp-badge status">DRAFT</span>
+        </div>
+      </div>
+
+      <!-- Facts -->
+      <div class="bp-section">
+        <div class="bp-sec-title">基本信息</div>
+        <div class="bp-fact"><span class="k">模板来源</span><span class="v">资深工程师</span></div>
+        <div class="bp-fact"><span class="k">归属团队</span><span class="v">平台工程组</span></div>
+        <div class="bp-fact"><span class="k">Provider</span><span class="v mono">claude-code</span></div>
+        <div class="bp-fact"><span class="k">风险等级</span><span class="v">medium</span></div>
+      </div>
+
+      <!-- Capabilities -->
+      <div class="bp-section">
+        <div class="bp-sec-title">已选能力 · 6 项</div>
+        <div class="bp-sec-title" style="margin-top:0;margin-bottom:4px;font-size:10px">技能 (3)</div>
+        <div class="bp-caps">
+          <span class="bp-cap">code-review</span>
+          <span class="bp-cap">go-testing</span>
+          <span class="bp-cap">rust-dev</span>
+        </div>
+        <div class="bp-sec-title" style="margin-top:8px;margin-bottom:4px;font-size:10px">MCP (2)</div>
+        <div class="bp-caps">
+          <span class="bp-cap">filesystem</span>
+          <span class="bp-cap">git-operations</span>
+        </div>
+        <div class="bp-sec-title" style="margin-top:8px;margin-bottom:4px;font-size:10px">Provider (1)</div>
+        <div class="bp-caps">
+          <span class="bp-cap">claude-code</span>
+        </div>
+      </div>
+
+      <!-- Governance -->
+      <div class="bp-section">
+        <div class="bp-sec-title">治理校验</div>
+        <div class="bp-gov" style="margin-bottom:6px">
+          <span class="bp-gov-dot ok"></span>
+          <span class="bp-gov-text ok">团队 allow-list 通过</span>
+        </div>
+        <div class="bp-fact"><span class="k">已过滤项</span><span class="v" style="color:var(--danger-text)">2 项</span></div>
+        <div class="bp-fact"><span class="k">预检状态</span>
+          <span class="bp-gov">
+            <span class="bp-gov-dot ok"></span>
+            <span class="bp-gov-text ok">可创建</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Create action — always visible -->
+      <div class="bp-action">
+        <div class="bp-ready">
+          <span class="pulse"></span>
+          配置就绪 · 可直接创建
+        </div>
+        <button class="create-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          创建数字员工
+        </button>
+        <span class="save-link">保存为草稿</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  // Template select — updates everything
+  function selectTpl(pill) {
+    document.querySelectorAll('.tpl-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+  }
+
+  // Capability toggle
+  function toggleCap(item) {
+    if (item.classList.contains('blocked')) return;
+    item.classList.toggle('selected');
+    updateBlueprint();
+  }
+
+  // Advanced toggle
+  function toggleAdvanced() {
+    document.getElementById('advZone').classList.toggle('open');
+  }
+
+  // Avatar popover
+  function toggleAvatarPop(e) {
+    e.stopPropagation();
+    document.getElementById('avatarPop').classList.toggle('show');
+  }
+  document.addEventListener('click', () => {
+    document.getElementById('avatarPop').classList.remove('show');
+  });
+  function pickAvatar(item, emoji) {
+    event.stopPropagation();
+    document.querySelectorAll('.ap-item').forEach(i => i.classList.remove('selected'));
+    item.classList.add('selected');
+    document.querySelector('.ap-current').textContent = emoji;
+    document.getElementById('bpAvatar').textContent = emoji;
+    document.getElementById('avatarPop').classList.remove('show');
+  }
+
+  // Update blueprint name
+  function updateBlueprint() {
+    const name = document.querySelector('.id-row .id-input').value;
+    document.getElementById('bpName').textContent = name || '未命名员工';
+  }
+</script>
+
+</body>
+</html>

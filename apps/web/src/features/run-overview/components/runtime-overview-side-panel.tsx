@@ -58,7 +58,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
                 {overview.summary.capacityUsed} / {overview.summary.capacityTotal}
               </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-v3-card-soft">
+            <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--v3-aurora-hairline)]">
               <span
                 className="block h-full rounded-full bg-v3-brand"
                 style={{
@@ -69,6 +69,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
           </div>
           <StatusRow label="正在工作" value={overview.summary.workingCount} status="working" />
           <StatusRow label="空闲" value={overview.summary.idleCount} status="idle" />
+          <StatusRow label="排队" value={overview.summary.queuedCount} status="queued" />
           <StatusRow label="待人工确认" value={overview.summary.waitingHumanCount} status="waiting_human" />
           <StatusRow label="异常" value={overview.summary.errorCount} status="error" />
         </div>
@@ -179,7 +180,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
 
 function Metric({ label, value, tone }: { label: string; value: number | string; tone?: "danger" }) {
   return (
-    <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+    <div className="v3-glass-inner p-3">
       <div className="text-xs text-v3-ink-2">{label}</div>
       <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "danger" ? "text-v3-danger" : "text-v3-ink"}`}>{value}</div>
     </div>
