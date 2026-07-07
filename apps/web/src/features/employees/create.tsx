@@ -22,13 +22,20 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { IconTile } from "@/components/superteam";
+import {
+  GlassCard,
+  IconTile,
+  SoftCard,
+  StatusPill,
+  V3Button,
+  WorkSurface,
+  type V3Tone,
+} from "@/components/superteam";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
@@ -403,10 +410,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         }
         actions={
           flowStep !== "template" ? (
-            <Button onClick={requestTemplateChange} type="button" variant="outline">
-              <ArrowLeft data-icon="inline-start" />
+            <V3Button onClick={requestTemplateChange} type="button" variant="outline">
+              <ArrowLeft className="size-4" />
               返回
-            </Button>
+            </V3Button>
           ) : undefined
         }
       />
@@ -477,30 +484,29 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
         {flowStep === "configure" ? (
           <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
-              <div className="border-b p-4">
+            <section className="flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
+              <div className="border-b border-v3-line p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">员工画像蓝图</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      按职责目标、可用能力、治理边界和 Provider 偏好完成员工画像。
-                    </p>
+                  <div className="flex items-center gap-2.5">
+                    <IconTile tone="brand" size="sm">
+                      <Bot />
+                    </IconTile>
+                    <div>
+                      <h2 className="text-lg font-semibold text-v3-ink">员工画像蓝图</h2>
+                      <p className="mt-0.5 text-sm text-v3-ink-3">
+                        按职责目标、可用能力、治理边界和 Provider 偏好完成员工画像。
+                      </p>
+                    </div>
                   </div>
                   <StepTabs currentStep={currentStep} />
                 </div>
               </div>
 
               <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4">
-                <SelectedTemplateSummary
-                  draft={draft}
-                  selectedType={selectedType}
-                  onChangeTemplate={requestTemplateChange}
-                />
-
-                <div className="min-h-0 rounded-md border bg-background p-4">
+                <div className="min-h-0 rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
                   {teams.isLoading || avatarAssets.isLoading || createOptions.isLoading ? (
-                    <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="animate-spin" />
+                    <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-v3-ink-3">
+                      <Loader2 className="size-4 animate-spin" />
                       加载创建选项
                     </div>
                   ) : null}
@@ -542,23 +548,23 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               </div>
 
               {createEmployee.isError ? (
-                <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
+                <p className="px-4 text-sm text-v3-danger">{getErrorMessage(createEmployee.error)}</p>
               ) : null}
               <div
-                className="sticky bottom-0 z-10 flex justify-between gap-3 border-t bg-card/95 p-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]"
+                className="sticky bottom-0 z-10 flex justify-between gap-3 border-t border-v3-line bg-v3-card p-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]"
                 data-testid="employee-configure-actions"
               >
-                <Button
+                <V3Button
                   disabled={stepIndex === 0 || createEmployee.isPending}
                   onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
                   type="button"
                   variant="outline"
                 >
-                  <ChevronLeft data-icon="inline-start" />
+                  <ChevronLeft className="size-4" />
                   上一步
-                </Button>
+                </V3Button>
                 {stepIndex < configSteps.length - 1 ? (
-                  <Button
+                  <V3Button
                     disabled={
                       createOptions.isLoading ||
                       createOptions.isError ||
@@ -569,10 +575,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     type="button"
                   >
                     下一步
-                    <ChevronRight data-icon="inline-end" />
-                  </Button>
+                    <ChevronRight className="size-4" />
+                  </V3Button>
                 ) : (
-                  <Button
+                  <V3Button
                     disabled={
                       createEmployee.isPending ||
                       createOptions.isLoading ||
@@ -586,8 +592,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     type="button"
                   >
                     进入确认创建
-                    <ChevronRight data-icon="inline-end" />
-                  </Button>
+                    <ChevronRight className="size-4" />
+                  </V3Button>
                 )}
               </div>
             </section>
@@ -627,7 +633,7 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const normalizedActiveIndex = activeIndex === -1 ? 2 : activeIndex;
 
   return (
-    <section className="mb-4 rounded-md border bg-card/95 px-4 py-3 shadow-xs">
+    <SoftCard className="mb-4 px-4 py-3.5">
       <div className="grid gap-3 md:grid-cols-4">
         {stages.map((stage, index) => {
           const active = index === normalizedActiveIndex;
@@ -637,23 +643,34 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
             <div className="flex items-center gap-3" key={stage.title}>
               <span
                 className={cn(
-                  "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                  active ? "bg-primary text-primary-foreground" : "",
-                  done ? "bg-primary/15 text-primary" : "",
-                  !active && !done ? "bg-muted text-muted-foreground" : "",
+                  "flex size-8 shrink-0 items-center justify-center rounded-[11px] text-[13px] font-bold tabular-nums transition-colors",
+                  active ? "bg-v3-brand text-white shadow-v3" : "",
+                  done ? "bg-v3-brand-soft text-v3-brand-deep" : "",
+                  !active && !done ? "bg-v3-card-soft text-v3-ink-3" : "",
                 )}
               >
                 {done ? <Check className="size-4" /> : index + 1}
               </span>
               <span className="min-w-0">
-                <span className={cn("block text-sm font-semibold", active ? "text-primary" : "")}>{stage.title}</span>
-                <span className="block text-xs text-muted-foreground">{stage.description}</span>
+                <span className={cn("block text-sm font-semibold", active ? "text-v3-brand-deep" : "text-v3-ink")}>
+                  {stage.title}
+                </span>
+                <span className="block truncate text-xs text-v3-ink-3">{stage.description}</span>
               </span>
+              {index < stages.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "ml-auto hidden h-px w-6 shrink-0 md:block",
+                    done ? "bg-v3-brand/40" : "bg-v3-line",
+                  )}
+                />
+              ) : null}
             </div>
           );
         })}
       </div>
-    </section>
+    </SoftCard>
   );
 }
 
@@ -700,14 +717,14 @@ function CreationPathPanel({
   ];
 
   return (
-    <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
-      <div className="mb-3 flex items-center gap-2 px-1">
+    <GlassCard className="flex flex-col p-3.5">
+      <div className="mb-3.5 flex items-center gap-2.5 px-1">
         <IconTile tone="brand" size="sm">
           <Sparkles />
         </IconTile>
         <div>
-          <h2 className="text-base font-semibold">创建路径</h2>
-          <p className="text-xs text-muted-foreground">先选入口，再进入配置。</p>
+          <h2 className="text-base font-semibold text-v3-ink">创建路径</h2>
+          <p className="text-xs text-v3-ink-3">先选入口，再进入配置。</p>
         </div>
       </div>
       <div className="grid gap-2">
@@ -718,11 +735,13 @@ function CreationPathPanel({
             <button
               aria-pressed={active}
               className={cn(
-                "rounded-md border p-3 text-left transition",
+                "rounded-[14px] border p-3 text-left transition-all duration-200",
                 active
-                  ? "border-primary/40 bg-primary/10 text-foreground shadow-xs"
-                  : "border-border/70 bg-background/80 text-muted-foreground",
-                path.disabled ? "cursor-not-allowed opacity-65" : "hover:border-primary/30 hover:bg-primary/5",
+                  ? "border-v3-brand/40 bg-v3-brand-soft shadow-v3"
+                  : "border-v3-line bg-v3-card/70",
+                path.disabled
+                  ? "cursor-not-allowed opacity-60"
+                  : "hover:-translate-y-0.5 hover:border-v3-brand/30 hover:shadow-md",
               )}
               disabled={path.disabled}
               key={path.title}
@@ -733,31 +752,29 @@ function CreationPathPanel({
               }}
               type="button"
             >
-              <span className="flex items-start gap-2">
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
-                    active ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  <Icon className="size-4" />
-                </span>
+              <span className="flex items-start gap-2.5">
+                <IconTile tone={active ? "brand" : "mute"} size="sm">
+                  <Icon />
+                </IconTile>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{path.title}</span>
+                    <span className={cn("text-sm font-semibold", active ? "text-v3-brand-deep" : "text-v3-ink")}>
+                      {path.title}
+                    </span>
                     <Badge variant={active ? "default" : "secondary"}>{path.badge}</Badge>
                   </span>
-                  <span className="mt-1 block text-xs leading-5">{path.description}</span>
+                  <span className="mt-1 block text-xs leading-5 text-v3-ink-3">{path.description}</span>
                 </span>
               </span>
             </button>
           );
         })}
       </div>
-      <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-        创建后进入 ready，不会自动执行任务；项目或任务调度可手动发起。
+      <div className="mt-3.5 flex items-start gap-2 rounded-[14px] border border-v3-info/20 bg-v3-info-soft p-3 text-xs leading-5 text-v3-ink">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-v3-info" />
+        <span>创建后进入 ready，不会自动执行任务；项目或任务调度可手动发起。</span>
       </div>
-    </aside>
+    </GlassCard>
   );
 }
 
@@ -794,12 +811,17 @@ function TemplateSelectionPanel({
   }, [employeeTypes, riskFilter, templateQuery]);
 
   return (
-    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
-      <div className="border-b p-4">
+    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
+      <div className="border-b border-v3-line p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold">选择内置模板</h2>
-            <p className="mt-1 text-sm text-muted-foreground">模板只负责带出默认角色、模板能力和治理默认值。</p>
+          <div className="flex items-center gap-2.5">
+            <IconTile tone="brand" size="sm">
+              <Sparkles />
+            </IconTile>
+            <div>
+              <h2 className="text-base font-semibold text-v3-ink">选择内置模板</h2>
+              <p className="mt-0.5 text-sm text-v3-ink-3">模板只负责带出默认角色、模板能力和治理默认值。</p>
+            </div>
           </div>
           <Badge variant="secondary">
             {employeeTypes.length} 个模板 · 已筛选 {filteredEmployeeTypes.length}
@@ -827,26 +849,31 @@ function TemplateSelectionPanel({
         </div>
       </div>
       {employeeTypes.length === 0 ? (
-        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
           当前团队治理配置未返回可用专业模板。
         </div>
       ) : (
         <div className="min-h-0 flex-1 p-4">
-          <div
-            className="h-full overflow-hidden rounded-md border bg-background"
+          <WorkSurface
+            className="h-full"
             data-testid="template-selection-table"
             data-slot="template-selection-table"
           >
             <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
-              <table className="w-full min-w-[860px] border-collapse text-sm">
-                <thead className="sticky top-0 z-10 border-b bg-muted text-xs font-medium text-muted-foreground">
+              <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                <thead>
                   <tr>
-                    <th className="w-[34%] px-3 py-2 text-left">模板</th>
-                    <th className="w-[18%] px-3 py-2 text-left">默认角色</th>
-                    <th className="w-[18%] px-3 py-2 text-left">模板能力</th>
-                    <th className="w-[12%] px-3 py-2 text-left">风险等级</th>
-                    <th className="w-[12%] px-3 py-2 text-left">默认注入</th>
-                    <th className="w-[6%] px-3 py-2 text-right">选择</th>
+                    {["模板", "默认角色", "模板能力", "风险等级", "默认注入"].map((label) => (
+                      <th
+                        key={label}
+                        className="sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                    <th className="sticky top-0 z-10 w-[104px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                      选择
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -861,35 +888,35 @@ function TemplateSelectionPanel({
                 </tbody>
               </table>
               {filteredEmployeeTypes.length === 0 ? (
-                <div className="flex min-h-[220px] items-center justify-center border-t bg-muted/20 p-6 text-sm text-muted-foreground">
+                <div className="flex min-h-[220px] items-center justify-center border-t border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
                   没有匹配当前筛选条件的专业模板。
                 </div>
               ) : null}
             </div>
-          </div>
+          </WorkSurface>
         </div>
       )}
-      <div className="border-t bg-card/95 px-4 py-3">
+      <div className="border-t border-v3-line px-4 py-3.5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium text-foreground">已选模板摘要</span>
+              <span className="font-semibold text-v3-ink">已选模板摘要</span>
               <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
               <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
               <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
               <Badge variant="secondary">风险 {draft.risk_level || "medium"}</Badge>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-v3-ink-3">
               没有合适的模板？
-              <button className="ml-2 cursor-not-allowed font-medium text-muted-foreground" disabled type="button">
+              <button className="ml-2 cursor-not-allowed font-medium text-v3-ink-3" disabled type="button">
                 选择空白自定义（暂未开放）
               </button>
             </p>
           </div>
-          <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
+          <V3Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
             进入配置预检
-            <ChevronRight data-icon="inline-end" />
-          </Button>
+            <ChevronRight className="size-4" />
+          </V3Button>
         </div>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
@@ -912,77 +939,58 @@ function TemplateTableRow({
   return (
     <tr
       className={cn(
-        "border-b transition last:border-b-0 hover:bg-muted/30",
-        selected ? "bg-primary/5 [box-shadow:inset_3px_0_0_var(--v3-brand)]" : "",
+        "transition-colors [&>td]:border-b [&>td]:border-v3-line [&:last-child>td]:border-b-0 [&:hover>td]:bg-v3-card-inner",
+        selected ? "[&>td]:bg-v3-brand-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]" : "",
       )}
     >
       <td className="px-3 py-3 align-top">
         <div className="flex min-w-0 gap-3">
-          <span
-            className={cn(
-              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border",
-              selected ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-            )}
-          >
-            <Code2 className="size-4" />
-          </span>
+          <IconTile tone={selected ? "brand" : "mute"} size="sm">
+            <Code2 />
+          </IconTile>
           <div className="min-w-0">
-            <div className="font-semibold">{typeOption.label}</div>
-            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{typeOption.description}</div>
+            <div className="font-semibold text-v3-ink">{typeOption.label}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-v3-ink-3">{typeOption.description}</div>
           </div>
         </div>
       </td>
       <td className="px-3 py-3 align-top">
-        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
           {typeOption.default_role || typeOption.type}
-        </div>
+        </span>
       </td>
       <td className="px-3 py-3 align-top">
         <div className="grid gap-1.5">
           <div className="flex flex-wrap gap-1.5">
-            <Badge className="gap-1" variant="secondary">
-              {`技能 ${capability.skills.length}`}
-            </Badge>
-            <Badge className="gap-1" variant="secondary">
-              {`MCP ${capability.mcpServers.length}`}
-            </Badge>
-            <Badge className="gap-1" variant="secondary">
-              {`Provider ${capability.providerTypes.length}`}
-            </Badge>
+            <Badge variant="secondary">{`技能 ${capability.skills.length}`}</Badge>
+            <Badge variant="secondary">{`MCP ${capability.mcpServers.length}`}</Badge>
+            <Badge variant="secondary">{`Provider ${capability.providerTypes.length}`}</Badge>
           </div>
-          <div className="truncate text-xs text-muted-foreground">{templateCapabilityPreview(typeOption)}</div>
+          <div className="truncate text-xs text-v3-ink-3">{templateCapabilityPreview(typeOption)}</div>
         </div>
       </td>
       <td className="px-3 py-3 align-top">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">风险</span>
-          <Badge
-            className={cn(
-              "font-mono",
-              risk === "high" || risk === "critical" ? "bg-amber-100 text-amber-800" : "",
-              risk === "low" || risk === "medium" ? "bg-emerald-100 text-emerald-800" : "",
-            )}
-            variant="secondary"
-          >
-            {risk}
-          </Badge>
+          <span className="text-xs text-v3-ink-3">风险</span>
+          <RiskPill risk={risk} />
         </div>
       </td>
-      <td className="px-3 py-3 align-top text-xs leading-5 text-muted-foreground">
+      <td className="px-3 py-3 align-top text-xs leading-5 text-v3-ink-3">
         {templateDefaultInjectionLine(typeOption)}
       </td>
       <td className="px-3 py-3 text-right align-top">
-        <Button
+        <V3Button
           aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}模板`}
           aria-pressed={selected}
+          className="ml-auto whitespace-nowrap"
           onClick={onSelect}
           size="sm"
           type="button"
-          variant={selected ? "default" : "outline"}
+          variant={selected ? "primary" : "outline"}
         >
-          {selected ? <Check data-icon="inline-start" /> : null}
+          {selected ? <Check className="size-4" /> : null}
           {selected ? "已选" : "选择"}
-        </Button>
+        </V3Button>
       </td>
     </tr>
   );
@@ -1006,34 +1014,45 @@ function BlankCustomSelectionPanel({
   const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
 
   return (
-    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-md border bg-card/95 shadow-xs">
-      <div className="border-b p-4">
+    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
+      <div className="border-b border-v3-line p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold">选择员工类型</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。
-            </p>
+          <div className="flex items-center gap-2.5">
+            <IconTile tone="brand" size="sm">
+              <FileText />
+            </IconTile>
+            <div>
+              <h2 className="text-base font-semibold text-v3-ink">选择员工类型</h2>
+              <p className="mt-0.5 text-sm text-v3-ink-3">
+                员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。
+              </p>
+            </div>
           </div>
           <Badge variant="secondary">{employeeTypes.length} 个类型</Badge>
         </div>
       </div>
       {employeeTypes.length === 0 ? (
-        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
           当前团队治理配置未返回可用员工类型。
         </div>
       ) : (
         <div className="min-h-0 flex-1 p-4">
-          <div className="h-full overflow-hidden rounded-md border bg-background">
+          <WorkSurface className="h-full">
             <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
-              <table className="w-full min-w-[760px] border-collapse text-sm">
-                <thead className="sticky top-0 z-10 border-b bg-muted text-xs font-medium text-muted-foreground">
+              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+                <thead>
                   <tr>
-                    <th className="w-[30%] px-3 py-2 text-left">员工类型</th>
-                    <th className="w-[22%] px-3 py-2 text-left">类型标识</th>
-                    <th className="w-[18%] px-3 py-2 text-left">默认角色</th>
-                    <th className="w-[18%] px-3 py-2 text-left">风险建议</th>
-                    <th className="w-[12%] px-3 py-2 text-right">选择</th>
+                    {["员工类型", "类型标识", "默认角色", "风险建议"].map((label) => (
+                      <th
+                        key={label}
+                        className="sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                    <th className="sticky top-0 z-10 w-[104px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                      选择
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1048,25 +1067,25 @@ function BlankCustomSelectionPanel({
                 </tbody>
               </table>
             </div>
-          </div>
+          </WorkSurface>
         </div>
       )}
-      <div className="border-t bg-card/95 px-4 py-3">
+      <div className="border-t border-v3-line px-4 py-3.5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium text-foreground">空白草稿摘要</span>
+              <span className="font-semibold text-v3-ink">空白草稿摘要</span>
               <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
               <Badge variant="secondary">类型 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
               <Badge variant="secondary">角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
               <Badge variant="secondary">能力手动配置</Badge>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">空白自定义草稿不会带入模板推荐技能、MCP 或外部能力。</p>
+            <p className="mt-2 text-sm text-v3-ink-3">空白自定义草稿不会带入模板推荐技能、MCP 或外部能力。</p>
           </div>
-          <Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
+          <V3Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
             进入配置预检
-            <ChevronRight data-icon="inline-end" />
-          </Button>
+            <ChevronRight className="size-4" />
+          </V3Button>
         </div>
       </div>
     </section>
@@ -1087,63 +1106,50 @@ function EmployeeTypeTableRow({
   return (
     <tr
       className={cn(
-        "border-b transition last:border-b-0 hover:bg-muted/30",
-        selected ? "bg-primary/5 [box-shadow:inset_3px_0_0_var(--v3-brand)]" : "",
+        "transition-colors [&>td]:border-b [&>td]:border-v3-line [&:last-child>td]:border-b-0 [&:hover>td]:bg-v3-card-inner",
+        selected ? "[&>td]:bg-v3-brand-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]" : "",
       )}
     >
       <td className="px-3 py-3 align-top">
         <div className="flex min-w-0 gap-3">
-          <span
-            className={cn(
-              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border",
-              selected ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-            )}
-          >
-            <FileText className="size-4" />
-          </span>
+          <IconTile tone={selected ? "brand" : "mute"} size="sm">
+            <FileText />
+          </IconTile>
           <div className="min-w-0">
-            <div className="font-semibold">{typeOption.label}</div>
-            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{typeOption.description}</div>
+            <div className="font-semibold text-v3-ink">{typeOption.label}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-v3-ink-3">{typeOption.description}</div>
           </div>
         </div>
       </td>
       <td className="px-3 py-3 align-top">
-        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
           {typeOption.type}
-        </div>
+        </span>
       </td>
       <td className="px-3 py-3 align-top">
-        <div className="max-w-[180px] truncate rounded-md border bg-muted/30 px-2 py-1 font-mono text-xs">
+        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
           {typeOption.default_role || typeOption.type}
-        </div>
+        </span>
       </td>
       <td className="px-3 py-3 align-top">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">风险</span>
-          <Badge
-            className={cn(
-              "font-mono",
-              risk === "high" || risk === "critical" ? "bg-amber-100 text-amber-800" : "",
-              risk === "low" || risk === "medium" ? "bg-emerald-100 text-emerald-800" : "",
-            )}
-            variant="secondary"
-          >
-            {risk}
-          </Badge>
+          <span className="text-xs text-v3-ink-3">风险</span>
+          <RiskPill risk={risk} />
         </div>
       </td>
       <td className="px-3 py-3 text-right align-top">
-        <Button
+        <V3Button
           aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}类型`}
           aria-pressed={selected}
+          className="ml-auto whitespace-nowrap"
           onClick={onSelect}
           size="sm"
           type="button"
-          variant={selected ? "default" : "outline"}
+          variant={selected ? "primary" : "outline"}
         >
-          {selected ? <Check data-icon="inline-start" /> : null}
+          {selected ? <Check className="size-4" /> : null}
           {selected ? "已选" : "选择"}
-        </Button>
+        </V3Button>
       </td>
     </tr>
   );
@@ -1153,26 +1159,29 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
   const checks = displayablePreflightChecks(options?.creation_checks ?? []);
 
   return (
-    <section className="rounded-md border bg-card/95 p-4 shadow-xs">
-      <h2 className="text-base font-semibold">预检项目</h2>
-      <p className="mt-1 text-xs text-muted-foreground">检查治理策略、模板与 Provider 偏好候选；能力选择在下一步配置。</p>
+    <SoftCard className="p-4">
+      <h2 className="text-base font-semibold text-v3-ink">预检项目</h2>
+      <p className="mt-1 text-xs text-v3-ink-3">检查治理策略、模板与 Provider 偏好候选；能力选择在下一步配置。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
-          <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
+          <p className="rounded-[12px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
         ) : (
           checks.map((check) => (
-            <div className="flex items-center gap-3 rounded-md border bg-background p-3" key={check.key}>
-              <span className={cn("size-2 rounded-full", checkDotClassName(check.status))} />
+            <div
+              className="flex items-center gap-3 rounded-[12px] border border-v3-line bg-v3-card-inner p-3"
+              key={check.key}
+            >
+              <span className={cn("size-2 shrink-0 rounded-full", checkDotClassName(check.status))} />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{check.label}</span>
-                <span className="block truncate text-xs text-muted-foreground">{check.message}</span>
+                <span className="block text-sm font-medium text-v3-ink">{check.label}</span>
+                <span className="block truncate text-xs text-v3-ink-3">{check.message}</span>
               </span>
-              <Badge variant={check.status === "blocked" ? "destructive" : "secondary"}>{checkStatusLabel(check.status)}</Badge>
+              <StatusPill tone={checkTone(check.status)}>{checkStatusLabel(check.status)}</StatusPill>
             </div>
           ))
         )}
       </div>
-    </section>
+    </SoftCard>
   );
 }
 
@@ -1199,12 +1208,19 @@ function PreflightStep({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
-        <div className="border-b p-4">
-          <h2 className="text-lg font-semibold">配置预检</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选；技能、MCP 和外部能力在配置页选择。
-          </p>
+      <GlassCard className="flex min-w-0 flex-col">
+        <div className="border-b border-v3-line p-4">
+          <div className="flex items-center gap-2.5">
+            <IconTile tone="ok" size="sm">
+              <ShieldCheck />
+            </IconTile>
+            <div>
+              <h2 className="text-lg font-semibold text-v3-ink">配置预检</h2>
+              <p className="mt-0.5 text-sm text-v3-ink-3">
+                先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选；技能、MCP 和外部能力在配置页选择。
+              </p>
+            </div>
+          </div>
         </div>
         <div className="grid gap-4 p-4">
           <CheckListPanel options={options} />
@@ -1222,22 +1238,22 @@ function PreflightStep({
             </Alert>
           )}
         </div>
-        <div className="flex justify-between gap-3 border-t p-4">
-          <Button onClick={onBack} type="button" variant="outline">
-            <ChevronLeft data-icon="inline-start" />
+        <div className="flex justify-between gap-3 border-t border-v3-line p-4">
+          <V3Button onClick={onBack} type="button" variant="glass">
+            <ChevronLeft className="size-4" />
             {isBlankCustom ? "返回选择类型" : "返回选择模板"}
-          </Button>
-          <Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
+          </V3Button>
+          <V3Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
             预检通过，继续配置
-            <ChevronRight data-icon="inline-end" />
-          </Button>
+            <ChevronRight className="size-4" />
+          </V3Button>
         </div>
-      </section>
+      </GlassCard>
 
       <aside className="grid content-start gap-4">
-        <section className="rounded-md border bg-card/95 p-4 shadow-xs">
-          <h2 className="text-base font-semibold">本次草稿</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+        <GlassCard className="p-4">
+          <h2 className="text-base font-semibold text-v3-ink">本次草稿</h2>
+          <p className="mt-1 text-xs text-v3-ink-3">
             {isBlankCustom ? "能力和治理覆盖将在配置页手动补齐。" : "模板默认值将在配置页继续编辑。"}
           </p>
           <div className="mt-4 grid gap-2 text-sm">
@@ -1254,7 +1270,7 @@ function PreflightStep({
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
             />
           </div>
-        </section>
+        </GlassCard>
       </aside>
     </div>
   );
@@ -1270,9 +1286,9 @@ function displayablePreflightChecks<T extends { key: string }>(checks: T[]) {
 
 function InlineSummary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="max-w-[180px] truncate font-medium">{value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-[12px] border border-v3-line bg-v3-card px-3 py-2">
+      <span className="text-v3-ink-3">{label}</span>
+      <span className="max-w-[180px] truncate font-medium text-v3-ink">{value}</span>
     </div>
   );
 }
@@ -1281,7 +1297,7 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = configSteps.indexOf(currentStep);
 
   return (
-    <div className="flex flex-wrap gap-2 rounded-md border bg-muted/30 p-1">
+    <div className="flex flex-wrap gap-1 rounded-[14px] bg-v3-card-soft p-1.5">
         {configSteps.map((step, index) => {
           const active = step === currentStep;
           const done = index < currentIndex;
@@ -1289,78 +1305,27 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
           return (
             <div
               className={cn(
-                "flex h-8 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground",
-                active ? "bg-background font-medium text-foreground shadow-xs" : "",
-                done ? "text-foreground" : "",
+                "flex h-8 items-center gap-2 rounded-[10px] px-2.5 text-xs font-semibold transition-colors",
+                active ? "bg-v3-brand-soft text-v3-brand-deep" : "text-v3-ink-3",
+                done && !active ? "text-v3-ink-2" : "",
               )}
               key={step}
             >
               <span
                 className={cn(
-                  "flex size-6 items-center justify-center rounded-full border text-xs",
-                  active ? "border-primary bg-primary text-primary-foreground" : "",
-                  done ? "border-primary text-primary" : "",
+                  "flex size-5 items-center justify-center rounded-full text-[11px] tabular-nums",
+                  active ? "bg-v3-brand text-white" : "",
+                  done && !active ? "bg-v3-brand-soft text-v3-brand-deep" : "",
+                  !active && !done ? "bg-v3-card text-v3-ink-3" : "",
                 )}
               >
-                {done ? <Check /> : index + 1}
+                {done ? <Check className="size-3" /> : index + 1}
               </span>
               <span>{step}</span>
             </div>
           );
         })}
     </div>
-  );
-}
-
-function SelectedTemplateSummary({
-  draft,
-  selectedType,
-  onChangeTemplate,
-}: {
-  draft: WizardDraft;
-  selectedType?: DigitalEmployeeTypeOption;
-  onChangeTemplate: () => void;
-}) {
-  const isBlankCustom = draft.creation_mode === "blank_custom";
-
-  return (
-    <section className="rounded-md border bg-background p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {isBlankCustom ? "空白自定义草稿" : "已选模板"}
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">
-            {isBlankCustom
-              ? `底层类型：${selectedType?.label ?? draft.employee_type ?? "未选择类型"}`
-              : selectedType?.label ?? (draft.employee_type || "未选择模板")}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isBlankCustom
-              ? "能力、上下文覆盖、审批覆盖和 Provider 偏好由你手动配置。"
-              : selectedType?.description ?? "模板只作为初始草稿来源，Provider 在最后一步选择。"}
-          </p>
-        </div>
-        <Button onClick={onChangeTemplate} type="button" variant="outline">
-          <ArrowLeft data-icon="inline-start" />
-          更换创建路径
-        </Button>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <Badge variant="secondary">默认角色 {selectedType?.default_role || draft.role || "未生成"}</Badge>
-        {isBlankCustom ? (
-          <>
-            <Badge variant="secondary">能力手动配置</Badge>
-            <Badge variant="secondary">治理覆盖 0</Badge>
-          </>
-        ) : (
-          <>
-            <Badge variant="secondary">技能 {selectedType?.recommended_skills?.length ?? 0}</Badge>
-            <Badge variant="secondary">MCP {selectedType?.recommended_mcp_servers?.length ?? 0}</Badge>
-          </>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -1378,46 +1343,47 @@ function CreationPreflightPanel({
 
   return (
     <aside className="grid content-start gap-4">
-      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+      <GlassCard className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <IconTile tone="ok" size="sm">
             <ShieldCheck />
           </IconTile>
           <div>
-            <h2 className="text-base font-semibold">预检项目</h2>
-            <p className="text-xs text-muted-foreground">来自 Control Plane 创建候选接口。</p>
+            <h2 className="text-base font-semibold text-v3-ink">预检项目</h2>
+            <p className="text-xs text-v3-ink-3">来自 Control Plane 创建候选接口。</p>
           </div>
         </div>
         <div className="grid gap-2">
           {checks.length === 0 ? (
-            <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
+            <p className="rounded-[12px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
           ) : (
             checks.map((check) => (
-              <div className="flex items-start gap-2 rounded-md border bg-background p-3" key={check.key}>
-                <span className={cn("mt-1 size-2 rounded-full", checkDotClassName(check.status))} />
+              <div
+                className="flex items-start gap-2 rounded-[12px] border border-v3-line bg-v3-card-inner p-3"
+                key={check.key}
+              >
+                <span className={cn("mt-1 size-2 shrink-0 rounded-full", checkDotClassName(check.status))} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{check.label}</span>
-                    <Badge variant={check.status === "blocked" ? "destructive" : "secondary"}>
-                      {checkStatusLabel(check.status)}
-                    </Badge>
+                    <span className="text-sm font-medium text-v3-ink">{check.label}</span>
+                    <StatusPill tone={checkTone(check.status)}>{checkStatusLabel(check.status)}</StatusPill>
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">{check.message}</span>
+                  <span className="mt-1 block text-xs leading-5 text-v3-ink-3">{check.message}</span>
                 </span>
               </div>
             ))
           )}
         </div>
-      </section>
+      </GlassCard>
 
-      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+      <GlassCard className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <IconTile tone="artifact" size="sm">
             <Gauge />
           </IconTile>
           <div>
-            <h2 className="text-base font-semibold">画像摘要</h2>
-            <p className="text-xs text-muted-foreground">随配置实时更新。</p>
+            <h2 className="text-base font-semibold text-v3-ink">画像摘要</h2>
+            <p className="text-xs text-v3-ink-3">随配置实时更新。</p>
           </div>
         </div>
         <div className="grid gap-3 text-sm">
@@ -1430,11 +1396,11 @@ function CreationPreflightPanel({
           />
           <SummaryItem label="Provider" value={draft.provider_type || `${providers.length} 个候选`} />
         </div>
-      </section>
+      </GlassCard>
 
-      <section className="rounded-md border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
-        <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
-          <Cpu className="size-4 text-primary" />
+      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-4 text-xs leading-5 text-v3-ink-3">
+        <div className="mb-2 flex items-center gap-2 font-semibold text-v3-ink">
+          <Cpu className="size-4 text-v3-brand" />
           创建后事实
         </div>
         <div className="grid gap-2">
@@ -1468,16 +1434,23 @@ function ConfirmCreationStep({
   const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
 
   return (
-    <section className="rounded-md border bg-card/95 shadow-xs">
-      <div className="border-b p-4">
-        <h2 className="text-lg font-semibold">确认创建</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          核对本次将提交给 Control Plane 的员工配置；确认后创建 ready 状态数字员工。
-        </p>
+    <GlassCard className="flex flex-col">
+      <div className="border-b border-v3-line p-4">
+        <div className="flex items-center gap-2.5">
+          <IconTile tone="brand" size="sm">
+            <ClipboardCheck />
+          </IconTile>
+          <div>
+            <h2 className="text-lg font-semibold text-v3-ink">确认创建</h2>
+            <p className="mt-0.5 text-sm text-v3-ink-3">
+              核对本次将提交给 Control Plane 的员工配置；确认后创建 ready 状态数字员工。
+            </p>
+          </div>
+        </div>
       </div>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
-        <section className="rounded-md border bg-background p-4">
-          <h3 className="text-sm font-semibold">身份与模板</h3>
+        <section className="rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
+          <h3 className="text-sm font-semibold text-v3-ink">身份与模板</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
             <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? "空白自定义草稿" : "专业模板"} />
@@ -1491,8 +1464,8 @@ function ConfirmCreationStep({
           </div>
         </section>
 
-        <section className="rounded-md border bg-background p-4">
-          <h3 className="text-sm font-semibold">能力与 Provider 偏好</h3>
+        <section className="rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
+          <h3 className="text-sm font-semibold text-v3-ink">能力与 Provider 偏好</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
@@ -1509,19 +1482,19 @@ function ConfirmCreationStep({
         </section>
       </div>
       {createError ? (
-        <p className="px-4 pb-2 text-sm text-destructive">{getErrorMessage(createError)}</p>
+        <p className="px-4 pb-2 text-sm text-v3-danger">{getErrorMessage(createError)}</p>
       ) : null}
-      <div className="flex justify-between gap-3 border-t p-4">
-        <Button disabled={creating} onClick={onBack} type="button" variant="outline">
-          <ChevronLeft data-icon="inline-start" />
+      <div className="flex justify-between gap-3 border-t border-v3-line p-4">
+        <V3Button disabled={creating} onClick={onBack} type="button" variant="glass">
+          <ChevronLeft className="size-4" />
           返回配置
-        </Button>
-        <Button disabled={creating} onClick={onSubmit} type="button">
-          {creating ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
+        </V3Button>
+        <V3Button disabled={creating} onClick={onSubmit} type="button">
+          {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
           确认创建
-        </Button>
+        </V3Button>
       </div>
-    </section>
+    </GlassCard>
   );
 }
 
@@ -1551,8 +1524,8 @@ function IdentityStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">身份</h2>
-        <p className="text-sm text-muted-foreground">确定团队、业务类型和职责边界。负责人由后端按当前登录身份注入。</p>
+        <h2 className="text-lg font-semibold text-v3-ink">身份</h2>
+        <p className="text-sm text-v3-ink-3">确定团队、业务类型和职责边界。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="归属团队" error={errors.team_id}>
@@ -1570,7 +1543,7 @@ function IdentityStep({
               </option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">选择“无”将创建租户级独立数字员工，治理按内置默认（全部允许）。</p>
+          <p className="text-xs text-v3-ink-3">选择“无”将创建租户级独立数字员工，治理按内置默认（全部允许）。</p>
         </Field>
         <Field label="员工类型" error={errors.employee_type}>
           <select
@@ -1586,10 +1559,10 @@ function IdentityStep({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-v3-ink-3">
             {isBlankCustom
-              ? "如需切换创建路径或员工类型，请使用上方“更换创建路径”并重新生成配置草稿。"
-              : "如需切换模板，请使用上方“更换创建路径”并重新生成配置草稿。"}
+              ? "如需切换创建路径或员工类型，请使用右上角“返回”并重新生成配置草稿。"
+              : "如需切换模板，请使用右上角“返回”并重新生成配置草稿。"}
           </p>
         </Field>
         <Field label="名称" error={errors.name}>
@@ -1636,10 +1609,10 @@ function IdentityStep({
         onSelect={onSelectAvatar}
       />
       {selectedType ? (
-        <div className="rounded-md border bg-muted/30 p-3 text-sm">
-          <div className="font-medium">{selectedType.label}</div>
-          <div className="mt-1 text-muted-foreground">{selectedType.description}</div>
-          <div className="mt-2 text-muted-foreground">默认角色：{selectedType.default_role || selectedType.type}</div>
+        <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm">
+          <div className="font-semibold text-v3-ink">{selectedType.label}</div>
+          <div className="mt-1 text-v3-ink-3">{selectedType.description}</div>
+          <div className="mt-2 text-v3-ink-3">默认角色：{selectedType.default_role || selectedType.type}</div>
         </div>
       ) : null}
     </div>
@@ -1658,8 +1631,8 @@ function AvatarSelection({
   selectedAssetId: string;
 }) {
   return (
-    <fieldset className="rounded-md border p-3">
-      <legend className="px-1 text-sm font-medium">头像</legend>
+    <fieldset className="rounded-[14px] border border-v3-line p-3">
+      <legend className="px-1 text-sm font-medium text-v3-ink">头像</legend>
       <div className="mt-3 flex flex-wrap gap-3">
         {assets.map((asset) => {
           const selected = asset.id === selectedAssetId;
@@ -1667,8 +1640,8 @@ function AvatarSelection({
             <button
               aria-pressed={selected}
               className={cn(
-                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-muted p-0.5 transition",
-                selected ? "border-primary ring-2 ring-primary/30" : "hover:border-primary/60",
+                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-v3-card-soft p-0.5 transition-all duration-200",
+                selected ? "border-v3-brand ring-2 ring-v3-brand/30" : "hover:-translate-y-0.5 hover:border-v3-brand/60",
               )}
               key={asset.id}
               onClick={() => onSelect(asset.id)}
@@ -1679,8 +1652,8 @@ function AvatarSelection({
           );
         })}
       </div>
-      {assets.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">暂无可选头像</p> : null}
-      {error ? <span className="mt-2 block text-sm text-destructive">{error}</span> : null}
+      {assets.length === 0 ? <p className="mt-2 text-sm text-v3-ink-3">暂无可选头像</p> : null}
+      {error ? <span className="mt-2 block text-sm text-v3-danger">{error}</span> : null}
     </fieldset>
   );
 }
@@ -1712,8 +1685,8 @@ function CapabilityStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">能力</h2>
-        <p className="text-sm text-muted-foreground">按团队治理配置选择技能、MCP Server 和外部能力。</p>
+        <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
+        <p className="text-sm text-v3-ink-3">按团队治理配置选择技能、MCP Server 和外部能力。</p>
       </div>
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_skills}
@@ -1749,16 +1722,27 @@ function CapabilityGroup({
   values: string[];
 }) {
   return (
-    <fieldset className="rounded-md border p-3">
-      <legend className="px-1 text-sm font-medium">{label}</legend>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {values.map((value) => (
-          <label className="flex items-center gap-2 text-sm" key={value}>
-            <Checkbox checked={checkedValues.includes(value)} onCheckedChange={() => onToggle(value)} />
-            <span>{value}</span>
-          </label>
-        ))}
-        {values.length === 0 ? <p className="text-sm text-muted-foreground">暂无可选项</p> : null}
+    <fieldset className="rounded-[14px] border border-v3-line p-3">
+      <legend className="px-1 text-sm font-medium text-v3-ink">{label}</legend>
+      <div className="mt-3 grid gap-2.5 md:grid-cols-2">
+        {values.map((value) => {
+          const checked = checkedValues.includes(value);
+          return (
+            <label
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-[12px] border px-3 py-2 text-sm transition-colors",
+                checked
+                  ? "border-v3-brand/40 bg-v3-brand-soft text-v3-brand-deep"
+                  : "border-v3-line bg-v3-card text-v3-ink hover:bg-v3-card-soft",
+              )}
+              key={value}
+            >
+              <Checkbox checked={checked} onCheckedChange={() => onToggle(value)} />
+              <span className="min-w-0 truncate">{value}</span>
+            </label>
+          );
+        })}
+        {values.length === 0 ? <p className="text-sm text-v3-ink-3">暂无可选项</p> : null}
       </div>
     </fieldset>
   );
@@ -1782,8 +1766,8 @@ function GovernanceStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">治理</h2>
-        <p className="text-sm text-muted-foreground">确认团队治理版本、上下文和审批默认值。这里不暴露原始 JSON 编辑。</p>
+        <h2 className="text-lg font-semibold text-v3-ink">治理</h2>
+        <p className="text-sm text-v3-ink-3">确认团队治理版本、上下文和审批默认值。这里不暴露原始 JSON 编辑。</p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <SummaryItem label="团队治理版本" value={teamConfig ? `#${teamConfig.revision_number} · ${teamConfig.status}` : "未加载"} />
@@ -1804,10 +1788,10 @@ function GovernanceStep({
           type="number"
           value={draft.daily_token_limit}
         />
-        <p className="text-xs text-muted-foreground">不填写表示无预算上限。填写后，达到当日上限会阻止发起新的运行。</p>
+        <p className="text-xs text-v3-ink-3">不填写表示无预算上限。填写后，达到当日上限会阻止发起新的运行。</p>
       </Field>
-      <div className="rounded-md border bg-muted/30 p-3">
-        <div className="text-sm font-medium">创建摘要</div>
+      <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
+        <div className="text-sm font-medium text-v3-ink">创建摘要</div>
         <div className="mt-2 flex flex-wrap gap-2">
           <Badge variant="secondary">{selectedType?.label ?? draft.employee_type}</Badge>
           <Badge variant="secondary">{draft.role}</Badge>
@@ -1822,9 +1806,9 @@ function GovernanceStep({
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-medium">{value}</div>
+    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
+      <div className="text-xs text-v3-ink-3">{label}</div>
+      <div className="mt-1 text-sm font-medium text-v3-ink">{value}</div>
     </div>
   );
 }
@@ -1857,8 +1841,8 @@ function ProviderStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold">Provider 偏好</h2>
-        <p className="text-sm text-muted-foreground">Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
+        <h2 className="text-lg font-semibold text-v3-ink">Provider 偏好</h2>
+        <p className="text-sm text-v3-ink-3">Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
       </div>
       <RadioGroup onValueChange={onSelectProvider} value={draft.provider_type}>
         <div className="grid gap-3">
@@ -1867,24 +1851,25 @@ function ProviderStep({
               key={providerType}
               options={options}
               providerType={providerType}
+              selected={draft.provider_type === providerType}
               onSelectProvider={onSelectProvider}
             />
           ))}
         </div>
       </RadioGroup>
       {providers.length === 0 ? (
-        <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+        <p className="rounded-[14px] border border-dashed border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
           当前团队治理没有返回可选 Provider，请检查团队能力边界配置。
         </p>
       ) : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <section className="rounded-md border bg-card/80 p-3">
+      {error ? <p className="text-sm text-v3-danger">{error}</p> : null}
+      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-medium">员工环境变量</h3>
-            <p className="text-xs text-muted-foreground">用于技能运行依赖；创建请求会提交值，接口不会回显明文。</p>
+            <h3 className="text-sm font-medium text-v3-ink">员工环境变量</h3>
+            <p className="text-xs text-v3-ink-3">用于技能运行依赖；创建请求会提交值，接口不会回显明文。</p>
           </div>
-          <Button
+          <V3Button
             onClick={() =>
               onUpdate({ environment_variables: [...draft.environment_variables, newEnvironmentVariableRow()] })
             }
@@ -1892,17 +1877,17 @@ function ProviderStep({
             type="button"
             variant="outline"
           >
-            <Plus data-icon="inline-start" />
+            <Plus className="size-4" />
             添加环境变量
-          </Button>
+          </V3Button>
         </div>
         <div className="mt-3 grid gap-2">
           {draft.environment_variables.length === 0 ? (
-            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无环境变量。</p>
+            <p className="rounded-[12px] border border-dashed border-v3-line p-3 text-sm text-v3-ink-3">暂无环境变量。</p>
           ) : null}
           {draft.environment_variables.map((row, index) => (
             <div
-              className="grid gap-2 rounded-md border bg-background p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end"
+              className="grid gap-2 rounded-[12px] border border-v3-line bg-v3-card p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end"
               key={row.id}
             >
               <div className="grid gap-1.5">
@@ -1923,14 +1908,14 @@ function ProviderStep({
                   value={row.value}
                 />
               </div>
-              <label className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+              <label className="flex h-10 items-center gap-2 rounded-xl border border-v3-line px-3 text-sm text-v3-ink">
                 <Checkbox
                   checked={row.sensitive}
                   onCheckedChange={(checked) => updateEnvironmentRow(row.id, { sensitive: checked === true })}
                 />
                 敏感
               </label>
-              <Button
+              <V3Button
                 aria-label={`移除环境变量 ${index + 1}`}
                 onClick={() => removeEnvironmentRow(row.id)}
                 size="icon"
@@ -1938,7 +1923,7 @@ function ProviderStep({
                 variant="ghost"
               >
                 <Trash2 />
-              </Button>
+              </V3Button>
             </div>
           ))}
         </div>
@@ -1951,16 +1936,23 @@ function ProviderOption({
   onSelectProvider,
   options,
   providerType,
+  selected,
 }: {
   onSelectProvider: (providerType: string) => void;
   options?: DigitalEmployeeCreateOptions;
   providerType: string;
+  selected?: boolean;
 }) {
   const preview = providerDispatchPreview(options, providerType);
 
   return (
     <label
-      className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm"
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-[14px] border p-3 text-sm transition-colors",
+        selected
+          ? "border-v3-brand/40 bg-v3-brand-soft"
+          : "border-v3-line bg-v3-card hover:bg-v3-card-soft",
+      )}
       onClick={(event) => {
         event.preventDefault();
         onSelectProvider(providerType);
@@ -1968,8 +1960,8 @@ function ProviderOption({
     >
       <RadioGroupItem value={providerType} />
       <span className="min-w-0 flex-1">
-        <span className="block font-medium">{providerType}</span>
-        <span className="mt-1 block text-muted-foreground">
+        <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>{providerType}</span>
+        <span className="mt-1 block text-v3-ink-3">
           {preview.availableCount > 0
             ? preview.availableCount === preview.matchingCount
               ? `${preview.matchingCount} 个 Runtime 节点候选会在项目运行准备中评估`
@@ -1994,9 +1986,9 @@ function Field({
 
   return (
     <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label className="text-v3-ink" htmlFor={id}>{label}</Label>
       {children}
-      {error ? <span className="text-sm text-destructive">{error}</span> : null}
+      {error ? <span className="text-sm text-v3-danger">{error}</span> : null}
     </div>
   );
 }
@@ -2012,7 +2004,7 @@ const labelId: Record<string, string> = {
 };
 
 const selectClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-10 w-full rounded-xl border border-v3-line bg-v3-card px-3 py-1 text-sm text-v3-ink shadow-sm outline-none transition-[color,box-shadow] focus-visible:border-v3-brand focus-visible:ring-2 focus-visible:ring-v3-brand/40 disabled:cursor-not-allowed disabled:opacity-50";
 
 function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
   const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
@@ -2120,10 +2112,27 @@ function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {
   };
 }
 
+const riskTone: Record<string, V3Tone> = {
+  critical: "danger",
+  high: "danger",
+  medium: "warn",
+  low: "ok",
+};
+
+function RiskPill({ risk }: { risk: string }) {
+  return <StatusPill tone={riskTone[risk] ?? "mute"}>{risk}</StatusPill>;
+}
+
+function checkTone(status: string): V3Tone {
+  if (status === "passed") return "ok";
+  if (status === "warning") return "warn";
+  return "danger";
+}
+
 function checkDotClassName(status: string) {
   if (status === "passed") return "bg-v3-ok";
   if (status === "warning") return "bg-v3-warn";
-  return "bg-destructive";
+  return "bg-v3-danger";
 }
 
 function checkStatusLabel(status: string) {

@@ -575,13 +575,14 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("角色")).toHaveValue("frontend_engineer");
   });
 
-  it("shows only the selected template summary after entering configuration", async () => {
+  it("shows the profile blueprint without a redundant template summary after entering configuration", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
 
-    await expect.element(screen.getByText("已选模板")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: /更换创建路径/ })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+    expect(screen.getByText("已选模板", { exact: true }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: /更换创建路径/ }).query()).toBeNull();
     expect(document.body.textContent).not.toContain("推荐起步画像");
     expect(document.body.textContent).not.toContain("从空白开始自定义");
     expect(document.body.textContent).not.toContain("模板只提供默认值和推荐能力");
@@ -602,7 +603,7 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: /更换创建路径/ }));
+    await userEvent.click(screen.getByRole("button", { name: "返回" }));
 
     expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
@@ -615,7 +616,7 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: /更换创建路径/ }));
+    await userEvent.click(screen.getByRole("button", { name: "返回" }));
 
     expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
@@ -701,7 +702,6 @@ describe("CreateEmployeeView", () => {
 
     await enterBlankCustomConfiguration(screen);
 
-    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
 
@@ -784,12 +784,10 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
   });
 
-  it("shows blank-custom source on the selected summary and confirm step", async () => {
+  it("shows blank-custom source on the confirm step", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterBlankCustomConfiguration(screen);
-    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
-    await expect.element(screen.getByText(/底层类型：数据库管理员/)).toBeVisible();
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
