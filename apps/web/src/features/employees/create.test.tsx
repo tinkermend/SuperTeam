@@ -1135,7 +1135,7 @@ describe("CreateEmployeeView", () => {
 
   it("submits the selected provider when one runtime exposes multiple providers", async () => {
     const fetcher = createWizardFetcher({
-      expectedProviderType: "claude_code",
+      expectedProviderType: "claude-code",
       sameRuntimeNodeProviders: true,
     });
     const screen = await renderCreateEmployeeView(fetcher);
@@ -1149,12 +1149,18 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
     await expect.element(screen.getByLabelText("codex")).not.toBeChecked();
-    await expect.element(screen.getByLabelText("claude_code")).not.toBeChecked();
+    await expect.element(screen.getByLabelText("Claude Code")).not.toBeChecked();
+    expect(document.body.textContent).not.toContain("claude_code");
 
-    await userEvent.click(screen.getByLabelText("claude_code"));
+    await userEvent.click(screen.getByLabelText("Claude Code"));
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.provider_type).toBe("claude-code");
 
     expect(navigate).toHaveBeenCalledWith({
       params: { employeeId: "11111111-1111-4111-8111-111111111111" },
