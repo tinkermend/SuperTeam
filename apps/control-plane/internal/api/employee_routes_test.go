@@ -972,6 +972,55 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeCreateOptionsReturnsStructuredTeamGovernanceError(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	teamID := uuid.New()
+	service := &routeEmployeeService{
+		createOptionsErr: fmt.Errorf("%w: active team governance config is required", employee.ErrEffectiveConfigRequired),
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected structured governance error status 422, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected JSON content type, got %q", resp.Header().Get("Content-Type"))
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode structured governance error: %v", err)
+	}
+	if body.Code != "team_governance_config_required" {
+		t.Fatalf("expected team governance error code, got %#v", body)
+	}
+	if !strings.Contains(body.Message, "active team governance config is required") {
+		t.Fatalf("expected effective config message, got %#v", body)
+	}
+}
+
 func assertCreateOptionCheck(t *testing.T, checks []struct {
 	Key     string `json:"key"`
 	Label   string `json:"label"`
@@ -1625,6 +1674,7 @@ func TestDigitalEmployeeEnvironmentVariableRoutes(t *testing.T) {
 type routeEmployeeService struct {
 	createOptionsReq                 employee.CreateOptionsRequest
 	createOptions                    *employee.CreateOptions
+	createOptionsErr                 error
 	createReq                        employee.CreateDigitalEmployeeRequest
 	listReq                          employee.ListDigitalEmployeesRequest
 	overviewReq                      employee.GetDigitalEmployeeOverviewRequest
@@ -1664,6 +1714,9 @@ type routeEmployeeService struct {
 
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
 	s.createOptionsReq = req
+	if s.createOptionsErr != nil {
+		return nil, s.createOptionsErr
+	}
 	if s.createOptions != nil {
 		return s.createOptions, nil
 	}

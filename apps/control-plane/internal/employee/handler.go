@@ -1199,6 +1199,11 @@ type schedulingReadinessEnvironmentSummaryResponse struct {
 	MissingNames    []string `json:"missing_names"`
 }
 
+type errorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 	if err != nil || employeeID == uuid.Nil {
@@ -1213,7 +1218,7 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	case errors.Is(err, ErrEffectiveConfigRequired):
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "team_governance_config_required", err.Error())
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):
@@ -1223,6 +1228,13 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+func writeJSONError(w http.ResponseWriter, status int, code string, message string) {
+	writeJSON(w, status, errorResponse{
+		Code:    code,
+		Message: message,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
