@@ -2,19 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 重构团队管理详情页：移除借调和审计Tab，拆分概览Tab为数字员工/人类成员两个独立区块，治理策略改用结构化审批表单，能力与知识页按钮风格统一为 V3 规范。
+**Goal:** 重构团队管理详情页：移除团队详情内的借调和审计 Tab，拆分概览 Tab 为数字员工/人类成员两个独立区块，治理策略改用结构化审批表单，能力与知识页按钮风格统一为 V3 规范。
 
-**Architecture:** 纯前端改造，不涉及后端 API 变动。7 个文件修改（4 modify + 2 delete），1 个 API 层清理。按功能边界拆为 5 个独立任务，每个任务可单独测试和提交。
+**Architecture:** 纯前端页面改造，不修改后端、OpenAPI、迁移或 Control Plane 路由。仅清理 Web 团队详情页不再使用的团队借调 API client；必须保留项目侧 lending API client，因为后端仍提供 `/api/v1/projects/{projectId}/lending-requests`。每个任务结束时仓库必须处于可编译、可测试状态。
 
 **Tech Stack:** React, TypeScript, TanStack Query, TanStack Router, Lucide Icons, V3 design system (`@/components/superteam`)
 
 ## Global Constraints
 
-- 所有按钮使用 `V3Button`（`@/components/superteam`），禁止使用 shadcn 原生 `Button`
-- 表格使用 `V3Table`/`V3Th`/`V3Td`/`V3Tr`，容器使用 `WorkSurface`（`@/components/superteam`）
-- 空状态使用 `V3EmptyState`，加载状态使用 `V3LoadingState`
-- Web 测试命令：`corepack pnpm --filter ./apps/web run test`，禁止使用 `npx vitest run`
-- 页面跳转使用 TanStack Router 的 `Link` 或 `navigate`，禁止 `window.location.href`
+- 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
+- 所有新/改操作按钮使用 `V3Button`（`@/components/superteam`），不要新增 shadcn 原生 `Button`。
+- 表格使用 `V3Table`/`V3Th`/`V3Td`/`V3Tr`，密集数据容器使用 `WorkSurface`（`@/components/superteam`）。
+- 空状态使用 `V3EmptyState`，加载状态使用 `V3LoadingState`。
+- Web 测试命令使用 `corepack pnpm --filter ./apps/web run test -- <test-file>` 或 `corepack pnpm --filter ./apps/web run test`，禁止使用 `npx vitest run`。
+- 类型检查命令使用 `corepack pnpm --filter ./apps/web run typecheck`，不要用 `grep`/`tail` 管道截断或掩盖退出码。
+- 页面跳转使用 TanStack Router 的 `Link` 或 `navigate`，禁止 `window.location.href`。
+- 不新增后端接口、不改 OpenAPI、不删除 Control Plane lending/audit 能力。
+- 不要在 Header 放可点击但无行为的 no-op 按钮。
 
 ---
 
@@ -26,147 +30,384 @@
 | `apps/web/src/features/teams/components/team-overview-tab.tsx` | Modify |
 | `apps/web/src/features/teams/components/team-governance-tab.tsx` | Modify |
 | `apps/web/src/features/teams/components/team-capabilities-tab.tsx` | Modify |
-| `apps/web/src/features/teams/components/team-lending-tab.tsx` | **Delete** |
-| `apps/web/src/features/teams/components/team-audit-tab.tsx` | **Delete** |
-| `apps/web/src/lib/api/teams.ts` | Modify（删除借调函数和类型） |
+| `apps/web/src/features/teams/components/team-lending-tab.tsx` | Delete |
+| `apps/web/src/features/teams/components/team-audit-tab.tsx` | Delete |
+| `apps/web/src/features/teams/index.test.tsx` | Modify |
+| `apps/web/src/lib/api/teams.ts` | Modify narrowly: remove only team-detail unused team-lending policy/decision client; keep project-side lending client |
+| `docs/superpowers/plans/2026-07-07-team-detail-page-redesign.md` | Modify: this corrected plan |
 
 ---
 
-### Task 1: 删除借调Tab、审计Tab 及借调 API 层
+### Task 1: 删除团队详情借调/审计 Tab，保留项目侧 lending API
 
 **Files:**
 - Delete: `apps/web/src/features/teams/components/team-lending-tab.tsx`
 - Delete: `apps/web/src/features/teams/components/team-audit-tab.tsx`
 - Modify: `apps/web/src/features/teams/components/team-detail-layout.tsx`
 - Modify: `apps/web/src/lib/api/teams.ts`
+- Modify: `apps/web/src/features/teams/index.test.tsx`
 
 **Interfaces:**
-- Produces: 干净的 3-Tab 布局（概览/能力与知识/治理策略），后续 Task 2-5 在此基础上修改
+- Consumes: `TeamDetailView` existing route-level test harness in `apps/web/src/features/teams/index.test.tsx`.
+- Produces: 3-Tab team detail layout: `概览` / `能力与知识` / `治理策略`.
+- Preserves: `CreateProjectLendingRequestInput`, `createProjectLendingRequest`, and `listProjectLendingRequests` in `apps/web/src/lib/api/teams.ts`.
 
-- [ ] **Step 1: 删除 team-lending-tab.tsx**
+- [ ] **Step 1: Add failing regression test for removed tabs**
 
-```bash
-rm apps/web/src/features/teams/components/team-lending-tab.tsx
-```
+In `apps/web/src/features/teams/index.test.tsx`, inside the existing `describe("TeamDetailView")` block, add this test before the action-button tests:
 
-- [ ] **Step 2: 删除 team-audit-tab.tsx**
-
-```bash
-rm apps/web/src/features/teams/components/team-audit-tab.tsx
-```
-
-- [ ] **Step 3: 清理 teams.ts 中借调相关函数和类型**
-
-打开 `apps/web/src/lib/api/teams.ts`，删除以下内容（从 `// ---- 团队借调（lending）----` 注释行到文件中最后一个借调函数）：
-
-- 类型：`TeamLendingApprovalMode`、`TeamLendingRequestStatus`、`TeamLendingPolicy`、`UpsertTeamLendingPolicyInput`、`TeamLendingRequest`、`DecideTeamLendingRequestInput`
-- 函数：`getTeamLendingPolicy`、`upsertTeamLendingPolicy`、`listTeamLendingRequests`、`approveTeamLendingRequest`、`rejectTeamLendingRequest`、`revokeTeamLendingRequest`
-- `AllowedTeamAction` 联合类型中删除：`"team.lending.policy.read"`、`"team.lending.policy.edit"`、`"team.lending.request.read"`、`"team.lending.request.decide"`
-
-- [ ] **Step 4: 修改 team-detail-layout.tsx — 删除借调/审计 Tab 及权限变量**
-
-打开 `apps/web/src/features/teams/components/team-detail-layout.tsx`，做以下修改：
-
-4a. 删除 import 行中的 `TeamLendingTab` 和 `TeamAuditTab`（如有）。
-
-4b. 删除以下变量声明：
 ```tsx
-// 删除这两行
+  it("shows only overview, capabilities, and governance tabs on team detail", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect
+      .element(screen.getByRole("heading", { name: "运维团队" }))
+      .toBeVisible();
+    for (const tab of ["概览", "能力与知识", "治理策略"]) {
+      await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
+    }
+    await expect
+      .element(screen.getByRole("tab", { name: "借调" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("tab", { name: "审计记录" }))
+      .not.toBeInTheDocument();
+  });
+```
+
+- [ ] **Step 2: Run regression test and verify it fails**
+
+Run:
+
+```bash
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+```
+
+Expected before implementation: FAIL because `借调` and `审计记录` tabs are still rendered.
+
+- [ ] **Step 3: Delete team-specific Tab component files**
+
+Run:
+
+```bash
+git rm apps/web/src/features/teams/components/team-lending-tab.tsx \
+       apps/web/src/features/teams/components/team-audit-tab.tsx
+```
+
+- [ ] **Step 4: Clean `team-detail-layout.tsx` imports and permissions**
+
+In `apps/web/src/features/teams/components/team-detail-layout.tsx`:
+
+1. Change the Lucide import from:
+
+```tsx
+import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UserPlus, UsersRound } from "lucide-react";
+```
+
+to:
+
+```tsx
+import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+```
+
+2. Delete these imports:
+
+```tsx
+import { TeamAuditTab } from "./team-audit-tab";
+import { TeamLendingTab } from "./team-lending-tab";
+```
+
+3. Delete these variables:
+
+```tsx
+const canAddMember = isActive && overview.allowed_actions.includes("team.member.add");
 const canEditLending = isActive && overview.allowed_actions.includes("team.lending.policy.edit");
 const canDecideLending = isActive && overview.allowed_actions.includes("team.lending.request.decide");
 ```
 
-4c. 删除 `<TabsTrigger value="lending">借调</TabsTrigger>` 和 `<TabsTrigger value="audit">审计记录</TabsTrigger>`。
+- [ ] **Step 5: Remove Header Add Member button and keep governance header non-clickable**
 
-4d. 删除 `<TabsContent value="lending">...</TabsContent>` 和 `<TabsContent value="audit">...</TabsContent>` 整块。
+In the Header button group of `team-detail-layout.tsx`, delete the entire disabled `添加成员` block.
 
-4e. 删除 Header 区域的"添加成员"按钮（整个 `canAddMember` 条件渲染块）：
-```tsx
-// 删除这段
-{canAddMember ? (
-  <V3Button disabled size="sm" variant="outline">
-    <UserPlus data-icon="inline-start" />
-    添加成员
-  </V3Button>
-) : null}
-```
+Keep the `创建治理草案` button visually present but disabled, using V3 outline style:
 
-4f. 将"创建治理草案"按钮的 `disabled` 属性移除（改为由 Tab 内部控制），并确认 variant 为 `"outline"`：
 ```tsx
 {canCreateGovernance ? (
-  <V3Button size="sm" variant="outline" onClick={() => {}}>
+  <V3Button disabled size="sm" variant="outline">
     <Plus data-icon="inline-start" />
     创建治理草案
   </V3Button>
 ) : null}
 ```
 
-- [ ] **Step 5: 运行类型检查确认无报错**
+Do not add `onClick={() => {}}`.
 
-```bash
-corepack pnpm --filter ./apps/web run typecheck 2>&1 | tail -20
+- [ ] **Step 6: Remove lending and audit Tab triggers and contents**
+
+In `team-detail-layout.tsx`, delete:
+
+```tsx
+the full `<TabsTrigger>` block whose `value` is `"lending"` and label is `借调`
+the full `<TabsTrigger>` block whose `value` is `"audit"` and label is `审计记录`
 ```
 
-期望：无 lending/audit 相关 TypeScript 报错。
+Delete the two matching `TabsContent` blocks:
 
-- [ ] **Step 6: 运行测试**
-
-```bash
-corepack pnpm --filter ./apps/web run test 2>&1 | tail -30
+```tsx
+the full `<TabsContent className="mt-0" value="lending">` block that renders `TeamLendingTab`
+the full `<TabsContent className="mt-0" value="audit">` block that renders `TeamAuditTab`
 ```
 
-期望：pass（团队相关测试不涉及 lending/audit）。
+- [ ] **Step 7: Clean only unused team-lending policy/decision API client**
 
-- [ ] **Step 7: 提交**
+In `apps/web/src/lib/api/teams.ts`:
+
+1. In `AllowedTeamAction`, delete only:
+
+```ts
+  | "team.lending.policy.read"
+  | "team.lending.policy.edit"
+  | "team.lending.request.read"
+  | "team.lending.request.decide"
+```
+
+2. Delete these team-detail-only types/functions:
+
+```ts
+export type TeamLendingPolicy;
+export type UpsertTeamLendingPolicyInput;
+export type DecideTeamLendingRequestInput;
+export async function getTeamLendingPolicy;
+export function upsertTeamLendingPolicy;
+export async function listTeamLendingRequests;
+export function approveTeamLendingRequest;
+export function rejectTeamLendingRequest;
+export function revokeTeamLendingRequest;
+```
+
+Delete the complete existing definitions for these symbols, from each `export type` / `export function` line through its closing `};` or function body.
+
+3. Preserve these project-side lending definitions exactly, because they still match current backend routes:
+
+```ts
+export type TeamLendingApprovalMode = "auto" | "manual";
+export type TeamLendingRequestStatus =
+  | "pending"
+  | "auto_approved"
+  | "approved"
+  | "rejected"
+  | "revoked";
+
+export type TeamLendingRequest = {
+  id: string;
+  tenant_id: string;
+  team_id: string;
+  project_id: string;
+  status: TeamLendingRequestStatus;
+  requested_by_user_id: string;
+  request_reason: string;
+  requested_budget?: string;
+  requested_capability: Record<string, unknown>;
+  granted_budget?: string;
+  granted_capability: Record<string, unknown>;
+  is_exception: boolean;
+  decided_by_user_id?: string;
+  decided_at?: string;
+  decision_reason?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CreateProjectLendingRequestInput = {
+  team_id: string;
+  request_reason?: string;
+  requested_budget?: string;
+  requested_capability?: Record<string, unknown>;
+};
+
+export function createProjectLendingRequest(
+  options: ApiClientOptions,
+  projectId: string,
+  input: CreateProjectLendingRequestInput,
+): Promise<TeamLendingRequest>
+
+export async function listProjectLendingRequests(
+  options: ApiClientOptions,
+  projectId: string,
+  status?: TeamLendingRequestStatus,
+): Promise<TeamLendingRequest[]>
+```
+
+- [ ] **Step 8: Remove obsolete audit-tab test expectations**
+
+In `apps/web/src/features/teams/index.test.tsx`, delete the existing test named:
+
+```tsx
+it("renders the team audit tab with summary, authorization action, and before after detail", async () => { ... });
+```
+
+This test belongs to the removed team detail audit Tab. Do not delete API-level audit tests in `apps/web/src/lib/api/teams.test.ts`; only remove this UI Tab test.
+
+- [ ] **Step 9: Run verification for Task 1**
+
+Run these commands:
+
+```bash
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+corepack pnpm --filter ./apps/web run typecheck
+rg -n "TeamLendingTab|TeamAuditTab|value=\"lending\"|value=\"audit\"|team\\.lending\\.policy|team\\.lending\\.request" apps/web/src/features/teams apps/web/src/lib/api/teams.ts
+```
+
+Expected:
+- Targeted teams test passes.
+- Typecheck passes.
+- `rg` has no hits for deleted team-detail lending/audit imports, tabs, or allowed actions.
+
+- [ ] **Step 10: Commit Task 1**
 
 ```bash
 git add apps/web/src/features/teams/components/team-detail-layout.tsx \
-        apps/web/src/lib/api/teams.ts
-git rm apps/web/src/features/teams/components/team-lending-tab.tsx \
-       apps/web/src/features/teams/components/team-audit-tab.tsx
-git commit -m "feat(teams): remove lending tab, audit tab and lending API layer"
+        apps/web/src/lib/api/teams.ts \
+        apps/web/src/features/teams/index.test.tsx
+git commit -m "feat(teams): remove team detail lending and audit tabs"
 ```
 
 ---
 
-### Task 2: 概览Tab — 数字员工区块
+### Task 2: 概览 Tab 拆分数字员工与人类成员区块
 
 **Files:**
 - Modify: `apps/web/src/features/teams/components/team-overview-tab.tsx`
+- Modify: `apps/web/src/features/teams/index.test.tsx`
 
 **Interfaces:**
-- Consumes: `listDigitalEmployees(apiOptions, { team_id: teamId }): Promise<DigitalEmployee[]>` from `@/lib/api/employees`
-- Consumes: `EmployeeAvatar` from `@/features/employees/avatar`, `employeeAvatarAsset` from `@/features/employees/avatar-library`
-- Produces: `DigitalEmployeesSection` 组件（供 Task 3 整合进页面布局）
+- Consumes: `listDigitalEmployees(apiOptions, { team_id: teamId }): Promise<DigitalEmployee[]>` from `@/lib/api/employees`.
+- Consumes: `EmployeeAvatar` from `@/features/employees/avatar`, `employeeAvatarAsset` from `@/features/employees/avatar-library`.
+- Consumes: `UserIdentity`, `TeamRoleBadge`, `DirectTeamRole`, `DirectAddPanel`.
+- Produces: `TeamOverviewTab` render with KPI cards, `DigitalEmployeesSection`, and `HumanMembersSection`.
 
-- [ ] **Step 1: 删除混合列表逻辑**
+- [ ] **Step 1: Add failing overview split regression test**
 
-在 `TeamOverviewTab` 函数中删除以下内容：
+In `apps/web/src/features/teams/index.test.tsx`, inside the existing `describe("TeamDetailView")` block, add:
 
 ```tsx
-// 删除 UnifiedMember 类型定义
-type UnifiedMember = { ... }
-// 删除 roleOrder 常量
-const roleOrder: Record<string, number> = { ... }
-// 删除 unifiedList 构建与排序逻辑
-const unifiedList: UnifiedMember[] = [...].sort(...)
-// 删除 isLoadingList
-const isLoadingList = membersQuery.isLoading || digitalEmployeesQuery.isLoading;
+  it("separates digital employees from human management members in overview", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("数字员工")).toBeVisible();
+    await expect.element(screen.getByText("人类管理成员")).toBeVisible();
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("团队成员与代理"))
+      .not.toBeInTheDocument();
+  });
 ```
 
-保留 `membersQuery`、`digitalEmployeesQuery`、`humanRoster`、`digitalRoster`、`existingUserIds`、`addMutation`、`removeMutation` 等。
+- [ ] **Step 2: Run regression test and verify it fails**
 
-- [ ] **Step 2: 确认 DigitalEmployee 类型字段**
+Run:
 
 ```bash
-grep -nE "role|status|description" apps/web/src/lib/api/employees.ts | grep -E ":\s|role:|status:" | head -20
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
 ```
 
-记录 `DigitalEmployee` 是否有 `role`、`status`、`description` 字段。若无 `role`，Step 3 中 `employee.role || "—"` 改为 `"—"`。
+Expected before implementation: FAIL because overview still uses `团队成员与代理` mixed list and does not render `人类管理成员`.
 
-- [ ] **Step 3: 新增 DigitalEmployeesSection 组件**
+- [ ] **Step 3: Update imports**
 
-在 `team-overview-tab.tsx` 末尾添加：
+In `apps/web/src/features/teams/components/team-overview-tab.tsx`:
+
+1. Add a type import:
+
+```tsx
+import type { ReactNode } from "react";
+```
+
+2. Keep `useEffect`, `useMemo`, and `useState` value imports.
+
+3. Remove `SoftCard` from the `@/components/superteam` import.
+
+- [ ] **Step 4: Delete mixed-list helper types and sorting**
+
+Delete:
+
+- the complete `type UnifiedMember` definition
+- the complete `const roleOrder: Record<string, number>` definition
+- the complete `const unifiedList: UnifiedMember[]` construction, including its `.sort` callback
+- `const isLoadingList = membersQuery.isLoading || digitalEmployeesQuery.isLoading;`
+
+Keep:
+
+```tsx
+const humanRoster = membersQuery.data ?? [];
+const digitalRoster = digitalEmployeesQuery.data ?? [];
+const existingUserIds = humanRoster.map((member) => member.user_id);
+```
+
+- [ ] **Step 5: Replace `TeamOverviewTab` return**
+
+Replace the current return body with:
+
+```tsx
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <V3MetricCard label="人类成员" value={member_count} icon={<Users />} meta="当前团队成员" />
+        <V3MetricCard label="数字员工" value={digital_employee_count} icon={<Bot />} iconTone="info" meta="AI 代理执行引擎" />
+        <V3MetricCard label="绑定能力" value={capability_count} icon={<Puzzle />} iconTone="artifact" meta="MCP 与外部工具" />
+        <V3MetricCard
+          label="待审批项"
+          value={pending_item_count}
+          icon={<TriangleAlert />}
+          meta="需人类介入决策"
+          iconTone={pending_item_count > 0 ? "warn" : "ok"}
+          loud={pending_item_count > 0}
+        />
+      </div>
+
+      <DigitalEmployeesSection
+        employees={digitalRoster}
+        isLoading={digitalEmployeesQuery.isLoading}
+      />
+
+      <HumanMembersSection
+        addPanel={
+          <DirectAddPanel
+            apiBaseUrl={apiBaseUrl}
+            canAdd={canAddMember}
+            existingUserIds={existingUserIds}
+            fetcher={fetcher}
+            isPending={addMutation.isPending}
+            onSubmit={(input) => addMutation.mutate(input)}
+            resetToken={directAddResetToken}
+          />
+        }
+        canAddMember={canAddMember}
+        isLoading={membersQuery.isLoading}
+        members={humanRoster}
+        onRemove={(membershipId) => removeMutation.mutate(membershipId)}
+        removing={removeMutation.isPending}
+      />
+    </div>
+  );
+```
+
+- [ ] **Step 6: Add `DigitalEmployeesSection`**
+
+Add this function below `TeamOverviewTab` and above `DirectAddPanel`:
 
 ```tsx
 function DigitalEmployeesSection({
@@ -227,12 +468,12 @@ function DigitalEmployeesSection({
                       />
                       <div className="min-w-0">
                         <p className="truncate font-medium leading-none text-v3-ink">{employee.name}</p>
-                        <p className="mt-1.5 truncate text-sm text-v3-ink-2">{employee.description}</p>
+                        <p className="mt-1.5 truncate text-sm text-v3-ink-2">{employee.description || "执行代理"}</p>
                       </div>
                     </div>
                   </V3Td>
                   <V3Td>
-                    <StatusPill tone="info">{employee.role || "—"}</StatusPill>
+                    <StatusPill tone="info">{employee.role || "未设置"}</StatusPill>
                   </V3Td>
                   <V3Td>
                     <StatusPill tone={employee.status === "active" ? "ok" : "warn"}>
@@ -257,37 +498,9 @@ function DigitalEmployeesSection({
 }
 ```
 
-- [ ] **Step 4: 运行类型检查**
+- [ ] **Step 7: Add `HumanMembersSection`**
 
-```bash
-corepack pnpm --filter ./apps/web run typecheck 2>&1 | grep -iE "error|team-overview" | head -20
-```
-
-期望：无新增错误（注：此时 TeamOverviewTab 的 return 尚未整合，可能有 unused 警告，Task 3 会解决）。
-
-- [ ] **Step 5: 提交**
-
-```bash
-git add apps/web/src/features/teams/components/team-overview-tab.tsx
-git commit -m "feat(teams/overview): add digital employees section with v3 table"
-```
-
----
-
-### Task 3: 概览Tab — 人类成员区块与页面布局整合
-
-**Files:**
-- Modify: `apps/web/src/features/teams/components/team-overview-tab.tsx`
-
-**Interfaces:**
-- Consumes: `DigitalEmployeesSection`（Task 2）、`DirectAddPanel`（现有）
-- Consumes: `listTeamMembers`、`addTeamMember`、`removeTeamMember` from `@/lib/api/teams`
-- Consumes: `UserIdentity` from `@/components/superteam/user-identity`, `TeamRoleBadge` + `type DirectTeamRole` from `@/components/superteam/team-role`
-- Produces: 完整的概览 Tab（KPI + 数字员工区块 + 人类成员区块）
-
-- [ ] **Step 1: 新增 HumanMembersSection 组件**
-
-在 `team-overview-tab.tsx` 添加：
+Add this function below `DigitalEmployeesSection`:
 
 ```tsx
 function HumanMembersSection({
@@ -298,7 +511,7 @@ function HumanMembersSection({
   onRemove,
   removing,
 }: {
-  addPanel: React.ReactNode;
+  addPanel: ReactNode;
   canAddMember: boolean;
   isLoading: boolean;
   members: TeamMember[];
@@ -375,96 +588,122 @@ function HumanMembersSection({
 }
 ```
 
-- [ ] **Step 2: DirectAddPanel 容器换 WorkSurface**
+- [ ] **Step 8: Convert `DirectAddPanel` shell to `WorkSurface`**
 
-在现有 `DirectAddPanel` 中，将外层 `<SoftCard className="p-5">` 替换为 `<WorkSurface className="p-5">`，对应闭合标签 `</SoftCard>` 改为 `</WorkSurface>`。删除 `SoftCard` 的 import（若无其他引用）。
-
-- [ ] **Step 3: 重写 TeamOverviewTab 主体 return**
+In `DirectAddPanel`, replace:
 
 ```tsx
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <V3MetricCard label="人类成员" value={member_count} icon={<Users />} meta="当前团队成员" />
-        <V3MetricCard label="数字员工" value={digital_employee_count} icon={<Bot />} iconTone="info" meta="AI 代理执行引擎" />
-        <V3MetricCard label="绑定能力" value={capability_count} icon={<Puzzle />} iconTone="artifact" meta="MCP 与外部工具" />
-        <V3MetricCard
-          label="待审批项"
-          value={pending_item_count}
-          icon={<TriangleAlert />}
-          meta="需人类介入决策"
-          iconTone={pending_item_count > 0 ? "warn" : "ok"}
-          loud={pending_item_count > 0}
-        />
-      </div>
-
-      <DigitalEmployeesSection
-        employees={digitalRoster}
-        isLoading={digitalEmployeesQuery.isLoading}
-      />
-
-      <HumanMembersSection
-        addPanel={
-          <DirectAddPanel
-            apiBaseUrl={apiBaseUrl}
-            canAdd={canAddMember}
-            existingUserIds={existingUserIds}
-            fetcher={fetcher}
-            isPending={addMutation.isPending}
-            onSubmit={(input) => addMutation.mutate(input)}
-            resetToken={directAddResetToken}
-          />
-        }
-        canAddMember={canAddMember}
-        isLoading={membersQuery.isLoading}
-        members={humanRoster}
-        onRemove={(membershipId) => removeMutation.mutate(membershipId)}
-        removing={removeMutation.isPending}
-      />
-    </div>
-  );
+<SoftCard className="p-5">
 ```
 
-- [ ] **Step 4: 清理未使用 imports**
+with:
 
-确认 `React` 已 import（`HumanMembersSection` 用到 `React.ReactNode`）。若文件未 import React，改用 `import type { ReactNode } from "react"` 并将类型改为 `ReactNode`。运行 lint：
-
-```bash
-corepack pnpm --filter ./apps/web run lint 2>&1 | grep -A2 "team-overview" | head -20
+```tsx
+<WorkSurface className="p-5">
 ```
 
-期望：无 unused import 报错。
+Replace the closing `</SoftCard>` with `</WorkSurface>`.
 
-- [ ] **Step 5: 运行测试**
+- [ ] **Step 9: Run verification for Task 2**
+
+Run:
 
 ```bash
-corepack pnpm --filter ./apps/web run test 2>&1 | tail -30
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+corepack pnpm --filter ./apps/web run typecheck
+rg -n "UnifiedMember|roleOrder|团队成员与代理|SoftCard" apps/web/src/features/teams/components/team-overview-tab.tsx
 ```
 
-期望：pass。
+Expected:
+- Targeted teams test passes.
+- Typecheck passes.
+- `rg` has no hits.
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 10: Commit Task 2**
 
 ```bash
-git add apps/web/src/features/teams/components/team-overview-tab.tsx
-git commit -m "feat(teams/overview): split human members section, stack layout"
+git add apps/web/src/features/teams/components/team-overview-tab.tsx \
+        apps/web/src/features/teams/index.test.tsx
+git commit -m "feat(teams/overview): split digital and human member sections"
 ```
 
 ---
 
-### Task 4: 治理策略Tab — 删除字段 + 审批策略结构化表单
+### Task 3: 治理策略 Tab 改为结构化审批表单
 
 **Files:**
 - Modify: `apps/web/src/features/teams/components/team-governance-tab.tsx`
+- Modify: `apps/web/src/features/teams/index.test.tsx`
 
 **Interfaces:**
-- Consumes: `Switch` from `@/components/ui/switch`, `Select` 系列 from `@/components/ui/select`, `Input` from `@/components/ui/input`
-- Consumes: `GovernanceDraftInput`、`TeamConfigRevision` from `@/lib/api/teams`
-- Produces: 结构化审批策略表单，`approval_policy` 序列化为 `{ enabled, risk_threshold, required_actions, min_approvers }`
+- Consumes: `Switch` from `@/components/ui/switch`, `Select` series from `@/components/ui/select`, `Input` from `@/components/ui/input`, `Textarea` from `@/components/ui/textarea`.
+- Consumes: `GovernanceDraftInput`, `TeamConfigRevision` from `@/lib/api/teams`.
+- Produces: UI-only structured approval editor; serialized `approval_policy` preserves unknown existing keys and overrides `enabled`, `risk_threshold`, `required_actions`, `min_approvers`.
+- Preserves: existing `constitution.principles` and `runtime_scope_policy` values from `sourceRevision`; these fields are no longer editable in this Tab.
 
-- [ ] **Step 1: 定义 ApprovalPolicy 类型与解析/序列化辅助函数**
+- [ ] **Step 1: Add failing governance form regression test**
 
-在 `team-governance-tab.tsx` 添加：
+In `apps/web/src/features/teams/index.test.tsx`, inside the existing `describe("TeamDetailView")` block, add:
+
+```tsx
+  it("uses a structured approval policy editor without principles or runtime fields", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+
+    await expect.element(screen.getByText("审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("启用审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("风险阈值")).toBeVisible();
+    await expect.element(screen.getByLabelText("必须审批的动作（每行一条）")).toBeVisible();
+    await expect.element(screen.getByLabelText("最小审批人数")).toBeVisible();
+    await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
+    await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
+  });
+```
+
+- [ ] **Step 2: Run regression test and verify it fails**
+
+Run:
+
+```bash
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+```
+
+Expected before implementation: FAIL because approval policy is still a JSON textarea.
+
+- [ ] **Step 3: Update imports**
+
+In `apps/web/src/features/teams/components/team-governance-tab.tsx`:
+
+1. Replace:
+
+```tsx
+import { Button } from "@/components/ui/button";
+```
+
+with:
+
+```tsx
+import { V3Button } from "@/components/superteam";
+```
+
+2. Add:
+
+```tsx
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+```
+
+- [ ] **Step 4: Add approval policy form helpers**
+
+Add below `TeamGovernanceTabProps`:
 
 ```tsx
 type ApprovalPolicyForm = {
@@ -498,13 +737,24 @@ function parseApprovalPolicy(value: unknown): ApprovalPolicyForm {
       : [],
     min_approvers:
       typeof obj.min_approvers === "number" && obj.min_approvers >= 1
-        ? obj.min_approvers
+        ? Math.floor(obj.min_approvers)
         : 1,
   };
 }
 
-function serializeApprovalPolicy(form: ApprovalPolicyForm): Record<string, unknown> {
+function approvalPolicyObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function serializeApprovalPolicy(
+  form: ApprovalPolicyForm,
+  sourcePolicy: unknown,
+): Record<string, unknown> {
   return {
+    ...approvalPolicyObject(sourcePolicy),
     enabled: form.enabled,
     risk_threshold: form.risk_threshold,
     required_actions: form.required_actions,
@@ -513,44 +763,39 @@ function serializeApprovalPolicy(form: ApprovalPolicyForm): Record<string, unkno
 }
 ```
 
-- [ ] **Step 2: 替换 state — 删除 principles/runtime，改审批为结构化**
+- [ ] **Step 5: Replace local state and sync**
 
-在 `TeamGovernanceTab` 中：
+In `TeamGovernanceTab`, replace:
 
-删除：
 ```tsx
 const [principlesText, setPrinciplesText] = useState(() => arrayText(sourceRevision?.constitution.principles));
 const [approvalText, setApprovalText] = useState(() => jsonText(sourceRevision?.approval_policy));
 const [runtimeText, setRuntimeText] = useState(() => jsonText(sourceRevision?.runtime_scope_policy));
 ```
 
-替换为：
+with:
+
 ```tsx
 const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
   parseApprovalPolicy(sourceRevision?.approval_policy),
 );
 ```
 
-保留 `hardRulesText` state。
-
-- [ ] **Step 3: 更新 useEffect 同步逻辑**
+Update the `useEffect` body to:
 
 ```tsx
-  useEffect(() => {
-    if (!sourceRevision) {
-      return;
-    }
     setHardRulesText(arrayText(sourceRevision.constitution.hard_rules));
     setApprovalPolicy(parseApprovalPolicy(sourceRevision.approval_policy));
-  }, [sourceRevision]);
 ```
 
-- [ ] **Step 4: 更新 draftInput**
+- [ ] **Step 6: Update `draftInput`**
+
+Replace the current `draftInput` with:
 
 ```tsx
   const draftInput = useMemo<GovernanceDraftInput>(
     () => ({
-      approval_policy: serializeApprovalPolicy(approvalPolicy),
+      approval_policy: serializeApprovalPolicy(approvalPolicy, sourceRevision?.approval_policy),
       artifact_contract: sourceRevision?.artifact_contract ?? {},
       capability_policy: sourceRevision?.capability_policy ?? {},
       constitution: {
@@ -566,11 +811,9 @@ const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
   );
 ```
 
-注意：`principles` 从 constitution 中删除（不再覆盖，保留 sourceRevision 原值即通过 spread 继承）；`runtime_scope_policy` 保留 sourceRevision 原值不再编辑。
+- [ ] **Step 7: Replace editor JSX**
 
-- [ ] **Step 5: 替换编辑区 JSX**
-
-将 `<CardContent className="flex flex-col gap-4">` 内的 4 个 PolicyTextArea 替换为：
+In the first card's `CardContent`, keep only `PolicyTextArea` for `团队宪法` and add `ApprovalPolicyEditor`:
 
 ```tsx
         <CardContent className="flex flex-col gap-4">
@@ -589,9 +832,9 @@ const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
         </CardContent>
 ```
 
-- [ ] **Step 6: 新增 ApprovalPolicyEditor 组件**
+- [ ] **Step 8: Add `ApprovalPolicyEditor`**
 
-在文件末尾添加：
+Add this component below `PolicyTextArea`:
 
 ```tsx
 function ApprovalPolicyEditor({
@@ -604,13 +847,13 @@ function ApprovalPolicyEditor({
   value: ApprovalPolicyForm;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-md border p-4">
+    <div className="flex flex-col gap-4 rounded-md border border-v3-line bg-v3-card-soft p-4">
       <div className="flex items-center gap-2">
-        <ShieldCheck />
+        <ShieldCheck className="size-4" />
         <Label>审批策略</Label>
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex items-center gap-2 text-sm text-v3-ink">
         <Switch
           checked={value.enabled}
           disabled={disabled}
@@ -632,9 +875,9 @@ function ApprovalPolicyEditor({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="low">low · 低风险即触发</SelectItem>
-            <SelectItem value="medium">medium · 中风险及以上触发</SelectItem>
-            <SelectItem value="high">high · 仅高风险触发</SelectItem>
+            <SelectItem value="low">low - 低风险即触发</SelectItem>
+            <SelectItem value="medium">medium - 中风险及以上触发</SelectItem>
+            <SelectItem value="high">high - 仅高风险触发</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -642,12 +885,13 @@ function ApprovalPolicyEditor({
       <div className="grid gap-2">
         <Label htmlFor="approval-required-actions">必须审批的动作（每行一条）</Label>
         <Textarea
+          aria-label="必须审批的动作（每行一条）"
           disabled={disabled || !value.enabled}
           id="approval-required-actions"
           onChange={(event) =>
             onChange({ ...value, required_actions: lineList(event.target.value) })
           }
-          placeholder="deploy&#10;delete"
+          placeholder={"deploy\ndelete"}
           rows={3}
           value={value.required_actions.join("\n")}
         />
@@ -660,7 +904,7 @@ function ApprovalPolicyEditor({
           id="approval-min-approvers"
           min={1}
           onChange={(event) =>
-            onChange({ ...value, min_approvers: Math.max(1, Number(event.target.value) || 1) })
+            onChange({ ...value, min_approvers: Math.max(1, Math.floor(Number(event.target.value) || 1)) })
           }
           type="number"
           value={value.min_approvers}
@@ -671,59 +915,154 @@ function ApprovalPolicyEditor({
 }
 ```
 
-- [ ] **Step 7: 更新 imports 与操作按钮**
+- [ ] **Step 9: Update diff badge, buttons, and dead helpers**
 
-7a. 在 import 中增加：
-```tsx
-import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { V3Button } from "@/components/superteam";
-```
+1. Replace the approval diff badge with:
 
-7b. 删除不再使用的 `jsonText`、`parseObjectText` 辅助函数（若无其他引用）；保留 `arrayText`、`lineList`。
-
-7c. 将底部 3 个 shadcn `Button`（保存草稿/提交负责人批准/驳回草稿）替换为 `V3Button`，size 保持默认，variant：保存=默认（不填），提交=`outline`，驳回=`outline`。删除 shadcn `Button` 的 import。
-
-7d. 更新变更 diff 区中审批策略行的判断，将 `approvalText.trim()` 改为 `approvalPolicy.enabled`：
 ```tsx
 <Badge variant="outline">{diff.data?.changed_approval_rules ? "有变更" : approvalPolicy.enabled ? "已启用" : "未启用"}</Badge>
 ```
 
-- [ ] **Step 8: 运行类型检查与测试**
+2. Replace the three bottom `Button` elements with `V3Button`:
 
-```bash
-corepack pnpm --filter ./apps/web run typecheck 2>&1 | grep -iE "error|governance" | head -20
-corepack pnpm --filter ./apps/web run test 2>&1 | tail -30
+```tsx
+<V3Button disabled={!canEdit || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+  <Save data-icon="inline-start" />
+  保存草稿
+</V3Button>
+<V3Button
+  disabled={!canApprove || approveMutation.isPending || !draftID}
+  onClick={() => approveMutation.mutate()}
+  variant="outline"
+>
+  <Send data-icon="inline-start" />
+  提交负责人批准
+</V3Button>
+<V3Button
+  disabled={!canApprove || rejectMutation.isPending || !draftID}
+  onClick={() => rejectMutation.mutate()}
+  variant="outline"
+>
+  <XCircle data-icon="inline-start" />
+  驳回草稿
+</V3Button>
 ```
 
-期望：无错误，测试 pass。
+3. Delete unused `jsonText` and `parseObjectText` helper functions.
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 10: Run verification for Task 3**
+
+Run:
 
 ```bash
-git add apps/web/src/features/teams/components/team-governance-tab.tsx
-git commit -m "feat(teams/governance): drop principles/runtime fields, structured approval form"
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+corepack pnpm --filter ./apps/web run typecheck
+rg -n "principlesText|approvalText|runtimeText|jsonText|parseObjectText|<Button" apps/web/src/features/teams/components/team-governance-tab.tsx
+```
+
+Expected:
+- Targeted teams test passes.
+- Typecheck passes.
+- `rg` has no hits.
+
+- [ ] **Step 11: Commit Task 3**
+
+```bash
+git add apps/web/src/features/teams/components/team-governance-tab.tsx \
+        apps/web/src/features/teams/index.test.tsx
+git commit -m "feat(teams/governance): add structured approval editor"
 ```
 
 ---
 
-### Task 5: 能力与知识Tab — 按钮统一 + MCP 表单简化 + 技能列裁剪
+### Task 4: 能力与知识 Tab 统一按钮与简化 MCP 表单
 
 **Files:**
 - Modify: `apps/web/src/features/teams/components/team-capabilities-tab.tsx`
+- Modify: `apps/web/src/features/teams/index.test.tsx`
 
 **Interfaces:**
-- Consumes: 现有 `V3Button`、`V3Table` 等组件（无新增依赖）
-- Produces: 统一 V3 按钮风格的能力页
+- Consumes: existing `V3Button`, `V3Table`, `StatusPill`, `WorkSurface`.
+- Produces: public MCP form with vertical layout, conditional credential field, outline bind button, skill version folded into skill identity cell, installed skill removal as icon ghost button.
 
-- [ ] **Step 1: MCP 绑定表单布局改为竖向堆叠**
+- [ ] **Step 1: Add failing capabilities interaction regression test**
 
-将 MCP 绑定表单的外层 `<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">` 改为 `<div className="flex flex-col gap-3">`。
+In `apps/web/src/features/teams/index.test.tsx`, inside the existing `describe("TeamDetailView")` block, add:
 
-- [ ] **Step 2: 凭据环境变量输入框条件渲染**
+```tsx
+  it("shows MCP credential input only after selecting a registry MCP", async () => {
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/mcp-servers": [
+          {
+            id: "mcp-github",
+            tenant_id: "tenant-1",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
+            status: "active",
+          },
+        ],
+        "GET /api/v1/teams/team-1/mcp-bindings": [],
+        "GET /api/v1/skills": [],
+        "GET /api/v1/teams/team-1/skills": [],
+      },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
 
-将凭据环境变量输入框整块用 `{selectedServerId ? (...) : null}` 包裹，仅在选中 MCP 后显示：
+    await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
+
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .toBeVisible();
+  });
+```
+
+- [ ] **Step 2: Run regression test and verify it fails**
+
+Run:
+
+```bash
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+```
+
+Expected before implementation: FAIL because credential input is always visible.
+
+- [ ] **Step 3: Make MCP form vertical**
+
+In `apps/web/src/features/teams/components/team-capabilities-tab.tsx`, replace:
+
+```tsx
+<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+```
+
+with:
+
+```tsx
+<div className="flex flex-col gap-3">
+```
+
+- [ ] **Step 4: Conditionally render credential input**
+
+Wrap the credential input block with:
 
 ```tsx
 {selectedServerId ? (
@@ -740,96 +1079,148 @@ git commit -m "feat(teams/governance): drop principles/runtime fields, structure
 ) : null}
 ```
 
-- [ ] **Step 3: 绑定按钮改 outline + 全宽独占一行**
+- [ ] **Step 5: Make bind button outline and remove wrapper**
+
+Delete the wrapper:
 
 ```tsx
-<V3Button variant="outline" className="w-full" disabled={!canCreateMcp} onClick={() => createMcpMutation.mutate()} type="button">
+<div className="flex min-w-0 items-end">
+  <V3Button className="w-full" disabled={!canCreateMcp} onClick={() => createMcpMutation.mutate()} type="button">
+    <Plus data-icon="inline-start" />
+    绑定公共 MCP
+  </V3Button>
+</div>
+```
+
+Place this button directly in the form stack:
+
+```tsx
+<V3Button
+  className="w-full"
+  disabled={!canCreateMcp}
+  onClick={() => createMcpMutation.mutate()}
+  type="button"
+  variant="outline"
+>
   <Plus data-icon="inline-start" />
   绑定公共 MCP
 </V3Button>
 ```
 
-删除原来包裹按钮的 `<div className="flex min-w-0 items-end">`。
+- [ ] **Step 6: Remove skill version column**
 
-- [ ] **Step 4: 技能表格删除版本列**
-
-在 `SkillTable` 的 thead 中删除 `<V3Th>版本</V3Th>`；在 `SkillRow` 中删除对应的版本 `<V3Td>` 整块。
-
-- [ ] **Step 5: 技能名称行加入版本小字**
-
-在 `SkillRow` 的名称区块中，将描述行下方追加版本：
+In `SkillTable`, remove the version header:
 
 ```tsx
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-v3-ink">{skill.name}</p>
-            <p className="truncate text-xs text-v3-ink-2">{skill.description}</p>
-            <p className="mt-0.5 truncate text-xs text-v3-ink-3">v{skill.version}</p>
-          </div>
+<V3Th>版本</V3Th>
 ```
 
-- [ ] **Step 6: 移除技能按钮改 icon ghost**
-
-在 `SkillRow` 的操作列，将 installed variant 的移除按钮改为图标按钮。把操作列 `<V3Td>` 改为：
+In `SkillRow`, remove the version cell:
 
 ```tsx
-      <V3Td className="text-right">
-        {variant === "installed" ? (
-          <V3Button
-            aria-label={actionLabel}
-            disabled={!canEdit || pending}
-            onClick={onAction}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Trash2 className="size-4" />
-          </V3Button>
-        ) : (
-          <V3Button disabled={!canEdit || pending} onClick={onAction} size="sm" type="button" variant="outline">
-            <Plus data-icon="inline-start" />
-            {actionLabel}
-          </V3Button>
-        )}
-      </V3Td>
+<V3Td>
+  <StatusPill tone="mute" showDot={false}>
+    {skill.version}
+  </StatusPill>
+</V3Td>
 ```
 
-- [ ] **Step 7: 运行类型检查与测试**
+- [ ] **Step 7: Fold version into skill identity cell**
 
-```bash
-corepack pnpm --filter ./apps/web run typecheck 2>&1 | grep -iE "error|capabilities" | head -20
-corepack pnpm --filter ./apps/web run test 2>&1 | tail -30
+Replace the skill identity text block with:
+
+```tsx
+<div className="min-w-0">
+  <p className="truncate text-sm font-medium text-v3-ink">{skill.name}</p>
+  <p className="truncate text-xs text-v3-ink-2">{skill.description}</p>
+  <p className="mt-0.5 truncate text-xs text-v3-ink-3">v{skill.version}</p>
+</div>
 ```
 
-期望：无错误，测试 pass。
+- [ ] **Step 8: Convert installed remove action to icon ghost button**
 
-- [ ] **Step 8: 提交**
+Replace the `SkillRow` operation cell with:
+
+```tsx
+<V3Td className="text-right">
+  {variant === "installed" ? (
+    <V3Button
+      aria-label={actionLabel}
+      disabled={!canEdit || pending}
+      onClick={onAction}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      <Trash2 className="size-4" />
+      <span className="sr-only">{actionLabel}</span>
+    </V3Button>
+  ) : (
+    <V3Button disabled={!canEdit || pending} onClick={onAction} size="sm" type="button" variant="outline">
+      <Plus data-icon="inline-start" />
+      {actionLabel}
+    </V3Button>
+  )}
+</V3Td>
+```
+
+- [ ] **Step 9: Run verification for Task 4**
+
+Run:
 
 ```bash
-git add apps/web/src/features/teams/components/team-capabilities-tab.tsx
-git commit -m "feat(teams/capabilities): unify v3 buttons, simplify mcp form, trim skill columns"
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+corepack pnpm --filter ./apps/web run typecheck
+rg -n "<V3Th>版本</V3Th>|items-end|md:grid-cols\\[minmax\\(0,1fr\\)_minmax\\(0,1fr\\)\\]" apps/web/src/features/teams/components/team-capabilities-tab.tsx
+```
+
+Expected:
+- Targeted teams test passes.
+- Typecheck passes.
+- `rg` has no hits.
+
+- [ ] **Step 10: Commit Task 4**
+
+```bash
+git add apps/web/src/features/teams/components/team-capabilities-tab.tsx \
+        apps/web/src/features/teams/index.test.tsx
+git commit -m "feat(teams/capabilities): simplify mcp form and skill actions"
 ```
 
 ---
 
 ## 收尾验证（全部任务完成后）
 
-- [ ] **真实端到端验证（项目宪法强制要求）**
+- [ ] **Full local verification**
 
-按 CLAUDE.md 规则，前端变更收尾必须走真实链路验证：
+Run:
 
 ```bash
-scripts/dev-services.sh status   # 确认 Web + Control Plane 运行中当前代码
-scripts/dev-services.sh restart web
+corepack pnpm --filter ./apps/web run test -- src/features/teams/index.test.tsx
+corepack pnpm --filter ./apps/web run typecheck
+corepack pnpm --filter ./apps/web run test
+git diff --check
 ```
 
-然后通过 Chrome plug（codex chrome plug）打开团队详情页，验证：
-1. Tab 只剩 3 个（概览/能力与知识/治理策略），无借调、无审计记录
-2. 概览页数字员工区块与人类成员区块分离，数字员工列为 头像+名称/职能/状态/详情
-3. 治理策略页无"原则"、无"Runtime 范围"，审批策略为结构化表单（开关/阈值/动作/人数）
-4. 能力与知识页按钮统一，MCP 凭据输入框选中后才出现
+- [ ] **真实端到端验证（项目宪法强制要求）**
 
-若服务未启动或认证缺失导致无法验证，标记为阻塞并说明缺失依赖，不得声明完成。
+Run:
+
+```bash
+scripts/dev-services.sh status
+scripts/dev-services.sh restart web
+scripts/dev-services.sh status
+```
+
+Then use Codex Chrome plug / browser automation to open the running team detail page and verify:
+
+1. Tab 只剩 3 个：`概览` / `能力与知识` / `治理策略`，无 `借调`、无 `审计记录`。
+2. 概览页数字员工区块与人类成员区块分离，数字员工列为头像+名称/职能/状态/详情。
+3. 治理策略页无 `原则`、无 `Runtime 范围`，审批策略为结构化表单（开关/阈值/动作/人数）。
+4. 能力与知识页按钮统一，MCP 凭据输入框选中 MCP 后才出现。
+
+If services are down, auth is missing, or the route cannot be opened against the current running Web + Control Plane, mark the feature blocked and do not claim real-chain completion.
 
 - [ ] **完成前检查**
 
-运行项目 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）。
+Read and run project skill `$superteam-completion-check` (`.codex/skills/superteam-completion-check/SKILL.md`) before final status, commit finish, merge, branch cleanup, or PR.

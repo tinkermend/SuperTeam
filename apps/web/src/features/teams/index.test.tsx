@@ -982,6 +982,24 @@ describe("TeamDetailView", () => {
       .not.toBeInTheDocument();
   });
 
+  it("separates digital employees from human management members in overview", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("团队成员与代理"))
+      .not.toBeInTheDocument();
+  });
+
   it("renders detail tabs for the team shell", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -994,15 +1012,13 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力与知识", "治理策略", "审计记录"]) {
+    for (const tab of ["概览", "能力与知识", "治理策略"]) {
       await expect
         .element(screen.getByRole("tab", { name: tab }))
         .toBeVisible();
     }
-    await expect.element(screen.getByText("团队成员与代理")).toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "添加成员" }).first())
-      .toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "创建治理草案" }))
       .toBeVisible();
@@ -1212,6 +1228,51 @@ describe("TeamDetailView", () => {
       .toBe(true);
   });
 
+  it("shows MCP credential input only after selecting a registry MCP", async () => {
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/mcp-servers": [
+          {
+            id: "mcp-github",
+            tenant_id: "tenant-1",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
+            status: "active",
+          },
+        ],
+        "GET /api/v1/teams/team-1/mcp-bindings": [],
+        "GET /api/v1/skills": [],
+        "GET /api/v1/teams/team-1/skills": [],
+      },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
+
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
+    await expect
+      .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
+      .toBeVisible();
+  });
+
   it("renders governance editor with JSON preview and approval action", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
@@ -1230,7 +1291,29 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByText("新增硬性规则需要复核"))
       .toBeVisible();
+    await userEvent.click(
+      screen.getByRole("switch", { name: "启用审批策略" }),
+    );
+    await userEvent.click(screen.getByRole("combobox", { name: "风险阈值" }));
+    await userEvent.click(
+      screen.getByRole("option", { name: "high - 仅高风险触发" }),
+    );
+    await userEvent.fill(
+      screen.getByLabelText("必须审批的动作（每行一条）"),
+      "deploy\n delete ",
+    );
+    await userEvent.clear(screen.getByLabelText("最小审批人数"));
+    await userEvent.fill(screen.getByLabelText("最小审批人数"), "3");
     await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await expect
+      .poll(() =>
+        hasRequest(
+          fetcher,
+          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "PATCH",
+        ),
+      )
+      .toBe(true);
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
       expect.objectContaining({
@@ -1238,6 +1321,38 @@ describe("TeamDetailView", () => {
         method: "PATCH",
       }),
     );
+    expect(
+      requestBody(
+        fetcher,
+        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "PATCH",
+      ),
+    ).toEqual({
+      approval_policy: {
+        high_risk: "required",
+        enabled: true,
+        risk_threshold: "high",
+        required_actions: ["deploy", "delete"],
+        min_approvers: 3,
+      },
+      artifact_contract: {},
+      capability_policy: {
+        external_capability_bindings: ["告警系统"],
+        knowledge_base_bindings: ["运维知识库"],
+        mcp_bindings: ["ops-mcp-server"],
+        skill_bindings: ["incident-diagnosis"],
+      },
+      constitution: {
+        hard_rules: ["所有生产写操作必须审批"],
+        principles: ["安全优先，稳定可靠"],
+      },
+      context_policy: {},
+      human_owner_user_ids: ["human-owner-1"],
+      internal_collaboration_policy: {},
+      runtime_scope_policy: {
+        provider_types: ["codex"],
+      },
+    });
 
     await userEvent.click(
       screen.getByRole("button", { name: "提交负责人批准" }),
@@ -1258,6 +1373,82 @@ describe("TeamDetailView", () => {
         method: "POST",
       }),
     );
+  });
+
+  it("preserves untouched approval policy when saving hard rules only", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+    await userEvent.fill(
+      screen.getByLabelText("团队宪法"),
+      "所有生产写操作必须审批\n变更窗口必须登记",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await expect
+      .poll(() =>
+        hasRequest(
+          fetcher,
+          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "PATCH",
+        ),
+      )
+      .toBe(true);
+
+    expect(
+      requestBody(
+        fetcher,
+        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "PATCH",
+      ),
+    ).toEqual({
+      approval_policy: {
+        high_risk: "required",
+      },
+      artifact_contract: {},
+      capability_policy: {
+        external_capability_bindings: ["告警系统"],
+        knowledge_base_bindings: ["运维知识库"],
+        mcp_bindings: ["ops-mcp-server"],
+        skill_bindings: ["incident-diagnosis"],
+      },
+      constitution: {
+        hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
+        principles: ["安全优先，稳定可靠"],
+      },
+      context_policy: {},
+      human_owner_user_ids: ["human-owner-1"],
+      internal_collaboration_policy: {},
+      runtime_scope_policy: {
+        provider_types: ["codex"],
+      },
+    });
+  });
+
+  it("uses a structured approval policy editor without principles or runtime fields", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+
+    await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("启用审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("风险阈值")).toBeVisible();
+    await expect.element(screen.getByLabelText("必须审批的动作（每行一条）")).toBeVisible();
+    await expect.element(screen.getByLabelText("最小审批人数")).toBeVisible();
+    await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
+    await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
   });
 
   it("does not show member or governance creation actions for a disabled team", async () => {
@@ -1396,54 +1587,5 @@ describe("TeamDetailView", () => {
         method: "GET",
       }),
     );
-  });
-
-  it("renders the team audit tab with summary, authorization action, and before after detail", async () => {
-    const fetcher = createTeamsFetcher();
-    const screen = await renderWithQueryClient(
-      <TeamDetailView
-        apiBaseUrl="http://control-plane.local"
-        fetcher={fetcher}
-        teamId="team-1"
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "审计记录" }));
-
-    await expect
-      .element(screen.getByText("Plan 4 会接入团队审计记录。"))
-      .not.toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("group", { name: "今日操作 0 24 小时内" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "成员变更 1 成员与角色" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "治理版本 1 草案与审批" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "能力绑定 1 外部能力" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "被拒绝 1 需复核" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("cell", { name: "授权动作" }))
-      .toBeVisible();
-    await expect.element(screen.getByText("team.create")).toBeVisible();
-    await expect.element(screen.getByText("创建团队“运维团队”")).toBeVisible();
-
-    await userEvent.click(screen.getByRole("row", { name: /添加成员 孙悦/ }));
-
-    await expect.element(screen.getByText("事件详情")).toBeVisible();
-    await expect
-      .element(screen.getByText("授权动作：team.member.add"))
-      .toBeVisible();
-    await expect
-      .element(screen.getByText("变更内容（前后对比）"))
-      .toBeVisible();
-    await expect.element(screen.getByText('"role": "-"')).toBeVisible();
-    await expect.element(screen.getByText('"role": "operator"')).toBeVisible();
   });
 });

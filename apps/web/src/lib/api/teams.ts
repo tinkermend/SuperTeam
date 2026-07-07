@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, patchJson, postJson, putJson } from "./client";
+import { deleteJson, getJson, patchJson, postJson } from "./client";
 
 export type TeamStatus = "active" | "disabled" | "archived";
 export type TeamConfigRevisionStatus =
@@ -31,11 +31,7 @@ export type AllowedTeamAction =
   | "team.governance.approve"
   | "team.capability.bind"
   | "team.capability.unbind"
-  | "team.audit.read"
-  | "team.lending.policy.read"
-  | "team.lending.policy.edit"
-  | "team.lending.request.read"
-  | "team.lending.request.decide";
+  | "team.audit.read";
 
 export type Team = {
   id: string;
@@ -603,30 +599,6 @@ export type TeamLendingRequestStatus =
   | "rejected"
   | "revoked";
 
-export type TeamLendingPolicy = {
-  id: string;
-  tenant_id: string;
-  team_id: string;
-  allow_lending: boolean;
-  approval_mode: TeamLendingApprovalMode;
-  budget_ceiling?: string;
-  capability_ceiling: Record<string, unknown>;
-  project_match: Record<string, unknown>;
-  status: string;
-  created_by_user_id?: string;
-  updated_by_user_id?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type UpsertTeamLendingPolicyInput = {
-  allow_lending: boolean;
-  approval_mode: TeamLendingApprovalMode;
-  budget_ceiling?: string;
-  capability_ceiling?: Record<string, unknown>;
-  project_match?: Record<string, unknown>;
-};
-
 export type TeamLendingRequest = {
   id: string;
   tenant_id: string;
@@ -653,91 +625,6 @@ export type CreateProjectLendingRequestInput = {
   requested_budget?: string;
   requested_capability?: Record<string, unknown>;
 };
-
-export type DecideTeamLendingRequestInput = {
-  decision_reason?: string;
-  granted_budget?: string;
-  granted_capability?: Record<string, unknown>;
-};
-
-export async function getTeamLendingPolicy(
-  options: ApiClientOptions,
-  teamId: string,
-): Promise<TeamLendingPolicy> {
-  return getJson<TeamLendingPolicy>(
-    options,
-    teamPath(teamId, "/lending-policy"),
-    "team lending policy",
-  );
-}
-
-export function upsertTeamLendingPolicy(
-  options: ApiClientOptions,
-  teamId: string,
-  input: UpsertTeamLendingPolicyInput,
-): Promise<TeamLendingPolicy> {
-  return putJson<TeamLendingPolicy>(
-    options,
-    teamPath(teamId, "/lending-policy"),
-    input,
-    "upsert team lending policy",
-  );
-}
-
-export async function listTeamLendingRequests(
-  options: ApiClientOptions,
-  teamId: string,
-  status?: TeamLendingRequestStatus,
-): Promise<TeamLendingRequest[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  return getJson<TeamLendingRequest[]>(
-    options,
-    teamPath(teamId, `/lending-requests${query}`),
-    "team lending requests",
-  );
-}
-
-export function approveTeamLendingRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  requestId: string,
-  input: DecideTeamLendingRequestInput = {},
-): Promise<TeamLendingRequest> {
-  return postJson<TeamLendingRequest>(
-    options,
-    teamPath(teamId, `/lending-requests/${encodeURIComponent(requestId)}/approve`),
-    input,
-    "approve team lending request",
-  );
-}
-
-export function rejectTeamLendingRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  requestId: string,
-  input: DecideTeamLendingRequestInput = {},
-): Promise<TeamLendingRequest> {
-  return postJson<TeamLendingRequest>(
-    options,
-    teamPath(teamId, `/lending-requests/${encodeURIComponent(requestId)}/reject`),
-    input,
-    "reject team lending request",
-  );
-}
-
-export function revokeTeamLendingRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  requestId: string,
-  input: DecideTeamLendingRequestInput = {},
-): Promise<TeamLendingRequest> {
-  return postJson<TeamLendingRequest>(
-    options,
-    teamPath(teamId, `/lending-requests/${encodeURIComponent(requestId)}/revoke`),
-    input,
-    "revoke team lending request",
-  );
-}
 
 export function createProjectLendingRequest(
   options: ApiClientOptions,
