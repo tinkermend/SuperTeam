@@ -63,6 +63,8 @@ import {
 
 const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
 const BLANK_CUSTOM_TITLE = "自定义身份";
+const canonicalProviderValues = ["claude-code", "codex", "opencode"] as const;
+type CanonicalProviderType = (typeof canonicalProviderValues)[number];
 const providerLabels: Record<string, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
@@ -1929,13 +1931,17 @@ function providerCandidates(options: DigitalEmployeeCreateOptions | undefined) {
   const governanceValues = [
     ...(options?.team_config.allowed_provider_types ?? []),
     ...(options?.capability_options.provider_types ?? []),
-  ].filter((value) => value.trim());
+  ]
+    .map(canonicalizeProviderType)
+    .filter((value): value is CanonicalProviderType => Boolean(value));
   const governanceSet = new Set(governanceValues);
   const runtimeValues = options?.runtime_provider_options
-    .map((option) => option.provider_type)
-    .filter((value) => value.trim() && (governanceSet.size === 0 || governanceSet.has(value))) ?? [];
+    .map((option) => canonicalizeProviderType(option.provider_type))
+    .filter(
+      (value): value is CanonicalProviderType => Boolean(value) && (governanceSet.size === 0 || governanceSet.has(value)),
+    ) ?? [];
   const values = [...governanceValues, ...runtimeValues];
-  return Array.from(new Set(values.filter((value) => value.trim()))).sort((left, right) => left.localeCompare(right));
+  return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
 }
 
 function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefined, providerType: string) {
@@ -1949,7 +1955,15 @@ function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefin
 }
 
 function providerLabel(providerType: string): string {
-  return providerLabels[providerType] ?? providerType;
+  const canonical = canonicalizeProviderType(providerType);
+  return canonical ? providerLabels[canonical] : providerType;
+}
+
+function canonicalizeProviderType(providerType: string): CanonicalProviderType | "" {
+  const trimmed = providerType.trim();
+  if (!trimmed) return "";
+  if (trimmed === "claude_code") return "claude-code";
+  return canonicalProviderValues.includes(trimmed as CanonicalProviderType) ? (trimmed as CanonicalProviderType) : "";
 }
 
 function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {

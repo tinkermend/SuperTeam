@@ -83,6 +83,9 @@ function createOptionsFixture({
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
   includePolicyExcludedProvider = false,
+  governanceProviderTypes,
+  capabilityProviderTypes,
+  runtimeProviderTypes,
   includeFrontendTemplate = false,
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
@@ -92,6 +95,9 @@ function createOptionsFixture({
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
   includePolicyExcludedProvider?: boolean;
+  governanceProviderTypes?: string[];
+  capabilityProviderTypes?: string[];
+  runtimeProviderTypes?: string[];
   includeFrontendTemplate?: boolean;
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
@@ -148,7 +154,13 @@ function createOptionsFixture({
     firstRuntimeOption,
     ...(sameRuntimeNodeProviders || includePolicyExcludedProvider ? [sameNodeProviderOption] : []),
     ...(!sameRuntimeNodeProviders && runtimeCount === 2 ? [secondRuntimeOption] : []),
-  ];
+  ].map((option, index) => ({
+    ...option,
+    provider_type: runtimeProviderTypes?.[index] ?? option.provider_type,
+  }));
+  const allowedProviderTypes = governanceProviderTypes ?? (sameRuntimeNodeProviders ? ["codex", "claude-code"] : ["codex"]);
+  const capabilityOptionProviderTypes =
+    capabilityProviderTypes ?? (sameRuntimeNodeProviders ? ["codex", "claude-code"] : ["codex"]);
 
   return {
     team_config: {
@@ -158,7 +170,7 @@ function createOptionsFixture({
       revision_number: 3,
       status: "approved",
       allowed_employee_types: ["database_admin"],
-      allowed_provider_types: sameRuntimeNodeProviders ? ["codex", "claude-code"] : ["codex"],
+      allowed_provider_types: allowedProviderTypes,
       allowed_skills: ["incident-diagnosis", "sql-review"],
       allowed_mcp_servers: ["postgres"],
       allowed_external_capabilities: ["jira.search"],
@@ -210,7 +222,7 @@ function createOptionsFixture({
         : []),
     ],
     capability_options: {
-      provider_types: sameRuntimeNodeProviders ? ["codex", "claude-code"] : ["codex"],
+      provider_types: capabilityOptionProviderTypes,
       skills: ["incident-diagnosis", "sql-review"],
       mcp_servers: ["postgres"],
       external_capabilities: ["jira.search"],
@@ -280,6 +292,9 @@ function createWizardFetcher({
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
   includePolicyExcludedProvider = false,
+  governanceProviderTypes,
+  capabilityProviderTypes,
+  runtimeProviderTypes,
   includeFrontendTemplate = false,
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
@@ -296,6 +311,9 @@ function createWizardFetcher({
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
   includePolicyExcludedProvider?: boolean;
+  governanceProviderTypes?: string[];
+  capabilityProviderTypes?: string[];
+  runtimeProviderTypes?: string[];
   includeFrontendTemplate?: boolean;
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
@@ -321,6 +339,9 @@ function createWizardFetcher({
           includeCapabilityBoundaryBlock,
           includeOtherBlockedCheck,
           includePolicyExcludedProvider,
+          governanceProviderTypes,
+          capabilityProviderTypes,
+          runtimeProviderTypes,
           runtimeAvailability,
           runtimeCount,
           sameRuntimeNodeProviders,
@@ -1126,6 +1147,42 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
     await userEvent.click(screen.getByLabelText("Claude Code"));
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
+  });
+
+  it("shows only canonical provider choices and submits claude-code when legacy and unexpected provider values are returned", async () => {
+    const fetcher = createWizardFetcher({
+      expectedProviderType: "claude-code",
+      governanceProviderTypes: ["codex", "claude_code", "anthropic", "gpt", "claude-code"],
+      capabilityProviderTypes: ["claude_code", "opencode", "gpt"],
+      runtimeProviderTypes: ["claude_code", "anthropic"],
+      sameRuntimeNodeProviders: true,
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterBlankCustomConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "自定义员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "负责跨系统问题诊断");
+    await userEvent.fill(screen.getByLabelText("描述"), "直接定义身份");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeVisible();
+    await expect.element(screen.getByRole("radio", { name: "OpenCode" })).toBeVisible();
+    await expect.element(screen.getByRole("radio", { name: "Claude Code" })).toBeVisible();
+    expect(screen.getByLabelText("claude_code").query()).toBeNull();
+    expect(document.body.textContent).not.toContain("claude_code");
+    expect(document.body.textContent).not.toContain("anthropic");
+    expect(document.body.textContent).not.toContain("gpt");
+
+    await userEvent.click(screen.getByLabelText("Claude Code"));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.provider_type).toBe("claude-code");
   });
 
   it("submits blank custom as internal custom_agent with canonical provider type", async () => {
