@@ -5,12 +5,14 @@
 
 ## 1. 背景
 
-当前数字员工创建页已经具备创建路径、预检、身份、能力、治理、Provider 和确认创建等基础能力，但信息架构和产品语义存在四个问题：
+当前数字员工创建页已经具备创建路径、预检、身份、能力、治理、Provider 和确认创建等基础能力，但信息架构和产品语义存在六个问题：
 
 - `空白自定义` 仍要求用户选择“员工类型”，与“用户正在定义一个新数字员工身份”的心智冲突。
 - 选择某些团队后，`create-options` 会因为缺少 active governance config 返回 422，前端直接暴露技术错误。
 - “角色”字段容易被理解为团队权限角色、项目角色或人类组织角色，但当前代码实际把它写入数字员工 `role_profile`，用于身份职责画像。
 - 能力配置没有清晰区分团队继承能力和员工个人扩展能力。
+- `配置预检` 独立页面只重复展示后端候选检查，不能形成额外决策价值。
+- 风险等级、Provider、摘要和说明文案仍夹杂英文或弱语义描述，增加理解成本。
 
 另外，Provider 当前在 Web 文案中被称为“Provider 偏好”，但产品语义应为数字员工必选的执行器类型。数字员工创建时必须选择一个 Provider 类型，可以是 `codex`、`opencode` 或 `claude-code`。Runtime 节点是否在线只影响后续项目运行准备，不改变 Provider 必选语义。
 
@@ -21,11 +23,14 @@
 - 将 `空白自定义` 定义为直接创建一个自定义数字员工身份，不再在用户路径中要求选择员工类型。
 - 将“员工类型”降为系统内部治理字段；空白自定义路径由系统映射到内部 `custom_agent` 治理基类。
 - 将“角色”用户可见文案改为“职责定位”，继续落到后端现有 `role` / `role_profile.role` 字段。
+- 移除用户可见的自定义数字员工描述字段；职责定位承担身份说明。
+- 删除独立 `配置预检` 页面，把阻断项和检查摘要并入配置页右侧或相关步骤内。
 - 将“Provider 偏好”改为必选的“Provider 类型”或“执行器类型”。
 - 将团队归属设为可选；选择团队时继承团队治理与团队能力，不选团队时走租户级默认治理。
 - 将团队治理缺失从技术 422 转为清晰业务阻断。
 - 将能力配置拆成只读的团队继承能力和可编辑的员工扩展能力。
 - 创建成功后通过现有 effective skills / MCP / config 能力展示最终生效结果。
+- 风险等级用户可见文案统一为中文：`低`、`中`、`高`、`严重`；接口提交值仍为 `low`、`medium`、`high`、`critical`。
 
 ## 3. 非目标
 
@@ -36,6 +41,7 @@
 - 不实现“从团队角色复制”或“从历史员工克隆”。
 - 不把人类组织角色、团队权限角色或项目成员角色并入数字员工职责定位字段。
 - 不绕过后端团队治理、Provider allowlist、能力 allowlist 或有效配置校验。
+- 不物理删除数据库中的 `digital_employees.employee_type` 字段。本次只从用户创建路径隐藏它，并把它作为内部治理基类保留。
 
 ## 4. 产品语义
 
@@ -49,6 +55,7 @@
 | 创建方式 | `creation_mode` 或 metadata | 模板创建或空白自定义，仅表达草稿来源 |
 | 内部治理基类 | `employee_type` | 后端治理、默认策略和 allowlist 校验字段；空白自定义对用户隐藏 |
 | 归属团队 | `team_id` | 可选团队归属，决定团队治理和团队能力继承 |
+| 风险等级 | `risk_level` | 用户可见中文，提交值保留英文枚举 |
 | 团队继承能力 | effective skills / MCP / capability bindings | 由团队绑定而来，创建页只读展示 |
 | 员工扩展能力 | employee skill / MCP bindings 或 create capability selection | 用户为该员工额外选择的能力 |
 | Provider 类型 | `provider_type` | 必选执行器类型，限定为 `codex`、`opencode`、`claude-code` |
@@ -57,7 +64,7 @@
 
 ## 5. 用户流程
 
-创建页采用以下步骤：
+创建页采用以下步骤。独立 `配置预检` 页面删除，预检信息只作为配置页里的阻断摘要和辅助事实存在。
 
 1. `创建方式`
    - `空白自定义`：直接定义一个新的数字员工身份。
@@ -65,9 +72,10 @@
    - `从团队角色复制`、`从历史员工克隆` 可继续保持未开放。
 
 2. `身份定义`
-   - 填写名称、头像、职责定位和描述。
+   - 填写名称、头像和职责定位。
    - 空白自定义路径不出现“选择员工类型”。
    - 模板路径可以展示模板来源，但职责定位可由用户修改。
+   - 不展示“自定义数字员工描述”输入框。
 
 3. `归属团队`
    - 用户可以不选择团队。
@@ -81,10 +89,11 @@
    - 已由团队继承的能力不允许重复选择为员工扩展。
    - 技能、MCP 和外部能力候选来自当前登录用户可见范围，再按团队策略过滤。
 
-5. `治理预检`
-   - 展示团队治理、员工配置、上下文、审批、能力边界和 Provider 边界检查。
+5. `治理`
+   - 展示团队治理、员工配置、上下文、审批、能力边界和 Provider 边界检查摘要。
    - 不直接展示 `employee effective config required: active team governance config is required`。
    - 阻断项必须给出业务原因和可行动作。
+   - 风险等级用中文选项展示，提交时映射为英文枚举。
 
 6. `Provider 类型`
    - 必选单选：`Codex`、`OpenCode`、`Claude Code`。
@@ -93,7 +102,7 @@
    - 没有在线 Runtime 不阻断创建，只提示“创建后运行前需要可用 Runtime”。
 
 7. `确认创建`
-   - 汇总身份、团队、团队继承能力、员工扩展能力、治理预检和 Provider 类型。
+   - 汇总身份、团队、团队继承能力、员工扩展能力、治理检查摘要和 Provider 类型。
    - 空白自定义显示“自定义身份”。
    - 不展示对用户无意义的内部员工类型。
 
@@ -157,7 +166,6 @@ POST /api/v1/digital-employees
 可选字段：
 
 - `team_id`
-- `description`
 - `capability_selection`
 - `context_policy_override`
 - `approval_policy_override`
@@ -168,6 +176,8 @@ POST /api/v1/digital-employees
 空白自定义路径由前端提交内部 `employee_type = "custom_agent"`，但 UI 不展示该字段，也不让用户选择该字段。`creation_mode: "blank_custom"` 可写入 `metadata` 或 `role_profile` 作为审计来源，不作为后端分支的唯一依据。
 
 团队继承能力不作为员工个人扩展能力提交。员工扩展能力只提交用户主动选择的个人扩展项。
+
+创建请求不提交 `runtime_node_id`。OpenAPI 和生成代码如果仍将 `runtime_node_id` 标为必填，必须同步修正为可选或移除创建请求字段要求，避免契约层继续制造 422 或误导前端。
 
 ### 6.3 创建后生效能力
 
@@ -206,11 +216,13 @@ POST /api/v1/digital-employees
 - `initialEmployeeConfigInput`
 - `validateInitialEffectiveConfig`
 
-如果团队治理配置中显式限制 `allowed_employee_types`，需要决定是否允许 `custom_agent`。推荐规则：
+如果团队治理配置中显式限制 `allowed_employee_types`，按以下规则处理 `custom_agent`：
 
 - 团队允许 `custom_agent` 时，可在该团队下创建空白自定义员工。
 - 团队未允许 `custom_agent` 时，前端在选择团队后显示“该团队不允许创建自定义数字员工”。
 - 租户级无团队创建允许 `custom_agent`。
+
+`employee_type` 当前仍是后端注册表、团队治理 allowlist、默认策略、筛选器、项目调度建议和历史数据兼容字段。本次不做数据库物理删除；只从创建页用户心智中移除。若未来要删除该字段，必须单独设计数据迁移、查询替代字段、历史数据回填、OpenAPI 兼容和调度策略替代方案。
 
 ### 7.2 Provider 校验
 
@@ -267,6 +279,28 @@ POST /api/v1/digital-employees
 - `自定义身份`
 - `团队继承`
 - `员工扩展`
+- 风险等级：`低`、`中`、`高`、`严重`
+
+创建页应移除以下 UI：
+
+- 独立 `配置预检` 页面和进度节点。
+- 空白自定义路径中的 `员工类型` 下拉或只读字段。
+- `描述` / `自定义数字员工描述` 输入框。
+- “完成配置”中身份、能力、治理、Provider 类型卡片右上角无决策价值的描述文案。
+
+推荐主流程：
+
+```text
+创建方式 -> 完成配置 -> 确认创建
+```
+
+`完成配置` 内部仍可保留分段步骤：
+
+```text
+身份 -> 能力 -> 治理 -> Provider 类型
+```
+
+右侧摘要只保留会影响创建结果或下一步决策的事实：团队、阻断项、能力数量、风险等级、Provider 类型和 Runtime 运行准备提示。
 
 ### 8.2 能力配置
 
@@ -334,8 +368,9 @@ Provider 选项用单选控件：
 | 团队不允许自定义员工 | 阻断该团队路径，提示选择其他团队或使用模板 |
 | 没有可选 Provider 类型 | 阻断创建，提示检查团队能力边界或系统配置 |
 | Provider 无在线 Runtime | 允许创建，提示运行前需要 Runtime |
+| 未选择 Provider 类型 | 阻断确认创建，提示必须选择执行器类型 |
 | 员工扩展能力越权 | 前端不展示，后端拒绝并显示可读错误 |
-| MCP 必需环境变量缺失 | 创建页提示，绑定或运行 preflight 继续兜底 |
+| MCP 必需环境变量缺失 | 创建页提示，绑定或运行前检查继续兜底 |
 | create-options 加载失败 | 阻断当前步骤，支持重试 |
 | 创建提交失败 | 保留表单状态，展示后端业务错误 |
 
@@ -349,6 +384,8 @@ Provider 选项用单选控件：
 - Provider 类型使用单选控件，不使用模糊的文本按钮模拟选择。
 - 阻断状态使用明确的状态面板和动作按钮。
 - 所有用户可见文案默认简体中文。
+- 风险等级显示中文，不在用户可见选择器、摘要或标签中直接显示 `low`、`medium`、`high`、`critical`。
+- 删除无决策价值的说明文案，尤其是步骤卡片右上角重复说明。
 
 ## 11. 实现范围
 
@@ -361,11 +398,13 @@ Provider 选项用单选控件：
 - `apps/control-plane/internal/employee/service.go`
 - `apps/control-plane/internal/employee/service_test.go`
 - `apps/control-plane/internal/employee/handler.go`
-- `contracts/control-plane/openapi.yaml`，仅当需要新增结构化错误或 create-options 字段时修改。
+- `contracts/control-plane/openapi.yaml`
 
 可能修改：
 
 - `apps/control-plane/internal/api/employee_routes_test.go`
+- `apps/control-plane/gen/control_plane.gen.go`
+- `apps/control-plane/internal/api/gen/control_plane.gen.go`
 - `apps/control-plane/internal/skill/*`
 - `apps/control-plane/internal/capability/*`
 - `apps/web/src/features/employees/components/employee-capabilities-panel.tsx`
@@ -379,12 +418,17 @@ Provider 选项用单选控件：
 ## 12. 验收标准
 
 - 空白自定义路径不再出现“选择员工类型”。
+- 空白自定义路径不再出现“描述”或“自定义数字员工描述”输入框。
+- 创建流程不再包含独立“配置预检”页面或进度节点。
 - 空白自定义路径能创建内部 `custom_agent` 类型员工，用户不需要理解该内部类型。
 - 创建页所有用户可见位置不再出现 `Provider 偏好`。
+- 创建页用户可见风险等级为中文：`低`、`中`、`高`、`严重`。
 - 未选择 Provider 类型时不能确认创建。
 - Provider 类型只能选择 `codex`、`opencode`、`claude-code`。
 - `Claude Code` 前端提交值与后端支持值一致。
+- 创建请求不提交 `runtime_node_id`，OpenAPI 不再把它列为创建必填。
 - 团队治理缺失时显示业务阻断，不暴露英文 422。
+- 团队未允许 `custom_agent` 时，空白自定义团队路径在前端显示业务阻断，不等到提交后暴露 422。
 - 团队继承能力只读展示。
 - 员工扩展能力可从用户可见且团队允许的技能/MCP/外部能力中选择。
 - 已由团队继承的能力不会重复提交为员工扩展能力。
@@ -398,12 +442,17 @@ Provider 选项用单选控件：
 覆盖：
 
 - 空白自定义路径不出现员工类型选择表。
+- 空白自定义路径不出现描述输入框。
 - 空白自定义路径显示“自定义身份”和“职责定位”。
+- 创建流程不出现独立“配置预检”步骤。
+- 风险等级选择器和摘要显示中文。
 - 页面不出现 `Provider 偏好`。
 - Provider 类型未选中时确认按钮不可用。
 - Provider 类型选择后，提交体包含 `provider_type`。
+- 创建提交体不包含 `runtime_node_id`。
 - `Claude Code` 提交值为 `claude-code`。
 - 团队治理缺失显示业务阻断和两个动作。
+- 团队不允许 `custom_agent` 时显示“该团队不允许创建自定义数字员工”。
 - 团队继承能力只读，员工扩展能力可选。
 - 已继承能力不会重复提交。
 
@@ -419,10 +468,12 @@ corepack pnpm --filter ./apps/web run test -- src/features/employees/create.test
 
 - 空白自定义映射到内部 `custom_agent`。
 - `custom_agent` 默认能力为空。
+- 创建请求仍使用内部 `employee_type=custom_agent`，但不要求前端展示该字段。
 - 缺少 `provider_type` 被拒绝。
 - 未知 Provider 被拒绝。
 - `claude_code` 如需兼容，会被规范化为 `claude-code`。
 - 团队缺少 active governance config 返回稳定错误 code。
+- 团队策略未允许 `custom_agent` 时返回稳定可识别业务错误。
 - 团队策略外 Provider 被拒绝。
 - 团队策略外能力被拒绝。
 
@@ -434,7 +485,7 @@ go test ./apps/control-plane/internal/employee ./apps/control-plane/internal/api
 
 ### 契约与代码生成
 
-如果修改 OpenAPI 或生成代码：
+修改 OpenAPI 或生成代码时：
 
 ```bash
 corepack pnpm generate:control-plane
@@ -453,12 +504,13 @@ git diff --check
 
 1. 使用真实登录会话访问 `/employees/new`。
 2. 选择 `空白自定义`。
-3. 填写名称、头像、职责定位和描述。
+3. 填写名称、头像和职责定位。
 4. 不选择团队，选择 Provider 类型，完成创建。
 5. 进入员工详情页，确认 Provider 类型、职责定位和 effective 能力展示正确。
 6. 选择一个有 active governance config 的团队，完成创建。
 7. 选择一个没有 active governance config 的团队，确认前端显示业务阻断。
-8. 在 Runtime 全部离线或无匹配 Runtime 的情况下，确认创建页提示运行准备风险但不把它当成员工创建失败。
+8. 选择一个 active governance config 未允许 `custom_agent` 的团队，确认前端显示业务阻断。
+9. 在 Runtime 全部离线或无匹配 Runtime 的情况下，确认创建页提示运行准备风险但不把它当成员工创建失败。
 
 若真实服务、认证、数据库迁移或 Runtime 状态无法满足验证条件，不能声明功能完成，只能报告阻塞项。
 
@@ -467,9 +519,11 @@ git diff --check
 下一步应进入实现计划，拆分为：
 
 - 后端自定义员工类型与结构化错误。
+- OpenAPI 创建请求契约修正，移除 `runtime_node_id` 必填要求。
 - create-options 能力继承/扩展候选。
-- Web 创建向导信息架构调整。
+- Web 创建向导信息架构调整，删除独立预检页、描述字段和员工类型用户入口。
 - Provider 类型必选与命名修正。
+- 风险等级中文显示与提交值映射。
 - 测试与真实链路验收。
 
 本设计不直接进入实现，不改变当前工作区已有未提交变更。
