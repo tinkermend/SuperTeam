@@ -68,7 +68,10 @@ import {
   templateSearchText,
 } from "./template-utils";
 
-const configSteps = ["身份", "能力", "治理", "Provider 偏好"] as const;
+const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
+const BLANK_CUSTOM_TITLE = "自定义身份";
+
+const configSteps = ["身份", "能力", "治理", "Provider 类型"] as const;
 type StepName = (typeof configSteps)[number];
 type CreateFlowStep = "template" | "preflight" | "configure" | "confirm";
 type CreationMode = "template" | "blank_custom";
@@ -179,25 +182,27 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const blankCustom = draft.creation_mode === "blank_custom";
 
   useEffect(() => {
-    if (draft.creation_mode !== "template") return;
     const optionsData = createOptions.data;
     const employeeTypes = optionsData?.employee_types ?? [];
     const firstType = firstPreferredEmployeeType(employeeTypes);
     if (!firstType) return;
-    if (!draft.employee_type || !employeeTypes.some((item) => item.type === draft.employee_type)) {
-      setDraft((current) => applyTypeDefaults(current, firstType));
-    }
+    setDraft((current) => {
+      if (current.creation_mode !== "template") return current;
+      if (!current.employee_type || !employeeTypes.some((item) => item.type === current.employee_type)) {
+        return applyTypeDefaults(current, firstType);
+      }
+      return current;
+    });
   }, [createOptions.data, draft.creation_mode, draft.employee_type]);
 
   useEffect(() => {
-    if (draft.creation_mode !== "template") return;
     const optionsData = createOptions.data;
     if (!requestedTemplate || !optionsData || templateQueryHandled === requestedTemplate) return;
     const requestedType = findTemplateByType(optionsData, requestedTemplate);
     setTemplateQueryHandled(requestedTemplate);
     if (!requestedType) return;
-    setDraft((current) => applyTypeDefaults(current, requestedType));
-  }, [createOptions.data, draft.creation_mode, requestedTemplate, templateQueryHandled]);
+    setDraft((current) => (current.creation_mode === "template" ? applyTypeDefaults(current, requestedType) : current));
+  }, [createOptions.data, requestedTemplate, templateQueryHandled]);
 
   useEffect(() => {
     const firstAvatar = avatarAssets.data?.find((asset) => asset.status === "active");
@@ -227,7 +232,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const createEmployee = useMutation({
     mutationFn: () => {
       if (!draft.provider_type) {
-        throw new Error("请选择 Provider");
+        throw new Error("请选择 Provider 类型");
       }
 
       return createDigitalEmployee(
@@ -288,11 +293,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       updateDraft({ employee_type: typeValue });
       return;
     }
-    setDraft((current) =>
-      current.creation_mode === "blank_custom"
-        ? applyBlankTypeDefaults(current, nextType)
-        : applyTypeDefaults(current, nextType),
-    );
+    setDraft((current) => applyTypeDefaults(current, nextType));
   }
 
   function selectProvider(providerType: string) {
@@ -342,7 +343,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function enterConfirmCreation() {
-    const nextErrors = validateStep("Provider 偏好", draft);
+    const nextErrors = validateStep("Provider 类型", draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
       setFlowStep("confirm");
@@ -353,7 +354,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setErrors({});
     setStepIndex(0);
     setDraftTouched(false);
-    setDraft({ ...emptyDraft, creation_mode: creationMode, team_id: teamId });
+    const nextDraft = { ...emptyDraft, creation_mode: creationMode, team_id: teamId };
+    setDraft(creationMode === "blank_custom" ? applyBlankCustomDefaults(nextDraft) : nextDraft);
   }
 
   function requestCreationModeChange(nextMode: CreationMode) {
@@ -366,17 +368,21 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setErrors({});
     setStepIndex(0);
     setDraftTouched(false);
-    setFlowStep("template");
     const nextDraft = { ...emptyDraft, creation_mode: nextMode, team_id: draft.team_id };
-    const firstType = firstPreferredEmployeeType(createOptions.data?.employee_types ?? []);
-    setDraft(nextMode === "blank_custom" && firstType ? applyBlankTypeDefaults(nextDraft, firstType) : nextDraft);
+    if (nextMode === "blank_custom") {
+      setDraft(applyBlankCustomDefaults(nextDraft));
+      setFlowStep("preflight");
+      return;
+    }
+    setDraft(nextDraft);
+    setFlowStep("template");
   }
 
   function requestTemplateChange() {
     if (draftTouched && !window.confirm("更换创建路径会重置当前配置草稿，是否继续？")) {
       return;
     }
-    resetDraftForTeam(draft.team_id, draft.creation_mode);
+    resetDraftForTeam(draft.team_id, "template");
     setFlowStep("template");
   }
 
@@ -389,7 +395,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
     resetDraftForTeam(nextTeamId, draft.creation_mode);
     if (draft.creation_mode === "blank_custom") {
-      setFlowStep("template");
+      setFlowStep("preflight");
     }
   }
 
@@ -406,7 +412,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择模板，再分步完成预检、配置和确认。"
-          : "按模板默认值补齐职责画像、能力选择、治理策略和 Provider 偏好。"
+          : "按职责定位、能力选择、治理策略和必选 Provider 类型完成员工画像。"
         }
         actions={
           flowStep !== "template" ? (
@@ -458,16 +464,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 onEnterPreflight={enterPreflight}
                 onSelectType={selectType}
               />
-            ) : (
-              <BlankCustomSelectionPanel
-                draft={draft}
-                options={createOptions.data}
-                selectedTeamName={selectedTeam?.name}
-                selectedType={selectedType}
-                onEnterPreflight={enterPreflight}
-                onSelectType={selectType}
-              />
-            )}
+            ) : null}
           </div>
         ) : null}
 
@@ -489,12 +486,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-center gap-2.5">
                     <IconTile tone="brand" size="sm">
-                      <Bot />
-                    </IconTile>
-                    <div>
-                      <h2 className="text-lg font-semibold text-v3-ink">员工画像蓝图</h2>
-                      <p className="mt-0.5 text-sm text-v3-ink-3">
-                        按职责目标、可用能力、治理边界和 Provider 偏好完成员工画像。
+                        <Bot />
+                      </IconTile>
+                      <div>
+                        <h2 className="text-lg font-semibold text-v3-ink">员工画像蓝图</h2>
+                        <p className="mt-0.5 text-sm text-v3-ink-3">
+                        按职责定位、可用能力、治理边界和 Provider 类型完成员工画像。
                       </p>
                     </div>
                   </div>
@@ -535,7 +532,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       onUpdate={updateDraft}
                     />
                   ) : null}
-                  {!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 偏好" ? (
+                  {!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 类型" ? (
                     <ProviderStep
                       draft={draft}
                       error={errors.runtime}
@@ -625,7 +622,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
     { key: "template", title: "选择模板", description: "选择创建方式和专业模板" },
-    { key: "preflight", title: "配置预检", description: "检查治理策略和 Provider 偏好候选" },
+    { key: "preflight", title: "配置预检", description: "检查治理策略和 Provider 类型候选" },
     { key: "configure", title: "完成配置", description: "进入详细配置向导" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
@@ -692,7 +689,7 @@ function CreationPathPanel({
     },
     {
       title: "空白自定义",
-      description: "选择底层员工类型后，逐项手动配置职责、能力和 Provider 偏好。",
+      description: "直接定义自定义身份，逐项手动配置职责定位、能力和 Provider 类型。",
       icon: FileText,
       mode: "blank_custom" as const,
       badge: "可用",
@@ -860,18 +857,27 @@ function TemplateSelectionPanel({
             data-slot="template-selection-table"
           >
             <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
-              <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+              <table className="w-full min-w-[880px] border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    {["模板", "默认角色", "模板能力", "风险等级", "默认注入"].map((label) => (
+                    {[
+                      { label: "模板", w: "" },
+                      { label: "默认角色", w: "w-[150px]" },
+                      { label: "模板能力", w: "w-[290px]" },
+                      { label: "风险等级", w: "w-[112px]" },
+                      { label: "默认注入", w: "w-[132px]" },
+                    ].map(({ label, w }) => (
                       <th
                         key={label}
-                        className="sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3"
+                        className={cn(
+                          "sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3",
+                          w,
+                        )}
                       >
                         {label}
                       </th>
                     ))}
-                    <th className="sticky top-0 z-10 w-[104px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                    <th className="sticky top-0 z-10 w-[100px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
                       选择
                     </th>
                   </tr>
@@ -970,176 +976,16 @@ function TemplateTableRow({
         </div>
       </td>
       <td className="px-3 py-3 align-top">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-v3-ink-3">风险</span>
-          <RiskPill risk={risk} />
-        </div>
+        <RiskPill risk={risk} />
       </td>
-      <td className="px-3 py-3 align-top text-xs leading-5 text-v3-ink-3">
-        {templateDefaultInjectionLine(typeOption)}
+      <td className="px-3 py-3 align-top">
+        <span className="line-clamp-2 text-xs leading-5 text-v3-ink-3">
+          {templateDefaultInjectionLine(typeOption)}
+        </span>
       </td>
       <td className="px-3 py-3 text-right align-top">
         <V3Button
           aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}模板`}
-          aria-pressed={selected}
-          className="ml-auto whitespace-nowrap"
-          onClick={onSelect}
-          size="sm"
-          type="button"
-          variant={selected ? "primary" : "outline"}
-        >
-          {selected ? <Check className="size-4" /> : null}
-          {selected ? "已选" : "选择"}
-        </V3Button>
-      </td>
-    </tr>
-  );
-}
-
-function BlankCustomSelectionPanel({
-  draft,
-  options,
-  selectedTeamName,
-  selectedType,
-  onEnterPreflight,
-  onSelectType,
-}: {
-  draft: WizardDraft;
-  options?: DigitalEmployeeCreateOptions;
-  selectedTeamName?: string;
-  selectedType?: DigitalEmployeeTypeOption;
-  onEnterPreflight: () => void;
-  onSelectType: (value: string) => void;
-}) {
-  const employeeTypes = useMemo(() => orderedEmployeeTypes(options?.employee_types ?? []), [options?.employee_types]);
-
-  return (
-    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
-      <div className="border-b border-v3-line p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <IconTile tone="brand" size="sm">
-              <FileText />
-            </IconTile>
-            <div>
-              <h2 className="text-base font-semibold text-v3-ink">选择员工类型</h2>
-              <p className="mt-0.5 text-sm text-v3-ink-3">
-                员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。
-              </p>
-            </div>
-          </div>
-          <Badge variant="secondary">{employeeTypes.length} 个类型</Badge>
-        </div>
-      </div>
-      {employeeTypes.length === 0 ? (
-        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
-          当前团队治理配置未返回可用员工类型。
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 p-4">
-          <WorkSurface className="h-full">
-            <div className="h-full max-h-[min(680px,calc(100vh-360px))] overflow-auto">
-              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr>
-                    {["员工类型", "类型标识", "默认角色", "风险建议"].map((label) => (
-                      <th
-                        key={label}
-                        className="sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3"
-                      >
-                        {label}
-                      </th>
-                    ))}
-                    <th className="sticky top-0 z-10 w-[104px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
-                      选择
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employeeTypes.map((typeOption) => (
-                    <EmployeeTypeTableRow
-                      key={typeOption.type}
-                      selected={typeOption.type === draft.employee_type}
-                      typeOption={typeOption}
-                      onSelect={() => onSelectType(typeOption.type)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </WorkSurface>
-        </div>
-      )}
-      <div className="border-t border-v3-line px-4 py-3.5">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-semibold text-v3-ink">空白草稿摘要</span>
-              <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
-              <Badge variant="secondary">类型 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
-              <Badge variant="secondary">角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
-              <Badge variant="secondary">能力手动配置</Badge>
-            </div>
-            <p className="mt-2 text-sm text-v3-ink-3">空白自定义草稿不会带入模板推荐技能、MCP 或外部能力。</p>
-          </div>
-          <V3Button disabled={!draft.employee_type} onClick={onEnterPreflight} type="button">
-            进入配置预检
-            <ChevronRight className="size-4" />
-          </V3Button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function EmployeeTypeTableRow({
-  selected,
-  typeOption,
-  onSelect,
-}: {
-  selected: boolean;
-  typeOption: DigitalEmployeeTypeOption;
-  onSelect: () => void;
-}) {
-  const risk = templateRisk(typeOption);
-
-  return (
-    <tr
-      className={cn(
-        "transition-colors [&>td]:border-b [&>td]:border-v3-line [&:last-child>td]:border-b-0 [&:hover>td]:bg-v3-card-inner",
-        selected ? "[&>td]:bg-v3-brand-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]" : "",
-      )}
-    >
-      <td className="px-3 py-3 align-top">
-        <div className="flex min-w-0 gap-3">
-          <IconTile tone={selected ? "brand" : "mute"} size="sm">
-            <FileText />
-          </IconTile>
-          <div className="min-w-0">
-            <div className="font-semibold text-v3-ink">{typeOption.label}</div>
-            <div className="mt-1 line-clamp-2 text-xs leading-5 text-v3-ink-3">{typeOption.description}</div>
-          </div>
-        </div>
-      </td>
-      <td className="px-3 py-3 align-top">
-        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
-          {typeOption.type}
-        </span>
-      </td>
-      <td className="px-3 py-3 align-top">
-        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
-          {typeOption.default_role || typeOption.type}
-        </span>
-      </td>
-      <td className="px-3 py-3 align-top">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-v3-ink-3">风险</span>
-          <RiskPill risk={risk} />
-        </div>
-      </td>
-      <td className="px-3 py-3 text-right align-top">
-        <V3Button
-          aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}类型`}
           aria-pressed={selected}
           className="ml-auto whitespace-nowrap"
           onClick={onSelect}
@@ -1161,7 +1007,7 @@ function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions })
   return (
     <SoftCard className="p-4">
       <h2 className="text-base font-semibold text-v3-ink">预检项目</h2>
-      <p className="mt-1 text-xs text-v3-ink-3">检查治理策略、模板与 Provider 偏好候选；能力选择在下一步配置。</p>
+      <p className="mt-1 text-xs text-v3-ink-3">检查治理策略、模板与 Provider 类型候选；能力选择在下一步配置。</p>
       <div className="mt-4 grid gap-2">
         {checks.length === 0 ? (
           <p className="rounded-[12px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
@@ -1217,7 +1063,7 @@ function PreflightStep({
             <div>
               <h2 className="text-lg font-semibold text-v3-ink">配置预检</h2>
               <p className="mt-0.5 text-sm text-v3-ink-3">
-                先确认后端创建候选返回的治理策略、{isBlankCustom ? "员工类型" : "模板"}和 Provider 偏好候选；技能、MCP 和外部能力在配置页选择。
+                先确认后端创建候选返回的治理策略、{isBlankCustom ? BLANK_CUSTOM_TITLE : "模板"}和 Provider 类型候选；技能、MCP 和外部能力在配置页选择。
               </p>
             </div>
           </div>
@@ -1234,14 +1080,14 @@ function PreflightStep({
           ) : (
             <Alert>
               <AlertTitle>预检通过</AlertTitle>
-              <AlertDescription>可以继续补充员工身份、能力、治理和 Provider 偏好。</AlertDescription>
+              <AlertDescription>可以继续补充员工身份、能力、治理和 Provider 类型。</AlertDescription>
             </Alert>
           )}
         </div>
         <div className="flex justify-between gap-3 border-t border-v3-line p-4">
           <V3Button onClick={onBack} type="button" variant="glass">
             <ChevronLeft className="size-4" />
-            {isBlankCustom ? "返回选择类型" : "返回选择模板"}
+            返回创建路径
           </V3Button>
           <V3Button disabled={hasBlockedChecks || !draft.employee_type} onClick={onContinue} type="button">
             预检通过，继续配置
@@ -1258,12 +1104,11 @@ function PreflightStep({
           </p>
           <div className="mt-4 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? "空白自定义" : "专业模板"} />
-            <InlineSummary
-              label={draft.creation_mode === "blank_custom" ? "底层类型" : "专业模板"}
-              value={selectedType?.label ?? (draft.employee_type || "未选择")}
-            />
-            <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
+            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : "专业模板"} />
+            {!isBlankCustom ? (
+              <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            ) : null}
+            <InlineSummary label="职责定位" value={draft.role || selectedType?.default_role || "未生成"} />
             <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
             <InlineSummary
               label="默认注入"
@@ -1387,14 +1232,17 @@ function CreationPreflightPanel({
           </div>
         </div>
         <div className="grid gap-3 text-sm">
-          <SummaryItem label="专业类型" value={(selectedType?.label ?? draft.employee_type) || "未选择"} />
-          <SummaryItem label="角色" value={draft.role || "未填写"} />
+          <SummaryItem
+            label="专业类型"
+            value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : (selectedType?.label ?? draft.employee_type) || "未选择"}
+          />
+          <SummaryItem label="职责定位" value={draft.role || "未填写"} />
           <SummaryItem label="风险等级" value={draft.risk_level || "medium"} />
           <SummaryItem
             label="能力选择"
             value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
           />
-          <SummaryItem label="Provider" value={draft.provider_type || `${providers.length} 个候选`} />
+          <SummaryItem label="Provider 类型" value={draft.provider_type || `${providers.length} 个候选`} />
         </div>
       </GlassCard>
 
@@ -1405,7 +1253,7 @@ function CreationPreflightPanel({
         </div>
         <div className="grid gap-2">
           <div>1. 写入身份与初始配置修订</div>
-          <div>2. 记录 Provider 偏好</div>
+          <div>2. 记录 Provider 类型</div>
           <div>3. Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</div>
           <div>4. 进入 ready，等待任务调度</div>
         </div>
@@ -1453,25 +1301,24 @@ function ConfirmCreationStep({
           <h3 className="text-sm font-semibold text-v3-ink">身份与模板</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
-            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? "空白自定义草稿" : "专业模板"} />
-            <InlineSummary
-              label={draft.creation_mode === "blank_custom" ? "底层类型" : "专业模板"}
-              value={selectedType?.label ?? (draft.employee_type || "未选择")}
-            />
+            <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : "专业模板"} />
+            {draft.creation_mode !== "blank_custom" ? (
+              <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+            ) : null}
             <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
-            <InlineSummary label="角色" value={draft.role || "未填写"} />
+            <InlineSummary label="职责定位" value={draft.role || "未填写"} />
             <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
           </div>
         </section>
 
         <section className="rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
-          <h3 className="text-sm font-semibold text-v3-ink">能力与 Provider 偏好</h3>
+          <h3 className="text-sm font-semibold text-v3-ink">能力与 Provider 类型</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
             />
-            <InlineSummary label="Provider 偏好" value={draft.provider_type || "未选择"} />
+            <InlineSummary label="Provider 类型" value={draft.provider_type || "未选择"} />
             <InlineSummary label="Runtime 节点" value="会在项目运行准备中决定，不在创建时绑定到员工。" />
             <InlineSummary
               label="每日预算"
@@ -1553,6 +1400,7 @@ function IdentityStep({
             id="employee-type"
             value={draft.employee_type}
           >
+            {isBlankCustom ? <option value={BLANK_CUSTOM_EMPLOYEE_TYPE}>{BLANK_CUSTOM_TITLE}</option> : null}
             {(options?.employee_types ?? []).map((item) => (
               <option key={item.type} value={item.type}>
                 {item.label}
@@ -1573,7 +1421,7 @@ function IdentityStep({
             value={draft.name}
           />
         </Field>
-        <Field label="角色" error={errors.role}>
+        <Field label="职责定位" error={errors.role}>
           <Input
             aria-invalid={Boolean(errors.role)}
             id="employee-role"
@@ -1612,7 +1460,7 @@ function IdentityStep({
         <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm">
           <div className="font-semibold text-v3-ink">{selectedType.label}</div>
           <div className="mt-1 text-v3-ink-3">{selectedType.description}</div>
-          <div className="mt-2 text-v3-ink-3">默认角色：{selectedType.default_role || selectedType.type}</div>
+          <div className="mt-2 text-v3-ink-3">默认职责定位：{selectedType.default_role || selectedType.type}</div>
         </div>
       ) : null}
     </div>
@@ -1841,8 +1689,8 @@ function ProviderStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold text-v3-ink">Provider 偏好</h2>
-        <p className="text-sm text-v3-ink-3">Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
+        <h2 className="text-lg font-semibold text-v3-ink">Provider 类型</h2>
+        <p className="text-sm text-v3-ink-3">数字员工必须选择一个 Provider 类型；Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
       </div>
       <RadioGroup onValueChange={onSelectProvider} value={draft.provider_type}>
         <div className="grid gap-3">
@@ -1966,7 +1814,7 @@ function ProviderOption({
             ? preview.availableCount === preview.matchingCount
               ? `${preview.matchingCount} 个 Runtime 节点候选会在项目运行准备中评估`
               : `${preview.availableCount}/${preview.matchingCount} 个 Runtime 节点当前在线，仅用于项目运行准备参考`
-            : "当前没有在线 Runtime 节点支持该 Provider；创建时仍只记录 Provider 偏好"}
+            : "当前没有在线 Runtime 节点支持该 Provider；创建时仍会记录必选 Provider 类型"}
         </span>
       </span>
     </label>
@@ -1998,7 +1846,7 @@ const labelId: Record<string, string> = {
   名称: "employee-name",
   归属团队: "employee-team",
   描述: "employee-description",
-  角色: "employee-role",
+  职责定位: "employee-role",
   风险等级: "employee-risk",
   "每日 Token 预算上限": "daily-token-limit",
 };
@@ -2024,7 +1872,7 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
   };
 }
 
-function applyBlankTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
+function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
   return {
     ...current,
     creation_mode: "blank_custom",
@@ -2035,9 +1883,9 @@ function applyBlankTypeDefaults(current: WizardDraft, typeOption: DigitalEmploye
       enabled_skills: [],
     },
     context_policy_override: {},
-    employee_type: typeOption.type,
-    risk_level: stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium",
-    role: typeOption.default_role || typeOption.type,
+    employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
+    risk_level: "medium",
+    role: "",
   };
 }
 
@@ -2047,7 +1895,7 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     if (!draft.avatar_asset_id.trim()) errors.avatar_asset_id = "头像不能为空";
     if (!draft.employee_type.trim()) errors.employee_type = "员工类型不能为空";
     if (!draft.name.trim()) errors.name = "名称不能为空";
-    if (!draft.role.trim()) errors.role = "角色不能为空";
+    if (!draft.role.trim()) errors.role = "职责定位不能为空";
     return errors;
   }
   if (step === "治理") {
@@ -2060,8 +1908,8 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     }
     return errors;
   }
-  if (step === "Provider 偏好" && !draft.provider_type) {
-    return { runtime: "请选择 Provider" };
+  if (step === "Provider 类型" && !draft.provider_type) {
+    return { runtime: "请选择 Provider 类型" };
   }
   return {};
 }
@@ -2070,7 +1918,7 @@ function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
   return {
     ...validateStep("身份", draft),
     ...validateStep("治理", draft),
-    ...validateStep("Provider 偏好", draft),
+    ...validateStep("Provider 类型", draft),
   };
 }
 

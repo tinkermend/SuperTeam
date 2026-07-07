@@ -309,9 +309,9 @@ func createOptionChecks(
 		},
 		{
 			Key:     "runtime_provider",
-			Label:   "Runtime 调度预览",
+			Label:   "Provider 类型预览",
 			Status:  checkStatus(availableRuntimeCount > 0, true),
-			Message: fmt.Sprintf("%d/%d 个运行绑定可用，Runtime 在线状态仅影响后续项目任务调度", availableRuntimeCount, len(runtimeOptions)),
+			Message: fmt.Sprintf("%d/%d 个 Provider 候选当前在线；创建时不绑定 Runtime 节点", availableRuntimeCount, len(runtimeOptions)),
 		},
 	}
 }

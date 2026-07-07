@@ -231,7 +231,7 @@ function createOptionsFixture({
       },
       {
         key: "runtime_provider",
-        label: "Provider 偏好预览",
+        label: "Provider 类型预览",
         status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "warning",
         message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个 Provider 候选当前在线；创建时不绑定 Runtime 节点`,
       },
@@ -428,10 +428,8 @@ async function enterConfiguration(screen: Awaited<ReturnType<typeof renderCreate
 async function enterBlankCustomConfiguration(screen: Awaited<ReturnType<typeof renderCreateEmployeeView>>) {
   await expect.element(screen.getByRole("button", { name: /^空白自定义/ })).toBeEnabled();
   await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
-  await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-  await expect.element(screen.getByRole("button", { name: "进入配置预检" })).toBeEnabled();
-  await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
   await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+  expect(document.body.textContent).not.toContain("选择员工类型");
   await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
   await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
 }
@@ -494,7 +492,7 @@ describe("CreateEmployeeView", () => {
     expect(createOptionsCalls.every(([input]) => !new URL(String(input)).searchParams.has("team_id"))).toBe(true);
   });
 
-  it("opens the blank-custom employee type selector while keeping copy and clone disabled", async () => {
+  it("opens blank custom as a custom identity without asking for employee type", async () => {
     const screen = await renderCreateEmployeeView();
 
     await expect.element(screen.getByRole("button", { name: /^从专业模板创建/ })).toBeEnabled();
@@ -504,9 +502,10 @@ describe("CreateEmployeeView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
 
-    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-    await expect.element(screen.getByText("员工类型用于后端治理校验；空白自定义不会自动注入模板推荐能力。")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "已选择数据库管理员类型" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+    await expect.element(screen.getByText("自定义身份", { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain("选择员工类型");
+    expect(document.body.textContent).not.toContain("底层类型");
     expect(document.body.textContent).not.toContain("选择内置模板");
     expect(document.body.textContent).not.toContain("员工画像蓝图");
   });
@@ -515,7 +514,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView();
 
     await expect.element(screen.getByRole("button", { name: /数据库管理员/ })).toBeVisible();
-    await expect.element(screen.getByText(/^风险$/)).toBeVisible();
+    await expect.element(screen.getByText("风险等级")).toBeVisible();
 
     const tableText = findTemplateSelectionTableText();
     expect(tableText).toContain("技能");
@@ -572,7 +571,7 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("frontend_engineer");
-    await expect.element(screen.getByLabelText("角色")).toHaveValue("frontend_engineer");
+    await expect.element(screen.getByLabelText("职责定位")).toHaveValue("frontend_engineer");
   });
 
   it("shows the profile blueprint without a redundant template summary after entering configuration", async () => {
@@ -662,8 +661,9 @@ describe("CreateEmployeeView", () => {
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
     expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
-    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "选择数据库管理员类型" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
+    await expect.element(screen.getByText("自定义身份", { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain("选择员工类型");
   });
 
   it("creates a ready digital employee through the four-step wizard", async () => {
@@ -675,7 +675,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
-    await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
+    await expect.element(screen.getByLabelText("职责定位")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("风险等级")).toHaveValue("high");
     await expect.element(screen.getByAltText("工程师头像 M01")).toBeVisible();
 
@@ -702,10 +702,11 @@ describe("CreateEmployeeView", () => {
 
     await enterBlankCustomConfiguration(screen);
 
-    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
-    await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
+    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("custom_agent");
+    await expect.element(screen.getByLabelText("职责定位")).toHaveValue("");
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).not.toBeChecked();
@@ -718,8 +719,6 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
-    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
     expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
@@ -728,6 +727,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: /继续配置/ }));
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
     await userEvent.fill(screen.getByLabelText("名称"), "空白自定义员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "自定义诊断职责");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
   });
@@ -741,8 +741,7 @@ describe("CreateEmployeeView", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
-    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
     expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
     await expect.element(screen.getByRole("button", { name: /继续配置/ })).toBeEnabled();
@@ -757,8 +756,7 @@ describe("CreateEmployeeView", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
-    await expect.element(screen.getByRole("heading", { name: "选择员工类型" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
+    await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
     await expect.element(screen.getByText("当前配置暂不能继续")).toBeVisible();
     await expect.element(screen.getByText("其他阻断: 需要先完成外部前置条件")).toBeVisible();
@@ -790,29 +788,30 @@ describe("CreateEmployeeView", () => {
     await enterBlankCustomConfiguration(screen);
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByLabelText("codex"));
     await enterConfirmCreation(screen);
 
-    await expect.element(screen.getByText("空白自定义草稿")).toBeVisible();
-    await expect.element(screen.getByText("数据库管理员", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("自定义身份", { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain("底层类型");
   });
 
   it("submits blank-custom creation without template-injected capabilities or policy overrides", async () => {
     const fetcher = createWizardFetcher({
       expectedCreateBody: {
-        employee_type: "database_admin",
+        employee_type: "custom_agent",
         name: "数据库管理员工",
-        role: "database_admin",
+        role: "数据库变更与恢复验证",
         description: "负责生产数据库变更和恢复验证",
-        risk_level: "high",
+        risk_level: "medium",
         avatar_asset_id: avatarAsset.id,
         role_profile: {
-          employee_type: "database_admin",
-          role: "database_admin",
-          title: "数据库管理员",
+          employee_type: "custom_agent",
+          role: "数据库变更与恢复验证",
+          title: "custom_agent",
         },
         capability_selection: {
           enabled_skills: [],
@@ -833,6 +832,7 @@ describe("CreateEmployeeView", () => {
 
     await enterBlankCustomConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -1032,7 +1032,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeEnabled();
   });
 
-  it("describes provider choice as a preference without promising runtime binding", async () => {
+  it("describes provider type as required without promising runtime binding", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeCount: 2 }));
 
     await enterConfiguration(screen);
@@ -1041,7 +1041,8 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByRole("heading", { name: "Provider 偏好" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "Provider 类型" })).toBeVisible();
+    expect(document.body.textContent).toContain("数字员工必须选择一个 Provider 类型");
     expect(document.body.textContent).toContain("Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。");
     expect(document.body.textContent).not.toContain("运行绑定");
     expect(document.body.textContent).not.toContain("绑定到 Runtime");
@@ -1049,7 +1050,7 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("Runtime placement");
 
     await enterConfirmCreation(screen);
-    await expect.element(screen.getByText("Provider 偏好", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Provider 类型", { exact: true })).toBeVisible();
     expect(document.body.textContent).toContain("Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。");
     expect(document.body.textContent).not.toContain("运行绑定");
     expect(document.body.textContent).not.toContain("绑定到 Runtime");
@@ -1082,7 +1083,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "进入配置预检" }));
     await expect.element(screen.getByRole("heading", { name: "配置预检" })).toBeVisible();
 
-    await expect.element(screen.getByText("Provider 偏好预览", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Provider 类型预览", { exact: true })).toBeVisible();
     await expect
       .element(screen.getByText("0/1 个 Provider 候选当前在线；创建时不绑定 Runtime 节点"))
       .toBeVisible();
