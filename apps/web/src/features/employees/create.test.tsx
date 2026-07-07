@@ -541,7 +541,7 @@ describe("CreateEmployeeView", () => {
     expect(tableText).toContain("MCP 1");
     expect(tableText).toContain("Provider 1");
     expect(tableText).toContain("外部能力 1");
-    expect(tableText).toContain("high");
+    expect(tableText).toContain("高");
     expect(tableText).not.toContain("推荐能力");
     expect(tableText).not.toContain("风险触发");
     expect(tableText).not.toContain("运行可用性");

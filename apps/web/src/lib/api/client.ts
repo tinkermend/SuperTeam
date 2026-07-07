@@ -160,10 +160,10 @@ async function readErrorDetail(response: Response): Promise<ParsedErrorDetail> {
     try {
       const parsed = JSON.parse(body) as { code?: unknown; error?: unknown; message?: unknown };
       const detail =
-        typeof parsed.error === "string" && parsed.error
-          ? parsed.error
-          : typeof parsed.message === "string" && parsed.message
-            ? parsed.message
+        typeof parsed.message === "string" && parsed.message
+          ? parsed.message
+          : typeof parsed.error === "string" && parsed.error
+            ? parsed.error
             : body;
       return {
         detail,

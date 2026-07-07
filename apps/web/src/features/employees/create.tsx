@@ -839,7 +839,7 @@ function TemplateSelectionPanel({
           >
             {riskOptions.map((risk) => (
               <option key={risk} value={risk}>
-                {risk === "all" ? "全部风险" : risk}
+                {risk === "all" ? "全部风险" : riskLabel(risk)}
               </option>
             ))}
           </select>
@@ -910,7 +910,7 @@ function TemplateSelectionPanel({
               <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
               <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
               <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
-              <Badge variant="secondary">风险 {draft.risk_level || "medium"}</Badge>
+              <Badge variant="secondary">风险 {riskLabel(draft.risk_level || "medium")}</Badge>
             </div>
             <p className="mt-2 text-sm text-v3-ink-3">
               没有合适的模板？
@@ -1109,7 +1109,7 @@ function PreflightStep({
               <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
             ) : null}
             <InlineSummary label="职责定位" value={draft.role || selectedType?.default_role || "未生成"} />
-            <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+            <InlineSummary label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
             <InlineSummary
               label="默认注入"
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
@@ -1237,12 +1237,15 @@ function CreationPreflightPanel({
             value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : (selectedType?.label ?? draft.employee_type) || "未选择"}
           />
           <SummaryItem label="职责定位" value={draft.role || "未填写"} />
-          <SummaryItem label="风险等级" value={draft.risk_level || "medium"} />
+          <SummaryItem label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           <SummaryItem
             label="能力选择"
             value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
           />
-          <SummaryItem label="Provider 类型" value={draft.provider_type || `${providers.length} 个候选`} />
+          <SummaryItem
+            label="Provider 类型"
+            value={draft.provider_type ? providerLabel(draft.provider_type) : `${providers.length} 个候选`}
+          />
         </div>
       </GlassCard>
 
@@ -1307,7 +1310,7 @@ function ConfirmCreationStep({
             ) : null}
             <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
             <InlineSummary label="职责定位" value={draft.role || "未填写"} />
-            <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+            <InlineSummary label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           </div>
         </section>
 
@@ -1318,7 +1321,10 @@ function ConfirmCreationStep({
               label="能力选择"
               value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
             />
-            <InlineSummary label="Provider 类型" value={draft.provider_type || "未选择"} />
+            <InlineSummary
+              label="Provider 类型"
+              value={draft.provider_type ? providerLabel(draft.provider_type) : "未选择"}
+            />
             <InlineSummary label="Runtime 节点" value="会在项目运行准备中决定，不在创建时绑定到员工。" />
             <InlineSummary
               label="每日预算"
@@ -1619,9 +1625,16 @@ function GovernanceStep({
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <SummaryItem label="团队治理版本" value={teamConfig ? `#${teamConfig.revision_number} · ${teamConfig.status}` : "未加载"} />
-        <SummaryItem label="风险等级" value={draft.risk_level} />
+        <SummaryItem label="风险等级" value={riskLabel(draft.risk_level)} />
         <SummaryItem label="允许员工类型" value={`${teamConfig?.allowed_employee_types.length ?? 0} 项`} />
-        <SummaryItem label="允许 Provider" value={(teamConfig?.allowed_provider_types ?? []).join(", ") || "暂无"} />
+        <SummaryItem
+          label="允许 Provider"
+          value={
+            (teamConfig?.allowed_provider_types ?? [])
+              .map((value) => providerLabel(normalizeProviderValue(value)))
+              .join(", ") || "暂无"
+          }
+        />
         <SummaryItem label="上下文策略" value={`覆盖项 ${Object.keys(draft.context_policy_override).length} 个`} />
         <SummaryItem label="审批策略" value={String(draft.approval_policy_override.min_risk_for_human ?? "按团队默认")} />
       </div>
@@ -1808,7 +1821,9 @@ function ProviderOption({
     >
       <RadioGroupItem value={providerType} />
       <span className="min-w-0 flex-1">
-        <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>{providerType}</span>
+        <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
+          {providerLabel(providerType)}
+        </span>
         <span className="mt-1 block text-v3-ink-3">
           {preview.availableCount > 0
             ? preview.availableCount === preview.matchingCount
@@ -1932,18 +1947,28 @@ function providerCandidates(options: DigitalEmployeeCreateOptions | undefined) {
   const governanceValues = [
     ...(options?.team_config.allowed_provider_types ?? []),
     ...(options?.capability_options.provider_types ?? []),
-  ].filter((value) => value.trim());
+  ]
+    .map(normalizeProviderValue)
+    .filter((value) => value && canonicalProviderTypes.includes(value as (typeof canonicalProviderTypes)[number]));
   const governanceSet = new Set(governanceValues);
-  const runtimeValues = options?.runtime_provider_options
-    .map((option) => option.provider_type)
-    .filter((value) => value.trim() && (governanceSet.size === 0 || governanceSet.has(value))) ?? [];
+  const runtimeValues =
+    options?.runtime_provider_options
+      .map((option) => normalizeProviderValue(option.provider_type))
+      .filter(
+        (value) =>
+          value &&
+          canonicalProviderTypes.includes(value as (typeof canonicalProviderTypes)[number]) &&
+          (governanceSet.size === 0 || governanceSet.has(value)),
+      ) ?? [];
   const values = [...governanceValues, ...runtimeValues];
-  return Array.from(new Set(values.filter((value) => value.trim()))).sort((left, right) => left.localeCompare(right));
+  return Array.from(new Set(values)).sort(
+    (left, right) => canonicalProviderTypes.indexOf(left as any) - canonicalProviderTypes.indexOf(right as any),
+  );
 }
 
 function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefined, providerType: string) {
   const matchingOptions = (options?.runtime_provider_options ?? []).filter(
-    (option) => option.provider_type === providerType,
+    (option) => normalizeProviderValue(option.provider_type) === providerType,
   );
   return {
     matchingCount: matchingOptions.length,
@@ -1967,8 +1992,36 @@ const riskTone: Record<string, V3Tone> = {
   low: "ok",
 };
 
+const riskLabels: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  critical: "严重",
+};
+
+const providerLabels: Record<string, string> = {
+  codex: "Codex",
+  opencode: "OpenCode",
+  "claude-code": "Claude Code",
+};
+
+const canonicalProviderTypes = ["codex", "opencode", "claude-code"] as const;
+
+function riskLabel(value: string) {
+  return riskLabels[value] ?? value;
+}
+
+function providerLabel(value: string) {
+  return providerLabels[value] ?? value;
+}
+
+function normalizeProviderValue(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "claude_code" ? "claude-code" : normalized;
+}
+
 function RiskPill({ risk }: { risk: string }) {
-  return <StatusPill tone={riskTone[risk] ?? "mute"}>{risk}</StatusPill>;
+  return <StatusPill tone={riskTone[risk] ?? "mute"}>{riskLabel(risk)}</StatusPill>;
 }
 
 function checkTone(status: string): V3Tone {
