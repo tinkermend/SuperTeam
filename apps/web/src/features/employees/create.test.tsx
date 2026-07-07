@@ -1123,6 +1123,41 @@ describe("CreateEmployeeView", () => {
     expect(body).not.toHaveProperty("runtime_node_id");
   });
 
+  it("shows Chinese risk labels and canonical Provider labels while submitting enum values", async () => {
+    const fetcher = createWizardFetcher({
+      sameRuntimeNodeProviders: true,
+      expectedProviderType: "claude-code",
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("高");
+    expect(document.body.textContent).not.toContain("风险 high");
+    await userEvent.selectOptions(screen.getByLabelText("风险等级"), "critical");
+    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("严重");
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByLabelText("Codex")).toBeVisible();
+    await expect.element(screen.getByLabelText("Claude Code")).toBeVisible();
+    expect(screen.getByLabelText("claude_code").query()).toBeNull();
+    await userEvent.click(screen.getByLabelText("Claude Code"));
+
+    await enterConfirmCreation(screen);
+    await expect.element(screen.getByText("严重", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Claude Code", { exact: true })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.risk_level).toBe("critical");
+    expect(body.provider_type).toBe("claude-code");
+  });
+
   it("submits the selected provider when one runtime exposes multiple providers", async () => {
     const fetcher = createWizardFetcher({
       expectedProviderType: "claude-code",

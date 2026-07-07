@@ -1282,10 +1282,10 @@ function IdentityStep({
             onChange={(event) => onUpdate({ risk_level: event.target.value })}
             value={draft.risk_level}
           >
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="critical">critical</option>
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+            <option value="critical">严重</option>
           </select>
         </Field>
       </div>
@@ -1653,11 +1653,12 @@ function ProviderOption({
         onSelectProvider(providerType);
       }}
     >
-      <RadioGroupItem value={providerType} />
+      <RadioGroupItem aria-label={providerLabel(providerType)} value={providerType} />
       <span className="min-w-0 flex-1">
         <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
           {providerLabel(providerType)}
         </span>
+        <span className="mt-0.5 block font-mono text-[11px] text-v3-ink-3">{providerType}</span>
         <span className="mt-1 block text-v3-ink-3">
           {preview.availableCount > 0
             ? preview.availableCount === preview.matchingCount
