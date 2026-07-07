@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GlassCard } from "@/components/superteam";
 import type {
   Project,
   ProjectDemandSourceType,
@@ -115,7 +116,7 @@ export function TaskLaunchForm({
         </p>
       </div>
 
-      <div className="tl-glass">
+      <GlassCard>
         <div className="tl-cmd">
           <div className="tl-cmd-top">
             <div className="tl-cmd-t">
@@ -204,7 +205,7 @@ export function TaskLaunchForm({
             <SendHorizontal className="size-4" aria-hidden />
           </button>
         </div>
-      </div>
+      </GlassCard>
 
       <PromptTemplateDialog
         open={templateDialogOpen}

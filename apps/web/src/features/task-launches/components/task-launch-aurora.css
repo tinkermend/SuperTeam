@@ -62,17 +62,8 @@
   line-height: 1.6;
 }
 
-/* 玻璃外壳 */
-.tl-glass {
-  background: var(--v3-aurora-glass);
-  border: 1px solid var(--v3-aurora-glass-border);
-  border-radius: var(--v3-aurora-r-card);
-  backdrop-filter: blur(22px) saturate(140%);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 30px 70px -28px rgba(36, 58, 140, 0.45);
-  overflow: hidden;
-}
+/* 玻璃外壳由共享基元 <GlassCard>（.v3-glass）承载，见 DESIGN.md「沉浸极光玻璃」。
+   本文件只保留任务发起页专属布局（.tl-cmd/.tl-params/.tl-actions 等）。 */
 
 /* 中枢指令区 */
 .tl-cmd {

@@ -417,7 +417,7 @@ describe("TaskLaunchView", () => {
     expect(getByLabelText("优先级")).toBeTruthy();
     expect(getByLabelText("风险级别")).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
-    expect(document.querySelector(".tl-glass")).toBeTruthy();
+    expect(document.querySelector(".v3-glass")).toBeTruthy();
     expect(document.querySelector(".tl-btn-send")).toBeTruthy();
 
     expect(queryByText("Command Center")).toBeNull();

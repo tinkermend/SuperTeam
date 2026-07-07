@@ -74,6 +74,16 @@ function SoftCard({
   );
 }
 
+/**
+ * Tier A 玻璃卡（Glass Card）：沉浸极光玻璃外壳，仅用于 DESIGN.md 定义的 Tier A
+ * 入口/创建画布（任务发起、技能上传、员工创建、登录/onboarding）。样式单一来源为
+ * index.css 的 `.v3-glass`（取自 --v3-aurora-* token），禁止在 Tier B/C 数据/审计面使用。
+ * 玻璃壳装实底内核：内部表单输入、逐行数据仍用实底 SoftCard/WorkSurface，不给每行套玻璃。
+ */
+function GlassCard({ className, ...props }: ComponentProps<"div">) {
+  return <div data-slot="v3-glass-card" className={cn("v3-glass", className)} {...props} />;
+}
+
 /** squircle 语义图标芯片：实底柔色背景 + 同色图标。 */
 function IconTile({
   className,
@@ -842,6 +852,7 @@ function V3StateSurface({
 
 export {
   SoftCard,
+  GlassCard,
   IconTile,
   StatusPill,
   V3MetricCard,

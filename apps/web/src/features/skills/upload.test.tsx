@@ -140,9 +140,6 @@ describe("SkillUploadView", () => {
     await userEvent.fill(screen.getByLabelText("CLI 依赖"), "gh,node");
     await userEvent.fill(screen.getByLabelText("环境变量"), "GH_TOKEN,OPENAI_API_KEY");
 
-    await expect.element(screen.getByText("ZIP 已选择")).toBeVisible();
-    await expect.element(screen.getByText("包含 SKILL.md")).toBeVisible();
-    await expect.element(screen.getByText("服务端发布校验")).toBeVisible();
     expect(document.body.textContent).not.toContain("发布链路");
     expect(document.body.textContent).not.toContain("上传、解析、资料补全、依赖检查与最终动作收束到同一条链路。");
     expect(document.body.textContent).not.toContain("Ready");

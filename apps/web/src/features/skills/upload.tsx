@@ -1,14 +1,11 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type DragEvent as ReactDragEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   BadgeCheck,
-  CheckCircle2,
-  CircleCheck,
   FileArchive,
   Info,
   PackageCheck,
-  Pencil,
   Rocket,
   ShieldCheck,
   Tag,
@@ -21,9 +18,9 @@ import {
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
 import {
+  GlassCard,
   IconTile,
   SignatureCard,
-  SoftCard,
   StatusPill,
   V3Button,
   type V3Tone,
@@ -51,6 +48,13 @@ const riskOptions = [
   { label: "中", value: "medium" },
   { label: "高", value: "high" },
 ] as const;
+
+// 选中态按风险语义着色：低=绿(ok)、中=橙(warn)、高=红(danger)，与右侧摘要 StatusPill tone 一致。
+const riskActiveClass: Record<string, string> = {
+  low: "bg-v3-ok",
+  medium: "bg-v3-warn",
+  high: "bg-v3-danger",
+};
 
 export function SkillUploadPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -127,7 +131,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
           />
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-            <SoftCard className="min-w-0 overflow-hidden py-0">
+            <GlassCard className="min-w-0">
               <CardContent className="p-0">
                 <section className="p-5">
                   <SectionTitle
@@ -182,10 +186,11 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <div className="grid h-10 grid-cols-3 rounded-xl bg-v3-card-soft p-1" role="group" aria-label="风险等级">
                       {riskOptions.map((option) => (
                         <button
+                          aria-pressed={riskLevel === option.value}
                           className={cn(
                             "rounded-[10px] text-sm font-semibold transition-colors",
                             riskLevel === option.value
-                              ? "bg-v3-brand text-white shadow-v3"
+                              ? cn(riskActiveClass[option.value], "text-white shadow-v3")
                               : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink",
                           )}
                           key={option.value}
@@ -199,20 +204,17 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </FormRow>
 
                   <FormRow
-                    help="用于检索与分类"
+                    help="回车或逗号分隔，用于检索与分类"
                     htmlFor="skill-upload-tags"
                     label="标签"
                   >
-                    <div className="space-y-2">
-                      <Input
-                        className="h-10"
-                        id="skill-upload-tags"
-                        onChange={(event) => setTags(event.target.value)}
-                        placeholder="文档生成,API,OpenAPI"
-                        value={tags}
-                      />
-                      <TokenPreview emptyText="暂无标签" items={tagItems} onRemove={(item) => setTags(removeCommaItem(tags, item))} />
-                    </div>
+                    <DependencyInput
+                      emptyText="未添加标签"
+                      id="skill-upload-tags"
+                      items={tagItems}
+                      onChange={setTags}
+                      placeholder="输入标签后回车或逗号分隔"
+                    />
                   </FormRow>
                 </section>
 
@@ -238,7 +240,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </FormRow>
 
                   <FormRow
-                    help="请输入或以逗号分隔"
+                    help="声明该技能需要的变量名；值由数字员工配置并在运行时注入"
                     htmlFor="skill-upload-runtime-env"
                     label="环境变量"
                   >
@@ -247,7 +249,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                       id="skill-upload-runtime-env"
                       items={runtimeEnvItems}
                       onChange={setRuntimeEnv}
-                      placeholder="输入变量名后回车或逗号分隔"
+                      placeholder="输入变量名后回车，如 GH_TOKEN"
                     />
                   </FormRow>
 
@@ -257,24 +259,12 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </div>
                 </section>
               </CardContent>
-            </SoftCard>
+            </GlassCard>
 
             <aside className="min-w-0">
-              <SoftCard className="sticky top-4 py-0">
+              <GlassCard className="sticky top-4">
                 <CardContent className="flex flex-col gap-4 p-5 text-sm">
                   <h2 className="text-base font-semibold tracking-normal">发布摘要</h2>
-                  <div className={cn(
-                    "flex items-start gap-3 rounded-md border p-3",
-                    canPublish
-                      ? "border-v3-ok/30 bg-v3-ok-soft text-v3-ok"
-                      : "border-border bg-muted/40 text-muted-foreground",
-                  )}>
-                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-v3-ok" />
-                    <div>
-                      <p className="text-lg font-semibold tracking-normal">{canPublish ? "可发布" : "待完善"}</p>
-                      <p className="mt-1 text-xs">{canPublish ? "元数据与依赖声明已就绪" : "请选择 zip 包并填写技能中文名称"}</p>
-                    </div>
-                  </div>
 
                   <div className="space-y-3 py-1">
                     <SummaryRow icon={<FileArchive />} label="归档包" value={file ? `${file.name}（${formatBytes(file.size)}）` : "未选择"} />
@@ -301,18 +291,25 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                       <AlertDescription>{upload.error.message}</AlertDescription>
                     </Alert>
                   ) : null}
-                  <V3Button
-                    data-skill-upload-publish
-                    disabled={!canPublish || upload.isPending}
-                    className="h-11 text-base"
-                    onClick={() => upload.mutate()}
-                    type="button"
-                  >
-                    <Rocket data-icon="inline-start" />
-                    发布到技能市场
-                  </V3Button>
+                  <div className="flex flex-col gap-2.5 border-t pt-4">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className={cn("size-1.5 shrink-0 rounded-full", canPublish ? "bg-v3-ok" : "bg-v3-ink-3")} />
+                      <span className="font-semibold text-v3-ink">{canPublish ? "可发布" : "待完善"}</span>
+                      <span className="text-v3-ink-3">{canPublish ? "元数据与依赖声明已就绪" : "请选择 zip 包并填写技能中文名称"}</span>
+                    </div>
+                    <V3Button
+                      data-skill-upload-publish
+                      disabled={!canPublish || upload.isPending}
+                      className="h-11 text-base"
+                      onClick={() => upload.mutate()}
+                      type="button"
+                    >
+                      <Rocket data-icon="inline-start" />
+                      发布到技能市场
+                    </V3Button>
+                  </div>
                 </CardContent>
-              </SoftCard>
+              </GlassCard>
             </aside>
           </div>
         </div>
@@ -336,6 +333,25 @@ function PackageStatusBand({
   onFileChange: (file: File | null) => void;
   packageDisplayName: string;
 }) {
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const clearFile = () => {
+    onFileChange(null);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  };
+
+  const acceptDroppedFile = (event: ReactDragEvent) => {
+    event.preventDefault();
+    setDragActive(false);
+    const dropped = event.dataTransfer.files?.[0];
+    if (dropped) {
+      onFileChange(dropped);
+    }
+  };
+
   const releaseSteps = [
     {
       description: file ? file.name : "等待 ZIP",
@@ -365,110 +381,134 @@ function PackageStatusBand({
     },
   ];
 
+  const zipTile = (
+    <span
+      className="flex size-14 shrink-0 flex-col items-center justify-center rounded-xl text-white shadow-[0_8px_20px_-6px_rgba(47,95,255,0.5)] transition group-hover:scale-[1.03]"
+      style={{ background: "var(--v3-brand-grad)" }}
+    >
+      <FileArchive className="size-5" />
+      <span className="mt-0.5 text-[10px] font-bold tracking-normal">ZIP</span>
+    </span>
+  );
+
+  const fileMeta = (
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-base font-extrabold tracking-tight text-v3-ink">
+        {file?.name ?? "选择技能 zip 包"}
+      </p>
+      <p className="mt-0.5 text-sm text-v3-ink-2">
+        {file ? formatBytes(file.size) : "拖拽 ZIP 到此处，或点击选择，必须包含 SKILL.md"}
+      </p>
+      {file ? (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-v3-ink-2">
+          <span className="text-xs uppercase tracking-wide text-v3-ink-3">包名</span>
+          <p className="truncate text-sm font-semibold text-v3-ink">
+            {packageDisplayName || "选择 zip 后自动生成"}
+          </p>
+          <span className="shrink-0 text-xs text-v3-ink-3">· 自动生成</span>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
-    <SignatureCard className="p-6 lg:p-7">
+    <SignatureCard
+      className={cn(
+        "p-5 transition-shadow",
+        dragActive && "ring-2 ring-v3-brand ring-offset-2 ring-offset-[color:var(--v3-signature-surface)]",
+      )}
+      onDragLeave={() => setDragActive(false)}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragActive(true);
+      }}
+      onDrop={acceptDroppedFile}
+    >
       <Label className="sr-only" htmlFor="skill-upload-file">技能 zip 包</Label>
       <input
         accept=".zip,application/zip"
         className="sr-only"
         id="skill-upload-file"
         onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+        ref={inputRef}
         type="file"
       />
-      <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)] xl:items-center">
-        <div className="flex min-w-0 items-center gap-4">
-          <label
-            className="flex size-[76px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl text-white shadow-[0_10px_24px_-6px_rgba(47,95,255,0.5)] transition hover:scale-[1.03]"
-            htmlFor="skill-upload-file"
-            style={{ background: "var(--v3-brand-grad)" }}
-          >
-            <FileArchive className="size-7" />
-            <span className="mt-1 text-xs font-bold tracking-normal">ZIP</span>
-          </label>
-          <div className="min-w-0">
-            <p className="truncate text-lg font-extrabold tracking-tight text-v3-ink">
-              {file?.name ?? "选择技能 zip 包"}
-            </p>
-            <p className="mt-1 text-sm text-v3-ink-2">
-              {file ? formatBytes(file.size) : "拖拽或点击上传，必须包含 SKILL.md"}
-            </p>
-            <div className="mt-2 flex min-w-0 items-center gap-2 text-v3-ink-2">
-              <span className="text-xs uppercase tracking-wide text-v3-ink-3">包名</span>
-              <p className="truncate text-sm font-semibold text-v3-ink">
-                {packageDisplayName || "选择 zip 后自动生成"}
-              </p>
-              <Pencil className="size-3.5 shrink-0 text-v3-brand" />
+      <div
+        className={cn(
+          "relative flex min-w-0 flex-col gap-3 rounded-xl border border-dashed p-3 transition-colors sm:flex-row sm:items-center",
+          dragActive
+            ? "border-v3-brand bg-v3-brand-soft/50"
+            : "border-v3-line-strong/70 hover:border-v3-brand/60 hover:bg-v3-brand-soft/15",
+        )}
+      >
+        {file ? (
+          <>
+            <label className="group shrink-0 cursor-pointer" htmlFor="skill-upload-file">{zipTile}</label>
+            {fileMeta}
+            <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1.5">
+              <label
+                className="cursor-pointer rounded-lg bg-v3-brand-soft px-2.5 py-1.5 text-xs font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft/80"
+                htmlFor="skill-upload-file"
+              >
+                更换
+              </label>
+              <button
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-v3-ink-3 transition-colors hover:bg-v3-card hover:text-v3-ink"
+                onClick={clearFile}
+                type="button"
+              >
+                移除
+              </button>
             </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-          <SignaturePill done={Boolean(file)} label={file ? "ZIP 已选择" : "等待 ZIP"} />
-          <SignaturePill done={Boolean(file)} label={file ? "包含 SKILL.md" : "需包含 SKILL.md"} />
-          <SignaturePill done label="服务端发布校验" icon={<ShieldCheck className="size-3.5" />} />
-        </div>
+          </>
+        ) : (
+          <label className="group flex min-w-0 flex-1 cursor-pointer items-center gap-4" htmlFor="skill-upload-file">
+            {zipTile}
+            {fileMeta}
+          </label>
+        )}
       </div>
-      <div className="mt-6 border-t border-[color:var(--v3-signature-border)] pt-5">
-        <ol className="grid gap-2 sm:grid-cols-5">
+      <div className="mt-4 border-t border-[color:var(--v3-signature-border)] pt-4">
+        <ol className="flex flex-col gap-3 sm:flex-row sm:gap-0">
           {releaseSteps.map((step, index) => (
             <li
               aria-disabled={step.disabled ? "true" : "false"}
               className={cn(
-                "min-w-0 rounded-xl border p-3",
-                step.disabled
-                  ? "border-v3-line bg-v3-card-soft text-v3-ink-2"
-                  : step.done
-                  ? "border-[color:var(--v3-signature-border)] bg-v3-card text-v3-ink"
-                  : "border-v3-line bg-v3-card-soft text-v3-ink-2",
+                "flex min-w-0 flex-1 flex-col gap-1.5",
+                step.done ? "text-v3-ink" : "text-v3-ink-2",
               )}
               data-release-step={step.label}
               key={step.label}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <span
                   className={cn(
-                    "grid size-6 shrink-0 place-items-center rounded-lg text-xs font-extrabold tabular-nums",
-                    step.disabled
-                      ? "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong"
-                      : step.done
-                      ? "bg-v3-brand text-white"
+                    "grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-extrabold tabular-nums transition-colors",
+                    step.done
+                      ? "bg-v3-brand text-white shadow-v3"
                       : "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong",
                   )}
                 >
                   {index + 1}
                 </span>
-                <span className="truncate text-sm font-bold" data-release-step-title>{step.label}</span>
+                {index < releaseSteps.length - 1 ? (
+                  <span
+                    className={cn(
+                      "hidden h-px flex-1 rounded-full sm:block",
+                      step.done ? "bg-v3-brand/45" : "bg-v3-line",
+                    )}
+                  />
+                ) : null}
               </div>
-              <p className="mt-2 truncate text-xs text-v3-ink-2" data-release-step-description>{step.description}</p>
+              <div className="min-w-0 pr-3">
+                <span className="block truncate text-sm font-bold" data-release-step-title>{step.label}</span>
+                <p className="mt-0.5 truncate text-xs text-v3-ink-2" data-release-step-description>{step.description}</p>
+              </div>
             </li>
           ))}
         </ol>
       </div>
     </SignatureCard>
-  );
-}
-
-function SignaturePill({
-  done,
-  icon,
-  label,
-}: {
-  done: boolean;
-  icon?: ReactNode;
-  label: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold",
-        done
-          ? "bg-v3-brand-soft text-v3-brand-deep ring-1 ring-[color:var(--v3-signature-border)]"
-          : "bg-v3-card-soft text-v3-ink-3",
-      )}
-    >
-      {icon ?? <CircleCheck className="size-3.5" />}
-      {label}
-    </span>
   );
 }
 
@@ -557,11 +597,15 @@ function DependencyInput({
   return (
     <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-v3-line-strong bg-v3-card px-2 py-1.5 focus-within:border-v3-brand focus-within:ring-2 focus-within:ring-v3-brand/25">
       {committedItems.map((item) => (
-        <Badge className="h-7 gap-1 rounded-md border-border/80 bg-background px-2.5 text-sm font-medium shadow-none" key={item} variant="outline">
+        <Badge
+          className="h-7 gap-1 rounded-lg border-transparent bg-v3-brand-soft py-0 pl-2.5 pr-1.5 text-sm font-semibold text-v3-brand-deep shadow-none ring-1 ring-inset ring-[color:var(--v3-signature-border)]"
+          key={item}
+          variant="outline"
+        >
           {item}
           <button
             aria-label={`移除 ${item}`}
-            className="-mr-1 inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="inline-flex size-4 items-center justify-center rounded-full text-v3-brand-deep/60 transition-colors hover:bg-v3-danger hover:text-white"
             onClick={() => removeItem(item)}
             type="button"
           >
@@ -602,41 +646,6 @@ function DependencyInput({
         placeholder={committedItems.length ? placeholder : emptyText}
         value={draft}
       />
-    </div>
-  );
-}
-
-function TokenPreview({
-  emptyText,
-  items,
-  onRemove,
-  prefix,
-}: {
-  emptyText: string;
-  items: string[];
-  onRemove?: (item: string) => void;
-  prefix?: string;
-}) {
-  if (items.length === 0) {
-    return <p className="text-xs text-muted-foreground">{emptyText}</p>;
-  }
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <Badge className="gap-1" key={`${prefix ?? "tag"}-${item}`} variant="outline">
-          {prefix ? `${prefix} ${item}` : item}
-          {onRemove ? (
-            <button
-              aria-label={`移除 ${item}`}
-              className="-mr-1 inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => onRemove(item)}
-              type="button"
-            >
-              <X className="size-3" />
-            </button>
-          ) : null}
-        </Badge>
-      ))}
     </div>
   );
 }
@@ -706,10 +715,6 @@ function splitCommaInput(value: string): string[] {
     }
   }
   return items;
-}
-
-function removeCommaItem(value: string, itemToRemove: string): string {
-  return splitCommaInput(value).filter((item) => item !== itemToRemove).join(",");
 }
 
 function mergeCommaItems(existingItems: string[], incomingItems: string[]): string[] {

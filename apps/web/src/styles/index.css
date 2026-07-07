@@ -81,6 +81,37 @@
     background-image: var(--v3-aurora-bg);
   }
 
+  /* Tier A 玻璃卡（Glass Card）复用基元：半透明玻璃外壳，色值/圆角/模糊全部取自 --v3-aurora-* /
+     --v3-shell-glass-* token（浅/深色自动切换）。仅供 <GlassCard> 组件与 Tier A 入口/创建画布复用，
+     禁止用于 Tier B/C 数据/审计面。规范见 DESIGN.md「沉浸极光玻璃」与 docs/design-system/surfaces.md「玻璃卡」。 */
+  .v3-glass {
+    background: var(--v3-aurora-glass);
+    border: 1px solid var(--v3-aurora-glass-border);
+    border-radius: var(--v3-aurora-r-card);
+    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
+    -webkit-backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 24px 56px -24px rgba(36, 58, 140, 0.35);
+    overflow: hidden;
+  }
+
+  /* 玻璃壳内的二级面板（表单区、摘要卡、预检面板）。逐行数据/输入仍走实底，不套此类。 */
+  .v3-glass-inner {
+    background: var(--v3-aurora-panel);
+    border: 1px solid var(--v3-aurora-panel-border);
+    border-radius: var(--v3-aurora-r-inner);
+  }
+
+  /* 低端设备 / 减弱动态：去掉主导成本的 backdrop-filter，退回接近实底的表面。 */
+  @media (prefers-reduced-motion: reduce) {
+    .v3-glass {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background: var(--v3-card);
+    }
+  }
+
   [data-slot='sidebar-container'] {
     border-inline-end: 1px solid var(--v3-shell-glass-border);
     box-shadow: 12px 0 32px rgba(16, 24, 40, 0.045);

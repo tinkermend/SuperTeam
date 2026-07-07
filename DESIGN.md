@@ -31,12 +31,13 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 ## 容器选择规则（v3 核心不变量）
 
-一套设计语言，两种容器，按“是否需要逐行扫读与比较”二选一，二者共用同一套 token、同一个蓝、同一组语义状态色：
+一套设计语言，三种容器，按"页面 Tier 分类 + 是否需要逐行扫读"选择，三者共用同一套 token、同一个蓝、同一组语义状态色：
 
-- **柔和卡片（Soft Card）**——用于页面外壳、概览指标、有稳定身份的实体目录、详情头卡、signature 强调。圆角白卡 + 弥散阴影，自带“状态 + 关键指标 + 一个主操作”。
+- **柔和卡片（Soft Card）**——用于页面外壳、概览指标、有稳定身份的实体目录、详情头卡、signature 强调。圆角白卡 + 弥散阴影，自带"状态 + 关键指标 + 一个主操作"。
 - **脆数据面（Work Surface / 密集表格）**——用于需要逐行扫读比较的数据本体（任务表、审计流水、日志、证据、diff）。实底高对比、不透明、不模糊、`tabular-nums`、等宽 UUID/路径、sticky 表头、危险行左侧实色 accent bar，配密度切换。
+- **玻璃卡（Glass Card）**——用于 Tier A 入口/创建画布的内容面板。半透明白 + `backdrop-filter` 模糊 + 内侧高光 + 品牌色细边框，透出极光背景底色，营造沉浸质感。仅在 Tier A 页面使用，Tier B/C 禁止。
 
-融合方式：**密集表格被装进同一张柔和白卡里 = 软壳装脆数据**。外壳负责层级与质感，一旦进入逐行内容，背景必须实底高对比。详见 `docs/design-system/surfaces.md` 与 `docs/design-system/data-display.md`。
+融合方式：**密集表格被装进同一张柔和白卡里 = 软壳装脆数据**。外壳负责层级与质感，一旦进入逐行内容，背景必须实底高对比。Tier A 页面可用玻璃卡做外壳，但内部逐行数据仍须退回实底。详见 `docs/design-system/surfaces.md` 与 `docs/design-system/data-display.md`。
 
 ## 沉浸极光玻璃（背景全局 · 玻璃分层）
 
@@ -44,9 +45,9 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 **极光背景底 = 全局（所有页面）。** 由 `<AuroraBackground />`（挂在 authenticated shell 一次）渲染一层置于内容之下的极光背景，配合半透明玻璃侧栏，全站页面共享同一氛围。**它只铺背景**：所有数据卡片、表格、审计/日志等内容表面仍保持不透明高对比，可读性不受影响。
 
-**玻璃沉浸（半透明玻璃卡 + gradient hero）= 仅 Tier A。** 只有单一主动作的入口/创建画布才在极光背景上叠加半透明玻璃卡与 hero；数据页一律用不透明 Soft Card / 脆数据面坐在同一层极光背景上。
+**玻璃沉浸（半透明玻璃卡 + gradient hero）= 仅 Tier A。** 只有单一主动作的入口/创建画布才在极光背景上叠加玻璃卡（Glass Card）与 hero；数据页一律用不透明 Soft Card / 脆数据面坐在同一层极光背景上。Glass Card 的具体样式规范见 `docs/design-system/surfaces.md`「玻璃卡」章节。
 
-- **唯一实现来源**：极光背景、玻璃、色值、圆角全部来自 `apps/web/src/styles/theme.css` 的 `--v3-aurora-*` token（浅/深色自动切换）。全局背景与半透明侧栏在 `apps/web/src/styles/index.css` 统一定义；Tier A 玻璃卡结构收敛在 feature 内的 `*aurora.css`（`.tl-*`）。不得在页面重抄内联极光 CSS 或复制平行色值；扩展必须先改 `--v3-aurora-*` token。
+- **唯一实现来源（三层）**：① **Token**——极光背景、玻璃、色值、圆角全部来自 `apps/web/src/styles/theme.css` 的 `--v3-aurora-*` token（浅/深色自动切换）；② **表面基元**——全局极光背景、半透明侧栏与玻璃卡表面（`.v3-glass` / `.v3-glass-inner`）在 `apps/web/src/styles/index.css` 统一定义，玻璃卡对外只经组件 `GlassCard`（`@/components/superteam`）复用；③ **页面组合**——feature 内的 `*aurora.css`（`.tl-*` 等）**只承载该页专属布局**（如 task-launch 的 `.tl-cmd/.tl-textarea/.tl-params`），不得重新声明玻璃表面或复制色值。扩展玻璃必须先改 `--v3-aurora-*` token，再落到 `.v3-glass` / `GlassCard`；不得在页面重抄内联极光 CSS 或新建平行 `*-glass` 类。
 - **背景底不需要每页开关**：全局背景由共享 shell 组件承载，页面无需任何 per-page class 或 effect；不要再引入 `body.*-page` 之类的每页切换。
 
 玻璃沉浸分层（判定口径只看"这屏是单一主动作入口，还是逐行数据工作台"）：
@@ -90,6 +91,7 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 | 概念 / 场景 | 组件 |
 | --- | --- |
 | 柔和卡片（外壳 / 面板 / 表格容器） | `SoftCard` |
+| 玻璃卡（Tier A 入口/创建画布面板） | `GlassCard`（唯一实现 `.v3-glass`，取自 `--v3-aurora-*`；仅 Tier A，禁用于数据/审计面） |
 | 概览指标卡（大数字 + 标签） | `V3MetricCard` |
 | signature 母题卡（每屏最多一块） | `SignatureCard` |
 | 脆数据面（装密集表格的软壳） | `WorkSurface` |
@@ -133,7 +135,7 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 | 判断整体视觉方向、避免业务内容污染设计规范 | `DESIGN.md`、`docs/design-system/principles.md`、`docs/design-system/visual-language.md` |
 | 落地矩枢平台专属视觉母题、命令中心、状态标签、步骤链 | `docs/design-system/visual-language.md` |
 | 调整颜色、radius、shadow、语义色、Tailwind token | `docs/design-system/tokens.md` |
-| 调整页面背景、Shell 质感、卡片、面板、顶栏半透明手势 | `docs/design-system/surfaces.md` |
+| 调整页面背景、Shell 质感、卡片、面板、顶栏半透明手势、玻璃卡（Tier A） | `docs/design-system/surfaces.md` |
 | 调整按钮、图标按钮、链接、主操作、危险操作 | `docs/design-system/actions.md` |
 | 调整侧栏、顶部栏、菜单、Tabs、导航选中态 | `docs/design-system/navigation.md` |
 | 调整 Input、Textarea、Select、表单布局、字段错误 | `docs/design-system/forms.md` |
@@ -147,7 +149,7 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 
 - `apps/web/src/styles/theme.css`：颜色、radius、shadow 和项目级 token 的代码事实源。
 - `apps/web/src/components/ui/`：shadcn/Radix primitive 层。除全站基础行为外，不承载业务组合组件。
-- `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。
+- `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。Tier A 玻璃卡基元 `GlassCard` 在此，样式单一来源为 `apps/web/src/styles/index.css` 的 `.v3-glass` / `.v3-glass-inner`（取自 `--v3-aurora-*` token）。
 - `docs/design-system/`：可读设计规范。文档指导实现，但不能取代代码 token 的事实源。
 - `docs/prototypes/design-direction-v3/`：v3 视觉方向参考；不是生产组件库，也不是 token 事实源。
 
