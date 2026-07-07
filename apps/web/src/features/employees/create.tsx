@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
@@ -42,8 +42,11 @@ import type {
 import {
   createDigitalEmployee,
   getDigitalEmployeeCreateOptions,
+  isTeamGovernanceConfigRequiredError,
   listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
+import { listTeamMcpBindings } from "@/lib/api/capabilities";
+import { listSkills, listTeamSkills } from "@/lib/api/skills";
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -175,6 +178,38 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher }),
   });
 
+  const visibleSkills = useQuery({
+    queryKey: ["skills", "employee-create-visible"],
+    queryFn: () => listSkills({ baseUrl: apiBaseUrl, fetcher }),
+    staleTime: 30_000,
+  });
+
+  const teamGovernanceBlocked = isTeamGovernanceConfigRequiredError(createOptions.error);
+
+  const teamSkills = useQuery({
+    enabled: Boolean(draft.team_id) && !teamGovernanceBlocked,
+    queryKey: ["team-skills", draft.team_id],
+    queryFn: () => listTeamSkills({ baseUrl: apiBaseUrl, fetcher }, draft.team_id),
+  });
+
+  const teamMcpBindings = useQuery({
+    enabled: Boolean(draft.team_id) && !teamGovernanceBlocked,
+    queryKey: ["team-mcp-bindings", draft.team_id],
+    queryFn: () => listTeamMcpBindings({ baseUrl: apiBaseUrl, fetcher }, draft.team_id),
+  });
+  const inheritedSkillKeys = useMemo(
+    () => new Set((teamSkills.data ?? []).map(skillKey).filter(Boolean)),
+    [teamSkills.data],
+  );
+  const inheritedMcpKeys = useMemo(
+    () => new Set((teamMcpBindings.data ?? []).map(mcpBindingKey).filter(Boolean)),
+    [teamMcpBindings.data],
+  );
+  const visibleSkillKeys = useMemo(
+    () => new Set((visibleSkills.data ?? []).map(skillKey).filter(Boolean)),
+    [visibleSkills.data],
+  );
+
   const selectedType = useMemo(
     () => createOptions.data?.employee_types.find((item) => item.type === draft.employee_type),
     [createOptions.data?.employee_types, draft.employee_type],
@@ -250,7 +285,16 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             title: roleTitle,
           },
           ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
-          capability_selection: draft.capability_selection,
+          capability_selection: {
+            enabled_external_capabilities: draft.capability_selection.enabled_external_capabilities.filter((value) =>
+              (createOptions.data?.capability_options.external_capabilities ?? []).includes(value),
+            ),
+            enabled_mcp_servers: withoutInherited(draft.capability_selection.enabled_mcp_servers, inheritedMcpKeys),
+            enabled_skills: withoutInherited(
+              draft.capability_selection.enabled_skills.filter((value) => visibleSkillKeys.size === 0 || visibleSkillKeys.has(value)),
+              inheritedSkillKeys,
+            ),
+          },
           context_policy_override: draft.context_policy_override,
           approval_policy_override: draft.approval_policy_override,
           budget_policy: budgetPolicyFromDraft(draft),
@@ -306,6 +350,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   function nextStep() {
     const nextErrors = validateStep(currentStep, draft);
+    if (teamGovernanceBlocked) {
+      const blockedErrors = { ...nextErrors, team_id: "该团队尚未启用治理配置" };
+      setErrors(blockedErrors);
+      return;
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
       setStepIndex((current) => Math.min(current + 1, configSteps.length - 1));
@@ -435,7 +484,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工；治理按内置默认（全部允许）。</AlertDescription>
           </Alert>
         ) : null}
-        {createOptions.isError ? (
+        {createOptions.isError && !teamGovernanceBlocked ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>创建选项加载失败</AlertTitle>
             <AlertDescription>{getErrorMessage(createOptions.error)}</AlertDescription>
@@ -521,7 +570,14 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     />
                   ) : null}
                   {!teams.isLoading && !createOptions.isLoading && currentStep === "能力" ? (
-                    <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
+                    <CapabilityStep
+                      draft={draft}
+                      options={createOptions.data}
+                      teamSkills={teamSkills.data}
+                      teamMcpBindings={teamMcpBindings.data}
+                      visibleSkills={visibleSkills.data}
+                      onUpdate={updateDraft}
+                    />
                   ) : null}
                   {!teams.isLoading && !createOptions.isLoading && currentStep === "治理" ? (
                     <GovernanceStep
@@ -546,6 +602,40 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
               {createEmployee.isError ? (
                 <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
+              ) : null}
+              {teamGovernanceBlocked ? (
+                <div className="px-4">
+                  <Alert variant="destructive">
+                    <AlertTitle>团队治理未启用</AlertTitle>
+                    <AlertDescription>
+                      该团队尚未启用治理配置，不能在此团队下创建数字员工。
+                    </AlertDescription>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setDraft((current) => ({
+                            ...current,
+                            team_id: "",
+                            capability_selection: {
+                              ...current.capability_selection,
+                              enabled_skills: [],
+                              enabled_mcp_servers: [],
+                            },
+                          }));
+                        }}
+                      >
+                        先不归属团队创建
+                      </Button>
+                      <Button asChild type="button" variant="outline">
+                        <Link params={{ teamId: draft.team_id }} to="/teams/$teamId">
+                          前往团队治理配置
+                        </Link>
+                      </Button>
+                    </div>
+                  </Alert>
+                </div>
               ) : null}
               <div
                 className="sticky bottom-0 z-10 flex justify-between gap-3 border-t bg-card/95 p-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]"
@@ -1527,13 +1617,34 @@ function AvatarSelection({
 function CapabilityStep({
   draft,
   options,
+  teamMcpBindings,
+  teamSkills,
+  visibleSkills,
   onUpdate,
 }: {
   draft: WizardDraft;
   options?: DigitalEmployeeCreateOptions;
+  teamMcpBindings?: Array<{ server_key?: string; server_name?: string }>;
+  teamSkills?: Array<{ slug?: string; name?: string }>;
+  visibleSkills?: Array<{ slug?: string; name?: string }>;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const capabilityOptions = options?.capability_options;
+  const inheritedSkills = (teamSkills ?? []).map((skill) => ({
+    key: skillKey(skill),
+    label: skill.name || skill.slug || "",
+  }));
+  const inheritedMcpServers = (teamMcpBindings ?? []).map((binding) => ({
+    key: mcpBindingKey(binding),
+    label: binding.server_name || binding.server_key || "",
+  }));
+  const inheritedSkillKeys = new Set(inheritedSkills.map((skill) => skill.key).filter(Boolean));
+  const inheritedMcpKeys = new Set(inheritedMcpServers.map((binding) => binding.key).filter(Boolean));
+  const extensionSkills = withoutInherited(
+    (visibleSkills ?? []).map(skillKey).filter(Boolean),
+    inheritedSkillKeys,
+  );
+  const extensionMcpServers = withoutInherited(capabilityOptions?.mcp_servers ?? [], inheritedMcpKeys);
 
   function toggle(kind: keyof WizardDraft["capability_selection"], value: string) {
     const currentValues = draft.capability_selection[kind];
@@ -1554,17 +1665,39 @@ function CapabilityStep({
         <h2 className="text-lg font-semibold">能力</h2>
         <p className="text-sm text-muted-foreground">按团队治理配置选择技能、MCP Server 和外部能力。</p>
       </div>
+      <div className="rounded-md border bg-muted/20 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold">团队继承能力</h3>
+            <p className="mt-1 text-sm text-muted-foreground">以下能力由团队治理统一继承，当前员工只读使用。</p>
+          </div>
+          <Badge variant="secondary">团队继承</Badge>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <InheritedCapabilityGroup label="技能" values={inheritedSkills.map((skill) => skill.label).filter(Boolean)} />
+          <InheritedCapabilityGroup
+            label="MCP Server"
+            values={inheritedMcpServers.map((binding) => binding.label).filter(Boolean)}
+          />
+        </div>
+      </div>
+      <div className="rounded-md border p-4">
+        <div>
+          <h3 className="text-base font-semibold">员工扩展能力</h3>
+          <p className="mt-1 text-sm text-muted-foreground">仅选择当前员工额外需要的能力，不重复团队继承项。</p>
+        </div>
+        <div className="mt-4 grid gap-5">
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_skills}
         label="技能"
         onToggle={(value) => toggle("enabled_skills", value)}
-        values={capabilityOptions?.skills ?? []}
+        values={extensionSkills}
       />
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_mcp_servers}
         label="MCP Server"
         onToggle={(value) => toggle("enabled_mcp_servers", value)}
-        values={capabilityOptions?.mcp_servers ?? []}
+        values={extensionMcpServers}
       />
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_external_capabilities}
@@ -1572,7 +1705,26 @@ function CapabilityStep({
         onToggle={(value) => toggle("enabled_external_capabilities", value)}
         values={capabilityOptions?.external_capabilities ?? []}
       />
+        </div>
+      </div>
     </div>
+  );
+}
+
+function InheritedCapabilityGroup({ label, values }: { label: string; values: string[] }) {
+  return (
+    <fieldset className="rounded-md border bg-background p-3">
+      <legend className="px-1 text-sm font-medium">{label}</legend>
+      <div className="mt-3 grid gap-2">
+        {values.map((value) => (
+          <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm" key={value}>
+            <span>{value}</span>
+            <Badge variant="secondary">团队继承</Badge>
+          </div>
+        ))}
+        {values.length === 0 ? <p className="text-sm text-muted-foreground">暂无继承项</p> : null}
+      </div>
+    </fieldset>
   );
 }
 
@@ -1601,6 +1753,18 @@ function CapabilityGroup({
       </div>
     </fieldset>
   );
+}
+
+function skillKey(skill: { slug?: string; name?: string }): string {
+  return skill.slug || skill.name || "";
+}
+
+function mcpBindingKey(binding: { server_key?: string; server_name?: string }): string {
+  return binding.server_key || binding.server_name || "";
+}
+
+function withoutInherited(values: string[], inherited: Set<string>): string[] {
+  return values.filter((value) => !inherited.has(value));
 }
 
 function GovernanceStep({
@@ -1860,7 +2024,7 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
     ...current,
     approval_policy_override: typeOption.default_approval_policy ?? {},
     capability_selection: {
-      enabled_external_capabilities: stringList(defaultCapabilitySelection.enabled_external_capabilities),
+      enabled_external_capabilities: [],
       enabled_mcp_servers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
       enabled_skills: stringList(defaultCapabilitySelection.enabled_skills),
     },

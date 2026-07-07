@@ -299,6 +299,7 @@ function createWizardFetcher({
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
+  teamGovernanceMissingForTeamId,
   teams = [team],
 }: {
   expectedCreateBody?: ExpectedCreateBody;
@@ -318,6 +319,7 @@ function createWizardFetcher({
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
+  teamGovernanceMissingForTeamId?: string;
   teams?: Array<typeof team>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -330,7 +332,17 @@ function createWizardFetcher({
 
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
       if (url.searchParams.has("team_id")) {
-        expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
+        const teamId = url.searchParams.get("team_id");
+        expect(teams.map((item) => item.id)).toContain(teamId);
+        if (teamId === teamGovernanceMissingForTeamId) {
+          return jsonResponse(
+            {
+              code: "team_governance_config_required",
+              message: "employee effective config required: active team governance config is required",
+            },
+            422,
+          );
+        }
       }
       return jsonResponse(
         createOptionsFixture({
@@ -353,6 +365,97 @@ function createWizardFetcher({
       return jsonResponse([avatarAsset]);
     }
 
+    if (url.pathname === `/api/v1/teams/${team.id}/skills` && method === "GET") {
+      return jsonResponse([
+        {
+          id: "skill-team-sql-review",
+          tenant_id: "22222222-2222-4222-8222-222222222222",
+          slug: "sql-review",
+          name: "SQL Review",
+          description: "SQL review",
+          version: "1.0.0",
+          source: "internal",
+          risk_level: "medium",
+          icon_key: "database",
+          color_token: "blue",
+          tags: [],
+          archive_object_ref: "skills/sql-review.zip",
+          archive_filename: "sql-review.zip",
+          archive_size_bytes: 1,
+          archive_checksum_sha256: "checksum",
+          archive_file_count: 1,
+          created_by: "user-1",
+          created_by_name: "Admin",
+          team_bindings: [],
+          agent_bindings: [],
+        },
+      ]);
+    }
+
+    if (url.pathname === "/api/v1/skills" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "skill-team-sql-review",
+          tenant_id: "22222222-2222-4222-8222-222222222222",
+          slug: "sql-review",
+          name: "SQL Review",
+          description: "SQL review",
+          version: "1.0.0",
+          source: "internal",
+          risk_level: "medium",
+          icon_key: "database",
+          color_token: "blue",
+          tags: [],
+          archive_object_ref: "skills/sql-review.zip",
+          archive_filename: "sql-review.zip",
+          archive_size_bytes: 1,
+          archive_checksum_sha256: "checksum",
+          archive_file_count: 1,
+          created_by: "user-1",
+          created_by_name: "Admin",
+          team_bindings: [],
+          agent_bindings: [],
+        },
+        {
+          id: "skill-incident-diagnosis",
+          tenant_id: "22222222-2222-4222-8222-222222222222",
+          slug: "incident-diagnosis",
+          name: "Incident Diagnosis",
+          description: "Incident diagnosis",
+          version: "1.0.0",
+          source: "internal",
+          risk_level: "medium",
+          icon_key: "siren",
+          color_token: "amber",
+          tags: [],
+          archive_object_ref: "skills/incident-diagnosis.zip",
+          archive_filename: "incident-diagnosis.zip",
+          archive_size_bytes: 1,
+          archive_checksum_sha256: "checksum-2",
+          archive_file_count: 1,
+          created_by: "user-1",
+          created_by_name: "Admin",
+          team_bindings: [],
+          agent_bindings: [],
+        },
+      ]);
+    }
+
+    if (url.pathname === `/api/v1/teams/${team.id}/mcp-bindings` && method === "GET") {
+      return jsonResponse([
+        {
+          id: "binding-postgres",
+          tenant_id: "22222222-2222-4222-8222-222222222222",
+          team_id: team.id,
+          mcp_server_id: "mcp-postgres",
+          server_key: "postgres",
+          server_name: "Postgres",
+          status: "active",
+          source_scope: "team",
+        },
+      ]);
+    }
+
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
       const body = JSON.parse(String(init?.body));
       const { budget_policy: _budgetPolicy, ...bodyWithoutBudgetPolicy } = body;
@@ -369,11 +472,17 @@ function createWizardFetcher({
           role: "database_admin",
           title: "数据库管理员",
         },
-        capability_selection: {
-          enabled_skills: ["sql-review"],
-          enabled_mcp_servers: ["postgres"],
-          enabled_external_capabilities: ["jira.search"],
-        },
+        capability_selection: expectedTeamId
+          ? {
+              enabled_skills: [],
+              enabled_mcp_servers: [],
+              enabled_external_capabilities: [],
+            }
+          : {
+              enabled_skills: ["sql-review"],
+              enabled_mcp_servers: ["postgres"],
+              enabled_external_capabilities: [],
+            },
         context_policy_override: { max_refs: 8 },
         approval_policy_override: { min_risk_for_human: "high" },
         output_contract_addendum: {},
@@ -715,6 +824,62 @@ describe("CreateEmployeeView", () => {
     });
   });
 
+  it("shows a business blocker when selected team lacks active governance config", async () => {
+    const fetcher = createWizardFetcher({ teams: [team, secondTeam], teamGovernanceMissingForTeamId: secondTeam.id });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    await expect
+      .element(screen.getByText("该团队尚未启用治理配置，不能在此团队下创建数字员工。"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "先不归属团队创建" })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "前往团队治理配置" })).toBeVisible();
+    expect(document.body.textContent).not.toContain("employee effective config required");
+
+    await userEvent.click(screen.getByRole("button", { name: "先不归属团队创建" }));
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
+  });
+
+  it("separates team-inherited capabilities from employee extension selections", async () => {
+    const fetcher = createWizardFetcher({ expectedTeamId: team.id });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "负责数据库变更");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("heading", { name: "团队继承能力" })).toBeVisible();
+    await expect.element(screen.getByText("SQL Review")).toBeVisible();
+    await expect.element(screen.getByText("Postgres")).toBeVisible();
+    await expect
+      .element(screen.getByText("团队继承能力以下能力由团队治理统一继承，当前员工只读使用。团队继承"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "员工扩展能力" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "sql-review" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "incident-diagnosis" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "jira.search" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("Codex"));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: ["incident-diagnosis"],
+      enabled_mcp_servers: [],
+      enabled_external_capabilities: ["jira.search"],
+    });
+  });
+
   it("starts blank-custom configuration without template-injected capabilities", async () => {
     const screen = await renderCreateEmployeeView();
 
@@ -748,7 +913,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "空白自定义员工");
     await userEvent.fill(screen.getByLabelText("职责定位"), "手动配置能力边界");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "能力", exact: true })).toBeVisible();
   });
 
   it("also hides the legacy capability boundary check key from blank-custom preflight", async () => {
@@ -798,7 +963,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
     await userEvent.fill(screen.getByLabelText("名称"), "模板员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "能力", exact: true })).toBeVisible();
   });
 
   it("shows blank-custom source on the selected summary and confirm step", async () => {
@@ -887,7 +1052,7 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "postgres" })).toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -900,7 +1065,7 @@ describe("CreateEmployeeView", () => {
     expect(body.capability_selection).toEqual({
       enabled_skills: ["sql-review"],
       enabled_mcp_servers: ["postgres"],
-      enabled_external_capabilities: ["jira.search"],
+      enabled_external_capabilities: [],
     });
     expect(body.context_policy_override).toEqual({ max_refs: 8 });
     expect(body.approval_policy_override).toEqual({ min_risk_for_human: "high" });
