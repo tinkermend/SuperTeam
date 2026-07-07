@@ -982,6 +982,24 @@ describe("TeamDetailView", () => {
       .not.toBeInTheDocument();
   });
 
+  it("separates digital employees from human management members in overview", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("团队成员与代理"))
+      .not.toBeInTheDocument();
+  });
+
   it("renders detail tabs for the team shell", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -999,7 +1017,8 @@ describe("TeamDetailView", () => {
         .element(screen.getByRole("tab", { name: tab }))
         .toBeVisible();
     }
-    await expect.element(screen.getByText("团队成员与代理")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "创建治理草案" }))
       .toBeVisible();
