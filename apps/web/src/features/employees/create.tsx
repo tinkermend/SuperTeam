@@ -68,7 +68,7 @@ const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
 const BLANK_CUSTOM_TITLE = "自定义身份";
 const canonicalProviderValues = ["claude-code", "codex", "opencode"] as const;
 type CanonicalProviderType = (typeof canonicalProviderValues)[number];
-const providerLabels: Record<string, string> = {
+const providerLabels: Record<CanonicalProviderType, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   opencode: "OpenCode",
@@ -266,7 +266,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher, initialDraft, initialF
           provider_type: candidateProviders[0],
         };
       }
-      if (current.provider_type && !candidateProviders.includes(current.provider_type)) {
+      if (current.provider_type && !isCanonicalProviderType(current.provider_type, candidateProviders)) {
         return { ...current, provider_type: "", runtime_binding: "", runtime_node_id: "" };
       }
       return current;
@@ -1977,9 +1977,9 @@ function ProviderOption({
   options,
   providerType,
 }: {
-  onSelectProvider: (providerType: string) => void;
+  onSelectProvider: (providerType: CanonicalProviderType) => void;
   options?: DigitalEmployeeCreateOptions;
-  providerType: string;
+  providerType: CanonicalProviderType;
 }) {
   const preview = providerDispatchPreview(options, providerType);
 
@@ -2123,16 +2123,17 @@ function providerCandidates(options: DigitalEmployeeCreateOptions | undefined) {
   const governanceSet = new Set(governanceValues);
   const runtimeValues = options?.runtime_provider_options
     .map((option) => canonicalizeProviderType(option.provider_type))
-    .filter(
-      (value): value is CanonicalProviderType => Boolean(value) && (governanceSet.size === 0 || governanceSet.has(value)),
-    ) ?? [];
+    .filter((value): value is CanonicalProviderType => {
+      if (!value) return false;
+      return governanceSet.size === 0 || governanceSet.has(value);
+    }) ?? [];
   const values = [...governanceValues, ...runtimeValues];
   return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
 }
 
-function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefined, providerType: string) {
+function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefined, providerType: CanonicalProviderType) {
   const matchingOptions = (options?.runtime_provider_options ?? []).filter(
-    (option) => option.provider_type === providerType,
+    (option) => canonicalizeProviderType(option.provider_type) === providerType,
   );
   return {
     matchingCount: matchingOptions.length,
@@ -2150,6 +2151,10 @@ function canonicalizeProviderType(providerType: string): CanonicalProviderType |
   if (!trimmed) return "";
   if (trimmed === "claude_code") return "claude-code";
   return canonicalProviderValues.includes(trimmed as CanonicalProviderType) ? (trimmed as CanonicalProviderType) : "";
+}
+
+function isCanonicalProviderType(value: string, candidates: CanonicalProviderType[]): value is CanonicalProviderType {
+  return candidates.includes(value as CanonicalProviderType);
 }
 
 function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {

@@ -1459,6 +1459,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeVisible();
     await expect.element(screen.getByRole("radio", { name: "OpenCode" })).toBeVisible();
     await expect.element(screen.getByRole("radio", { name: "Claude Code" })).toBeVisible();
+    await expect.element(screen.getByText("1 个 Runtime 节点候选会在项目运行准备中评估")).toBeVisible();
     expect(screen.getByLabelText("claude_code").query()).toBeNull();
     expect(document.body.textContent).not.toContain("claude_code");
     expect(document.body.textContent).not.toContain("anthropic");
