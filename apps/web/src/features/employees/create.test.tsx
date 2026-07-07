@@ -784,6 +784,7 @@ describe("CreateEmployeeView", () => {
     expect(screen.getByLabelText("员工类型").query()).toBeNull();
     expect(screen.getByLabelText("描述").query()).toBeNull();
     expect(document.body.textContent).toContain("自定义身份");
+    expect(document.body.textContent).not.toContain("custom_agent");
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("");
   });
 
@@ -945,6 +946,19 @@ describe("CreateEmployeeView", () => {
     expect(body.metadata).toBeUndefined();
   });
 
+  it("renders governance defaults with Chinese risk labels", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("审批策略")).toBeVisible();
+    expect(document.body.textContent).toContain("高");
+    expect(document.body.textContent).not.toContain("high");
+  });
+
   it("excludes 团队继承能力 from submitted 员工扩展能力", async () => {
     const fetcher = createWizardFetcher({
       teamInheritedCapabilitySelection: {
@@ -975,6 +989,44 @@ describe("CreateEmployeeView", () => {
       enabled_mcp_servers: [],
       enabled_external_capabilities: [],
     });
+  });
+
+  it("does not expose inherited capabilities as editable employee extensions", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        teamInheritedCapabilitySelection: {
+          team_inherited_skills: ["sql-review"],
+          team_inherited_mcp_servers: ["postgres"],
+          team_inherited_external_capabilities: ["jira.search"],
+        },
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "sql-review" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "jira.search" }).query()).toBeNull();
+  });
+
+  it("shows provider choices without exposing canonical provider values", async () => {
+    const screen = await renderCreateEmployeeView(createWizardFetcher({ sameRuntimeNodeProviders: true }));
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByLabelText("Codex")).toBeVisible();
+    await expect.element(screen.getByLabelText("Claude Code")).toBeVisible();
+    expect(document.body.textContent).not.toContain("codex");
+    expect(document.body.textContent).not.toContain("claude_code");
+    expect(document.body.textContent).not.toContain("claude-code");
   });
 
   it("supports creating a team-less digital employee when the user selects no team", async () => {

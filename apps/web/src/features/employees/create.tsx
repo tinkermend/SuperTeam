@@ -931,10 +931,7 @@ function TemplateSelectionPanel({
               <Badge variant="secondary">风险 {riskLabel(draft.risk_level || "medium")}</Badge>
             </div>
             <p className="mt-2 text-sm text-v3-ink-3">
-              没有合适的模板？
-              <button className="ml-2 cursor-not-allowed font-medium text-v3-ink-3" disabled type="button">
-                选择空白自定义（暂未开放）
-              </button>
+              没有合适的模板？可在左侧选择空白自定义。
             </p>
           </div>
           <V3Button disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
@@ -1329,7 +1326,7 @@ function IdentityStep({
           {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
         </div>
         <div className="mt-1 text-v3-ink-3">
-          {isBlankCustom ? "系统将使用内部 custom_agent 治理基类，用户无需手动配置类型。" : selectedType?.description}
+          {isBlankCustom ? "从空白配置开始，仅保留必要治理基线，后续按职责逐项补齐。" : selectedType?.description}
         </div>
       </div>
       <AvatarSelection
@@ -1392,6 +1389,14 @@ function CapabilityStep({
 }) {
   const capabilityOptions = options?.capability_options;
   const inheritedCapabilities = inheritedCapabilitySelection(options);
+  const extensionCapabilityOptions = {
+    external_capabilities: withoutValues(
+      capabilityOptions?.external_capabilities ?? [],
+      inheritedCapabilities.enabled_external_capabilities,
+    ),
+    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.enabled_mcp_servers),
+    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.enabled_skills),
+  };
 
   function toggle(kind: keyof WizardDraft["capability_selection"], value: string) {
     const currentValues = draft.capability_selection[kind];
@@ -1429,19 +1434,19 @@ function CapabilityStep({
         checkedValues={draft.capability_selection.enabled_skills}
         label="技能"
         onToggle={(value) => toggle("enabled_skills", value)}
-        values={capabilityOptions?.skills ?? []}
+        values={extensionCapabilityOptions.skills}
       />
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_mcp_servers}
         label="MCP Server"
         onToggle={(value) => toggle("enabled_mcp_servers", value)}
-        values={capabilityOptions?.mcp_servers ?? []}
+        values={extensionCapabilityOptions.mcp_servers}
       />
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_external_capabilities}
         label="外部能力"
         onToggle={(value) => toggle("enabled_external_capabilities", value)}
-        values={capabilityOptions?.external_capabilities ?? []}
+        values={extensionCapabilityOptions.external_capabilities}
       />
     </div>
   );
@@ -1519,7 +1524,10 @@ function GovernanceStep({
           }
         />
         <SummaryItem label="上下文策略" value={`覆盖项 ${Object.keys(draft.context_policy_override).length} 个`} />
-        <SummaryItem label="审批策略" value={String(draft.approval_policy_override.min_risk_for_human ?? "按团队默认")} />
+        <SummaryItem
+          label="审批策略"
+          value={approvalPolicySummary(draft.approval_policy_override.min_risk_for_human)}
+        />
       </div>
       <Field label="每日 Token 预算上限" error={errors.daily_token_limit}>
         <Input
@@ -1537,7 +1545,9 @@ function GovernanceStep({
       <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
         <div className="text-sm font-medium text-v3-ink">创建摘要</div>
         <div className="mt-2 flex flex-wrap gap-2">
-          <Badge variant="secondary">{selectedType?.label ?? draft.employee_type}</Badge>
+          <Badge variant="secondary">
+            {draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : selectedType?.label ?? draft.employee_type}
+          </Badge>
           <Badge variant="secondary">{draft.role}</Badge>
           <Badge variant="secondary">技能 {draft.capability_selection.enabled_skills.length}</Badge>
           <Badge variant="secondary">MCP {draft.capability_selection.enabled_mcp_servers.length}</Badge>
@@ -1707,7 +1717,6 @@ function ProviderOption({
         <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
           {providerLabel(providerType)}
         </span>
-        <span className="mt-0.5 block font-mono text-[11px] text-v3-ink-3">{providerType}</span>
         <span className="mt-1 block text-v3-ink-3">
           {preview.availableCount > 0
             ? preview.availableCount === preview.matchingCount
@@ -1954,6 +1963,11 @@ function riskLabel(value: string) {
 
 function providerLabel(value: string) {
   return providerLabels[value] ?? value;
+}
+
+function approvalPolicySummary(value: unknown) {
+  const risk = stringValue(value);
+  return risk ? riskLabel(risk) : "按团队默认";
 }
 
 function normalizeProviderValue(value: string) {
