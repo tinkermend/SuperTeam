@@ -48,6 +48,7 @@ import type {
 import {
   createDigitalEmployee,
   getDigitalEmployeeCreateOptions,
+  isTeamGovernanceConfigRequiredError,
   listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
 import { listTeams } from "@/lib/api/teams";
@@ -272,6 +273,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const currentStep = configSteps[stepIndex];
   const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
   const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
+  const teamGovernanceBlocker = teamGovernanceBlockerMessage(createOptions.error);
+  const customAgentTeamBlocker = customAgentTeamBlockerMessage(draft, createOptions.data);
+  const configurationBlocked = Boolean(teamGovernanceBlocker || customAgentTeamBlocker);
 
   function updateDraft(patch: Partial<WizardDraft>) {
     if (flowStep === "configure") {
@@ -302,6 +306,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function nextStep() {
+    if (configurationBlocked) {
+      setErrors({});
+      setStepIndex(0);
+      return;
+    }
     const nextErrors = validateStep(currentStep, draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -310,6 +319,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function submit() {
+    if (configurationBlocked) {
+      setFlowStep("configure");
+      setStepIndex(0);
+      return;
+    }
     const nextErrors = validateDraftForCreate(draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -335,6 +349,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function enterConfirmCreation() {
+    if (configurationBlocked) {
+      setFlowStep("configure");
+      setStepIndex(0);
+      return;
+    }
     const nextErrors = validateStep("Provider 类型", draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -429,7 +448,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工；治理按内置默认（全部允许）。</AlertDescription>
           </Alert>
         ) : null}
-        {createOptions.isError ? (
+        {createOptions.isError && !teamGovernanceBlocker ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>创建选项加载失败</AlertTitle>
             <AlertDescription>{getErrorMessage(createOptions.error)}</AlertDescription>
@@ -502,6 +521,23 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       onUpdate={updateDraft}
                     />
                   ) : null}
+                  {teamGovernanceBlocker ? (
+                    <Alert className="mb-4" variant="destructive">
+                      <AlertTitle>团队治理未启用</AlertTitle>
+                      <AlertDescription>{teamGovernanceBlocker}</AlertDescription>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <V3Button onClick={() => requestTeamChange("")} size="sm" type="button" variant="outline">
+                          先不归属团队创建
+                        </V3Button>
+                      </div>
+                    </Alert>
+                  ) : null}
+                  {customAgentTeamBlocker ? (
+                    <Alert className="mb-4" variant="destructive">
+                      <AlertTitle>团队策略不允许</AlertTitle>
+                      <AlertDescription>{customAgentTeamBlocker}</AlertDescription>
+                    </Alert>
+                  ) : null}
                   {!teams.isLoading && !createOptions.isLoading && currentStep === "能力" ? (
                     <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
                   ) : null}
@@ -546,9 +582,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   <V3Button
                     disabled={
                       createOptions.isLoading ||
-                      createOptions.isError ||
+                      (createOptions.isError && !teamGovernanceBlocker) ||
                       avatarAssets.isLoading ||
-                      avatarAssets.isError
+                      avatarAssets.isError ||
+                      configurationBlocked
                     }
                     onClick={nextStep}
                     type="button"
@@ -561,9 +598,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     disabled={
                       createEmployee.isPending ||
                       createOptions.isLoading ||
-                      createOptions.isError ||
+                      (createOptions.isError && !teamGovernanceBlocker) ||
                       avatarAssets.isLoading ||
                       avatarAssets.isError ||
+                      configurationBlocked ||
                       !draft.avatar_asset_id ||
                       !draft.provider_type
                     }
@@ -1376,6 +1414,19 @@ function CapabilityStep({
         <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
         <p className="text-sm text-v3-ink-3">按团队治理配置选择技能、MCP Server 和外部能力。</p>
       </div>
+      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
+        <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
+        <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          <SummaryItem label="技能" value={`${draft.team_id ? 0 : 0} 项`} />
+          <SummaryItem label="MCP" value={`${draft.team_id ? 0 : 0} 项`} />
+          <SummaryItem label="外部能力" value={`${draft.team_id ? 0 : 0} 项`} />
+        </div>
+      </section>
+      <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
+        <div className="text-sm font-semibold text-v3-ink">员工扩展能力</div>
+        <p className="mt-1 text-xs text-v3-ink-3">这里只提交员工个人扩展项。</p>
+      </section>
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_skills}
         label="技能"
@@ -1768,6 +1819,22 @@ function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
     ...validateStep("治理", draft),
     ...validateStep("Provider 类型", draft),
   };
+}
+
+function isCustomAgentAllowedForTeam(options: DigitalEmployeeCreateOptions | undefined) {
+  const allowedTypes = options?.team_config.allowed_employee_types ?? [];
+  return allowedTypes.length === 0 || allowedTypes.includes(BLANK_CUSTOM_EMPLOYEE_TYPE);
+}
+
+function teamGovernanceBlockerMessage(error: unknown) {
+  return isTeamGovernanceConfigRequiredError(error)
+    ? "该团队尚未启用治理配置，不能在此团队下创建数字员工。"
+    : "";
+}
+
+function customAgentTeamBlockerMessage(draft: WizardDraft, options: DigitalEmployeeCreateOptions | undefined) {
+  if (draft.creation_mode !== "blank_custom" || !draft.team_id) return "";
+  return isCustomAgentAllowedForTeam(options) ? "" : "该团队不允许创建自定义数字员工。";
 }
 
 function budgetPolicyFromDraft(draft: WizardDraft) {

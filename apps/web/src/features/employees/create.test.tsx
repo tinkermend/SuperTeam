@@ -87,6 +87,7 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
+  allowedEmployeeTypes = ["database_admin"],
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -96,6 +97,7 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
+  allowedEmployeeTypes?: string[];
 } = {}) {
   const firstRuntimeAvailable = runtimeAvailability === "all";
   const secondRuntimeAvailable = runtimeAvailability !== "none";
@@ -157,7 +159,7 @@ function createOptionsFixture({
       team_id: team.id,
       revision_number: 3,
       status: "approved",
-      allowed_employee_types: ["database_admin"],
+      allowed_employee_types: allowedEmployeeTypes,
       allowed_provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
       allowed_skills: ["incident-diagnosis", "sql-review"],
       allowed_mcp_servers: ["postgres"],
@@ -285,6 +287,8 @@ function createWizardFetcher({
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
   teams = [team],
+  createOptionsErrorForTeamId,
+  allowedEmployeeTypes = ["database_admin"],
 }: {
   expectedCreateBody?: ExpectedCreateBody;
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
@@ -301,6 +305,8 @@ function createWizardFetcher({
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
   teams?: Array<typeof team>;
+  createOptionsErrorForTeamId?: string;
+  allowedEmployeeTypes?: string[];
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -314,8 +320,18 @@ function createWizardFetcher({
       if (url.searchParams.has("team_id")) {
         expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
       }
+      if (createOptionsErrorForTeamId && url.searchParams.get("team_id") === createOptionsErrorForTeamId) {
+        return jsonResponse(
+          {
+            code: "team_governance_config_required",
+            message: "employee effective config required: active team governance config is required",
+          },
+          422,
+        );
+      }
       return jsonResponse(
         createOptionsFixture({
+          allowedEmployeeTypes,
           capabilityBoundaryKey,
           includeFrontendTemplate,
           includeCapabilityBoundaryBlock,
@@ -665,6 +681,32 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("配置预检");
   });
 
+  it("shows a business blocker when selected team lacks governance config", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({ teams: [team, secondTeam], createOptionsErrorForTeamId: secondTeam.id }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    await expect.element(screen.getByText("该团队尚未启用治理配置，不能在此团队下创建数字员工。")).toBeVisible();
+    expect(document.body.textContent).not.toContain("employee effective config required");
+    await expect.element(screen.getByRole("button", { name: "先不归属团队创建" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "下一步" })).toBeDisabled();
+  });
+
+  it("blocks blank custom when selected team does not allow custom_agent", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({ teams: [team], allowedEmployeeTypes: ["database_admin"] }),
+    );
+
+    await enterBlankCustomConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
+
+    await expect.element(screen.getByText("该团队不允许创建自定义数字员工。")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "下一步" })).toBeDisabled();
+  });
+
   it("creates a ready digital employee through the streamlined wizard", async () => {
     const fetcher = createWizardFetcher({ expectedTeamId: team.id });
     const screen = await renderCreateEmployeeView(fetcher);
@@ -707,10 +749,25 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).not.toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).not.toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "postgres" })).not.toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
+  });
+
+  it("shows 团队继承能力 and 员工扩展能力 as separate capability sections", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("团队绑定能力只读展示，不会作为员工扩展能力重复提交。")).toBeVisible();
+    await expect.element(screen.getByText("这里只提交员工个人扩展项。")).toBeVisible();
   });
 
   it("configures blank custom without employee type or description fields", async () => {
