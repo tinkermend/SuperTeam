@@ -33,6 +33,14 @@ var builtInAssets = []Asset{
 	asset("engineer-m-08", "工程师头像 M08", "male", "33"),
 	asset("engineer-m-09", "工程师头像 M09", "male", "27"),
 	asset("engineer-m-10", "工程师头像 M10", "male", "40"),
+	asset("engineer-m-11", "工程师头像 M11", "male", "24"),
+	asset("engineer-m-12", "工程师头像 M12", "male", "33"),
+	asset("engineer-m-13", "工程师头像 M13", "male", "39"),
+	asset("engineer-m-14", "工程师头像 M14", "male", "29"),
+	asset("engineer-m-15", "工程师头像 M15", "male", "21"),
+	asset("engineer-m-16", "工程师头像 M16", "male", "36"),
+	asset("engineer-m-17", "工程师头像 M17", "male", "27"),
+	asset("engineer-m-18", "工程师头像 M18", "male", "31"),
 	asset("engineer-f-01", "工程师头像 F01", "female", "23"),
 	asset("engineer-f-02", "工程师头像 F02", "female", "30"),
 	asset("engineer-f-03", "工程师头像 F03", "female", "27"),
@@ -43,6 +51,10 @@ var builtInAssets = []Asset{
 	asset("engineer-f-08", "工程师头像 F08", "female", "39"),
 	asset("engineer-f-09", "工程师头像 F09", "female", "26"),
 	asset("engineer-f-10", "工程师头像 F10", "female", "29"),
+	asset("engineer-f-11", "工程师头像 F11", "female", "25"),
+	asset("engineer-f-12", "工程师头像 F12", "female", "38"),
+	asset("engineer-f-13", "工程师头像 F13", "female", "30"),
+	asset("engineer-f-14", "工程师头像 F14", "female", "22"),
 }
 
 func ListBuiltInAssets() []Asset {

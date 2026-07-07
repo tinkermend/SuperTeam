@@ -14,8 +14,8 @@ func TestBuiltInAvatarAssetLookupNormalizesID(t *testing.T) {
 
 func TestBuiltInAvatarAssetsAreReturnedAsCopy(t *testing.T) {
 	assets := ListBuiltInAssets()
-	if len(assets) != 20 {
-		t.Fatalf("expected 20 built-in assets, got %d", len(assets))
+	if len(assets) != 32 {
+		t.Fatalf("expected 32 built-in assets, got %d", len(assets))
 	}
 	assets[0].ID = "mutated"
 	fresh := ListBuiltInAssets()
