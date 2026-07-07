@@ -88,6 +88,7 @@ function createOptionsFixture({
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
   allowedEmployeeTypes = ["database_admin"],
+  teamInheritedCapabilitySelection,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -98,6 +99,7 @@ function createOptionsFixture({
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
   allowedEmployeeTypes?: string[];
+  teamInheritedCapabilitySelection?: Record<string, unknown>;
 } = {}) {
   const firstRuntimeAvailable = runtimeAvailability === "all";
   const secondRuntimeAvailable = runtimeAvailability !== "none";
@@ -262,7 +264,7 @@ function createOptionsFixture({
       permission_policy: { mode: "least_privilege" },
       context_policy_override: { max_refs: 6 },
       approval_policy: { required: true },
-      capability_selection: { source: "team_default" },
+      capability_selection: teamInheritedCapabilitySelection ?? { source: "team_default" },
       runtime_selector: { strategy: "manual" },
       workspace_policy: { mode: "ephemeral" },
       session_policy: { mode: "reuse_latest" },
@@ -289,6 +291,7 @@ function createWizardFetcher({
   teams = [team],
   createOptionsErrorForTeamId,
   allowedEmployeeTypes = ["database_admin"],
+  teamInheritedCapabilitySelection,
 }: {
   expectedCreateBody?: ExpectedCreateBody;
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
@@ -307,6 +310,7 @@ function createWizardFetcher({
   teams?: Array<typeof team>;
   createOptionsErrorForTeamId?: string;
   allowedEmployeeTypes?: string[];
+  teamInheritedCapabilitySelection?: Record<string, unknown>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -340,6 +344,7 @@ function createWizardFetcher({
           runtimeAvailability,
           runtimeCount,
           sameRuntimeNodeProviders,
+          teamInheritedCapabilitySelection,
         }),
       );
     }
@@ -938,6 +943,38 @@ describe("CreateEmployeeView", () => {
     expect(body.context_policy_override).toEqual({ max_refs: 8 });
     expect(body.approval_policy_override).toEqual({ min_risk_for_human: "high" });
     expect(body.metadata).toBeUndefined();
+  });
+
+  it("excludes 团队继承能力 from submitted 员工扩展能力", async () => {
+    const fetcher = createWizardFetcher({
+      teamInheritedCapabilitySelection: {
+        team_inherited_skills: ["sql-review"],
+        team_inherited_mcp_servers: ["postgres"],
+        team_inherited_external_capabilities: ["jira.search"],
+      },
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
+    await userEvent.click(screen.getByRole("checkbox", { name: "incident-diagnosis" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: ["incident-diagnosis"],
+      enabled_mcp_servers: [],
+      enabled_external_capabilities: [],
+    });
   });
 
   it("supports creating a team-less digital employee when the user selects no team", async () => {

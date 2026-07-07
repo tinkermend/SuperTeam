@@ -248,7 +248,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             title: selectedType?.label ?? draft.employee_type,
           },
           ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
-          capability_selection: draft.capability_selection,
+          capability_selection: employeeExtensionCapabilitySelection(draft.capability_selection, createOptions.data),
           context_policy_override: draft.context_policy_override,
           approval_policy_override: draft.approval_policy_override,
           budget_policy: budgetPolicyFromDraft(draft),
@@ -1394,6 +1394,7 @@ function CapabilityStep({
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const capabilityOptions = options?.capability_options;
+  const inheritedCapabilities = inheritedCapabilitySelection(options);
 
   function toggle(kind: keyof WizardDraft["capability_selection"], value: string) {
     const currentValues = draft.capability_selection[kind];
@@ -1418,9 +1419,9 @@ function CapabilityStep({
         <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
         <div className="mt-3 grid gap-2 md:grid-cols-3">
-          <SummaryItem label="技能" value={`${draft.team_id ? 0 : 0} 项`} />
-          <SummaryItem label="MCP" value={`${draft.team_id ? 0 : 0} 项`} />
-          <SummaryItem label="外部能力" value={`${draft.team_id ? 0 : 0} 项`} />
+          <SummaryItem label="技能" value={`${inheritedCapabilities.enabled_skills.length} 项`} />
+          <SummaryItem label="MCP" value={`${inheritedCapabilities.enabled_mcp_servers.length} 项`} />
+          <SummaryItem label="外部能力" value={`${inheritedCapabilities.enabled_external_capabilities.length} 项`} />
         </div>
       </section>
       <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
@@ -1786,6 +1787,49 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
     risk_level: "medium",
     role: "",
   };
+}
+
+function inheritedCapabilitySelection(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_selection"] {
+  const raw = options?.policy_defaults.capability_selection ?? {};
+  const nested = objectValue(raw.team_inherited);
+
+  return {
+    enabled_external_capabilities: uniqueStringList(
+      raw.team_inherited_external_capabilities ?? nested.external_capabilities,
+    ),
+    enabled_mcp_servers: uniqueStringList(raw.team_inherited_mcp_servers ?? nested.mcp_servers),
+    enabled_skills: uniqueStringList(raw.team_inherited_skills ?? nested.skills),
+  };
+}
+
+function employeeExtensionCapabilitySelection(
+  selection: WizardDraft["capability_selection"],
+  options: DigitalEmployeeCreateOptions | undefined,
+): WizardDraft["capability_selection"] {
+  const inherited = inheritedCapabilitySelection(options);
+
+  return {
+    enabled_external_capabilities: withoutValues(
+      selection.enabled_external_capabilities,
+      inherited.enabled_external_capabilities,
+    ),
+    enabled_mcp_servers: withoutValues(selection.enabled_mcp_servers, inherited.enabled_mcp_servers),
+    enabled_skills: withoutValues(selection.enabled_skills, inherited.enabled_skills),
+  };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function uniqueStringList(value: unknown): string[] {
+  return Array.from(new Set(stringList(value)));
+}
+
+function withoutValues(values: string[], excludedValues: string[]) {
+  if (excludedValues.length === 0) return values;
+  const excluded = new Set(excludedValues);
+  return values.filter((value) => !excluded.has(value));
 }
 
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
