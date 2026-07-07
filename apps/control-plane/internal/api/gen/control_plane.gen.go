@@ -2069,7 +2069,7 @@ type CreateDigitalEmployeeRequest struct {
 	RiskLevel              *string                 `json:"risk_level,omitempty"`
 	Role                   *string                 `json:"role,omitempty"`
 	RoleProfile            *map[string]interface{} `json:"role_profile,omitempty"`
-	RuntimeNodeId          openapi_types.UUID      `json:"runtime_node_id"`
+	RuntimeNodeId          *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
 	SessionPolicy          *map[string]interface{} `json:"session_policy,omitempty"`
 
 	// TeamId Team ID; omit or null for team-less (tenant-level) digital employees.

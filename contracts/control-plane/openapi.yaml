@@ -9952,7 +9952,6 @@ components:
         - employee_type
         - name
         - avatar_asset_id
-        - runtime_node_id
         - provider_type
       properties:
         team_id:
