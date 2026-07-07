@@ -1276,6 +1276,26 @@ describe("TeamDetailView", () => {
     );
   });
 
+  it("uses a structured approval policy editor without principles or runtime fields", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+
+    await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("启用审批策略")).toBeVisible();
+    await expect.element(screen.getByLabelText("风险阈值")).toBeVisible();
+    await expect.element(screen.getByLabelText("必须审批的动作（每行一条）")).toBeVisible();
+    await expect.element(screen.getByLabelText("最小审批人数")).toBeVisible();
+    await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
+    await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
+  });
+
   it("does not show member or governance creation actions for a disabled team", async () => {
     const fetcher = createTeamsFetcher({ disabledOverview: true });
     const screen = await renderWithQueryClient(

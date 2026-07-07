@@ -1,10 +1,19 @@
 import { Send, ShieldCheck, Save, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { V3Button } from "@/components/superteam";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -26,6 +35,62 @@ type TeamGovernanceTabProps = {
   teamId: string;
 };
 
+type ApprovalPolicyForm = {
+  enabled: boolean;
+  risk_threshold: "low" | "medium" | "high";
+  required_actions: string[];
+  min_approvers: number;
+};
+
+const DEFAULT_APPROVAL_POLICY: ApprovalPolicyForm = {
+  enabled: false,
+  risk_threshold: "medium",
+  required_actions: [],
+  min_approvers: 1,
+};
+
+function parseApprovalPolicy(value: unknown): ApprovalPolicyForm {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...DEFAULT_APPROVAL_POLICY };
+  }
+  const obj = value as Record<string, unknown>;
+  const threshold = obj.risk_threshold;
+  return {
+    enabled: typeof obj.enabled === "boolean" ? obj.enabled : false,
+    risk_threshold:
+      threshold === "low" || threshold === "medium" || threshold === "high"
+        ? threshold
+        : "medium",
+    required_actions: Array.isArray(obj.required_actions)
+      ? obj.required_actions.filter((item): item is string => typeof item === "string")
+      : [],
+    min_approvers:
+      typeof obj.min_approvers === "number" && obj.min_approvers >= 1
+        ? Math.floor(obj.min_approvers)
+        : 1,
+  };
+}
+
+function approvalPolicyObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function serializeApprovalPolicy(
+  form: ApprovalPolicyForm,
+  sourcePolicy: unknown,
+): Record<string, unknown> {
+  return {
+    ...approvalPolicyObject(sourcePolicy),
+    enabled: form.enabled,
+    risk_threshold: form.risk_threshold,
+    required_actions: form.required_actions,
+    min_approvers: form.min_approvers,
+  };
+}
+
 export function TeamGovernanceTab({
   apiOptions,
   canApprove,
@@ -40,36 +105,33 @@ export function TeamGovernanceTab({
   const draft = drafts.data?.[0];
   const sourceRevision = draft ?? currentRevision;
   const [hardRulesText, setHardRulesText] = useState(() => arrayText(sourceRevision?.constitution.hard_rules));
-  const [principlesText, setPrinciplesText] = useState(() => arrayText(sourceRevision?.constitution.principles));
-  const [approvalText, setApprovalText] = useState(() => jsonText(sourceRevision?.approval_policy));
-  const [runtimeText, setRuntimeText] = useState(() => jsonText(sourceRevision?.runtime_scope_policy));
+  const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
+    parseApprovalPolicy(sourceRevision?.approval_policy),
+  );
 
   useEffect(() => {
     if (!sourceRevision) {
       return;
     }
     setHardRulesText(arrayText(sourceRevision.constitution.hard_rules));
-    setPrinciplesText(arrayText(sourceRevision.constitution.principles));
-    setApprovalText(jsonText(sourceRevision.approval_policy));
-    setRuntimeText(jsonText(sourceRevision.runtime_scope_policy));
+    setApprovalPolicy(parseApprovalPolicy(sourceRevision.approval_policy));
   }, [sourceRevision]);
 
   const draftInput = useMemo<GovernanceDraftInput>(
     () => ({
-      approval_policy: parseObjectText(approvalText),
+      approval_policy: serializeApprovalPolicy(approvalPolicy, sourceRevision?.approval_policy),
       artifact_contract: sourceRevision?.artifact_contract ?? {},
       capability_policy: sourceRevision?.capability_policy ?? {},
       constitution: {
         ...(sourceRevision?.constitution ?? {}),
         hard_rules: lineList(hardRulesText),
-        principles: lineList(principlesText),
       },
       context_policy: sourceRevision?.context_policy ?? {},
       human_owner_user_ids: sourceRevision?.human_owner_user_ids,
       internal_collaboration_policy: sourceRevision?.internal_collaboration_policy ?? {},
-      runtime_scope_policy: parseObjectText(runtimeText),
+      runtime_scope_policy: sourceRevision?.runtime_scope_policy ?? {},
     }),
-    [approvalText, hardRulesText, principlesText, runtimeText, sourceRevision],
+    [approvalPolicy, hardRulesText, sourceRevision],
   );
   const preview = JSON.stringify(draftInput, null, 2);
   const saveMutation = useMutation({
@@ -114,26 +176,10 @@ export function TeamGovernanceTab({
             onChange={setHardRulesText}
             value={hardRulesText}
           />
-          <PolicyTextArea
-            description="用于约束团队协作风格和工作边界。"
+          <ApprovalPolicyEditor
             disabled={!canEdit}
-            label="原则"
-            onChange={setPrinciplesText}
-            value={principlesText}
-          />
-          <PolicyTextArea
-            description="JSON 对象，定义风险阈值和必须人工审批的动作。"
-            disabled={!canEdit}
-            label="审批策略"
-            onChange={setApprovalText}
-            value={approvalText}
-          />
-          <PolicyTextArea
-            description="JSON 对象，定义 Runtime、Provider 和环境范围。"
-            disabled={!canEdit}
-            label="Runtime 范围"
-            onChange={setRuntimeText}
-            value={runtimeText}
+            onChange={setApprovalPolicy}
+            value={approvalPolicy}
           />
         </CardContent>
       </Card>
@@ -161,7 +207,7 @@ export function TeamGovernanceTab({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">审批策略</span>
-              <Badge variant="outline">{diff.data?.changed_approval_rules ? "有变更" : approvalText.trim() ? "已配置" : "未配置"}</Badge>
+              <Badge variant="outline">{diff.data?.changed_approval_rules ? "有变更" : approvalPolicy.enabled ? "已启用" : "未启用"}</Badge>
             </div>
             {diff.data?.warnings.length ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
@@ -178,26 +224,26 @@ export function TeamGovernanceTab({
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
-              <Button disabled={!canEdit || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+              <V3Button disabled={!canEdit || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
                 <Save data-icon="inline-start" />
                 保存草稿
-              </Button>
-              <Button
+              </V3Button>
+              <V3Button
                 disabled={!canApprove || approveMutation.isPending || !draftID}
                 onClick={() => approveMutation.mutate()}
                 variant="outline"
               >
                 <Send data-icon="inline-start" />
                 提交负责人批准
-              </Button>
-              <Button
+              </V3Button>
+              <V3Button
                 disabled={!canApprove || rejectMutation.isPending || !draftID}
                 onClick={() => rejectMutation.mutate()}
                 variant="outline"
               >
                 <XCircle data-icon="inline-start" />
                 驳回草稿
-              </Button>
+              </V3Button>
             </div>
             {saveMutation.isSuccess ? <p className="text-muted-foreground">治理草稿已保存。</p> : null}
             {saveMutation.isError ? <p className="text-destructive">治理草稿保存失败。</p> : null}
@@ -238,6 +284,86 @@ function PolicyTextArea({
   );
 }
 
+function ApprovalPolicyEditor({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: ApprovalPolicyForm) => void;
+  value: ApprovalPolicyForm;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-md border border-v3-line bg-v3-card-soft p-4">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="size-4" />
+        <Label>审批策略</Label>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-v3-ink">
+        <Switch
+          checked={value.enabled}
+          disabled={disabled}
+          onCheckedChange={(checked) => onChange({ ...value, enabled: checked })}
+        />
+        启用审批策略
+      </label>
+
+      <div className="grid gap-2">
+        <Label htmlFor="approval-risk-threshold">风险阈值触发审批</Label>
+        <Select
+          disabled={disabled || !value.enabled}
+          onValueChange={(next) =>
+            onChange({ ...value, risk_threshold: next as ApprovalPolicyForm["risk_threshold"] })
+          }
+          value={value.risk_threshold}
+        >
+          <SelectTrigger aria-label="风险阈值" id="approval-risk-threshold">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">low - 低风险即触发</SelectItem>
+            <SelectItem value="medium">medium - 中风险及以上触发</SelectItem>
+            <SelectItem value="high">high - 仅高风险触发</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="approval-required-actions">必须审批的动作（每行一条）</Label>
+        <Textarea
+          aria-label="必须审批的动作（每行一条）"
+          disabled={disabled || !value.enabled}
+          id="approval-required-actions"
+          onChange={(event) =>
+            onChange({ ...value, required_actions: lineList(event.target.value) })
+          }
+          placeholder={"deploy\ndelete"}
+          rows={3}
+          value={value.required_actions.join("\n")}
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="approval-min-approvers">最小审批人数</Label>
+        <Input
+          disabled={disabled || !value.enabled}
+          id="approval-min-approvers"
+          min={1}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              min_approvers: Math.max(1, Math.floor(Number(event.target.value) || 1)),
+            })
+          }
+          type="number"
+          value={value.min_approvers}
+        />
+      </div>
+    </div>
+  );
+}
+
 function saveGovernanceDraft(
   apiOptions: ApiClientOptions,
   teamId: string,
@@ -262,23 +388,4 @@ function arrayText(value: unknown): string {
     return "";
   }
   return value.filter((item): item is string => typeof item === "string").join("\n");
-}
-
-function jsonText(value: unknown): string {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return "{}";
-  }
-  return JSON.stringify(value, null, 2);
-}
-
-function parseObjectText(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value || "{}") as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return {};
-  }
-  return {};
 }
