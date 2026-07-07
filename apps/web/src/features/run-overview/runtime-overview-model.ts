@@ -13,6 +13,8 @@ export type RuntimeOverviewSummary = {
   idleCount: number;
   waitingHumanCount: number;
   queuedCount: number;
+  needsConfigurationCount: number;
+  unavailableCount: number;
   errorCount: number;
   cumulativeTaskCount: number;
 };

@@ -32,11 +32,19 @@ function statusTone(status: RuntimeOverviewEmployee["status"]) {
 export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { overview: RuntimeOverviewDTO; selectedEmployeeId?: string }) {
   const selected = overview.employees.find((employee) => employee.employeeId === selectedEmployeeId) ?? overview.employees[0];
   const selectedTeam = selected ? overview.teams.find((team) => team.teamId === selected.teamId) : undefined;
-  const activeFloor = overview.floors.find((floor) => floor.floorId === overview.activeFloorId);
-  const otherFloors = overview.floors.filter((floor) => floor.floorId !== overview.activeFloorId && floor.summary.teamCount > 0);
   const dailyTokens = selected?.usage?.dailyTokens ?? 0;
   const dailyLimit = selected?.usage?.dailyTokenLimit ?? 0;
   const usagePercent = dailyLimit > 0 ? Math.min(100, Math.round((dailyTokens / dailyLimit) * 100)) : 0;
+  // 运行态分布：覆盖全部 7 种运行状态，过滤 0 值后可见行之和恒等于「数字员工」。
+  const statusBreakdown: Array<{ label: string; status: RuntimeOverviewEmployee["status"]; value: number }> = [
+    { label: "正在工作", status: "working", value: overview.summary.workingCount },
+    { label: "空闲", status: "idle", value: overview.summary.idleCount },
+    { label: "排队", status: "queued", value: overview.summary.queuedCount },
+    { label: "待配置", status: "needs_configuration", value: overview.summary.needsConfigurationCount },
+    { label: "待人工确认", status: "waiting_human", value: overview.summary.waitingHumanCount },
+    { label: "不可用", status: "unavailable", value: overview.summary.unavailableCount },
+    { label: "异常", status: "error", value: overview.summary.errorCount },
+  ];
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <GlassCard className="p-4">
@@ -67,29 +75,12 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
               />
             </div>
           </div>
-          <StatusRow label="正在工作" value={overview.summary.workingCount} status="working" />
-          <StatusRow label="空闲" value={overview.summary.idleCount} status="idle" />
-          <StatusRow label="排队" value={overview.summary.queuedCount} status="queued" />
-          <StatusRow label="待人工确认" value={overview.summary.waitingHumanCount} status="waiting_human" />
-          <StatusRow label="异常" value={overview.summary.errorCount} status="error" />
+          {statusBreakdown
+            .filter((row) => row.value > 0)
+            .map((row) => (
+              <StatusRow key={row.status} label={row.label} value={row.value} status={row.status} />
+            ))}
         </div>
-        {otherFloors.length > 0 ? (
-          <div className="mt-4 border-t border-v3-line pt-4">
-            <div className="mb-2 text-xs font-semibold text-v3-ink">其他楼层</div>
-            <div className="space-y-2">
-              {otherFloors.map((floor) => (
-                <div key={floor.floorId} className="flex items-center justify-between text-sm text-v3-ink-2">
-                  <span>{floor.label}</span>
-                  <span className="tabular-nums">
-                    {floor.summary.teamCount} 团队 · 异常 {floor.summary.errorCount}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : activeFloor ? (
-          <p className="mt-4 border-t border-v3-line pt-4 text-xs text-v3-ink-2">{activeFloor.label} 已展示当前可见团队。</p>
-        ) : null}
       </GlassCard>
       {selected ? (
         <GlassCard className="p-4">

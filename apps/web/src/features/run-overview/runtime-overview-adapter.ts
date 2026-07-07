@@ -85,6 +85,11 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
       waitingHumanCount:
         input.employees.summary.operational_status_counts.waiting_human ?? countEmployees(overviewEmployees, "waiting_human"),
       queuedCount: input.employees.summary.operational_status_counts.queued ?? countEmployees(overviewEmployees, "queued"),
+      needsConfigurationCount:
+        input.employees.summary.operational_status_counts.needs_configuration ??
+        countEmployees(overviewEmployees, "needs_configuration"),
+      unavailableCount:
+        input.employees.summary.operational_status_counts.unavailable ?? countEmployees(overviewEmployees, "unavailable"),
       errorCount: input.employees.summary.operational_status_counts.error ?? countEmployees(overviewEmployees, "error"),
       cumulativeTaskCount: input.employees.items.filter((item) => item.latest_run_summary).length,
     },
