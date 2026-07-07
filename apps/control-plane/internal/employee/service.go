@@ -600,7 +600,11 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 }
 
 func normalizeProviderType(value string) string {
-	return strings.TrimSpace(value)
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "claude_code" {
+		return "claude-code"
+	}
+	return normalized
 }
 
 func isSupportedDigitalEmployeeProviderType(providerType string) bool {

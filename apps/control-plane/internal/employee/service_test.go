@@ -47,25 +47,54 @@ func TestEmployeeTypeRegistryReturnsClonedDefinitions(t *testing.T) {
 	if len(types) == 0 {
 		t.Fatalf("expected employee type definitions")
 	}
-	originalSkill := types[0].RecommendedSkills[0]
-	types[0].RecommendedSkills[0] = "mutated-skill"
-	enabledSkills, ok := types[0].DefaultCapabilitySelection["enabled_skills"].([]string)
+	typeIndex := firstTypeWithDefaultSkills(t, types)
+	originalSkill := types[typeIndex].RecommendedSkills[0]
+	types[typeIndex].RecommendedSkills[0] = "mutated-skill"
+	enabledSkills, ok := types[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
 	if !ok || len(enabledSkills) == 0 {
-		t.Fatalf("expected enabled_skills default selection, got %#v", types[0].DefaultCapabilitySelection)
+		t.Fatalf("expected enabled_skills default selection, got %#v", types[typeIndex].DefaultCapabilitySelection)
 	}
 	enabledSkills[0] = "mutated-enabled-skill"
 
 	fresh := DefaultEmployeeTypeDefinitions()
-	if fresh[0].RecommendedSkills[0] != originalSkill {
-		t.Fatalf("expected recommended skills to be cloned, got %#v", fresh[0].RecommendedSkills)
+	if fresh[typeIndex].RecommendedSkills[0] != originalSkill {
+		t.Fatalf("expected recommended skills to be cloned, got %#v", fresh[typeIndex].RecommendedSkills)
 	}
-	freshEnabledSkills, ok := fresh[0].DefaultCapabilitySelection["enabled_skills"].([]string)
+	freshEnabledSkills, ok := fresh[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
 	if !ok || len(freshEnabledSkills) == 0 {
-		t.Fatalf("expected fresh enabled_skills default selection, got %#v", fresh[0].DefaultCapabilitySelection)
+		t.Fatalf("expected fresh enabled_skills default selection, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
 	}
 	if freshEnabledSkills[0] == "mutated-enabled-skill" {
-		t.Fatalf("expected default capability selection to be cloned, got %#v", fresh[0].DefaultCapabilitySelection)
+		t.Fatalf("expected default capability selection to be cloned, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
 	}
+}
+
+func firstTypeWithDefaultSkills(t *testing.T, types []EmployeeTypeDefinition) int {
+	t.Helper()
+	for index, definition := range types {
+		if len(definition.RecommendedSkills) == 0 {
+			continue
+		}
+		enabledSkills, ok := definition.DefaultCapabilitySelection["enabled_skills"].([]string)
+		if ok && len(enabledSkills) > 0 {
+			return index
+		}
+	}
+	t.Fatalf("expected at least one employee type with default skills, got %#v", types)
+	return 0
+}
+
+func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *testing.T) {
+	definition, ok := EmployeeTypeDefinitionByType(" custom_agent ")
+	require.True(t, ok)
+	require.Equal(t, "custom_agent", definition.Type)
+	require.Equal(t, "自定义数字员工", definition.Label)
+	require.Empty(t, definition.DefaultRole)
+	require.Empty(t, definition.RecommendedSkills)
+	require.Empty(t, definition.RecommendedMCPServers)
+	require.Empty(t, definition.DefaultCapabilitySelection)
+	require.Contains(t, definition.Metadata, "creation_mode")
+	require.Equal(t, "blank_custom", definition.Metadata["creation_mode"])
 }
 
 func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
@@ -212,6 +241,41 @@ func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected invalid input for malformed allowed_employee_types, got options=%#v err=%v", options, err)
 	}
+}
+
+func TestGetCreateOptionsIncludesCustomAgentForTeamLessCreate(t *testing.T) {
+	svc, repo, tenantID, _ := newCreateOptionsTestService(t, map[string]any{}, map[string]any{})
+	repo.currentTeamConfigByTeam = map[uuid.UUID]uuid.UUID{}
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{TenantID: tenantID})
+
+	require.NoError(t, err)
+	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
+}
+
+func TestGetCreateOptionsHonorsTeamCustomAgentAllowlist(t *testing.T) {
+	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+		"allowed_employee_types": []any{"custom_agent"},
+		"allowed_provider_types": []any{"codex"},
+	}, map[string]any{})
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, options.EmployeeTypes, 1)
+	require.Equal(t, "custom_agent", options.EmployeeTypes[0].Type)
+}
+
+func employeeTypeOptionExists(items []EmployeeTypeDefinition, employeeType string) bool {
+	for _, item := range items {
+		if item.Type == employeeType {
+			return true
+		}
+	}
+	return false
 }
 
 func TestEmployeeServiceGetOverviewAppliesDefaultsAndFilters(t *testing.T) {
@@ -996,6 +1060,35 @@ func TestCreateDigitalEmployeeProviderTypeMustBeSupportedEvenWithoutTeamAllowlis
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestCreateDigitalEmployeeNormalizesProviderTypeAliases(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.ProviderType = " CLAUDE_CODE "
+	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
+	teamConfig := repo.teamConfigs[teamConfigID]
+	teamConfig.CapabilityPolicy["allowed_provider_types"] = []any{"claude-code"}
+	teamConfig.RuntimeScopePolicy = map[string]any{"allowed_provider_types": []any{"claude-code"}}
+	repo.teamConfigs[teamConfigID] = teamConfig
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.NoError(t, err)
+	require.Equal(t, "claude-code", created.ProviderType)
+	require.Equal(t, "claude-code", repo.employees[created.ID].ProviderType)
+}
+
+func TestCreateDigitalEmployeeRejectsBlankProviderType(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.ProviderType = " "
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.ErrorIs(t, err, ErrInvalidInput)
+	require.Contains(t, err.Error(), "provider_type is required")
+	require.Empty(t, dispatcher.commands)
+	require.Empty(t, repo.employees)
+	require.Empty(t, repo.commandReceipts)
 }
 
 func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {

@@ -1,4 +1,4 @@
-import type { ApiClientOptions } from "./client";
+import { ApiRequestError, type ApiClientOptions } from "./client";
 import { deleteJson, getJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
@@ -720,6 +720,10 @@ export function getDigitalEmployeeCreateOptions(
     `/api/v1/digital-employees/create-options${searchParams.toString() ? `?${searchParams.toString()}` : ""}`,
     "digital employee create options",
   );
+}
+
+export function isTeamGovernanceConfigRequiredError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 422 && error.code === "team_governance_config_required";
 }
 
 export function listDigitalEmployeeAvatarAssets(

@@ -32,17 +32,19 @@ export type TemplateGovernanceStatus = {
 };
 
 export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
-  return [...employeeTypes].sort((left, right) => {
-    const leftIndex = preferredEmployeeTypeOrder.indexOf(left.type);
-    const rightIndex = preferredEmployeeTypeOrder.indexOf(right.type);
-    const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-    const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+  return [...employeeTypes]
+    .filter((item) => !item.metadata?.["system_type"])
+    .sort((left, right) => {
+      const leftIndex = preferredEmployeeTypeOrder.indexOf(left.type);
+      const rightIndex = preferredEmployeeTypeOrder.indexOf(right.type);
+      const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
 
-    if (normalizedLeft !== normalizedRight) {
-      return normalizedLeft - normalizedRight;
-    }
-    return employeeTypes.indexOf(left) - employeeTypes.indexOf(right);
-  });
+      if (normalizedLeft !== normalizedRight) {
+        return normalizedLeft - normalizedRight;
+      }
+      return employeeTypes.indexOf(left) - employeeTypes.indexOf(right);
+    });
 }
 
 export function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOption[]) {

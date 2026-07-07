@@ -5,11 +5,15 @@ export type ApiClientOptions = {
 
 export class ApiRequestError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly detail?: string;
 
-  constructor(resource: string, status: number, detail?: string) {
+  constructor(resource: string, status: number, detail?: string, code?: string) {
     super(`${resource} request failed with status ${status}${detail ? `: ${detail}` : ""}`);
     this.name = "ApiRequestError";
     this.status = status;
+    this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -19,7 +23,8 @@ export function buildApiUrl(baseUrl: string, path: string): string {
 
 export async function parseJson<T>(response: Response, resource: string): Promise<T> {
   if (!response.ok) {
-    throw new ApiRequestError(resource, response.status, await readErrorDetail(response));
+    const errorDetail = await readErrorDetail(response);
+    throw new ApiRequestError(resource, response.status, errorDetail.detail, errorDetail.code);
   }
 
   return (await response.json()) as T;
@@ -138,27 +143,36 @@ export async function deleteJsonWithResponse<T>(
   return parseJson<T>(response, resource);
 }
 
-async function readErrorDetail(response: Response): Promise<string | undefined> {
+type ParsedErrorDetail = {
+  detail?: string;
+  code?: string;
+};
+
+async function readErrorDetail(response: Response): Promise<ParsedErrorDetail> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = await response.text();
 
   if (!body) {
-    return undefined;
+    return {};
   }
 
   if (contentType.includes("application/json")) {
     try {
-      const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
-      if (typeof parsed.error === "string" && parsed.error) {
-        return parsed.error;
-      }
-      if (typeof parsed.message === "string" && parsed.message) {
-        return parsed.message;
-      }
+      const parsed = JSON.parse(body) as { code?: unknown; error?: unknown; message?: unknown };
+      const detail =
+        typeof parsed.error === "string" && parsed.error
+          ? parsed.error
+          : typeof parsed.message === "string" && parsed.message
+            ? parsed.message
+            : body;
+      return {
+        detail,
+        code: typeof parsed.code === "string" && parsed.code ? parsed.code : undefined,
+      };
     } catch {
-      return body;
+      return { detail: body };
     }
   }
 
-  return body;
+  return { detail: body };
 }
