@@ -340,7 +340,6 @@ function createWizardFetcher({
         employee_type: "database_admin",
         name: "数据库管理员工",
         role: "database_admin",
-        description: "负责生产数据库变更和恢复验证",
         risk_level: "high",
         avatar_asset_id: avatarAsset.id,
         role_profile: {
@@ -567,7 +566,8 @@ describe("CreateEmployeeView", () => {
     expect(tableText).toContain("前端开发");
 
     await enterConfiguration(screen);
-    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("frontend_engineer");
+    expect(screen.getByLabelText("员工类型").query()).toBeNull();
+    expect(document.body.textContent).toContain("前端开发");
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("frontend_engineer");
   });
 
@@ -584,13 +584,14 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("模板只提供默认值和推荐能力");
   });
 
-  it("locks direct employee type editing during configuration", async () => {
+  it("keeps the selected template visible without direct employee type editing", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
 
-    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
-    await expect.element(screen.getByLabelText("员工类型")).toBeDisabled();
+    expect(screen.getByLabelText("员工类型").query()).toBeNull();
+    expect(document.body.textContent).toContain("数据库管理员");
+    expect(document.body.textContent).toContain("负责数据库变更、备份、性能诊断和恢复验证");
   });
 
   it("keeps edited configuration when change-template confirmation is cancelled", async () => {
@@ -672,13 +673,12 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
-    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
+    expect(screen.getByLabelText("员工类型").query()).toBeNull();
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("风险等级")).toHaveValue("high");
     await expect.element(screen.getByAltText("工程师头像 M01")).toBeVisible();
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -700,7 +700,7 @@ describe("CreateEmployeeView", () => {
 
     await enterBlankCustomConfiguration(screen);
 
-    await expect.element(screen.getByLabelText("员工类型")).toHaveValue("custom_agent");
+    expect(screen.getByLabelText("员工类型").query()).toBeNull();
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("");
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
@@ -711,6 +711,18 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).not.toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "postgres" })).not.toBeChecked();
     await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
+  });
+
+  it("configures blank custom without employee type or description fields", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterBlankCustomConfiguration(screen);
+
+    await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
+    expect(screen.getByLabelText("员工类型").query()).toBeNull();
+    expect(screen.getByLabelText("描述").query()).toBeNull();
+    expect(document.body.textContent).toContain("自定义身份");
+    await expect.element(screen.getByLabelText("职责定位")).toHaveValue("");
   });
 
   it("does not show capability boundary as a blank-custom configuration summary blocker", async () => {
@@ -794,7 +806,6 @@ describe("CreateEmployeeView", () => {
         employee_type: "custom_agent",
         name: "数据库管理员工",
         role: "数据库变更与恢复验证",
-        description: "负责生产数据库变更和恢复验证",
         risk_level: "medium",
         avatar_asset_id: avatarAsset.id,
         role_profile: {
@@ -822,7 +833,6 @@ describe("CreateEmployeeView", () => {
     await enterBlankCustomConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -849,7 +859,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).toBeChecked();
@@ -884,7 +893,6 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -909,7 +917,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "12000");
@@ -932,7 +939,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -976,7 +982,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
@@ -1104,7 +1109,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -1128,7 +1132,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));

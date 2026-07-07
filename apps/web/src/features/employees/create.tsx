@@ -26,7 +26,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Textarea } from "@/components/ui/textarea";
 import {
   GlassCard,
   IconTile,
@@ -86,7 +85,6 @@ type WizardDraft = {
   context_policy_override: Record<string, unknown>;
   daily_token_limit: string;
   approval_policy_override: Record<string, unknown>;
-  description: string;
   employee_type: string;
   avatar_asset_id: string;
   name: string;
@@ -128,7 +126,6 @@ const emptyDraft: WizardDraft = {
   },
   context_policy_override: {},
   daily_token_limit: "",
-  description: "",
   employee_type: "",
   avatar_asset_id: "",
   name: "",
@@ -243,7 +240,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           name: draft.name.trim(),
           avatar_asset_id: draft.avatar_asset_id,
           role: draft.role.trim(),
-          description: draft.description.trim() || undefined,
           risk_level: draft.risk_level,
           role_profile: {
             employee_type: draft.employee_type,
@@ -1243,7 +1239,7 @@ function IdentityStep({
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">身份</h2>
-        <p className="text-sm text-v3-ink-3">确定团队、业务类型和职责边界。负责人由后端按当前登录身份注入。</p>
+        <p className="text-sm text-v3-ink-3">确定团队、名称和职责定位。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="归属团队" error={errors.team_id}>
@@ -1262,27 +1258,6 @@ function IdentityStep({
             ))}
           </select>
           <p className="text-xs text-v3-ink-3">选择“无”将创建租户级独立数字员工，治理按内置默认（全部允许）。</p>
-        </Field>
-        <Field label="员工类型" error={errors.employee_type}>
-          <select
-            aria-invalid={Boolean(errors.employee_type)}
-            className={selectClassName}
-            disabled
-            id="employee-type"
-            value={draft.employee_type}
-          >
-            {isBlankCustom ? <option value={BLANK_CUSTOM_EMPLOYEE_TYPE}>{BLANK_CUSTOM_TITLE}</option> : null}
-            {(options?.employee_types ?? []).map((item) => (
-              <option key={item.type} value={item.type}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-v3-ink-3">
-            {isBlankCustom
-              ? "如需切换创建路径或员工类型，请使用右上角“返回”并重新生成配置草稿。"
-              : "如需切换模板，请使用右上角“返回”并重新生成配置草稿。"}
-          </p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input
@@ -1313,13 +1288,14 @@ function IdentityStep({
             <option value="critical">critical</option>
           </select>
         </Field>
-        <Field label="描述">
-          <Textarea
-            id="employee-description"
-            onChange={(event) => onUpdate({ description: event.target.value })}
-            value={draft.description}
-          />
-        </Field>
+      </div>
+      <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm">
+        <div className="font-semibold text-v3-ink">
+          {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
+        </div>
+        <div className="mt-1 text-v3-ink-3">
+          {isBlankCustom ? "系统将使用内部 custom_agent 治理基类，用户无需手动配置类型。" : selectedType?.description}
+        </div>
       </div>
       <AvatarSelection
         assets={avatarAssets}
@@ -1327,13 +1303,6 @@ function IdentityStep({
         selectedAssetId={draft.avatar_asset_id}
         onSelect={onSelectAvatar}
       />
-      {selectedType ? (
-        <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm">
-          <div className="font-semibold text-v3-ink">{selectedType.label}</div>
-          <div className="mt-1 text-v3-ink-3">{selectedType.description}</div>
-          <div className="mt-2 text-v3-ink-3">默认职责定位：{selectedType.default_role || selectedType.type}</div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1722,10 +1691,8 @@ function Field({
 }
 
 const labelId: Record<string, string> = {
-  员工类型: "employee-type",
   名称: "employee-name",
   归属团队: "employee-team",
-  描述: "employee-description",
   职责定位: "employee-role",
   风险等级: "employee-risk",
   "每日 Token 预算上限": "daily-token-limit",
