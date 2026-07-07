@@ -370,7 +370,7 @@ function V3Tr({
   );
 }
 
-export type V3ButtonVariant = "primary" | "outline" | "ghost" | "danger";
+export type V3ButtonVariant = "primary" | "outline" | "ghost" | "danger" | "glass";
 export type V3ButtonSize = "default" | "sm" | "icon";
 export type V3Density = "comfortable" | "compact";
 
@@ -382,6 +382,9 @@ const buttonVariant: Record<V3ButtonVariant, string> = {
   outline: "bg-v3-card text-v3-ink border border-v3-line-strong hover:bg-v3-card-soft",
   ghost: "bg-transparent text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink",
   danger: "bg-v3-danger-soft text-v3-danger hover:brightness-95",
+  // Tier A 玻璃卡内的次级按钮：半透明 aurora 面板底 + 品牌 accent 描边，融入玻璃（取自 --v3-aurora-* token）。
+  glass:
+    "border border-[color:var(--v3-aurora-accent-line)] bg-[color:var(--v3-aurora-panel)] text-v3-brand-deep hover:bg-[color:var(--v3-aurora-accent-soft)]",
 };
 
 const buttonSize: Record<V3ButtonSize, string> = {

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { SoftCard, StatusPill } from "@/components/superteam";
+import { GlassCard, StatusPill, V3Button } from "@/components/superteam";
 import type { RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
 
 const statusLabel: Record<RuntimeOverviewEmployee["status"], string> = {
@@ -39,7 +39,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
   const usagePercent = dailyLimit > 0 ? Math.min(100, Math.round((dailyTokens / dailyLimit) * 100)) : 0;
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <SoftCard className="p-4">
+      <GlassCard className="p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-v3-ink">运行概况</h2>
           <span className="rounded-full bg-v3-ok-soft px-2 py-1 text-xs font-semibold text-v3-ok">实时读取</span>
@@ -89,9 +89,9 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
         ) : activeFloor ? (
           <p className="mt-4 border-t border-v3-line pt-4 text-xs text-v3-ink-2">{activeFloor.label} 已展示当前可见团队。</p>
         ) : null}
-      </SoftCard>
+      </GlassCard>
       {selected ? (
-        <SoftCard className="p-4">
+        <GlassCard className="p-4">
           <div className="flex items-start gap-3">
             {selected.avatarAsset?.url ? (
               <img className="size-12 rounded-full object-cover" src={selected.avatarAsset.url} alt="" />
@@ -114,7 +114,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
           ) : null}
           <div className="mt-5">
             <div className="text-xs font-semibold text-v3-ink-2">当前任务</div>
-            <div className="mt-2 rounded-v3-inner border border-v3-line bg-white px-3 py-3">
+            <div className="v3-glass-inner mt-2 px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 text-sm font-semibold text-v3-ink">{selected.currentTask?.title ?? "暂无进行中的任务"}</p>
                 {selected.currentTask?.priority === "high" ? <span className="shrink-0 rounded-lg bg-v3-danger-soft px-2 py-1 text-xs font-semibold text-v3-danger">优先级：高</span> : null}
@@ -129,21 +129,17 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
             </p>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              className="inline-flex h-9 items-center rounded-v3-button border border-v3-line bg-white px-3 text-xs font-semibold text-v3-ink shadow-sm transition-colors hover:bg-v3-card-soft"
-              params={{ employeeId: selected.employeeId }}
-              to="/employees/$employeeId"
-            >
-              查看员工详情
-            </Link>
-            {selected.runtime?.nodeId ? (
-              <Link
-                className="inline-flex h-9 items-center rounded-v3-button border border-v3-line bg-white px-3 text-xs font-semibold text-v3-ink shadow-sm transition-colors hover:bg-v3-card-soft"
-                search={{ node: selected.runtime.nodeId }}
-                to="/runtime"
-              >
-                查看 Runtime 节点
+            <V3Button asChild size="sm" variant="glass">
+              <Link params={{ employeeId: selected.employeeId }} to="/employees/$employeeId">
+                查看员工详情
               </Link>
+            </V3Button>
+            {selected.runtime?.nodeId ? (
+              <V3Button asChild size="sm" variant="glass">
+                <Link search={{ node: selected.runtime.nodeId }} to="/runtime">
+                  查看 Runtime 节点
+                </Link>
+              </V3Button>
             ) : null}
           </div>
           <div className="mt-5">
@@ -160,7 +156,7 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
           </div>
           <div className="mt-5">
             <div className="text-xs font-semibold text-v3-ink-2">消耗情况</div>
-            <div className="mt-2 rounded-v3-inner bg-v3-card-soft px-3 py-3 text-sm text-v3-ink-2">
+            <div className="v3-glass-inner mt-2 px-3 py-3 text-sm text-v3-ink-2">
               <div className="flex items-center justify-between">
                 <span>今日累计</span>
                 <span className="font-semibold text-v3-ink tabular-nums">
@@ -169,13 +165,13 @@ export function RuntimeOverviewSidePanel({ overview, selectedEmployeeId }: { ove
                 </span>
               </div>
               {dailyLimit > 0 ? (
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--v3-aurora-hairline)]">
                   <span className="block h-full rounded-full bg-v3-brand" style={{ width: `${usagePercent}%` }} />
                 </div>
               ) : null}
             </div>
           </div>
-        </SoftCard>
+        </GlassCard>
       ) : null}
     </div>
   );
