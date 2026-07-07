@@ -862,7 +862,7 @@ describe("TeamsView", () => {
     const levelLabels = screen.getByText("L1").all();
     await expect.element(levelLabels[0]).toBeVisible();
 
-    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-glass-card"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
   });
 

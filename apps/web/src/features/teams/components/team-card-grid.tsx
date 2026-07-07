@@ -8,8 +8,8 @@ import {
   type TeamDisplayMetadata,
 } from "@/components/superteam/team-icon-tile";
 import {
+  GlassCard,
   IconTile,
-  SoftCard,
   StatusPill,
   V3EmptyState,
   V3ErrorState,
@@ -349,9 +349,9 @@ function TeamCard({
     : team.digital_employee_count;
 
   return (
-    <SoftCard
+    <GlassCard
       className={cn(
-        "group flex min-h-[260px] flex-col overflow-hidden transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-v3-pop",
+        "group flex min-h-[260px] flex-col transition-transform duration-150 hover:-translate-y-0.5",
         isHighlighted && "ring-2 ring-v3-brand",
       )}
     >
@@ -412,14 +412,14 @@ function TeamCard({
 
       {/* ── Footer ─────────────────────────────────────────────── */}
       <Link
-        className="flex items-center justify-between border-t border-v3-line bg-v3-card-soft px-5 py-3.5 text-sm font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
+        className="flex items-center justify-between border-t border-[color:var(--v3-aurora-hairline)] bg-[color:var(--v3-aurora-panel)] px-5 py-3.5 text-sm font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
         params={{ teamId: team.id }}
         to="/teams/$teamId"
       >
         查看完整部门
         <ChevronRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
       </Link>
-    </SoftCard>
+    </GlassCard>
   );
 }
 
