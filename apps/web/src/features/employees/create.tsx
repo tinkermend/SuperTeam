@@ -1640,8 +1640,11 @@ function CapabilityStep({
   }));
   const inheritedSkillKeys = new Set(inheritedSkills.map((skill) => skill.key).filter(Boolean));
   const inheritedMcpKeys = new Set(inheritedMcpServers.map((binding) => binding.key).filter(Boolean));
+  const teamPolicySkillKeys = new Set((capabilityOptions?.skills ?? []).filter(Boolean));
   const extensionSkills = withoutInherited(
-    (visibleSkills ?? []).map(skillKey).filter(Boolean),
+    (visibleSkills ?? [])
+      .map(skillKey)
+      .filter((value) => Boolean(value) && teamPolicySkillKeys.has(value)),
     inheritedSkillKeys,
   );
   const extensionMcpServers = withoutInherited(capabilityOptions?.mcp_servers ?? [], inheritedMcpKeys);

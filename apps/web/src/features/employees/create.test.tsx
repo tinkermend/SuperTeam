@@ -299,6 +299,7 @@ function createWizardFetcher({
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
+  extraVisibleSkill,
   teamGovernanceMissingForTeamId,
   teams = [team],
 }: {
@@ -319,6 +320,7 @@ function createWizardFetcher({
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
+  extraVisibleSkill?: { slug: string; name: string };
   teamGovernanceMissingForTeamId?: string;
   teams?: Array<typeof team>;
 } = {}) {
@@ -438,6 +440,32 @@ function createWizardFetcher({
           team_bindings: [],
           agent_bindings: [],
         },
+        ...(extraVisibleSkill
+          ? [
+              {
+                id: `skill-${extraVisibleSkill.slug}`,
+                tenant_id: "22222222-2222-4222-8222-222222222222",
+                slug: extraVisibleSkill.slug,
+                name: extraVisibleSkill.name,
+                description: `${extraVisibleSkill.name} description`,
+                version: "1.0.0",
+                source: "internal",
+                risk_level: "medium",
+                icon_key: "bolt",
+                color_token: "slate",
+                tags: [],
+                archive_object_ref: `skills/${extraVisibleSkill.slug}.zip`,
+                archive_filename: `${extraVisibleSkill.slug}.zip`,
+                archive_size_bytes: 1,
+                archive_checksum_sha256: "checksum-extra",
+                archive_file_count: 1,
+                created_by: "user-1",
+                created_by_name: "Admin",
+                team_bindings: [],
+                agent_bindings: [],
+              },
+            ]
+          : []),
       ]);
     }
 
@@ -878,6 +906,25 @@ describe("CreateEmployeeView", () => {
       enabled_mcp_servers: [],
       enabled_external_capabilities: ["jira.search"],
     });
+  });
+
+  it("does not render globally visible skills outside team policy as employee extensions", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        expectedTeamId: team.id,
+        extraVisibleSkill: { slug: "billing-admin", name: "Billing Admin" },
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "负责数据库变更");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("heading", { name: "员工扩展能力" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "billing-admin" }).query()).toBeNull();
+    expect(document.body.textContent).not.toContain("Billing Admin");
   });
 
   it("starts blank-custom configuration without template-injected capabilities", async () => {
