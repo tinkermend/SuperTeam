@@ -85,6 +85,8 @@ function createOptionsFixture({
   includePolicyExcludedProvider = false,
   governanceProviderTypes,
   capabilityProviderTypes,
+  capabilitySkills,
+  capabilityMcpServers,
   runtimeProviderTypes,
   includeFrontendTemplate = false,
   includeCapabilityBoundaryBlock = false,
@@ -97,6 +99,8 @@ function createOptionsFixture({
   includePolicyExcludedProvider?: boolean;
   governanceProviderTypes?: string[];
   capabilityProviderTypes?: string[];
+  capabilitySkills?: string[];
+  capabilityMcpServers?: string[];
   runtimeProviderTypes?: string[];
   includeFrontendTemplate?: boolean;
   includeCapabilityBoundaryBlock?: boolean;
@@ -223,8 +227,8 @@ function createOptionsFixture({
     ],
     capability_options: {
       provider_types: capabilityOptionProviderTypes,
-      skills: ["incident-diagnosis", "sql-review"],
-      mcp_servers: ["postgres"],
+      skills: capabilitySkills ?? ["incident-diagnosis", "sql-review"],
+      mcp_servers: capabilityMcpServers ?? ["postgres"],
       external_capabilities: ["jira.search"],
     },
     runtime_provider_options: runtimeProviderOptions,
@@ -294,6 +298,8 @@ function createWizardFetcher({
   includePolicyExcludedProvider = false,
   governanceProviderTypes,
   capabilityProviderTypes,
+  capabilitySkills,
+  capabilityMcpServers,
   runtimeProviderTypes,
   includeFrontendTemplate = false,
   includeCapabilityBoundaryBlock = false,
@@ -315,6 +321,8 @@ function createWizardFetcher({
   includePolicyExcludedProvider?: boolean;
   governanceProviderTypes?: string[];
   capabilityProviderTypes?: string[];
+  capabilitySkills?: string[];
+  capabilityMcpServers?: string[];
   runtimeProviderTypes?: string[];
   includeFrontendTemplate?: boolean;
   includeCapabilityBoundaryBlock?: boolean;
@@ -355,6 +363,8 @@ function createWizardFetcher({
           includePolicyExcludedProvider,
           governanceProviderTypes,
           capabilityProviderTypes,
+          capabilitySkills,
+          capabilityMcpServers,
           runtimeProviderTypes,
           runtimeAvailability,
           runtimeCount,
@@ -1223,6 +1233,68 @@ describe("CreateEmployeeView", () => {
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.team_id).toBeUndefined();
+  });
+
+  it("shows visible extension skills for team-less create when tenant default policy is empty and submits the selected skill", async () => {
+    const fetcher = createWizardFetcher({
+      capabilitySkills: [],
+      capabilityMcpServers: [],
+      expectedTeamId: undefined,
+      expectedCreateBody: {
+        employee_type: "custom_agent",
+        name: "租户级诊断员工",
+        role: "负责租户级问题诊断",
+        description: "允许直接选择可见技能",
+        risk_level: "medium",
+        avatar_asset_id: avatarAsset.id,
+        role_profile: {
+          employee_type: "custom_agent",
+          role: "负责租户级问题诊断",
+          title: "自定义身份",
+        },
+        capability_selection: {
+          enabled_skills: ["incident-diagnosis"],
+          enabled_mcp_servers: [],
+          enabled_external_capabilities: [],
+        },
+        context_policy_override: {},
+        approval_policy_override: {},
+        output_contract_addendum: {},
+        provider_type: "codex",
+        session_policy: { mode: "reuse_latest" },
+        workspace_policy: {},
+        environment_variables: [],
+        metadata: { creation_mode: "blank_custom" },
+      },
+      teams: [team, secondTeam],
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await enterBlankCustomConfiguration(screen);
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
+    await userEvent.fill(screen.getByLabelText("名称"), "租户级诊断员工");
+    await userEvent.fill(screen.getByLabelText("职责定位"), "负责租户级问题诊断");
+    await userEvent.fill(screen.getByLabelText("描述"), "允许直接选择可见技能");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("heading", { name: "员工扩展能力" })).toBeVisible();
+    await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).toBeVisible();
+    await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).toBeVisible();
+    await userEvent.click(screen.getByRole("checkbox", { name: "incident-diagnosis" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("Codex"));
+    await enterConfirmCreation(screen);
+    await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const createCall = findCreateEmployeePost(fetcher);
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.capability_selection).toEqual({
+      enabled_skills: ["incident-diagnosis"],
+      enabled_mcp_servers: [],
+      enabled_external_capabilities: [],
+    });
   });
 
   it("submits an optional daily token budget when creating a digital employee", async () => {
