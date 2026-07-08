@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -2335,6 +2336,7 @@ type memoryRepository struct {
 	transactionCommitCount    int
 	transactionRollbackCount  int
 	inTransaction             bool
+	templates                 map[uuid.UUID][]EmployeeTemplateRecord
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -2349,7 +2351,171 @@ func newMemoryRepository() *memoryRepository {
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		envVars:                  make(map[string]EnvironmentVariableRecord),
 		nextConfigRevisionNumber: 1,
+		templates:                make(map[uuid.UUID][]EmployeeTemplateRecord),
 	}
+}
+
+func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecord {
+	now := time.Now().UTC()
+	type seed struct {
+		templateType string
+		label        string
+		defaultRole  string
+		skills       []string
+	}
+	seeds := []seed{
+		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}},
+		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}},
+		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}},
+		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}},
+		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}},
+		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}},
+		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}},
+		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}},
+		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}},
+	}
+	records := make([]EmployeeTemplateRecord, 0, len(seeds))
+	for _, s := range seeds {
+		records = append(records, EmployeeTemplateRecord{
+			ID:                         uuid.New(),
+			TenantID:                   tenantID,
+			Type:                       s.templateType,
+			Label:                      s.label,
+			Description:                s.label,
+			DefaultRole:                s.defaultRole,
+			RecommendedSkills:          s.skills,
+			RecommendedMCPServers:      []string{},
+			RecommendedProviderTypes:   []string{"codex", "opencode"},
+			DefaultCapabilitySelection: map[string]any{"enabled_skills": s.skills},
+			Status:                     "active",
+			IsSystem:                   true,
+			CreatedAt:                  now,
+			UpdatedAt:                  now,
+		})
+	}
+	return records
+}
+
+func (r *memoryRepository) templatesForTenant(tenantID uuid.UUID) []EmployeeTemplateRecord {
+	if _, ok := r.templates[tenantID]; !ok {
+		r.templates[tenantID] = builtinEmployeeTemplateFixtures(tenantID)
+	}
+	return r.templates[tenantID]
+}
+
+func (r *memoryRepository) ListEmployeeTemplates(ctx context.Context, params ListEmployeeTemplatesParams) ([]EmployeeTemplateRecord, error) {
+	result := make([]EmployeeTemplateRecord, 0)
+	for _, tmpl := range r.templatesForTenant(params.TenantID) {
+		if params.ActiveOnly && tmpl.Status != "active" {
+			continue
+		}
+		result = append(result, tmpl)
+	}
+	return result, nil
+}
+
+func (r *memoryRepository) GetEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		if tmpl.ID == templateID {
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetEmployeeTemplateByType(ctx context.Context, tenantID uuid.UUID, employeeType string) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		if tmpl.Type == employeeType {
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) CreateEmployeeTemplate(ctx context.Context, params CreateEmployeeTemplateParams) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(params.TenantID) {
+		if tmpl.Type == params.Type {
+			return EmployeeTemplateRecord{}, fmt.Errorf("%w: template type already exists for this tenant", ErrInvalidInput)
+		}
+	}
+	now := time.Now().UTC()
+	record := EmployeeTemplateRecord{
+		ID:                           uuid.New(),
+		TenantID:                     params.TenantID,
+		Type:                         params.Type,
+		Label:                        params.Label,
+		Description:                  params.Description,
+		DefaultRole:                  params.DefaultRole,
+		RecommendedSkills:            params.RecommendedSkills,
+		RecommendedMCPServers:        params.RecommendedMCPServers,
+		RecommendedProviderTypes:     params.RecommendedProviderTypes,
+		DefaultCapabilitySelection:   params.DefaultCapabilitySelection,
+		DefaultContextPolicyOverride: params.DefaultContextPolicyOverride,
+		DefaultApprovalPolicy:        params.DefaultApprovalPolicy,
+		Metadata:                     params.Metadata,
+		Status:                       "active",
+		IsSystem:                     false,
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
+	}
+	r.templates[params.TenantID] = append(r.templatesForTenant(params.TenantID), record)
+	return record, nil
+}
+
+func (r *memoryRepository) UpdateEmployeeTemplate(ctx context.Context, params UpdateEmployeeTemplateParams) (EmployeeTemplateRecord, error) {
+	templates := r.templatesForTenant(params.TenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == params.ID {
+			tmpl.Label = params.Label
+			tmpl.Description = params.Description
+			tmpl.DefaultRole = params.DefaultRole
+			tmpl.RecommendedSkills = params.RecommendedSkills
+			tmpl.RecommendedMCPServers = params.RecommendedMCPServers
+			tmpl.RecommendedProviderTypes = params.RecommendedProviderTypes
+			tmpl.DefaultCapabilitySelection = params.DefaultCapabilitySelection
+			tmpl.DefaultContextPolicyOverride = params.DefaultContextPolicyOverride
+			tmpl.DefaultApprovalPolicy = params.DefaultApprovalPolicy
+			tmpl.Metadata = params.Metadata
+			tmpl.UpdatedAt = time.Now().UTC()
+			templates[i] = tmpl
+			r.templates[params.TenantID] = templates
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) SetEmployeeTemplateStatus(ctx context.Context, tenantID, templateID uuid.UUID, status string) (EmployeeTemplateRecord, error) {
+	templates := r.templatesForTenant(tenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == templateID {
+			tmpl.Status = status
+			tmpl.UpdatedAt = time.Now().UTC()
+			templates[i] = tmpl
+			r.templates[tenantID] = templates
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) SoftDeleteEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) error {
+	templates := r.templatesForTenant(tenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == templateID {
+			r.templates[tenantID] = append(templates[:i], templates[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (r *memoryRepository) ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) (map[string]string, error) {
+	labels := make(map[string]string)
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		labels[tmpl.Type] = tmpl.Label
+	}
+	return labels, nil
 }
 
 type overviewRepositoryStub struct {
