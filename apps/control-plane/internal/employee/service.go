@@ -225,7 +225,15 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, err
 	}
-	employeeTypes := DefaultEmployeeTypeDefinitions()
+	templates, err := s.repository.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: req.TenantID, ActiveOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("list employee templates: %w", err)
+	}
+	employeeTypes := make([]EmployeeTypeDefinition, 0, len(templates)+1)
+	employeeTypes = append(employeeTypes, customAgentEmployeeTypeDefinition())
+	for _, template := range templates {
+		employeeTypes = append(employeeTypes, template.ToDefinition())
+	}
 	var runtimeOptions []RuntimeProviderOption
 	if teamLess {
 		runtimeOptions, err = s.repository.ListRuntimeProviderOptionsForTeamLessCreate(ctx, req.TenantID)
@@ -235,7 +243,7 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
-	capabilityOptions := capabilityOptionsForCreate()
+	capabilityOptions := capabilityOptionsForCreate(employeeTypes)
 
 	return &CreateOptions{
 		TeamConfig:             teamConfigOption,
@@ -353,11 +361,11 @@ func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption,
 	}, nil
 }
 
-func capabilityOptionsForCreate() CapabilityOptions {
+func capabilityOptionsForCreate(employeeTypes []EmployeeTypeDefinition) CapabilityOptions {
 	return CapabilityOptions{
 		ProviderTypes: supportedProviderTypes(),
-		Skills:        platformSkillOptions(),
-		MCPServers:    platformMCPServerOptions(),
+		Skills:        platformSkillOptions(employeeTypes),
+		MCPServers:    platformMCPServerOptions(employeeTypes),
 	}
 }
 
@@ -410,7 +418,7 @@ func emptyPolicyDefaults() PolicyDefaults {
 }
 
 func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error) {
-	normalized, definition, err := normalizeCreateDigitalEmployeeRequest(req)
+	normalized, definition, err := s.normalizeCreateDigitalEmployeeRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +474,7 @@ func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantI
 	return nil
 }
 
-func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (CreateDigitalEmployeeRequest, EmployeeTypeDefinition, error) {
+func (s *Service) normalizeCreateDigitalEmployeeRequest(ctx context.Context, req CreateDigitalEmployeeRequest) (CreateDigitalEmployeeRequest, EmployeeTypeDefinition, error) {
 	if req.TenantID == uuid.Nil {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
@@ -480,9 +488,9 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if employeeType == "" {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: employee_type is required", ErrInvalidInput)
 	}
-	definition, ok := EmployeeTypeDefinitionByType(employeeType)
-	if !ok {
-		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: unknown employee_type %q", ErrInvalidInput, employeeType)
+	definition, err := s.employeeTypeDefinitionByType(ctx, req.TenantID, employeeType)
+	if err != nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, err
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -530,6 +538,27 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	return req, definition, nil
 }
 
+// employeeTypeDefinitionByType resolves an employee_type string to its
+// EmployeeTypeDefinition. custom_agent is a hardcoded sentinel (never
+// persisted); every other type is looked up in digital_employee_templates,
+// scoped to the tenant, and must be active to be usable for creation.
+func (s *Service) employeeTypeDefinitionByType(ctx context.Context, tenantID uuid.UUID, employeeType string) (EmployeeTypeDefinition, error) {
+	if employeeType == "custom_agent" {
+		return customAgentEmployeeTypeDefinition(), nil
+	}
+	template, err := s.repository.GetEmployeeTemplateByType(ctx, tenantID, employeeType)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return EmployeeTypeDefinition{}, fmt.Errorf("%w: unknown employee_type %q", ErrInvalidInput, employeeType)
+		}
+		return EmployeeTypeDefinition{}, err
+	}
+	if template.Status != "active" {
+		return EmployeeTypeDefinition{}, fmt.Errorf("%w: employee_type %q is disabled", ErrInvalidInput, employeeType)
+	}
+	return template.ToDefinition(), nil
+}
+
 func normalizeProviderType(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	if normalized == "claude_code" {
@@ -559,9 +588,9 @@ func supportedProviderTypes() []string {
 	return types
 }
 
-func platformSkillOptions() []string {
+func platformSkillOptions(employeeTypes []EmployeeTypeDefinition) []string {
 	values := make(map[string]struct{})
-	for _, definition := range DefaultEmployeeTypeDefinitions() {
+	for _, definition := range employeeTypes {
 		for _, skill := range definition.RecommendedSkills {
 			if skill == "" {
 				continue
@@ -578,9 +607,9 @@ func platformSkillOptions() []string {
 	return sortedKeys(values)
 }
 
-func platformMCPServerOptions() []string {
+func platformMCPServerOptions(employeeTypes []EmployeeTypeDefinition) []string {
 	values := make(map[string]struct{})
-	for _, definition := range DefaultEmployeeTypeDefinitions() {
+	for _, definition := range employeeTypes {
 		for _, serverID := range definition.RecommendedMCPServers {
 			if serverID == "" {
 				continue
