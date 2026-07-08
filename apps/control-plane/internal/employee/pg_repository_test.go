@@ -25,7 +25,7 @@ func TestGetTeamBaseline(t *testing.T) {
 	ctx := context.Background()
 	cfg, ok := employeeRepoIntegrationTestConfig()
 	if !ok {
-		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+		t.Skip("set TEST_DATABASE_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL")
 	}
 
 	conn, err := pgx.Connect(ctx, cfg.databaseURL)
@@ -50,35 +50,50 @@ func TestGetTeamBaseline(t *testing.T) {
 	_, err = conn.Exec(ctx, `
 		INSERT INTO tenants (id, slug, name, status)
 		VALUES ($1, 'default', '默认租户', 'active')
-		ON CONFLICT (id) DO NOTHING;
+		ON CONFLICT (id) DO NOTHING
+	`, tenantID)
+	require.NoError(t, err)
 
+	_, err = conn.Exec(ctx, `
 		INSERT INTO tenant_teams (id, tenant_id, slug, name, status, constitution)
 		VALUES ($2, $1, 'default', '默认团队', 'active', '{"hard_rules":["r1"]}'::jsonb)
 		ON CONFLICT (id) DO UPDATE SET
 			status = EXCLUDED.status,
-			constitution = EXCLUDED.constitution;
+			constitution = EXCLUDED.constitution
+	`, tenantID, teamID)
+	require.NoError(t, err)
 
+	_, err = conn.Exec(ctx, `
 		INSERT INTO skills (
 			id, tenant_id, slug, name, description,
 			archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
 		) VALUES
-			($3, $1, 'skill-a', 'skill-a', '', 's3://skills/skill-a', 'skill-a.zip', 1, repeat('a', 64), 1),
-			($4, $1, 'skill-b', 'skill-b', '', 's3://skills/skill-b', 'skill-b.zip', 1, repeat('b', 64), 1);
+			($2, $1, 'skill-a', 'skill-a', '', 's3://skills/skill-a', 'skill-a.zip', 1, repeat('a', 64), 1),
+			($3, $1, 'skill-b', 'skill-b', '', 's3://skills/skill-b', 'skill-b.zip', 1, repeat('b', 64), 1)
+	`, tenantID, skillAID, skillBID)
+	require.NoError(t, err)
 
+	_, err = conn.Exec(ctx, `
 		INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
-		VALUES ($1, $3, $2), ($1, $4, $2);
+		VALUES ($1, $2, $4), ($1, $3, $4)
+	`, tenantID, skillAID, skillBID, teamID)
+	require.NoError(t, err)
 
+	_, err = conn.Exec(ctx, `
 		INSERT INTO mcp_servers (
 			id, tenant_id, name, server_key, description, transport, url, auth_strategy,
 			required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata
 		) VALUES (
-			$5, $1, 'Postgres Readonly', 'postgres-readonly', '', 'http', 'https://mcp.local/postgres', 'none',
+			$2, $1, 'Postgres Readonly', 'postgres-readonly', '', 'http', 'https://mcp.local/postgres', 'none',
 			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb
-		);
+		)
+	`, tenantID, mcpID)
+	require.NoError(t, err)
 
+	_, err = conn.Exec(ctx, `
 		INSERT INTO team_mcp_bindings (tenant_id, team_id, mcp_server_id, metadata)
-		VALUES ($1, $2, $5, '{}'::jsonb);
-	`, tenantID, teamID, skillAID, skillBID, mcpID)
+		VALUES ($1, $2, $3, '{}'::jsonb)
+	`, tenantID, teamID, mcpID)
 	require.NoError(t, err)
 
 	repo := NewPgRepository(queries.New(conn), conn)
