@@ -158,4 +158,47 @@
 - 项目自身的 `approval_policy` / `coordination_policy` / `evidence_policy`：属于项目/人类决策层，本次不涉及。
 - 员工自有 approval/context 默认值语义：保留现状，仅调整创建向导呈现位置。
 - 外部能力：团队与员工创建路径中的外部能力 plumbing 本次删除；外部能力的注册表与团队绑定留待真正要引用外部能力时单独设计。
-- 项目绑定可运行节点：属计划 B，本设计不在 A 中实现。
+- 项目绑定可运行节点：属计划 B，见 §7。
+
+## 7. 计划 B — 项目绑定可运行节点
+
+### 7.1 探查纠偏（关键）：项目已有单节点 placement
+
+代码探查发现项目**已有** runtime 落点子系统，B 必须在其上调和而非新造派发链：
+
+- `project_placements` 表（迁移 040）：`(tenant_id, project_id) WHERE placement_status='active'` 唯一 → **每项目仅一个 active 落点**。
+- 仅能**手动** `PUT /projects/{id}/runtime-placement` 设置（`UpsertProjectPlacement` 无自动调用方）。
+- predispatch gate（`predispatch_gate.go`）：无 active placement 即 `runtime.placement_missing` 阻断派发，要求 `bind_runtime`。
+- 就绪度（`service.go` `GetProjectRuntimeReadiness`）：以 active placement 为准，再查节点 online/可用。
+
+现状即"建项目 → 手动 pin 一个节点 → 才能派发"，手动 pin 是 golden path 的一处卡点。
+
+### 7.2 目标模型：资格集（多，创建时选）+ 单 active placement（派发自动选）
+
+```
+新表 project_runtime_nodes (tenant_id, project_id, runtime_node_id, created_at)
+    项目 ↔ N 个「可运行资格」节点；创建时多选写入，强制 ≥1。
+
+CreateProjectRequest 新增 runtime_node_ids: uuid[]（required, minItems 1）。
+
+project_placements（单 active = 当前实际落点）：语义不变，但
+    - PutProjectRuntimePlacement 约束：只能选资格集(project_runtime_nodes)内的节点。
+    - 派发时自动选：无 active placement 但资格集有 online 节点时，
+      派发自动从资格集挑一个 online 节点 upsert placement（消除手动 pin，
+      顺带解掉 placement_missing 卡点）。
+
+predispatch gate / 就绪度：基本不动（仍看 active placement，只是现在能自动获得）。
+```
+
+### 7.3 改动清单（B）
+
+- **DB 迁移 M3**：新增 `project_runtime_nodes` 表（FK 到 `projects(tenant_id,id)` ON DELETE CASCADE、`runtime_nodes(node_id 或 id)`）。
+- **契约**：`CreateProjectRequest` 加 `runtime_node_ids: uuid[]`（required, minItems 1）；如需读取资格集，加 `GET /projects/{projectId}/runtime-nodes`。重生成。
+- **Go project**：`CreateProject` 校验 `runtime_node_ids` 非空、同租户、节点存在，插入 `project_runtime_nodes`；`PutProjectRuntimePlacement` 增加资格集约束；派发路径（predispatch 或 dispatch 入口）在无 active placement 时从资格集自动选 online 节点 upsert placement。
+- **Web**：项目创建向导（`create-project` 系列）在 policies 步前/后加「可运行节点」多选步或分区，复用 `listRuntimeNodes`，强制 ≥1；`create-project-draft.ts` 加 `runtimeNodeIds`；提交映射到 `runtime_node_ids`。
+- **测试 + 真实 e2e**：建项目多选 ≥1 节点 → 不手动 pin 直接派发 → 派发自动从资格集选 online 节点、不再 `placement_missing`。
+
+### 7.4 B 明确排除
+
+- 不改 `project_placements` 单 active 语义（不做多 active）。
+- 不引入项目级 runtime_scope_policy blob（用显式资格集表取代）。
