@@ -199,7 +199,6 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	runtimeNodeID := uuid.New()
 	employeeID := uuid.New()
 	executionInstanceID := uuid.New()
-	teamConfigRevisionID := uuid.New()
 	employeeConfigRevisionID := uuid.New()
 	authoritativeNodeID := "runtime-authoritative"
 
@@ -330,36 +329,6 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			'{}'::jsonb
 		);
 
-		INSERT INTO tenant_team_config_revisions (
-			id,
-			tenant_id,
-			team_id,
-			revision_number,
-			constitution,
-			capability_policy,
-			context_policy,
-			approval_policy,
-			artifact_contract,
-			internal_collaboration_policy,
-			runtime_scope_policy,
-			status,
-			approved_at
-		) VALUES (
-			$7,
-			$1,
-			$2,
-			1,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'active',
-			NOW()
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id,
 			tenant_id,
@@ -373,7 +342,7 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			output_contract_addendum,
 			status
 		) VALUES (
-			$8,
+			$7,
 			$1,
 			$5,
 			1,
@@ -385,27 +354,7 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			'{}'::jsonb,
 			'draft'
 		);
-
-		INSERT INTO digital_employee_effective_configs (
-			tenant_id,
-			digital_employee_id,
-			tenant_team_config_revision_id,
-			employee_config_revision_id,
-			effective_config_snapshot,
-			validation_result,
-			status,
-			approved_at
-		) VALUES (
-			$1,
-			$5,
-			$7,
-			$8,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'approved',
-			NOW()
-		);
-	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, executionInstanceID, teamConfigRevisionID, employeeConfigRevisionID)
+	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, executionInstanceID, employeeConfigRevisionID)
 	require.NoError(t, err)
 
 	repo := NewPgRunRepository(queries.New(conn))
@@ -446,7 +395,6 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 	runtimeNodeID := uuid.New()
 	employeeID := uuid.New()
 	executionInstanceID := uuid.New()
-	teamConfigRevisionID := uuid.New()
 	employeeConfigRevisionID := uuid.New()
 	taskBeforeID := uuid.New()
 	taskInsideID := uuid.New()
@@ -589,36 +537,6 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			'{}'::jsonb
 		);
 
-		INSERT INTO tenant_team_config_revisions (
-			id,
-			tenant_id,
-			team_id,
-			revision_number,
-			constitution,
-			capability_policy,
-			context_policy,
-			approval_policy,
-			artifact_contract,
-			internal_collaboration_policy,
-			runtime_scope_policy,
-			status,
-			approved_at
-		) VALUES (
-			$7,
-			$1,
-			$2,
-			1,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'active',
-			NOW()
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id,
 			tenant_id,
@@ -630,9 +548,10 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			context_policy_override,
 			approval_policy_override,
 			output_contract_addendum,
+			budget_policy,
 			status
 		) VALUES (
-			$8,
+			$7,
 			$1,
 			$5,
 			1,
@@ -642,27 +561,8 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			'{}'::jsonb,
 			'{}'::jsonb,
 			'{}'::jsonb,
-			'approved'
-		);
-
-		INSERT INTO digital_employee_effective_configs (
-			tenant_id,
-			digital_employee_id,
-			tenant_team_config_revision_id,
-			employee_config_revision_id,
-			effective_config_snapshot,
-			validation_result,
-			status,
-			approved_at
-		) VALUES (
-			$1,
-			$5,
-			$7,
-			$8,
-			'{"budget_policy":{"daily_token_limit":1000}}'::jsonb,
-			'{}'::jsonb,
-			'approved',
-			NOW()
+			'{"daily_token_limit":1000}'::jsonb,
+			'active'
 		);
 
 		INSERT INTO tasks (
@@ -677,8 +577,8 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			created_at,
 			updated_at
 		) VALUES
-			($9, $1, $2, '午夜前运行', 'completed', 'codex', $4, '{}'::jsonb, $13, $13),
-			($10, $1, $2, '午夜后运行', 'completed', 'codex', $4, '{}'::jsonb, $14, $14);
+			($8, $1, $2, '午夜前运行', 'completed', 'codex', $4, '{}'::jsonb, $12, $12),
+			($9, $1, $2, '午夜后运行', 'completed', 'codex', $4, '{}'::jsonb, $13, $13);
 
 		INSERT INTO task_runs (
 			id,
@@ -698,9 +598,9 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			execution_instance_id,
 			provider_type
 		) VALUES
-			($11, $1, $9, $4, $3, 'completed', $13, $13, $13, '{"usage":{"total_tokens":700}}'::jsonb, $13, $13, 'cmd-before-midnight', $5, $6, 'codex'),
-			($12, $1, $10, $4, $3, 'completed', $14, $14, $14, '{"usage":{"total_tokens":300}}'::jsonb, $14, $14, 'cmd-after-midnight', $5, $6, 'codex');
-	`, tenantID, teamID, runtimeNodeID, nodeID, employeeID, executionInstanceID, teamConfigRevisionID, employeeConfigRevisionID, taskBeforeID, taskInsideID, runBeforeID, runInsideID, beforeToday, insideToday)
+			($10, $1, $8, $4, $3, 'completed', $12, $12, $12, '{"usage":{"total_tokens":700}}'::jsonb, $12, $12, 'cmd-before-midnight', $5, $6, 'codex'),
+			($11, $1, $9, $4, $3, 'completed', $13, $13, $13, '{"usage":{"total_tokens":300}}'::jsonb, $13, $13, 'cmd-after-midnight', $5, $6, 'codex');
+	`, tenantID, teamID, runtimeNodeID, nodeID, employeeID, executionInstanceID, employeeConfigRevisionID, taskBeforeID, taskInsideID, runBeforeID, runInsideID, beforeToday, insideToday)
 	require.NoError(t, err)
 
 	repo := NewPgRunRepository(queries.New(conn))

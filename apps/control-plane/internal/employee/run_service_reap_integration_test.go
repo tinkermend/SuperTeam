@@ -201,17 +201,17 @@ func reapIntegrationCreateRunRequest(tenantID, employeeID uuid.UUID, objective s
 
 // seedEmployeeRunGraph inserts the minimum real entity graph (tenant, team,
 // runtime node + capability, digital employee, execution instance, config
-// revisions, approved effective config) that GetRunPreflight resolves for a
-// dispatchable digital employee. It mirrors the production seeding shape used
-// by the run-loop repository tests. The graph is seeded as a single arg-free
-// (simple-protocol) multi-statement query, because pgx's extended protocol
-// rejects multi-statement queries that carry bind parameters.
+// revision) that GetRunPreflight resolves for a dispatchable digital
+// employee. It mirrors the production seeding shape used by the run-loop
+// repository tests. The graph is seeded as a single arg-free (simple-protocol)
+// multi-statement query, because pgx's extended protocol rejects
+// multi-statement queries that carry bind parameters.
 func seedEmployeeRunGraph(
 	ctx context.Context,
 	conn *pgx.Conn,
 	tenantID, teamID, runtimeNodeID uuid.UUID,
 	authoritativeNodeID string,
-	employeeID, executionInstanceID, teamConfigRevisionID, employeeConfigRevisionID uuid.UUID,
+	employeeID, executionInstanceID, _, employeeConfigRevisionID uuid.UUID,
 ) error {
 	ownerUserID := uuid.New()
 	sql := fmt.Sprintf(`
@@ -264,17 +264,6 @@ func seedEmployeeRunGraph(
 			'ready', NOW(), '{}'::jsonb
 		);
 
-		INSERT INTO tenant_team_config_revisions (
-			id, tenant_id, team_id, revision_number, constitution,
-			capability_policy, context_policy, approval_policy,
-			artifact_contract, internal_collaboration_policy,
-			runtime_scope_policy, status, approved_at
-		) VALUES (
-			'%s', '%s', '%s', 1, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-			'{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-			'active', NOW()
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id, tenant_id, digital_employee_id, revision_number, role_profile,
 			constitution_addendum, capability_selection,
@@ -284,14 +273,6 @@ func seedEmployeeRunGraph(
 			'%s', '%s', '%s', 1, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
 			'{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'draft'
 		);
-
-		INSERT INTO digital_employee_effective_configs (
-			tenant_id, digital_employee_id,
-			tenant_team_config_revision_id, employee_config_revision_id,
-			effective_config_snapshot, validation_result, status, approved_at
-		) VALUES (
-			'%s', '%s', '%s', '%s', '{}'::jsonb, '{}'::jsonb, 'approved', NOW()
-		);
 	`,
 		tenantID,
 		teamID, tenantID,
@@ -299,9 +280,7 @@ func seedEmployeeRunGraph(
 		tenantID, runtimeNodeID,
 		employeeID, tenantID, teamID, ownerUserID,
 		executionInstanceID, tenantID, employeeID, runtimeNodeID,
-		teamConfigRevisionID, tenantID, teamID,
 		employeeConfigRevisionID, tenantID, employeeID,
-		tenantID, employeeID, teamConfigRevisionID, employeeConfigRevisionID,
 	)
 	_, err := conn.Exec(ctx, sql)
 	return err
