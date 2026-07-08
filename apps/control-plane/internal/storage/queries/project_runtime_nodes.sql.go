@@ -42,7 +42,8 @@ func (q *Queries) GetProjectEmployeeNodeAffinity(ctx context.Context, arg GetPro
 const InsertProjectRuntimeNode = `-- name: InsertProjectRuntimeNode :one
 INSERT INTO project_runtime_nodes (tenant_id, project_id, runtime_node_id)
 VALUES ($1::uuid, $2::uuid, $3::uuid)
-ON CONFLICT (project_id, runtime_node_id) DO NOTHING
+ON CONFLICT (project_id, runtime_node_id)
+DO UPDATE SET runtime_node_id = EXCLUDED.runtime_node_id
 RETURNING id, tenant_id, project_id, runtime_node_id, created_at
 `
 

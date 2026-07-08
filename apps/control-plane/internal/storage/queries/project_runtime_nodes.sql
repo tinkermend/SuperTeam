@@ -1,7 +1,8 @@
 -- name: InsertProjectRuntimeNode :one
 INSERT INTO project_runtime_nodes (tenant_id, project_id, runtime_node_id)
 VALUES (sqlc.arg('tenant_id')::uuid, sqlc.arg('project_id')::uuid, sqlc.arg('runtime_node_id')::uuid)
-ON CONFLICT (project_id, runtime_node_id) DO NOTHING
+ON CONFLICT (project_id, runtime_node_id)
+DO UPDATE SET runtime_node_id = EXCLUDED.runtime_node_id
 RETURNING *;
 
 -- name: ListProjectRuntimeNodes :many
