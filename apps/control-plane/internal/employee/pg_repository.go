@@ -962,9 +962,13 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 	if err != nil {
 		return nil, err
 	}
+	labelsByType, err := r.ListEmployeeTemplateLabels(ctx, req.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]DigitalEmployeeOverviewItem, 0, len(itemRows))
 	for _, row := range itemRows {
-		items = append(items, overviewItemFromQuery(row))
+		items = append(items, overviewItemFromQuery(row, labelsByType))
 	}
 
 	filterRows, err := r.q.ListDigitalEmployeeOverviewFilterOptions(ctx, req.TenantID)
@@ -992,7 +996,7 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 			FailedRecentRunCount:       summary.FailedRecentRunCount,
 		},
 		Items:   items,
-		Filters: overviewFiltersFromQuery(filterRows),
+		Filters: overviewFiltersFromQuery(filterRows, labelsByType),
 		Pagination: OverviewPagination{
 			Limit:      req.Limit,
 			Offset:     req.Offset,
@@ -1062,7 +1066,7 @@ func (r *PgRepository) GetDigitalEmployeeOperationalSignals(ctx context.Context,
 	return signals, nil
 }
 
-func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) DigitalEmployeeOverviewItem {
+func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labelsByType map[string]string) DigitalEmployeeOverviewItem {
 	executionStatus := overviewExecutionStatus(row.ExecutionStatus)
 	latestRunStatus := overviewRunStatus(row.LatestRunStatus)
 	dailyTokenLimit := int32PtrFromJSONString(row.DailyTokenLimitText)
@@ -1124,7 +1128,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 			OwnerUserID:       row.OwnerUserID,
 			OwnerDisplayName:  row.OwnerDisplayName,
 			EmployeeType:      row.EmployeeType,
-			EmployeeTypeLabel: overviewEmployeeTypeLabel(row.EmployeeType),
+			EmployeeTypeLabel: overviewEmployeeTypeLabel(row.EmployeeType, labelsByType),
 			Name:              row.Name,
 			Role:              row.Role,
 			Description:       stringPtrFromPgText(row.Description),
@@ -1240,7 +1244,7 @@ func avatarAssetFromOverviewMetadata(metadata []byte) *DigitalEmployeeAvatarAsse
 	return AvatarAssetFromMetadata(jsonMapFromBytes(metadata))
 }
 
-func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow) DigitalEmployeeOverviewFilters {
+func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow, labelsByType map[string]string) DigitalEmployeeOverviewFilters {
 	filters := DigitalEmployeeOverviewFilters{
 		Teams:             []OverviewFilterOption{},
 		Statuses:          []OverviewFilterOption{},
@@ -1260,7 +1264,7 @@ func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOp
 		if label == "" {
 			label = value
 		}
-		label = overviewFilterLabel(row.FilterType, value, label)
+		label = overviewFilterLabel(row.FilterType, value, label, labelsByType)
 		option := OverviewFilterOption{Value: value, Label: label}
 		switch row.FilterType {
 		case "team":
@@ -1284,10 +1288,10 @@ func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOp
 	return filters
 }
 
-func overviewFilterLabel(filterType, value, fallback string) string {
+func overviewFilterLabel(filterType, value, fallback string, labelsByType map[string]string) string {
 	switch filterType {
 	case "employee_type":
-		return overviewEmployeeTypeLabel(value)
+		return overviewEmployeeTypeLabel(value, labelsByType)
 	case "status":
 		return overviewStatusLabel(value, fallback)
 	case "risk_level":
@@ -1306,12 +1310,14 @@ func overviewFilterLabel(filterType, value, fallback string) string {
 	}
 }
 
-func overviewEmployeeTypeLabel(value string) string {
-	definition, ok := EmployeeTypeDefinitionByType(value)
-	if !ok {
-		return value
+func overviewEmployeeTypeLabel(value string, labelsByType map[string]string) string {
+	if value == "custom_agent" {
+		return customAgentEmployeeTypeDefinition().Label
 	}
-	return definition.Label
+	if label, ok := labelsByType[value]; ok && label != "" {
+		return label
+	}
+	return value
 }
 
 func overviewStatusLabel(value, fallback string) string {
