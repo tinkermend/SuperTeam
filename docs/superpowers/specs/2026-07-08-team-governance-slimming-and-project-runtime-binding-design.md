@@ -173,32 +173,53 @@
 
 现状即"建项目 → 手动 pin 一个节点 → 才能派发"，手动 pin 是 golden path 的一处卡点。
 
-### 7.2 目标模型：资格集（多，创建时选）+ 单 active placement（派发自动选）
+### 7.2 目标模型：三层节点选择（资格集 / 员工亲和 / 任务硬钉）
 
 ```
-新表 project_runtime_nodes (tenant_id, project_id, runtime_node_id, created_at)
-    项目 ↔ N 个「可运行资格」节点；创建时多选写入，强制 ≥1。
+第 1 层 资格集（项目级，创建时多选 ≥1）
+  新表 project_runtime_nodes (tenant_id, project_id, runtime_node_id, created_at)
+  CreateProjectRequest 新增 runtime_node_ids: uuid[]（required, minItems 1）。
+  限定该项目允许在哪些节点跑。
 
-CreateProjectRequest 新增 runtime_node_ids: uuid[]（required, minItems 1）。
+第 2 层 员工亲和（软，按 项目+数字员工）
+  新表 project_employee_node_affinity
+    (tenant_id, project_id, digital_employee_id, runtime_node_id, last_run_at)
+  新任务优先落在该员工上次的节点；上次节点离线 → 允许换到资格集内另一 online 节点。
 
-project_placements（单 active = 当前实际落点）：语义不变，但
-    - PutProjectRuntimePlacement 约束：只能选资格集(project_runtime_nodes)内的节点。
-    - 派发时自动选：无 active placement 但资格集有 online 节点时，
-      派发自动从资格集挑一个 online 节点 upsert placement（消除手动 pin，
-      顺带解掉 placement_missing 卡点）。
+第 3 层 任务硬钉（反漂移，按任务）
+  复用现有任务/尝试的 RuntimeNodeID（types.go 多处已携带；service.go:2559 已有错配校验）。
+  任务一旦落在节点 A，整个生命周期（重试/续跑）钉死 A，禁止换节点。
+  A 中途离线 → 任务暂停（不迁移），等 A 回来或人工介入。
 
-predispatch gate / 就绪度：基本不动（仍看 active placement，只是现在能自动获得）。
+派发选节点（任务 T，项目 P，员工 E）：
+  eligible = project_runtime_nodes(P)
+  若 T 已有钉定节点 N（来自已有尝试）：
+     N ∈ eligible 且 online 且有空槽 → 跑在 N（硬钉，不漂移）
+     N 离线 → 暂停任务（blocker: runtime.pinned_node_offline），不换节点
+  否则（新任务）：
+     候选 = eligible ∩ online ∩ 有空槽 ∩ 支持所需 provider
+     affinity(P,E).node ∈ 候选 → 选它（软黏性）
+     否则选负载最优候选
+     钉定 T = 所选节点；upsert affinity(P,E) = 所选节点
+
+predispatch gate：placement_missing 语义替换为
+  - 新任务：eligible ∩ online 为空 → 阻断（reason: runtime.no_eligible_online_node）
+  - 钉定任务：钉定节点离线 → 暂停（reason: runtime.pinned_node_offline）
 ```
 
 ### 7.3 改动清单（B）
 
-- **DB 迁移 M3**：新增 `project_runtime_nodes` 表（FK 到 `projects(tenant_id,id)` ON DELETE CASCADE、`runtime_nodes(node_id 或 id)`）。
-- **契约**：`CreateProjectRequest` 加 `runtime_node_ids: uuid[]`（required, minItems 1）；如需读取资格集，加 `GET /projects/{projectId}/runtime-nodes`。重生成。
-- **Go project**：`CreateProject` 校验 `runtime_node_ids` 非空、同租户、节点存在，插入 `project_runtime_nodes`；`PutProjectRuntimePlacement` 增加资格集约束；派发路径（predispatch 或 dispatch 入口）在无 active placement 时从资格集自动选 online 节点 upsert placement。
-- **Web**：项目创建向导（`create-project` 系列）在 policies 步前/后加「可运行节点」多选步或分区，复用 `listRuntimeNodes`，强制 ≥1；`create-project-draft.ts` 加 `runtimeNodeIds`；提交映射到 `runtime_node_ids`。
-- **测试 + 真实 e2e**：建项目多选 ≥1 节点 → 不手动 pin 直接派发 → 派发自动从资格集选 online 节点、不再 `placement_missing`。
+- **DB 迁移 M3**：新增 `project_runtime_nodes`、`project_employee_node_affinity` 两表（FK 到 `projects(tenant_id,id)` ON DELETE CASCADE；`runtime_node_id` 对齐 `runtime_nodes(id)` UUID，与 `project_placements.runtime_node_id` 一致，不强制 FK 以保持一致性，实现时确认）。
+- **契约**：`CreateProjectRequest` 加 `runtime_node_ids: uuid[]`（required, minItems 1）；加 `GET /projects/{projectId}/runtime-nodes` 读资格集。重生成。
+- **Go project**：
+  - `CreateProject` 校验 `runtime_node_ids` 非空、同租户、节点存在，插入 `project_runtime_nodes`。
+  - 派发节点选择实现三层算法（资格集 ∩ online → 亲和优先 → 硬钉复用尝试节点）；写回 `project_employee_node_affinity`。
+  - predispatch gate 的 `runtime.placement_missing` 替换为 `runtime.no_eligible_online_node`（新任务）与 `runtime.pinned_node_offline`（钉定任务暂停）；`project_placements` 退出选节点权威（保留表/端点为兼容，不再作为派发源）。
+- **Web**：项目创建向导（`create-project` 系列）加「可运行节点」多选（复用 `listRuntimeNodes`，强制 ≥1）；`create-project-draft.ts` 加 `runtimeNodeIds`；提交映射 `runtime_node_ids`。
+- **测试 + 真实 e2e**：建项目多选 ≥1 → 不手动 pin 直接派发 → 首个任务按亲和/负载落节点并写亲和；重试/续跑钉死同节点；钉定节点离线 → 任务暂停不漂移；新任务在上次节点离线时换到另一 online 资格节点。
 
 ### 7.4 B 明确排除
 
-- 不改 `project_placements` 单 active 语义（不做多 active）。
+- `project_placements` 单 active 语义不改、也不删（退出选节点权威，保留兼容/展示）。
 - 不引入项目级 runtime_scope_policy blob（用显式资格集表取代）。
+- 跨项目的全局节点亲和不做（亲和限定在 项目+员工 粒度）。
