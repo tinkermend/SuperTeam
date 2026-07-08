@@ -97,7 +97,20 @@ type PreDispatchToolSnapshot struct {
 }
 
 type PreDispatchRuntimeSnapshot struct {
-	PlacementPresent        bool
+	// PlacementPresent means the project has at least one runtime node in its
+	// eligibility set (project_runtime_nodes). It no longer reflects the legacy
+	// single active project_placement — Plan B's eligibility set is the source
+	// of truth for whether a runtime binding exists at all.
+	PlacementPresent bool
+	// Pinned means the task's current attempt already has a hard-pinned runtime
+	// node (from a prior successful dispatch). When true, NodeOnline reports the
+	// status of that SPECIFIC pinned node (via the three-layer resolver), not of
+	// the eligibility set in general — per the anti-drift rule, an offline
+	// pinned node must never be papered over by some other node being online.
+	Pinned bool
+	// NodeOnline means the relevant node (the pinned node when Pinned is true,
+	// otherwise a resolvable node from the online eligibility set) is currently
+	// dispatchable.
 	NodeOnline              bool
 	ProviderAvailable       bool
 	WorkspaceReady          bool
@@ -325,9 +338,19 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		addCheck("runtime.placement", "failed", nil)
 		addBlocker("runtime.placement_missing", PreDispatchGateStatusBlocked, "hard", false, nil)
 		setStatus(PreDispatchGateStatusBlocked)
+	} else if snapshot.Runtime.Pinned && !snapshot.Runtime.NodeOnline {
+		// The task is hard-pinned to a specific node (a prior attempt already
+		// bound one) and that node is currently offline/out of capacity. Per the
+		// anti-drift rule this must wait for that node, not be re-selected onto a
+		// different one — so it gets its own blocker key and Blocked status
+		// (parked, non-terminal) rather than the RetryLater active-poll status
+		// used for "no node was ever pinned".
+		addCheck("runtime.ready", "failed", map[string]any{"node_online": false, "pinned": true})
+		addBlocker("runtime.pinned_node_offline", PreDispatchGateStatusBlocked, "hard", false, nil)
+		setStatus(PreDispatchGateStatusBlocked)
 	} else if !snapshot.Runtime.NodeOnline {
 		addCheck("runtime.ready", "failed", map[string]any{"node_online": false})
-		addBlocker("runtime.node_offline", PreDispatchGateStatusRetryLater, "transient", true, nil)
+		addBlocker("runtime.no_eligible_online_node", PreDispatchGateStatusRetryLater, "transient", true, nil)
 		setStatus(PreDispatchGateStatusRetryLater)
 	} else if !snapshot.Runtime.ProviderAvailable {
 		addCheck("runtime.ready", "failed", map[string]any{"provider_available": false})

@@ -190,6 +190,13 @@ func nodeSupportsProvider(node runtimepkg.NodeRecord, providerType string) bool 
 // lowestLoadNodeID returns the candidate node id with the smallest CurrentLoad,
 // breaking ties by lexicographically smallest node id for deterministic output.
 func lowestLoadNodeID(candidates []runtimepkg.NodeRecord) uuid.UUID {
+	return lowestLoadNode(candidates).ID
+}
+
+// lowestLoadNode is lowestLoadNodeID's full-record counterpart, used where the
+// caller needs more than the id (e.g. readiness reporting a representative
+// node's display name).
+func lowestLoadNode(candidates []runtimepkg.NodeRecord) runtimepkg.NodeRecord {
 	sorted := append([]runtimepkg.NodeRecord(nil), candidates...)
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].CurrentLoad != sorted[j].CurrentLoad {
@@ -197,5 +204,59 @@ func lowestLoadNodeID(candidates []runtimepkg.NodeRecord) uuid.UUID {
 		}
 		return sorted[i].ID.String() < sorted[j].ID.String()
 	})
-	return sorted[0].ID
+	return sorted[0]
+}
+
+// usableEligibleNodes returns the project's eligibility-set nodes that are
+// currently online, have capacity, and are connected — the set-level building
+// block GetProjectRuntimeReadiness uses ("≥1 eligible node online + connected +
+// with capacity"), sharing the online/capacity predicate (runtimeNodeDispatchable)
+// with ResolveProjectTaskNode so the two never disagree about what "usable"
+// means.
+func (s *Service) usableEligibleNodes(ctx context.Context, tenantID uuid.UUID, eligibleNodes []ProjectRuntimeNode) ([]runtimepkg.NodeRecord, error) {
+	nodes, err := s.runtimeNodes.ListRuntimeNodesForTenant(ctx, runtimepkg.ListRuntimeNodesForTenantParams{
+		TenantID: tenantID,
+		Limit:    500,
+	})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uuid.UUID]runtimepkg.NodeRecord, len(nodes))
+	for _, node := range nodes {
+		if node.TenantID == tenantID {
+			byID[node.ID] = node
+		}
+	}
+	usable := make([]runtimepkg.NodeRecord, 0, len(eligibleNodes))
+	seen := make(map[uuid.UUID]struct{}, len(eligibleNodes))
+	for _, eligible := range eligibleNodes {
+		record, ok := byID[eligible.RuntimeNodeID]
+		if !ok || !runtimeNodeDispatchable(record, "") {
+			continue
+		}
+		if !s.runtimeNodes.IsConnected(record.NodeID) {
+			continue
+		}
+		if _, dup := seen[record.ID]; dup {
+			continue
+		}
+		seen[record.ID] = struct{}{}
+		usable = append(usable, record)
+	}
+	return usable, nil
+}
+
+// unionProviderCapabilities reports the set of provider types available across
+// nodes — "does the eligible, usable set cover every required provider",
+// rather than requiring a single node to cover all of them.
+func (s *Service) unionProviderCapabilities(ctx context.Context, tenantID uuid.UUID, nodes []runtimepkg.NodeRecord) ([]string, error) {
+	union := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		capabilities, err := s.runtimeNodes.ListRuntimeCapabilitiesForNode(ctx, tenantID, node.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		union = append(union, availableProviderCapabilities(capabilities, node.SupportedProviders)...)
+	}
+	return normalizeStringSet(union), nil
 }

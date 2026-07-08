@@ -117,6 +117,126 @@ func TestRunPreDispatchGateBlocksMissingProjectPlacement(t *testing.T) {
 	require.Equal(t, "bind_runtime", recommendedAction)
 }
 
+// fakeGateProjectTaskNodeResolver is a test double for GateProjectTaskNodeResolver
+// that returns a fixed NodeResolution, letting tests drive the gate's
+// Pinned/NodeOnline facts directly without needing a real project.Service.
+type fakeGateProjectTaskNodeResolver struct {
+	resolution project.NodeResolution
+	err        error
+	calls      int
+}
+
+func (f *fakeGateProjectTaskNodeResolver) ResolveProjectTaskNodeForGate(ctx context.Context, tenantID, projectID, employeeID, projectTaskID uuid.UUID) (project.NodeResolution, error) {
+	f.calls++
+	return f.resolution, f.err
+}
+
+func TestRunPreDispatchGateBlocksNoEligibleOnlineNodeViaResolver(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	demandID := uuid.New()
+	fixedNow := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "Dispatch with no eligible online node",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	resolver := &fakeGateProjectTaskNodeResolver{resolution: project.NodeResolution{Reason: project.NodeResolutionReasonNoEligibleOnlineNode}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow }).
+		WithProjectTaskNodeResolver(resolver)
+
+	gate, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, resolver.calls)
+	require.False(t, gate.AllowRunStart)
+	require.False(t, gate.Terminal)
+	require.True(t, gate.Retryable)
+	require.Contains(t, preDispatchBlockerKeys(gate.Gate.Blockers), "runtime.no_eligible_online_node")
+	reasonCode, recommendedAction := dispatchBlockReasonFromGate(gate.Gate)
+	require.Equal(t, "runtime_no_eligible_online_node", reasonCode)
+	require.Equal(t, "bind_runtime", recommendedAction)
+}
+
+func TestRunPreDispatchGateBlocksPinnedNodeOfflineViaResolverWithoutDrift(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	demandID := uuid.New()
+	fixedNow := time.Date(2026, 7, 8, 9, 1, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "Dispatch with pinned node offline",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	resolver := &fakeGateProjectTaskNodeResolver{resolution: project.NodeResolution{Paused: true, Reason: project.NodeResolutionReasonPinnedNodeOffline}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow }).
+		WithProjectTaskNodeResolver(resolver)
+
+	gate, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, resolver.calls)
+	require.False(t, gate.AllowRunStart)
+	// Blocked-but-non-terminal (parked waiting for the pinned node), and NOT
+	// classified as the active-poll Retryable state — critically, this must
+	// never be conflated with "no node was ever pinned" (which IS retryable),
+	// since that would risk the coordinator treating it as free to re-select.
+	require.False(t, gate.Terminal)
+	require.False(t, gate.Retryable)
+	require.Contains(t, preDispatchBlockerKeys(gate.Gate.Blockers), "runtime.pinned_node_offline")
+	reasonCode, recommendedAction := dispatchBlockReasonFromGate(gate.Gate)
+	require.Equal(t, "runtime_pinned_node_offline", reasonCode)
+	require.Equal(t, "restart_runtime", recommendedAction)
+}
+
 func TestProjectStoreRunPreDispatchGateRequiresAcceptedDependencyResult(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1030,6 +1150,20 @@ func (r *preDispatchGateRepositoryFake) GetActiveProjectPlacement(ctx context.Co
 		RuntimeNodeID:   uuid.New(),
 		PlacementStatus: project.ProjectRuntimePlacementStateActive,
 	}, nil
+}
+
+// ListProjectRuntimeNodes mirrors GetActiveProjectPlacement's presence
+// semantics (missingActivePlacement gates both) so existing "no runtime bound"
+// scenarios exercise the new eligibility-set-based PlacementPresent check the
+// same way they exercised the legacy placement-based one.
+func (r *preDispatchGateRepositoryFake) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectRuntimeNode, error) {
+	if r.missingActivePlacement {
+		return nil, nil
+	}
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return nil, nil
+	}
+	return []project.ProjectRuntimeNode{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RuntimeNodeID: uuid.New()}}, nil
 }
 
 func (r *preDispatchGateRepositoryFake) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {

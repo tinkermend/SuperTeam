@@ -21,6 +21,18 @@ var (
 	ErrProjectArchiveBlocked        = errors.New("project archive blocked")
 	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
 	ErrProjectRuntimeNodesRequired  = errors.New("project requires at least one runtime node")
+	// ErrProjectTaskNoEligibleOnlineNode means the project's runtime node
+	// eligibility set has no node that is currently online with capacity (and,
+	// when checked, supporting the required provider). Retryable: the set may
+	// gain a usable node (a node comes online, frees a slot, or an operator
+	// widens the eligibility set).
+	ErrProjectTaskNoEligibleOnlineNode = errors.New("project task has no eligible online runtime node")
+	// ErrProjectTaskPinnedNodeOffline means the task's current attempt is
+	// already bound to a runtime node (task hard-pin) and that node is
+	// currently offline or out of capacity. Per the anti-drift rule the task
+	// must wait for that specific node to recover rather than being
+	// re-selected onto a different one.
+	ErrProjectTaskPinnedNodeOffline = errors.New("project task's pinned runtime node is offline")
 )
 
 type ProjectStatus string

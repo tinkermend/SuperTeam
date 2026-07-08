@@ -219,7 +219,25 @@ type Querier interface {
 	GetProjectTaskDispatchGateResult(ctx context.Context, arg GetProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskDispatchGateResultByKey(ctx context.Context, arg GetProjectTaskDispatchGateResultByKeyParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, arg GetProjectTaskLatestDispatchFailureEventParams) (ProjectEvent, error)
+	// Discovery-only preflight: used by planning-profile facts and the pre-dispatch
+	// gate's runtime snapshot to read health signals for an employee, before any
+	// task-specific node has been resolved. It does NOT pin a dispatch to a node —
+	// for that, see GetProjectTaskRunPreflightForNode. The node reported here is a
+	// deterministic representative of the project's eligibility set (project_runtime_nodes):
+	// the least-loaded online node, so an idle/degraded node doesn't look "ready" just
+	// because it happens to sort first. project_placements is intentionally not consulted;
+	// Plan B's node selection authority is the eligibility set, not the legacy single pin.
 	GetProjectTaskRunPreflight(ctx context.Context, arg GetProjectTaskRunPreflightParams) (GetProjectTaskRunPreflightRow, error)
+	// Dispatch preflight: the node has already been resolved by the Go-level
+	// three-layer resolver (internal/project.Service.ResolveProjectTaskNode), which
+	// has already checked eligibility, online status, capacity, and (task) pin
+	// semantics. This query only confirms the resolved node is still online and
+	// assembles the workspace/budget/session/provider-health facts needed to start
+	// a run on it. rn.status/disabled_at/archived_at stay as a final safety net —
+	// cheap belt-and-suspenders against a node going offline between resolution and
+	// this query running; if that happens this scans zero rows and the caller sees
+	// pgx.ErrNoRows like any other preflight-absent case.
+	GetProjectTaskRunPreflightForNode(ctx context.Context, arg GetProjectTaskRunPreflightForNodeParams) (GetProjectTaskRunPreflightForNodeRow, error)
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error)
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)

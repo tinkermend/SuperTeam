@@ -185,6 +185,12 @@ func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.
 	require.Equal(t, "bind for dispatch", placement.PlacementReason)
 	require.Equal(t, ProjectEventRuntimePlacementUpdated, repo.eventTypes[len(repo.eventTypes)-1])
 
+	// Readiness is now driven by the project's runtime eligibility set
+	// (project_runtime_nodes), not by project_placements — PutProjectRuntimePlacement
+	// alone (compat/display path) no longer makes a node dispatch-usable.
+	_, err = repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID)
+	require.NoError(t, err)
+
 	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
 	require.NoError(t, err)
 	require.Equal(t, ProjectRuntimePlacementStatusReady, readiness.PlacementStatus)
@@ -235,6 +241,13 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 		RuntimeNodeID:   runtimeNodeID,
 		PlacementStatus: ProjectRuntimePlacementStateActive,
 		AssignedAt:      time.Now().UTC(),
+	}
+	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
+	// not by project_placements — register the same node there too so this
+	// fixture represents a project that is actually dispatch-eligible under the
+	// new model, not just one with a legacy placement row.
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
 		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
@@ -320,6 +333,13 @@ func TestGetProjectRuntimeReadinessBlocksProviderTypeMissingEmployee(t *testing.
 		RuntimeNodeID:   runtimeNodeID,
 		PlacementStatus: ProjectRuntimePlacementStateActive,
 		AssignedAt:      time.Now().UTC(),
+	}
+	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
+	// not by project_placements — register the same node there too so this
+	// fixture represents a project that is actually dispatch-eligible under the
+	// new model, not just one with a legacy placement row.
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
 		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
@@ -420,6 +440,13 @@ func TestGetProjectRuntimeReadinessDoesNotFallbackOverExplicitUnavailableCapabil
 		RuntimeNodeID:   runtimeNodeID,
 		PlacementStatus: ProjectRuntimePlacementStateActive,
 		AssignedAt:      time.Now().UTC(),
+	}
+	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
+	// not by project_placements — register the same node there too so this
+	// fixture represents a project that is actually dispatch-eligible under the
+	// new model, not just one with a legacy placement row.
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
 		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{

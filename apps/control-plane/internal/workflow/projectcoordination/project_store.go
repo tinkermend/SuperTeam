@@ -25,6 +25,7 @@ type ProjectStore struct {
 	clock            clockFunc
 	employeeReader   GateEmployeeRuntimeReader
 	capabilityReader GateCapabilityReader
+	nodeResolver     GateProjectTaskNodeResolver
 }
 
 type clockFunc func() time.Time
@@ -54,6 +55,27 @@ type GateCapabilityReader interface {
 func (s *ProjectStore) WithPreDispatchGateReaders(employeeReader GateEmployeeRuntimeReader, capabilityReader GateCapabilityReader) *ProjectStore {
 	s.employeeReader = employeeReader
 	s.capabilityReader = capabilityReader
+	return s
+}
+
+// GateProjectTaskNodeResolver resolves the runtime node the pre-dispatch gate
+// should evaluate for a task, using the same three-layer algorithm (task pin >
+// employee affinity > lowest load) that dispatch itself uses — implemented as a
+// DryRun call so gate evaluation (which may run repeatedly, e.g. on retry
+// polling) never mutates employee affinity. This is how the gate distinguishes
+// "task hard-pinned to an offline node" from "no eligible node is online at
+// all", which the project's runtime eligibility set alone cannot answer.
+type GateProjectTaskNodeResolver interface {
+	ResolveProjectTaskNodeForGate(ctx context.Context, tenantID, projectID, employeeID, projectTaskID uuid.UUID) (project.NodeResolution, error)
+}
+
+// WithProjectTaskNodeResolver attaches the node resolver used to compute the
+// gate's runtime Pinned/NodeOnline facts. Optional: when unset, PlacementPresent
+// still reflects the eligibility set, but Pinned/NodeOnline fall back to
+// whatever GateEmployeeRuntimeReader reports (which cannot distinguish a
+// pinned-but-offline node from "no node was ever pinned").
+func (s *ProjectStore) WithProjectTaskNodeResolver(resolver GateProjectTaskNodeResolver) *ProjectStore {
+	s.nodeResolver = resolver
 	return s
 }
 

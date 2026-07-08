@@ -75,6 +75,23 @@ func (r *PgRunRepository) GetProjectTaskRunPreflight(ctx context.Context, tenant
 	return projectTaskRunPreflightFromQuery(preflight)
 }
 
+// GetProjectTaskRunPreflightForNode is the dispatch-path preflight: unlike
+// GetProjectTaskRunPreflight (discovery-only, resolves an eligibility-set
+// representative), it takes a node already chosen by the Go-level three-layer
+// resolver and only re-confirms that node's health plus assembles the
+// workspace/budget/session facts needed to start a run on it.
+func (r *PgRunRepository) GetProjectTaskRunPreflightForNode(ctx context.Context, tenantID, employeeID, resolvedNodeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
+	preflight, err := r.q.GetProjectTaskRunPreflightForNode(ctx, queries.GetProjectTaskRunPreflightForNodeParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ResolvedNodeID:    resolvedNodeID,
+	})
+	if err != nil {
+		return StartProjectTaskRunPreflight{}, mapNoRows(err)
+	}
+	return projectTaskRunPreflightForNodeFromQuery(preflight)
+}
+
 func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
@@ -115,6 +132,28 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 }
 
 func projectTaskRunPreflightFromQuery(preflight queries.GetProjectTaskRunPreflightRow) (StartProjectTaskRunPreflight, error) {
+	budgetPolicy, err := mapFromJSONB(preflight.BudgetPolicy, "budget_policy")
+	if err != nil {
+		return StartProjectTaskRunPreflight{}, err
+	}
+	return StartProjectTaskRunPreflight{
+		TenantID:                   preflight.TenantID,
+		TeamID:                     preflight.TeamID.UUID,
+		DigitalEmployeeID:          preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		RuntimeNodeID:              preflight.RuntimeNodeID,
+		NodeID:                     preflight.NodeID,
+		ProviderType:               preflight.ProviderType,
+		WorkspaceBaseDir:           preflight.WorkspaceBaseDir,
+		BudgetPolicy:               budgetPolicy,
+		TodayTokenUsage:            preflight.TodayTokenUsage,
+		BusinessTimezone:           preflight.BusinessTimezone,
+		RuntimeSessionActive:       preflight.RuntimeSessionActive,
+		ProviderHealthy:            preflight.ProviderHealthy,
+	}, nil
+}
+
+func projectTaskRunPreflightForNodeFromQuery(preflight queries.GetProjectTaskRunPreflightForNodeRow) (StartProjectTaskRunPreflight, error) {
 	budgetPolicy, err := mapFromJSONB(preflight.BudgetPolicy, "budget_policy")
 	if err != nil {
 		return StartProjectTaskRunPreflight{}, err

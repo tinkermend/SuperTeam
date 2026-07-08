@@ -245,7 +245,7 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
-func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
+func TestStartProjectTaskRunResolvesNodeThenUsesPreflightForNode(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000901")
 	demandID := uuid.MustParse("00000000-0000-0000-0000-000000000902")
@@ -257,6 +257,8 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
+	resolver := &fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID}
+	service.SetProjectTaskNodeResolver(resolver)
 
 	result, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
 		TenantID:             runServiceTenantID,
@@ -284,8 +286,15 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 	if result.RuntimeNodeID != repo.projectTaskPreflight.RuntimeNodeID || result.NodeID != repo.projectTaskPreflight.NodeID || result.ProviderType != "codex" {
 		t.Fatalf("expected placement/provider result from preflight, got %#v", result)
 	}
-	if repo.projectTaskPreflightProjectID != projectID || repo.projectTaskPreflightEmployeeID != runServiceEmployeeID {
-		t.Fatalf("expected project task preflight lookup by project/employee, got project=%s employee=%s", repo.projectTaskPreflightProjectID, repo.projectTaskPreflightEmployeeID)
+	if resolver.calls != 1 {
+		t.Fatalf("expected node resolver to be called exactly once, got %d", resolver.calls)
+	}
+	if resolver.lastReq.TenantID != runServiceTenantID || resolver.lastReq.ProjectID != projectID ||
+		resolver.lastReq.DigitalEmployeeID != runServiceEmployeeID || resolver.lastReq.ProjectTaskID != projectTaskID {
+		t.Fatalf("expected node resolver called with tenant/project/employee/task ids, got %#v", resolver.lastReq)
+	}
+	if repo.projectTaskPreflightForNodeEmployeeID != runServiceEmployeeID || repo.projectTaskPreflightForNodeNodeID != resolver.nodeID {
+		t.Fatalf("expected dispatch preflight lookup by resolved node, got employee=%s node=%s", repo.projectTaskPreflightForNodeEmployeeID, repo.projectTaskPreflightForNodeNodeID)
 	}
 	if len(repo.createRunRequests) != 1 {
 		t.Fatalf("expected one created run, got %d", len(repo.createRunRequests))
@@ -346,6 +355,53 @@ func TestStartProjectTaskRunUsesProjectPlacementPreflight(t *testing.T) {
 	}
 	if metadata["provider_type"] != "codex" {
 		t.Fatalf("expected provider_type metadata, got %#v", metadata)
+	}
+}
+
+func TestStartProjectTaskRunPropagatesNodeResolverError(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher)
+	resolveErr := errors.New("no eligible online node")
+	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{err: resolveErr})
+
+	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            uuid.New(),
+		DemandID:             uuid.New(),
+		ProjectTaskID:        uuid.New(),
+		ProjectTaskAttemptID: uuid.New(),
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       uuid.New(),
+		Objective:            "整理上线证据",
+	})
+	if !errors.Is(err, resolveErr) {
+		t.Fatalf("expected resolver error to propagate, got %v", err)
+	}
+	if len(repo.createRunRequests) != 0 {
+		t.Fatalf("expected no run to be created when node resolution fails, got %#v", repo.createRunRequests)
+	}
+}
+
+func TestStartProjectTaskRunRequiresNodeResolver(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            uuid.New(),
+		DemandID:             uuid.New(),
+		ProjectTaskID:        uuid.New(),
+		ProjectTaskAttemptID: uuid.New(),
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       uuid.New(),
+		Objective:            "整理上线证据",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput when no node resolver is configured, got %v", err)
 	}
 }
 
@@ -1444,11 +1500,29 @@ var (
 	runServiceRuntimeNodeID       = uuid.MustParse("00000000-0000-0000-0000-000000000401")
 )
 
+type fakeProjectTaskNodeResolver struct {
+	nodeID  uuid.UUID
+	err     error
+	lastReq ResolveProjectTaskNodeRequest
+	calls   int
+}
+
+func (f *fakeProjectTaskNodeResolver) ResolveProjectTaskNode(_ context.Context, req ResolveProjectTaskNodeRequest) (uuid.UUID, error) {
+	f.calls++
+	f.lastReq = req
+	if f.err != nil {
+		return uuid.Nil, f.err
+	}
+	return f.nodeID, nil
+}
+
 type fakeRunServiceRepository struct {
-	preflight                      RunPreflight
-	projectTaskPreflight           StartProjectTaskRunPreflight
-	projectTaskPreflightProjectID  uuid.UUID
-	projectTaskPreflightEmployeeID uuid.UUID
+	preflight                             RunPreflight
+	projectTaskPreflight                  StartProjectTaskRunPreflight
+	projectTaskPreflightProjectID         uuid.UUID
+	projectTaskPreflightEmployeeID        uuid.UUID
+	projectTaskPreflightForNodeEmployeeID uuid.UUID
+	projectTaskPreflightForNodeNodeID     uuid.UUID
 	activeRun                      *DigitalEmployeeRun
 	run                            *DigitalEmployeeRun
 	runs                           []*DigitalEmployeeRun
@@ -1481,6 +1555,12 @@ func (f *fakeRunServiceRepository) GetRunPreflight(context.Context, uuid.UUID, u
 func (f *fakeRunServiceRepository) GetProjectTaskRunPreflight(_ context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
 	f.projectTaskPreflightProjectID = projectID
 	f.projectTaskPreflightEmployeeID = employeeID
+	return f.projectTaskPreflight, nil
+}
+
+func (f *fakeRunServiceRepository) GetProjectTaskRunPreflightForNode(_ context.Context, tenantID, employeeID, resolvedNodeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
+	f.projectTaskPreflightForNodeEmployeeID = employeeID
+	f.projectTaskPreflightForNodeNodeID = resolvedNodeID
 	return f.projectTaskPreflight, nil
 }
 

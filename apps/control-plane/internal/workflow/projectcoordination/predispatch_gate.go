@@ -83,7 +83,11 @@ func preDispatchGateDecisionTerminal(gate project.PreDispatchGateResult) bool {
 		return false
 	}
 	for _, blocker := range gate.Blockers {
-		if blocker.Key == "runtime.placement_missing" {
+		switch blocker.Key {
+		case "runtime.placement_missing", "runtime.pinned_node_offline":
+			// Both are recoverable operational states (bind a runtime node; wait
+			// for the pinned node to come back), not task failures — same
+			// non-terminal treatment placement_missing has always had.
 			return false
 		}
 	}
@@ -95,6 +99,10 @@ func dispatchBlockReasonFromGate(gate project.PreDispatchGateResult) (reasonCode
 		switch blocker.Key {
 		case "runtime.placement_missing":
 			return "runtime_placement_missing", "bind_runtime"
+		case "runtime.no_eligible_online_node":
+			return "runtime_no_eligible_online_node", "bind_runtime"
+		case "runtime.pinned_node_offline":
+			return "runtime_pinned_node_offline", "restart_runtime"
 		case "runtime.node_offline":
 			return "runtime_node_offline", "restart_runtime"
 		case "runtime.provider_unavailable":
@@ -142,13 +150,15 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 	} else if !errors.Is(err, project.ErrProjectNotFound) {
 		return project.PreDispatchGateSnapshot{}, err
 	}
-	if _, err := s.repository.GetActiveProjectPlacement(ctx, input.TenantID, input.ProjectID); err == nil {
-		snapshot.Runtime.PlacementPresent = true
-	} else if errors.Is(err, project.ErrProjectNotFound) {
-		snapshot.Runtime.PlacementPresent = false
-	} else {
+	// PlacementPresent now reflects the project's runtime eligibility set
+	// (project_runtime_nodes), not the legacy single active project_placement —
+	// Plan B projects never create a project_placement, so gating on it would
+	// permanently block every Plan B project regardless of eligibility.
+	eligibleNodes, err := s.repository.ListProjectRuntimeNodes(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
 		return project.PreDispatchGateSnapshot{}, err
 	}
+	snapshot.Runtime.PlacementPresent = len(eligibleNodes) > 0
 	dependencies, err := s.repository.ListProjectTaskDependencies(ctx, input.TenantID, input.ProjectID, []uuid.UUID{input.TaskID})
 	if err != nil {
 		return project.PreDispatchGateSnapshot{}, err
@@ -206,6 +216,20 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Employee = mergePreDispatchEmployeeSnapshot(snapshot.Employee, employee)
 		runtime.PlacementPresent = snapshot.Runtime.PlacementPresent
 		snapshot.Runtime = runtime
+	}
+	if s.nodeResolver != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
+		// Override Pinned/NodeOnline with the resolver's dry-run outcome: this is
+		// the one source that can distinguish "task hard-pinned to a specific,
+		// currently offline node" from "no node was ever pinned and none are
+		// online" — GateEmployeeRuntimeReader's discovery-only facts above cannot
+		// make that distinction (it just reports a representative eligible node's
+		// health, blind to any existing task pin).
+		resolution, err := s.nodeResolver.ResolveProjectTaskNodeForGate(ctx, input.TenantID, input.ProjectID, *task.AssignedDigitalEmployeeID, input.TaskID)
+		if err != nil {
+			return project.PreDispatchGateSnapshot{}, err
+		}
+		snapshot.Runtime.Pinned = resolution.Pinned || resolution.Paused
+		snapshot.Runtime.NodeOnline = resolution.NodeID != uuid.Nil
 	}
 	if s.capabilityReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
 		capabilities, tools, err := s.capabilityReader.GetEmployeeCapabilitySnapshot(ctx, input.TenantID, *task.AssignedDigitalEmployeeID, task)

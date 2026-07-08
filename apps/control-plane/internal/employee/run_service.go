@@ -67,6 +67,7 @@ type DigitalEmployeeRunService struct {
 	capabilityLister RuntimeCapabilityLister
 	envLister        RuntimeEnvironmentLister
 	mcpLister        RuntimeMCPLister
+	nodeResolver     ProjectTaskNodeResolver
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -97,6 +98,14 @@ func (s *DigitalEmployeeRunService) SetEnvironmentLister(l RuntimeEnvironmentLis
 
 func (s *DigitalEmployeeRunService) SetMCPLister(l RuntimeMCPLister) {
 	s.mcpLister = l
+}
+
+// SetProjectTaskNodeResolver injects the three-layer runtime node resolver used
+// by StartProjectTaskRun. It is required for project task dispatch; when unset,
+// StartProjectTaskRun fails fast rather than falling back to any legacy
+// single-node selection.
+func (s *DigitalEmployeeRunService) SetProjectTaskNodeResolver(r ProjectTaskNodeResolver) {
+	s.nodeResolver = r
 }
 
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
@@ -164,7 +173,19 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 	if !ok {
 		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project task run preflight repository is required", ErrInvalidInput)
 	}
-	projectPreflight, err := preflightRepo.GetProjectTaskRunPreflight(ctx, req.TenantID, req.ProjectID, req.DigitalEmployeeID)
+	if s.nodeResolver == nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("%w: project task node resolver is required", ErrInvalidInput)
+	}
+	resolvedNodeID, err := s.nodeResolver.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		ProjectTaskID:     req.ProjectTaskID,
+	})
+	if err != nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("resolve project task node: %w", err)
+	}
+	projectPreflight, err := preflightRepo.GetProjectTaskRunPreflightForNode(ctx, req.TenantID, req.DigitalEmployeeID, resolvedNodeID)
 	if err != nil {
 		return StartProjectTaskRunResult{}, fmt.Errorf("get project task run preflight: %w", err)
 	}

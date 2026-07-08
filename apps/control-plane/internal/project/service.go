@@ -407,16 +407,19 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 		EmployeeReadiness:     employeeReadiness,
 	}
 
-	placement, err := s.repository.GetActiveProjectPlacement(ctx, tenantID, projectID)
+	// Plan B's node-selection authority is the project's runtime eligibility set
+	// (project_runtime_nodes), not the legacy single active project_placement —
+	// gating readiness on GetActiveProjectPlacement would permanently report
+	// "missing" for every Plan B project regardless of its bound nodes.
+	eligibleNodes, err := s.repository.ListProjectRuntimeNodes(ctx, tenantID, projectID)
 	if err != nil {
-		if errors.Is(err, ErrProjectNotFound) {
-			readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_placement_missing", Message: "project has no active runtime placement"})
-			readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "bind_runtime", Label: "Bind runtime"})
-			return readiness, nil
-		}
 		return nil, err
 	}
-	readiness.RuntimeNodeID = &placement.RuntimeNodeID
+	if len(eligibleNodes) == 0 {
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_placement_missing", Message: "project has no active runtime placement"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "bind_runtime", Label: "Bind runtime"})
+		return readiness, nil
+	}
 
 	if s.runtimeNodes == nil {
 		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
@@ -425,57 +428,45 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_node_reader_missing", "runtime node reader is not configured")
 		return readiness, nil
 	}
-	node, found, err := s.findRuntimeNode(ctx, tenantID, placement.RuntimeNodeID)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_node_missing", Message: "placed runtime node is unavailable"})
-		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "rebind_runtime", Label: "Rebind runtime"})
-		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_node_missing", "placed runtime node is unavailable")
-		return readiness, nil
-	}
-	readiness.RuntimeNodeName = node.Name
-	if node.Status != string(runtimepkg.NodeStatusOnline) {
-		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_offline", Message: "placed runtime node is offline"})
-		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "start_runtime", Label: "Start runtime"})
-		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_offline", "placed runtime node is offline")
-		return readiness, nil
-	}
-	readiness.CommandChannelConnected = s.runtimeNodes.IsConnected(node.NodeID)
-	if !readiness.CommandChannelConnected {
-		readiness.PlacementStatus = ProjectRuntimePlacementStatusCommandChannelDisconnected
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "command_channel_disconnected", Message: "runtime command channel is disconnected"})
-		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "connect_runtime_command_channel", Label: "Connect runtime command channel"})
-		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "command_channel_disconnected", "runtime command channel is disconnected")
-		return readiness, nil
-	}
-	if node.MaxSlots > 0 && node.CurrentLoad >= node.MaxSlots {
-		readiness.PlacementStatus = ProjectRuntimePlacementStatusCapacityFull
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_capacity_full", Message: "placed runtime node has no available slots"})
-		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "free_runtime_slot", Label: "Free runtime slot"})
-		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_capacity_full", "placed runtime node has no available slots")
-		return readiness, nil
-	}
 
-	capabilities, err := s.runtimeNodes.ListRuntimeCapabilitiesForNode(ctx, tenantID, node.NodeID)
+	// Set-level readiness: ≥1 eligible node online + connected + with capacity.
+	// Unlike the old single-placement model, individual nodes in the set can be
+	// offline/disconnected/full without blocking dispatch as long as at least
+	// one usable node remains — so those per-node conditions collapse into one
+	// blocking reason here rather than the old node-by-node cascade.
+	usableNodes, err := s.usableEligibleNodes(ctx, tenantID, eligibleNodes)
 	if err != nil {
 		return nil, err
 	}
-	providerCapabilities := availableProviderCapabilities(capabilities, node.SupportedProviders)
+	if len(usableNodes) == 0 {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_no_eligible_online_node", Message: "no eligible runtime node is online, connected, and has capacity"})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "start_runtime", Label: "Start runtime"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_no_eligible_online_node", "no eligible runtime node is online, connected, and has capacity")
+		return readiness, nil
+	}
+	representative := lowestLoadNode(usableNodes)
+	readiness.RuntimeNodeID = &representative.ID
+	readiness.RuntimeNodeName = representative.Name
+	readiness.CommandChannelConnected = true
+
+	// providerCapabilities is the UNION across the usable set: the set covers a
+	// provider if any node in it does, not just a single placed node.
+	providerCapabilities, err := s.unionProviderCapabilities(ctx, tenantID, usableNodes)
+	if err != nil {
+		return nil, err
+	}
 	readiness.ProviderCapabilities = providerCapabilities
 	missingProviders := missingProviderTypes(requiredProviders, providerCapabilities)
 	if len(missingProviders) > 0 {
 		readiness.PlacementStatus = ProjectRuntimePlacementStatusProviderUnavailable
-		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "provider_unavailable", Message: "placed runtime does not expose every required provider"})
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "provider_unavailable", Message: "eligible runtime set does not cover every required provider"})
 		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "bind_provider_capable_runtime", Label: "Bind provider-capable runtime"})
 		for i := range readiness.EmployeeReadiness {
 			if readiness.EmployeeReadiness[i].ProviderType != "" && stringInSlice(readiness.EmployeeReadiness[i].ProviderType, missingProviders) {
 				readiness.EmployeeReadiness[i].CanDispatch = false
 				readiness.EmployeeReadiness[i].ReasonCode = "provider_unavailable"
-				readiness.EmployeeReadiness[i].ReasonMessage = "required provider is unavailable on placed runtime"
+				readiness.EmployeeReadiness[i].ReasonMessage = "required provider is unavailable on eligible runtime set"
 			}
 		}
 		return readiness, nil

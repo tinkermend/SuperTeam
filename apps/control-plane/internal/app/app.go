@@ -256,6 +256,18 @@ func runStartRetryable(err error) bool {
 		return false
 	case isRunStartIdempotencyFingerprintMismatch(err):
 		return false
+	case errors.Is(err, project.ErrProjectTaskPinnedNodeOffline):
+		// The task is hard-pinned to a specific node that is currently offline;
+		// per the anti-drift rule it must wait for that node to recover rather
+		// than being retried onto a different one. This is expected to be caught
+		// by the pre-dispatch gate (runtime.pinned_node_offline) before dispatch
+		// is attempted; reaching here is the race-condition fallback (node went
+		// offline between gate evaluation and this call).
+		return false
+	case errors.Is(err, project.ErrProjectTaskNoEligibleOnlineNode):
+		// No eligible node is online/has capacity right now; the set can regain
+		// a usable node, so this is retryable.
+		return true
 	default:
 		return true
 	}
@@ -468,6 +480,17 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
 	var temporalClientClose func()
+	// coordinationStore is declared here (rather than with := inside the
+	// Temporal-enabled block below) so it can be attached to projectService's
+	// node resolver after projectService is constructed further down — the two
+	// have a circular-looking dependency (coordinationStore needs
+	// coordinatorClient, which is only finalized inside the Temporal block;
+	// projectService needs that same finalized coordinatorClient, so it must be
+	// constructed after the block). Activities/the worker only read the
+	// resolver field at gate-evaluation time, long after container
+	// construction completes, so attaching it via this pointer after the fact
+	// is safe.
+	var coordinationStore *projectcoordination.ProjectStore
 	projectTaskPreflights, _ := runRepository.(gateProjectTaskRunPreflightReader)
 	if cfg.Temporal.Enabled {
 		temporalClient, err := temporalclient.NewLazyClient(temporalclient.Options{
@@ -490,7 +513,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			runtimeNodes:    runtimeRepository,
 			capabilities:    capabilityRepository,
 		}
-		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
+		coordinationStore = projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
 			projectRepository,
 			approvalService,
 			decisionProjector,
@@ -515,6 +538,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
+	runService.SetProjectTaskNodeResolver(project.NewProjectTaskNodeResolverAdapter(projectService))
+	if coordinationStore != nil {
+		coordinationStore.WithProjectTaskNodeResolver(gateProjectTaskNodeResolverAdapter{service: projectService})
+	}
 	inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
 	inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
 

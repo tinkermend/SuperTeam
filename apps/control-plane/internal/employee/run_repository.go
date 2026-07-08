@@ -36,7 +36,42 @@ type DigitalEmployeeRunRepository interface {
 }
 
 type ProjectTaskRunPreflightRepository interface {
+	// GetProjectTaskRunPreflight is discovery-only: it reports facts for an
+	// employee against a deterministic representative of the project's
+	// eligibility set. It does not pin a dispatch to a node.
 	GetProjectTaskRunPreflight(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error)
+	// GetProjectTaskRunPreflightForNode is the dispatch-path preflight: it takes
+	// a node already chosen by ProjectTaskNodeResolver and confirms it is still
+	// dispatchable.
+	GetProjectTaskRunPreflightForNode(ctx context.Context, tenantID, employeeID, resolvedNodeID uuid.UUID) (StartProjectTaskRunPreflight, error)
+}
+
+// ResolveProjectTaskNodeRequest carries the identifiers the runtime node
+// resolver needs. It intentionally has no dependency on the project package —
+// see ProjectTaskNodeResolver.
+type ResolveProjectTaskNodeRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	// ProjectTaskID selects the task hard-pin layer; Nil skips it (no task
+	// context yet).
+	ProjectTaskID uuid.UUID
+}
+
+// ProjectTaskNodeResolver picks the runtime node a project task dispatch should
+// run on (project package's three-layer resolver: task pin > employee affinity
+// > lowest load, all within the project's online eligibility set). It is
+// declared here, not in the project package, so this package never imports
+// project (project already imports employee); the concrete implementation is a
+// project-package adapter wired in at composition (internal/app).
+//
+// On failure to resolve a runnable node, the returned error wraps a
+// project-package sentinel (project.ErrProjectTaskNoEligibleOnlineNode or
+// project.ErrProjectTaskPinnedNodeOffline) that callers outside this package
+// (which may import project) can classify with errors.Is; this package never
+// needs to know which sentinel it is.
+type ProjectTaskNodeResolver interface {
+	ResolveProjectTaskNode(ctx context.Context, req ResolveProjectTaskNodeRequest) (uuid.UUID, error)
 }
 
 type RunPreflight struct {

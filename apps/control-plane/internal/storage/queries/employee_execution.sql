@@ -730,6 +730,14 @@ WHERE de.id = sqlc.arg('digital_employee_id')::uuid
   AND de.archived_at IS NULL;
 
 -- name: GetProjectTaskRunPreflight :one
+-- Discovery-only preflight: used by planning-profile facts and the pre-dispatch
+-- gate's runtime snapshot to read health signals for an employee, before any
+-- task-specific node has been resolved. It does NOT pin a dispatch to a node —
+-- for that, see GetProjectTaskRunPreflightForNode. The node reported here is a
+-- deterministic representative of the project's eligibility set (project_runtime_nodes):
+-- the least-loaded online node, so an idle/degraded node doesn't look "ready" just
+-- because it happens to sort first. project_placements is intentionally not consulted;
+-- Plan B's node selection authority is the eligibility set, not the legacy single pin.
 SELECT
     de.tenant_id,
     de.team_id,
@@ -758,13 +766,145 @@ SELECT
     (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
     (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
 FROM digital_employees de
-JOIN project_placements pp
-  ON pp.tenant_id = de.tenant_id
- AND pp.project_id = sqlc.arg('project_id')::uuid
- AND pp.placement_status = 'active'
- AND pp.released_at IS NULL
+JOIN LATERAL (
+    SELECT rn2.*
+    FROM project_runtime_nodes prn
+    JOIN runtime_nodes rn2
+      ON rn2.id = prn.runtime_node_id
+     AND rn2.tenant_id = de.tenant_id
+     AND rn2.status = 'online'
+     AND rn2.disabled_at IS NULL
+     AND rn2.archived_at IS NULL
+    WHERE prn.tenant_id = de.tenant_id
+      AND prn.project_id = sqlc.arg('project_id')::uuid
+    ORDER BY rn2.current_load ASC, rn2.id ASC
+    LIMIT 1
+) rn ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'provider'
+      AND rc.provider_type = de.provider_type
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+    LIMIT 1
+) provider_capability ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'workspace'
+      AND rc.available = true
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY
+      CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
+      rc.last_seen_at DESC NULLS LAST,
+      rc.updated_at DESC
+    LIMIT 1
+) workspace_capability ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rs.id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = de.tenant_id
+      AND rs.runtime_node_id = rn.id
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+    ORDER BY rs.last_seen_at DESC, rs.updated_at DESC
+    LIMIT 1
+) runtime_session ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        dec.id AS effective_config_id,
+        dec.effective_config_snapshot
+    FROM digital_employee_effective_configs dec
+    WHERE dec.tenant_id = de.tenant_id
+      AND dec.digital_employee_id = de.id
+      AND dec.status = 'approved'
+      AND dec.revoked_at IS NULL
+    ORDER BY dec.created_at DESC, dec.updated_at DESC
+    LIMIT 1
+) ec ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        LEAST(
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') ~ '^[0-9]+$'
+                        THEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '')::bigint
+                        ELSE 0
+                    END
+                ),
+                0
+            ),
+            2147483647
+        )::integer AS usage_tokens_today
+    FROM task_runs tr
+    WHERE tr.tenant_id = de.tenant_id
+      AND tr.digital_employee_id = de.id
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+) today_usage ON TRUE
+WHERE de.id = sqlc.arg('digital_employee_id')::uuid
+  AND de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL;
+
+-- name: GetProjectTaskRunPreflightForNode :one
+-- Dispatch preflight: the node has already been resolved by the Go-level
+-- three-layer resolver (internal/project.Service.ResolveProjectTaskNode), which
+-- has already checked eligibility, online status, capacity, and (task) pin
+-- semantics. This query only confirms the resolved node is still online and
+-- assembles the workspace/budget/session/provider-health facts needed to start
+-- a run on it. rn.status/disabled_at/archived_at stay as a final safety net —
+-- cheap belt-and-suspenders against a node going offline between resolution and
+-- this query running; if that happens this scans zero rows and the caller sees
+-- pgx.ErrNoRows like any other preflight-absent case.
+SELECT
+    de.tenant_id,
+    de.team_id,
+    de.id AS digital_employee_id,
+    de.status AS digital_employee_status,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    de.provider_type,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        provider_capability.details ->> 'workspace_base_dir',
+        provider_capability.metadata ->> 'workspace_base_dir',
+        workspace_capability.details ->> 'workspace_base_dir',
+        workspace_capability.metadata ->> 'workspace_base_dir',
+        ''
+    )::text AS workspace_base_dir,
+    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
+    'Asia/Shanghai'::text AS business_timezone,
+    (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
+FROM digital_employees de
 JOIN runtime_nodes rn
-  ON rn.id = pp.runtime_node_id
+  ON rn.id = sqlc.arg('resolved_node_id')::uuid
  AND rn.tenant_id = de.tenant_id
  AND rn.status = 'online'
  AND rn.disabled_at IS NULL

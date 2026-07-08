@@ -97,6 +97,26 @@ func (r projectRuntimeNodeReader) IsConnected(nodeID string) bool {
 	return r.connections != nil && r.connections.IsConnected(nodeID)
 }
 
+// gateProjectTaskNodeResolverAdapter implements
+// projectcoordination.GateProjectTaskNodeResolver by delegating to the same
+// three-layer resolver dispatch uses (Service.ResolveProjectTaskNode), always
+// in DryRun mode so gate evaluation — which can run repeatedly, e.g. on retry
+// polling — never mutates employee affinity as a side effect of merely
+// checking readiness.
+type gateProjectTaskNodeResolverAdapter struct {
+	service *project.Service
+}
+
+func (a gateProjectTaskNodeResolverAdapter) ResolveProjectTaskNodeForGate(ctx context.Context, tenantID, projectID, employeeID, projectTaskID uuid.UUID) (project.NodeResolution, error) {
+	return a.service.ResolveProjectTaskNode(ctx, project.ResolveProjectTaskNodeInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+		ProjectTaskID:     projectTaskID,
+		DryRun:            true,
+	})
+}
+
 func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]projectcoordination.DigitalEmployeePlanningProfileSourceRecord, error) {
 	if a.reader == nil {
 		return nil, errors.New("digital employee planning profile reader is required")

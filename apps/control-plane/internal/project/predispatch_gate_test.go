@@ -91,6 +91,52 @@ func TestEvaluatePreDispatchGatePassesReadyEmployeeForProjectTask(t *testing.T) 
 	require.True(t, result.CreateRun)
 }
 
+func TestEvaluatePreDispatchGateBlocksNoEligibleOnlineNode(t *testing.T) {
+	now := time.Date(2026, 7, 8, 9, 30, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	snapshot.Runtime.Pinned = false
+	snapshot.Runtime.NodeOnline = false
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID:          projectID,
+		ProjectTaskID:      taskID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+	}, snapshot, now)
+
+	require.Equal(t, PreDispatchGateStatusRetryLater, result.Status)
+	require.Len(t, result.Blockers, 1)
+	require.Equal(t, "runtime.no_eligible_online_node", result.Blockers[0].Key)
+	require.False(t, result.CreateRun)
+}
+
+func TestEvaluatePreDispatchGateBlocksPinnedNodeOffline(t *testing.T) {
+	now := time.Date(2026, 7, 8, 9, 31, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	snapshot.Runtime.Pinned = true
+	snapshot.Runtime.NodeOnline = false
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID:          projectID,
+		ProjectTaskID:      taskID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+	}, snapshot, now)
+
+	require.Equal(t, PreDispatchGateStatusBlocked, result.Status)
+	require.Len(t, result.Blockers, 1)
+	require.Equal(t, "runtime.pinned_node_offline", result.Blockers[0].Key)
+	require.False(t, result.CreateRun)
+}
+
 func TestEvaluatePreDispatchGateBlocksActiveAttempt(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 31, 0, 0, time.UTC)
 	projectID := uuid.New()

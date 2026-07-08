@@ -4199,6 +4199,20 @@ func (r *projectStoreMemoryRepository) GetActiveProjectPlacement(ctx context.Con
 	}, nil
 }
 
+// ListProjectRuntimeNodes mirrors GetActiveProjectPlacement's presence
+// semantics (missingActivePlacement gates both) so scenarios that exercised the
+// legacy placement-based PlacementPresent check exercise the eligibility-set
+// based one the same way.
+func (r *projectStoreMemoryRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectRuntimeNode, error) {
+	if r.missingActivePlacement {
+		return nil, nil
+	}
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return nil, nil
+	}
+	return []project.ProjectRuntimeNode{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RuntimeNodeID: uuid.New()}}, nil
+}
+
 func (r *projectStoreMemoryRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (project.Project, error) {
 	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
 		return project.Project{}, project.ErrProjectNotFound
