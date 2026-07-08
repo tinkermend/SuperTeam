@@ -1047,6 +1047,17 @@ type ProjectDemandSummary struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ProjectEmployeeNodeAffinity struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	ProjectID         uuid.UUID          `json:"project_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	RuntimeNodeID     uuid.UUID          `json:"runtime_node_id"`
+	LastRunAt         pgtype.Timestamptz `json:"last_run_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目生命周期内的关键事件流
 type ProjectEvent struct {
 	// 项目事件ID
@@ -1339,6 +1350,14 @@ type ProjectRouteDecision struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 路由决策创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProjectRuntimeNode struct {
+	ID            uuid.UUID          `json:"id"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
+	ProjectID     uuid.UUID          `json:"project_id"`
+	RuntimeNodeID uuid.UUID          `json:"runtime_node_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目内可分派、可执行的工作项

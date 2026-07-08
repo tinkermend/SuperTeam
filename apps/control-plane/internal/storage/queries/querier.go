@@ -204,6 +204,7 @@ type Querier interface {
 	GetProjectDecisionRequestByApprovalAndTask(ctx context.Context, arg GetProjectDecisionRequestByApprovalAndTaskParams) (ProjectDecisionRequest, error)
 	GetProjectDecisionRequestByPlanRevision(ctx context.Context, arg GetProjectDecisionRequestByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProjectDemand(ctx context.Context, arg GetProjectDemandParams) (ProjectDemand, error)
+	GetProjectEmployeeNodeAffinity(ctx context.Context, arg GetProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
 	GetProjectEvent(ctx context.Context, arg GetProjectEventParams) (ProjectEvent, error)
 	GetProjectEventByTypeAndActor(ctx context.Context, arg GetProjectEventByTypeAndActorParams) (ProjectEvent, error)
 	GetProjectPlanRevision(ctx context.Context, arg GetProjectPlanRevisionParams) (ProjectPlanRevision, error)
@@ -252,6 +253,7 @@ type Querier interface {
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
+	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
 	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
 	LinkProjectTaskDispatchGateAttempt(ctx context.Context, arg LinkProjectTaskDispatchGateAttemptParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context, arg LinkProjectTaskDispatchGateDecisionRequestParams) (ProjectTaskDispatchGateResult, error)
@@ -317,6 +319,7 @@ type Querier interface {
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
+	ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRuntimeNodesParams) ([]ProjectRuntimeNode, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, arg ListProjectTaskAttemptsForExecutionTraceParams) ([]ProjectTaskAttempt, error)
 	ListProjectTaskAttestations(ctx context.Context, arg ListProjectTaskAttestationsParams) ([]ProjectTaskAttestation, error)
 	ListProjectTaskDependencies(ctx context.Context, arg ListProjectTaskDependenciesParams) ([]ProjectTaskDependency, error)
@@ -457,6 +460,7 @@ type Querier interface {
 	UpsertDigitalEmployeeWorkspaceFileSync(ctx context.Context, arg UpsertDigitalEmployeeWorkspaceFileSyncParams) error
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
+	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
 	UpsertProjectPlacement(ctx context.Context, arg UpsertProjectPlacementParams) (ProjectPlacement, error)
 	UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error)
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)

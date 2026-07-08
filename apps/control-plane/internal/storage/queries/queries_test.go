@@ -6191,3 +6191,174 @@ func TestCapabilityQueriesListEffectiveMCPServersSkipsSoftDeletedEmployee(t *tes
 	require.NoError(t, err)
 	require.Empty(t, merged)
 }
+
+func seedProject(t *testing.T, db *pgxpool.Pool) (*queries.Queries, context.Context, uuid.UUID, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := queries.New(db)
+
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "project-runtime-nodes-team", "Project Runtime Nodes Team")
+	ownerID := seedTestAuthUser(t, db, "project-nodes-owner")
+
+	project, err := q.CreateProject(ctx, queries.CreateProjectParams{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             "Project Runtime Nodes Test Project",
+		Description:      pgtype.Text{String: "test project for runtime nodes queries", Valid: true},
+		Goal:             pgtype.Text{String: "verify runtime nodes storage semantics", Valid: true},
+		Status:           "active",
+		HumanOwnerUserID: ownerID,
+		ApprovalPolicy:   []byte(`{}`),
+		EvidencePolicy:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	return q, ctx, tenantID, project.ID
+}
+
+func TestProjectRuntimeNodesQueries(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	db := newQueriesTestDB(t)
+	q, ctx, tenantID, projectID := seedProject(t, db)
+
+	// Create runtime nodes for testing
+	nodeA, err := q.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "test-node-a",
+		Name:               "Test Node A",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id = $2`, tenantID, nodeA.ID)
+	require.NoError(t, err)
+
+	nodeB, err := q.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "test-node-b",
+		Name:               "Test Node B",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id = $2`, tenantID, nodeB.ID)
+	require.NoError(t, err)
+
+	// Test InsertProjectRuntimeNode
+	inserted, err := q.InsertProjectRuntimeNode(ctx, queries.InsertProjectRuntimeNodeParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: nodeA.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, tenantID, inserted.TenantID)
+	require.Equal(t, projectID, inserted.ProjectID)
+	require.Equal(t, nodeA.ID, inserted.RuntimeNodeID)
+
+	// Test InsertProjectRuntimeNode with duplicate (should be ignored)
+	duplicateInsert, err := q.InsertProjectRuntimeNode(ctx, queries.InsertProjectRuntimeNodeParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: nodeA.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, inserted.ID, duplicateInsert.ID)
+
+	// Test InsertProjectRuntimeNode with different node
+	inserted2, err := q.InsertProjectRuntimeNode(ctx, queries.InsertProjectRuntimeNodeParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: nodeB.ID,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, inserted.ID, inserted2.ID)
+
+	// Test ListProjectRuntimeNodes
+	nodes, err := q.ListProjectRuntimeNodes(ctx, queries.ListProjectRuntimeNodesParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	require.Equal(t, nodeA.ID, nodes[0].RuntimeNodeID)
+	require.Equal(t, nodeB.ID, nodes[1].RuntimeNodeID)
+
+	// Create a digital employee for affinity testing
+	ownerID := seedTestAuthUser(t, db, "employee-owner")
+	employeeID := seedTestDigitalEmployee(t, db, tenantID, uuid.New(), ownerID, "Test Digital Employee")
+
+	// Test UpsertProjectEmployeeNodeAffinity (initial insert)
+	affinity, err := q.UpsertProjectEmployeeNodeAffinity(ctx, queries.UpsertProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+		RuntimeNodeID:     nodeA.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, tenantID, affinity.TenantID)
+	require.Equal(t, projectID, affinity.ProjectID)
+	require.Equal(t, employeeID, affinity.DigitalEmployeeID)
+	require.Equal(t, nodeA.ID, affinity.RuntimeNodeID)
+	firstCreatedAt := affinity.CreatedAt
+
+	// Sleep a bit to ensure timestamps differ
+	time.Sleep(10 * time.Millisecond)
+
+	// Test UpsertProjectEmployeeNodeAffinity (update to different node)
+	updated, err := q.UpsertProjectEmployeeNodeAffinity(ctx, queries.UpsertProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+		RuntimeNodeID:     nodeB.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, affinity.ID, updated.ID)
+	require.Equal(t, nodeB.ID, updated.RuntimeNodeID)
+	require.Equal(t, firstCreatedAt, updated.CreatedAt)
+	require.True(t, updated.UpdatedAt.Time.After(affinity.UpdatedAt.Time))
+	require.True(t, updated.LastRunAt.Time.After(affinity.LastRunAt.Time))
+
+	// Test GetProjectEmployeeNodeAffinity
+	retrieved, err := q.GetProjectEmployeeNodeAffinity(ctx, queries.GetProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, affinity.ID, retrieved.ID)
+	require.Equal(t, nodeB.ID, retrieved.RuntimeNodeID)
+	require.Equal(t, updated.UpdatedAt, retrieved.UpdatedAt)
+
+	// Create another employee to test multiple affinities
+	employeeID2 := seedTestDigitalEmployee(t, db, tenantID, uuid.New(), ownerID, "Test Digital Employee 2")
+
+	// Test GetProjectEmployeeNodeAffinity with non-existent affinity
+	_, err = q.GetProjectEmployeeNodeAffinity(ctx, queries.GetProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID2,
+	})
+	require.Error(t, err)
+	require.Equal(t, pgx.ErrNoRows, err)
+
+	// Create affinity for second employee
+	affinity2, err := q.UpsertProjectEmployeeNodeAffinity(ctx, queries.UpsertProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID2,
+		RuntimeNodeID:     nodeA.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, employeeID2, affinity2.DigitalEmployeeID)
+	require.Equal(t, nodeA.ID, affinity2.RuntimeNodeID)
+}
