@@ -1576,7 +1576,7 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 		Warnings:       []ValidationIssue{},
 	}
 	if !teamLess {
-		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySubset(req.TeamConfig.CapabilityPolicy, req.EmployeeConfig.CapabilitySelection)...)
+		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySelection(req.EmployeeConfig.CapabilitySelection)...)
 		validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
 		validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
 	}
@@ -1674,45 +1674,6 @@ func executionInstanceFromRecord(record DigitalEmployeeExecutionInstanceRecord) 
 	}
 }
 
-func validateCapabilitySubset(teamPolicy, employeeSelection map[string]any) []ValidationIssue {
-	pairs := []struct {
-		teamKey     string
-		employeeKey string
-	}{
-		{teamKey: "allowed_mcp_servers", employeeKey: "enabled_mcp_servers"},
-		{teamKey: "allowed_skills", employeeKey: "enabled_skills"},
-		{teamKey: "allowed_plugins", employeeKey: "enabled_plugins"},
-		{teamKey: "allowed_external_capabilities", employeeKey: "enabled_external_capabilities"},
-		{teamKey: "allowed_provider_types", employeeKey: "enabled_provider_types"},
-	}
-	issues := []ValidationIssue{}
-	for _, pair := range pairs {
-		allowed, allowedIssues := stringListPolicyValue(teamPolicy, pair.teamKey, fmt.Sprintf("capability_policy.%s", pair.teamKey))
-		enabled, enabledIssues := stringListPolicyValue(employeeSelection, pair.employeeKey, fmt.Sprintf("capability_selection.%s", pair.employeeKey))
-		issues = append(issues, allowedIssues...)
-		issues = append(issues, enabledIssues...)
-		if len(enabled) == 0 {
-			continue
-		}
-		allowedSet := stringSet(allowed)
-		var outside []string
-		for _, item := range enabled {
-			if !allowedSet[item] {
-				outside = append(outside, item)
-			}
-		}
-		if len(outside) == 0 {
-			continue
-		}
-		issues = append(issues, ValidationIssue{
-			Code:    "capability_outside_team_allowlist",
-			Path:    fmt.Sprintf("capability_selection.%s", pair.employeeKey),
-			Message: fmt.Sprintf("capabilities are outside team allowlist: %s", strings.Join(outside, ", ")),
-		})
-	}
-	return issues
-}
-
 func validateContextSubset(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
 	keys := []struct {
 		overrideKey string
@@ -1748,6 +1709,21 @@ func validateContextSubset(teamPolicy, employeeOverride map[string]any) []Valida
 			Path:    fmt.Sprintf("context_policy_override.%s", key.overrideKey),
 			Message: fmt.Sprintf("context refs are outside team scope: %s", strings.Join(outside, ", ")),
 		})
+	}
+	return issues
+}
+
+func validateCapabilitySelection(employeeSelection map[string]any) []ValidationIssue {
+	keys := []string{
+		"enabled_mcp_servers",
+		"enabled_skills",
+		"enabled_plugins",
+		"enabled_provider_types",
+	}
+	issues := []ValidationIssue{}
+	for _, key := range keys {
+		_, valueIssues := stringListPolicyValue(employeeSelection, key, fmt.Sprintf("capability_selection.%s", key))
+		issues = append(issues, valueIssues...)
 	}
 	return issues
 }
