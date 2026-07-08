@@ -1187,21 +1187,20 @@ func TestRunServiceStopRunRecordsStopRequestedBeforeDispatchFailure(t *testing.T
 	}
 }
 
-func TestRunServiceCreateRunRejectsPreflightWithoutApprovedEffectiveConfig(t *testing.T) {
+func TestRunServiceCreateRunAllowsPreflightWithoutApprovedEffectiveConfig(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
-	repo.preflight.HasApprovedEffectiveConfig = false
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
 	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
 
-	if !errors.Is(err, ErrEffectiveConfigRequired) {
-		t.Fatalf("expected ErrEffectiveConfigRequired, got %v", err)
+	if err != nil {
+		t.Fatalf("expected run creation to allow missing approved effective config, got %v", err)
 	}
-	if repo.createdRunCount != 0 || len(dispatcher.commands) != 0 {
-		t.Fatalf("expected preflight rejection before create/dispatch")
+	if repo.createdRunCount != 1 || len(dispatcher.commands) != 1 {
+		t.Fatalf("expected run creation and dispatch to proceed, got created=%d dispatched=%d", repo.createdRunCount, len(dispatcher.commands))
 	}
 }
 
@@ -1368,7 +1367,6 @@ func validRunServicePreflight() RunPreflight {
 		RuntimeSelector:            map[string]any{"node_id": "runtime-authoritative"},
 		SessionPolicy:              map[string]any{"resume": true},
 		WorkspacePolicy:            map[string]any{"workspace": "isolated"},
-		HasApprovedEffectiveConfig: true,
 		ProviderHealthy:            true,
 	}
 }
@@ -1385,7 +1383,6 @@ func validProjectTaskRunServicePreflight() StartProjectTaskRunPreflight {
 		WorkspaceBaseDir:           "/var/lib/superteam/workspaces",
 		BudgetPolicy:               map[string]any{"daily_token_limit": float64(100000)},
 		BusinessTimezone:           "Asia/Shanghai",
-		HasApprovedEffectiveConfig: true,
 		RuntimeSessionActive:       true,
 		ProviderHealthy:            true,
 	}

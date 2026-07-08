@@ -341,54 +341,6 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected budget policy in config response, got %#v", configCreated.BudgetPolicy)
 	}
 
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/effective-configs/preview", strings.NewReader(`{"team_config":{"id":"`+teamConfigRevisionID.String()+`"},"employee_config":{"id":"`+employeeConfigRevisionID.String()+`"}}`))
-	previewReq.Header.Set("Content-Type", "application/json")
-	previewReq.AddCookie(cookie)
-	previewResp := httptest.NewRecorder()
-	server.ServeHTTP(previewResp, previewReq)
-	if previewResp.Code != http.StatusOK {
-		t.Fatalf("expected preview effective config to succeed, got %d: %s", previewResp.Code, previewResp.Body.String())
-	}
-	if service.previewReq.TenantID != expectedTenantID || service.previewReq.DigitalEmployeeID != employeeID || service.previewReq.TeamConfigRevisionID != teamConfigRevisionID || service.previewReq.EmployeeConfigRevisionID != employeeConfigRevisionID {
-		t.Fatalf("unexpected preview request mapping: %#v", service.previewReq)
-	}
-
-	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/effective-configs/approve", strings.NewReader(`{"preview":{"team_config":{"id":"`+teamConfigRevisionID.String()+`"},"employee_config":{"id":"`+employeeConfigRevisionID.String()+`"}}}`))
-	approveReq.Header.Set("Content-Type", "application/json")
-	approveReq.AddCookie(cookie)
-	approveResp := httptest.NewRecorder()
-	server.ServeHTTP(approveResp, approveReq)
-	if approveResp.Code != http.StatusCreated {
-		t.Fatalf("expected approve effective config to succeed, got %d: %s", approveResp.Code, approveResp.Body.String())
-	}
-	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
-		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
-	}
-
-	getEffectiveConfigReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/effective-config", nil)
-	getEffectiveConfigReq.AddCookie(cookie)
-	getEffectiveConfigResp := httptest.NewRecorder()
-	server.ServeHTTP(getEffectiveConfigResp, getEffectiveConfigReq)
-	if getEffectiveConfigResp.Code != http.StatusOK {
-		t.Fatalf("expected get effective config to succeed, got %d: %s", getEffectiveConfigResp.Code, getEffectiveConfigResp.Body.String())
-	}
-	if !service.getEffectiveConfigCalled || service.getEffectiveConfigTenant != expectedTenantID {
-		t.Fatalf("unexpected get effective config request mapping: called=%v tenant=%s", service.getEffectiveConfigCalled, service.getEffectiveConfigTenant)
-	}
-	var effectiveConfigRead struct {
-		ID                uuid.UUID `json:"id"`
-		DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-		Status            string    `json:"status"`
-	}
-	if err := json.NewDecoder(getEffectiveConfigResp.Body).Decode(&effectiveConfigRead); err != nil {
-		t.Fatalf("decode get effective config response: %v", err)
-	}
-	if effectiveConfigRead.DigitalEmployeeID != employeeID || effectiveConfigRead.Status != string(employee.EffectiveConfigStatusApproved) {
-		t.Fatalf("unexpected get effective config response body: %#v", effectiveConfigRead)
-	}
-
 	readinessReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/scheduling-readiness", nil)
 	readinessReq.AddCookie(cookie)
 	readinessResp := httptest.NewRecorder()
@@ -1042,7 +994,7 @@ func TestDigitalEmployeeCreateOptionsReturnsStructuredTeamGovernanceError(t *tes
 		t.Fatalf("expected team governance error code, got %#v", body)
 	}
 	if !strings.Contains(body.Message, "active team governance config is required") {
-		t.Fatalf("expected effective config message, got %#v", body)
+		t.Fatalf("expected governance message, got %#v", body)
 	}
 }
 
@@ -1493,9 +1445,6 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`, action: authz.ActionEmployeeExecutionBind, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`, action: authz.ActionEmployeeConfigPreview, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`, action: authz.ActionEmployeeConfigApprove, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "get effective config", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/effective-config", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get scheduling readiness", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/scheduling-readiness", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
 
@@ -1721,13 +1670,7 @@ type routeEmployeeService struct {
 	getInstanceCalled                bool
 	bindCalled                       bool
 	configRevisionReq                employee.CreateDigitalEmployeeConfigRevisionRequest
-	previewReq                       employee.PreviewEffectiveConfigByRevisionIDsRequest
-	approveReq                       employee.ApproveEffectiveConfigRequest
 	configCalled                     bool
-	previewCalled                    bool
-	approveCalled                    bool
-	getEffectiveConfigCalled         bool
-	getEffectiveConfigTenant         uuid.UUID
 	getSchedulingReadinessCalled     bool
 	getSchedulingReadinessTenant     uuid.UUID
 	getSchedulingReadinessEmployeeID uuid.UUID
@@ -2037,57 +1980,6 @@ func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req emp
 	}, nil
 }
 
-func (s *routeEmployeeService) PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req employee.PreviewEffectiveConfigByRevisionIDsRequest) (*employee.EffectiveConfigPreview, error) {
-	s.previewCalled = true
-	s.previewReq = req
-	return &employee.EffectiveConfigPreview{
-		TeamConfigRevisionID:     req.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
-		EffectiveConfig:          map[string]any{"team_config_revision_id": req.TeamConfigRevisionID.String()},
-		Validation:               employee.EffectiveConfigValidation{BlockingErrors: []employee.ValidationIssue{}, Warnings: []employee.ValidationIssue{}},
-	}, nil
-}
-
-func (s *routeEmployeeService) ApproveEffectiveConfig(ctx context.Context, req employee.ApproveEffectiveConfigRequest) (*employee.DigitalEmployeeEffectiveConfig, error) {
-	s.approveCalled = true
-	s.approveReq = req
-	now := time.Now().UTC()
-	return &employee.DigitalEmployeeEffectiveConfig{
-		ID:                       uuid.New(),
-		TenantID:                 req.TenantID,
-		DigitalEmployeeID:        req.DigitalEmployeeID,
-		TeamConfigRevisionID:     &req.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
-		EffectiveConfig:          map[string]any{"approved": true},
-		ValidationResult:         map[string]any{"blocking_errors": []any{}},
-		Status:                   employee.EffectiveConfigStatusApproved,
-		ApprovedBy:               &req.ApprovedBy,
-		ApprovedAt:               &now,
-		CreatedAt:                now,
-		UpdatedAt:                now,
-	}, nil
-}
-
-func (s *routeEmployeeService) GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeEffectiveConfig, error) {
-	s.getEffectiveConfigCalled = true
-	s.getEffectiveConfigTenant = tenantID
-	now := time.Now().UTC()
-	approvedBy := uuid.New()
-	return &employee.DigitalEmployeeEffectiveConfig{
-		ID:                       uuid.New(),
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		EmployeeConfigRevisionID: uuid.New(),
-		EffectiveConfig:          map[string]any{"approved": true},
-		ValidationResult:         map[string]any{"blocking_errors": []any{}},
-		Status:                   employee.EffectiveConfigStatusApproved,
-		ApprovedBy:               &approvedBy,
-		ApprovedAt:               &now,
-		CreatedAt:                now,
-		UpdatedAt:                now,
-	}, nil
-}
-
 func (s *routeEmployeeService) GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeSchedulingReadiness, error) {
 	s.getSchedulingReadinessCalled = true
 	s.getSchedulingReadinessTenant = tenantID
@@ -2134,9 +2026,6 @@ func (s *routeEmployeeService) called() bool {
 		s.getInstanceCalled ||
 		s.bindCalled ||
 		s.configCalled ||
-		s.previewCalled ||
-		s.approveCalled ||
-		s.getEffectiveConfigCalled ||
 		s.getSchedulingReadinessCalled
 }
 
@@ -2246,7 +2135,6 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 	runtimeNodeID := uuid.MustParse("55555555-5555-4555-8555-555555555555")
 	runID := uuid.MustParse("66666666-6666-4666-8666-666666666666")
 	taskID := uuid.MustParse("77777777-7777-4777-8777-777777777777")
-	effectiveConfigID := uuid.MustParse("88888888-8888-4888-8888-888888888888")
 	now := time.Date(2026, 6, 6, 10, 4, 0, 0, time.UTC)
 	finishedAt := now.Add(10 * time.Minute)
 	costAmount := 12.34
@@ -2257,7 +2145,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
 			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
 			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusCompleted, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: ""},
-			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
+			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3},
 			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{DailyTokenLimit: int32Ptr(10000), UsageTokensToday: 2500, UsagePercentToday: int32Ptr(25), LimitExceeded: false, UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
 			WorkbenchStatus:   employee.WorkbenchStatusReady,
 			OperationalState:  employee.DigitalEmployeeOperationalState{Status: employee.DigitalEmployeeOperationalStatusIdle, Reasons: []employee.DigitalEmployeeOperationalReason{}, CanDispatch: true},

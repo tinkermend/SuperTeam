@@ -20,7 +20,6 @@ const runtimeNodeHeartbeatTTL = 2 * time.Minute
 
 type digitalEmployeePlanningProfileReader interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeRecord, error)
-	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.DigitalEmployeeEffectiveConfigRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error)
 }
@@ -78,10 +77,9 @@ func (a projectPlanningProfileAdapter) PlanningProfileRecords(ctx context.Contex
 	out := make(map[uuid.UUID]project.DigitalEmployeePlanningProfileSourceRecord, len(records))
 	for employeeID, record := range records {
 		out[employeeID] = project.DigitalEmployeePlanningProfileSourceRecord{
-			DigitalEmployeeID:     record.DigitalEmployeeID,
-			ProviderType:          record.ProviderType,
-			EffectiveConfigStatus: record.EffectiveConfigStatus,
-			ExecutionStatus:       record.ExecutionStatus,
+			DigitalEmployeeID: record.DigitalEmployeeID,
+			ProviderType:      record.ProviderType,
+			ExecutionStatus:   record.ExecutionStatus,
 		}
 	}
 	return out, nil
@@ -124,16 +122,6 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			ProviderType:      employeeRecord.ProviderType,
 			PermissionPolicy:  clonePlanningProfileMap(employeeRecord.PermissionPolicy),
 			ContextPolicy:     clonePlanningProfileMap(employeeRecord.ContextPolicy),
-		}
-		effectiveConfig, err := a.reader.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, employeeID)
-		if err != nil {
-			if !errors.Is(err, employee.ErrNotFound) {
-				return nil, err
-			}
-		} else {
-			record.EffectiveConfigStatus = string(effectiveConfig.Status)
-			record.RoleProfile = cloneNestedMap(effectiveConfig.EffectiveConfig, "role_profile")
-			record.CapabilitySelection = cloneNestedMap(effectiveConfig.EffectiveConfig, "capability_selection")
 		}
 		preflightApplied := false
 		if a.projectTaskRuns != nil && projectID != uuid.Nil {
@@ -180,16 +168,10 @@ func applyProjectTaskPreflightPlanningFacts(record *projectcoordination.DigitalE
 	if providerType := strings.TrimSpace(preflight.ProviderType); providerType != "" {
 		record.ProviderType = providerType
 	}
-	if preflight.HasApprovedEffectiveConfig && strings.TrimSpace(record.EffectiveConfigStatus) == "" {
-		record.EffectiveConfigStatus = string(employee.EffectiveConfigStatusApproved)
-	}
 	record.ExecutionStatus = projectTaskPreflightExecutionStatus(preflight)
 }
 
 func projectTaskPreflightExecutionStatus(preflight employee.StartProjectTaskRunPreflight) string {
-	if !preflight.HasApprovedEffectiveConfig {
-		return "pending_configuration"
-	}
 	if !preflight.RuntimeSessionActive || !preflight.ProviderHealthy || strings.TrimSpace(preflight.WorkspaceBaseDir) == "" {
 		return "unavailable"
 	}

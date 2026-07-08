@@ -159,13 +159,3 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
 ORDER BY created_at DESC
 LIMIT 1;
-
--- name: GetCurrentDigitalEmployeeEffectiveConfig :one
-SELECT *
-FROM digital_employee_effective_configs
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND status = 'approved'
-  AND revoked_at IS NULL
-ORDER BY created_at DESC
-LIMIT 1;

@@ -56,7 +56,6 @@ type RunPreflight struct {
 	BudgetPolicy               map[string]any
 	TodayTokenUsage            int32
 	BusinessTimezone           string
-	HasApprovedEffectiveConfig bool
 	ProviderHealthy            bool
 }
 

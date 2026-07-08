@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  approveDigitalEmployeeEffectiveConfig,
   createDigitalEmployee,
   createDigitalEmployeeConfigRevision,
   getDigitalEmployeeCreateOptions,
@@ -14,7 +13,6 @@ import {
   listDigitalEmployeeRuns,
   listDigitalEmployees,
   isTeamGovernanceConfigRequiredError,
-  previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
   upsertWorkspaceFile,
   type DigitalEmployee,
@@ -650,122 +648,6 @@ describe("digital employee API", () => {
     expect(JSON.parse(String(requestInit.body))).toMatchObject({
       budget_policy: { daily_token_limit: 12000 },
     });
-  });
-
-  it("previews effective config with encoded employee id and revision refs", async () => {
-    const preview = {
-      team_config_revision_id: "55555555-5555-4555-8555-555555555555",
-      employee_config_revision_id: "44444444-4444-4444-8444-444444444444",
-      effective_config: {
-        team_config_revision_id: "55555555-5555-4555-8555-555555555555",
-      },
-      validation: {
-        blocking_errors: [
-          {
-            code: "capability_not_allowed",
-            path: "capability_selection.enabled_skills[0]",
-            message: "能力不在团队白名单中",
-          },
-        ],
-        warnings: [],
-      },
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(preview), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      previewDigitalEmployeeEffectiveConfig(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "employee 1/primary",
-        {
-          team_config: { id: "55555555-5555-4555-8555-555555555555" },
-          employee_config: { id: "44444444-4444-4444-8444-444444444444" },
-        },
-      ),
-    ).resolves.toEqual(preview);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/effective-configs/preview",
-      {
-        body: JSON.stringify({
-          team_config: { id: "55555555-5555-4555-8555-555555555555" },
-          employee_config: { id: "44444444-4444-4444-8444-444444444444" },
-        }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-    );
-  });
-
-  it("approves effective config with encoded employee id and preview refs", async () => {
-    const effectiveConfig = {
-      id: "66666666-6666-4666-8666-666666666666",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      digital_employee_id: "11111111-1111-4111-8111-111111111111",
-      team_config_revision_id: "55555555-5555-4555-8555-555555555555",
-      employee_config_revision_id: "44444444-4444-4444-8444-444444444444",
-      effective_config: {
-        team_config_revision_id: "55555555-5555-4555-8555-555555555555",
-      },
-      validation_result: {
-        blocking_errors: [],
-        warnings: [],
-      },
-      status: "approved",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(effectiveConfig), {
-          headers: { "content-type": "application/json" },
-          status: 201,
-        }),
-    );
-
-    await expect(
-      approveDigitalEmployeeEffectiveConfig(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "employee 1/primary",
-        {
-          preview: {
-            team_config: { id: "55555555-5555-4555-8555-555555555555" },
-            employee_config: { id: "44444444-4444-4444-8444-444444444444" },
-          },
-        },
-      ),
-    ).resolves.toEqual(effectiveConfig);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/effective-configs/approve",
-      {
-        body: JSON.stringify({
-          preview: {
-            team_config: { id: "55555555-5555-4555-8555-555555555555" },
-            employee_config: { id: "44444444-4444-4444-8444-444444444444" },
-          },
-        }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-    );
   });
 
   it("gets execution instance with encoded employee id and cookie credentials", async () => {

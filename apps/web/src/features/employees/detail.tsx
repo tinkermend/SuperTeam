@@ -10,7 +10,6 @@ import { ApiRequestError } from "@/lib/api/client";
 import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
 import {
   createDigitalEmployeeRun,
-  getCurrentDigitalEmployeeEffectiveConfig,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeSchedulingReadiness,
@@ -101,11 +100,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed both the
   // panel (as computed props) and ContextInjectionChain (real counts). The panel
   // is now a pure presentational component.
-  const effectiveConfigQuery = useQuery({
-    queryKey: ["digital-employee-effective-config", employeeId],
-    queryFn: () => getCurrentDigitalEmployeeEffectiveConfig(apiOptions, employeeId),
-    retry: false,
-  });
   const skillsQuery = useQuery({
     queryKey: ["employee-skills", employeeId],
     queryFn: () => listEmployeeSkills(apiOptions, employeeId),
@@ -121,9 +115,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   const instanceNotFound =
     instance.error instanceof ApiRequestError && instance.error.status === 404;
-  const noApprovedConfig =
-    effectiveConfigQuery.error instanceof ApiRequestError &&
-    effectiveConfigQuery.error.status === 404;
+  const effectiveConfigState = {
+    isLoading: false,
+    isError: false,
+    noApprovedConfig: true,
+  };
 
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
@@ -241,11 +237,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                   readiness={schedulingReadiness.data}
                 />
                 <EffectiveContextPanel
-                  effectiveConfig={{
-                    isLoading: effectiveConfigQuery.isLoading,
-                    isError: effectiveConfigQuery.isError && !noApprovedConfig,
-                    noApprovedConfig,
-                  }}
+                  effectiveConfig={effectiveConfigState}
                   employee={employee.data}
                   employeeId={employeeId}
                   envVars={{

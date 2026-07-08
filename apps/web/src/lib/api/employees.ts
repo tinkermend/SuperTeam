@@ -578,53 +578,6 @@ export type CreateDigitalEmployeeConfigRevisionInput = {
   status?: "draft";
 };
 
-export type ConfigRevisionRef = {
-  id: string;
-};
-
-export type EffectiveConfigValidationIssue = {
-  code: string;
-  message: string;
-  path?: string;
-};
-
-export type EffectiveConfigValidation = {
-  blocking_errors: EffectiveConfigValidationIssue[];
-  warnings: EffectiveConfigValidationIssue[];
-};
-
-export type EffectiveConfigPreview = {
-  team_config_revision_id: string;
-  employee_config_revision_id: string;
-  effective_config: Record<string, unknown>;
-  validation: EffectiveConfigValidation;
-};
-
-export type EffectiveConfigPreviewInput = {
-  team_config: ConfigRevisionRef;
-  employee_config: ConfigRevisionRef;
-};
-
-export type DigitalEmployeeEffectiveConfig = {
-  id: string;
-  tenant_id: string;
-  digital_employee_id: string;
-  team_config_revision_id: string;
-  employee_config_revision_id: string;
-  effective_config: Record<string, unknown>;
-  validation_result: EffectiveConfigValidation;
-  status: "pending_approval" | "approved" | "revoked";
-  approved_by?: string;
-  approved_at?: string;
-  revoked_at?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type ApproveEffectiveConfigInput = {
-  preview: EffectiveConfigPreviewInput;
-};
-
 export type WorkspaceFile = {
   id: string;
   team_id: string;
@@ -845,34 +798,6 @@ export function createDigitalEmployeeConfigRevision(
   );
 }
 
-export function previewDigitalEmployeeEffectiveConfig(
-  options: ApiClientOptions,
-  employeeId: string,
-  input: EffectiveConfigPreviewInput,
-): Promise<EffectiveConfigPreview> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-  return postJson<EffectiveConfigPreview>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/preview`,
-    input,
-    "preview digital employee effective config",
-  );
-}
-
-export function approveDigitalEmployeeEffectiveConfig(
-  options: ApiClientOptions,
-  employeeId: string,
-  input: ApproveEffectiveConfigInput,
-): Promise<DigitalEmployeeEffectiveConfig> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-  return postJson<DigitalEmployeeEffectiveConfig>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/approve`,
-    input,
-    "approve digital employee effective config",
-  );
-}
-
 export function listWorkspaceFiles(
   options: ApiClientOptions,
   employeeId: string,
@@ -946,17 +871,6 @@ export function getDigitalEmployeeRunStats(
     options,
     `/api/v1/digital-employees/${encodePathSegment(employeeId)}/run-stats`,
     "digital employee run stats",
-  );
-}
-
-export function getCurrentDigitalEmployeeEffectiveConfig(
-  options: ApiClientOptions,
-  employeeId: string,
-): Promise<DigitalEmployeeEffectiveConfig> {
-  return getJson<DigitalEmployeeEffectiveConfig>(
-    options,
-    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/effective-config`,
-    "digital employee effective config",
   );
 }
 

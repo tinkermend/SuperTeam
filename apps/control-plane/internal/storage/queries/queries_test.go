@@ -1385,12 +1385,6 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, employeeConfig.ID, currentEmployeeConfig.ID)
 
-	currentEffective, err := testQueries.GetCurrentDigitalEmployeeEffectiveConfig(ctx, queries.GetCurrentDigitalEmployeeEffectiveConfigParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employee.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, effective.ID, currentEffective.ID)
 }
 
 func TestTeamGovernanceDraftLifecycleQueries(t *testing.T) {

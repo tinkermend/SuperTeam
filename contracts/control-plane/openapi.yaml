@@ -3233,59 +3233,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeConfigRevision"
-  /api/v1/digital-employees/{employeeId}/effective-configs/preview:
-    post:
-      operationId: previewDigitalEmployeeEffectiveConfig
-      summary: Preview a digital employee effective config
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EffectiveConfigPreviewRequest"
-      responses:
-        "200":
-          description: Digital employee effective config preview
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EffectiveConfigPreview"
-  /api/v1/digital-employees/{employeeId}/effective-configs/approve:
-    post:
-      operationId: approveDigitalEmployeeEffectiveConfig
-      summary: Approve a digital employee effective config
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApproveEffectiveConfigRequest"
-      responses:
-        "201":
-          description: Digital employee effective config approved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DigitalEmployeeEffectiveConfig"
-  /api/v1/digital-employees/{employeeId}/effective-config:
-    get:
-      operationId: getDigitalEmployeeEffectiveConfig
-      summary: Get current approved digital employee effective config
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      responses:
-        "200":
-          description: Current approved effective config
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DigitalEmployeeEffectiveConfig"
-        "404":
-          description: No approved effective config exists yet
   /api/v1/digital-employees/{employeeId}/status:
     put:
       operationId: updateDigitalEmployeeStatus
@@ -10390,24 +10337,6 @@ components:
           type: string
           enum:
             - draft
-    ConfigRevisionRef:
-      type: object
-      required:
-        - id
-      properties:
-        id:
-          type: string
-          format: uuid
-    EffectiveConfigPreviewRequest:
-      type: object
-      required:
-        - team_config
-        - employee_config
-      properties:
-        team_config:
-          $ref: "#/components/schemas/ConfigRevisionRef"
-        employee_config:
-          $ref: "#/components/schemas/ConfigRevisionRef"
     EffectiveConfigValidationIssue:
       type: object
       required:
@@ -10434,94 +10363,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EffectiveConfigValidationIssue"
-    EffectiveConfigPreview:
-      type: object
-      required:
-        - team_config_revision_id
-        - employee_config_revision_id
-        - effective_config
-        - validation
-      properties:
-        team_config_revision_id:
-          type: string
-          format: uuid
-        employee_config_revision_id:
-          type: string
-          format: uuid
-        effective_config:
-          type: object
-          additionalProperties: true
-        validation:
-          $ref: "#/components/schemas/EffectiveConfigValidation"
-    ApproveEffectiveConfigRequest:
-      type: object
-      required:
-        - preview
-      properties:
-        preview:
-          type: object
-          required:
-            - team_config
-            - employee_config
-          properties:
-            team_config:
-              $ref: "#/components/schemas/ConfigRevisionRef"
-            employee_config:
-              $ref: "#/components/schemas/ConfigRevisionRef"
-    DigitalEmployeeEffectiveConfig:
-      type: object
-      required:
-        - id
-        - tenant_id
-        - digital_employee_id
-        - team_config_revision_id
-        - employee_config_revision_id
-        - effective_config
-        - validation_result
-        - status
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        digital_employee_id:
-          type: string
-          format: uuid
-        team_config_revision_id:
-          type: string
-          format: uuid
-        employee_config_revision_id:
-          type: string
-          format: uuid
-        effective_config:
-          type: object
-          additionalProperties: true
-        validation_result:
-          type: object
-          additionalProperties: true
-        status:
-          type: string
-          enum:
-            - pending_approval
-            - approved
-            - revoked
-        approved_by:
-          type: string
-          format: uuid
-        approved_at:
-          type: string
-          format: date-time
-        revoked_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     UpdateDigitalEmployeeStatusRequest:
       type: object
       required:

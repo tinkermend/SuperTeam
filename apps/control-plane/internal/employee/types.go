@@ -69,14 +69,6 @@ const (
 	TeamConfigRevisionStatusActive TeamConfigRevisionStatus = "active"
 )
 
-type EffectiveConfigStatus string
-
-const (
-	EffectiveConfigStatusPendingApproval EffectiveConfigStatus = "pending_approval"
-	EffectiveConfigStatusApproved        EffectiveConfigStatus = "approved"
-	EffectiveConfigStatusRevoked         EffectiveConfigStatus = "revoked"
-)
-
 type ValidationIssue struct {
 	Code    string `json:"code"`
 	Path    string `json:"path,omitempty"`
@@ -443,22 +435,6 @@ type EffectiveConfigPreview struct {
 	Validation               EffectiveConfigValidation
 }
 
-type DigitalEmployeeEffectiveConfig struct {
-	ID                       uuid.UUID
-	TenantID                 uuid.UUID
-	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     *uuid.UUID
-	EmployeeConfigRevisionID uuid.UUID
-	EffectiveConfig          map[string]any
-	ValidationResult         map[string]any
-	Status                   EffectiveConfigStatus
-	ApprovedBy               *uuid.UUID
-	ApprovedAt               *time.Time
-	RevokedAt                *time.Time
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
-}
-
 type DigitalEmployeeExecutionInstance struct {
 	ID                   uuid.UUID
 	TenantID             uuid.UUID
@@ -558,21 +534,6 @@ type PreviewEffectiveConfigRequest struct {
 	DigitalEmployeeID uuid.UUID
 	TeamConfig        TeamConfigInput
 	EmployeeConfig    EmployeeConfigInput
-}
-
-type PreviewEffectiveConfigByRevisionIDsRequest struct {
-	TenantID                 uuid.UUID
-	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     uuid.UUID
-	EmployeeConfigRevisionID uuid.UUID
-}
-
-type ApproveEffectiveConfigRequest struct {
-	TenantID                 uuid.UUID
-	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     uuid.UUID
-	EmployeeConfigRevisionID uuid.UUID
-	ApprovedBy               uuid.UUID
 }
 
 type ListDigitalEmployeesRequest struct {

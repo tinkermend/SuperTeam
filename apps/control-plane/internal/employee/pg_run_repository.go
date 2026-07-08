@@ -110,7 +110,6 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 		BudgetPolicy:               budgetPolicy,
 		TodayTokenUsage:            preflight.TodayTokenUsage,
 		BusinessTimezone:           preflight.BusinessTimezone,
-		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
 		ProviderHealthy:            preflight.ProviderHealthy,
 	}, nil
 }
@@ -132,7 +131,6 @@ func projectTaskRunPreflightFromQuery(preflight queries.GetProjectTaskRunPreflig
 		BudgetPolicy:               budgetPolicy,
 		TodayTokenUsage:            preflight.TodayTokenUsage,
 		BusinessTimezone:           preflight.BusinessTimezone,
-		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
 		RuntimeSessionActive:       preflight.RuntimeSessionActive,
 		ProviderHealthy:            preflight.ProviderHealthy,
 	}, nil

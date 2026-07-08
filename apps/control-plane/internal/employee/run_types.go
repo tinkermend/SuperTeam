@@ -165,7 +165,6 @@ type StartProjectTaskRunPreflight struct {
 	BudgetPolicy               map[string]any
 	TodayTokenUsage            int32
 	BusinessTimezone           string
-	HasApprovedEffectiveConfig bool
 	RuntimeSessionActive       bool
 	ProviderHealthy            bool
 }

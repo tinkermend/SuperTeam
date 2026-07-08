@@ -654,9 +654,6 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if len(preview.Validation.BlockingErrors) > 0 {
 		return DigitalEmployeeRecord{}, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
 	}
-	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfigRevisionIDPtr(teamConfig), configRevision.ID, preview, req.OwnerUserID); err != nil {
-		return DigitalEmployeeRecord{}, err
-	}
 	record.Status = DigitalEmployeeStatusReady
 	if updated, err := repository.UpdateDigitalEmployeeStatus(ctx, req.TenantID, record.ID, DigitalEmployeeStatusReady); err == nil {
 		record = updated
@@ -759,26 +756,6 @@ func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition Emp
 		BudgetPolicy:           cloneMap(req.BudgetPolicy),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 	}
-}
-
-func createApprovedEffectiveConfig(ctx context.Context, repository Repository, record DigitalEmployeeRecord, teamConfigRevisionID *uuid.UUID, employeeConfigRevisionID uuid.UUID, preview *EffectiveConfigPreview, approvedBy uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
-	now := time.Now().UTC()
-	params := CreateEffectiveConfigParams{
-		TenantID:                 record.TenantID,
-		DigitalEmployeeID:        record.ID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
-		ValidationResult:         validationResultMap(preview.Validation),
-		Status:                   EffectiveConfigStatusApproved,
-		ApprovedBy:               &approvedBy,
-		ApprovedAt:               &now,
-	}
-	effectiveConfig, err := repository.CreateDigitalEmployeeEffectiveConfig(ctx, params)
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, fmt.Errorf("create approved digital employee effective config: %w", err)
-	}
-	return effectiveConfig, nil
 }
 
 // Legacy compatibility helper for explicit execution-instance provisioning.
@@ -1500,20 +1477,6 @@ func inheritedConfigMap(requested map[string]any, latest *EmployeeConfigInput, s
 	return cloneMap(selectLatest(*latest))
 }
 
-func (s *Service) GetCurrentEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (*DigitalEmployeeEffectiveConfig, error) {
-	if tenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if digitalEmployeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
-	}
-	record, err := s.repository.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, digitalEmployeeID)
-	if err != nil {
-		return nil, err
-	}
-	return effectiveConfigFromRecord(record), nil
-}
-
 func (s *Service) GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -1530,28 +1493,8 @@ func (s *Service) GetSchedulingReadiness(ctx context.Context, tenantID, employee
 		return nil, fmt.Errorf("get scheduling capability facts: %w", err)
 	}
 
-	checks := make([]SchedulingReadinessCheck, 0, 4)
+	checks := make([]SchedulingReadinessCheck, 0, 3)
 	checks = append(checks, employeeStatusReadinessCheck(employee.Status))
-
-	if _, err := s.repository.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, employeeID); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			checks = append(checks, SchedulingReadinessCheck{
-				Code:    "effective_config",
-				Status:  ReadinessCheckBlocked,
-				Label:   "有效配置",
-				Message: "尚无已批准的有效配置，不能进入项目调度池。",
-			})
-		} else {
-			return nil, fmt.Errorf("get current effective config: %w", err)
-		}
-	} else {
-		checks = append(checks, SchedulingReadinessCheck{
-			Code:    "effective_config",
-			Status:  ReadinessCheckPassed,
-			Label:   "有效配置",
-			Message: "已存在已批准的有效配置。",
-		})
-	}
 
 	checks = append(checks, SchedulingReadinessCheck{
 		Code:    "project_runtime",
@@ -1661,95 +1604,6 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	}, nil
 }
 
-func (s *Service) PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req PreviewEffectiveConfigByRevisionIDsRequest) (*EffectiveConfigPreview, error) {
-	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if req.DigitalEmployeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
-	}
-	if req.TeamConfigRevisionID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_config_revision_id is required", ErrInvalidInput)
-	}
-	if req.EmployeeConfigRevisionID == uuid.Nil {
-		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
-	}
-	teamConfig, err := s.repository.GetTeamConfigRevision(ctx, req.TenantID, req.TeamConfigRevisionID)
-	if err != nil {
-		return nil, fmt.Errorf("get team config revision: %w", err)
-	}
-	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("get digital employee: %w", err)
-	}
-	if employee.TeamID == nil || *employee.TeamID == uuid.Nil {
-		return nil, fmt.Errorf("%w: digital employee team_id is required for effective config preview", ErrInvalidInput)
-	}
-	if teamConfig.TeamID != *employee.TeamID {
-		return nil, fmt.Errorf("%w: team config revision does not belong to digital employee team", ErrInvalidInput)
-	}
-	if teamConfig.Status != TeamConfigRevisionStatusActive {
-		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
-	}
-	employeeConfig, err := s.repository.GetDigitalEmployeeConfigRevision(ctx, req.TenantID, req.DigitalEmployeeID, req.EmployeeConfigRevisionID)
-	if err != nil {
-		return nil, fmt.Errorf("get digital employee config revision: %w", err)
-	}
-	return s.PreviewEffectiveConfig(ctx, PreviewEffectiveConfigRequest{
-		TenantID:          req.TenantID,
-		DigitalEmployeeID: req.DigitalEmployeeID,
-		TeamConfig:        teamConfig,
-		EmployeeConfig:    employeeConfig,
-	})
-}
-
-func (s *Service) ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error) {
-	if req.ApprovedBy == uuid.Nil {
-		return nil, fmt.Errorf("%w: approved_by is required", ErrInvalidInput)
-	}
-	preview, err := s.PreviewEffectiveConfigByRevisionIDs(ctx, PreviewEffectiveConfigByRevisionIDsRequest{
-		TenantID:                 req.TenantID,
-		DigitalEmployeeID:        req.DigitalEmployeeID,
-		TeamConfigRevisionID:     req.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(preview.Validation.BlockingErrors) > 0 {
-		return nil, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
-	}
-	instance, err := s.repository.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("get digital employee execution instance: %w", err)
-	}
-	if instance.Status != ExecutionInstanceStatusReady && instance.Status != ExecutionInstanceStatusActive {
-		return nil, fmt.Errorf("%w: execution instance must be ready or active", ErrInvalidInput)
-	}
-	if _, err := s.repository.GetCurrentDigitalEmployeeEffectiveConfig(ctx, req.TenantID, req.DigitalEmployeeID); err == nil {
-		return nil, fmt.Errorf("%w: approved effective config already exists", ErrConflict)
-	} else if !errors.Is(err, ErrNotFound) {
-		return nil, fmt.Errorf("get current digital employee effective config: %w", err)
-	}
-	now := time.Now().UTC()
-	approvedBy := req.ApprovedBy
-	record, err := s.repository.CreateDigitalEmployeeEffectiveConfig(ctx, CreateEffectiveConfigParams{
-		TenantID:                 req.TenantID,
-		DigitalEmployeeID:        req.DigitalEmployeeID,
-		TeamConfigRevisionID:     &req.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: req.EmployeeConfigRevisionID,
-		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
-		ValidationResult:         validationResultMap(preview.Validation),
-		Status:                   EffectiveConfigStatusApproved,
-		ApprovedBy:               &approvedBy,
-		ApprovedAt:               &now,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create digital employee effective config: %w", err)
-	}
-	return effectiveConfigFromRecord(record), nil
-}
-
 func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 	return &DigitalEmployee{
 		ID:               record.ID,
@@ -1809,24 +1663,6 @@ func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) E
 		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
 		BudgetPolicy:           cloneMap(record.BudgetPolicy),
 		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
-	}
-}
-
-func effectiveConfigFromRecord(record DigitalEmployeeEffectiveConfigRecord) *DigitalEmployeeEffectiveConfig {
-	return &DigitalEmployeeEffectiveConfig{
-		ID:                       record.ID,
-		TenantID:                 record.TenantID,
-		DigitalEmployeeID:        record.DigitalEmployeeID,
-		TeamConfigRevisionID:     record.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: record.EmployeeConfigRevisionID,
-		EffectiveConfig:          cloneMap(record.EffectiveConfig),
-		ValidationResult:         cloneMap(record.ValidationResult),
-		Status:                   record.Status,
-		ApprovedBy:               validUUIDPtr(record.ApprovedBy),
-		ApprovedAt:               cloneTimePtr(record.ApprovedAt),
-		RevokedAt:                cloneTimePtr(record.RevokedAt),
-		CreatedAt:                record.CreatedAt,
-		UpdatedAt:                record.UpdatedAt,
 	}
 }
 

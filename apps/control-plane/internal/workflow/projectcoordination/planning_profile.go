@@ -60,7 +60,6 @@ type PlanningRuntimeRequirements struct {
 	ProviderTypes           []string `json:"provider_types,omitempty"`
 	ProviderStatus          string   `json:"provider_status,omitempty"`
 	RuntimeNodeID           string   `json:"runtime_node_id,omitempty"`
-	EffectiveConfigStatus   string   `json:"effective_config_status,omitempty"`
 	DispatchReadinessStatus string   `json:"dispatch_readiness_status,omitempty"`
 	DispatchBlockingReasons []string `json:"dispatch_blocking_reasons,omitempty"`
 }
@@ -108,7 +107,6 @@ type DigitalEmployeePlanningProfileSourceRecord struct {
 	RuntimeNodeID         uuid.UUID      `json:"runtime_node_id,omitempty"`
 	ProviderType          string         `json:"provider_type,omitempty"`
 	ExecutionStatus       string         `json:"execution_status,omitempty"`
-	EffectiveConfigStatus string         `json:"effective_config_status,omitempty"`
 	LoadState             map[string]any `json:"load_state,omitempty"`
 	ReliabilitySignals    map[string]any `json:"reliability_signals,omitempty"`
 	FetchedAt             time.Time      `json:"fetched_at,omitempty"`
@@ -288,8 +286,7 @@ func buildPlanningToolBindings(capabilitySelection map[string]any) []PlanningToo
 
 func buildPlanningRuntimeRequirements(source DigitalEmployeePlanningProfileSourceRecord, runtimeReady bool, sourceMissing bool) PlanningRuntimeRequirements {
 	requirements := PlanningRuntimeRequirements{
-		ProviderTypes:         stringSliceFromMap(source.CapabilitySelection, "enabled_provider_types"),
-		EffectiveConfigStatus: normalizePlanningString(source.EffectiveConfigStatus),
+		ProviderTypes: stringSliceFromMap(source.CapabilitySelection, "enabled_provider_types"),
 	}
 	if !runtimeReady {
 		requirements.DispatchReadinessStatus = "not_ready"
@@ -384,14 +381,7 @@ func buildPlanningProfileFreshness(source DigitalEmployeePlanningProfileSourceRe
 }
 
 func buildPlanningSourceVersions(source DigitalEmployeePlanningProfileSourceRecord) map[string]string {
-	versions := map[string]string{}
-	if effectiveConfigStatus := normalizePlanningString(source.EffectiveConfigStatus); effectiveConfigStatus != "" {
-		versions["effective_config_status"] = effectiveConfigStatus
-	}
-	if len(versions) == 0 {
-		return nil
-	}
-	return versions
+	return nil
 }
 
 func scoreCapabilities(profile DigitalEmployeePlanningProfile, req PlanningTaskRequirements, result *PlanningProfileScore) int {
@@ -534,7 +524,6 @@ func planningProfileSourceHasFacts(source DigitalEmployeePlanningProfileSourceRe
 		normalizePlanningString(source.EmployeeStatus) != "" ||
 		normalizePlanningString(source.ProviderType) != "" ||
 		normalizePlanningString(source.ExecutionStatus) != "" ||
-		normalizePlanningString(source.EffectiveConfigStatus) != "" ||
 		source.RuntimeNodeID != uuid.Nil {
 		return true
 	}

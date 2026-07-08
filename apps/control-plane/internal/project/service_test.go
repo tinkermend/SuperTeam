@@ -238,7 +238,6 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 			employeeID: {
 				DigitalEmployeeID:     employeeID,
 				ProviderType:          "codex",
-				EffectiveConfigStatus: "pending_configuration",
 				ExecutionStatus:       "unavailable",
 			},
 		},
@@ -279,6 +278,7 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 	require.True(t, readiness.EmployeeReadiness[0].CanPlan)
 	require.False(t, readiness.EmployeeReadiness[0].CanDispatch)
 	require.Equal(t, "employee_workspace_pending", readiness.EmployeeReadiness[0].ReasonCode)
+	require.Equal(t, "employee execution workspace or provider is not ready", readiness.EmployeeReadiness[0].ReasonMessage)
 }
 
 func TestGetProjectRuntimeReadinessBlocksProviderTypeMissingEmployee(t *testing.T) {

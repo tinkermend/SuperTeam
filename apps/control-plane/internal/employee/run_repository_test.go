@@ -417,7 +417,6 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	require.Equal(t, executionInstanceID, preflight.ExecutionInstanceID)
 	require.Equal(t, "codex", preflight.ProviderType)
 	require.Equal(t, "isolated", preflight.WorkspacePolicy["workspace"])
-	require.True(t, preflight.HasApprovedEffectiveConfig)
 	require.True(t, preflight.ProviderHealthy)
 }
 

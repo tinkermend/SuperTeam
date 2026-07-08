@@ -251,19 +251,6 @@ function createDetailFetcher({
       return jsonResponse(runStats);
     }
 
-    if (path === `/api/v1/digital-employees/${employee.id}/effective-config` && method === "GET") {
-      return jsonResponse({
-        id: "config-1",
-        tenant_id: "tenant-1",
-        digital_employee_id: employee.id,
-        team_config_revision_id: "team-rev-1",
-        employee_config_revision_id: "employee-rev-1",
-        effective_config: {},
-        validation_result: { ok: true },
-        status: "approved",
-      });
-    }
-
     if (path === `/api/v1/digital-employees/${employee.id}/skills` && method === "GET") {
       return jsonResponse([]);
     }

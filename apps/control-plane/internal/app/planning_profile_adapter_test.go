@@ -32,20 +32,6 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 				ContextPolicy:    map[string]any{"max_context_classification": "internal"},
 			},
 		},
-		configs: map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				Status:            employee.EffectiveConfigStatusApproved,
-				EffectiveConfig: map[string]any{
-					"role_profile": map[string]any{"primary_role": "data_analyst"},
-					"capability_selection": map[string]any{
-						"enabled_skills":         []any{"sql.analysis"},
-						"enabled_mcp_servers":    []any{"postgres.readonly"},
-						"enabled_provider_types": []any{"codex"},
-					},
-				},
-			},
-		},
 		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
 			employeeID: {
 				DigitalEmployeeID: employeeID,
@@ -70,11 +56,9 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	record := records[employeeID]
 	require.Equal(t, "database_admin", record.EmployeeType)
 	require.Equal(t, "active", record.EmployeeStatus)
-	require.Equal(t, "approved", record.EffectiveConfigStatus)
 	require.Equal(t, "ready", record.ExecutionStatus)
 	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
 	require.Equal(t, "codex", record.ProviderType)
-	require.Equal(t, map[string]any{"primary_role": "data_analyst"}, record.RoleProfile)
 	require.Equal(t, map[string]any{
 		"in_flight_tasks": int32(2),
 		"available_slots": int32(0),
@@ -105,17 +89,6 @@ func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExe
 				ProviderType: "codex",
 			},
 		},
-		configs: map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				Status:            employee.EffectiveConfigStatusApproved,
-				EffectiveConfig: map[string]any{
-					"capability_selection": map[string]any{
-						"enabled_external_capabilities": []any{"implementation"},
-					},
-				},
-			},
-		},
 	}
 	preflightReader := fakeProjectTaskRunPreflightReader{
 		preflight: employee.StartProjectTaskRunPreflight{
@@ -126,7 +99,6 @@ func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExe
 			NodeID:                     "provider-runtime-smoke-node",
 			ProviderType:               "codex",
 			WorkspaceBaseDir:           "/var/superteam/projects",
-			HasApprovedEffectiveConfig: true,
 			RuntimeSessionActive:       true,
 			ProviderHealthy:            true,
 		},
@@ -139,7 +111,6 @@ func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExe
 	require.Equal(t, "codex", record.ProviderType)
 	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
 	require.Equal(t, "ready", record.ExecutionStatus)
-	require.Equal(t, "approved", record.EffectiveConfigStatus)
 }
 
 func TestPreDispatchGateAdapterMapsEmployeeRuntimeFacts(t *testing.T) {
@@ -244,7 +215,6 @@ func TestPreDispatchGateAdapterUsesProjectTaskPlacementForRuntimeLessReadyEmploy
 			NodeID:                     nodeID,
 			ProviderType:               "codex",
 			WorkspaceBaseDir:           "/var/superteam/projects",
-			HasApprovedEffectiveConfig: true,
 			RuntimeSessionActive:       true,
 			ProviderHealthy:            true,
 		},
@@ -426,7 +396,6 @@ func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T
 
 type fakePlanningProfileEmployeeReader struct {
 	employees map[uuid.UUID]employee.DigitalEmployeeRecord
-	configs   map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord
 	instances map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord
 	signals   map[uuid.UUID]employee.OperationalSignals
 }
@@ -435,14 +404,6 @@ func (r fakePlanningProfileEmployeeReader) GetDigitalEmployee(_ context.Context,
 	record, ok := r.employees[employeeID]
 	if !ok || record.TenantID != tenantID {
 		return employee.DigitalEmployeeRecord{}, employee.ErrNotFound
-	}
-	return record, nil
-}
-
-func (r fakePlanningProfileEmployeeReader) GetCurrentDigitalEmployeeEffectiveConfig(_ context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeEffectiveConfigRecord, error) {
-	record, ok := r.configs[employeeID]
-	if !ok || tenantID == uuid.Nil {
-		return employee.DigitalEmployeeEffectiveConfigRecord{}, employee.ErrNotFound
 	}
 	return record, nil
 }

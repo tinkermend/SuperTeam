@@ -52,7 +52,6 @@ type DigitalEmployeePlanningProfileSource interface {
 type DigitalEmployeePlanningProfileSourceRecord struct {
 	DigitalEmployeeID     uuid.UUID
 	ProviderType          string
-	EffectiveConfigStatus string
 	ExecutionStatus       string
 }
 
@@ -990,11 +989,7 @@ func employeeDispatchBlockProjectReason(employees []ProjectEmployeeReadiness) (s
 }
 
 func employeeDispatchBlockReason(record DigitalEmployeePlanningProfileSourceRecord) (string, string, bool) {
-	configStatus := strings.TrimSpace(record.EffectiveConfigStatus)
 	executionStatus := strings.TrimSpace(record.ExecutionStatus)
-	if configStatus != "" && configStatus != "approved" {
-		return "employee_workspace_pending", "employee effective configuration is not approved", true
-	}
 	if executionStatus != "" && executionStatus != "ready" && executionStatus != "active" {
 		return "employee_workspace_pending", "employee execution workspace or provider is not ready", true
 	}

@@ -669,7 +669,6 @@ SELECT
     COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
-    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
     EXISTS (
         SELECT 1
         FROM runtime_capabilities rc
@@ -756,7 +755,6 @@ SELECT
     COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
-    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
     (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
     (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
 FROM digital_employees de

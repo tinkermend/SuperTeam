@@ -141,7 +141,6 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 			RuntimeNodeID:         runtimeNodeID,
 			ProviderType:          "codex",
 			ExecutionStatus:       "ready",
-			EffectiveConfigStatus: "approved",
 		},
 	}}
 	store := NewProjectStore(repo).
@@ -216,7 +215,6 @@ func TestLoadProjectCoordinationSnapshotKeepsPlannableEmployeesWhenRuntimeNotRea
 			RuntimeNodeID:         runtimeNodeID,
 			ProviderType:          "codex",
 			ExecutionStatus:       "ready",
-			EffectiveConfigStatus: "approved",
 		},
 	}}
 	store := NewProjectStore(repo).
@@ -275,8 +273,7 @@ func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 					"enabled_skills":                []any{"sql.analysis"},
 					"enabled_provider_types":        []any{"codex"},
 				},
-				ExecutionStatus:       "ready",
-				EffectiveConfigStatus: "approved",
+				ExecutionStatus: "ready",
 			},
 		},
 	}

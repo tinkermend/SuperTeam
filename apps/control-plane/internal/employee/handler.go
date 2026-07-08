@@ -30,9 +30,6 @@ type HandlerService interface {
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
 	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
-	PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req PreviewEffectiveConfigByRevisionIDsRequest) (*EffectiveConfigPreview, error)
-	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
-	GetCurrentEffectiveConfig(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeEffectiveConfig, error)
 	GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error)
 }
 
@@ -597,107 +594,6 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
 }
 
-func (h *HTTPHandler) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigPreview, &employeeID, "digital employee effective config preview")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var req struct {
-		TeamConfig struct {
-			ID uuid.UUID `json:"id"`
-		} `json:"team_config"`
-		EmployeeConfig struct {
-			ID uuid.UUID `json:"id"`
-		} `json:"employee_config"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	preview, err := service.PreviewEffectiveConfigByRevisionIDs(r.Context(), PreviewEffectiveConfigByRevisionIDsRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     req.TeamConfig.ID,
-		EmployeeConfigRevisionID: req.EmployeeConfig.ID,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, effectiveConfigPreviewResponseFromDomain(preview))
-}
-
-func (h *HTTPHandler) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigApprove, &employeeID, "digital employee effective config approve")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var req struct {
-		Preview struct {
-			TeamConfig struct {
-				ID uuid.UUID `json:"id"`
-			} `json:"team_config"`
-			EmployeeConfig struct {
-				ID uuid.UUID `json:"id"`
-			} `json:"employee_config"`
-		} `json:"preview"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	approvedBy := middleware.GetUserID(r.Context())
-	effectiveConfig, err := service.ApproveEffectiveConfig(r.Context(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     req.Preview.TeamConfig.ID,
-		EmployeeConfigRevisionID: req.Preview.EmployeeConfig.ID,
-		ApprovedBy:               approvedBy,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, effectiveConfigResponseFromDomain(effectiveConfig))
-}
-
-func (h *HTTPHandler) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee effective config read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	effectiveConfig, err := service.GetCurrentEffectiveConfig(r.Context(), tenantID, employeeID)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, effectiveConfigResponseFromDomain(effectiveConfig))
-}
-
 const (
 	defaultOverviewPageLimit = 50
 	maxOverviewPageLimit     = 100
@@ -1125,29 +1021,6 @@ type configRevisionResponse struct {
 	ArchivedAt             *string              `json:"archived_at,omitempty"`
 	CreatedAt              string               `json:"created_at,omitempty"`
 	UpdatedAt              string               `json:"updated_at,omitempty"`
-}
-
-type effectiveConfigPreviewResponse struct {
-	TeamConfigRevisionID     string                    `json:"team_config_revision_id"`
-	EmployeeConfigRevisionID string                    `json:"employee_config_revision_id"`
-	EffectiveConfig          map[string]any            `json:"effective_config"`
-	Validation               EffectiveConfigValidation `json:"validation"`
-}
-
-type effectiveConfigResponse struct {
-	ID                       string                `json:"id"`
-	TenantID                 string                `json:"tenant_id"`
-	DigitalEmployeeID        string                `json:"digital_employee_id"`
-	TeamConfigRevisionID     string                `json:"team_config_revision_id"`
-	EmployeeConfigRevisionID string                `json:"employee_config_revision_id"`
-	EffectiveConfig          map[string]any        `json:"effective_config"`
-	ValidationResult         map[string]any        `json:"validation_result"`
-	Status                   EffectiveConfigStatus `json:"status"`
-	ApprovedBy               *string               `json:"approved_by,omitempty"`
-	ApprovedAt               *string               `json:"approved_at,omitempty"`
-	RevokedAt                *string               `json:"revoked_at,omitempty"`
-	CreatedAt                string                `json:"created_at,omitempty"`
-	UpdatedAt                string                `json:"updated_at,omitempty"`
 }
 
 type schedulingReadinessResponse struct {
@@ -1680,33 +1553,6 @@ func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) c
 		ArchivedAt:             timeStringPtr(revision.ArchivedAt),
 		CreatedAt:              timeString(revision.CreatedAt),
 		UpdatedAt:              timeString(revision.UpdatedAt),
-	}
-}
-
-func effectiveConfigPreviewResponseFromDomain(preview *EffectiveConfigPreview) effectiveConfigPreviewResponse {
-	return effectiveConfigPreviewResponse{
-		TeamConfigRevisionID:     preview.TeamConfigRevisionID.String(),
-		EmployeeConfigRevisionID: preview.EmployeeConfigRevisionID.String(),
-		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
-		Validation:               preview.Validation,
-	}
-}
-
-func effectiveConfigResponseFromDomain(effectiveConfig *DigitalEmployeeEffectiveConfig) effectiveConfigResponse {
-	return effectiveConfigResponse{
-		ID:                       effectiveConfig.ID.String(),
-		TenantID:                 effectiveConfig.TenantID.String(),
-		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID.String(),
-		TeamConfigRevisionID:     optionalUUIDStringPtr(effectiveConfig.TeamConfigRevisionID),
-		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID.String(),
-		EffectiveConfig:          cloneMap(effectiveConfig.EffectiveConfig),
-		ValidationResult:         cloneMap(effectiveConfig.ValidationResult),
-		Status:                   effectiveConfig.Status,
-		ApprovedBy:               uuidStringPtr(effectiveConfig.ApprovedBy),
-		ApprovedAt:               timeStringPtr(effectiveConfig.ApprovedAt),
-		RevokedAt:                timeStringPtr(effectiveConfig.RevokedAt),
-		CreatedAt:                timeString(effectiveConfig.CreatedAt),
-		UpdatedAt:                timeString(effectiveConfig.UpdatedAt),
 	}
 }
 

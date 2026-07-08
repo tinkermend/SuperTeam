@@ -43,8 +43,6 @@ type Repository interface {
 	GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error)
-	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error)
-	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error)
 	GetSchedulingCapabilityFacts(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (SchedulingCapabilityFacts, error)
 	GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error)
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
@@ -105,18 +103,6 @@ type CreateConfigRevisionParams struct {
 	Status                 ConfigRevisionStatus
 	ApprovedBy             *uuid.UUID
 	ApprovedAt             *time.Time
-}
-
-type CreateEffectiveConfigParams struct {
-	TenantID                 uuid.UUID
-	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     *uuid.UUID
-	EmployeeConfigRevisionID uuid.UUID
-	EffectiveConfig          map[string]any
-	ValidationResult         map[string]any
-	Status                   EffectiveConfigStatus
-	ApprovedBy               *uuid.UUID
-	ApprovedAt               *time.Time
 }
 
 type CreateWorkspaceFileParams struct {
@@ -224,22 +210,6 @@ type DigitalEmployeeConfigRevisionRecord struct {
 	ArchivedAt             *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
-}
-
-type DigitalEmployeeEffectiveConfigRecord struct {
-	ID                       uuid.UUID
-	TenantID                 uuid.UUID
-	DigitalEmployeeID        uuid.UUID
-	TeamConfigRevisionID     *uuid.UUID
-	EmployeeConfigRevisionID uuid.UUID
-	EffectiveConfig          map[string]any
-	ValidationResult         map[string]any
-	Status                   EffectiveConfigStatus
-	ApprovedBy               *uuid.UUID
-	ApprovedAt               *time.Time
-	RevokedAt                *time.Time
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
 }
 
 type WorkspaceFileRecord struct {

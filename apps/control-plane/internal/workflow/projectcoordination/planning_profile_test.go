@@ -109,7 +109,6 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 		RuntimeNodeID:         runtimeNodeID,
 		ProviderType:          "codex",
 		ExecutionStatus:       "ready",
-		EffectiveConfigStatus: "approved",
 		LoadState: map[string]any{
 			"running_tasks":   2,
 			"available_slots": 3,
@@ -135,7 +134,7 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 	require.Equal(t, PlanningLoadState{AvailableSlots: 3, InFlightTasks: 2, Lendable: true}, profile.LoadState)
 	require.Equal(t, PlanningReliabilitySignals{RecentSuccessCount: 7, RecentFailureCount: 1, RecentHumanRejectCount: 2}, profile.ReliabilitySignals)
 	require.Equal(t, "ready", profile.ProfileFreshness.SourceState)
-	require.Equal(t, "approved", profile.ProfileFreshness.SourceVersions["effective_config_status"])
+	require.Nil(t, profile.ProfileFreshness.SourceVersions)
 }
 
 func TestBuildDigitalEmployeePlanningProfileKeepsRuntimeStatusUnknownWithoutExecutionFacts(t *testing.T) {

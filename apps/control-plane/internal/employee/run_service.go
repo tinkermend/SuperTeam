@@ -819,9 +819,6 @@ func validateRunPreflight(preflight RunPreflight) error {
 	if preflight.DigitalEmployeeStatus != DigitalEmployeeStatusReady && preflight.DigitalEmployeeStatus != DigitalEmployeeStatusActive {
 		return fmt.Errorf("%w: digital employee must be ready or active", ErrInvalidInput)
 	}
-	if !preflight.HasApprovedEffectiveConfig {
-		return fmt.Errorf("%w: approved effective config is required", ErrEffectiveConfigRequired)
-	}
 	// Legacy workbench runs still require a concrete execution instance. ProjectTask dispatch uses project placement preflight instead.
 	if preflight.ExecutionInstanceID == uuid.Nil {
 		return fmt.Errorf("%w: execution_instance_id is required", ErrInvalidInput)
@@ -856,9 +853,6 @@ func validateProjectTaskRunPreflight(preflight StartProjectTaskRunPreflight) err
 	}
 	if preflight.DigitalEmployeeStatus != DigitalEmployeeStatusReady && preflight.DigitalEmployeeStatus != DigitalEmployeeStatusActive {
 		return fmt.Errorf("%w: digital employee must be ready or active", ErrInvalidInput)
-	}
-	if !preflight.HasApprovedEffectiveConfig {
-		return fmt.Errorf("%w: approved effective config is required", ErrEffectiveConfigRequired)
 	}
 	if preflight.RuntimeNodeID == uuid.Nil {
 		return fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
@@ -899,7 +893,6 @@ func projectTaskRunPreflightToRunPreflight(preflight StartProjectTaskRunPrefligh
 		BudgetPolicy:               cloneMap(preflight.BudgetPolicy),
 		TodayTokenUsage:            preflight.TodayTokenUsage,
 		BusinessTimezone:           preflight.BusinessTimezone,
-		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
 		ProviderHealthy:            preflight.ProviderHealthy,
 	}
 }
@@ -1028,7 +1021,6 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 		"session_policy":                runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":              cloneMap(preflight.RuntimeSelector),
 		"idempotency_fingerprint":       fingerprint,
-		"has_approved_effective_config": preflight.HasApprovedEffectiveConfig,
 		"provider_healthy":              preflight.ProviderHealthy,
 	}
 }

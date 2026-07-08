@@ -770,7 +770,6 @@ SELECT
     COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
-    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
     EXISTS (
         SELECT 1
         FROM runtime_capabilities rc
@@ -838,24 +837,23 @@ type GetDigitalEmployeeRunPreflightParams struct {
 }
 
 type GetDigitalEmployeeRunPreflightRow struct {
-	TenantID                   uuid.UUID     `json:"tenant_id"`
-	TeamID                     uuid.NullUUID `json:"team_id"`
-	DigitalEmployeeID          uuid.UUID     `json:"digital_employee_id"`
-	DigitalEmployeeStatus      string        `json:"digital_employee_status"`
-	ExecutionInstanceID        uuid.UUID     `json:"execution_instance_id"`
-	ExecutionStatus            string        `json:"execution_status"`
-	RuntimeNodeID              uuid.UUID     `json:"runtime_node_id"`
-	NodeID                     string        `json:"node_id"`
-	ProviderType               string        `json:"provider_type"`
-	AgentHomeDir               string        `json:"agent_home_dir"`
-	RuntimeSelector            []byte        `json:"runtime_selector"`
-	SessionPolicy              []byte        `json:"session_policy"`
-	WorkspacePolicy            []byte        `json:"workspace_policy"`
-	BudgetPolicy               []byte        `json:"budget_policy"`
-	TodayTokenUsage            int32         `json:"today_token_usage"`
-	BusinessTimezone           string        `json:"business_timezone"`
-	HasApprovedEffectiveConfig bool          `json:"has_approved_effective_config"`
-	ProviderHealthy            bool          `json:"provider_healthy"`
+	TenantID              uuid.UUID     `json:"tenant_id"`
+	TeamID                uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID     uuid.UUID     `json:"digital_employee_id"`
+	DigitalEmployeeStatus string        `json:"digital_employee_status"`
+	ExecutionInstanceID   uuid.UUID     `json:"execution_instance_id"`
+	ExecutionStatus       string        `json:"execution_status"`
+	RuntimeNodeID         uuid.UUID     `json:"runtime_node_id"`
+	NodeID                string        `json:"node_id"`
+	ProviderType          string        `json:"provider_type"`
+	AgentHomeDir          string        `json:"agent_home_dir"`
+	RuntimeSelector       []byte        `json:"runtime_selector"`
+	SessionPolicy         []byte        `json:"session_policy"`
+	WorkspacePolicy       []byte        `json:"workspace_policy"`
+	BudgetPolicy          []byte        `json:"budget_policy"`
+	TodayTokenUsage       int32         `json:"today_token_usage"`
+	BusinessTimezone      string        `json:"business_timezone"`
+	ProviderHealthy       bool          `json:"provider_healthy"`
 }
 
 func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error) {
@@ -878,7 +876,6 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 		&i.BudgetPolicy,
 		&i.TodayTokenUsage,
 		&i.BusinessTimezone,
-		&i.HasApprovedEffectiveConfig,
 		&i.ProviderHealthy,
 	)
 	return i, err
@@ -971,7 +968,6 @@ SELECT
     COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
-    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
     (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
     (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
 FROM digital_employees de
@@ -1079,20 +1075,19 @@ type GetProjectTaskRunPreflightParams struct {
 }
 
 type GetProjectTaskRunPreflightRow struct {
-	TenantID                   uuid.UUID     `json:"tenant_id"`
-	TeamID                     uuid.NullUUID `json:"team_id"`
-	DigitalEmployeeID          uuid.UUID     `json:"digital_employee_id"`
-	DigitalEmployeeStatus      string        `json:"digital_employee_status"`
-	RuntimeNodeID              uuid.UUID     `json:"runtime_node_id"`
-	NodeID                     string        `json:"node_id"`
-	ProviderType               string        `json:"provider_type"`
-	WorkspaceBaseDir           string        `json:"workspace_base_dir"`
-	BudgetPolicy               []byte        `json:"budget_policy"`
-	TodayTokenUsage            int32         `json:"today_token_usage"`
-	BusinessTimezone           string        `json:"business_timezone"`
-	HasApprovedEffectiveConfig bool          `json:"has_approved_effective_config"`
-	RuntimeSessionActive       bool          `json:"runtime_session_active"`
-	ProviderHealthy            bool          `json:"provider_healthy"`
+	TenantID              uuid.UUID     `json:"tenant_id"`
+	TeamID                uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID     uuid.UUID     `json:"digital_employee_id"`
+	DigitalEmployeeStatus string        `json:"digital_employee_status"`
+	RuntimeNodeID         uuid.UUID     `json:"runtime_node_id"`
+	NodeID                string        `json:"node_id"`
+	ProviderType          string        `json:"provider_type"`
+	WorkspaceBaseDir      string        `json:"workspace_base_dir"`
+	BudgetPolicy          []byte        `json:"budget_policy"`
+	TodayTokenUsage       int32         `json:"today_token_usage"`
+	BusinessTimezone      string        `json:"business_timezone"`
+	RuntimeSessionActive  bool          `json:"runtime_session_active"`
+	ProviderHealthy       bool          `json:"provider_healthy"`
 }
 
 func (q *Queries) GetProjectTaskRunPreflight(ctx context.Context, arg GetProjectTaskRunPreflightParams) (GetProjectTaskRunPreflightRow, error) {
@@ -1110,7 +1105,6 @@ func (q *Queries) GetProjectTaskRunPreflight(ctx context.Context, arg GetProject
 		&i.BudgetPolicy,
 		&i.TodayTokenUsage,
 		&i.BusinessTimezone,
-		&i.HasApprovedEffectiveConfig,
 		&i.RuntimeSessionActive,
 		&i.ProviderHealthy,
 	)

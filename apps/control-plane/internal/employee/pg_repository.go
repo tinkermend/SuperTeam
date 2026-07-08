@@ -811,17 +811,6 @@ func (r *PgRepository) GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Co
 	return nextRevision, nil
 }
 
-func (r *PgRepository) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
-	effectiveConfig, err := r.q.GetCurrentDigitalEmployeeEffectiveConfig(ctx, queries.GetCurrentDigitalEmployeeEffectiveConfigParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: digitalEmployeeID,
-	})
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, mapNoRows(err)
-	}
-	return effectiveConfigRecordFromQuery(effectiveConfig)
-}
-
 func (r *PgRepository) GetSchedulingCapabilityFacts(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (SchedulingCapabilityFacts, error) {
 	skillCounts, err := r.q.GetDigitalEmployeeSchedulingSkillCounts(ctx, queries.GetDigitalEmployeeSchedulingSkillCountsParams{
 		TenantID:          tenantID,
@@ -938,32 +927,6 @@ func pgFloat8Ptr(value pgtype.Float8) *float64 {
 	}
 	v := value.Float64
 	return &v
-}
-
-func (r *PgRepository) CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
-	effectiveConfigSnapshot, err := jsonbFromMap(params.EffectiveConfig, "effective_config_snapshot")
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, err
-	}
-	validationResult, err := jsonbFromMap(params.ValidationResult, "validation_result")
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, err
-	}
-	effectiveConfig, err := r.q.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
-		TenantID:                   params.TenantID,
-		DigitalEmployeeID:          params.DigitalEmployeeID,
-		TenantTeamConfigRevisionID: nullUUIDFromPtr(params.TeamConfigRevisionID),
-		EmployeeConfigRevisionID:   params.EmployeeConfigRevisionID,
-		EffectiveConfigSnapshot:    effectiveConfigSnapshot,
-		ValidationResult:           validationResult,
-		Status:                     string(params.Status),
-		ApprovedBy:                 nullUUIDFromPtr(params.ApprovedBy),
-		ApprovedAt:                 timestamptzFromPtr(params.ApprovedAt),
-	})
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, err
-	}
-	return effectiveConfigRecordFromQuery(effectiveConfig)
 }
 
 func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
@@ -1958,32 +1921,6 @@ func employeeConfigInputFromQuery(revision queries.DigitalEmployeeConfigRevision
 		ApprovalPolicyOverride: approvalPolicyOverride,
 		BudgetPolicy:           budgetPolicy,
 		OutputContractAddendum: outputContractAddendum,
-	}, nil
-}
-
-func effectiveConfigRecordFromQuery(effectiveConfig queries.DigitalEmployeeEffectiveConfig) (DigitalEmployeeEffectiveConfigRecord, error) {
-	effectiveConfigSnapshot, err := mapFromJSONB(effectiveConfig.EffectiveConfigSnapshot, "effective_config_snapshot")
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, err
-	}
-	validationResult, err := mapFromJSONB(effectiveConfig.ValidationResult, "validation_result")
-	if err != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, err
-	}
-	return DigitalEmployeeEffectiveConfigRecord{
-		ID:                       effectiveConfig.ID,
-		TenantID:                 effectiveConfig.TenantID,
-		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID,
-		TeamConfigRevisionID:     uuidPtrFromNullUUID(effectiveConfig.TenantTeamConfigRevisionID),
-		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID,
-		EffectiveConfig:          effectiveConfigSnapshot,
-		ValidationResult:         validationResult,
-		Status:                   EffectiveConfigStatus(effectiveConfig.Status),
-		ApprovedBy:               uuidPtrFromNull(effectiveConfig.ApprovedBy),
-		ApprovedAt:               timePtrFromTimestamptz(effectiveConfig.ApprovedAt),
-		RevokedAt:                timePtrFromTimestamptz(effectiveConfig.RevokedAt),
-		CreatedAt:                timeFromTimestamptz(effectiveConfig.CreatedAt),
-		UpdatedAt:                timeFromTimestamptz(effectiveConfig.UpdatedAt),
 	}, nil
 }
 

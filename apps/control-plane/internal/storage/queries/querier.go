@@ -166,7 +166,6 @@ type Querier interface {
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
 	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthCaptchaChallenge, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
-	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurrentProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetCurrentTenantTeamConfigRevision(ctx context.Context, arg GetCurrentTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)

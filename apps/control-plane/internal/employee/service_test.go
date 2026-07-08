@@ -665,18 +665,6 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigWithoutRuntim
 		t.Fatalf("expected request budget policy to be persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
 	}
 
-	if repo.createdEffectiveConfig.Status != EffectiveConfigStatusApproved {
-		t.Fatalf("expected approved effective config, got %q", repo.createdEffectiveConfig.Status)
-	}
-	if repo.createdEffectiveConfig.ApprovedBy == nil || *repo.createdEffectiveConfig.ApprovedBy != req.OwnerUserID || repo.createdEffectiveConfig.ApprovedAt == nil {
-		t.Fatalf("expected effective config approved by owner, got approved_by=%#v approved_at=%#v", repo.createdEffectiveConfig.ApprovedBy, repo.createdEffectiveConfig.ApprovedAt)
-	}
-	if repo.createdEffectiveConfig.TeamConfigRevisionID != nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
-		t.Fatalf("expected effective config revision ids to be set, got %#v", repo.createdEffectiveConfig)
-	}
-	if len(repo.effectiveConfigs) != 1 {
-		t.Fatalf("expected one effective config, got %#v", repo.effectiveConfigs)
-	}
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected no runtime command, got %#v", dispatcher.commands)
 	}
@@ -726,9 +714,6 @@ func TestCreateDigitalEmployeeSupportsTeamLessCreation(t *testing.T) {
 
 	if created.TeamID != nil {
 		t.Fatalf("expected created employee team_id nil, got %#v", created.TeamID)
-	}
-	if repo.createdEffectiveConfig.TeamConfigRevisionID != nil {
-		t.Fatalf("expected no team config revision id for team-less employee, got %#v", repo.createdEffectiveConfig.TeamConfigRevisionID)
 	}
 	if len(repo.workspaceFiles) != 0 {
 		t.Fatalf("expected no runtime workspace files during identity creation, got %#v", repo.workspaceFiles)
@@ -814,6 +799,11 @@ func TestCreateDigitalEmployeeDoesNotCreateRuntimeWorkspaceFile(t *testing.T) {
 
 func TestLegacyProvisioningPayloadUsesTeamEmployeeHomeAndWorkspaceFiles(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.teamBaselines[*req.TeamID] = TeamBaseline{
+		Constitution: map[string]any{"mission": "keep services healthy"},
+		Skills:       []string{"database-troubleshooting", "incident-diagnosis"},
+		MCPServers:   []string{"postgres-readonly"},
+	}
 
 	created, err := svc.CreateDigitalEmployee(context.Background(), req)
 	if err != nil {
@@ -863,6 +853,11 @@ func TestLegacyProvisioningPayloadUsesTeamEmployeeHomeAndWorkspaceFiles(t *testi
 
 func TestLegacyProvisioningPayloadCarriesEffectiveCapabilityArrays(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.teamBaselines[*req.TeamID] = TeamBaseline{
+		Constitution: map[string]any{"mission": "keep services healthy"},
+		Skills:       []string{"database-troubleshooting", "incident-diagnosis"},
+		MCPServers:   []string{"postgres-readonly"},
+	}
 	svc.skillLister = &fakeSkillLister{records: []skill.SkillRuntimeRecord{
 		{ID: uuid.New(), Slug: "database-troubleshooting", ArchiveObjectRef: "s3://bucket/skills/db-trouble.zip", ArchiveChecksum: "abc123", ArchiveSizeBytes: 1024, ArchiveFileCount: 2},
 		{ID: uuid.New(), Slug: "sql-review", ArchiveObjectRef: "s3://bucket/skills/sql-review.zip", ArchiveChecksum: "def456", ArchiveSizeBytes: 2048, ArchiveFileCount: 1},
@@ -938,23 +933,38 @@ func runtimeCommandPayloadForTest(t *testing.T, payload map[string]any) map[stri
 
 func latestEffectiveConfigPreviewForTest(t *testing.T, repo *memoryRepository, tenantID, employeeID uuid.UUID) *EffectiveConfigPreview {
 	t.Helper()
-	record, err := repo.GetCurrentDigitalEmployeeEffectiveConfig(context.Background(), tenantID, employeeID)
+	configInput, err := repo.GetLatestDigitalEmployeeConfigRevision(context.Background(), tenantID, employeeID)
 	if err != nil {
-		t.Fatalf("get current effective config: %v", err)
+		t.Fatalf("get latest employee config: %v", err)
 	}
-	return &EffectiveConfigPreview{
-		TeamConfigRevisionID:     optionalUUIDValue(record.TeamConfigRevisionID),
-		EmployeeConfigRevisionID: record.EmployeeConfigRevisionID,
-		EffectiveConfig:          cloneMap(record.EffectiveConfig),
-		Validation:               EffectiveConfigValidation{},
+	employeeRecord, ok := repo.employees[employeeID]
+	if !ok {
+		t.Fatalf("missing employee record for %s", employeeID)
 	}
-}
-
-func optionalUUIDValue(value *uuid.UUID) uuid.UUID {
-	if value == nil {
-		return uuid.Nil
+	var teamConfig TeamConfigInput
+	if employeeRecord.TeamID != nil && *employeeRecord.TeamID != uuid.Nil {
+		baseline, ok := repo.teamBaselines[*employeeRecord.TeamID]
+		if !ok {
+			t.Fatalf("missing team baseline for %s", *employeeRecord.TeamID)
+		}
+		teamConfig = teamConfigInputFromBaseline(tenantID, *employeeRecord.TeamID, baseline)
+	} else {
+		teamConfig = defaultTeamLessConfigInput(tenantID)
 	}
-	return *value
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		TeamConfig:        teamConfig,
+		EmployeeConfig:    configInput,
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+	return preview
 }
 
 func TestRuntimeWorkspaceFilesPayloadOmitsInlineContentForObjectStore(t *testing.T) {
@@ -1178,26 +1188,6 @@ func TestCreateDigitalEmployeeKeepsPlatformTypeDefaultsWithoutTeamPolicyClipping
 	}
 }
 
-func TestCreateDigitalEmployeeRollsBackLocalFactsWhenEffectiveConfigFails(t *testing.T) {
-	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
-	repo.createEffectiveConfigErr = errors.New("effective config insert failed")
-
-	_, err := svc.CreateDigitalEmployee(context.Background(), req)
-
-	if err == nil || !strings.Contains(err.Error(), "effective config") {
-		t.Fatalf("expected effective config creation failure, got %v", err)
-	}
-	if repo.transactionCount != 1 || repo.transactionCommitCount != 0 || repo.transactionRollbackCount != 1 {
-		t.Fatalf("expected one rolled-back transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
-	}
-	if len(repo.employees) != 0 || len(repo.instances) != 0 || len(repo.commandReceipts) != 0 {
-		t.Fatalf("expected local facts rollback, employees=%#v instances=%#v receipts=%#v", repo.employees, repo.instances, repo.commandReceipts)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected no runtime dispatch after local failure, got %#v", dispatcher.commands)
-	}
-}
-
 func TestCreateDigitalEmployeeDoesNotWaitForProvisioningTimeout(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
 	svc.provisioningTimeout = time.Nanosecond
@@ -1216,9 +1206,6 @@ func TestCreateDigitalEmployeeDoesNotWaitForProvisioningTimeout(t *testing.T) {
 	}
 	if len(repo.abortReasons) != 0 {
 		t.Fatalf("expected no provisioning abort, got %#v", repo.abortReasons)
-	}
-	if _, err := repo.GetCurrentDigitalEmployeeEffectiveConfig(context.Background(), req.TenantID, firstEmployeeID(repo)); err != nil {
-		t.Fatalf("expected approved effective config to remain after identity creation, got %v", err)
 	}
 	visible, err := repo.ListDigitalEmployees(context.Background(), ListDigitalEmployeesParams{TenantID: req.TenantID})
 	if err != nil {
@@ -1927,7 +1914,7 @@ func TestPreviewEffectiveConfigReportsUnknownApprovalRisk(t *testing.T) {
 	assertBlockingIssuePath(t, preview.Validation, "invalid_policy_value", "approval_policy_override.min_risk_for_human")
 }
 
-func TestApproveEffectiveConfigBlocksValidationErrors(t *testing.T) {
+func TestGetSchedulingReadinessPassesForReadyEmployee(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -1936,404 +1923,6 @@ func TestApproveEffectiveConfigBlocksValidationErrors(t *testing.T) {
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 	teamID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
-		Status:   DigitalEmployeeStatusDraft,
-	}
-	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
-		ID:               teamConfigRevisionID,
-		TenantID:         tenantID,
-		TeamID:           teamID,
-		Status:           TeamConfigRevisionStatusActive,
-		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
-	}
-	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
-		ID:                  employeeConfigRevisionID,
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		CapabilitySelection: map[string]any{"enabled_skills": []any{"database-troubleshooting"}},
-	}
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusReady,
-	}
-
-	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for blocking validation errors, got %v", err)
-	}
-	if len(repo.effectiveConfigs) != 0 {
-		t.Fatalf("expected no effective config to be created, got %#v", repo.effectiveConfigs)
-	}
-}
-
-func TestApproveEffectiveConfigRejectsDuplicateApprovedConfig(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	teamID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
-		Status:   DigitalEmployeeStatusDraft,
-	}
-	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
-		ID:               teamConfigRevisionID,
-		TenantID:         tenantID,
-		TeamID:           teamID,
-		Status:           TeamConfigRevisionStatusActive,
-		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
-	}
-	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
-		ID:                  employeeConfigRevisionID,
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
-	}
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusReady,
-	}
-	existingID := uuid.New()
-	repo.effectiveConfigs[existingID] = DigitalEmployeeEffectiveConfigRecord{
-		ID:                       existingID,
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     &teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		Status:                   EffectiveConfigStatusApproved,
-	}
-
-	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected conflict for duplicate approved effective config, got %v", err)
-	}
-	if len(repo.effectiveConfigs) != 1 {
-		t.Fatalf("expected duplicate approval not to create another effective config, got %#v", repo.effectiveConfigs)
-	}
-}
-
-func TestPreviewEffectiveConfigByRevisionIDsRejectsWrongTeamConfig(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	employeeTeamID := uuid.New()
-	otherTeamID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &employeeTeamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
-		Status:   DigitalEmployeeStatusDraft,
-	}
-	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
-		ID:               teamConfigRevisionID,
-		TenantID:         tenantID,
-		TeamID:           otherTeamID,
-		Status:           TeamConfigRevisionStatusActive,
-		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
-	}
-	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
-		ID:                  employeeConfigRevisionID,
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
-	}
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusReady,
-	}
-
-	_, err = svc.PreviewEffectiveConfigByRevisionIDs(context.Background(), PreviewEffectiveConfigByRevisionIDsRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for mismatched team config, got %v", err)
-	}
-
-	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected approval to reject mismatched team config, got %v", err)
-	}
-	if len(repo.effectiveConfigs) != 0 {
-		t.Fatalf("expected mismatched team config not to persist effective config, got %#v", repo.effectiveConfigs)
-	}
-}
-
-func TestPreviewEffectiveConfigByRevisionIDsRejectsDraftTeamConfig(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	teamID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
-		Status:   DigitalEmployeeStatusDraft,
-	}
-	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
-		ID:               teamConfigRevisionID,
-		TenantID:         tenantID,
-		TeamID:           teamID,
-		Status:           TeamConfigRevisionStatusDraft,
-		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
-	}
-	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
-		ID:                  employeeConfigRevisionID,
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
-	}
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusReady,
-	}
-
-	_, err = svc.PreviewEffectiveConfigByRevisionIDs(context.Background(), PreviewEffectiveConfigByRevisionIDsRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for draft team config preview, got %v", err)
-	}
-
-	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected approval to reject draft team config, got %v", err)
-	}
-	if len(repo.effectiveConfigs) != 0 {
-		t.Fatalf("expected draft team config not to persist effective config, got %#v", repo.effectiveConfigs)
-	}
-}
-
-func TestApproveEffectiveConfigRequiresReadyOrActiveExecutionInstance(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	teamID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
-		Status:   DigitalEmployeeStatusDraft,
-	}
-	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
-		ID:               teamConfigRevisionID,
-		TenantID:         tenantID,
-		TeamID:           teamID,
-		Status:           TeamConfigRevisionStatusActive,
-		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
-	}
-	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
-		ID:                  employeeConfigRevisionID,
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
-	}
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusDisabled,
-	}
-
-	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for disabled execution instance, got %v", err)
-	}
-
-	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            ExecutionInstanceStatusReady,
-	}
-	effectiveConfig, err := svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		ApprovedBy:               approvedBy,
-	})
-	if err != nil {
-		t.Fatalf("approve effective config: %v", err)
-	}
-	if effectiveConfig.Status != EffectiveConfigStatusApproved {
-		t.Fatalf("expected approved effective config, got %q", effectiveConfig.Status)
-	}
-	if effectiveConfig.ApprovedBy == nil || *effectiveConfig.ApprovedBy != approvedBy {
-		t.Fatalf("expected approved_by %s, got %#v", approvedBy, effectiveConfig.ApprovedBy)
-	}
-	if repo.createdEffectiveConfig.ValidationResult["blocking_errors"] == nil {
-		t.Fatalf("expected validation result to be persisted, got %#v", repo.createdEffectiveConfig.ValidationResult)
-	}
-}
-
-func TestGetCurrentEffectiveConfigReturnsApprovedConfig(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	teamConfigRevisionID := uuid.New()
-	employeeConfigRevisionID := uuid.New()
-	approvedBy := uuid.New()
-	approvedAt := time.Now().UTC()
-	existingID := uuid.New()
-	repo.effectiveConfigs[existingID] = DigitalEmployeeEffectiveConfigRecord{
-		ID:                       existingID,
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employeeID,
-		TeamConfigRevisionID:     &teamConfigRevisionID,
-		EmployeeConfigRevisionID: employeeConfigRevisionID,
-		EffectiveConfig:          map[string]any{"role_profile": map[string]any{"role": "incident_analyst"}},
-		ValidationResult:         map[string]any{"blocking_errors": []any{}},
-		Status:                   EffectiveConfigStatusApproved,
-		ApprovedBy:               &approvedBy,
-		ApprovedAt:               &approvedAt,
-	}
-
-	effectiveConfig, err := svc.GetCurrentEffectiveConfig(context.Background(), tenantID, employeeID)
-	if err != nil {
-		t.Fatalf("get current effective config: %v", err)
-	}
-	if effectiveConfig.ID != existingID {
-		t.Fatalf("expected effective config id %s, got %s", existingID, effectiveConfig.ID)
-	}
-	if effectiveConfig.Status != EffectiveConfigStatusApproved {
-		t.Fatalf("expected approved status, got %q", effectiveConfig.Status)
-	}
-	if effectiveConfig.ApprovedBy == nil || *effectiveConfig.ApprovedBy != approvedBy {
-		t.Fatalf("expected approved_by %s, got %#v", approvedBy, effectiveConfig.ApprovedBy)
-	}
-	if effectiveConfig.TeamConfigRevisionID == nil || *effectiveConfig.TeamConfigRevisionID != teamConfigRevisionID {
-		t.Fatalf("expected team config revision id %s, got %#v", teamConfigRevisionID, effectiveConfig.TeamConfigRevisionID)
-	}
-	if effectiveConfig.EmployeeConfigRevisionID != employeeConfigRevisionID {
-		t.Fatalf("expected employee config revision id %s, got %s", employeeConfigRevisionID, effectiveConfig.EmployeeConfigRevisionID)
-	}
-}
-
-func TestGetCurrentEffectiveConfigReturnsNotFoundWhenNoApprovedConfigExists(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-
-	_, err = svc.GetCurrentEffectiveConfig(context.Background(), uuid.New(), uuid.New())
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected not found, got %v", err)
-	}
-}
-
-func TestGetCurrentEffectiveConfigRejectsMissingIdentifiers(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-
-	if _, err := svc.GetCurrentEffectiveConfig(context.Background(), uuid.Nil, uuid.New()); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for nil tenant_id, got %v", err)
-	}
-	if _, err := svc.GetCurrentEffectiveConfig(context.Background(), uuid.New(), uuid.Nil); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for nil digital_employee_id, got %v", err)
-	}
-}
-
-func TestGetSchedulingReadinessPassesForReadyEmployeeWithApprovedConfig(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	teamID := uuid.New()
-	effectiveConfigID := uuid.New()
 	repo.employees[employeeID] = DigitalEmployeeRecord{
 		ID:           employeeID,
 		TenantID:     tenantID,
@@ -2343,12 +1932,6 @@ func TestGetSchedulingReadinessPassesForReadyEmployeeWithApprovedConfig(t *testi
 		Name:         "需求分析员工",
 		Role:         "requirements_analyst",
 		Status:       DigitalEmployeeStatusReady,
-	}
-	repo.effectiveConfigs[effectiveConfigID] = DigitalEmployeeEffectiveConfigRecord{
-		ID:                effectiveConfigID,
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            EffectiveConfigStatusApproved,
 	}
 	repo.schedulingCapabilityFacts = SchedulingCapabilityFacts{
 		PersonalSkillCount:      1,
@@ -2368,7 +1951,6 @@ func TestGetSchedulingReadinessPassesForReadyEmployeeWithApprovedConfig(t *testi
 		t.Fatalf("expected employee to be schedulable, got %#v", readiness)
 	}
 	assertReadinessCheck(t, readiness, "employee_status", ReadinessCheckPassed)
-	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckPassed)
 	assertReadinessCheck(t, readiness, "project_runtime", ReadinessCheckInfo)
 	if readiness.Capabilities.Skills.PersonalCount != 1 || readiness.Capabilities.Skills.InheritedCount != 2 {
 		t.Fatalf("unexpected skill counts: %#v", readiness.Capabilities.Skills)
@@ -2398,7 +1980,6 @@ func TestGetSchedulingReadinessBlocksWhenEmployeeStatusIsNotRunnable(t *testing.
 	}
 	tenantID := uuid.New()
 	employeeID := uuid.New()
-	effectiveConfigID := uuid.New()
 	repo.employees[employeeID] = DigitalEmployeeRecord{
 		ID:           employeeID,
 		TenantID:     tenantID,
@@ -2408,13 +1989,6 @@ func TestGetSchedulingReadinessBlocksWhenEmployeeStatusIsNotRunnable(t *testing.
 		Role:         "requirements_analyst",
 		Status:       DigitalEmployeeStatusDisabled,
 	}
-	repo.effectiveConfigs[effectiveConfigID] = DigitalEmployeeEffectiveConfigRecord{
-		ID:                effectiveConfigID,
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Status:            EffectiveConfigStatusApproved,
-	}
-
 	readiness, err := svc.GetSchedulingReadiness(context.Background(), tenantID, employeeID)
 	if err != nil {
 		t.Fatalf("get scheduling readiness: %v", err)
@@ -2423,10 +1997,9 @@ func TestGetSchedulingReadinessBlocksWhenEmployeeStatusIsNotRunnable(t *testing.
 		t.Fatalf("expected disabled employee to be blocked, got %#v", readiness)
 	}
 	assertReadinessCheck(t, readiness, "employee_status", ReadinessCheckBlocked)
-	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckPassed)
 }
 
-func TestGetSchedulingReadinessBlocksWhenEffectiveConfigMissing(t *testing.T) {
+func TestGetSchedulingReadinessDoesNotBlockWhenEffectiveConfigMissing(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -2448,10 +2021,10 @@ func TestGetSchedulingReadinessBlocksWhenEffectiveConfigMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get scheduling readiness: %v", err)
 	}
-	if readiness.ReadyForProjectScheduling {
-		t.Fatalf("expected missing effective config to block readiness, got %#v", readiness)
+	if !readiness.ReadyForProjectScheduling {
+		t.Fatalf("expected missing effective config not to block readiness, got %#v", readiness)
 	}
-	assertReadinessCheck(t, readiness, "effective_config", ReadinessCheckBlocked)
+	assertReadinessCheck(t, readiness, "employee_status", ReadinessCheckPassed)
 }
 
 func assertReadinessCheck(t *testing.T, readiness *DigitalEmployeeSchedulingReadiness, code string, status ReadinessCheckStatus) {
@@ -2759,15 +2332,12 @@ type memoryRepository struct {
 	currentTeamConfigByTeam   map[uuid.UUID]uuid.UUID
 	runtimeProviderOptions    []RuntimeProviderOption
 	employeeConfigs           map[uuid.UUID]EmployeeConfigInput
-	effectiveConfigs          map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
 	schedulingCapabilityFacts SchedulingCapabilityFacts
 	envVars                   map[string]EnvironmentVariableRecord
 	workspaceFiles            []WorkspaceFileRecord
 	workspaceFileRevisions    []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber  int32
 	createdConfigRevision     CreateConfigRevisionParams
-	createdEffectiveConfig    CreateEffectiveConfigParams
-	createEffectiveConfigErr  error
 	digitalEmployeeOverview   *DigitalEmployeeOverview
 	lastOverviewRequest       GetDigitalEmployeeOverviewRequest
 	waitHook                  func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
@@ -2787,7 +2357,6 @@ func newMemoryRepository() *memoryRepository {
 		teamBaselines:            make(map[uuid.UUID]TeamBaseline),
 		currentTeamConfigByTeam:  make(map[uuid.UUID]uuid.UUID),
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
-		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
 		envVars:                  make(map[string]EnvironmentVariableRecord),
 		nextConfigRevisionNumber: 1,
 	}
@@ -3237,19 +2806,6 @@ func (r *memoryRepository) GetNextDigitalEmployeeConfigRevisionNumber(_ context.
 	return r.nextConfigRevisionNumber, nil
 }
 
-func (r *memoryRepository) GetCurrentDigitalEmployeeEffectiveConfig(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
-	for _, record := range r.effectiveConfigs {
-		if record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
-			continue
-		}
-		if record.Status != EffectiveConfigStatusApproved || record.RevokedAt != nil {
-			continue
-		}
-		return record, nil
-	}
-	return DigitalEmployeeEffectiveConfigRecord{}, ErrNotFound
-}
-
 func (r *memoryRepository) GetSchedulingCapabilityFacts(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (SchedulingCapabilityFacts, error) {
 	if _, ok := r.employees[digitalEmployeeID]; !ok {
 		return SchedulingCapabilityFacts{}, ErrNotFound
@@ -3260,29 +2816,6 @@ func (r *memoryRepository) GetSchedulingCapabilityFacts(_ context.Context, tenan
 	return r.schedulingCapabilityFacts, nil
 }
 
-func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
-	r.createdEffectiveConfig = params
-	if r.createEffectiveConfigErr != nil {
-		return DigitalEmployeeEffectiveConfigRecord{}, r.createEffectiveConfigErr
-	}
-	now := time.Now().UTC()
-	record := DigitalEmployeeEffectiveConfigRecord{
-		ID:                       uuid.New(),
-		TenantID:                 params.TenantID,
-		DigitalEmployeeID:        params.DigitalEmployeeID,
-		TeamConfigRevisionID:     params.TeamConfigRevisionID,
-		EmployeeConfigRevisionID: params.EmployeeConfigRevisionID,
-		EffectiveConfig:          cloneMap(params.EffectiveConfig),
-		ValidationResult:         cloneMap(params.ValidationResult),
-		Status:                   params.Status,
-		ApprovedBy:               validUUIDPtr(params.ApprovedBy),
-		ApprovedAt:               cloneTimePtr(params.ApprovedAt),
-		CreatedAt:                now,
-		UpdatedAt:                now,
-	}
-	r.effectiveConfigs[record.ID] = record
-	return record, nil
-}
 
 func (r *memoryRepository) GetDigitalEmployeeRunStats(_ context.Context, _, _ uuid.UUID) (DigitalEmployeeRunStats, error) {
 	return DigitalEmployeeRunStats{}, nil
@@ -3403,13 +2936,6 @@ func (r *memoryRepository) AbortProvisionedDigitalEmployee(ctx context.Context, 
 			receipt.UpdatedAt = now
 		}
 	}
-	for id, record := range r.effectiveConfigs {
-		if record.TenantID == tenantID && record.DigitalEmployeeID == employeeID && record.Status == EffectiveConfigStatusApproved && record.RevokedAt == nil {
-			record.RevokedAt = &now
-			record.UpdatedAt = now
-			r.effectiveConfigs[id] = record
-		}
-	}
 	for index := range r.workspaceFiles {
 		if r.workspaceFiles[index].TenantID == tenantID && r.workspaceFiles[index].DigitalEmployeeID == employeeID && r.workspaceFiles[index].DeletedAt == nil {
 			r.workspaceFiles[index].Status = "deleted"
@@ -3426,14 +2952,12 @@ type memoryRepositorySnapshot struct {
 	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	commandReceipts          map[string]*RuntimeCommandReceipt
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
-	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
 	envVars                  map[string]EnvironmentVariableRecord
 	workspaceFiles           []WorkspaceFileRecord
 	workspaceFileRevisions   []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber int32
 	createdEmployeeCount     int
 	createdConfigRevision    CreateConfigRevisionParams
-	createdEffectiveConfig   CreateEffectiveConfigParams
 }
 
 func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
@@ -3442,14 +2966,12 @@ func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 		instances:                cloneExecutionInstanceRecordMap(r.instances),
 		commandReceipts:          cloneCommandReceiptMap(r.commandReceipts),
 		employeeConfigs:          cloneEmployeeConfigInputMap(r.employeeConfigs),
-		effectiveConfigs:         cloneEffectiveConfigRecordMap(r.effectiveConfigs),
 		envVars:                  cloneEnvironmentVariableRecordMap(r.envVars),
 		workspaceFiles:           cloneWorkspaceFileRecords(r.workspaceFiles),
 		workspaceFileRevisions:   cloneWorkspaceFileRevisionRecords(r.workspaceFileRevisions),
 		nextConfigRevisionNumber: r.nextConfigRevisionNumber,
 		createdEmployeeCount:     r.createdEmployeeCount,
 		createdConfigRevision:    cloneCreateConfigRevisionParams(r.createdConfigRevision),
-		createdEffectiveConfig:   cloneCreateEffectiveConfigParams(r.createdEffectiveConfig),
 	}
 }
 
@@ -3458,14 +2980,12 @@ func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
 	r.instances = snapshot.instances
 	r.commandReceipts = snapshot.commandReceipts
 	r.employeeConfigs = snapshot.employeeConfigs
-	r.effectiveConfigs = snapshot.effectiveConfigs
 	r.envVars = snapshot.envVars
 	r.workspaceFiles = snapshot.workspaceFiles
 	r.workspaceFileRevisions = snapshot.workspaceFileRevisions
 	r.nextConfigRevisionNumber = snapshot.nextConfigRevisionNumber
 	r.createdEmployeeCount = snapshot.createdEmployeeCount
 	r.createdConfigRevision = snapshot.createdConfigRevision
-	r.createdEffectiveConfig = snapshot.createdEffectiveConfig
 }
 
 func cloneEmployeeRecordMap(values map[uuid.UUID]DigitalEmployeeRecord) map[uuid.UUID]DigitalEmployeeRecord {
@@ -3537,19 +3057,6 @@ func cloneEmployeeConfigInputMap(values map[uuid.UUID]EmployeeConfigInput) map[u
 	return cloned
 }
 
-func cloneEffectiveConfigRecordMap(values map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord) map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord {
-	cloned := make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord, len(values))
-	for id, record := range values {
-		record.EffectiveConfig = cloneMap(record.EffectiveConfig)
-		record.ValidationResult = cloneMap(record.ValidationResult)
-		record.ApprovedBy = validUUIDPtr(record.ApprovedBy)
-		record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
-		record.RevokedAt = cloneTimePtr(record.RevokedAt)
-		cloned[id] = record
-	}
-	return cloned
-}
-
 func cloneEnvironmentVariableRecordMap(values map[string]EnvironmentVariableRecord) map[string]EnvironmentVariableRecord {
 	cloned := make(map[string]EnvironmentVariableRecord, len(values))
 	for name, record := range values {
@@ -3593,14 +3100,6 @@ func cloneCreateConfigRevisionParams(params CreateConfigRevisionParams) CreateCo
 	params.ApprovalPolicyOverride = cloneMap(params.ApprovalPolicyOverride)
 	params.BudgetPolicy = cloneMap(params.BudgetPolicy)
 	params.OutputContractAddendum = cloneMap(params.OutputContractAddendum)
-	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
-	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)
-	return params
-}
-
-func cloneCreateEffectiveConfigParams(params CreateEffectiveConfigParams) CreateEffectiveConfigParams {
-	params.EffectiveConfig = cloneMap(params.EffectiveConfig)
-	params.ValidationResult = cloneMap(params.ValidationResult)
 	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
 	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)
 	return params

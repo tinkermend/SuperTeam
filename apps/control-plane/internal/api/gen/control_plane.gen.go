@@ -252,27 +252,6 @@ func (e DigitalEmployeeCreateOptionCheckStatus) Valid() bool {
 	}
 }
 
-// Defines values for DigitalEmployeeEffectiveConfigStatus.
-const (
-	DigitalEmployeeEffectiveConfigStatusApproved        DigitalEmployeeEffectiveConfigStatus = "approved"
-	DigitalEmployeeEffectiveConfigStatusPendingApproval DigitalEmployeeEffectiveConfigStatus = "pending_approval"
-	DigitalEmployeeEffectiveConfigStatusRevoked         DigitalEmployeeEffectiveConfigStatus = "revoked"
-)
-
-// Valid indicates whether the value is a known member of the DigitalEmployeeEffectiveConfigStatus enum.
-func (e DigitalEmployeeEffectiveConfigStatus) Valid() bool {
-	switch e {
-	case DigitalEmployeeEffectiveConfigStatusApproved:
-		return true
-	case DigitalEmployeeEffectiveConfigStatusPendingApproval:
-		return true
-	case DigitalEmployeeEffectiveConfigStatusRevoked:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DigitalEmployeeEnvironmentVariableSummaryStatus.
 const (
 	DigitalEmployeeEnvironmentVariableSummaryStatusActive   DigitalEmployeeEnvironmentVariableSummaryStatus = "active"
@@ -1694,19 +1673,19 @@ func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestStatus.
 const (
-	Approved TeamMemberRoleRequestStatus = "approved"
-	Pending  TeamMemberRoleRequestStatus = "pending"
-	Rejected TeamMemberRoleRequestStatus = "rejected"
+	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
+	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
+	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
 func (e TeamMemberRoleRequestStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case TeamMemberRoleRequestStatusApproved:
 		return true
-	case Pending:
+	case TeamMemberRoleRequestStatusPending:
 		return true
-	case Rejected:
+	case TeamMemberRoleRequestStatusRejected:
 		return true
 	default:
 		return false
@@ -1965,14 +1944,6 @@ type AppendProviderSessionEventRequest0 = interface{}
 // AppendProviderSessionEventRequest1 defines model for .
 type AppendProviderSessionEventRequest1 = interface{}
 
-// ApproveEffectiveConfigRequest defines model for ApproveEffectiveConfigRequest.
-type ApproveEffectiveConfigRequest struct {
-	Preview struct {
-		EmployeeConfig ConfigRevisionRef `json:"employee_config"`
-		TeamConfig     ConfigRevisionRef `json:"team_config"`
-	} `json:"preview"`
-}
-
 // AuditEvent defines model for AuditEvent.
 type AuditEvent struct {
 	Action       string                 `json:"action"`
@@ -2022,11 +1993,6 @@ type CompleteProjectTaskRequest struct {
 // CompleteTaskRequest defines model for CompleteTaskRequest.
 type CompleteTaskRequest struct {
 	Result *map[string]interface{} `json:"result,omitempty"`
-}
-
-// ConfigRevisionRef defines model for ConfigRevisionRef.
-type ConfigRevisionRef struct {
-	Id openapi_types.UUID `json:"id"`
 }
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
@@ -2426,26 +2392,6 @@ type DigitalEmployeeCreateTeamConfig struct {
 	TeamId   *openapi_types.UUID `json:"team_id,omitempty"`
 	TenantId openapi_types.UUID  `json:"tenant_id"`
 }
-
-// DigitalEmployeeEffectiveConfig defines model for DigitalEmployeeEffectiveConfig.
-type DigitalEmployeeEffectiveConfig struct {
-	ApprovedAt               *time.Time                           `json:"approved_at,omitempty"`
-	ApprovedBy               *openapi_types.UUID                  `json:"approved_by,omitempty"`
-	CreatedAt                *time.Time                           `json:"created_at,omitempty"`
-	DigitalEmployeeId        openapi_types.UUID                   `json:"digital_employee_id"`
-	EffectiveConfig          map[string]interface{}               `json:"effective_config"`
-	EmployeeConfigRevisionId openapi_types.UUID                   `json:"employee_config_revision_id"`
-	Id                       openapi_types.UUID                   `json:"id"`
-	RevokedAt                *time.Time                           `json:"revoked_at,omitempty"`
-	Status                   DigitalEmployeeEffectiveConfigStatus `json:"status"`
-	TeamConfigRevisionId     openapi_types.UUID                   `json:"team_config_revision_id"`
-	TenantId                 openapi_types.UUID                   `json:"tenant_id"`
-	UpdatedAt                *time.Time                           `json:"updated_at,omitempty"`
-	ValidationResult         map[string]interface{}               `json:"validation_result"`
-}
-
-// DigitalEmployeeEffectiveConfigStatus defines model for DigitalEmployeeEffectiveConfig.Status.
-type DigitalEmployeeEffectiveConfigStatus string
 
 // DigitalEmployeeEnvironmentVariableSummary defines model for DigitalEmployeeEnvironmentVariableSummary.
 type DigitalEmployeeEnvironmentVariableSummary struct {
@@ -2850,20 +2796,6 @@ type DispatchGateResult struct {
 
 // DispatchGateResultStatus defines model for DispatchGateResult.Status.
 type DispatchGateResultStatus string
-
-// EffectiveConfigPreview defines model for EffectiveConfigPreview.
-type EffectiveConfigPreview struct {
-	EffectiveConfig          map[string]interface{}    `json:"effective_config"`
-	EmployeeConfigRevisionId openapi_types.UUID        `json:"employee_config_revision_id"`
-	TeamConfigRevisionId     openapi_types.UUID        `json:"team_config_revision_id"`
-	Validation               EffectiveConfigValidation `json:"validation"`
-}
-
-// EffectiveConfigPreviewRequest defines model for EffectiveConfigPreviewRequest.
-type EffectiveConfigPreviewRequest struct {
-	EmployeeConfig ConfigRevisionRef `json:"employee_config"`
-	TeamConfig     ConfigRevisionRef `json:"team_config"`
-}
 
 // EffectiveConfigValidation defines model for EffectiveConfigValidation.
 type EffectiveConfigValidation struct {
@@ -5470,12 +5402,6 @@ type CreateDigitalEmployeeJSONRequestBody = CreateDigitalEmployeeRequest
 // CreateDigitalEmployeeConfigRevisionJSONRequestBody defines body for CreateDigitalEmployeeConfigRevision for application/json ContentType.
 type CreateDigitalEmployeeConfigRevisionJSONRequestBody = CreateDigitalEmployeeConfigRevisionRequest
 
-// ApproveDigitalEmployeeEffectiveConfigJSONRequestBody defines body for ApproveDigitalEmployeeEffectiveConfig for application/json ContentType.
-type ApproveDigitalEmployeeEffectiveConfigJSONRequestBody = ApproveEffectiveConfigRequest
-
-// PreviewDigitalEmployeeEffectiveConfigJSONRequestBody defines body for PreviewDigitalEmployeeEffectiveConfig for application/json ContentType.
-type PreviewDigitalEmployeeEffectiveConfigJSONRequestBody = EffectiveConfigPreviewRequest
-
 // UpsertEmployeeEnvironmentVariableJSONRequestBody defines body for UpsertEmployeeEnvironmentVariable for application/json ContentType.
 type UpsertEmployeeEnvironmentVariableJSONRequestBody = UpsertEnvironmentVariableRequest
 
@@ -6165,15 +6091,6 @@ type ServerInterface interface {
 	// Create a digital employee governance config revision
 	// (POST /api/v1/digital-employees/{employeeId}/config-revisions)
 	CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Get current approved digital employee effective config
-	// (GET /api/v1/digital-employees/{employeeId}/effective-config)
-	GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Approve a digital employee effective config
-	// (POST /api/v1/digital-employees/{employeeId}/effective-configs/approve)
-	ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Preview a digital employee effective config
-	// (POST /api/v1/digital-employees/{employeeId}/effective-configs/preview)
-	PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List the effective MCP servers projected for a digital employee
 	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-config)
 	ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -6756,24 +6673,6 @@ func (_ Unimplemented) GetDigitalEmployee(w http.ResponseWriter, r *http.Request
 // Create a digital employee governance config revision
 // (POST /api/v1/digital-employees/{employeeId}/config-revisions)
 func (_ Unimplemented) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get current approved digital employee effective config
-// (GET /api/v1/digital-employees/{employeeId}/effective-config)
-func (_ Unimplemented) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Approve a digital employee effective config
-// (POST /api/v1/digital-employees/{employeeId}/effective-configs/approve)
-func (_ Unimplemented) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Preview a digital employee effective config
-// (POST /api/v1/digital-employees/{employeeId}/effective-configs/preview)
-func (_ Unimplemented) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8259,84 +8158,6 @@ func (siw *ServerInterfaceWrapper) CreateDigitalEmployeeConfigRevision(w http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateDigitalEmployeeConfigRevision(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetDigitalEmployeeEffectiveConfig operation middleware
-func (siw *ServerInterfaceWrapper) GetDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetDigitalEmployeeEffectiveConfig(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ApproveDigitalEmployeeEffectiveConfig operation middleware
-func (siw *ServerInterfaceWrapper) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApproveDigitalEmployeeEffectiveConfig(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PreviewDigitalEmployeeEffectiveConfig operation middleware
-func (siw *ServerInterfaceWrapper) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PreviewDigitalEmployeeEffectiveConfig(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14931,15 +14752,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/config-revisions", wrapper.CreateDigitalEmployeeConfigRevision)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-config", wrapper.GetDigitalEmployeeEffectiveConfig)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-configs/approve", wrapper.ApproveDigitalEmployeeEffectiveConfig)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-configs/preview", wrapper.PreviewDigitalEmployeeEffectiveConfig)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-config", wrapper.ListEffectiveMCPConfig)

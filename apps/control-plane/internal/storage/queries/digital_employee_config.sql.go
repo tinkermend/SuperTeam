@@ -243,43 +243,6 @@ func (q *Queries) GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, a
 	return i, err
 }
 
-const GetCurrentDigitalEmployeeEffectiveConfig = `-- name: GetCurrentDigitalEmployeeEffectiveConfig :one
-SELECT id, tenant_id, digital_employee_id, tenant_team_config_revision_id, employee_config_revision_id, effective_config_snapshot, validation_result, status, approved_by, approved_at, revoked_at, created_at, updated_at
-FROM digital_employee_effective_configs
-WHERE tenant_id = $1::uuid
-  AND digital_employee_id = $2::uuid
-  AND status = 'approved'
-  AND revoked_at IS NULL
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-type GetCurrentDigitalEmployeeEffectiveConfigParams struct {
-	TenantID          uuid.UUID `json:"tenant_id"`
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-}
-
-func (q *Queries) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error) {
-	row := q.db.QueryRow(ctx, GetCurrentDigitalEmployeeEffectiveConfig, arg.TenantID, arg.DigitalEmployeeID)
-	var i DigitalEmployeeEffectiveConfig
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.DigitalEmployeeID,
-		&i.TenantTeamConfigRevisionID,
-		&i.EmployeeConfigRevisionID,
-		&i.EffectiveConfigSnapshot,
-		&i.ValidationResult,
-		&i.Status,
-		&i.ApprovedBy,
-		&i.ApprovedAt,
-		&i.RevokedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const GetDigitalEmployeeConfigRevision = `-- name: GetDigitalEmployeeConfigRevision :one
 SELECT id,
     tenant_id,
