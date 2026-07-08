@@ -202,13 +202,16 @@ WHERE digital_employee_id = sqlc.arg('digital_employee_id')::uuid
 
 -- name: ListRuntimeProviderOptionsForDigitalEmployeeCreate :many
 WITH active_team_config AS (
-    SELECT *
-    FROM tenant_team_config_revisions
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND team_id = sqlc.arg('team_id')::uuid
-      AND status = 'active'
-      AND archived_at IS NULL
-    ORDER BY revision_number DESC
+    SELECT
+        tt.id,
+        tt.tenant_id,
+        tt.constitution,
+        '{}'::jsonb AS runtime_scope_policy
+    FROM tenant_teams tt
+    WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND tt.id = sqlc.arg('team_id')::uuid
+      AND tt.deleted_at IS NULL
+      AND tt.status <> 'archived'
     LIMIT 1
 ),
 runtime_sessions_active AS (
@@ -486,13 +489,21 @@ WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
 
 -- name: GetRuntimeProvisioningPreflight :one
 WITH active_team_config AS (
-    SELECT *
-    FROM tenant_team_config_revisions
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND team_id = sqlc.arg('team_id')::uuid
-      AND status = 'active'
-      AND archived_at IS NULL
-    ORDER BY revision_number DESC
+    SELECT
+        tt.id,
+        tt.tenant_id,
+        tt.constitution,
+        '{}'::jsonb AS capability_policy,
+        '{}'::jsonb AS context_policy,
+        '{}'::jsonb AS approval_policy,
+        '{}'::jsonb AS artifact_contract,
+        '{}'::jsonb AS internal_collaboration_policy,
+        '{}'::jsonb AS runtime_scope_policy
+    FROM tenant_teams tt
+    WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND tt.id = sqlc.arg('team_id')::uuid
+      AND tt.deleted_at IS NULL
+      AND tt.status <> 'archived'
     LIMIT 1
 ),
 provider_capability AS (
@@ -540,17 +551,13 @@ SELECT
     )::text AS agent_home_dir,
     COALESCE(
         jsonb_build_object(
-            'team_config_revision_id', active_team_config.id,
-            'revision_number', active_team_config.revision_number,
             'constitution', active_team_config.constitution,
             'capability_policy', active_team_config.capability_policy,
             'context_policy', active_team_config.context_policy,
             'approval_policy', active_team_config.approval_policy,
             'artifact_contract', active_team_config.artifact_contract,
             'internal_collaboration_policy', active_team_config.internal_collaboration_policy,
-            'runtime_scope_policy', active_team_config.runtime_scope_policy,
-            'approved_by', active_team_config.approved_by,
-            'approved_at', active_team_config.approved_at
+            'runtime_scope_policy', active_team_config.runtime_scope_policy
         ),
         '{}'::jsonb
     ) AS governance_snapshot,
@@ -1321,7 +1328,7 @@ effective_configs AS (
         ec.status,
         ec.effective_config_snapshot -> 'budget_policy' AS budget_policy,
         NULLIF(ec.effective_config_snapshot #>> '{budget_policy,daily_token_limit}', '') AS daily_token_limit_text,
-        ttcr.revision_number AS team_revision_number,
+        NULL::integer AS team_revision_number,
         decr.revision_number AS employee_revision_number,
         CASE
             WHEN jsonb_typeof(ec.effective_config_snapshot #> '{capability_selection,enabled_mcp_servers}') = 'array'
@@ -1336,9 +1343,6 @@ effective_configs AS (
         )::text AS constitution_ref
     FROM digital_employee_effective_configs ec
     JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    LEFT JOIN tenant_team_config_revisions ttcr
-      ON ttcr.id = ec.tenant_team_config_revision_id
-     AND ttcr.tenant_id = ec.tenant_id
     LEFT JOIN digital_employee_config_revisions decr
       ON decr.id = ec.employee_config_revision_id
      AND decr.tenant_id = ec.tenant_id

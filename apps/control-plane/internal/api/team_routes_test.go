@@ -192,127 +192,28 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		})
 	}
 
-	clientApprovedBy := uuid.New()
-	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
-	revisionReq.Header.Set("Content-Type", "application/json")
-	revisionReq.AddCookie(cookie)
-	revisionResp := httptest.NewRecorder()
-	server.ServeHTTP(revisionResp, revisionReq)
-	if revisionResp.Code != http.StatusCreated {
-		t.Fatalf("expected create config revision to succeed, got %d: %s", revisionResp.Code, revisionResp.Body.String())
+	constitutionReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/constitution", strings.NewReader(`{"hard_rules":["review before deploy"]}`))
+	constitutionReq.Header.Set("Content-Type", "application/json")
+	constitutionReq.AddCookie(cookie)
+	constitutionResp := httptest.NewRecorder()
+	server.ServeHTTP(constitutionResp, constitutionReq)
+	if constitutionResp.Code != http.StatusOK {
+		t.Fatalf("expected update constitution to succeed, got %d: %s", constitutionResp.Code, constitutionResp.Body.String())
 	}
-	if service.createRevisionReq.TenantID != expectedTenantID || service.createRevisionReq.TeamID.String() != created.Team.ID {
-		t.Fatalf("expected revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.createRevisionReq.TenantID, service.createRevisionReq.TeamID)
+	if service.updateConstitutionTenantID != expectedTenantID || service.updateConstitutionTeamID.String() != created.Team.ID {
+		t.Fatalf("expected constitution tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.updateConstitutionTenantID, service.updateConstitutionTeamID)
 	}
-	if service.createRevisionReq.HumanOwnerUserIDs == nil || service.createRevisionReq.HumanOwnerUserIDs[0] != ownerID {
-		t.Fatalf("expected revision human owner %s, got %#v", ownerID, service.createRevisionReq.HumanOwnerUserIDs)
+	if !reflect.DeepEqual(service.updateConstitution, map[string]any{"hard_rules": []any{"review before deploy"}}) {
+		t.Fatalf("expected constitution payload, got %#v", service.updateConstitution)
 	}
-	if service.createRevisionReq.ApprovedBy == nil || *service.createRevisionReq.ApprovedBy != user.ID {
-		t.Fatalf("expected revision approved_by to use current console user %s, got %#v", user.ID, service.createRevisionReq.ApprovedBy)
+	var constitutionBody struct {
+		Constitution map[string]any `json:"constitution"`
 	}
-	if *service.createRevisionReq.ApprovedBy == clientApprovedBy {
-		t.Fatalf("expected handler to ignore client supplied approved_by %s", clientApprovedBy)
+	if err := json.NewDecoder(constitutionResp.Body).Decode(&constitutionBody); err != nil {
+		t.Fatalf("decode constitution response: %v", err)
 	}
-
-	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/config-revisions/current", nil)
-	currentReq.AddCookie(cookie)
-	currentResp := httptest.NewRecorder()
-	server.ServeHTTP(currentResp, currentReq)
-	if currentResp.Code != http.StatusOK {
-		t.Fatalf("expected current config revision to succeed, got %d: %s", currentResp.Code, currentResp.Body.String())
-	}
-	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.Team.ID {
-		t.Fatalf("expected current revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.currentTenantID, service.currentTeamID)
-	}
-
-	governanceCurrentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/current", nil)
-	governanceCurrentReq.AddCookie(cookie)
-	governanceCurrentResp := httptest.NewRecorder()
-	server.ServeHTTP(governanceCurrentResp, governanceCurrentReq)
-	if governanceCurrentResp.Code != http.StatusOK {
-		t.Fatalf("expected current governance revision to succeed, got %d: %s", governanceCurrentResp.Code, governanceCurrentResp.Body.String())
-	}
-	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.Team.ID {
-		t.Fatalf("expected current governance tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.currentTenantID, service.currentTeamID)
-	}
-
-	listDraftsReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/drafts?limit=25&offset=5", nil)
-	listDraftsReq.AddCookie(cookie)
-	listDraftsResp := httptest.NewRecorder()
-	server.ServeHTTP(listDraftsResp, listDraftsReq)
-	if listDraftsResp.Code != http.StatusOK {
-		t.Fatalf("expected list governance drafts to succeed, got %d: %s", listDraftsResp.Code, listDraftsResp.Body.String())
-	}
-	if service.listDraftsTenantID != expectedTenantID || service.listDraftsTeamID.String() != created.Team.ID || service.listDraftsLimit != 25 || service.listDraftsOffset != 5 {
-		t.Fatalf("expected list drafts tenant/team/pagination %s/%s/25/5, got %s/%s/%d/%d", expectedTenantID, created.Team.ID, service.listDraftsTenantID, service.listDraftsTeamID, service.listDraftsLimit, service.listDraftsOffset)
-	}
-
-	createDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"approved_by":"`+uuid.New().String()+`","constitution":{"hard_rules":["review before deploy"]}}`))
-	createDraftReq.Header.Set("Content-Type", "application/json")
-	createDraftReq.AddCookie(cookie)
-	createDraftResp := httptest.NewRecorder()
-	server.ServeHTTP(createDraftResp, createDraftReq)
-	if createDraftResp.Code != http.StatusCreated {
-		t.Fatalf("expected create governance draft to succeed, got %d: %s", createDraftResp.Code, createDraftResp.Body.String())
-	}
-	if service.createDraftReq.TenantID != expectedTenantID || service.createDraftReq.TeamID.String() != created.Team.ID {
-		t.Fatalf("expected create draft tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.createDraftReq.TenantID, service.createDraftReq.TeamID)
-	}
-	if service.createDraftReq.ApprovedBy != nil {
-		t.Fatalf("expected create draft to ignore client approved_by, got %#v", service.createDraftReq.ApprovedBy)
-	}
-
-	draftID := uuid.New()
-	updateDraftReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String(), strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"constitution":{"hard_rules":["keep audit trail"]},"capability_policy":{"bindings":["runtime:read"]}}`))
-	updateDraftReq.Header.Set("Content-Type", "application/json")
-	updateDraftReq.AddCookie(cookie)
-	updateDraftResp := httptest.NewRecorder()
-	server.ServeHTTP(updateDraftResp, updateDraftReq)
-	if updateDraftResp.Code != http.StatusOK {
-		t.Fatalf("expected update governance draft to succeed, got %d: %s", updateDraftResp.Code, updateDraftResp.Body.String())
-	}
-	if service.updateDraftTenantID != expectedTenantID || service.updateDraftTeamID.String() != created.Team.ID || service.updateDraftID != draftID {
-		t.Fatalf("expected update draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.updateDraftTenantID, service.updateDraftTeamID, service.updateDraftID)
-	}
-	if service.updateDraftInput.HumanOwnerUserIDs == nil || service.updateDraftInput.HumanOwnerUserIDs[0] != ownerID {
-		t.Fatalf("expected update draft human owner %s, got %#v", ownerID, service.updateDraftInput.HumanOwnerUserIDs)
-	}
-
-	approveDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/approve", strings.NewReader(`{"approved_by":"`+uuid.New().String()+`"}`))
-	approveDraftReq.Header.Set("Content-Type", "application/json")
-	approveDraftReq.AddCookie(cookie)
-	approveDraftResp := httptest.NewRecorder()
-	server.ServeHTTP(approveDraftResp, approveDraftReq)
-	if approveDraftResp.Code != http.StatusOK {
-		t.Fatalf("expected approve governance draft to succeed, got %d: %s", approveDraftResp.Code, approveDraftResp.Body.String())
-	}
-	if service.approveDraftTenantID != expectedTenantID || service.approveDraftTeamID.String() != created.Team.ID || service.approveDraftID != draftID {
-		t.Fatalf("expected approve draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.approveDraftTenantID, service.approveDraftTeamID, service.approveDraftID)
-	}
-	if service.approveDraftApprovedBy != user.ID {
-		t.Fatalf("expected approve draft to use current user %s, got %s", user.ID, service.approveDraftApprovedBy)
-	}
-
-	rejectDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/reject", nil)
-	rejectDraftReq.AddCookie(cookie)
-	rejectDraftResp := httptest.NewRecorder()
-	server.ServeHTTP(rejectDraftResp, rejectDraftReq)
-	if rejectDraftResp.Code != http.StatusOK {
-		t.Fatalf("expected reject governance draft to succeed, got %d: %s", rejectDraftResp.Code, rejectDraftResp.Body.String())
-	}
-	if service.rejectDraftTenantID != expectedTenantID || service.rejectDraftTeamID.String() != created.Team.ID || service.rejectDraftID != draftID {
-		t.Fatalf("expected reject draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.rejectDraftTenantID, service.rejectDraftTeamID, service.rejectDraftID)
-	}
-
-	diffReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/diff", nil)
-	diffReq.AddCookie(cookie)
-	diffResp := httptest.NewRecorder()
-	server.ServeHTTP(diffResp, diffReq)
-	if diffResp.Code != http.StatusOK {
-		t.Fatalf("expected preview governance diff to succeed, got %d: %s", diffResp.Code, diffResp.Body.String())
-	}
-	if service.diffTenantID != expectedTenantID || service.diffTeamID.String() != created.Team.ID || service.diffDraftID != draftID {
-		t.Fatalf("expected diff tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.diffTenantID, service.diffTeamID, service.diffDraftID)
+	if !reflect.DeepEqual(constitutionBody.Constitution, map[string]any{"hard_rules": []any{"review before deploy"}}) {
+		t.Fatalf("expected response constitution, got %#v", constitutionBody.Constitution)
 	}
 }
 
@@ -534,8 +435,6 @@ func TestTeamRoutesRejectInvalidListPagination(t *testing.T) {
 		"/api/v1/teams?offset=bad",
 		"/api/v1/teams?limit=-1",
 		"/api/v1/teams?offset=-1",
-		"/api/v1/teams/" + uuid.New().String() + "/governance/drafts?limit=bad",
-		"/api/v1/teams/" + uuid.New().String() + "/governance/drafts?offset=-1",
 	}
 
 	for _, path := range tests {
@@ -551,9 +450,6 @@ func TestTeamRoutesRejectInvalidListPagination(t *testing.T) {
 	}
 	if service.listCalled {
 		t.Fatalf("expected invalid pagination not to call tenant service")
-	}
-	if service.listDraftsCalled {
-		t.Fatalf("expected invalid draft pagination not to call tenant service")
 	}
 }
 
@@ -598,15 +494,7 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		{name: "disable", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/disable", action: authz.ActionTeamDisable, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "archive", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/archive", action: authz.ActionTeamArchive, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "restore", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/restore", action: authz.ActionTeamRestore, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_ids":["` + ownerID + `"]}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "current governance", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/governance/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "list governance drafts", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/governance/drafts", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "create governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts", body: `{"human_owner_user_ids":["` + ownerID + `"]}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "update governance draft", method: http.MethodPatch, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String(), body: `{"constitution":{"hard_rules":["review"]}}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "approve governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String() + "/approve", action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "reject governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String() + "/reject", action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "diff governance draft", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String() + "/diff", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "update constitution", method: http.MethodPatch, path: "/api/v1/teams/" + teamID + "/constitution", body: `{"constitution":{"hard_rules":["review"]}}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "list members", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/members", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "add member", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/members", body: `{"user_id":"` + uuid.New().String() + `","role":"member"}`, action: authz.ActionTeamMemberAdd, resourceType: authz.ResourceTeam, resourceID: teamID, targetRole: "member"},
 		{name: "remove member", method: http.MethodDelete, path: "/api/v1/teams/" + teamID + "/members/" + uuid.New().String(), action: authz.ActionTeamMemberRemove, resourceType: authz.ResourceTeam, resourceID: teamID},
@@ -784,7 +672,7 @@ func TestTeamMemberRoutesUseConsoleTenant(t *testing.T) {
 	}
 }
 
-func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
+func TestUpdateTeamConstitutionUsesGovernanceEditAuthorization(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
@@ -804,16 +692,15 @@ func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
 	server.SetTenantHandler(tenant.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
 	teamID := uuid.New()
-	ownerID := uuid.New()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"status":"draft"}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+teamID.String()+"/constitution", strings.NewReader(`{"hard_rules":["review before deploy"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
 	resp := httptest.NewRecorder()
 	server.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("expected draft config revision to succeed, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected update constitution to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
 	if len(authorizer.checks) == 0 {
 		t.Fatalf("expected authorization check")
@@ -824,6 +711,15 @@ func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
 	}
 	if check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
 		t.Fatalf("expected team resource %s, got %#v", teamID, check)
+	}
+	expectedTenantID := platform.DefaultTenantID
+	if service.updateConstitutionTenantID != expectedTenantID || service.updateConstitutionTeamID != teamID {
+		t.Fatalf("expected service tenant/team %s/%s, got %s/%s", expectedTenantID, teamID, service.updateConstitutionTenantID, service.updateConstitutionTeamID)
+	}
+	if !reflect.DeepEqual(service.updateConstitution, map[string]any{
+		"hard_rules": []any{"review before deploy"},
+	}) {
+		t.Fatalf("expected raw constitution body, got %#v", service.updateConstitution)
 	}
 }
 
@@ -1083,90 +979,51 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 	if service.createReq.HumanOwnerUserIDs != nil {
 		t.Fatalf("expected handler not to substitute console user %s as team owner, got %#v", user.ID, service.createReq.HumanOwnerUserIDs)
 	}
-
-	teamID := uuid.New()
-	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/config-revisions", strings.NewReader(`{"constitution":{}}`))
-	revisionReq.Header.Set("Content-Type", "application/json")
-	revisionReq.AddCookie(cookie)
-	revisionResp := httptest.NewRecorder()
-	server.ServeHTTP(revisionResp, revisionReq)
-	if revisionResp.Code != http.StatusBadRequest {
-		t.Fatalf("expected missing revision owner to fail through service validation, got %d: %s", revisionResp.Code, revisionResp.Body.String())
-	}
-	if service.createRevisionReq.HumanOwnerUserIDs != nil {
-		t.Fatalf("expected handler not to substitute console user %s as revision owner, got %#v", user.ID, service.createRevisionReq.HumanOwnerUserIDs)
-	}
 }
 
 type routeTeamService struct {
-	createReq              tenant.CreateTeamRequest
-	listReq                tenant.ListTeamsRequest
-	updateReq              tenant.UpdateTeamRequest
-	changeStatusReq        tenant.ChangeTeamStatusRequest
-	createRevisionReq      tenant.CreateTeamConfigRevisionRequest
-	createDraftReq         tenant.CreateTeamConfigRevisionRequest
-	updateDraftInput       tenant.GovernanceDraftInput
-	addMemberReq           tenant.AddTeamMemberRequest
-	removeMemberReq        tenant.RemoveTeamMemberRequest
-	createRoleReq          tenant.CreateRoleRequestRequest
-	decideRoleReq          tenant.DecideRoleRequestRequest
-	getTenantID            uuid.UUID
-	getTeamID              uuid.UUID
-	overviewTenantID       uuid.UUID
-	overviewTeamID         uuid.UUID
-	currentTenantID        uuid.UUID
-	currentTeamID          uuid.UUID
-	listDraftsTenantID     uuid.UUID
-	listDraftsTeamID       uuid.UUID
-	listDraftsLimit        int32
-	listDraftsOffset       int32
-	updateDraftTenantID    uuid.UUID
-	updateDraftTeamID      uuid.UUID
-	updateDraftID          uuid.UUID
-	approveDraftTenantID   uuid.UUID
-	approveDraftTeamID     uuid.UUID
-	approveDraftID         uuid.UUID
-	approveDraftApprovedBy uuid.UUID
-	rejectDraftTenantID    uuid.UUID
-	rejectDraftTeamID      uuid.UUID
-	rejectDraftID          uuid.UUID
-	diffTenantID           uuid.UUID
-	diffTeamID             uuid.UUID
-	diffDraftID            uuid.UUID
-	auditTenantID          uuid.UUID
-	auditTeamID            uuid.UUID
-	auditLimit             int32
-	auditOffset            int32
-	listMembersTenantID    uuid.UUID
-	listMembersTeamID      uuid.UUID
-	listMembersLimit       int32
-	listMembersOffset      int32
-	listRoleRequestsID     uuid.UUID
-	createCalled           bool
-	listCalled             bool
-	getCalled              bool
-	overviewCalled         bool
-	updateCalled           bool
-	changeStatusCalled     bool
-	createRevisionCalled   bool
-	currentCalled          bool
-	listDraftsCalled       bool
-	createDraftCalled      bool
-	updateDraftCalled      bool
-	approveDraftCalled     bool
-	rejectDraftCalled      bool
-	diffCalled             bool
-	auditCalled            bool
-	listMembersCalled      bool
-	addMemberCalled        bool
-	removeMemberCalled     bool
-	createRoleCalled       bool
-	listRoleRequestsCalled bool
-	approveRoleCalled      bool
-	rejectRoleCalled       bool
-	createdID              uuid.UUID
-	rejectMissingOwner     bool
-	listErr                error
+	createReq                  tenant.CreateTeamRequest
+	listReq                    tenant.ListTeamsRequest
+	updateReq                  tenant.UpdateTeamRequest
+	changeStatusReq            tenant.ChangeTeamStatusRequest
+	updateConstitution         map[string]any
+	addMemberReq               tenant.AddTeamMemberRequest
+	removeMemberReq            tenant.RemoveTeamMemberRequest
+	createRoleReq              tenant.CreateRoleRequestRequest
+	decideRoleReq              tenant.DecideRoleRequestRequest
+	getTenantID                uuid.UUID
+	getTeamID                  uuid.UUID
+	overviewTenantID           uuid.UUID
+	overviewTeamID             uuid.UUID
+	updateConstitutionTenantID uuid.UUID
+	updateConstitutionTeamID   uuid.UUID
+	auditTenantID              uuid.UUID
+	auditTeamID                uuid.UUID
+	auditLimit                 int32
+	auditOffset                int32
+	listMembersTenantID        uuid.UUID
+	listMembersTeamID          uuid.UUID
+	listMembersLimit           int32
+	listMembersOffset          int32
+	listRoleRequestsID         uuid.UUID
+	createCalled               bool
+	listCalled                 bool
+	getCalled                  bool
+	overviewCalled             bool
+	updateCalled               bool
+	changeStatusCalled         bool
+	updateConstitutionCalled   bool
+	auditCalled                bool
+	listMembersCalled          bool
+	addMemberCalled            bool
+	removeMemberCalled         bool
+	createRoleCalled           bool
+	listRoleRequestsCalled     bool
+	approveRoleCalled          bool
+	rejectRoleCalled           bool
+	createdID                  uuid.UUID
+	rejectMissingOwner         bool
+	listErr                    error
 }
 
 func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeamRequest) (*tenant.TeamOverview, error) {
@@ -1302,6 +1159,25 @@ func (s *routeTeamService) UpdateTeam(ctx context.Context, req tenant.UpdateTeam
 	}, nil
 }
 
+func (s *routeTeamService) UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*tenant.Team, error) {
+	s.updateConstitutionCalled = true
+	s.updateConstitutionTenantID = tenantID
+	s.updateConstitutionTeamID = teamID
+	s.updateConstitution = constitution
+	now := time.Now().UTC()
+	return &tenant.Team{
+		ID:           teamID,
+		TenantID:     tenantID,
+		Slug:         "platform",
+		Name:         "Platform",
+		Status:       tenant.TeamStatusActive,
+		Constitution: constitution,
+		Metadata:     map[string]any{},
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}, nil
+}
+
 func (s *routeTeamService) ChangeTeamStatus(ctx context.Context, req tenant.ChangeTeamStatusRequest) (*tenant.Team, error) {
 	s.changeStatusCalled = true
 	s.changeStatusReq = req
@@ -1320,155 +1196,6 @@ func (s *routeTeamService) ChangeTeamStatus(ctx context.Context, req tenant.Chan
 
 func (s *routeTeamService) DeleteTeam(_ context.Context, _ tenant.DeleteTeamRequest) error {
 	return nil
-}
-
-func (s *routeTeamService) CreateConfigRevision(ctx context.Context, req tenant.CreateTeamConfigRevisionRequest) (*tenant.TeamConfigRevision, error) {
-	s.createRevisionCalled = true
-	s.createRevisionReq = req
-	if s.rejectMissingOwner && req.HumanOwnerUserIDs == nil {
-		return nil, tenant.ErrInvalidInput
-	}
-	now := time.Now().UTC()
-	status := req.Status
-	if status == "" {
-		status = tenant.TeamConfigRevisionStatusActive
-	}
-	return &tenant.TeamConfigRevision{
-		ID:                          uuid.New(),
-		TenantID:                    req.TenantID,
-		TeamID:                      req.TeamID,
-		RevisionNumber:              1,
-		Constitution:                req.Constitution,
-		CapabilityPolicy:            map[string]any{},
-		ContextPolicy:               map[string]any{},
-		ApprovalPolicy:              map[string]any{},
-		ArtifactContract:            map[string]any{},
-		InternalCollaborationPolicy: map[string]any{},
-		RuntimeScopePolicy:          map[string]any{},
-		HumanOwnerUserIDs:           req.HumanOwnerUserIDs,
-		Status:                      status,
-		ApprovedBy:                  req.ApprovedBy,
-		ApprovedAt:                  &now,
-		CreatedAt:                   now,
-		UpdatedAt:                   now,
-	}, nil
-}
-
-func (s *routeTeamService) GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*tenant.TeamConfigRevision, error) {
-	s.currentCalled = true
-	s.currentTenantID = tenantID
-	s.currentTeamID = teamID
-	now := time.Now().UTC()
-	return &tenant.TeamConfigRevision{
-		ID:                          uuid.New(),
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		RevisionNumber:              1,
-		Constitution:                map[string]any{},
-		CapabilityPolicy:            map[string]any{},
-		ContextPolicy:               map[string]any{},
-		ApprovalPolicy:              map[string]any{},
-		ArtifactContract:            map[string]any{},
-		InternalCollaborationPolicy: map[string]any{},
-		RuntimeScopePolicy:          map[string]any{},
-		Status:                      tenant.TeamConfigRevisionStatusActive,
-		ApprovedAt:                  &now,
-		CreatedAt:                   now,
-		UpdatedAt:                   now,
-	}, nil
-}
-
-func (s *routeTeamService) ListGovernanceDrafts(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*tenant.TeamConfigRevision, error) {
-	s.listDraftsCalled = true
-	s.listDraftsTenantID = tenantID
-	s.listDraftsTeamID = teamID
-	s.listDraftsLimit = limit
-	s.listDraftsOffset = offset
-	return []*tenant.TeamConfigRevision{s.configRevision(tenantID, teamID, tenant.TeamConfigRevisionStatusDraft)}, nil
-}
-
-func (s *routeTeamService) CreateGovernanceDraft(ctx context.Context, req tenant.CreateTeamConfigRevisionRequest) (*tenant.TeamConfigRevision, error) {
-	s.createDraftCalled = true
-	s.createDraftReq = req
-	if s.rejectMissingOwner && req.HumanOwnerUserIDs == nil {
-		return nil, tenant.ErrInvalidInput
-	}
-	return s.configRevision(req.TenantID, req.TeamID, tenant.TeamConfigRevisionStatusDraft), nil
-}
-
-func (s *routeTeamService) UpdateGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID, input tenant.GovernanceDraftInput) (*tenant.TeamConfigRevision, error) {
-	s.updateDraftCalled = true
-	s.updateDraftTenantID = tenantID
-	s.updateDraftTeamID = teamID
-	s.updateDraftID = draftID
-	s.updateDraftInput = input
-	revision := s.configRevision(tenantID, teamID, tenant.TeamConfigRevisionStatusDraft)
-	revision.ID = draftID
-	revision.HumanOwnerUserIDs = input.HumanOwnerUserIDs
-	revision.Constitution = input.Constitution
-	revision.CapabilityPolicy = input.CapabilityPolicy
-	return revision, nil
-}
-
-func (s *routeTeamService) ApproveGovernanceDraft(ctx context.Context, tenantID, teamID, draftID, approvedBy uuid.UUID) (*tenant.TeamConfigRevision, error) {
-	s.approveDraftCalled = true
-	s.approveDraftTenantID = tenantID
-	s.approveDraftTeamID = teamID
-	s.approveDraftID = draftID
-	s.approveDraftApprovedBy = approvedBy
-	revision := s.configRevision(tenantID, teamID, tenant.TeamConfigRevisionStatusActive)
-	revision.ID = draftID
-	revision.ApprovedBy = &approvedBy
-	return revision, nil
-}
-
-func (s *routeTeamService) RejectGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*tenant.TeamConfigRevision, error) {
-	s.rejectDraftCalled = true
-	s.rejectDraftTenantID = tenantID
-	s.rejectDraftTeamID = teamID
-	s.rejectDraftID = draftID
-	revision := s.configRevision(tenantID, teamID, tenant.TeamConfigRevisionStatusRejected)
-	revision.ID = draftID
-	return revision, nil
-}
-
-func (s *routeTeamService) PreviewGovernanceDiff(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*tenant.GovernanceDiffSummary, error) {
-	s.diffCalled = true
-	s.diffTenantID = tenantID
-	s.diffTeamID = teamID
-	s.diffDraftID = draftID
-	return &tenant.GovernanceDiffSummary{
-		AddedHardRules:       1,
-		ChangedCapabilities:  1,
-		ChangedApprovalRules: 0,
-		Warnings: []tenant.ValidationIssue{{
-			Field:    "constitution.hard_rules",
-			Message:  "new hard rule requires review",
-			Severity: "warning",
-		}},
-		BlockingErrors: []tenant.ValidationIssue{},
-	}, nil
-}
-
-func (s *routeTeamService) configRevision(tenantID, teamID uuid.UUID, status tenant.TeamConfigRevisionStatus) *tenant.TeamConfigRevision {
-	now := time.Now().UTC()
-	return &tenant.TeamConfigRevision{
-		ID:                          uuid.New(),
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		RevisionNumber:              1,
-		Constitution:                map[string]any{},
-		CapabilityPolicy:            map[string]any{},
-		ContextPolicy:               map[string]any{},
-		ApprovalPolicy:              map[string]any{},
-		ArtifactContract:            map[string]any{},
-		InternalCollaborationPolicy: map[string]any{},
-		RuntimeScopePolicy:          map[string]any{},
-		Status:                      status,
-		ApprovedAt:                  &now,
-		CreatedAt:                   now,
-		UpdatedAt:                   now,
-	}
 }
 
 func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*tenant.TeamMember, error) {
@@ -1614,14 +1341,6 @@ func (s *routeTeamService) called() bool {
 		s.overviewCalled ||
 		s.updateCalled ||
 		s.changeStatusCalled ||
-		s.createRevisionCalled ||
-		s.currentCalled ||
-		s.listDraftsCalled ||
-		s.createDraftCalled ||
-		s.updateDraftCalled ||
-		s.approveDraftCalled ||
-		s.rejectDraftCalled ||
-		s.diffCalled ||
 		s.listMembersCalled ||
 		s.addMemberCalled ||
 		s.removeMemberCalled ||

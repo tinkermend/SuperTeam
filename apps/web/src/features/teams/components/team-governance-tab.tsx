@@ -1,6 +1,6 @@
-import { Send, ShieldCheck, Save, XCircle } from "lucide-react";
+import { Save, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { V3Button } from "@/components/superteam";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,21 +17,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
-  approveTeamGovernanceDraft,
-  createTeamGovernanceDraft,
-  listTeamGovernanceDrafts,
-  previewTeamGovernanceDiff,
-  rejectTeamGovernanceDraft,
-  updateTeamGovernanceDraft,
-  type GovernanceDraftInput,
-  type TeamConfigRevision,
+  updateTeamConstitution,
+  type Team,
+  type UpdateTeamConstitutionInput,
 } from "@/lib/api/teams";
 
 type TeamGovernanceTabProps = {
   apiOptions: ApiClientOptions;
-  canApprove: boolean;
   canEdit: boolean;
-  currentRevision?: TeamConfigRevision;
+  onSaved?: () => void;
+  team: Team;
   teamId: string;
 };
 
@@ -97,77 +92,43 @@ function serializeApprovalPolicy(
 
 export function TeamGovernanceTab({
   apiOptions,
-  canApprove,
   canEdit,
-  currentRevision,
+  onSaved,
+  team,
   teamId,
 }: TeamGovernanceTabProps) {
-  const drafts = useQuery({
-    queryKey: ["team-governance-drafts", teamId],
-    queryFn: () => listTeamGovernanceDrafts(apiOptions, teamId),
-  });
-  const draft = drafts.data?.[0];
-  const sourceRevision = draft ?? currentRevision;
-  const [hardRulesText, setHardRulesText] = useState(() => arrayText(sourceRevision?.constitution.hard_rules));
+  const [hardRulesText, setHardRulesText] = useState(() => arrayText(team.constitution?.hard_rules));
   const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicyForm>(() =>
-    parseApprovalPolicy(sourceRevision?.approval_policy),
+    parseApprovalPolicy(team.constitution?.approval_policy),
   );
   const [approvalPolicyChanged, setApprovalPolicyChanged] = useState(false);
 
   useEffect(() => {
-    if (!sourceRevision) {
-      return;
-    }
-    setHardRulesText(arrayText(sourceRevision.constitution.hard_rules));
-    setApprovalPolicy(parseApprovalPolicy(sourceRevision.approval_policy));
+    setHardRulesText(arrayText(team.constitution?.hard_rules));
+    setApprovalPolicy(parseApprovalPolicy(team.constitution?.approval_policy));
     setApprovalPolicyChanged(false);
-  }, [sourceRevision]);
+  }, [team.constitution]);
 
-  const draftInput = useMemo<GovernanceDraftInput>(
+  const constitutionInput = useMemo<UpdateTeamConstitutionInput>(
     () => ({
+      ...(team.constitution ?? {}),
       approval_policy: serializeApprovalPolicy(
         approvalPolicy,
-        sourceRevision?.approval_policy,
+        team.constitution?.approval_policy,
         approvalPolicyChanged,
       ),
-      artifact_contract: sourceRevision?.artifact_contract ?? {},
-      capability_policy: sourceRevision?.capability_policy ?? {},
-      constitution: {
-        ...(sourceRevision?.constitution ?? {}),
-        hard_rules: lineList(hardRulesText),
-      },
-      context_policy: sourceRevision?.context_policy ?? {},
-      human_owner_user_ids: sourceRevision?.human_owner_user_ids,
-      internal_collaboration_policy: sourceRevision?.internal_collaboration_policy ?? {},
-      runtime_scope_policy: sourceRevision?.runtime_scope_policy ?? {},
+      hard_rules: lineList(hardRulesText),
     }),
-    [approvalPolicy, approvalPolicyChanged, hardRulesText, sourceRevision],
+    [approvalPolicy, approvalPolicyChanged, hardRulesText, team.constitution],
   );
-  const preview = JSON.stringify(draftInput, null, 2);
+  const preview = JSON.stringify(constitutionInput, null, 2);
   const saveMutation = useMutation({
-    mutationFn: () => saveGovernanceDraft(apiOptions, teamId, draft, draftInput),
+    mutationFn: () => updateTeamConstitution(apiOptions, teamId, constitutionInput),
     onSuccess: () => {
-      void drafts.refetch();
+      onSaved?.();
     },
   });
-  const approveMutation = useMutation({
-    mutationFn: () => approveTeamGovernanceDraft(apiOptions, teamId, draft?.id ?? saveMutation.data?.id ?? ""),
-    onSuccess: () => {
-      void drafts.refetch();
-    },
-  });
-  const draftID = draft?.id ?? saveMutation.data?.id;
-  const diff = useQuery({
-    enabled: Boolean(draftID),
-    queryKey: ["team-governance-diff", teamId, draftID],
-    queryFn: () => previewTeamGovernanceDiff(apiOptions, teamId, draftID ?? ""),
-  });
-  const rejectMutation = useMutation({
-    mutationFn: () => rejectTeamGovernanceDraft(apiOptions, teamId, draftID ?? ""),
-    onSuccess: () => {
-      void drafts.refetch();
-    },
-  });
+  const hardRuleCount = lineList(hardRulesText).length;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -175,7 +136,7 @@ export function TeamGovernanceTab({
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">治理策略编辑</CardTitle>
-            <Badge variant="secondary">{draft ? "草稿版本" : "基于当前版本"}</Badge>
+            <Badge variant="secondary">团队宪法</Badge>
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -212,58 +173,20 @@ export function TeamGovernanceTab({
           <CardContent className="flex flex-col gap-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">硬性规则</span>
-              <Badge variant="outline">{diff.data ? `+${diff.data.added_hard_rules}` : `${lineList(hardRulesText).length} 条`}</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">能力绑定</span>
-              <Badge variant="outline">{diff.data?.changed_capabilities ? "有变更" : "无变更"}</Badge>
+              <Badge variant="outline">{hardRuleCount} 条</Badge>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">审批策略</span>
-              <Badge variant="outline">{diff.data?.changed_approval_rules ? "有变更" : approvalPolicy.enabled ? "已启用" : "未启用"}</Badge>
+              <Badge variant="outline">{approvalPolicy.enabled ? "已启用" : "未启用"}</Badge>
             </div>
-            {diff.data?.warnings.length ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                {diff.data.warnings.map((issue) => (
-                  <p key={`${issue.field}-${issue.message}`}>{issue.message}</p>
-                ))}
-              </div>
-            ) : null}
-            {diff.data?.blocking_errors.length ? (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
-                {diff.data.blocking_errors.map((issue) => (
-                  <p key={`${issue.field}-${issue.message}`}>{issue.message}</p>
-                ))}
-              </div>
-            ) : null}
             <div className="flex flex-wrap gap-2">
               <V3Button disabled={!canEdit || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
                 <Save data-icon="inline-start" />
-                保存草稿
-              </V3Button>
-              <V3Button
-                disabled={!canApprove || approveMutation.isPending || !draftID}
-                onClick={() => approveMutation.mutate()}
-                variant="outline"
-              >
-                <Send data-icon="inline-start" />
-                提交负责人批准
-              </V3Button>
-              <V3Button
-                disabled={!canApprove || rejectMutation.isPending || !draftID}
-                onClick={() => rejectMutation.mutate()}
-                variant="outline"
-              >
-                <XCircle data-icon="inline-start" />
-                驳回草稿
+                保存宪法
               </V3Button>
             </div>
-            {saveMutation.isSuccess ? <p className="text-muted-foreground">治理草稿已保存。</p> : null}
-            {saveMutation.isError ? <p className="text-destructive">治理草稿保存失败。</p> : null}
-            {approveMutation.isSuccess ? <p className="text-muted-foreground">治理草稿已提交批准。</p> : null}
-            {approveMutation.isError ? <p className="text-destructive">治理草稿提交失败。</p> : null}
-            {rejectMutation.isSuccess ? <p className="text-muted-foreground">治理草稿已驳回。</p> : null}
-            {rejectMutation.isError ? <p className="text-destructive">治理草稿驳回失败。</p> : null}
+            {saveMutation.isSuccess ? <p className="text-muted-foreground">团队宪法已保存。</p> : null}
+            {saveMutation.isError ? <p className="text-destructive">团队宪法保存失败。</p> : null}
           </CardContent>
         </Card>
       </div>
@@ -375,18 +298,6 @@ function ApprovalPolicyEditor({
       </div>
     </div>
   );
-}
-
-function saveGovernanceDraft(
-  apiOptions: ApiClientOptions,
-  teamId: string,
-  draft: TeamConfigRevision | undefined,
-  input: GovernanceDraftInput,
-) {
-  if (draft) {
-    return updateTeamGovernanceDraft(apiOptions, teamId, draft.id, input);
-  }
-  return createTeamGovernanceDraft(apiOptions, teamId, input);
 }
 
 function lineList(value: string): string[] {

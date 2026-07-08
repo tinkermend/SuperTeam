@@ -547,7 +547,6 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 		ID:       teamConfigID,
 		TenantID: tenantID,
 		TeamID:   teamID,
-		Status:   TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{
 			"allowed_employee_types": []any{"backend_engineer"},
 			"allowed_provider_types": []any{"codex"},
@@ -1742,7 +1741,6 @@ func TestPreviewEffectiveConfigIncludesBudgetPolicy(t *testing.T) {
 			ID:       uuid.New(),
 			TenantID: tenantID,
 			TeamID:   uuid.New(),
-			Status:   TeamConfigRevisionStatusActive,
 		},
 		EmployeeConfig: EmployeeConfigInput{
 			ID:                uuid.New(),
@@ -2146,8 +2144,6 @@ func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePol
 		ID:                 teamConfigID,
 		TenantID:           tenantID,
 		TeamID:             teamID,
-		RevisionNumber:     1,
-		Status:             TeamConfigRevisionStatusActive,
 		CapabilityPolicy:   cloneMap(capabilityPolicy),
 		RuntimeScopePolicy: cloneMap(runtimeScopePolicy),
 	}
@@ -2170,11 +2166,9 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	teamConfigID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.teamConfigs[teamConfigID] = TeamConfigInput{
-		ID:             teamConfigID,
-		TenantID:       tenantID,
-		TeamID:         teamID,
-		RevisionNumber: 7,
-		Status:         TeamConfigRevisionStatusActive,
+		ID:       teamConfigID,
+		TenantID: tenantID,
+		TeamID:   teamID,
 		CapabilityPolicy: map[string]any{
 			"allowed_employee_types":        []any{"database_admin"},
 			"allowed_provider_types":        []any{"codex"},
@@ -2196,9 +2190,8 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
 	repo.preflight.GovernanceSnapshot = map[string]any{
-		"team_config_revision_id": teamConfigID.String(),
-		"authorization":           "Bearer raw-token",
-		"capability_policy":       map[string]any{"api_key": "raw-key"},
+		"authorization":     "Bearer raw-token",
+		"capability_policy": map[string]any{"api_key": "raw-key"},
 	}
 	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
 	dispatcher.connected["runtime-node-1"] = true
@@ -2302,9 +2295,7 @@ func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID
 		RuntimeNodeID: runtimeNodeID,
 		NodeID:        "runtime-node-1",
 		AgentHomeDir:  "/runtime/reported/agent-home",
-		GovernanceSnapshot: map[string]any{
-			"team_config_revision_id": uuid.NewString(),
-		},
+		GovernanceSnapshot: map[string]any{},
 		HasActiveTeamConfig:   true,
 		RuntimeOnline:         true,
 		EnrollmentApproved:    true,
@@ -2501,18 +2492,6 @@ func (r *memoryRepository) GetTeamBaseline(_ context.Context, tenantID, teamID u
 		Skills:       append([]string(nil), baseline.Skills...),
 		MCPServers:   append([]string(nil), baseline.MCPServers...),
 	}, nil
-}
-
-func (r *memoryRepository) GetCurrentTeamConfigRevision(_ context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
-	teamConfigID, ok := r.currentTeamConfigByTeam[teamID]
-	if !ok {
-		return TeamConfigInput{}, ErrNotFound
-	}
-	record, ok := r.teamConfigs[teamConfigID]
-	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamConfigRevisionStatusActive {
-		return TeamConfigInput{}, ErrNotFound
-	}
-	return record, nil
 }
 
 func (r *memoryRepository) ListRuntimeProviderOptionsForCreate(_ context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
@@ -2761,14 +2740,6 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
 		BudgetPolicy:           cloneMap(record.BudgetPolicy),
 		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
-	}
-	return record, nil
-}
-
-func (r *memoryRepository) GetTeamConfigRevision(_ context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error) {
-	record, ok := r.teamConfigs[teamConfigRevisionID]
-	if !ok || record.TenantID != tenantID {
-		return TeamConfigInput{}, ErrNotFound
 	}
 	return record, nil
 }

@@ -22,16 +22,9 @@ type HandlerService interface {
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*Team, error)
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
+	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*Team, error)
 	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
-	CreateConfigRevision(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
-	GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamConfigRevision, error)
-	ListGovernanceDrafts(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamConfigRevision, error)
-	CreateGovernanceDraft(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
-	UpdateGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID, input GovernanceDraftInput) (*TeamConfigRevision, error)
-	ApproveGovernanceDraft(ctx context.Context, tenantID, teamID, draftID, approvedBy uuid.UUID) (*TeamConfigRevision, error)
-	RejectGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*TeamConfigRevision, error)
-	PreviewGovernanceDiff(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*GovernanceDiffSummary, error)
 	ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error)
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
 	RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error
@@ -213,6 +206,32 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
 }
 
+func (h *HTTPHandler) UpdateTeamConstitution(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team constitution update")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var constitution map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&constitution); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	team, err := service.UpdateTeamConstitution(r.Context(), tenantID, teamID, constitution)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
 func (h *HTTPHandler) DisableTeam(w http.ResponseWriter, r *http.Request) {
 	h.changeTeamStatus(w, r, TeamStatusDisabled, authz.ActionTeamDisable, "team disable")
 }
@@ -243,236 +262,6 @@ func (h *HTTPHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		Constitution                map[string]any           `json:"constitution"`
-		CapabilityPolicy            map[string]any           `json:"capability_policy"`
-		ContextPolicy               map[string]any           `json:"context_policy"`
-		ApprovalPolicy              map[string]any           `json:"approval_policy"`
-		ArtifactContract            map[string]any           `json:"artifact_contract"`
-		InternalCollaborationPolicy map[string]any           `json:"internal_collaboration_policy"`
-		RuntimeScopePolicy          map[string]any           `json:"runtime_scope_policy"`
-		HumanOwnerUserIDs           []uuid.UUID              `json:"human_owner_user_ids,omitempty"`
-		Status                      TeamConfigRevisionStatus `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	action := authz.ActionTeamGovernanceApprove
-	if req.Status == TeamConfigRevisionStatusDraft {
-		action = authz.ActionTeamGovernanceEdit
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, action, "team config revision create")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	approvedBy := middleware.GetUserID(r.Context())
-	revision, err := service.CreateConfigRevision(r.Context(), CreateTeamConfigRevisionRequest{
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		Constitution:                req.Constitution,
-		CapabilityPolicy:            req.CapabilityPolicy,
-		ContextPolicy:               req.ContextPolicy,
-		ApprovalPolicy:              req.ApprovalPolicy,
-		ArtifactContract:            req.ArtifactContract,
-		InternalCollaborationPolicy: req.InternalCollaborationPolicy,
-		RuntimeScopePolicy:          req.RuntimeScopePolicy,
-		HumanOwnerUserIDs:           req.HumanOwnerUserIDs,
-		Status:                      req.Status,
-		ApprovedBy:                  &approvedBy,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team config revision current read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	revision, err := service.GetCurrentConfigRevision(r.Context(), tenantID, teamID)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) ListGovernanceDrafts(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team governance drafts read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	limit, ok := nonNegativeInt32QueryParam(w, r, "limit")
-	if !ok {
-		return
-	}
-	offset, ok := nonNegativeInt32QueryParam(w, r, "offset")
-	if !ok {
-		return
-	}
-	drafts, err := service.ListGovernanceDrafts(r.Context(), tenantID, teamID, limit, offset)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, configRevisionResponses(drafts))
-}
-
-func (h *HTTPHandler) CreateGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team governance draft create")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	input, ok := governanceDraftInputFromRequest(w, r)
-	if !ok {
-		return
-	}
-	revision, err := service.CreateGovernanceDraft(r.Context(), CreateTeamConfigRevisionRequest{
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		Constitution:                input.Constitution,
-		CapabilityPolicy:            input.CapabilityPolicy,
-		ContextPolicy:               input.ContextPolicy,
-		ApprovalPolicy:              input.ApprovalPolicy,
-		ArtifactContract:            input.ArtifactContract,
-		InternalCollaborationPolicy: input.InternalCollaborationPolicy,
-		RuntimeScopePolicy:          input.RuntimeScopePolicy,
-		HumanOwnerUserIDs:           input.HumanOwnerUserIDs,
-		Status:                      TeamConfigRevisionStatusDraft,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) UpdateGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team governance draft update")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	input, ok := governanceDraftInputFromRequest(w, r)
-	if !ok {
-		return
-	}
-	revision, err := service.UpdateGovernanceDraft(r.Context(), tenantID, teamID, draftID, input)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) ApproveGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceApprove, "team governance draft approve")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	approvedBy := middleware.GetUserID(r.Context())
-	revision, err := service.ApproveGovernanceDraft(r.Context(), tenantID, teamID, draftID, approvedBy)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) RejectGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceApprove, "team governance draft reject")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	revision, err := service.RejectGovernanceDraft(r.Context(), tenantID, teamID, draftID)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
-}
-
-func (h *HTTPHandler) PreviewGovernanceDiff(w http.ResponseWriter, r *http.Request) {
-	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team governance draft diff read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	diff, err := service.PreviewGovernanceDiff(r.Context(), tenantID, teamID, draftID)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, governanceDiffSummaryResponseFromDomain(diff))
 }
 
 func (h *HTTPHandler) ListTeamMembers(w http.ResponseWriter, r *http.Request) {
@@ -855,6 +644,7 @@ type teamResponse struct {
 	Status            TeamStatus               `json:"status"`
 	HumanOwnerUserIDs []string                 `json:"human_owner_user_ids,omitempty"`
 	HumanOwners       []teamHumanOwnerResponse `json:"human_owners,omitempty"`
+	Constitution      map[string]any           `json:"constitution"`
 	Metadata          map[string]any           `json:"metadata"`
 	CreatedAt         string                   `json:"created_at,omitempty"`
 	UpdatedAt         string                   `json:"updated_at,omitempty"`
@@ -875,7 +665,6 @@ type teamListItemResponse struct {
 	DigitalEmployeeCount int32                    `json:"digital_employee_count"`
 	CapabilityCount      int32                    `json:"capability_count"`
 	GovernanceStatus     GovernanceSummaryStatus  `json:"governance_status"`
-	CurrentRevision      *int32                   `json:"current_revision,omitempty"`
 	PendingDraftCount    int32                    `json:"pending_draft_count"`
 	RiskSummary          string                   `json:"risk_summary"`
 }
@@ -890,42 +679,13 @@ type teamHumanOwnerResponse struct {
 }
 
 type teamOverviewResponse struct {
-	Team                 teamResponse            `json:"team"`
-	MemberCount          int32                   `json:"member_count"`
-	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
-	CapabilityCount      int32                   `json:"capability_count"`
-	CurrentRevision      *configRevisionResponse `json:"current_revision,omitempty"`
-	PendingDraftCount    int32                   `json:"pending_draft_count"`
-	PendingItemCount     int32                   `json:"pending_item_count"`
-	AllowedActions       []AllowedTeamAction     `json:"allowed_actions"`
-}
-
-type configRevisionResponse struct {
-	ID                          string                   `json:"id"`
-	TenantID                    string                   `json:"tenant_id"`
-	TeamID                      string                   `json:"team_id"`
-	RevisionNumber              int32                    `json:"revision_number"`
-	Constitution                map[string]any           `json:"constitution"`
-	CapabilityPolicy            map[string]any           `json:"capability_policy"`
-	ContextPolicy               map[string]any           `json:"context_policy"`
-	ApprovalPolicy              map[string]any           `json:"approval_policy"`
-	ArtifactContract            map[string]any           `json:"artifact_contract"`
-	InternalCollaborationPolicy map[string]any           `json:"internal_collaboration_policy"`
-	RuntimeScopePolicy          map[string]any           `json:"runtime_scope_policy"`
-	HumanOwnerUserIDs           []string                 `json:"human_owner_user_ids,omitempty"`
-	Status                      TeamConfigRevisionStatus `json:"status"`
-	ApprovedBy                  *string                  `json:"approved_by,omitempty"`
-	ApprovedAt                  *string                  `json:"approved_at,omitempty"`
-	CreatedAt                   string                   `json:"created_at,omitempty"`
-	UpdatedAt                   string                   `json:"updated_at,omitempty"`
-}
-
-type governanceDiffSummaryResponse struct {
-	AddedHardRules       int32                     `json:"added_hard_rules"`
-	ChangedCapabilities  int32                     `json:"changed_capabilities"`
-	ChangedApprovalRules int32                     `json:"changed_approval_rules"`
-	Warnings             []validationIssueResponse `json:"warnings"`
-	BlockingErrors       []validationIssueResponse `json:"blocking_errors"`
+	Team                 teamResponse        `json:"team"`
+	MemberCount          int32               `json:"member_count"`
+	DigitalEmployeeCount int32               `json:"digital_employee_count"`
+	CapabilityCount      int32               `json:"capability_count"`
+	PendingDraftCount    int32               `json:"pending_draft_count"`
+	PendingItemCount     int32               `json:"pending_item_count"`
+	AllowedActions       []AllowedTeamAction `json:"allowed_actions"`
 }
 
 type validationIssueResponse struct {
@@ -1014,46 +774,6 @@ func roleRequestIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID
 	return requestID, true
 }
 
-func teamAndDraftIDsFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return uuid.Nil, uuid.Nil, false
-	}
-	draftID, err := uuid.Parse(chi.URLParam(r, "draftId"))
-	if err != nil || draftID == uuid.Nil {
-		http.Error(w, "invalid draft id", http.StatusBadRequest)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return teamID, draftID, true
-}
-
-func governanceDraftInputFromRequest(w http.ResponseWriter, r *http.Request) (GovernanceDraftInput, bool) {
-	var req struct {
-		Constitution                map[string]any `json:"constitution"`
-		CapabilityPolicy            map[string]any `json:"capability_policy"`
-		ContextPolicy               map[string]any `json:"context_policy"`
-		ApprovalPolicy              map[string]any `json:"approval_policy"`
-		ArtifactContract            map[string]any `json:"artifact_contract"`
-		InternalCollaborationPolicy map[string]any `json:"internal_collaboration_policy"`
-		RuntimeScopePolicy          map[string]any `json:"runtime_scope_policy"`
-		HumanOwnerUserIDs           []uuid.UUID    `json:"human_owner_user_ids,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return GovernanceDraftInput{}, false
-	}
-	return GovernanceDraftInput{
-		Constitution:                req.Constitution,
-		CapabilityPolicy:            req.CapabilityPolicy,
-		ContextPolicy:               req.ContextPolicy,
-		ApprovalPolicy:              req.ApprovalPolicy,
-		ArtifactContract:            req.ArtifactContract,
-		InternalCollaborationPolicy: req.InternalCollaborationPolicy,
-		RuntimeScopePolicy:          req.RuntimeScopePolicy,
-		HumanOwnerUserIDs:           req.HumanOwnerUserIDs,
-	}, true
-}
-
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidInput):
@@ -1101,6 +821,7 @@ func teamResponseFromDomain(team *Team) teamResponse {
 		Status:            team.Status,
 		HumanOwnerUserIDs: uuidStringSlice(team.HumanOwnerUserIDs),
 		HumanOwners:       teamHumanOwnersResponseFromDomain(team.HumanOwners),
+		Constitution:      cloneMap(team.Constitution),
 		Metadata:          cloneMap(team.Metadata),
 		CreatedAt:         timeString(team.CreatedAt),
 		UpdatedAt:         timeString(team.UpdatedAt),
@@ -1123,7 +844,6 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 		DigitalEmployeeCount: item.DigitalEmployeeCount,
 		CapabilityCount:      item.CapabilityCount,
 		GovernanceStatus:     item.GovernanceStatus,
-		CurrentRevision:      cloneInt32Ptr(item.CurrentRevision),
 		PendingDraftCount:    item.PendingDraftCount,
 		RiskSummary:          item.RiskSummary,
 	}
@@ -1171,69 +891,7 @@ func teamOverviewResponseFromDomain(overview *TeamOverview) teamOverviewResponse
 	if overview.Team != nil {
 		response.Team = teamResponseFromDomain(overview.Team)
 	}
-	if overview.CurrentRevision != nil {
-		revision := configRevisionResponseFromDomain(overview.CurrentRevision)
-		response.CurrentRevision = &revision
-	}
 	return response
-}
-
-func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisionResponse {
-	return configRevisionResponse{
-		ID:                          revision.ID.String(),
-		TenantID:                    revision.TenantID.String(),
-		TeamID:                      revision.TeamID.String(),
-		RevisionNumber:              revision.RevisionNumber,
-		Constitution:                cloneMap(revision.Constitution),
-		CapabilityPolicy:            cloneMap(revision.CapabilityPolicy),
-		ContextPolicy:               cloneMap(revision.ContextPolicy),
-		ApprovalPolicy:              cloneMap(revision.ApprovalPolicy),
-		ArtifactContract:            cloneMap(revision.ArtifactContract),
-		InternalCollaborationPolicy: cloneMap(revision.InternalCollaborationPolicy),
-		RuntimeScopePolicy:          cloneMap(revision.RuntimeScopePolicy),
-		HumanOwnerUserIDs:           uuidStringSlice(revision.HumanOwnerUserIDs),
-		Status:                      revision.Status,
-		ApprovedBy:                  uuidStringPtr(revision.ApprovedBy),
-		ApprovedAt:                  timeStringPtr(revision.ApprovedAt),
-		CreatedAt:                   timeString(revision.CreatedAt),
-		UpdatedAt:                   timeString(revision.UpdatedAt),
-	}
-}
-
-func configRevisionResponses(revisions []*TeamConfigRevision) []configRevisionResponse {
-	responses := make([]configRevisionResponse, 0, len(revisions))
-	for _, revision := range revisions {
-		responses = append(responses, configRevisionResponseFromDomain(revision))
-	}
-	return responses
-}
-
-func governanceDiffSummaryResponseFromDomain(summary *GovernanceDiffSummary) governanceDiffSummaryResponse {
-	if summary == nil {
-		return governanceDiffSummaryResponse{
-			Warnings:       []validationIssueResponse{},
-			BlockingErrors: []validationIssueResponse{},
-		}
-	}
-	return governanceDiffSummaryResponse{
-		AddedHardRules:       summary.AddedHardRules,
-		ChangedCapabilities:  summary.ChangedCapabilities,
-		ChangedApprovalRules: summary.ChangedApprovalRules,
-		Warnings:             validationIssueResponses(summary.Warnings),
-		BlockingErrors:       validationIssueResponses(summary.BlockingErrors),
-	}
-}
-
-func validationIssueResponses(issues []ValidationIssue) []validationIssueResponse {
-	responses := make([]validationIssueResponse, 0, len(issues))
-	for _, issue := range issues {
-		responses = append(responses, validationIssueResponse{
-			Field:    issue.Field,
-			Message:  issue.Message,
-			Severity: issue.Severity,
-		})
-	}
-	return responses
 }
 
 func teamMemberResponses(members []*TeamMember) []teamMemberResponse {

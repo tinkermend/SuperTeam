@@ -16,7 +16,6 @@ import {
   archiveTeam,
   deleteTeam,
   disableTeam,
-  getCurrentTeamGovernance,
   getTeamOverview,
   listTeamSummaries,
   restoreTeam,
@@ -144,29 +143,22 @@ export function TeamDetailView({
     queryKey: ["team-overview", teamId],
     queryFn: () => getTeamOverview(apiOptions, teamId),
   });
-  const currentGovernance = useQuery({
-    queryKey: ["team-governance-current", teamId],
-    queryFn: () => getCurrentTeamGovernance(apiOptions, teamId),
-  });
   const disableMutation = useMutation({
     mutationFn: () => disableTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
-      void currentGovernance.refetch();
     },
   });
   const archiveMutation = useMutation({
     mutationFn: () => archiveTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
-      void currentGovernance.refetch();
     },
   });
   const restoreMutation = useMutation({
     mutationFn: () => restoreTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
-      void currentGovernance.refetch();
     },
   });
   const deleteMutation = useMutation({
@@ -193,13 +185,11 @@ export function TeamDetailView({
         {overview.data ? (
           <TeamDetailLayout
             apiOptions={apiOptions}
-            currentRevision={
-              currentGovernance.data ?? overview.data.current_revision
-            }
             onArchiveTeam={() => archiveMutation.mutate()}
             onDeleteTeam={() => deleteMutation.mutate()}
             onDisableTeam={() => disableMutation.mutate()}
             onRestoreTeam={() => restoreMutation.mutate()}
+            onTeamChanged={() => void overview.refetch()}
             overview={overview.data}
           />
         ) : null}

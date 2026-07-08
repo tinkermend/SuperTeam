@@ -39,27 +39,26 @@ function TeamStatusPill({ status }: { status: TeamStatus }) {
 
 type TeamDetailLayoutProps = {
   apiOptions: ApiClientOptions;
-  currentRevision?: TeamOverview["current_revision"];
   onArchiveTeam?: () => void;
   onDeleteTeam?: () => void;
   onDisableTeam?: () => void;
   onRestoreTeam?: () => void;
+  onTeamChanged?: () => void;
   overview: TeamOverview;
 };
 
 export function TeamDetailLayout({
   apiOptions,
-  currentRevision,
   onArchiveTeam,
   onDeleteTeam,
   onDisableTeam,
   onRestoreTeam,
+  onTeamChanged,
   overview,
 }: TeamDetailLayoutProps) {
   const team = overview.team;
   const isActive = team.status === "active";
   const canCreateGovernance = isActive && overview.allowed_actions.includes("team.governance.edit");
-  const canApproveGovernance = isActive && overview.allowed_actions.includes("team.governance.approve");
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
@@ -172,16 +171,15 @@ export function TeamDetailLayout({
           <TeamCapabilitiesTab
             apiOptions={apiOptions}
             canEdit={canCreateGovernance}
-            currentRevision={currentRevision ?? overview.current_revision}
             teamId={team.id}
           />
         </TabsContent>
         <TabsContent className="mt-0" value="governance">
           <TeamGovernanceTab
             apiOptions={apiOptions}
-            canApprove={canApproveGovernance}
             canEdit={canCreateGovernance}
-            currentRevision={currentRevision ?? overview.current_revision}
+            onSaved={onTeamChanged}
+            team={team}
             teamId={team.id}
           />
         </TabsContent>

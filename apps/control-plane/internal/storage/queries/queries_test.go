@@ -480,24 +480,11 @@ func requireNoEncryptedValueField(t *testing.T, row any) {
 	require.False(t, ok, "%s should not expose encrypted credential values", rowType.Name())
 }
 
-func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID uuid.UUID, status string, revisionNumber int32, ownerID uuid.NullUUID) queries.TenantTeamConfigRevision {
+func requireJSONFromAny(t *testing.T, value any) string {
 	t.Helper()
-	revision, err := queries.New(db).CreateTenantTeamConfigRevision(context.Background(), queries.CreateTenantTeamConfigRevisionParams{
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		RevisionNumber:              revisionNumber,
-		Constitution:                []byte(`{}`),
-		CapabilityPolicy:            []byte(`{}`),
-		ContextPolicy:               []byte(`{}`),
-		ApprovalPolicy:              []byte(`{}`),
-		ArtifactContract:            []byte(`{}`),
-		InternalCollaborationPolicy: []byte(`{}`),
-		RuntimeScopePolicy:          []byte(`{}`),
-		HumanOwnerUserIds:           []uuid.UUID{ownerID.UUID},
-		Status:                      status,
-	})
+	raw, err := json.Marshal(value)
 	require.NoError(t, err)
-	return revision
+	return string(raw)
 }
 
 func seedProjectTaskAttemptForAffinityTest(t *testing.T, db *pgxpool.Pool, q *queries.Queries, idempotencyPrefix string) (uuid.UUID, uuid.UUID, queries.ProjectTask, queries.ProjectTaskAttempt, queries.RuntimeNode) {
@@ -1264,7 +1251,7 @@ func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {
 	require.False(t, allowed)
 }
 
-func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
+func TestTeamConstitutionAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)
 
@@ -1287,23 +1274,13 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
-		TenantID:                    tenantID,
-		TeamID:                      team.ID,
-		RevisionNumber:              1,
-		Constitution:                []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
-		CapabilityPolicy:            []byte(`{"allowed_mcp_servers":["prometheus"],"allowed_skills":["incident-diagnosis"],"allowed_plugins":["log-viewer"],"allowed_provider_types":["codex"]}`),
-		ContextPolicy:               []byte(`{"sources":["monitoring","logs"]}`),
-		ApprovalPolicy:              []byte(`{"min_risk_for_human":"high","write_actions_require_human":true}`),
-		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
-		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request","artifact_request"],"max_auto_rounds":2,"max_auto_participants":3}`),
-		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserIds:           []uuid.UUID{uuid.New()},
-		Status:                      "active",
-		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
-		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	team, err = testQueries.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
+		ID:           team.ID,
+		TenantID:     tenantID,
+		Constitution: []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
 	})
 	require.NoError(t, err)
+	require.JSONEq(t, `{"hard_rules":["禁止执行未审批的生产写操作"]}`, string(team.Constitution))
 
 	employee, err := testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
 		TenantID:  tenantID,
@@ -1346,37 +1323,30 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	effective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
-		TenantID:                   tenantID,
-		DigitalEmployeeID:          employee.ID,
-		TenantTeamConfigRevisionID: uuid.NullUUID{UUID: teamConfig.ID, Valid: true},
-		EmployeeConfigRevisionID:   employeeConfig.ID,
-		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":1}}`),
-		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":[]}`),
-		Status:                     "approved",
-		ApprovedBy:                 uuid.NullUUID{UUID: owner.ID, Valid: true},
-		ApprovedAt:                 pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employee.ID,
+		EmployeeConfigRevisionID: employeeConfig.ID,
+		EffectiveConfigSnapshot:  []byte(`{"team":{"constitution":{"hard_rules":["禁止执行未审批的生产写操作"]}},"employee":{"revision":1}}`),
+		ValidationResult:         []byte(`{"blocking_errors":[],"warnings":[]}`),
+		Status:                   "approved",
+		ApprovedBy:               uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:               pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	})
 	require.NoError(t, err)
 	require.Equal(t, employee.ID, effective.DigitalEmployeeID)
+	require.False(t, effective.TenantTeamConfigRevisionID.Valid)
 
 	pendingEffective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
-		TenantID:                   tenantID,
-		DigitalEmployeeID:          employee.ID,
-		TenantTeamConfigRevisionID: uuid.NullUUID{UUID: teamConfig.ID, Valid: true},
-		EmployeeConfigRevisionID:   draftEmployeeConfig.ID,
-		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":2}}`),
-		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":["等待审批"]}`),
-		Status:                     "pending_approval",
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employee.ID,
+		EmployeeConfigRevisionID: draftEmployeeConfig.ID,
+		EffectiveConfigSnapshot:  []byte(`{"team":{"constitution":{"hard_rules":["禁止执行未审批的生产写操作"]}},"employee":{"revision":2}}`),
+		ValidationResult:         []byte(`{"blocking_errors":[],"warnings":["等待审批"]}`),
+		Status:                   "pending_approval",
 	})
 	require.NoError(t, err)
 	require.Equal(t, employee.ID, pendingEffective.DigitalEmployeeID)
-
-	current, err := testQueries.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   team.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, teamConfig.ID, current.ID)
+	require.False(t, pendingEffective.TenantTeamConfigRevisionID.Valid)
 
 	currentEmployeeConfig, err := testQueries.GetCurrentDigitalEmployeeConfigRevision(ctx, queries.GetCurrentDigitalEmployeeConfigRevisionParams{
 		TenantID:          tenantID,
@@ -1385,117 +1355,12 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, employeeConfig.ID, currentEmployeeConfig.ID)
 
-}
-
-func TestTeamGovernanceDraftLifecycleQueries(t *testing.T) {
-	ctx := context.Background()
-	cleanupTestData(t, testDB)
-	db := testDB
-	q := queries.New(db)
-	tenantID := seedTestTenant(t, db)
-	teamID := seedTestTeam(t, db, tenantID, "ops", "运维团队")
-	active := seedTestTeamConfigRevision(t, db, tenantID, teamID, "active", 1, uuid.NullUUID{})
-	draftOwnerID := seedTestAuthUser(t, db, "draft-owner")
-	draft := seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 2, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
-
-	updated, err := q.UpdateTenantTeamConfigRevisionDraft(ctx, queries.UpdateTenantTeamConfigRevisionDraftParams{
-		ID:               draft.ID,
-		TenantID:         tenantID,
-		TeamID:           teamID,
-		Constitution:     []byte(`{"hard_rules":["禁止未审批生产写操作"]}`),
-		CapabilityPolicy: []byte(`{"skill_bindings":["incident-diagnosis"]}`),
-	})
-	require.NoError(t, err)
-	require.Equal(t, int32(2), updated.RevisionNumber)
-	require.Equal(t, uuid.NullUUID{UUID: draftOwnerID, Valid: true}, updated.HumanOwnerUserIds)
-	require.JSONEq(t, `{"hard_rules":["禁止未审批生产写操作"]}`, string(updated.Constitution))
-	require.JSONEq(t, `{"skill_bindings":["incident-diagnosis"]}`, string(updated.CapabilityPolicy))
-	require.JSONEq(t, string(draft.ContextPolicy), string(updated.ContextPolicy))
-	require.JSONEq(t, string(draft.ApprovalPolicy), string(updated.ApprovalPolicy))
-
-	archived, err := q.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	require.NoError(t, err)
-	require.Len(t, archived, 1)
-	require.Equal(t, active.ID, archived[0].ID)
-	require.Equal(t, "archived", archived[0].Status)
-	require.True(t, archived[0].ArchivedAt.Valid)
-
-	approverID := seedTestAuthUser(t, db, "approver")
-	approved, err := q.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
-		ID:         draft.ID,
-		TenantID:   tenantID,
-		TeamID:     teamID,
-		ApprovedBy: approverID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, "active", approved.Status)
-	require.Equal(t, approverID, approved.ApprovedBy.UUID)
-	require.True(t, approved.ApprovedAt.Valid)
-
-	rejectedDraft := seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 3, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
-	rejected, err := q.RejectTenantTeamConfigRevision(ctx, queries.RejectTenantTeamConfigRevisionParams{
-		ID:       rejectedDraft.ID,
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, "rejected", rejected.Status)
-	require.True(t, rejected.ArchivedAt.Valid)
-
-	fetchedRejected, err := q.GetTenantTeamConfigRevision(ctx, queries.GetTenantTeamConfigRevisionParams{
-		ID:       rejectedDraft.ID,
+	reloadedTeam, err := testQueries.GetTenantTeam(ctx, queries.GetTenantTeamParams{
+		ID:       team.ID,
 		TenantID: tenantID,
 	})
 	require.NoError(t, err)
-	require.Equal(t, rejectedDraft.ID, fetchedRejected.ID)
-	require.Equal(t, "rejected", fetchedRejected.Status)
-	require.True(t, fetchedRejected.ArchivedAt.Valid)
-}
-
-func TestTeamGovernanceDraftApprovalTransactionRollbackQueries(t *testing.T) {
-	ctx := context.Background()
-	cleanupTestData(t, testDB)
-	db := testDB
-	q := queries.New(db)
-	tenantID := seedTestTenant(t, db)
-	teamID := seedTestTeam(t, db, tenantID, "rollback-ops", "回滚运维团队")
-	active := seedTestTeamConfigRevision(t, db, tenantID, teamID, "active", 1, uuid.NullUUID{})
-	draftOwnerID := seedTestAuthUser(t, db, "rollback-draft-owner")
-	_ = seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 2, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
-
-	tx, err := db.Begin(ctx)
-	require.NoError(t, err)
-	qtx := q.WithTx(tx)
-
-	archived, err := qtx.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	require.NoError(t, err)
-	require.Len(t, archived, 1)
-	require.Equal(t, "archived", archived[0].Status)
-
-	approverID := seedTestAuthUser(t, db, "rollback-approver")
-	_, err = qtx.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
-		ID:         uuid.New(),
-		TenantID:   tenantID,
-		TeamID:     teamID,
-		ApprovedBy: approverID,
-	})
-	require.ErrorIs(t, err, pgx.ErrNoRows)
-	require.NoError(t, tx.Rollback(ctx))
-
-	current, err := q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, active.ID, current.ID)
-	require.Equal(t, "active", current.Status)
-	require.False(t, current.ArchivedAt.Valid)
+	require.JSONEq(t, `{"hard_rules":["禁止执行未审批的生产写操作"]}`, string(reloadedTeam.Constitution))
 }
 
 // ============================================================================
@@ -2007,23 +1872,13 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
-		TenantID:                    tenantID,
-		TeamID:                      team.ID,
-		RevisionNumber:              1,
-		Constitution:                []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
-		CapabilityPolicy:            []byte(`{"skill_bindings":["incident-diagnosis"],"mcp_bindings":["prometheus"],"knowledge_base_bindings":[],"external_capability_bindings":["deploy-api"],"allowed_provider_types":["codex"]}`),
-		ContextPolicy:               []byte(`{"sources":["monitoring","logs"]}`),
-		ApprovalPolicy:              []byte(`{"risk_summary":"生产写操作需审批"}`),
-		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
-		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request"]}`),
-		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserIds:           []uuid.UUID{uuid.New()},
-		Status:                      "active",
-		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
-		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	team, err = testQueries.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
+		ID:           team.ID,
+		TenantID:     tenantID,
+		Constitution: []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
 	})
 	require.NoError(t, err)
+	require.JSONEq(t, `{"hard_rules":["禁止执行未审批的生产写操作"]}`, string(team.Constitution))
 
 	rows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
 		TenantID: tenantID,
@@ -2035,10 +1890,31 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, int32(1), rows[0].MemberCount)
 	assert.Equal(t, int32(1), rows[0].DigitalEmployeeCount)
-	assert.Equal(t, int32(4), rows[0].CapabilityCount)
-	assert.Equal(t, int32(1), rows[0].CurrentRevision.Int32)
+	assert.Equal(t, int32(0), rows[0].CapabilityCount)
+	assert.Equal(t, int32(0), rows[0].PendingDraftCount)
 	assert.Equal(t, "active", rows[0].GovernanceStatus)
-	assert.Equal(t, "生产写操作需审批", rows[0].RiskSummary)
+	assert.Equal(t, "", rows[0].RiskSummary)
+
+	notConfiguredTeam, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
+		TenantID:          tenantID,
+		Slug:              "unconfigured-summary",
+		Name:              "未配置团队",
+		HumanOwnerUserIds: []uuid.UUID{owner.ID},
+		Metadata:          []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	governanceFilteredRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+		TenantID:          tenantID,
+		GovernanceStatus:  pgtype.Text{String: "not_configured", Valid: true},
+		Q:                 pgtype.Text{String: "unconfigured", Valid: true},
+		Limit:             20,
+		Offset:            0,
+	})
+	require.NoError(t, err)
+	require.Len(t, governanceFilteredRows, 1)
+	assert.Equal(t, notConfiguredTeam.ID, governanceFilteredRows[0].ID)
+	assert.Equal(t, "not_configured", governanceFilteredRows[0].GovernanceStatus)
 
 	for _, query := range []string{"summary-owner", "Summary Owner", "summary-owner@example.com"} {
 		ownerRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
@@ -4496,21 +4372,10 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	runtimeScopePolicy := []byte(fmt.Sprintf(`{"allowed_runtime_node_ids":["%s"],"allowed_node_ids":["%s"]}`, node.ID.String(), node.NodeID))
-	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		RevisionNumber:              1,
-		Constitution:                []byte(`{}`),
-		CapabilityPolicy:            []byte(`{"allowed_provider_types":["codex"]}`),
-		ContextPolicy:               []byte(`{}`),
-		ApprovalPolicy:              []byte(`{}`),
-		ArtifactContract:            []byte(`{}`),
-		InternalCollaborationPolicy: []byte(`{}`),
-		RuntimeScopePolicy:          runtimeScopePolicy,
-		Status:                      "active",
-		ApprovedBy:                  uuid.NullUUID{UUID: uuid.New(), Valid: true},
-		ApprovedAt:                  now,
+	_, err = testQueries.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
+		ID:           teamID,
+		TenantID:     tenantID,
+		Constitution: []byte(`{"hard_rules":["生产变更必须人工审批"]}`),
 	})
 	require.NoError(t, err)
 
@@ -4526,9 +4391,10 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	assert.True(t, preflight.EnrollmentApproved)
 	assert.True(t, preflight.RuntimeSessionActive)
 	assert.True(t, preflight.ProviderAvailable)
-	assert.True(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.False(t, preflight.RuntimePolicyAllowed)
 	assert.Equal(t, "/provider/preflight-policy", preflight.AgentHomeDir)
+	assert.JSONEq(t, `{"constitution":{"hard_rules":["生产变更必须人工审批"]},"capability_policy":{},"context_policy":{},"approval_policy":{},"artifact_contract":{},"internal_collaboration_policy":{},"runtime_scope_policy":{}}`, requireJSONFromAny(t, preflight.GovernanceSnapshot))
 
 	_, err = testDB.Exec(ctx, `
 		UPDATE runtime_capabilities
@@ -4559,91 +4425,23 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, preflight.ProviderAvailable)
 	assert.False(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
-
-	_, err = testDB.Exec(ctx, `
-		UPDATE tenant_team_config_revisions
-		SET capability_policy = '{}'::jsonb,
-		    runtime_scope_policy = $2::jsonb,
-		    updated_at = NOW()
-		WHERE id = $1
-	`, teamConfig.ID, runtimeScopePolicy)
-	require.NoError(t, err)
-	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: node.ID,
-		ProviderType:  "codex",
-	})
-	require.NoError(t, err)
-	assert.True(t, preflight.ProviderAvailable)
-	assert.False(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
-
-	runtimeScopeProviderTypes := []byte(`{"provider_types":["codex"]}`)
-	_, err = testDB.Exec(ctx, `
-		UPDATE tenant_team_config_revisions
-		SET capability_policy = '{}'::jsonb,
-		    runtime_scope_policy = $2::jsonb,
-		    updated_at = NOW()
-		WHERE id = $1
-	`, teamConfig.ID, runtimeScopeProviderTypes)
-	require.NoError(t, err)
-	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: node.ID,
-		ProviderType:  "codex",
-	})
-	require.NoError(t, err)
-	assert.True(t, preflight.ProviderAvailable)
-	assert.True(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
-
-	_, err = testDB.Exec(ctx, `
-		UPDATE tenant_team_config_revisions
-		SET capability_policy = '{"allowed_provider_types":[]}'::jsonb,
-		    runtime_scope_policy = $2::jsonb,
-		    updated_at = NOW()
-		WHERE id = $1
-	`, teamConfig.ID, runtimeScopePolicy)
-	require.NoError(t, err)
-	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: node.ID,
-		ProviderType:  "codex",
-	})
-	require.NoError(t, err)
-	assert.True(t, preflight.ProviderAvailable)
-	assert.False(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
-
-	_, err = testDB.Exec(ctx, `
-		UPDATE tenant_team_config_revisions
-		SET capability_policy = '{"allowed_provider_types":["codex"]}'::jsonb,
-		    runtime_scope_policy = '{}'::jsonb,
-		    updated_at = NOW()
-		WHERE id = $1
-	`, teamConfig.ID)
-	require.NoError(t, err)
-	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: node.ID,
-		ProviderType:  "codex",
-	})
-	require.NoError(t, err)
-	assert.True(t, preflight.ProviderPolicyAllowed)
 	assert.False(t, preflight.RuntimePolicyAllowed)
 
-	_, err = testDB.Exec(ctx, `
-		UPDATE tenant_team_config_revisions
-		SET runtime_scope_policy = $2::jsonb,
-		    updated_at = NOW()
-		WHERE id = $1
-	`, teamConfig.ID, runtimeScopePolicy)
+	_, err = testQueries.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
+		ID:           teamID,
+		TenantID:     tenantID,
+		Constitution: []byte(`{}`),
+	})
 	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"constitution":{},"capability_policy":{},"context_policy":{},"approval_policy":{},"artifact_contract":{},"internal_collaboration_policy":{},"runtime_scope_policy":{}}`, requireJSONFromAny(t, preflight.GovernanceSnapshot))
+
 	_, err = testDB.Exec(ctx, `
 		UPDATE runtime_enrollments
 		SET status = 'revoked',
@@ -4662,8 +4460,8 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, preflight.EnrollmentApproved)
 	assert.False(t, preflight.RuntimeSessionActive)
-	assert.True(t, preflight.ProviderPolicyAllowed)
-	assert.True(t, preflight.RuntimePolicyAllowed)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.False(t, preflight.RuntimePolicyAllowed)
 }
 
 // ============================================================================

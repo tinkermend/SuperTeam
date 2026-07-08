@@ -164,6 +164,7 @@ function createTeamsFetcher(
         team_id: "team-1",
         revision_number: 7,
         constitution: {
+          approval_policy: { high_risk: "required" },
           hard_rules: ["所有生产写操作必须审批"],
           principles: ["安全优先，稳定可靠"],
         },
@@ -285,6 +286,7 @@ function createTeamsFetcher(
             slug: "ops",
             name: "运维团队",
             status: options.disabledOverview ? "disabled" : "active",
+            constitution: governanceRevision.constitution,
             human_owner_user_ids: ["human-owner-1"],
             human_owners: [{user_id: "human-owner-1",
               username: "owner",
@@ -327,53 +329,18 @@ function createTeamsFetcher(
       }
 
       if (
-        url.pathname === "/api/v1/teams/team-1/governance/drafts" &&
-        method === "POST"
-      ) {
-        return jsonResponse(governanceDraft, 201);
-      }
-
-      if (
-        url.pathname ===
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1" &&
+        url.pathname === "/api/v1/teams/team-1/constitution" &&
         method === "PATCH"
       ) {
-        return jsonResponse(governanceDraft);
-      }
-
-      if (
-        url.pathname ===
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1/approve" &&
-        method === "POST"
-      ) {
-        return jsonResponse({ ...governanceDraft, status: "active" });
-      }
-
-      if (
-        url.pathname ===
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1/reject" &&
-        method === "POST"
-      ) {
-        return jsonResponse({ ...governanceDraft, status: "rejected" });
-      }
-
-      if (
-        url.pathname ===
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1/diff" &&
-        method === "GET"
-      ) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
         return jsonResponse({
-          added_hard_rules: 1,
-          changed_approval_rules: 1,
-          changed_capabilities: 1,
-          blocking_errors: [],
-          warnings: [
-            {
-              field: "constitution.hard_rules",
-              message: "新增硬性规则需要复核",
-              severity: "warning",
-            },
-          ],
+          id: "team-1",
+          tenant_id: "tenant-1",
+          slug: "ops",
+          name: "运维团队",
+          status: options.disabledOverview ? "disabled" : "active",
+          constitution: body,
+          human_owner_user_ids: ["human-owner-1"],
         });
       }
 
@@ -1288,9 +1255,6 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
     await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
     await expect.element(screen.getByText("JSON 快照预览")).toBeVisible();
-    await expect
-      .element(screen.getByText("新增硬性规则需要复核"))
-      .toBeVisible();
     await userEvent.click(
       screen.getByRole("switch", { name: "启用审批策略" }),
     );
@@ -1304,18 +1268,18 @@ describe("TeamDetailView", () => {
     );
     await userEvent.clear(screen.getByLabelText("最小审批人数"));
     await userEvent.fill(screen.getByLabelText("最小审批人数"), "3");
-    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存宪法" }));
     await expect
       .poll(() =>
         hasRequest(
           fetcher,
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "/api/v1/teams/team-1/constitution",
           "PATCH",
         ),
       )
       .toBe(true);
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+      "http://control-plane.local/api/v1/teams/team-1/constitution",
       expect.objectContaining({
         credentials: "include",
         method: "PATCH",
@@ -1324,7 +1288,7 @@ describe("TeamDetailView", () => {
     expect(
       requestBody(
         fetcher,
-        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "/api/v1/teams/team-1/constitution",
         "PATCH",
       ),
     ).toEqual({
@@ -1335,44 +1299,9 @@ describe("TeamDetailView", () => {
         required_actions: ["deploy", "delete"],
         min_approvers: 3,
       },
-      artifact_contract: {},
-      capability_policy: {
-        external_capability_bindings: ["告警系统"],
-        knowledge_base_bindings: ["运维知识库"],
-        mcp_bindings: ["ops-mcp-server"],
-        skill_bindings: ["incident-diagnosis"],
-      },
-      constitution: {
-        hard_rules: ["所有生产写操作必须审批"],
-        principles: ["安全优先，稳定可靠"],
-      },
-      context_policy: {},
-      human_owner_user_ids: ["human-owner-1"],
-      internal_collaboration_policy: {},
-      runtime_scope_policy: {
-        provider_types: ["codex"],
-      },
+      hard_rules: ["所有生产写操作必须审批"],
+      principles: ["安全优先，稳定可靠"],
     });
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "提交负责人批准" }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1/approve",
-      expect.objectContaining({
-        credentials: "include",
-        method: "POST",
-      }),
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "驳回草稿" }));
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1/reject",
-      expect.objectContaining({
-        credentials: "include",
-        method: "POST",
-      }),
-    );
   });
 
   it("preserves untouched approval policy when saving hard rules only", async () => {
@@ -1390,12 +1319,12 @@ describe("TeamDetailView", () => {
       screen.getByLabelText("团队宪法"),
       "所有生产写操作必须审批\n变更窗口必须登记",
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存宪法" }));
     await expect
       .poll(() =>
         hasRequest(
           fetcher,
-          "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+          "/api/v1/teams/team-1/constitution",
           "PATCH",
         ),
       )
@@ -1404,30 +1333,15 @@ describe("TeamDetailView", () => {
     expect(
       requestBody(
         fetcher,
-        "/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+        "/api/v1/teams/team-1/constitution",
         "PATCH",
       ),
     ).toEqual({
       approval_policy: {
         high_risk: "required",
       },
-      artifact_contract: {},
-      capability_policy: {
-        external_capability_bindings: ["告警系统"],
-        knowledge_base_bindings: ["运维知识库"],
-        mcp_bindings: ["ops-mcp-server"],
-        skill_bindings: ["incident-diagnosis"],
-      },
-      constitution: {
-        hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
-        principles: ["安全优先，稳定可靠"],
-      },
-      context_policy: {},
-      human_owner_user_ids: ["human-owner-1"],
-      internal_collaboration_policy: {},
-      runtime_scope_policy: {
-        provider_types: ["codex"],
-      },
+      hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
+      principles: ["安全优先，稳定可靠"],
     });
   });
 

@@ -49,24 +49,6 @@ func (s GovernanceSummaryStatus) IsValid() bool {
 
 type AllowedTeamAction string
 
-type TeamConfigRevisionStatus string
-
-const (
-	TeamConfigRevisionStatusDraft    TeamConfigRevisionStatus = "draft"
-	TeamConfigRevisionStatusActive   TeamConfigRevisionStatus = "active"
-	TeamConfigRevisionStatusRejected TeamConfigRevisionStatus = "rejected"
-	TeamConfigRevisionStatusArchived TeamConfigRevisionStatus = "archived"
-)
-
-func (s TeamConfigRevisionStatus) IsValid() bool {
-	switch s {
-	case TeamConfigRevisionStatusDraft, TeamConfigRevisionStatusActive, TeamConfigRevisionStatusRejected, TeamConfigRevisionStatusArchived:
-		return true
-	default:
-		return false
-	}
-}
-
 const (
 	TeamRoleOwner    = "owner"
 	TeamRoleAdmin    = "admin"
@@ -91,25 +73,6 @@ type ValidationIssue struct {
 	Severity string
 }
 
-type GovernanceDraftInput struct {
-	Constitution                map[string]any
-	CapabilityPolicy            map[string]any
-	ContextPolicy               map[string]any
-	ApprovalPolicy              map[string]any
-	ArtifactContract            map[string]any
-	InternalCollaborationPolicy map[string]any
-	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserIDs           []uuid.UUID
-}
-
-type GovernanceDiffSummary struct {
-	AddedHardRules       int32
-	ChangedCapabilities  int32
-	ChangedApprovalRules int32
-	Warnings             []ValidationIssue
-	BlockingErrors       []ValidationIssue
-}
-
 type Team struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
@@ -118,6 +81,7 @@ type Team struct {
 	Status            TeamStatus
 	HumanOwnerUserIDs []uuid.UUID
 	HumanOwners       []TeamHumanOwner
+	Constitution      map[string]any
 	Metadata          map[string]any
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -145,7 +109,6 @@ type TeamListItem struct {
 	DigitalEmployeeCount int32
 	CapabilityCount      int32
 	GovernanceStatus     GovernanceSummaryStatus
-	CurrentRevision      *int32
 	PendingDraftCount    int32
 	RiskSummary          string
 }
@@ -155,30 +118,9 @@ type TeamOverview struct {
 	MemberCount          int32
 	DigitalEmployeeCount int32
 	CapabilityCount      int32
-	CurrentRevision      *TeamConfigRevision
 	PendingDraftCount    int32
 	PendingItemCount     int32
 	AllowedActions       []AllowedTeamAction
-}
-
-type TeamConfigRevision struct {
-	ID                          uuid.UUID
-	TenantID                    uuid.UUID
-	TeamID                      uuid.UUID
-	RevisionNumber              int32
-	Constitution                map[string]any
-	CapabilityPolicy            map[string]any
-	ContextPolicy               map[string]any
-	ApprovalPolicy              map[string]any
-	ArtifactContract            map[string]any
-	InternalCollaborationPolicy map[string]any
-	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserIDs           []uuid.UUID
-	Status                      TeamConfigRevisionStatus
-	ApprovedBy                  *uuid.UUID
-	ApprovedAt                  *time.Time
-	CreatedAt                   time.Time
-	UpdatedAt                   time.Time
 }
 
 type TeamMember struct {
@@ -248,25 +190,16 @@ type UpdateTeamRequest struct {
 	Metadata          map[string]any
 }
 
+type UpdateTeamConstitutionRequest struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	Constitution map[string]any
+}
+
 type ChangeTeamStatusRequest struct {
 	TenantID uuid.UUID
 	TeamID   uuid.UUID
 	Status   TeamStatus
-}
-
-type CreateTeamConfigRevisionRequest struct {
-	TenantID                    uuid.UUID
-	TeamID                      uuid.UUID
-	Constitution                map[string]any
-	CapabilityPolicy            map[string]any
-	ContextPolicy               map[string]any
-	ApprovalPolicy              map[string]any
-	ArtifactContract            map[string]any
-	InternalCollaborationPolicy map[string]any
-	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserIDs           []uuid.UUID
-	Status                      TeamConfigRevisionStatus
-	ApprovedBy                  *uuid.UUID
 }
 
 type AddTeamMemberRequest struct {

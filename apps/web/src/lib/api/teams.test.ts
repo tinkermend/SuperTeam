@@ -1,30 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   addTeamMember,
-  approveTeamGovernanceDraft,
   approveTeamMemberRoleRequest,
   archiveTeam,
   createTeam,
-  createTeamConfigRevision,
-  createTeamGovernanceDraft,
   createTeamMemberRoleRequest,
   disableTeam,
-  getCurrentTeamConfigRevision,
-  getCurrentTeamGovernance,
   getTeamOverview,
   listTeamAuditEvents,
-  listTeamGovernanceDrafts,
   listTeamMemberRoleRequests,
   listTeamMembers,
   listTeamSummaries,
   listTeams,
-  previewTeamGovernanceDiff,
-  rejectTeamGovernanceDraft,
   rejectTeamMemberRoleRequest,
   removeTeamMember,
   restoreTeam,
   updateTeam,
-  updateTeamGovernanceDraft,
+  updateTeamConstitution,
 } from "./teams";
 
 describe("team API", () => {
@@ -341,249 +333,54 @@ describe("team API", () => {
     );
   });
 
-  it("creates team config revision with encoded team id and JSON body", async () => {
-    const revision = {
-      id: "44444444-4444-4444-8444-444444444444",
+  it("updates team constitution with encoded team id and JSON body", async () => {
+    const team = {
+      id: "11111111-1111-4111-8111-111111111111",
       tenant_id: "22222222-2222-4222-8222-222222222222",
-      team_id: "11111111-1111-4111-8111-111111111111",
-      revision_number: 1,
-      constitution: { principle: "review" },
-      capability_policy: { allow: ["incident-diagnosis"] },
-      context_policy: {},
-      approval_policy: {},
-      artifact_contract: {},
-      internal_collaboration_policy: {},
-      runtime_scope_policy: {},
-      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
+      slug: "ops",
+      name: "运维团队",
       status: "active",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(revision), {
-          headers: { "content-type": "application/json" },
-          status: 201,
-        }),
-    );
-
-    await expect(
-      createTeamConfigRevision(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "team 1/primary",
-        {
-          constitution: { principle: "review" },
-          capability_policy: { allow: ["incident-diagnosis"] },
-          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
-          status: "active",
-        },
-      ),
-    ).resolves.toEqual(revision);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/config-revisions",
-      {
-        body: JSON.stringify({
-          constitution: { principle: "review" },
-          capability_policy: { allow: ["incident-diagnosis"] },
-          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
-          status: "active",
-        }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
+      constitution: {
+        approval_policy: { enabled: true },
+        hard_rules: ["提交前必须审批"],
       },
-    );
-  });
-
-  it("gets current team config revision with encoded team id and cookie credentials", async () => {
-    const revision = {
-      id: "44444444-4444-4444-8444-444444444444",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      team_id: "11111111-1111-4111-8111-111111111111",
-      revision_number: 1,
-      constitution: {},
-      capability_policy: {},
-      context_policy: {},
-      approval_policy: {},
-      artifact_contract: {},
-      internal_collaboration_policy: {},
-      runtime_scope_policy: {},
       human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
-      status: "active",
     };
     const fetcher = vi.fn(
       async () =>
-        new Response(JSON.stringify(revision), {
+        new Response(JSON.stringify(team), {
           headers: { "content-type": "application/json" },
           status: 200,
         }),
     );
 
     await expect(
-      getCurrentTeamConfigRevision(
+      updateTeamConstitution(
         {
           baseUrl: "http://control-plane.local",
           fetcher,
         },
         "team 1/primary",
-      ),
-    ).resolves.toEqual(revision);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/config-revisions/current",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-  });
-
-  it("calls governance draft endpoints with encoded ids", async () => {
-    const revision = {
-      id: "44444444-4444-4444-8444-444444444444",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      team_id: "11111111-1111-4111-8111-111111111111",
-      revision_number: 2,
-      constitution: { hard_rules: ["提交前必须审批"] },
-      capability_policy: { skill_bindings: ["incident-diagnosis"] },
-      context_policy: {},
-      approval_policy: {},
-      artifact_contract: {},
-      internal_collaboration_policy: {},
-      runtime_scope_policy: {},
-      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
-      status: "draft",
-    };
-    const diff = {
-      added_hard_rules: 1,
-      changed_approval_rules: 1,
-      changed_capabilities: 1,
-      blocking_errors: [],
-      warnings: [
         {
-          field: "constitution.hard_rules",
-          message: "新增硬性规则需要复核",
-          severity: "warning",
+          approval_policy: { enabled: true },
+          hard_rules: ["提交前必须审批"],
         },
-      ],
-    };
-    const fetcher = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = new URL(String(input));
-        if (
-          url.pathname.endsWith("/governance/drafts") &&
-          (init?.method ?? "GET") === "GET"
-        ) {
-          return new Response(JSON.stringify([revision]), {
-            headers: { "content-type": "application/json" },
-            status: 200,
-          });
-        }
-        if (
-          url.pathname.endsWith("/diff") &&
-          (init?.method ?? "GET") === "GET"
-        ) {
-          return new Response(JSON.stringify(diff), {
-            headers: { "content-type": "application/json" },
-            status: 200,
-          });
-        }
-        return new Response(JSON.stringify(revision), {
-          headers: { "content-type": "application/json" },
-          status:
-            init?.method === "POST" &&
-            url.pathname.endsWith("/governance/drafts")
-              ? 201
-              : 200,
-        });
-      },
-    ) as unknown as typeof fetch;
-    const options = { baseUrl: "http://control-plane.local", fetcher };
-
-    await expect(
-      getCurrentTeamGovernance(options, "team 1/primary"),
-    ).resolves.toEqual(revision);
-    await expect(
-      listTeamGovernanceDrafts(options, "team 1/primary"),
-    ).resolves.toEqual([revision]);
-    await expect(
-      createTeamGovernanceDraft(options, "team 1/primary", {
-        constitution: { hard_rules: ["提交前必须审批"] },
-        human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
-      }),
-    ).resolves.toEqual(revision);
-    await expect(
-      updateTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary", {
-        capability_policy: { mcp_bindings: ["ops-mcp-server"] },
-      }),
-    ).resolves.toEqual(revision);
-    await expect(
-      approveTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary"),
-    ).resolves.toEqual(revision);
-    await expect(
-      rejectTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary"),
-    ).resolves.toEqual(revision);
-    await expect(
-      previewTeamGovernanceDiff(options, "team 1/primary", "draft 1/primary"),
-    ).resolves.toEqual(diff);
+      ),
+    ).resolves.toEqual(team);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/current",
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/constitution",
       {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts",
-      expect.objectContaining({
         body: JSON.stringify({
-          constitution: { hard_rules: ["提交前必须审批"] },
-          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
+          approval_policy: { enabled: true },
+          hard_rules: ["提交前必须审批"],
         }),
         credentials: "include",
-        method: "POST",
-      }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts/draft%201%2Fprimary",
-      expect.objectContaining({
-        body: JSON.stringify({
-          capability_policy: { mcp_bindings: ["ops-mcp-server"] },
-        }),
-        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "PATCH",
-      }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts/draft%201%2Fprimary/approve",
-      expect.objectContaining({ credentials: "include", method: "POST" }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts/draft%201%2Fprimary/reject",
-      expect.objectContaining({ credentials: "include", method: "POST" }),
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts/draft%201%2Fprimary/diff",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
       },
     );
   });

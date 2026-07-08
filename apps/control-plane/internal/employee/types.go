@@ -62,13 +62,6 @@ const (
 	ConfigRevisionStatusActive ConfigRevisionStatus = "active"
 )
 
-type TeamConfigRevisionStatus string
-
-const (
-	TeamConfigRevisionStatusDraft  TeamConfigRevisionStatus = "draft"
-	TeamConfigRevisionStatusActive TeamConfigRevisionStatus = "active"
-)
-
 type ValidationIssue struct {
 	Code    string `json:"code"`
 	Path    string `json:"path,omitempty"`
@@ -330,8 +323,6 @@ type TeamConfigInput struct {
 	ID                          uuid.UUID
 	TenantID                    uuid.UUID
 	TeamID                      uuid.UUID
-	RevisionNumber              int32
-	Status                      TeamConfigRevisionStatus
 	Constitution                map[string]any
 	CapabilityPolicy            map[string]any
 	ContextPolicy               map[string]any
@@ -429,7 +420,6 @@ type DigitalEmployeeConfigRevision struct {
 }
 
 type EffectiveConfigPreview struct {
-	TeamConfigRevisionID     uuid.UUID
 	EmployeeConfigRevisionID uuid.UUID
 	EffectiveConfig          map[string]any
 	Validation               EffectiveConfigValidation

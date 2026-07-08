@@ -286,6 +286,22 @@ func (r *PgRepository) UpdateTeam(ctx context.Context, params UpdateTeamParams) 
 	return teamRecordFromQuery(team)
 }
 
+func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error) {
+	constitutionJSON, err := jsonbFromMap(constitution, "constitution")
+	if err != nil {
+		return TeamRecord{}, err
+	}
+	team, err := r.q.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
+		ID:           teamID,
+		TenantID:     tenantID,
+		Constitution: constitutionJSON,
+	})
+	if err != nil {
+		return TeamRecord{}, mapNoRows(err)
+	}
+	return teamRecordFromQuery(team)
+}
+
 func (r *PgRepository) SetTeamStatus(ctx context.Context, params SetTeamStatusParams) (TeamRecord, error) {
 	team, err := r.q.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
 		ID:       params.TeamID,
@@ -330,213 +346,6 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUI
 	}
 	committed = true
 	return nil
-}
-
-func (r *PgRepository) CreateTeamConfigRevision(ctx context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
-	constitution, err := jsonbFromMap(params.Constitution, "constitution")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	capabilityPolicy, err := jsonbFromMap(params.CapabilityPolicy, "capability_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	contextPolicy, err := jsonbFromMap(params.ContextPolicy, "context_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	approvalPolicy, err := jsonbFromMap(params.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	artifactContract, err := jsonbFromMap(params.ArtifactContract, "artifact_contract")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	internalCollaborationPolicy, err := jsonbFromMap(params.InternalCollaborationPolicy, "internal_collaboration_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	runtimeScopePolicy, err := jsonbFromMap(params.RuntimeScopePolicy, "runtime_scope_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-
-	revision, err := r.q.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
-		TenantID:                    params.TenantID,
-		TeamID:                      params.TeamID,
-		RevisionNumber:              params.RevisionNumber,
-		Constitution:                constitution,
-		CapabilityPolicy:            capabilityPolicy,
-		ContextPolicy:               contextPolicy,
-		ApprovalPolicy:              approvalPolicy,
-		ArtifactContract:            artifactContract,
-		InternalCollaborationPolicy: internalCollaborationPolicy,
-		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserIds:           params.HumanOwnerUserIDs,
-		Status:                      string(params.Status),
-		ApprovedBy:                  nullUUIDFromPtr(params.ApprovedBy),
-		ApprovedAt:                  timestamptzFromPtr(params.ApprovedAt),
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	return configRevisionRecordFromQuery(revision)
-}
-
-func (r *PgRepository) GetTeamConfigRevision(ctx context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error) {
-	revision, err := r.q.GetTenantTeamConfigRevision(ctx, queries.GetTenantTeamConfigRevisionParams{
-		ID:       revisionID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, mapNoRows(err)
-	}
-	return configRevisionRecordFromQuery(revision)
-}
-
-func (r *PgRepository) GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error) {
-	revision, err := r.q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, mapNoRows(err)
-	}
-	return configRevisionRecordFromQuery(revision)
-}
-
-func (r *PgRepository) GetNextTeamConfigRevisionNumber(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error) {
-	nextRevision, err := r.q.GetNextTenantTeamConfigRevisionNumber(ctx, queries.GetNextTenantTeamConfigRevisionNumberParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return nextRevision, nil
-}
-
-func (r *PgRepository) ListTeamConfigDrafts(ctx context.Context, params ListTeamConfigDraftsParams) ([]TeamConfigRevisionRecord, error) {
-	revisions, err := r.q.ListTenantTeamConfigDrafts(ctx, queries.ListTenantTeamConfigDraftsParams{
-		TenantID: params.TenantID,
-		TeamID:   params.TeamID,
-		Offset:   params.Offset,
-		Limit:    params.Limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	records := make([]TeamConfigRevisionRecord, 0, len(revisions))
-	for _, revision := range revisions {
-		record, err := configRevisionRecordFromQuery(revision)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
-func (r *PgRepository) UpdateTeamConfigRevisionDraft(ctx context.Context, params UpdateTeamConfigRevisionDraftParams) (TeamConfigRevisionRecord, error) {
-	constitution, err := jsonbFromOptionalMap(params.Constitution, "constitution")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	capabilityPolicy, err := jsonbFromOptionalMap(params.CapabilityPolicy, "capability_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	contextPolicy, err := jsonbFromOptionalMap(params.ContextPolicy, "context_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	approvalPolicy, err := jsonbFromOptionalMap(params.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	artifactContract, err := jsonbFromOptionalMap(params.ArtifactContract, "artifact_contract")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	internalCollaborationPolicy, err := jsonbFromOptionalMap(params.InternalCollaborationPolicy, "internal_collaboration_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	runtimeScopePolicy, err := jsonbFromOptionalMap(params.RuntimeScopePolicy, "runtime_scope_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	revision, err := r.q.UpdateTenantTeamConfigRevisionDraft(ctx, queries.UpdateTenantTeamConfigRevisionDraftParams{
-		ID:                          params.RevisionID,
-		TenantID:                    params.TenantID,
-		TeamID:                      params.TeamID,
-		Constitution:                constitution,
-		CapabilityPolicy:            capabilityPolicy,
-		ContextPolicy:               contextPolicy,
-		ApprovalPolicy:              approvalPolicy,
-		ArtifactContract:            artifactContract,
-		InternalCollaborationPolicy: internalCollaborationPolicy,
-		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserIds:           params.HumanOwnerUserIDs,
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, mapNoRows(err)
-	}
-	return configRevisionRecordFromQuery(revision)
-}
-
-func (r *PgRepository) ApproveTeamConfigRevision(ctx context.Context, params ActivateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
-	if r.db == nil {
-		return TeamConfigRevisionRecord{}, fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
-	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback(ctx)
-		}
-	}()
-	qtx := r.q.WithTx(tx)
-	if _, err := qtx.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
-		TenantID: params.TenantID,
-		TeamID:   params.TeamID,
-	}); err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	revision, err := qtx.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
-		ID:         params.RevisionID,
-		TenantID:   params.TenantID,
-		TeamID:     params.TeamID,
-		ApprovedBy: params.ApprovedBy,
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, mapNoRows(err)
-	}
-	record, err := configRevisionRecordFromQuery(revision)
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	committed = true
-	return record, nil
-}
-
-func (r *PgRepository) RejectTeamConfigRevision(ctx context.Context, tenantID, teamID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error) {
-	revision, err := r.q.RejectTenantTeamConfigRevision(ctx, queries.RejectTenantTeamConfigRevisionParams{
-		ID:       revisionID,
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	if err != nil {
-		return TeamConfigRevisionRecord{}, mapNoRows(err)
-	}
-	return configRevisionRecordFromQuery(revision)
 }
 
 func (r *PgRepository) ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {
@@ -725,6 +534,10 @@ func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 	if err != nil {
 		return TeamRecord{}, err
 	}
+	constitution, err := mapFromJSONB(team.Constitution, "constitution")
+	if err != nil {
+		return TeamRecord{}, err
+	}
 	return TeamRecord{
 		ID:                team.ID,
 		TenantID:          team.TenantID,
@@ -732,6 +545,7 @@ func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 		Name:              team.Name,
 		Status:            TeamStatus(team.Status),
 		HumanOwnerUserIDs: team.HumanOwnerUserIds,
+		Constitution:      constitution,
 		Metadata:          metadata,
 		CreatedAt:         timeFromTimestamptz(team.CreatedAt),
 		UpdatedAt:         timeFromTimestamptz(team.UpdatedAt),
@@ -747,6 +561,7 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 			Name:              row.Name,
 			Status:            row.Status,
 			HumanOwnerUserIds: row.HumanOwnerUserIds,
+			Constitution:      row.Constitution,
 			Metadata:          row.Metadata,
 			ArchivedAt:        row.ArchivedAt,
 			DisabledAt:        row.DisabledAt,
@@ -757,7 +572,6 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 		row.MemberCount,
 		row.DigitalEmployeeCount,
 		row.CapabilityCount,
-		row.CurrentRevision,
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
@@ -774,6 +588,7 @@ func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) 
 			Name:              row.Name,
 			Status:            row.Status,
 			HumanOwnerUserIds: row.HumanOwnerUserIds,
+			Constitution:      row.Constitution,
 			Metadata:          row.Metadata,
 			ArchivedAt:        row.ArchivedAt,
 			DisabledAt:        row.DisabledAt,
@@ -784,7 +599,6 @@ func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) 
 		row.MemberCount,
 		row.DigitalEmployeeCount,
 		row.CapabilityCount,
-		row.CurrentRevision,
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
@@ -797,7 +611,6 @@ func teamListItemRecordFromSummaryParts(
 	memberCount int32,
 	digitalEmployeeCount int32,
 	capabilityCount int32,
-	currentRevision pgtype.Int4,
 	pendingDraftCount int32,
 	governanceStatus string,
 	riskSummary string,
@@ -813,7 +626,6 @@ func teamListItemRecordFromSummaryParts(
 		MemberCount:          memberCount,
 		DigitalEmployeeCount: digitalEmployeeCount,
 		CapabilityCount:      capabilityCount,
-		CurrentRevision:      int32PtrFromInt4(currentRevision),
 		PendingDraftCount:    pendingDraftCount,
 		GovernanceStatus:     GovernanceSummaryStatus(governanceStatus),
 		RiskSummary:          riskSummary,
@@ -869,56 +681,6 @@ func parseTeamHumanOwners(b []byte) []TeamHumanOwner {
 		owners = append(owners, o)
 	}
 	return owners
-}
-
-func configRevisionRecordFromQuery(revision queries.TenantTeamConfigRevision) (TeamConfigRevisionRecord, error) {
-	constitution, err := mapFromJSONB(revision.Constitution, "constitution")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	capabilityPolicy, err := mapFromJSONB(revision.CapabilityPolicy, "capability_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	contextPolicy, err := mapFromJSONB(revision.ContextPolicy, "context_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	approvalPolicy, err := mapFromJSONB(revision.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	artifactContract, err := mapFromJSONB(revision.ArtifactContract, "artifact_contract")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	internalCollaborationPolicy, err := mapFromJSONB(revision.InternalCollaborationPolicy, "internal_collaboration_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	runtimeScopePolicy, err := mapFromJSONB(revision.RuntimeScopePolicy, "runtime_scope_policy")
-	if err != nil {
-		return TeamConfigRevisionRecord{}, err
-	}
-	return TeamConfigRevisionRecord{
-		ID:                          revision.ID,
-		TenantID:                    revision.TenantID,
-		TeamID:                      revision.TeamID,
-		RevisionNumber:              revision.RevisionNumber,
-		Constitution:                constitution,
-		CapabilityPolicy:            capabilityPolicy,
-		ContextPolicy:               contextPolicy,
-		ApprovalPolicy:              approvalPolicy,
-		ArtifactContract:            artifactContract,
-		InternalCollaborationPolicy: internalCollaborationPolicy,
-		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserIDs:           revision.HumanOwnerUserIds,
-		Status:                      TeamConfigRevisionStatus(revision.Status),
-		ApprovedBy:                  uuidPtrFromNull(revision.ApprovedBy),
-		ApprovedAt:                  timePtrFromTimestamptz(revision.ApprovedAt),
-		CreatedAt:                   timeFromTimestamptz(revision.CreatedAt),
-		UpdatedAt:                   timeFromTimestamptz(revision.UpdatedAt),
-	}, nil
 }
 
 func teamMemberRecordFromListRow(row queries.ListTeamMembersRow) (TeamMemberRecord, error) {

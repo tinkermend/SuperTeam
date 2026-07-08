@@ -257,8 +257,6 @@ func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
 		ID:                          uuid.Nil,
 		TenantID:                    tenantID,
 		TeamID:                      uuid.Nil,
-		RevisionNumber:              0,
-		Status:                      TeamConfigRevisionStatusActive,
 		CapabilityPolicy:            map[string]any{},
 		ContextPolicy:               map[string]any{},
 		ApprovalPolicy:              map[string]any{},
@@ -273,8 +271,6 @@ func teamConfigInputFromBaseline(tenantID, teamID uuid.UUID, baseline TeamBaseli
 		ID:                          uuid.Nil,
 		TenantID:                    tenantID,
 		TeamID:                      teamID,
-		RevisionNumber:              0,
-		Status:                      TeamConfigRevisionStatusActive,
 		Constitution:                cloneMap(baseline.Constitution),
 		CapabilityPolicy: map[string]any{
 			"allowed_skills":      append([]string(nil), baseline.Skills...),
@@ -992,7 +988,6 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"provider_type":               providerType,
 		"provider_run_protocol":       providerRunProtocol,
 		"agent_home_dir":              instance.AgentHomeDir,
-		"team_config_revision_id":     nullUUIDString(preview.TeamConfigRevisionID),
 		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
 		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
 		"session_policy":              cloneMap(req.SessionPolicy),
@@ -1111,9 +1106,7 @@ func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput Emplo
 	builder.WriteString("- Persist durable results through platform artifacts, evidence, or structured writeback.\n")
 	if preview != nil {
 		builder.WriteString("\n# Active Configuration\n\n")
-		builder.WriteString("- Team config revision: ")
-		builder.WriteString(preview.TeamConfigRevisionID.String())
-		builder.WriteString("\n- Employee config revision: ")
+		builder.WriteString("- Employee config revision: ")
 		builder.WriteString(preview.EmployeeConfigRevisionID.String())
 		builder.WriteString("\n")
 	}
@@ -1562,13 +1555,9 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
-	if req.TeamConfig.ID != uuid.Nil && req.TeamConfig.Status != "" && req.TeamConfig.Status != TeamConfigRevisionStatusActive {
-		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
-	}
 	teamLess := req.TeamConfig.ID == uuid.Nil
 
 	effectiveConfig := map[string]any{
-		"team_config_revision_id":     nullUUIDString(req.TeamConfig.ID),
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
 		"constitution": map[string]any{
 			"team":     cloneMap(req.TeamConfig.Constitution),
@@ -1597,7 +1586,6 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	}
 
 	return &EffectiveConfigPreview{
-		TeamConfigRevisionID:     req.TeamConfig.ID,
 		EmployeeConfigRevisionID: req.EmployeeConfig.ID,
 		EffectiveConfig:          effectiveConfig,
 		Validation:               validation,
@@ -1946,14 +1934,6 @@ func validUUIDPtr(value *uuid.UUID) *uuid.UUID {
 	}
 	copied := *value
 	return &copied
-}
-
-func teamConfigRevisionIDPtr(teamConfig TeamConfigInput) *uuid.UUID {
-	if teamConfig.ID == uuid.Nil {
-		return nil
-	}
-	id := teamConfig.ID
-	return &id
 }
 
 func nullUUIDString(value uuid.UUID) string {
