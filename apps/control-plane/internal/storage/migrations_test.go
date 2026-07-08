@@ -2075,3 +2075,56 @@ func TestMigrationProjectRuntimeNodes(t *testing.T) {
 	assertTableExists(t, pool, schemaName, "project_runtime_nodes")
 	assertTableExists(t, pool, schemaName, "project_employee_node_affinity")
 }
+
+func TestMigration048BackfillProjectRuntimeNodesFromPlacements(t *testing.T) {
+	pool, _ := applyAllMigrations(t)
+	ctx := context.Background()
+
+	// Create test data: tenant, runtime node, and project
+	tenantID := "00000000-0000-0000-0000-000000000001"
+	runtimeNodeID := "00000000-0000-0000-0000-000000000002"
+	projectID := "00000000-0000-0000-0000-000000000003"
+	ownerUserID := "00000000-0000-0000-0000-000000000004"
+
+	// Insert tenant
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenants (id, name) VALUES ($1, 'test-tenant')
+	`, tenantID); err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+
+	// Insert runtime node
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO runtime_nodes (id, tenant_id, node_name, node_type, status)
+		VALUES ($1, $2, 'test-node', 'compute', 'online')
+	`, runtimeNodeID, tenantID); err != nil {
+		t.Fatalf("insert runtime node: %v", err)
+	}
+
+	// Insert project
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO projects (id, tenant_id, name, human_owner_user_id, status)
+		VALUES ($1, $2, 'test-project', $3, 'active')
+	`, projectID, tenantID, ownerUserID); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+
+	// Insert active project placement
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO project_placements (tenant_id, project_id, runtime_node_id, placement_status)
+		VALUES ($1, $2, $3, 'active')
+	`, tenantID, projectID, runtimeNodeID); err != nil {
+		t.Fatalf("insert project placement: %v", err)
+	}
+
+	// Verify backfill worked: check that a matching project_runtime_nodes row exists
+	var count int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM project_runtime_nodes
+		WHERE tenant_id = $1 AND project_id = $2 AND runtime_node_id = $3
+	`, tenantID, projectID, runtimeNodeID).Scan(&count); err != nil {
+		t.Fatalf("query project_runtime_nodes: %v", err)
+	}
+	require.Equalf(t, 1, count, "expected exactly one project_runtime_nodes row after backfill")
+}
