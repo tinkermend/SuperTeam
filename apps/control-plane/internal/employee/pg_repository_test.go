@@ -45,7 +45,9 @@ func TestGetTeamBaseline(t *testing.T) {
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	skillAID := uuid.New()
 	skillBID := uuid.New()
-	mcpID := uuid.New()
+	activeMCPID := uuid.New()
+	disabledServerMCPID := uuid.New()
+	disabledBindingMCPID := uuid.New()
 
 	_, err = conn.Exec(ctx, `
 		INSERT INTO tenants (id, slug, name, status)
@@ -82,18 +84,27 @@ func TestGetTeamBaseline(t *testing.T) {
 	_, err = conn.Exec(ctx, `
 		INSERT INTO mcp_servers (
 			id, tenant_id, name, server_key, description, transport, url, auth_strategy,
-			required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata
+			required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata, status
 		) VALUES (
 			$2, $1, 'Postgres Readonly', 'postgres-readonly', '', 'http', 'https://mcp.local/postgres', 'none',
-			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb
+			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb, 'active'
+		), (
+			$3, $1, 'Disabled Server', 'disabled-server', '', 'http', 'https://mcp.local/disabled-server', 'none',
+			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb, 'disabled'
+		), (
+			$4, $1, 'Disabled Binding', 'disabled-binding', '', 'http', 'https://mcp.local/disabled-binding', 'none',
+			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb, 'active'
 		)
-	`, tenantID, mcpID)
+	`, tenantID, activeMCPID, disabledServerMCPID, disabledBindingMCPID)
 	require.NoError(t, err)
 
 	_, err = conn.Exec(ctx, `
-		INSERT INTO team_mcp_bindings (tenant_id, team_id, mcp_server_id, metadata)
-		VALUES ($1, $2, $3, '{}'::jsonb)
-	`, tenantID, teamID, mcpID)
+		INSERT INTO team_mcp_bindings (tenant_id, team_id, mcp_server_id, metadata, status)
+		VALUES
+			($1, $2, $3, '{}'::jsonb, 'active'),
+			($1, $2, $4, '{}'::jsonb, 'active'),
+			($1, $2, $5, '{}'::jsonb, 'disabled')
+	`, tenantID, teamID, activeMCPID, disabledServerMCPID, disabledBindingMCPID)
 	require.NoError(t, err)
 
 	repo := NewPgRepository(queries.New(conn), conn)

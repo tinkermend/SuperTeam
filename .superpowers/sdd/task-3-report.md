@@ -194,3 +194,64 @@ Verification Evidence
 Notes
 - Scope was intentionally limited to production query/schema alignment for Task 3a.
 - Current binding semantics remain hard-delete only, matching the task brief.
+
+---
+
+Task 3a Review Finding Fix: Filter Inactive MCP Servers From Team Baseline
+
+Status
+- Implemented the narrow Task 3a follow-up in `GetTeamBaseline` only.
+- Kept scope to the employee repository, its DB-backed baseline test, and this task report.
+
+Root Cause
+- `GetTeamBaseline` used `ListTeamMCPBindings`, which already exposes both binding `status` and `server_status`.
+- The method filtered only `team_mcp_bindings.status == active`, so an active binding that referenced a disabled `mcp_servers` row still leaked into `TeamBaseline.MCPServers`.
+
+RED Evidence
+1. Added DB-backed coverage for three MCP cases under the same team baseline fixture:
+   - active binding + active server
+   - active binding + disabled server
+   - disabled binding + active server
+2. Before the repository fix, the targeted DB-backed test failed with:
+   - command:
+     `TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' go test ./apps/control-plane/internal/employee/... -run TestGetTeamBaseline -v`
+   - result:
+     returned MCP list included `disabled-server`
+
+Change
+- File: `apps/control-plane/internal/employee/pg_repository.go`
+- Updated `GetTeamBaseline` to include an MCP server only when:
+  - binding status is `active`
+  - server status is `active`
+
+Test Coverage
+- File: `apps/control-plane/internal/employee/pg_repository_test.go`
+- Extended `TestGetTeamBaseline` to preserve the original happy path assertions:
+  - skills: `skill-a`, `skill-b`
+  - MCP servers: only `postgres-readonly`
+  - constitution hard rules: `["r1"]`
+- The same test now proves that:
+  - an active binding to a disabled server is excluded
+  - a disabled binding is excluded
+
+Verification Evidence
+1. Targeted DB-backed baseline test:
+   - command:
+     `TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' go test ./apps/control-plane/internal/employee/... -run TestGetTeamBaseline -v`
+   - result:
+     pass
+
+2. Control Plane build:
+   - command:
+     `go build ./apps/control-plane/...`
+   - result:
+     success
+
+3. Diff hygiene:
+   - command:
+     `git diff --check`
+   - result:
+     success
+
+Notes
+- This is a local repository/read-model fix. No contract, migration, or broader capability-management behavior was changed.
