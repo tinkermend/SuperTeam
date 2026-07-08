@@ -138,12 +138,12 @@ RETURNING id`,
 	if err != nil {
 		return nil, err
 	}
-	if _, err = tx.Exec(ctx, `DELETE FROM skill_team_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, skillID); err != nil {
+	if _, err = tx.Exec(ctx, `DELETE FROM team_skill_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, skillID); err != nil {
 		return nil, err
 	}
 	for _, teamID := range req.TeamIDs {
 		if _, err = tx.Exec(ctx, `
-INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 VALUES ($1,$2,$3)
 ON CONFLICT DO NOTHING`, req.TenantID, skillID, teamID); err != nil {
 			return nil, err
@@ -169,7 +169,7 @@ func (r *PgRepository) DeleteSkill(ctx context.Context, req DeleteSkillRequest) 
 		// once Commit succeeds, so a leaked open tx can never strand a pooled conn.
 		_ = tx.Rollback(ctx)
 	}()
-	if _, err = tx.Exec(ctx, `DELETE FROM skill_team_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
+	if _, err = tx.Exec(ctx, `DELETE FROM team_skill_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM skill_agent_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
@@ -194,7 +194,7 @@ func (r *PgRepository) IsSkillBoundToEmployeeTeam(ctx context.Context, req BindE
 	err := r.db.QueryRow(ctx, `
 SELECT EXISTS(
     SELECT 1
-    FROM skill_team_bindings stb
+    FROM team_skill_bindings stb
     JOIN digital_employees de ON de.tenant_id = stb.tenant_id AND de.team_id = stb.team_id
     WHERE stb.tenant_id = $1
       AND stb.skill_id = $2
@@ -215,7 +215,7 @@ func (r *PgRepository) BindSkillToTeam(ctx context.Context, req BindTeamSkillReq
 		return nil, err
 	}
 	if _, err := r.db.Exec(ctx, `
-INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 VALUES ($1, $2, $3)
 ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID); err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (r *PgRepository) UnbindSkillFromTeam(ctx context.Context, req BindTeamSkil
 		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
 	_, err := r.db.Exec(ctx, `
-DELETE FROM skill_team_bindings
+DELETE FROM team_skill_bindings
 WHERE tenant_id = $1 AND skill_id = $2 AND team_id = $3`, req.TenantID, req.SkillID, req.TeamID)
 	return err
 }
@@ -239,7 +239,7 @@ func (r *PgRepository) ListTeamSkills(ctx context.Context, req ListTeamSkillsReq
 	}
 	rows, err := r.db.Query(ctx, `
 SELECT `+skillSelectColumns+`
-FROM skill_team_bindings stb
+FROM team_skill_bindings stb
 JOIN skills s ON s.tenant_id = stb.tenant_id
     AND s.id = stb.skill_id
     AND s.deleted_at IS NULL
@@ -323,7 +323,7 @@ SELECT
     s.created_at, s.updated_at,
     'team'::text AS source_scope, true AS inherited, true AS read_only
 FROM target_employee
-JOIN skill_team_bindings stb ON stb.tenant_id = target_employee.tenant_id
+JOIN team_skill_bindings stb ON stb.tenant_id = target_employee.tenant_id
     AND stb.team_id = target_employee.team_id
 JOIN skills s ON s.tenant_id = stb.tenant_id
     AND s.id = stb.skill_id
@@ -348,7 +348,7 @@ JOIN skills s ON s.tenant_id = sab.tenant_id
 LEFT JOIN auth_users au ON au.id = s.created_by
 WHERE NOT EXISTS (
     SELECT 1
-    FROM skill_team_bindings inherited_binding
+    FROM team_skill_bindings inherited_binding
     WHERE inherited_binding.tenant_id = target_employee.tenant_id
       AND inherited_binding.team_id = target_employee.team_id
       AND inherited_binding.skill_id = sab.skill_id
@@ -431,7 +431,7 @@ JOIN skills s ON s.tenant_id = target_employee.tenant_id
     AND s.archive_object_ref IS NOT NULL
     AND s.archive_object_ref <> ''
 WHERE EXISTS (
-    SELECT 1 FROM skill_team_bindings stb
+    SELECT 1 FROM team_skill_bindings stb
     WHERE stb.tenant_id = target_employee.tenant_id
       AND stb.team_id = target_employee.team_id
       AND stb.skill_id = s.id
@@ -687,7 +687,7 @@ func (r *PgRepository) PersistInstallSuccess(ctx context.Context, req PersistSki
 	}()
 	if req.TargetScope == SkillInstallTargetTeam {
 		if _, err = tx.Exec(ctx, `
-INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 VALUES ($1,$2,$3)
 ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID); err != nil {
 			return InstallSkillResult{}, err
@@ -870,7 +870,7 @@ func (r *PgRepository) loadChildren(ctx context.Context, item *Skill) error {
 func (r *PgRepository) listTeamBindings(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillTeamBinding, error) {
 	rows, err := r.db.Query(ctx, `
 SELECT stb.team_id, COALESCE(tt.name, '')
-FROM skill_team_bindings stb
+FROM team_skill_bindings stb
 LEFT JOIN tenant_teams tt ON tt.tenant_id = stb.tenant_id AND tt.id = stb.team_id
 WHERE stb.tenant_id = $1 AND stb.skill_id = $2
 ORDER BY tt.name ASC NULLS LAST`, tenantID, skillID)

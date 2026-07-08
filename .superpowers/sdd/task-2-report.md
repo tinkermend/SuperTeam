@@ -109,3 +109,24 @@
 ### Resolution
 
 - Included the three generated files in the Task 2 checkpoint so the branch no longer carries sqlc generated-code drift from migration 046 / team constitution / team-skill-binding rename.
+
+---
+
+## Controller follow-up fix: raw SQL rename completion
+
+### What changed
+
+- Replaced the remaining raw SQL table references in `apps/control-plane/internal/skill/pg_repository.go` from `skill_team_bindings` to `team_skill_bindings`.
+- Updated static assertions in `apps/control-plane/internal/skill/service_test.go` to check the renamed table in repository source.
+
+### Verification
+
+1. `go test ./apps/control-plane/internal/skill/... -v`
+2. `go build ./apps/control-plane/...`
+3. `rg -n "skill_team_bindings" apps/control-plane/internal/skill`
+4. `git diff --check`
+
+### Notes
+
+- No migration files or migration tests were changed.
+- The fix was intentionally limited to the controller-flagged runtime raw SQL and matching static tests.

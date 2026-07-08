@@ -341,7 +341,7 @@ func TestPgRepositoryEffectiveEmployeeSkillsSQLSuppressesPersonalDuplicateRows(t
 	}
 	normalized := strings.Join(strings.Fields(string(source)), " ")
 	if !strings.Contains(normalized, "FROM skill_agent_bindings sab") ||
-		!strings.Contains(normalized, "WHERE NOT EXISTS ( SELECT 1 FROM skill_team_bindings inherited_binding") {
+		!strings.Contains(normalized, "WHERE NOT EXISTS ( SELECT 1 FROM team_skill_bindings inherited_binding") {
 		t.Fatal("effective employee skill SQL must suppress personal skill rows duplicated by team inheritance")
 	}
 }
@@ -352,7 +352,7 @@ func TestPgRepositoryBindSkillsPreflightsTargetsBeforeInsert(t *testing.T) {
 		t.Fatalf("read pg repository source: %v", err)
 	}
 	normalized := strings.Join(strings.Fields(string(source)), " ")
-	if strings.Contains(normalized, "INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id) SELECT $1, $2, $3 WHERE EXISTS") {
+	if strings.Contains(normalized, "INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id) SELECT $1, $2, $3 WHERE EXISTS") {
 		t.Fatal("team skill bind must not rely on zero-row INSERT SELECT for target validation")
 	}
 	if strings.Contains(normalized, "INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status) SELECT $1, $2, $3, 'enabled' WHERE EXISTS") {
