@@ -5666,6 +5666,7 @@ components:
         - coordination_jobs
         - route_decisions
         - project_tasks
+        - execution_summaries
         - decision_requests
         - recent_events
       properties:
@@ -5689,6 +5690,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectTask"
+        execution_summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectExecutionSummary"
         decision_requests:
           type: array
           items:

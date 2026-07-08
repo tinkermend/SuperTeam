@@ -20,6 +20,7 @@ const runtimeNodeHeartbeatTTL = 2 * time.Minute
 
 type digitalEmployeePlanningProfileReader interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeRecord, error)
+	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.EmployeeConfigInput, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error)
 }
@@ -122,6 +123,18 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			ProviderType:      employeeRecord.ProviderType,
 			PermissionPolicy:  clonePlanningProfileMap(employeeRecord.PermissionPolicy),
 			ContextPolicy:     clonePlanningProfileMap(employeeRecord.ContextPolicy),
+		}
+		config, err := a.reader.GetLatestDigitalEmployeeConfigRevision(ctx, tenantID, employeeID)
+		if err != nil {
+			if !normalGateAbsence(err) {
+				return nil, err
+			}
+		} else {
+			record.RoleProfile = clonePlanningProfileMap(config.RoleProfile)
+			record.CapabilitySelection = clonePlanningProfileMap(config.CapabilitySelection)
+			if len(config.ContextPolicyOverride) > 0 {
+				record.ContextPolicy = clonePlanningProfileMap(config.ContextPolicyOverride)
+			}
 		}
 		preflightApplied := false
 		if a.projectTaskRuns != nil && projectID != uuid.Nil {

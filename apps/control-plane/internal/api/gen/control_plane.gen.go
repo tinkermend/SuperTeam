@@ -3273,14 +3273,15 @@ type ProjectDemand struct {
 
 // ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.
 type ProjectDemandLaunchDetail struct {
-	CoordinationJobs []ProjectCoordinationJob `json:"coordination_jobs"`
-	DecisionRequests []ProjectDecisionRequest `json:"decision_requests"`
-	Demand           ProjectDemand            `json:"demand"`
-	Project          Project                  `json:"project"`
-	ProjectTasks     []ProjectTask            `json:"project_tasks"`
-	RecentEvents     []ProjectEvent           `json:"recent_events"`
-	Reviewer         *ReviewerPreference      `json:"reviewer"`
-	RouteDecisions   []ProjectRouteDecision   `json:"route_decisions"`
+	CoordinationJobs   []ProjectCoordinationJob  `json:"coordination_jobs"`
+	DecisionRequests   []ProjectDecisionRequest  `json:"decision_requests"`
+	Demand             ProjectDemand             `json:"demand"`
+	ExecutionSummaries []ProjectExecutionSummary `json:"execution_summaries"`
+	Project            Project                   `json:"project"`
+	ProjectTasks       []ProjectTask             `json:"project_tasks"`
+	RecentEvents       []ProjectEvent            `json:"recent_events"`
+	Reviewer           *ReviewerPreference       `json:"reviewer"`
+	RouteDecisions     []ProjectRouteDecision    `json:"route_decisions"`
 }
 
 // ProjectDemandSourceType defines model for ProjectDemandSourceType.

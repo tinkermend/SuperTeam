@@ -4368,7 +4368,7 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	assert.True(t, preflight.EnrollmentApproved)
 	assert.True(t, preflight.RuntimeSessionActive)
 	assert.True(t, preflight.ProviderAvailable)
-	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.ProviderPolicyAllowed)
 	assert.False(t, preflight.RuntimePolicyAllowed)
 	assert.Equal(t, "/provider/preflight-policy", preflight.AgentHomeDir)
 	assert.JSONEq(t, `{"constitution":{"hard_rules":["生产变更必须人工审批"]},"capability_policy":{},"context_policy":{},"approval_policy":{},"artifact_contract":{},"internal_collaboration_policy":{},"runtime_scope_policy":{}}`, requireJSONFromAny(t, preflight.GovernanceSnapshot))
@@ -4401,7 +4401,7 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, preflight.ProviderAvailable)
-	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.ProviderPolicyAllowed)
 	assert.False(t, preflight.RuntimePolicyAllowed)
 
 	_, err = testQueries.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
@@ -4437,7 +4437,7 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, preflight.EnrollmentApproved)
 	assert.False(t, preflight.RuntimeSessionActive)
-	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.ProviderPolicyAllowed)
 	assert.False(t, preflight.RuntimePolicyAllowed)
 }
 

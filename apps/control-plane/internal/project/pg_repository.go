@@ -3422,6 +3422,10 @@ func (r *PgRepository) listProjectExecutionSummariesByTaskIDs(ctx context.Contex
 	return executionSummariesFromRecords(rows)
 }
 
+func (r *PgRepository) ListExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error) {
+	return r.listProjectExecutionSummariesByTaskIDs(ctx, tenantID, projectID, taskIDs)
+}
+
 func (r *PgRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
 	return r.createTransferRequestWithQueries(ctx, r.q, req)
 }

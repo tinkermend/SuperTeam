@@ -32,6 +32,19 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 				ContextPolicy:    map[string]any{"max_context_classification": "internal"},
 			},
 		},
+		configs: map[uuid.UUID]employee.EmployeeConfigInput{
+			employeeID: {
+				TenantID:          tenantID,
+				DigitalEmployeeID: employeeID,
+				RoleProfile:       map[string]any{"primary_role": "backend_engineer"},
+				CapabilitySelection: map[string]any{
+					"enabled_external_capabilities": []any{"text_generation", "codebase.analysis"},
+					"enabled_skills":                []any{"backend-implementation"},
+					"enabled_mcp_servers":           []any{"postgres-readonly"},
+				},
+				ContextPolicyOverride: map[string]any{"max_context_classification": "confidential"},
+			},
+		},
 		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
 			employeeID: {
 				DigitalEmployeeID: employeeID,
@@ -59,6 +72,14 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	require.Equal(t, "ready", record.ExecutionStatus)
 	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
 	require.Equal(t, "codex", record.ProviderType)
+	require.Equal(t, map[string]any{"primary_role": "backend_engineer"}, record.RoleProfile)
+	require.Equal(t, map[string]any{
+		"enabled_external_capabilities": []any{"text_generation", "codebase.analysis"},
+		"enabled_skills":                []any{"backend-implementation"},
+		"enabled_mcp_servers":           []any{"postgres-readonly"},
+	}, record.CapabilitySelection)
+	require.Equal(t, map[string]any{"grants": []any{"database.read:dev_database"}}, record.PermissionPolicy)
+	require.Equal(t, map[string]any{"max_context_classification": "confidential"}, record.ContextPolicy)
 	require.Equal(t, map[string]any{
 		"in_flight_tasks": int32(2),
 		"available_slots": int32(0),
@@ -92,15 +113,15 @@ func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExe
 	}
 	preflightReader := fakeProjectTaskRunPreflightReader{
 		preflight: employee.StartProjectTaskRunPreflight{
-			TenantID:                   tenantID,
-			DigitalEmployeeID:          employeeID,
-			DigitalEmployeeStatus:      employee.DigitalEmployeeStatusReady,
-			RuntimeNodeID:              runtimeNodeID,
-			NodeID:                     "provider-runtime-smoke-node",
-			ProviderType:               "codex",
-			WorkspaceBaseDir:           "/var/superteam/projects",
-			RuntimeSessionActive:       true,
-			ProviderHealthy:            true,
+			TenantID:              tenantID,
+			DigitalEmployeeID:     employeeID,
+			DigitalEmployeeStatus: employee.DigitalEmployeeStatusReady,
+			RuntimeNodeID:         runtimeNodeID,
+			NodeID:                "provider-runtime-smoke-node",
+			ProviderType:          "codex",
+			WorkspaceBaseDir:      "/var/superteam/projects",
+			RuntimeSessionActive:  true,
+			ProviderHealthy:       true,
 		},
 	}
 
@@ -208,15 +229,15 @@ func TestPreDispatchGateAdapterUsesProjectTaskPlacementForRuntimeLessReadyEmploy
 	}
 	projectTaskPreflight := fakeProjectTaskRunPreflightReader{
 		preflight: employee.StartProjectTaskRunPreflight{
-			TenantID:                   tenantID,
-			DigitalEmployeeID:          employeeID,
-			DigitalEmployeeStatus:      employee.DigitalEmployeeStatusReady,
-			RuntimeNodeID:              runtimeNodeID,
-			NodeID:                     nodeID,
-			ProviderType:               "codex",
-			WorkspaceBaseDir:           "/var/superteam/projects",
-			RuntimeSessionActive:       true,
-			ProviderHealthy:            true,
+			TenantID:              tenantID,
+			DigitalEmployeeID:     employeeID,
+			DigitalEmployeeStatus: employee.DigitalEmployeeStatusReady,
+			RuntimeNodeID:         runtimeNodeID,
+			NodeID:                nodeID,
+			ProviderType:          "codex",
+			WorkspaceBaseDir:      "/var/superteam/projects",
+			RuntimeSessionActive:  true,
+			ProviderHealthy:       true,
 		},
 	}
 	adapter := preDispatchGateAdapter{
@@ -396,6 +417,7 @@ func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T
 
 type fakePlanningProfileEmployeeReader struct {
 	employees map[uuid.UUID]employee.DigitalEmployeeRecord
+	configs   map[uuid.UUID]employee.EmployeeConfigInput
 	instances map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord
 	signals   map[uuid.UUID]employee.OperationalSignals
 }
@@ -404,6 +426,14 @@ func (r fakePlanningProfileEmployeeReader) GetDigitalEmployee(_ context.Context,
 	record, ok := r.employees[employeeID]
 	if !ok || record.TenantID != tenantID {
 		return employee.DigitalEmployeeRecord{}, employee.ErrNotFound
+	}
+	return record, nil
+}
+
+func (r fakePlanningProfileEmployeeReader) GetLatestDigitalEmployeeConfigRevision(_ context.Context, tenantID, employeeID uuid.UUID) (employee.EmployeeConfigInput, error) {
+	record, ok := r.configs[employeeID]
+	if !ok || record.TenantID != tenantID {
+		return employee.EmployeeConfigInput{}, employee.ErrNotFound
 	}
 	return record, nil
 }

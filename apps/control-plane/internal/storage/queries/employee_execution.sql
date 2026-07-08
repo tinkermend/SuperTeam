@@ -255,33 +255,19 @@ SELECT
         rn.metadata ->> 'agent_home_dir',
         ''
     )::text AS agent_home_dir,
-    (
-        active_team_config.id IS NOT NULL
-        AND rn.status = 'online'
-        AND rn.disabled_at IS NULL
-        AND rn.archived_at IS NULL
-        AND pc.available = true
-        AND pc.status = 'healthy'
-        AND pc.health_status = 'healthy'
-        AND runtime_sessions_active.runtime_node_id IS NOT NULL
-        AND COALESCE((
-            (
-                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
-            )
-        ), false)
-        AND CASE
-            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
-            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
-                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+	    (
+	        active_team_config.id IS NOT NULL
+	        AND rn.status = 'online'
+	        AND rn.disabled_at IS NULL
+	        AND rn.archived_at IS NULL
+	        AND pc.available = true
+	        AND pc.status = 'healthy'
+	        AND pc.health_status = 'healthy'
+	        AND runtime_sessions_active.runtime_node_id IS NOT NULL
+	        AND CASE
+	            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+	            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+	                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
             ELSE false
         END
         AND CASE
@@ -289,32 +275,18 @@ SELECT
             WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
                 (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
             ELSE false
-        END
-    )::boolean AS available,
-    CASE
-        WHEN active_team_config.id IS NULL THEN 'active_team_config_required'
-        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
-        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
-        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
-        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
-        WHEN NOT COALESCE((
-            (
-                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
-            )
-        ), false) THEN 'provider_outside_team_policy'
-        WHEN active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
-            AND (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') <> 'array'
-                OR NOT ((active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text)
+	        END
+	    )::boolean AS available,
+	    CASE
+	        WHEN active_team_config.id IS NULL THEN 'team_required'
+	        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
+	        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
+	        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
+	        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
+	        WHEN active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
+	            AND (
+	                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') <> 'array'
+	                OR NOT ((active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text)
             ) THEN 'runtime_node_outside_team_policy'
         WHEN active_team_config.runtime_scope_policy ? 'allowed_node_ids'
             AND (
@@ -590,51 +562,15 @@ SELECT
           AND rs.runtime_node_id = rn.id
           AND rs.expires_at > NOW()
           AND rs.revoked_at IS NULL
-    )::boolean AS runtime_session_active,
-    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
-    COALESCE((
-        active_team_config.id IS NOT NULL
-        AND (
-            (
-                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? sqlc.arg('provider_type')::varchar
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? sqlc.arg('provider_type')::varchar
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? sqlc.arg('provider_type')::varchar
-            )
-        )
-    ), false)::boolean AS provider_policy_allowed,
-    COALESCE((
-        active_team_config.id IS NOT NULL
-        AND (
-            (
-                active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
-                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
-            )
-            OR (
-                active_team_config.runtime_scope_policy ? 'allowed_node_ids'
-                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? sqlc.arg('provider_type')::varchar
-            )
-            OR (
-                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
-                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? sqlc.arg('provider_type')::varchar
-            )
-        )
-        AND CASE
-            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
-            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
-                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+	    )::boolean AS runtime_session_active,
+	    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+	    (active_team_config.id IS NOT NULL)::boolean AS provider_policy_allowed,
+	    COALESCE((
+	        active_team_config.id IS NOT NULL
+	        AND CASE
+	            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+	            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+	                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
             ELSE false
         END
         AND CASE

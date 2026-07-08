@@ -138,9 +138,9 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 				"enabled_external_capabilities": []any{"implementation"},
 				"enabled_provider_types":        []any{"codex"},
 			},
-			RuntimeNodeID:         runtimeNodeID,
-			ProviderType:          "codex",
-			ExecutionStatus:       "ready",
+			RuntimeNodeID:   runtimeNodeID,
+			ProviderType:    "codex",
+			ExecutionStatus: "ready",
 		},
 	}}
 	store := NewProjectStore(repo).
@@ -212,9 +212,9 @@ func TestLoadProjectCoordinationSnapshotKeepsPlannableEmployeesWhenRuntimeNotRea
 				"enabled_external_capabilities": []any{"implementation"},
 				"enabled_provider_types":        []any{"codex"},
 			},
-			RuntimeNodeID:         runtimeNodeID,
-			ProviderType:          "codex",
-			ExecutionStatus:       "ready",
+			RuntimeNodeID:   runtimeNodeID,
+			ProviderType:    "codex",
+			ExecutionStatus: "ready",
 		},
 	}}
 	store := NewProjectStore(repo).
@@ -3797,6 +3797,53 @@ func TestProjectStoreDispatchProjectTaskRetriesDemandAdvanceAfterQueuedReplay(t 
 	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
 }
 
+func TestProjectStoreDispatchProjectTaskBindConflictIsIdempotentWhenSameAttemptRunAlreadyBound(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord:                  project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:                         project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:                        []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		bindConflictAfterApplyingFirst: true,
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+		ProviderType:  "codex",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
+	require.Equal(t, 1, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+}
+
 func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4058,6 +4105,70 @@ func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing
 	require.Equal(t, 1, repo.advanceDemandCalls)
 }
 
+func TestProjectStoreDispatchProjectTaskQueuedAttemptAlreadyBoundIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	attemptID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusCompleted, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusQueued,
+			AssignedDigitalEmployeeID: &employeeID,
+			CurrentAttemptID:          &attemptID,
+			AttemptCount:              1,
+		}},
+		projectTaskAttempts: []project.ProjectTaskAttempt{{
+			ID:                   attemptID,
+			TenantID:             tenantID,
+			ProjectTaskID:        taskID,
+			AttemptNo:            1,
+			Status:               project.ProjectTaskAttemptStatusQueued,
+			DigitalEmployeeID:    &employeeID,
+			DigitalEmployeeRunID: &runID,
+			RuntimeTaskID:        &runtimeTaskID,
+			RuntimeNodeID:        &runtimeNodeID,
+			ProviderType:         strPtr("codex"),
+			LeaseToken:           "lease-token",
+			IdempotencyKey:       projectTaskAttemptDispatchIdempotencyKey(taskID, 1),
+		}},
+	}
+	starter := &projectTaskRunStarterFake{
+		result: StartProjectTaskRunResult{
+			RunID:         runID,
+			RuntimeTaskID: runtimeTaskID,
+			RuntimeNodeID: runtimeNodeID,
+			ProviderType:  "codex",
+		},
+		onStart: func(StartProjectTaskRunRequest) {
+			repo.tasks[0].Status = project.ProjectTaskStatusCompleted
+			repo.tasks[0].DigitalEmployeeRunID = &runID
+			repo.tasks[0].RuntimeTaskID = &runtimeTaskID
+		},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.bindAttemptRunRequests, 1)
+	require.Equal(t, project.ProjectDemandStatusCompleted, repo.demand.Status)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+}
+
 func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4136,6 +4247,7 @@ type projectStoreMemoryRepository struct {
 	linkGateAttemptRequests               []project.LinkPreDispatchGateAttemptRequest
 	projectTaskAttempts                   []project.ProjectTaskAttempt
 	bindErr                               error
+	bindConflictAfterApplyingFirst        bool
 	queueErr                              error
 	advanceDemandErr                      error
 	advanceDemandCalls                    int
@@ -4867,6 +4979,9 @@ func (r *projectStoreMemoryRepository) BindProjectTaskAttemptRun(ctx context.Con
 		task.RuntimeTaskID = &req.RuntimeTaskID
 		task.UpdatedAt = time.Now().UTC()
 		r.tasks[index] = task
+		if r.bindConflictAfterApplyingFirst && len(r.bindAttemptRunRequests) == 1 {
+			return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectConflict
+		}
 		return project.ProjectTaskAttemptRunBindingResult{Task: task, Attempt: attempt}, nil
 	}
 	return project.ProjectTaskAttemptRunBindingResult{}, project.ErrProjectNotFound

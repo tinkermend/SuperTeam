@@ -50,9 +50,9 @@ type DigitalEmployeePlanningProfileSource interface {
 }
 
 type DigitalEmployeePlanningProfileSourceRecord struct {
-	DigitalEmployeeID     uuid.UUID
-	ProviderType          string
-	ExecutionStatus       string
+	DigitalEmployeeID uuid.UUID
+	ProviderType      string
+	ExecutionStatus   string
 }
 
 type ApprovalResolver interface {
@@ -1759,6 +1759,10 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 		return nil, err
 	}
 	taskIDs := projectTaskIDs(tasks)
+	summaries, err := s.repository.ListExecutionSummariesByTaskIDs(ctx, tenantID, demand.ProjectID, taskIDs)
+	if err != nil {
+		return nil, err
+	}
 	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, demand.ProjectID, coordinationJobIDs(jobs), taskIDs, 100)
 	if err != nil {
 		return nil, err
@@ -1768,14 +1772,15 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 		return nil, err
 	}
 	return &DemandLaunchDetail{
-		Demand:           demand,
-		Project:          project,
-		Reviewer:         demand.ReviewerPreference,
-		CoordinationJobs: jobs,
-		RouteDecisions:   routes,
-		ProjectTasks:     tasks,
-		DecisionRequests: decisions,
-		RecentEvents:     events,
+		Demand:             demand,
+		Project:            project,
+		Reviewer:           demand.ReviewerPreference,
+		CoordinationJobs:   jobs,
+		RouteDecisions:     routes,
+		ProjectTasks:       tasks,
+		ExecutionSummaries: summaries,
+		DecisionRequests:   decisions,
+		RecentEvents:       events,
 	}, nil
 }
 
