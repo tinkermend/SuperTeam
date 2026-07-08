@@ -2365,10 +2365,9 @@ type DigitalEmployeeBudgetSummary struct {
 
 // DigitalEmployeeCapabilityOptions defines model for DigitalEmployeeCapabilityOptions.
 type DigitalEmployeeCapabilityOptions struct {
-	ExternalCapabilities []string `json:"external_capabilities"`
-	McpServers           []string `json:"mcp_servers"`
-	ProviderTypes        []string `json:"provider_types"`
-	Skills               []string `json:"skills"`
+	McpServers    []string `json:"mcp_servers"`
+	ProviderTypes []string `json:"provider_types"`
+	Skills        []string `json:"skills"`
 }
 
 // DigitalEmployeeConfigRevision defines model for DigitalEmployeeConfigRevision.
@@ -2418,20 +2417,10 @@ type DigitalEmployeeCreateOptions struct {
 
 // DigitalEmployeeCreateTeamConfig defines model for DigitalEmployeeCreateTeamConfig.
 type DigitalEmployeeCreateTeamConfig struct {
-	AllowedEmployeeTypes        []string                `json:"allowed_employee_types"`
-	AllowedExternalCapabilities *[]string               `json:"allowed_external_capabilities,omitempty"`
-	AllowedMcpServers           *[]string               `json:"allowed_mcp_servers,omitempty"`
-	AllowedProviderTypes        *[]string               `json:"allowed_provider_types,omitempty"`
-	AllowedSkills               *[]string               `json:"allowed_skills,omitempty"`
-	ApprovalPolicy              *map[string]interface{} `json:"approval_policy,omitempty"`
-	ArtifactContract            *map[string]interface{} `json:"artifact_contract,omitempty"`
-	CapabilityPolicy            *map[string]interface{} `json:"capability_policy,omitempty"`
-	ContextPolicy               *map[string]interface{} `json:"context_policy,omitempty"`
-	Id                          openapi_types.UUID      `json:"id"`
-	InternalCollaborationPolicy *map[string]interface{} `json:"internal_collaboration_policy,omitempty"`
-	RevisionNumber              int32                   `json:"revision_number"`
-	RuntimeScopePolicy          *map[string]interface{} `json:"runtime_scope_policy,omitempty"`
-	Status                      string                  `json:"status"`
+	Constitution map[string]interface{} `json:"constitution"`
+	Id           openapi_types.UUID     `json:"id"`
+	McpServers   []string               `json:"mcp_servers"`
+	Skills       []string               `json:"skills"`
 
 	// TeamId Team ID; null for team-less (tenant-level) default governance.
 	TeamId   *openapi_types.UUID `json:"team_id,omitempty"`

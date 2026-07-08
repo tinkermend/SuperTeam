@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -214,23 +215,17 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 		if err := s.repository.EnsureTeamExists(ctx, req.TenantID, *req.TeamID); err != nil {
 			return nil, fmt.Errorf("get team: %w", err)
 		}
-		loaded, err := s.repository.GetCurrentTeamConfigRevision(ctx, req.TenantID, *req.TeamID)
+		baseline, err := s.repository.GetTeamBaseline(ctx, req.TenantID, *req.TeamID)
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
-			}
-			return nil, fmt.Errorf("get current team config revision: %w", err)
+			return nil, fmt.Errorf("get team baseline: %w", err)
 		}
-		teamConfig = loaded
+		teamConfig = teamConfigInputFromBaseline(req.TenantID, *req.TeamID, baseline)
 	}
 	teamConfigOption, err := teamConfigCreateOption(teamConfig)
 	if err != nil {
 		return nil, err
 	}
-	employeeTypes, err := employeeTypesForTeamConfig(teamConfig)
-	if err != nil {
-		return nil, err
-	}
+	employeeTypes := DefaultEmployeeTypeDefinitions()
 	var runtimeOptions []RuntimeProviderOption
 	if teamLess {
 		runtimeOptions, err = s.repository.ListRuntimeProviderOptionsForTeamLessCreate(ctx, req.TenantID)
@@ -273,6 +268,26 @@ func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
 	}
 }
 
+func teamConfigInputFromBaseline(tenantID, teamID uuid.UUID, baseline TeamBaseline) TeamConfigInput {
+	return TeamConfigInput{
+		ID:                          uuid.Nil,
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		RevisionNumber:              0,
+		Status:                      TeamConfigRevisionStatusActive,
+		Constitution:                cloneMap(baseline.Constitution),
+		CapabilityPolicy: map[string]any{
+			"allowed_skills":      append([]string(nil), baseline.Skills...),
+			"allowed_mcp_servers": append([]string(nil), baseline.MCPServers...),
+		},
+		ContextPolicy:               map[string]any{},
+		ApprovalPolicy:              map[string]any{},
+		ArtifactContract:            map[string]any{},
+		InternalCollaborationPolicy: map[string]any{},
+		RuntimeScopePolicy:          map[string]any{},
+	}
+}
+
 func createOptionChecks(
 	teamConfig TeamConfigCreateOption,
 	employeeTypes []EmployeeTypeDefinition,
@@ -286,14 +301,15 @@ func createOptionChecks(
 		}
 	}
 
-	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers) + len(capabilityOptions.ExternalCapabilities)
+	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers)
+	teamGovernanceReady := teamConfig.TeamID == uuid.Nil || len(teamConfig.Skills) > 0 || len(teamConfig.MCPServers) > 0 || len(teamConfig.Constitution) > 0
 
 	return []CreateOptionCheck{
 		{
 			Key:     "team_governance",
 			Label:   "团队治理版本",
-			Status:  checkStatus(teamConfig.Status == TeamConfigRevisionStatusActive, false),
-			Message: fmt.Sprintf("#%d %s", teamConfig.RevisionNumber, teamConfig.Status),
+			Status:  checkStatus(teamGovernanceReady, false),
+			Message: fmt.Sprintf("skills %d · MCP %d", len(teamConfig.Skills), len(teamConfig.MCPServers)),
 		},
 		{
 			Key:     "employee_templates",
@@ -305,7 +321,7 @@ func createOptionChecks(
 			Key:     "capability_policy",
 			Label:   "能力边界",
 			Status:  checkStatus(capabilityCount > 0 || len(capabilityOptions.ProviderTypes) > 0, false),
-			Message: fmt.Sprintf("技能 %d · MCP %d · 外部能力 %d", len(capabilityOptions.Skills), len(capabilityOptions.MCPServers), len(capabilityOptions.ExternalCapabilities)),
+			Message: fmt.Sprintf("技能 %d · MCP %d", len(capabilityOptions.Skills), len(capabilityOptions.MCPServers)),
 		},
 		{
 			Key:     "runtime_provider",
@@ -327,43 +343,21 @@ func checkStatus(passed bool, warning bool) string {
 }
 
 func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption, error) {
-	allowedEmployeeTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
-	if err != nil {
-		return TeamConfigCreateOption{}, err
-	}
-	allowedProviderTypes := firstNonEmptyStringList(
-		optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
-		optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
-	)
 	return TeamConfigCreateOption{
-		ID:                          teamConfig.ID,
-		TenantID:                    teamConfig.TenantID,
-		TeamID:                      teamConfig.TeamID,
-		RevisionNumber:              teamConfig.RevisionNumber,
-		Status:                      teamConfig.Status,
-		AllowedEmployeeTypes:        cloneStringSlice(allowedEmployeeTypes),
-		AllowedProviderTypes:        cloneStringSlice(allowedProviderTypes),
-		AllowedSkills:               optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
-		AllowedMCPServers:           optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
-		AllowedExternalCaps:         optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
-		CapabilityPolicy:            cloneMap(teamConfig.CapabilityPolicy),
-		ContextPolicy:               cloneMap(teamConfig.ContextPolicy),
-		ApprovalPolicy:              cloneMap(teamConfig.ApprovalPolicy),
-		ArtifactContract:            cloneMap(teamConfig.ArtifactContract),
-		InternalCollaborationPolicy: cloneMap(teamConfig.InternalCollaborationPolicy),
-		RuntimeScopePolicy:          cloneMap(teamConfig.RuntimeScopePolicy),
+		ID:           teamConfig.ID,
+		TenantID:     teamConfig.TenantID,
+		TeamID:       teamConfig.TeamID,
+		Constitution: cloneMap(teamConfig.Constitution),
+		Skills:       optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		MCPServers:   optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
 	}, nil
 }
 
 func capabilityOptionsFromTeamConfig(teamConfig TeamConfigInput) CapabilityOptions {
 	return CapabilityOptions{
-		ProviderTypes: firstNonEmptyStringList(
-			optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
-			optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
-		),
-		Skills:               optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
-		MCPServers:           optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
-		ExternalCapabilities: optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
+		ProviderTypes: supportedProviderTypes(),
+		Skills:        optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		MCPServers:    optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
 	}
 }
 
@@ -486,20 +480,11 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		if err := s.ensureTeamDigitalEmployeeCapacity(ctx, normalized.TenantID, teamID); err != nil {
 			return nil, err
 		}
-		loaded, err := s.repository.GetCurrentTeamConfigRevision(ctx, normalized.TenantID, teamID)
+		baseline, err := s.repository.GetTeamBaseline(ctx, normalized.TenantID, teamID)
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
-			}
-			return nil, fmt.Errorf("get current team config revision: %w", err)
+			return nil, fmt.Errorf("get team baseline: %w", err)
 		}
-		teamConfig = loaded
-	}
-	if err := validateEmployeeTypeAllowedByTeamConfig(normalized.EmployeeType, teamConfig); err != nil {
-		return nil, err
-	}
-	if err := validateProviderTypeAllowedByTeamConfig(normalized.ProviderType, teamConfig); err != nil {
-		return nil, err
+		teamConfig = teamConfigInputFromBaseline(normalized.TenantID, teamID, baseline)
 	}
 	if err := s.validateInitialEffectiveConfig(ctx, s.repository, normalized, definition, teamConfig, uuid.New()); err != nil {
 		return nil, err
@@ -645,6 +630,15 @@ func validateProviderTypeAllowedByTeamConfig(providerType string, teamConfig Tea
 		return fmt.Errorf("%w: provider_type %q is outside team policy", ErrInvalidInput, providerType)
 	}
 	return nil
+}
+
+func supportedProviderTypes() []string {
+	types := make([]string, 0, len(supportedDigitalEmployeeProviderTypes))
+	for providerType := range supportedDigitalEmployeeProviderTypes {
+		types = append(types, providerType)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func (s *Service) validateInitialEffectiveConfig(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID) error {
@@ -935,7 +929,7 @@ func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uu
 }
 
 func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := constrainedDefaultCapabilitySelection(definition.DefaultCapabilitySelection, teamConfig)
+	defaults := cloneMap(definition.DefaultCapabilitySelection)
 	return mergePolicyMaps(defaults, req.CapabilitySelection)
 }
 

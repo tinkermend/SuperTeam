@@ -10128,9 +10128,9 @@ components:
       required:
         - id
         - tenant_id
-        - revision_number
-        - status
-        - allowed_employee_types
+        - constitution
+        - skills
+        - mcp_servers
       properties:
         id:
           type: string
@@ -10143,49 +10143,17 @@ components:
           format: uuid
           nullable: true
           description: Team ID; null for team-less (tenant-level) default governance.
-        revision_number:
-          type: integer
-          format: int32
-        status:
-          type: string
-        allowed_employee_types:
+        constitution:
+          type: object
+          additionalProperties: true
+        skills:
           type: array
           items:
             type: string
-        allowed_provider_types:
+        mcp_servers:
           type: array
           items:
             type: string
-        allowed_skills:
-          type: array
-          items:
-            type: string
-        allowed_mcp_servers:
-          type: array
-          items:
-            type: string
-        allowed_external_capabilities:
-          type: array
-          items:
-            type: string
-        capability_policy:
-          type: object
-          additionalProperties: true
-        context_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
-          type: object
-          additionalProperties: true
-        artifact_contract:
-          type: object
-          additionalProperties: true
-        internal_collaboration_policy:
-          type: object
-          additionalProperties: true
-        runtime_scope_policy:
-          type: object
-          additionalProperties: true
     DigitalEmployeeTypeOption:
       type: object
       required:
@@ -10232,7 +10200,6 @@ components:
         - provider_types
         - skills
         - mcp_servers
-        - external_capabilities
       properties:
         provider_types:
           type: array
@@ -10243,10 +10210,6 @@ components:
           items:
             type: string
         mcp_servers:
-          type: array
-          items:
-            type: string
-        external_capabilities:
           type: array
           items:
             type: string

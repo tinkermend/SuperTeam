@@ -97,7 +97,7 @@ func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *tes
 	require.Equal(t, "blank_custom", definition.Metadata["creation_mode"])
 }
 
-func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
+func TestGetCreateOptionsReturnsTeamBaselineAndPlatformCandidates(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -105,25 +105,13 @@ func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
-	teamConfigID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
-	repo.teamConfigs[teamConfigID] = TeamConfigInput{
-		ID:             teamConfigID,
-		TenantID:       tenantID,
-		TeamID:         teamID,
-		RevisionNumber: 4,
-		Status:         TeamConfigRevisionStatusActive,
-		CapabilityPolicy: map[string]any{
-			"allowed_skills":         []any{"database-troubleshooting", "incident-diagnosis"},
-			"allowed_mcp_servers":    []any{"postgres-readonly"},
-			"allowed_provider_types": []any{"codex"},
-			"allowed_employee_types": []any{"database_admin"},
-		},
-		ContextPolicy:  map[string]any{"sources": []any{"runbook", "monitoring"}},
-		ApprovalPolicy: map[string]any{"min_risk_for_human": "high"},
+	repo.teamBaselines[teamID] = TeamBaseline{
+		Constitution: map[string]any{"mission": "keep services healthy"},
+		Skills:       []string{"database-troubleshooting", "incident-diagnosis"},
+		MCPServers:   []string{"postgres-readonly"},
 	}
-	repo.currentTeamConfigByTeam[teamID] = teamConfigID
 	repo.runtimeProviderOptions = []RuntimeProviderOption{{
 		RuntimeNodeID:         runtimeNodeID,
 		NodeID:                "node-ops-01",
@@ -148,30 +136,24 @@ func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 		t.Fatalf("get create options: %v", err)
 	}
 
-	if options.TeamConfig.ID != teamConfigID || options.TeamConfig.RevisionNumber != 4 {
+	if options.TeamConfig.ID != uuid.Nil {
 		t.Fatalf("unexpected team config option: %#v", options.TeamConfig)
 	}
-	if got := options.TeamConfig.AllowedEmployeeTypes; len(got) != 1 || got[0] != "database_admin" {
-		t.Fatalf("expected allowed employee types from policy, got %#v", got)
+	if got := options.TeamConfig.Skills; len(got) != 2 || got[0] != "database-troubleshooting" {
+		t.Fatalf("expected baseline skills, got %#v", got)
 	}
-	if len(options.EmployeeTypes) != 1 || options.EmployeeTypes[0].Type != "database_admin" {
-		t.Fatalf("expected filtered employee type database_admin, got %#v", options.EmployeeTypes)
-	}
-	if got := options.EmployeeTypes[0].DefaultCapabilitySelection["enabled_skills"]; !stringSlicesEqual(got, []string{"database-troubleshooting"}) {
-		t.Fatalf("expected employee type default skills to be constrained by team policy, got %#v", got)
-	}
-	if got := options.EmployeeTypes[0].DefaultContextPolicyOverride["sources"]; !stringSlicesEqual(got, []string{"runbook", "monitoring"}) {
-		t.Fatalf("expected employee type default context to be constrained by team policy, got %#v", got)
+	if len(options.EmployeeTypes) != len(DefaultEmployeeTypeDefinitions()) {
+		t.Fatalf("expected full employee types, got %#v", options.EmployeeTypes)
 	}
 	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
 		t.Fatalf("expected available runtime provider option, got %#v", options.RuntimeProviderOptions)
 	}
-	if got := options.CapabilityOptions.ProviderTypes; len(got) != 1 || got[0] != "codex" {
-		t.Fatalf("expected provider type from team policy, got %#v", got)
+	if got := options.CapabilityOptions.ProviderTypes; len(got) != 3 {
+		t.Fatalf("expected full provider types, got %#v", got)
 	}
 }
 
-func TestGetCreateOptionsRejectsEmptyAllowedEmployeeTypes(t *testing.T) {
+func TestGetCreateOptionsIgnoresEmptyAllowedEmployeeTypes(t *testing.T) {
 	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{},
 	}, nil)
@@ -181,9 +163,8 @@ func TestGetCreateOptionsRejectsEmptyAllowedEmployeeTypes(t *testing.T) {
 		TeamID:   &teamID,
 	})
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for empty allowed_employee_types, got options=%#v err=%v", options, err)
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, options.EmployeeTypes)
 }
 
 func TestGetCreateOptionsSupportsTeamLessWithBuiltInDefaults(t *testing.T) {
@@ -228,7 +209,7 @@ func TestGetCreateOptionsSupportsTeamLessWithBuiltInDefaults(t *testing.T) {
 	}
 }
 
-func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
+func TestGetCreateOptionsIgnoresMalformedAllowedEmployeeTypes(t *testing.T) {
 	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{"database_admin", 42},
 	}, nil)
@@ -238,9 +219,8 @@ func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
 		TeamID:   &teamID,
 	})
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for malformed allowed_employee_types, got options=%#v err=%v", options, err)
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, options.EmployeeTypes)
 }
 
 func TestGetCreateOptionsIncludesCustomAgentForTeamLessCreate(t *testing.T) {
@@ -253,7 +233,84 @@ func TestGetCreateOptionsIncludesCustomAgentForTeamLessCreate(t *testing.T) {
 	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
 }
 
-func TestGetCreateOptionsHonorsTeamCustomAgentAllowlist(t *testing.T) {
+func TestCreateEmployeeWithoutTeamRevision(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	teamID := *req.TeamID
+	delete(repo.currentTeamConfigByTeam, teamID)
+	repo.teamBaselines[teamID] = TeamBaseline{
+		Constitution: map[string]any{
+			"mission": "protect production databases",
+		},
+		Skills:     []string{"database-troubleshooting", "incident-diagnosis"},
+		MCPServers: []string{"postgres-readonly"},
+	}
+	repo.preflight.HasActiveTeamConfig = false
+	delete(repo.preflight.GovernanceSnapshot, "team_config_revision_id")
+
+	employee, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.NoError(t, err)
+	require.NotNil(t, employee)
+	require.Equal(t, DigitalEmployeeStatusReady, employee.Status)
+}
+
+func TestCreateOptionsUsePlatformFullEmployeeTypes(t *testing.T) {
+	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+		"allowed_employee_types": []any{"database_admin"},
+		"allowed_provider_types": []any{"codex"},
+		"allowed_skills":         []any{"database-troubleshooting"},
+	}, nil)
+	repo.teamBaselines[teamID] = TeamBaseline{
+		Skills:     []string{"database-troubleshooting"},
+		MCPServers: []string{"postgres-readonly"},
+	}
+	delete(repo.currentTeamConfigByTeam, teamID)
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, options.EmployeeTypes, len(DefaultEmployeeTypeDefinitions()))
+	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "database_admin"))
+	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
+	require.Contains(t, options.CapabilityOptions.ProviderTypes, "codex")
+	require.Contains(t, options.CapabilityOptions.ProviderTypes, "opencode")
+	require.Contains(t, options.CapabilityOptions.ProviderTypes, "claude-code")
+}
+
+func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
+	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+		"allowed_skills":                []any{"policy-only-skill"},
+		"allowed_mcp_servers":           []any{"policy-only-mcp"},
+		"allowed_external_capabilities": []any{"change-ticket"},
+	}, nil)
+	delete(repo.currentTeamConfigByTeam, teamID)
+	repo.teamBaselines[teamID] = TeamBaseline{
+		Constitution: map[string]any{
+			"mission": "stabilize ops",
+		},
+		Skills:     []string{"baseline-skill", "shared-skill"},
+		MCPServers: []string{"baseline-mcp"},
+	}
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, teamID, options.TeamConfig.TeamID)
+	require.Equal(t, tenantID, options.TeamConfig.TenantID)
+	require.Equal(t, map[string]any{"mission": "stabilize ops"}, options.TeamConfig.Constitution)
+	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.TeamConfig.Skills)
+	require.Equal(t, []string{"baseline-mcp"}, options.TeamConfig.MCPServers)
+	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.CapabilityOptions.Skills)
+	require.Equal(t, []string{"baseline-mcp"}, options.CapabilityOptions.MCPServers)
+}
+
+func TestGetCreateOptionsIncludesCustomAgentRegardlessOfTeamAllowlist(t *testing.T) {
 	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{"custom_agent"},
 		"allowed_provider_types": []any{"codex"},
@@ -265,8 +322,8 @@ func TestGetCreateOptionsHonorsTeamCustomAgentAllowlist(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, options.EmployeeTypes, 1)
-	require.Equal(t, "custom_agent", options.EmployeeTypes[0].Type)
+	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
+	require.Greater(t, len(options.EmployeeTypes), 1)
 }
 
 func employeeTypeOptionExists(items []EmployeeTypeDefinition, employeeType string) bool {
@@ -607,7 +664,7 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigWithoutRuntim
 	if repo.createdEffectiveConfig.ApprovedBy == nil || *repo.createdEffectiveConfig.ApprovedBy != req.OwnerUserID || repo.createdEffectiveConfig.ApprovedAt == nil {
 		t.Fatalf("expected effective config approved by owner, got approved_by=%#v approved_at=%#v", repo.createdEffectiveConfig.ApprovedBy, repo.createdEffectiveConfig.ApprovedAt)
 	}
-	if repo.createdEffectiveConfig.TeamConfigRevisionID == nil || *repo.createdEffectiveConfig.TeamConfigRevisionID == uuid.Nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
+	if repo.createdEffectiveConfig.TeamConfigRevisionID != nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
 		t.Fatalf("expected effective config revision ids to be set, got %#v", repo.createdEffectiveConfig)
 	}
 	if len(repo.effectiveConfigs) != 1 {
@@ -967,7 +1024,7 @@ func TestCreateDigitalEmployeeRejectsUnknownAvatarAsset(t *testing.T) {
 	}
 }
 
-func TestCreateDigitalEmployeeBlocksCapabilityOutsideTeamPolicyBeforeProvisioning(t *testing.T) {
+func TestCreateDigitalEmployeeAllowsCapabilityOutsideFormerTeamPolicyBeforeProvisioning(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
 	teamConfig := repo.teamConfigs[teamConfigID]
@@ -978,20 +1035,15 @@ func TestCreateDigitalEmployeeBlocksCapabilityOutsideTeamPolicyBeforeProvisionin
 	}
 	repo.teamConfigs[teamConfigID] = teamConfig
 
-	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for capability outside team policy, got %v", err)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected capability validation not to dispatch command, got %#v", dispatcher.commands)
-	}
-	if len(repo.employees) != 0 || len(repo.commandReceipts) != 0 {
-		t.Fatalf("expected capability validation rollback before provisioning, employees=%#v receipts=%#v", repo.employees, repo.commandReceipts)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.Empty(t, dispatcher.commands)
+	require.Len(t, repo.employees, 1)
 }
 
-func TestCreateDigitalEmployeeRejectsProviderOutsideTeamPolicyBeforeCreatingFacts(t *testing.T) {
+func TestCreateDigitalEmployeeAllowsProviderOutsideFormerTeamPolicyBeforeCreatingFacts(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
 	req.ProviderType = "opencode"
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
@@ -1008,20 +1060,13 @@ func TestCreateDigitalEmployeeRejectsProviderOutsideTeamPolicyBeforeCreatingFact
 	}
 	repo.teamConfigs[teamConfigID] = teamConfig
 
-	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for provider outside team policy, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "provider_type") {
-		t.Fatalf("expected provider_type policy error, got %v", err)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected provider validation not to dispatch command, got %#v", dispatcher.commands)
-	}
-	if len(repo.employees) != 0 || len(repo.commandReceipts) != 0 || repo.transactionCount != 0 {
-		t.Fatalf("expected provider validation before creation, employees=%#v receipts=%#v transactions=%d", repo.employees, repo.commandReceipts, repo.transactionCount)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "opencode", created.ProviderType)
+	require.Empty(t, dispatcher.commands)
+	require.Len(t, repo.employees, 1)
+	require.Equal(t, 1, repo.transactionCount)
 }
 
 func TestCreateDigitalEmployeeProviderTypeMustBeSupportedEvenWithoutTeamAllowlist(t *testing.T) {
@@ -1091,7 +1136,7 @@ func TestCreateDigitalEmployeeRejectsBlankProviderType(t *testing.T) {
 	require.Empty(t, repo.commandReceipts)
 }
 
-func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {
+func TestCreateDigitalEmployeeKeepsPlatformTypeDefaultsWithoutTeamPolicyClipping(t *testing.T) {
 	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
 	teamConfig := repo.teamConfigs[teamConfigID]
@@ -1118,11 +1163,11 @@ func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {
 	if created.ID == uuid.Nil {
 		t.Fatalf("expected created employee id")
 	}
-	if len(repo.createdConfigRevision.CapabilitySelection) != 0 {
-		t.Fatalf("expected type default capabilities to be filtered by team policy, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_skills"], "database-troubleshooting") {
+		t.Fatalf("expected platform default capabilities to remain, got %#v", repo.createdConfigRevision.CapabilitySelection)
 	}
 	if len(repo.createdConfigRevision.ContextPolicyOverride) != 0 {
-		t.Fatalf("expected type default context to be filtered by team policy, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
+		t.Fatalf("expected unmatched context defaults to remain empty, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
 	}
 }
 

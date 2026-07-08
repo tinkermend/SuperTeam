@@ -1030,22 +1030,12 @@ type createOptionCheckResponse struct {
 }
 
 type teamConfigCreateOptionResponse struct {
-	ID                          string         `json:"id"`
-	TenantID                    string         `json:"tenant_id"`
-	TeamID                      string         `json:"team_id"`
-	RevisionNumber              int32          `json:"revision_number"`
-	Status                      string         `json:"status"`
-	AllowedEmployeeTypes        []string       `json:"allowed_employee_types"`
-	AllowedProviderTypes        []string       `json:"allowed_provider_types"`
-	AllowedSkills               []string       `json:"allowed_skills"`
-	AllowedMCPServers           []string       `json:"allowed_mcp_servers"`
-	AllowedExternalCapabilities []string       `json:"allowed_external_capabilities"`
-	CapabilityPolicy            map[string]any `json:"capability_policy"`
-	ContextPolicy               map[string]any `json:"context_policy"`
-	ApprovalPolicy              map[string]any `json:"approval_policy"`
-	ArtifactContract            map[string]any `json:"artifact_contract"`
-	InternalCollaborationPolicy map[string]any `json:"internal_collaboration_policy"`
-	RuntimeScopePolicy          map[string]any `json:"runtime_scope_policy"`
+	ID           string         `json:"id"`
+	TenantID     string         `json:"tenant_id"`
+	TeamID       string         `json:"team_id"`
+	Constitution map[string]any `json:"constitution"`
+	Skills       []string       `json:"skills"`
+	MCPServers   []string       `json:"mcp_servers"`
 }
 
 type employeeTypeOptionResponse struct {
@@ -1063,10 +1053,9 @@ type employeeTypeOptionResponse struct {
 }
 
 type capabilityOptionsResponse struct {
-	ProviderTypes        []string `json:"provider_types"`
-	Skills               []string `json:"skills"`
-	MCPServers           []string `json:"mcp_servers"`
-	ExternalCapabilities []string `json:"external_capabilities"`
+	ProviderTypes []string `json:"provider_types"`
+	Skills        []string `json:"skills"`
+	MCPServers    []string `json:"mcp_servers"`
 }
 
 type runtimeProviderOptionResponse struct {
@@ -1613,29 +1602,18 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 	}
 	return createOptionsResponse{
 		TeamConfig: teamConfigCreateOptionResponse{
-			ID:                          options.TeamConfig.ID.String(),
-			TenantID:                    options.TeamConfig.TenantID.String(),
-			TeamID:                      options.TeamConfig.TeamID.String(),
-			RevisionNumber:              options.TeamConfig.RevisionNumber,
-			Status:                      string(options.TeamConfig.Status),
-			AllowedEmployeeTypes:        stringSliceForJSON(options.TeamConfig.AllowedEmployeeTypes),
-			AllowedProviderTypes:        stringSliceForJSON(options.TeamConfig.AllowedProviderTypes),
-			AllowedSkills:               stringSliceForJSON(options.TeamConfig.AllowedSkills),
-			AllowedMCPServers:           stringSliceForJSON(options.TeamConfig.AllowedMCPServers),
-			AllowedExternalCapabilities: stringSliceForJSON(options.TeamConfig.AllowedExternalCaps),
-			CapabilityPolicy:            cloneMap(options.TeamConfig.CapabilityPolicy),
-			ContextPolicy:               cloneMap(options.TeamConfig.ContextPolicy),
-			ApprovalPolicy:              cloneMap(options.TeamConfig.ApprovalPolicy),
-			ArtifactContract:            cloneMap(options.TeamConfig.ArtifactContract),
-			InternalCollaborationPolicy: cloneMap(options.TeamConfig.InternalCollaborationPolicy),
-			RuntimeScopePolicy:          cloneMap(options.TeamConfig.RuntimeScopePolicy),
+			ID:           options.TeamConfig.ID.String(),
+			TenantID:     options.TeamConfig.TenantID.String(),
+			TeamID:       options.TeamConfig.TeamID.String(),
+			Constitution: cloneMap(options.TeamConfig.Constitution),
+			Skills:       stringSliceForJSON(options.TeamConfig.Skills),
+			MCPServers:   stringSliceForJSON(options.TeamConfig.MCPServers),
 		},
 		EmployeeTypes: employeeTypes,
 		CapabilityOptions: capabilityOptionsResponse{
-			ProviderTypes:        stringSliceForJSON(options.CapabilityOptions.ProviderTypes),
-			Skills:               stringSliceForJSON(options.CapabilityOptions.Skills),
-			MCPServers:           stringSliceForJSON(options.CapabilityOptions.MCPServers),
-			ExternalCapabilities: stringSliceForJSON(options.CapabilityOptions.ExternalCapabilities),
+			ProviderTypes: stringSliceForJSON(options.CapabilityOptions.ProviderTypes),
+			Skills:        stringSliceForJSON(options.CapabilityOptions.Skills),
+			MCPServers:    stringSliceForJSON(options.CapabilityOptions.MCPServers),
 		},
 		RuntimeProviderOptions: runtimeOptions,
 		CreationChecks:         creationChecks,

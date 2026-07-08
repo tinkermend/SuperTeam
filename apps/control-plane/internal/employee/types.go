@@ -350,29 +350,18 @@ type TeamConfigInput struct {
 }
 
 type TeamConfigCreateOption struct {
-	ID                          uuid.UUID
-	TenantID                    uuid.UUID
-	TeamID                      uuid.UUID
-	RevisionNumber              int32
-	Status                      TeamConfigRevisionStatus
-	AllowedEmployeeTypes        []string
-	AllowedProviderTypes        []string
-	AllowedSkills               []string
-	AllowedMCPServers           []string
-	AllowedExternalCaps         []string
-	CapabilityPolicy            map[string]any
-	ContextPolicy               map[string]any
-	ApprovalPolicy              map[string]any
-	ArtifactContract            map[string]any
-	InternalCollaborationPolicy map[string]any
-	RuntimeScopePolicy          map[string]any
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	Constitution map[string]any
+	Skills       []string
+	MCPServers   []string
 }
 
 type CapabilityOptions struct {
-	ProviderTypes        []string
-	Skills               []string
-	MCPServers           []string
-	ExternalCapabilities []string
+	ProviderTypes []string
+	Skills        []string
+	MCPServers    []string
 }
 
 type RuntimeProviderOption struct {
