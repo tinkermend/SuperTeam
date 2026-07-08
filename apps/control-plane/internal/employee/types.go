@@ -352,7 +352,7 @@ type TeamConfigInput struct {
 type TeamConfigCreateOption struct {
 	ID           uuid.UUID
 	TenantID     uuid.UUID
-	TeamID       uuid.UUID
+	TeamID       *uuid.UUID
 	Constitution map[string]any
 	Skills       []string
 	MCPServers   []string

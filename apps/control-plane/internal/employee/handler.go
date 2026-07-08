@@ -1032,7 +1032,7 @@ type createOptionCheckResponse struct {
 type teamConfigCreateOptionResponse struct {
 	ID           string         `json:"id"`
 	TenantID     string         `json:"tenant_id"`
-	TeamID       string         `json:"team_id"`
+	TeamID       *string        `json:"team_id,omitempty"`
 	Constitution map[string]any `json:"constitution"`
 	Skills       []string       `json:"skills"`
 	MCPServers   []string       `json:"mcp_servers"`
@@ -1604,7 +1604,7 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 		TeamConfig: teamConfigCreateOptionResponse{
 			ID:           options.TeamConfig.ID.String(),
 			TenantID:     options.TeamConfig.TenantID.String(),
-			TeamID:       options.TeamConfig.TeamID.String(),
+			TeamID:       uuidStringPtr(options.TeamConfig.TeamID),
 			Constitution: cloneMap(options.TeamConfig.Constitution),
 			Skills:       stringSliceForJSON(options.TeamConfig.Skills),
 			MCPServers:   stringSliceForJSON(options.TeamConfig.MCPServers),

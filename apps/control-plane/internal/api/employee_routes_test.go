@@ -67,7 +67,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	var optionsBody struct {
 		TeamConfig struct {
-			AllowedEmployeeTypes []string `json:"allowed_employee_types"`
+			TeamID string `json:"team_id"`
+			Skills []string `json:"skills"`
+			MCPServers []string `json:"mcp_servers"`
 		} `json:"team_config"`
 		EmployeeTypes []struct {
 			Type string `json:"type"`
@@ -92,8 +94,14 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if err := json.NewDecoder(optionsResp.Body).Decode(&optionsBody); err != nil {
 		t.Fatalf("decode create options: %v", err)
 	}
-	if len(optionsBody.TeamConfig.AllowedEmployeeTypes) != 1 || optionsBody.TeamConfig.AllowedEmployeeTypes[0] != "database_admin" {
-		t.Fatalf("expected team config allowed employee types, got %#v", optionsBody.TeamConfig)
+	if optionsBody.TeamConfig.TeamID != teamID.String() {
+		t.Fatalf("expected team config team_id %s, got %#v", teamID, optionsBody.TeamConfig)
+	}
+	if len(optionsBody.TeamConfig.Skills) != 1 || optionsBody.TeamConfig.Skills[0] != "database_admin" {
+		t.Fatalf("expected team config skills to reflect team baseline, got %#v", optionsBody.TeamConfig.Skills)
+	}
+	if len(optionsBody.TeamConfig.MCPServers) != 0 || optionsBody.TeamConfig.MCPServers == nil {
+		t.Fatalf("expected team config mcp_servers to decode as [], got %#v", optionsBody.TeamConfig.MCPServers)
 	}
 	if len(optionsBody.EmployeeTypes) != 1 || optionsBody.EmployeeTypes[0].Type != "database_admin" {
 		t.Fatalf("expected employee type options, got %#v", optionsBody.EmployeeTypes)
@@ -110,6 +118,25 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	assertCreateOptionCheck(t, optionsBody.CreationChecks, "team_governance", "passed")
 	assertCreateOptionCheck(t, optionsBody.CreationChecks, "employee_templates", "passed")
 	assertCreateOptionCheck(t, optionsBody.CreationChecks, "runtime_provider", "passed")
+
+	teamlessReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options", nil)
+	teamlessReq.AddCookie(cookie)
+	teamlessResp := httptest.NewRecorder()
+	server.ServeHTTP(teamlessResp, teamlessReq)
+	if teamlessResp.Code != http.StatusOK {
+		t.Fatalf("expected team-less create options to succeed, got %d: %s", teamlessResp.Code, teamlessResp.Body.String())
+	}
+	var teamlessBody struct {
+		TeamConfig struct {
+			TeamID *string `json:"team_id,omitempty"`
+		} `json:"team_config"`
+	}
+	if err := json.NewDecoder(teamlessResp.Body).Decode(&teamlessBody); err != nil {
+		t.Fatalf("decode team-less create options: %v", err)
+	}
+	if teamlessBody.TeamConfig.TeamID != nil || strings.Contains(teamlessResp.Body.String(), `"team_id"`) {
+		t.Fatalf("expected team-less team_config to omit team_id, got %s", teamlessResp.Body.String())
+	}
 
 	avatarReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employee-avatar-assets", nil)
 	avatarReq.AddCookie(cookie)
@@ -847,11 +874,12 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	service := &routeEmployeeService{
 		createOptions: &employee.CreateOptions{
 			TeamConfig: employee.TeamConfigCreateOption{
-				ID:             uuid.New(),
-				TenantID:       tenantID,
-				TeamID:         teamID,
-				RevisionNumber: 1,
-				Status:         employee.TeamConfigRevisionStatusActive,
+				ID:           uuid.New(),
+				TenantID:     tenantID,
+				TeamID:       &teamID,
+				Constitution: map[string]any{},
+				Skills:       []string{},
+				MCPServers:   []string{},
 			},
 			EmployeeTypes: []employee.EmployeeTypeDefinition{{
 				Type:        "database_admin",
@@ -896,11 +924,10 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 
 	var body struct {
 		TeamConfig struct {
-			AllowedEmployeeTypes        []string `json:"allowed_employee_types"`
-			AllowedProviderTypes        []string `json:"allowed_provider_types"`
-			AllowedSkills               []string `json:"allowed_skills"`
-			AllowedMCPServers           []string `json:"allowed_mcp_servers"`
-			AllowedExternalCapabilities []string `json:"allowed_external_capabilities"`
+			TeamID       string         `json:"team_id"`
+			Constitution map[string]any `json:"constitution"`
+			Skills       []string       `json:"skills"`
+			MCPServers   []string       `json:"mcp_servers"`
 		} `json:"team_config"`
 		EmployeeTypes []struct {
 			RecommendedSkills        []string `json:"recommended_skills"`
@@ -908,10 +935,9 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			RecommendedProviderTypes []string `json:"recommended_provider_types"`
 		} `json:"employee_types"`
 		CapabilityOptions struct {
-			ProviderTypes        []string `json:"provider_types"`
-			Skills               []string `json:"skills"`
-			MCPServers           []string `json:"mcp_servers"`
-			ExternalCapabilities []string `json:"external_capabilities"`
+			ProviderTypes []string `json:"provider_types"`
+			Skills        []string `json:"skills"`
+			MCPServers    []string `json:"mcp_servers"`
 		} `json:"capability_options"`
 		RuntimeProviderOptions []struct {
 			ProviderType string `json:"provider_type"`
@@ -927,11 +953,11 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode create options: %v", err)
 	}
-	assertNonNilEmptyStringSlice(t, "team_config.allowed_employee_types", body.TeamConfig.AllowedEmployeeTypes)
-	assertNonNilEmptyStringSlice(t, "team_config.allowed_provider_types", body.TeamConfig.AllowedProviderTypes)
-	assertNonNilEmptyStringSlice(t, "team_config.allowed_skills", body.TeamConfig.AllowedSkills)
-	assertNonNilEmptyStringSlice(t, "team_config.allowed_mcp_servers", body.TeamConfig.AllowedMCPServers)
-	assertNonNilEmptyStringSlice(t, "team_config.allowed_external_capabilities", body.TeamConfig.AllowedExternalCapabilities)
+	if body.TeamConfig.TeamID != teamID.String() {
+		t.Fatalf("expected team_config.team_id %s, got %q", teamID, body.TeamConfig.TeamID)
+	}
+	assertNonNilEmptyStringSlice(t, "team_config.skills", body.TeamConfig.Skills)
+	assertNonNilEmptyStringSlice(t, "team_config.mcp_servers", body.TeamConfig.MCPServers)
 	if len(body.EmployeeTypes) != 1 {
 		t.Fatalf("expected one employee type option, got %#v", body.EmployeeTypes)
 	}
@@ -941,7 +967,6 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	assertNonNilEmptyStringSlice(t, "capability_options.provider_types", body.CapabilityOptions.ProviderTypes)
 	assertNonNilEmptyStringSlice(t, "capability_options.skills", body.CapabilityOptions.Skills)
 	assertNonNilEmptyStringSlice(t, "capability_options.mcp_servers", body.CapabilityOptions.MCPServers)
-	assertNonNilEmptyStringSlice(t, "capability_options.external_capabilities", body.CapabilityOptions.ExternalCapabilities)
 	if len(body.RuntimeProviderOptions) != 1 || body.RuntimeProviderOptions[0].ProviderType != "codex" || body.RuntimeProviderOptions[0].Available {
 		t.Fatalf("expected runtime_provider_options dispatch preview to remain present and unavailable, got %#v", body.RuntimeProviderOptions)
 	}
@@ -1722,13 +1747,12 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 	}
 	return &employee.CreateOptions{
 		TeamConfig: employee.TeamConfigCreateOption{
-			ID:                   uuid.New(),
-			TenantID:             req.TenantID,
-			TeamID:               derefTeamID(req.TeamID),
-			RevisionNumber:       2,
-			Status:               employee.TeamConfigRevisionStatusActive,
-			AllowedEmployeeTypes: []string{"database_admin"},
-			AllowedProviderTypes: []string{"codex"},
+			ID:           uuid.New(),
+			TenantID:     req.TenantID,
+			TeamID:       req.TeamID,
+			Constitution: map[string]any{},
+			Skills:       baselineSkillsForRoute(req.TeamID),
+			MCPServers:   []string{},
 		},
 		EmployeeTypes: []employee.EmployeeTypeDefinition{{
 			Type:                     "database_admin",
@@ -1765,6 +1789,13 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 			Metadata:              map[string]any{},
 		},
 	}, nil
+}
+
+func baselineSkillsForRoute(teamID *uuid.UUID) []string {
+	if teamID == nil {
+		return []string{}
+	}
+	return []string{"database_admin"}
 }
 
 func (s *routeEmployeeService) CreateDigitalEmployee(ctx context.Context, req employee.CreateDigitalEmployeeRequest) (*employee.DigitalEmployee, error) {

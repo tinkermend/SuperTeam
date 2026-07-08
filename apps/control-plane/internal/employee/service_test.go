@@ -301,7 +301,8 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, teamID, options.TeamConfig.TeamID)
+	require.NotNil(t, options.TeamConfig.TeamID)
+	require.Equal(t, teamID, *options.TeamConfig.TeamID)
 	require.Equal(t, tenantID, options.TeamConfig.TenantID)
 	require.Equal(t, map[string]any{"mission": "stabilize ops"}, options.TeamConfig.Constitution)
 	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.TeamConfig.Skills)

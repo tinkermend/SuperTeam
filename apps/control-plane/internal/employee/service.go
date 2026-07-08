@@ -302,7 +302,7 @@ func createOptionChecks(
 	}
 
 	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers)
-	teamGovernanceReady := teamConfig.TeamID == uuid.Nil || len(teamConfig.Skills) > 0 || len(teamConfig.MCPServers) > 0 || len(teamConfig.Constitution) > 0
+	teamGovernanceReady := teamConfig.TeamID == nil || len(teamConfig.Skills) > 0 || len(teamConfig.MCPServers) > 0 || len(teamConfig.Constitution) > 0
 
 	return []CreateOptionCheck{
 		{
@@ -343,10 +343,15 @@ func checkStatus(passed bool, warning bool) string {
 }
 
 func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption, error) {
+	var teamID *uuid.UUID
+	if teamConfig.TeamID != uuid.Nil {
+		id := teamConfig.TeamID
+		teamID = &id
+	}
 	return TeamConfigCreateOption{
 		ID:           teamConfig.ID,
 		TenantID:     teamConfig.TenantID,
-		TeamID:       teamConfig.TeamID,
+		TeamID:       teamID,
 		Constitution: cloneMap(teamConfig.Constitution),
 		Skills:       optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
 		MCPServers:   optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
