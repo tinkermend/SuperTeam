@@ -12,7 +12,6 @@ import {
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
-  isTeamGovernanceConfigRequiredError,
   stopDigitalEmployeeRun,
   upsertWorkspaceFile,
   type DigitalEmployee,
@@ -277,19 +276,9 @@ describe("digital employee API", () => {
         id: "55555555-5555-4555-8555-555555555555",
         tenant_id: "22222222-2222-4222-8222-222222222222",
         team_id: "team 1/ops",
-        revision_number: 3,
-        status: "approved",
-        allowed_employee_types: ["database_admin"],
-        allowed_provider_types: ["codex"],
-        allowed_skills: ["incident-diagnosis"],
-        allowed_mcp_servers: ["github"],
-        allowed_external_capabilities: ["jira.search"],
-        capability_policy: { mode: "allow_list" },
-        context_policy: { max_refs: 8 },
-        approval_policy: { high_risk: "required" },
-        artifact_contract: { required: ["summary"] },
-        internal_collaboration_policy: { handoff: "structured" },
-        runtime_scope_policy: { allowed_nodes: ["runtime-1"] },
+        constitution: { hard_rules: ["生产变更必须人工审批"] },
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["github"],
       },
       employee_types: [
         {
@@ -310,7 +299,6 @@ describe("digital employee API", () => {
         provider_types: ["codex"],
         skills: ["incident-diagnosis"],
         mcp_servers: ["github"],
-        external_capabilities: ["jira.search"],
       },
       runtime_provider_options: [
         {
@@ -330,10 +318,10 @@ describe("digital employee API", () => {
       ],
       creation_checks: [
         {
-          key: "team_governance",
-          label: "团队治理版本",
+          key: "team_baseline",
+          label: "团队继承基线",
           status: "passed",
-          message: "#3 approved",
+          message: "skills 1 · MCP 1",
         },
         {
           key: "runtime_provider",
@@ -379,41 +367,7 @@ describe("digital employee API", () => {
         method: "GET",
       },
     );
-    expect(createOptions.creation_checks[0].key).toBe("team_governance");
-  });
-
-  it("preserves structured create-options team governance error codes", async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          code: "team_governance_config_required",
-          message: "employee effective config required: active team governance config is required",
-        }),
-        {
-          status: 422,
-          headers: { "content-type": "application/json" },
-        },
-      ),
-    );
-
-    const request = getDigitalEmployeeCreateOptions(
-      { baseUrl: "http://control-plane.local", fetcher: fetcher as typeof fetch },
-      "team-1",
-    );
-
-    await expect(
-      request,
-    ).rejects.toMatchObject({
-      name: "ApiRequestError",
-      status: 422,
-      code: "team_governance_config_required",
-      detail: "employee effective config required: active team governance config is required",
-    });
-
-    await request.catch((error: unknown) => {
-      expect(isTeamGovernanceConfigRequiredError(error)).toBe(true);
-    });
-    expect(isTeamGovernanceConfigRequiredError(new Error("different"))).toBe(false);
+    expect(createOptions.creation_checks[0].key).toBe("team_baseline");
   });
 
   it("creates digital employee with ready creation body and cookie credentials", async () => {

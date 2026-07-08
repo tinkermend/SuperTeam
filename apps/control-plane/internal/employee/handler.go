@@ -1079,8 +1079,6 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-	case errors.Is(err, ErrEffectiveConfigRequired):
-		writeJSONError(w, http.StatusUnprocessableEntity, "team_governance_config_required", err.Error())
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):

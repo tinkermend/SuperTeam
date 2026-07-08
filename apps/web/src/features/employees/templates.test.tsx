@@ -79,19 +79,9 @@ function createOptionsFixture() {
       id: "55555555-5555-4555-8555-555555555555",
       tenant_id: "tenant-1",
       team_id: activeTeam.id,
-      revision_number: 3,
-      status: "approved",
-      allowed_employee_types: ["database_admin", "frontend_engineer"],
-      allowed_provider_types: ["codex"],
-      allowed_skills: ["ui-implementation"],
-      allowed_mcp_servers: ["postgres"],
-      allowed_external_capabilities: ["jira.search"],
-      capability_policy: { mode: "allow_list" },
-      context_policy: { max_refs: 8 },
-      approval_policy: { required: true },
-      artifact_contract: { required: ["summary"] },
-      internal_collaboration_policy: { handoff: "structured" },
-      runtime_scope_policy: { allowed_nodes: ["runtime-a"] },
+      constitution: { hard_rules: ["生产变更必须人工审批"] },
+      skills: ["ui-implementation"],
+      mcp_servers: ["postgres"],
     },
     employee_types: [
       {
@@ -105,7 +95,6 @@ function createOptionsFixture() {
         default_capability_selection: {
           enabled_skills: ["database-troubleshooting"],
           enabled_mcp_servers: ["postgres"],
-          enabled_external_capabilities: ["jira.search"],
           enabled_provider_types: ["codex"],
         },
         default_context_policy_override: { max_refs: 8 },
@@ -123,7 +112,6 @@ function createOptionsFixture() {
         default_capability_selection: {
           enabled_skills: ["ui-implementation"],
           enabled_mcp_servers: [],
-          enabled_external_capabilities: [],
           enabled_provider_types: ["codex"],
         },
         default_context_policy_override: { max_refs: 6 },
@@ -135,15 +123,14 @@ function createOptionsFixture() {
       provider_types: ["codex"],
       skills: ["database-troubleshooting", "ui-implementation"],
       mcp_servers: ["postgres"],
-      external_capabilities: ["jira.search"],
     },
     runtime_provider_options: [],
     creation_checks: [
       {
-        key: "team_governance",
-        label: "团队治理版本",
+        key: "team_baseline",
+        label: "团队继承基线",
         status: "passed",
-        message: "#3 approved",
+        message: "skills 1 · MCP 1",
       },
     ],
     policy_defaults: {
@@ -238,7 +225,7 @@ async function renderTemplateDetailView(templateType: string, fetcher = createTe
 }
 
 describe("TemplateListView", () => {
-  it("renders readonly built-in template rows with governance status and detail links", async () => {
+  it("renders readonly built-in template rows with baseline status and detail links", async () => {
     const screen = await renderTemplateListView();
 
     await expect.element(screen.getByRole("heading", { name: "数字员工模板" })).toBeVisible();
@@ -247,7 +234,7 @@ describe("TemplateListView", () => {
     await expect.element(screen.getByText("前端开发")).toBeVisible();
     await expect.element(screen.getByText("模板能力")).toBeVisible();
     await expect.element(screen.getByText("默认注入")).toBeVisible();
-    await expect.element(screen.getByText("被治理过滤")).toBeVisible();
+    await expect.element(screen.getByRole("cell", { name: "继承团队基线" }).first()).toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "查看数据库管理员模板详情" }))
       .toHaveAttribute("href", "/employees/templates/database_admin");
@@ -268,7 +255,7 @@ describe("TemplateListView", () => {
 });
 
 describe("TemplateDetailView", () => {
-  it("renders the selected template fields, governance impact, and create entry", async () => {
+  it("renders the selected template fields, inherited baseline notes, and create entry", async () => {
     const screen = await renderTemplateDetailView("database_admin");
 
     await expect.element(screen.getByRole("heading", { name: "数据库管理员" })).toBeVisible();
@@ -277,10 +264,11 @@ describe("TemplateDetailView", () => {
     expect(document.body.textContent).toContain("database-troubleshooting");
     await expect.element(screen.getByText("默认注入")).toBeVisible();
     await expect.element(screen.getByText("Provider 1")).toBeVisible();
-    await expect.element(screen.getByText("治理影响")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "继承基线" })).toBeVisible();
     expect(document.body.textContent).toContain("模板已定义的技能、MCP 与 Provider 能力");
     expect(document.body.textContent).not.toContain("模板推荐能力");
-    await expect.element(screen.getByText("技能受限 database-troubleshooting")).toBeVisible();
+    await expect.element(screen.getByText("团队继承技能 1")).toBeVisible();
+    await expect.element(screen.getByText("团队继承 MCP 1")).toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "用此模板创建数字员工" }))
       .toHaveAttribute("href", "/employees/new?template=database_admin");

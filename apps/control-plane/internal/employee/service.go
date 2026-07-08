@@ -268,10 +268,10 @@ func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
 
 func teamConfigInputFromBaseline(tenantID, teamID uuid.UUID, baseline TeamBaseline) TeamConfigInput {
 	return TeamConfigInput{
-		ID:                          uuid.Nil,
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		Constitution:                cloneMap(baseline.Constitution),
+		ID:           uuid.Nil,
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		Constitution: cloneMap(baseline.Constitution),
 		CapabilityPolicy: map[string]any{
 			"allowed_skills":      append([]string(nil), baseline.Skills...),
 			"allowed_mcp_servers": append([]string(nil), baseline.MCPServers...),
@@ -298,13 +298,12 @@ func createOptionChecks(
 	}
 
 	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers)
-	teamGovernanceReady := teamConfig.TeamID == nil || len(teamConfig.Skills) > 0 || len(teamConfig.MCPServers) > 0 || len(teamConfig.Constitution) > 0
 
 	return []CreateOptionCheck{
 		{
-			Key:     "team_governance",
-			Label:   "团队治理基线",
-			Status:  checkStatus(teamGovernanceReady, false),
+			Key:     "team_baseline",
+			Label:   "团队继承基线",
+			Status:  "passed",
 			Message: fmt.Sprintf("skills %d · MCP %d", len(teamConfig.Skills), len(teamConfig.MCPServers)),
 		},
 		{
@@ -943,9 +942,6 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	}
 	if preflight.RuntimeNodeID == uuid.Nil || strings.TrimSpace(preflight.NodeID) == "" {
 		return fmt.Errorf("%w: runtime node is unavailable", ErrRuntimeUnavailable)
-	}
-	if preflight.TeamID != uuid.Nil && !preflight.HasActiveTeamConfig {
-		return fmt.Errorf("%w: active team governance config is required before provisioning", ErrEffectiveConfigRequired)
 	}
 	if !preflight.RuntimeOnline {
 		return fmt.Errorf("%w: runtime node is not online", ErrRuntimeUnavailable)

@@ -11,7 +11,6 @@ var (
 	ErrInvalidInput            = errors.New("invalid employee input")
 	ErrNotFound                = errors.New("employee not found")
 	ErrConflict                = errors.New("employee conflict")
-	ErrEffectiveConfigRequired = errors.New("employee effective config required")
 	ErrRuntimeUnavailable      = errors.New("employee runtime unavailable")
 	ErrProviderUnavailable     = errors.New("employee provider unavailable")
 	ErrRuntimeIdentityMismatch = errors.New("employee runtime identity mismatch")

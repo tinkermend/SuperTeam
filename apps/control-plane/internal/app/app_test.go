@@ -267,11 +267,6 @@ func TestRunStartRetryableClassifiesRunStartFailures(t *testing.T) {
 			retryable: false,
 		},
 		{
-			name:      "effective config required terminal",
-			err:       fmt.Errorf("%w: approved effective config is required", employee.ErrEffectiveConfigRequired),
-			retryable: false,
-		},
-		{
 			name:      "active run conflict retryable",
 			err:       fmt.Errorf("%w: active digital employee run exists", employee.ErrConflict),
 			retryable: true,

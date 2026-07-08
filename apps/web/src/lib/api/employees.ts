@@ -1,4 +1,4 @@
-import { ApiRequestError, type ApiClientOptions } from "./client";
+import type { ApiClientOptions } from "./client";
 import { deleteJson, getJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
@@ -70,7 +70,6 @@ export type DigitalEmployeeCapabilityOptions = {
   provider_types: string[];
   skills: string[];
   mcp_servers: string[];
-  external_capabilities: string[];
 };
 
 export type DigitalEmployeeRuntimeProviderOption = {
@@ -112,19 +111,9 @@ export type DigitalEmployeeCreateOptions = {
     id: string;
     tenant_id: string;
     team_id?: string;
-    revision_number: number;
-    status: string;
-    allowed_employee_types: string[];
-    allowed_provider_types: string[];
-    allowed_skills: string[];
-    allowed_mcp_servers: string[];
-    allowed_external_capabilities: string[];
-    capability_policy: Record<string, unknown>;
-    context_policy: Record<string, unknown>;
-    approval_policy: Record<string, unknown>;
-    artifact_contract: Record<string, unknown>;
-    internal_collaboration_policy: Record<string, unknown>;
-    runtime_scope_policy: Record<string, unknown>;
+    constitution: Record<string, unknown>;
+    skills: string[];
+    mcp_servers: string[];
   };
   employee_types: DigitalEmployeeTypeOption[];
   capability_options: DigitalEmployeeCapabilityOptions;
@@ -673,10 +662,6 @@ export function getDigitalEmployeeCreateOptions(
     `/api/v1/digital-employees/create-options${searchParams.toString() ? `?${searchParams.toString()}` : ""}`,
     "digital employee create options",
   );
-}
-
-export function isTeamGovernanceConfigRequiredError(error: unknown): boolean {
-  return error instanceof ApiRequestError && error.status === 422 && error.code === "team_governance_config_required";
 }
 
 export function listDigitalEmployeeAvatarAssets(

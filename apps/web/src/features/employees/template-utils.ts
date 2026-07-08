@@ -22,13 +22,12 @@ export type TemplateCapabilitySummary = {
 export type TemplateDefaultInjectionSummary = {
   skills: string[];
   mcpServers: string[];
-  externalCapabilities: string[];
   providerTypes: string[];
 };
 
-export type TemplateGovernanceStatus = {
-  label: "可用" | "被治理过滤";
-  blockedReasons: string[];
+export type TemplateAvailabilityStatus = {
+  label: "平台默认" | "继承团队基线";
+  notes: string[];
 };
 
 export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
@@ -90,7 +89,6 @@ export function templateDefaultInjectionSummary(
   return {
     skills: stringList(defaultCapabilitySelection.enabled_skills),
     mcpServers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
-    externalCapabilities: stringList(defaultCapabilitySelection.enabled_external_capabilities),
     providerTypes: stringList(defaultCapabilitySelection.enabled_provider_types),
   };
 }
@@ -100,7 +98,6 @@ export function templateDefaultInjectionLine(typeOption: DigitalEmployeeTypeOpti
   const parts = [
     summary.skills.length > 0 ? `技能 ${summary.skills.length}` : "",
     summary.mcpServers.length > 0 ? `MCP ${summary.mcpServers.length}` : "",
-    summary.externalCapabilities.length > 0 ? `外部能力 ${summary.externalCapabilities.length}` : "",
     summary.providerTypes.length > 0 ? `Provider ${summary.providerTypes.length}` : "",
   ].filter(Boolean);
 
@@ -116,40 +113,27 @@ export function templateCapabilityPreview(typeOption: DigitalEmployeeTypeOption)
   ].filter(Boolean).join(" · ") || "无模板能力";
 }
 
-export function templateGovernanceStatus(
+export function templateAvailabilityStatus(
   options: DigitalEmployeeCreateOptions | undefined,
-  typeOption: DigitalEmployeeTypeOption,
-): TemplateGovernanceStatus {
+): TemplateAvailabilityStatus {
   if (!options) {
-    return { label: "可用", blockedReasons: [] };
+    return { label: "平台默认", notes: [] };
   }
 
-  const blockedReasons: string[] = [];
   const teamConfig = options.team_config;
-  const defaultInjection = templateDefaultInjectionSummary(typeOption);
-  const allowedSkills = new Set(teamConfig.allowed_skills ?? []);
-  const allowedMcpServers = new Set(teamConfig.allowed_mcp_servers ?? []);
-  const allowedExternalCapabilities = new Set(teamConfig.allowed_external_capabilities ?? []);
-  const allowedProviders = new Set(teamConfig.allowed_provider_types ?? []);
-
-  const blockedSkills = blockedByAllowList(defaultInjection.skills, allowedSkills);
-  const blockedMcp = blockedByAllowList(defaultInjection.mcpServers, allowedMcpServers);
-  const blockedExternalCapabilities = blockedByAllowList(
-    defaultInjection.externalCapabilities,
-    allowedExternalCapabilities,
-  );
-  const blockedProviders = blockedByAllowList(defaultInjection.providerTypes, allowedProviders);
-
-  if (blockedSkills.length > 0) blockedReasons.push(`技能受限 ${blockedSkills.join(", ")}`);
-  if (blockedMcp.length > 0) blockedReasons.push(`MCP 受限 ${blockedMcp.join(", ")}`);
-  if (blockedExternalCapabilities.length > 0) {
-    blockedReasons.push(`外部能力受限 ${blockedExternalCapabilities.join(", ")}`);
+  const notes: string[] = [];
+  if ((teamConfig.skills ?? []).length > 0) {
+    notes.push(`团队继承技能 ${teamConfig.skills.length}`);
   }
-  if (blockedProviders.length > 0) blockedReasons.push(`Provider 受限 ${blockedProviders.join(", ")}`);
-
+  if ((teamConfig.mcp_servers ?? []).length > 0) {
+    notes.push(`团队继承 MCP ${teamConfig.mcp_servers.length}`);
+  }
+  if (Object.keys(teamConfig.constitution ?? {}).length > 0) {
+    notes.push("创建时会继承团队宪法基线");
+  }
   return {
-    label: blockedReasons.length > 0 ? "被治理过滤" : "可用",
-    blockedReasons,
+    label: notes.length > 0 ? "继承团队基线" : "平台默认",
+    notes,
   };
 }
 
@@ -169,9 +153,4 @@ export function stringList(value: unknown) {
 
 export function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function blockedByAllowList(values: string[], allowedValues: Set<string>) {
-  if (allowedValues.size === 0) return [];
-  return values.filter((value) => !allowedValues.has(value));
 }

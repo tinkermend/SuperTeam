@@ -314,10 +314,10 @@ function createWizardFetcher({
       if (createOptionsErrorForTeamId && url.searchParams.get("team_id") === createOptionsErrorForTeamId) {
         return jsonResponse(
           {
-            code: "team_governance_config_required",
-            message: "employee effective config required: active team governance config is required",
+            code: "create_options_unavailable",
+            message: "temporary create options failure",
           },
-          422,
+          500,
         );
       }
       return jsonResponse(
