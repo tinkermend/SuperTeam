@@ -936,6 +936,21 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/runtime-nodes:
+    get:
+      operationId: listProjectRuntimeNodes
+      summary: List eligible Runtime nodes for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project Runtime nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectRuntimeNode"
   /api/v1/projects/{projectId}/runtime-readiness:
     get:
       operationId: getProjectRuntimeReadiness
@@ -5111,6 +5126,14 @@ components:
           type: array
           items:
             type: string
+    ProjectRuntimeNode:
+      type: object
+      required:
+        - runtime_node_id
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
     ProjectRuntimePlacementStatus:
       type: string
       enum:
@@ -7035,6 +7058,7 @@ components:
         - name
         - goal
         - human_owner_user_id
+        - runtime_node_ids
       properties:
         team_id:
           type: string
@@ -7067,6 +7091,12 @@ components:
         evidence_policy:
           type: object
           additionalProperties: true
+        runtime_node_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
         repo_binding:
           $ref: "#/components/schemas/ProjectRepoBinding"
     CreateProjectResponse:

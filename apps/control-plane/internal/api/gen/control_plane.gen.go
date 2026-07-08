@@ -2142,6 +2142,7 @@ type CreateProjectRequest struct {
 	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
 	Name               string                  `json:"name"`
 	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
+	RuntimeNodeIds     []openapi_types.UUID    `json:"runtime_node_ids"`
 	TeamId             *openapi_types.UUID     `json:"team_id,omitempty"`
 }
 
@@ -3622,6 +3623,11 @@ type ProjectRouteDecision struct {
 	RequiresHumanReview         bool                   `json:"requires_human_review"`
 	SelectedDigitalEmployeeIds  []openapi_types.UUID   `json:"selected_digital_employee_ids"`
 	TenantId                    openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectRuntimeNode defines model for ProjectRuntimeNode.
+type ProjectRuntimeNode struct {
+	RuntimeNodeId openapi_types.UUID `json:"runtime_node_id"`
 }
 
 // ProjectRuntimePlacement defines model for ProjectRuntimePlacement.
@@ -6310,6 +6316,9 @@ type ServerInterface interface {
 	// List project route decisions
 	// (GET /api/v1/projects/{projectId}/route-decisions)
 	ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams)
+	// List eligible Runtime nodes for a project
+	// (GET /api/v1/projects/{projectId}/runtime-nodes)
+	ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Release active Runtime placement for a project
 	// (DELETE /api/v1/projects/{projectId}/runtime-placement)
 	ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -7111,6 +7120,12 @@ func (_ Unimplemented) ListProjectReports(w http.ResponseWriter, r *http.Request
 // List project route decisions
 // (GET /api/v1/projects/{projectId}/route-decisions)
 func (_ Unimplemented) ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List eligible Runtime nodes for a project
+// (GET /api/v1/projects/{projectId}/runtime-nodes)
+func (_ Unimplemented) ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10934,6 +10949,32 @@ func (siw *ServerInterfaceWrapper) ListProjectRouteDecisions(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectRouteDecisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectRuntimeNodes operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectRuntimeNodes(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14971,6 +15012,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/route-decisions", wrapper.ListProjectRouteDecisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes", wrapper.ListProjectRuntimeNodes)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.ReleaseProjectRuntimePlacement)
