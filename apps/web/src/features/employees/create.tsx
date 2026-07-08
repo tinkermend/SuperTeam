@@ -48,7 +48,6 @@ import type {
 import {
   createDigitalEmployee,
   getDigitalEmployeeCreateOptions,
-  isTeamGovernanceConfigRequiredError,
   listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
 import { listTeams } from "@/lib/api/teams";
@@ -71,7 +70,7 @@ import {
 const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
 const BLANK_CUSTOM_TITLE = "自定义身份";
 
-const configSteps = ["身份", "能力", "治理", "Provider 类型"] as const;
+const configSteps = ["身份", "能力", "Provider 类型"] as const;
 type StepName = (typeof configSteps)[number];
 type CreateFlowStep = "template" | "configure" | "confirm";
 type CreationMode = "template" | "blank_custom";
@@ -79,7 +78,6 @@ type CreationMode = "template" | "blank_custom";
 type WizardDraft = {
   creation_mode: CreationMode;
   capability_selection: {
-    enabled_external_capabilities: string[];
     enabled_mcp_servers: string[];
     enabled_skills: string[];
   };
@@ -121,7 +119,6 @@ const emptyDraft: WizardDraft = {
   approval_policy_override: {},
   creation_mode: "template",
   capability_selection: {
-    enabled_external_capabilities: [],
     enabled_mcp_servers: [],
     enabled_skills: [],
   },
@@ -273,9 +270,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const currentStep = configSteps[stepIndex];
   const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
   const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
-  const teamGovernanceBlocker = teamGovernanceBlockerMessage(createOptions.error);
-  const customAgentTeamBlocker = customAgentTeamBlockerMessage(draft, createOptions.data);
-  const configurationBlocked = Boolean(teamGovernanceBlocker || customAgentTeamBlocker);
   const isIdentityStepReady = !teams.isLoading && !avatarAssets.isLoading && currentStep === "身份";
   const shouldShowConfigureLoading =
     teams.isLoading ||
@@ -311,11 +305,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function nextStep() {
-    if (configurationBlocked) {
-      setErrors({});
-      setStepIndex(0);
-      return;
-    }
     const nextErrors = validateStep(currentStep, draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -324,11 +313,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function submit() {
-    if (configurationBlocked) {
-      setFlowStep("configure");
-      setStepIndex(0);
-      return;
-    }
     const nextErrors = validateDraftForCreate(draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -340,9 +324,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     if (nextErrors.avatar_asset_id || nextErrors.employee_type || nextErrors.name || nextErrors.role) {
       setStepIndex(0);
     } else if (nextErrors.daily_token_limit) {
-      setStepIndex(2);
+      setStepIndex(1);
     } else if (nextErrors.runtime) {
-      setStepIndex(3);
+      setStepIndex(2);
     }
   }
 
@@ -354,11 +338,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }
 
   function enterConfirmCreation() {
-    if (configurationBlocked) {
-      setFlowStep("configure");
-      setStepIndex(0);
-      return;
-    }
     const nextErrors = validateStep("Provider 类型", draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
@@ -429,7 +408,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择创建方式，再完成配置并确认创建。"
-          : "按职责定位、能力选择、治理策略和必选 Provider 类型完成员工画像。"
+          : "按职责定位、能力选择和必选 Provider 类型完成员工画像。"
         }
         actions={
           flowStep !== "template" ? (
@@ -450,13 +429,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         {!teams.isLoading && !teams.isError && teamOptions.length === 0 ? (
           <Alert className="mb-4">
             <AlertTitle>暂无可用团队</AlertTitle>
-            <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工；治理按内置默认（全部允许）。</AlertDescription>
+            <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工。</AlertDescription>
           </Alert>
         ) : null}
-        {createOptions.isError && !teamGovernanceBlocker ? (
+        {createOptions.isError ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>创建选项加载失败</AlertTitle>
-            <AlertDescription>{getErrorMessage(createOptions.error)}</AlertDescription>
+            <AlertDescription>请稍后重试，或切换团队后重新加载创建选项。</AlertDescription>
           </Alert>
         ) : null}
         {avatarAssets.isError ? (
@@ -497,7 +476,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       <div>
                         <h2 className="text-lg font-semibold text-v3-ink">员工画像蓝图</h2>
                         <p className="mt-0.5 text-sm text-v3-ink-3">
-                        按职责定位、可用能力、治理边界和 Provider 类型完成员工画像。
+                        按职责定位、可用能力和 Provider 类型完成员工画像。
                       </p>
                     </div>
                   </div>
@@ -525,34 +504,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       onUpdate={updateDraft}
                     />
                   ) : null}
-                  {teamGovernanceBlocker ? (
-                    <Alert className="mb-4" variant="destructive">
-                      <AlertTitle>团队治理未启用</AlertTitle>
-                      <AlertDescription>{teamGovernanceBlocker}</AlertDescription>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <V3Button onClick={() => requestTeamChange("")} size="sm" type="button" variant="outline">
-                          先不归属团队创建
-                        </V3Button>
-                      </div>
-                    </Alert>
-                  ) : null}
-                  {customAgentTeamBlocker ? (
-                    <Alert className="mb-4" variant="destructive">
-                      <AlertTitle>团队策略不允许</AlertTitle>
-                      <AlertDescription>{customAgentTeamBlocker}</AlertDescription>
-                    </Alert>
-                  ) : null}
                   {!teams.isLoading && !createOptions.isLoading && currentStep === "能力" ? (
-                    <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
-                  ) : null}
-                  {!teams.isLoading && !createOptions.isLoading && currentStep === "治理" ? (
-                    <GovernanceStep
-                      draft={draft}
-                      errors={errors}
-                      options={createOptions.data}
-                      selectedType={selectedType}
-                      onUpdate={updateDraft}
-                    />
+                    <CapabilityStep draft={draft} errors={errors} options={createOptions.data} onUpdate={updateDraft} />
                   ) : null}
                   {!teams.isLoading && !createOptions.isLoading && currentStep === "Provider 类型" ? (
                     <ProviderStep
@@ -586,10 +539,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   <V3Button
                     disabled={
                       createOptions.isLoading ||
-                      (createOptions.isError && !teamGovernanceBlocker) ||
+                      createOptions.isError ||
                       avatarAssets.isLoading ||
-                      avatarAssets.isError ||
-                      configurationBlocked
+                      avatarAssets.isError
                     }
                     onClick={nextStep}
                     type="button"
@@ -602,10 +554,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     disabled={
                       createEmployee.isPending ||
                       createOptions.isLoading ||
-                      (createOptions.isError && !teamGovernanceBlocker) ||
+                      createOptions.isError ||
                       avatarAssets.isLoading ||
                       avatarAssets.isError ||
-                      configurationBlocked ||
                       !draft.avatar_asset_id ||
                       !draft.provider_type
                     }
@@ -646,7 +597,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const stages = [
     { key: "template", title: "创建方式", description: "选择模板或自定义身份" },
-    { key: "configure", title: "完成配置", description: "补齐身份、能力、治理和 Provider" },
+    { key: "configure", title: "完成配置", description: "补齐身份、能力和 Provider" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
   ];
   const activeIndex = stages.findIndex((stage) => stage.key === flowStep);
@@ -704,7 +655,7 @@ function CreationPathPanel({
   const paths = [
     {
       title: "从专业模板创建",
-      description: "按职责模板带出默认角色、能力建议和治理策略。",
+      description: "按职责模板带出默认角色、能力建议和 Provider 默认值。",
       icon: Sparkles,
       mode: "template" as const,
       badge: "推荐",
@@ -840,7 +791,7 @@ function TemplateSelectionPanel({
             </IconTile>
             <div>
               <h2 className="text-base font-semibold text-v3-ink">选择内置模板</h2>
-              <p className="mt-0.5 text-sm text-v3-ink-3">模板只负责带出默认角色、模板能力和治理默认值。</p>
+              <p className="mt-0.5 text-sm text-v3-ink-3">模板只负责带出默认角色、模板能力和 Provider 默认值。</p>
             </div>
           </div>
           <Badge variant="secondary">
@@ -870,7 +821,7 @@ function TemplateSelectionPanel({
       </div>
       {employeeTypes.length === 0 ? (
         <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
-          当前团队治理配置未返回可用专业模板。
+          当前创建选项未返回可用专业模板。
         </div>
       ) : (
         <div className="min-h-0 flex-1 p-4">
@@ -1140,7 +1091,7 @@ function CreationPreflightPanel({
           <SummaryItem label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           <SummaryItem
             label="能力选择"
-            value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
+            value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
           />
           <SummaryItem
             label="Provider 类型"
@@ -1183,6 +1134,8 @@ function ConfirmCreationStep({
   onSubmit: () => void;
 }) {
   const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
+  const contextPolicySummary = formatJsonSummary(draft.context_policy_override);
+  const approvalPolicySummary = formatJsonSummary(draft.approval_policy_override);
 
   return (
     <GlassCard className="flex flex-col">
@@ -1219,7 +1172,7 @@ function ConfirmCreationStep({
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
-              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
+              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
             />
             <InlineSummary
               label="Provider 类型"
@@ -1231,6 +1184,10 @@ function ConfirmCreationStep({
               value={draft.daily_token_limit.trim() ? `${draft.daily_token_limit.trim()} Token` : "无预算上限"}
             />
             <InlineSummary label="环境变量" value={`${environmentVariableCount} 个`} />
+          </div>
+          <div className="mt-3 grid gap-2">
+            <JsonReadOnlyCard label="上下文策略" value={contextPolicySummary} />
+            <JsonReadOnlyCard label="审批策略" value={approvalPolicySummary} />
           </div>
         </section>
       </div>
@@ -1294,7 +1251,7 @@ function IdentityStep({
               </option>
             ))}
           </select>
-          <p className="text-xs text-v3-ink-3">选择“无”将创建租户级独立数字员工，治理按内置默认（全部允许）。</p>
+          <p className="text-xs text-v3-ink-3">选择“无”将创建租户级独立数字员工。</p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input
@@ -1331,7 +1288,7 @@ function IdentityStep({
           {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
         </div>
         <div className="mt-1 text-v3-ink-3">
-          {isBlankCustom ? "从空白配置开始，仅保留必要治理基线，后续按职责逐项补齐。" : selectedType?.description}
+          {isBlankCustom ? "从空白配置开始，后续按职责逐项补齐能力和 Provider。" : selectedType?.description}
         </div>
       </div>
       <AvatarSelection
@@ -1385,20 +1342,18 @@ function AvatarSelection({
 
 function CapabilityStep({
   draft,
+  errors,
   options,
   onUpdate,
 }: {
   draft: WizardDraft;
+  errors: ValidationErrors;
   options?: DigitalEmployeeCreateOptions;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const capabilityOptions = options?.capability_options;
   const inheritedCapabilities = inheritedCapabilitySelection(options);
   const extensionCapabilityOptions = {
-    external_capabilities: withoutValues(
-      capabilityOptions?.external_capabilities ?? [],
-      inheritedCapabilities.enabled_external_capabilities,
-    ),
     mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.enabled_mcp_servers),
     skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.enabled_skills),
   };
@@ -1420,15 +1375,14 @@ function CapabilityStep({
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
-        <p className="text-sm text-v3-ink-3">按团队治理配置选择技能、MCP Server 和外部能力。</p>
+        <p className="text-sm text-v3-ink-3">团队基线能力只读继承；这里只为员工补充个人技能和 MCP。</p>
       </div>
       <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
         <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
-        <div className="mt-3 grid gap-2 md:grid-cols-3">
-          <SummaryItem label="技能" value={`${inheritedCapabilities.enabled_skills.length} 项`} />
-          <SummaryItem label="MCP" value={`${inheritedCapabilities.enabled_mcp_servers.length} 项`} />
-          <SummaryItem label="外部能力" value={`${inheritedCapabilities.enabled_external_capabilities.length} 项`} />
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.enabled_skills} />
+          <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.enabled_mcp_servers} />
         </div>
       </section>
       <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
@@ -1447,12 +1401,63 @@ function CapabilityStep({
         onToggle={(value) => toggle("enabled_mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
       />
-      <CapabilityGroup
-        checkedValues={draft.capability_selection.enabled_external_capabilities}
-        label="外部能力"
-        onToggle={(value) => toggle("enabled_external_capabilities", value)}
-        values={extensionCapabilityOptions.external_capabilities}
+      <section className="grid gap-4 rounded-[14px] border border-v3-line bg-v3-card p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-v3-ink">默认策略</h3>
+            <p className="mt-1 text-xs text-v3-ink-3">模板默认的上下文与审批策略会随本次创建一起提交。</p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <JsonReadOnlyCard label="上下文策略" value={formatJsonSummary(draft.context_policy_override)} />
+            <JsonReadOnlyCard label="审批策略" value={formatJsonSummary(draft.approval_policy_override)} />
+          </div>
+        </div>
+        <Field error={errors.daily_token_limit} label="每日 Token 预算上限">
+          <Input
+            aria-invalid={Boolean(errors.daily_token_limit)}
+            id="daily-token-limit"
+            inputMode="numeric"
+            onChange={(event) => onUpdate({ daily_token_limit: event.target.value })}
+            placeholder="例如 200000"
+            value={draft.daily_token_limit}
+          />
+          <p className="text-xs text-v3-ink-3">留空表示不设置每日预算上限；填写时必须为正整数。</p>
+        </Field>
+      </section>
+    </div>
+  );
+}
+
+function JsonReadOnlyCard({ label, value }: { label: string; value: string }) {
+  const id = `${labelId[label] ?? label}-readonly`;
+
+  return (
+    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
+      <Label className="text-v3-ink" htmlFor={id}>
+        {label}
+      </Label>
+      <textarea
+        className="mt-2 min-h-[84px] w-full rounded-xl border border-v3-line bg-v3-card-soft px-3 py-2 font-mono text-xs text-v3-ink outline-none"
+        id={id}
+        readOnly
+        value={value}
       />
+    </div>
+  );
+}
+
+function CapabilityReadOnlyList({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
+      <div className="text-xs text-v3-ink-3">{label}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {values.length === 0 ? <span className="text-sm text-v3-ink-3">无</span> : null}
+        {values.map((value) => (
+          <Badge key={value} variant="secondary">
+            {value}
+          </Badge>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1492,74 +1497,6 @@ function CapabilityGroup({
         {values.length === 0 ? <p className="text-sm text-v3-ink-3">暂无可选项</p> : null}
       </div>
     </fieldset>
-  );
-}
-
-function GovernanceStep({
-  draft,
-  errors,
-  options,
-  selectedType,
-  onUpdate,
-}: {
-  draft: WizardDraft;
-  errors: ValidationErrors;
-  options?: DigitalEmployeeCreateOptions;
-  selectedType?: DigitalEmployeeTypeOption;
-  onUpdate: (patch: Partial<WizardDraft>) => void;
-}) {
-  const teamConfig = options?.team_config;
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h2 className="text-lg font-semibold text-v3-ink">治理</h2>
-        <p className="text-sm text-v3-ink-3">确认团队治理版本、上下文和审批默认值。这里不暴露原始 JSON 编辑。</p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <SummaryItem label="团队治理版本" value={teamConfig ? `#${teamConfig.revision_number} · ${teamConfig.status}` : "未加载"} />
-        <SummaryItem label="风险等级" value={riskLabel(draft.risk_level)} />
-        <SummaryItem label="允许员工类型" value={`${teamConfig?.allowed_employee_types.length ?? 0} 项`} />
-        <SummaryItem
-          label="允许 Provider"
-          value={
-            (teamConfig?.allowed_provider_types ?? [])
-              .map((value) => providerLabel(normalizeProviderValue(value)))
-              .join(", ") || "暂无"
-          }
-        />
-        <SummaryItem label="上下文策略" value={`覆盖项 ${Object.keys(draft.context_policy_override).length} 个`} />
-        <SummaryItem
-          label="审批策略"
-          value={approvalPolicySummary(draft.approval_policy_override.min_risk_for_human)}
-        />
-      </div>
-      <Field label="每日 Token 预算上限" error={errors.daily_token_limit}>
-        <Input
-          aria-invalid={Boolean(errors.daily_token_limit)}
-          id="daily-token-limit"
-          inputMode="numeric"
-          min={1}
-          onChange={(event) => onUpdate({ daily_token_limit: event.target.value })}
-          placeholder="不填写表示无预算上限"
-          type="number"
-          value={draft.daily_token_limit}
-        />
-        <p className="text-xs text-v3-ink-3">不填写表示无预算上限。填写后，达到当日上限会阻止发起新的运行。</p>
-      </Field>
-      <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
-        <div className="text-sm font-medium text-v3-ink">创建摘要</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Badge variant="secondary">
-            {draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : selectedType?.label ?? draft.employee_type}
-          </Badge>
-          <Badge variant="secondary">{draft.role}</Badge>
-          <Badge variant="secondary">技能 {draft.capability_selection.enabled_skills.length}</Badge>
-          <Badge variant="secondary">MCP {draft.capability_selection.enabled_mcp_servers.length}</Badge>
-          <Badge variant="secondary">外部能力 {draft.capability_selection.enabled_external_capabilities.length}</Badge>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1618,7 +1555,7 @@ function ProviderStep({
       </RadioGroup>
       {providers.length === 0 ? (
         <p className="rounded-[14px] border border-dashed border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
-          当前团队治理没有返回可选 Provider，请检查团队能力边界配置。
+          当前创建选项没有返回可选 Provider 类型。
         </p>
       ) : null}
       {error ? <p className="text-sm text-v3-danger">{error}</p> : null}
@@ -1756,6 +1693,8 @@ function Field({
 
 const labelId: Record<string, string> = {
   名称: "employee-name",
+  上下文策略: "context-policy",
+  审批策略: "approval-policy",
   归属团队: "employee-team",
   职责定位: "employee-role",
   风险等级: "employee-risk",
@@ -1772,7 +1711,6 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
     ...current,
     approval_policy_override: typeOption.default_approval_policy ?? {},
     capability_selection: {
-      enabled_external_capabilities: stringList(defaultCapabilitySelection.enabled_external_capabilities),
       enabled_mcp_servers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
       enabled_skills: stringList(defaultCapabilitySelection.enabled_skills),
     },
@@ -1789,7 +1727,6 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
     creation_mode: "blank_custom",
     approval_policy_override: {},
     capability_selection: {
-      enabled_external_capabilities: [],
       enabled_mcp_servers: [],
       enabled_skills: [],
     },
@@ -1801,15 +1738,11 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
 }
 
 function inheritedCapabilitySelection(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_selection"] {
-  const raw = options?.policy_defaults.capability_selection ?? {};
-  const nested = objectValue(raw.team_inherited);
+  const teamConfig = options?.team_config as Record<string, unknown> | undefined;
 
   return {
-    enabled_external_capabilities: uniqueStringList(
-      raw.team_inherited_external_capabilities ?? nested.external_capabilities,
-    ),
-    enabled_mcp_servers: uniqueStringList(raw.team_inherited_mcp_servers ?? nested.mcp_servers),
-    enabled_skills: uniqueStringList(raw.team_inherited_skills ?? nested.skills),
+    enabled_mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
+    enabled_skills: uniqueStringList(teamConfig?.skills),
   };
 }
 
@@ -1820,17 +1753,9 @@ function employeeExtensionCapabilitySelection(
   const inherited = inheritedCapabilitySelection(options);
 
   return {
-    enabled_external_capabilities: withoutValues(
-      selection.enabled_external_capabilities,
-      inherited.enabled_external_capabilities,
-    ),
     enabled_mcp_servers: withoutValues(selection.enabled_mcp_servers, inherited.enabled_mcp_servers),
     enabled_skills: withoutValues(selection.enabled_skills, inherited.enabled_skills),
   };
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function uniqueStringList(value: unknown): string[] {
@@ -1843,6 +1768,20 @@ function withoutValues(values: string[], excludedValues: string[]) {
   return values.filter((value) => !excluded.has(value));
 }
 
+function parseDailyTokenLimit(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return { value: undefined };
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return { error: "每日 Token 预算上限必须是正整数" };
+  }
+  return { value: parsed };
+}
+
+function formatJsonSummary(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2);
+}
+
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
   if (step === "身份") {
     const errors: ValidationErrors = {};
@@ -1852,15 +1791,9 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     if (!draft.role.trim()) errors.role = "职责定位不能为空";
     return errors;
   }
-  if (step === "治理") {
-    const errors: ValidationErrors = {};
-    if (draft.daily_token_limit.trim()) {
-      const parsed = Number(draft.daily_token_limit);
-      if (!Number.isInteger(parsed) || parsed <= 0) {
-        errors.daily_token_limit = "每日 Token 预算上限必须是正整数";
-      }
-    }
-    return errors;
+  if (step === "能力") {
+    const budget = parseDailyTokenLimit(draft.daily_token_limit);
+    return budget.error ? { daily_token_limit: budget.error } : {};
   }
   if (step === "Provider 类型" && !draft.provider_type) {
     return { runtime: "请选择 Provider 类型" };
@@ -1871,51 +1804,30 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
 function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
   return {
     ...validateStep("身份", draft),
-    ...validateStep("治理", draft),
+    ...validateStep("能力", draft),
     ...validateStep("Provider 类型", draft),
   };
 }
 
-function isCustomAgentAllowedForTeam(options: DigitalEmployeeCreateOptions | undefined) {
-  const allowedTypes = options?.team_config.allowed_employee_types ?? [];
-  return allowedTypes.length === 0 || allowedTypes.includes(BLANK_CUSTOM_EMPLOYEE_TYPE);
-}
-
-function teamGovernanceBlockerMessage(error: unknown) {
-  return isTeamGovernanceConfigRequiredError(error)
-    ? "该团队尚未启用治理配置，不能在此团队下创建数字员工。"
-    : "";
-}
-
-function customAgentTeamBlockerMessage(draft: WizardDraft, options: DigitalEmployeeCreateOptions | undefined) {
-  if (draft.creation_mode !== "blank_custom" || !draft.team_id) return "";
-  return isCustomAgentAllowedForTeam(options) ? "" : "该团队不允许创建自定义数字员工。";
-}
-
 function budgetPolicyFromDraft(draft: WizardDraft) {
-  const trimmed = draft.daily_token_limit.trim();
-  if (!trimmed) return {};
-  return { daily_token_limit: Number(trimmed) };
+  const budget = parseDailyTokenLimit(draft.daily_token_limit);
+  if (budget.value === undefined) return {};
+  return budget.error ? {} : { daily_token_limit: budget.value };
 }
 
 function providerCandidates(options: DigitalEmployeeCreateOptions | undefined) {
-  const governanceValues = [
-    ...(options?.team_config.allowed_provider_types ?? []),
-    ...(options?.capability_options.provider_types ?? []),
-  ]
+  const configuredValues = [...(options?.capability_options.provider_types ?? [])]
     .map(normalizeProviderValue)
     .filter((value) => value && canonicalProviderTypes.includes(value as (typeof canonicalProviderTypes)[number]));
-  const governanceSet = new Set(governanceValues);
   const runtimeValues =
     options?.runtime_provider_options
       .map((option) => normalizeProviderValue(option.provider_type))
       .filter(
         (value) =>
           value &&
-          canonicalProviderTypes.includes(value as (typeof canonicalProviderTypes)[number]) &&
-          (governanceSet.size === 0 || governanceSet.has(value)),
+          canonicalProviderTypes.includes(value as (typeof canonicalProviderTypes)[number]),
       ) ?? [];
-  const values = [...governanceValues, ...runtimeValues];
+  const values = [...configuredValues, ...runtimeValues];
   return Array.from(new Set(values)).sort(
     (left, right) => canonicalProviderTypes.indexOf(left as any) - canonicalProviderTypes.indexOf(right as any),
   );
@@ -1968,11 +1880,6 @@ function riskLabel(value: string) {
 
 function providerLabel(value: string) {
   return providerLabels[value] ?? value;
-}
-
-function approvalPolicySummary(value: unknown) {
-  const risk = stringValue(value);
-  return risk ? riskLabel(risk) : "按团队默认";
 }
 
 function normalizeProviderValue(value: string) {
