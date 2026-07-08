@@ -257,8 +257,6 @@ func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
 		ID:                          uuid.Nil,
 		TenantID:                    tenantID,
 		TeamID:                      uuid.Nil,
-		RevisionNumber:              0,
-		Status:                      TeamConfigRevisionStatusActive,
 		CapabilityPolicy:            map[string]any{},
 		ContextPolicy:               map[string]any{},
 		ApprovalPolicy:              map[string]any{},
@@ -270,12 +268,10 @@ func defaultTeamLessConfigInput(tenantID uuid.UUID) TeamConfigInput {
 
 func teamConfigInputFromBaseline(tenantID, teamID uuid.UUID, baseline TeamBaseline) TeamConfigInput {
 	return TeamConfigInput{
-		ID:                          uuid.Nil,
-		TenantID:                    tenantID,
-		TeamID:                      teamID,
-		RevisionNumber:              0,
-		Status:                      TeamConfigRevisionStatusActive,
-		Constitution:                cloneMap(baseline.Constitution),
+		ID:           uuid.Nil,
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		Constitution: cloneMap(baseline.Constitution),
 		CapabilityPolicy: map[string]any{
 			"allowed_skills":      append([]string(nil), baseline.Skills...),
 			"allowed_mcp_servers": append([]string(nil), baseline.MCPServers...),
@@ -302,13 +298,12 @@ func createOptionChecks(
 	}
 
 	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers)
-	teamGovernanceReady := teamConfig.TeamID == nil || len(teamConfig.Skills) > 0 || len(teamConfig.MCPServers) > 0 || len(teamConfig.Constitution) > 0
 
 	return []CreateOptionCheck{
 		{
-			Key:     "team_governance",
-			Label:   "团队治理基线",
-			Status:  checkStatus(teamGovernanceReady, false),
+			Key:     "team_baseline",
+			Label:   "团队继承基线",
+			Status:  "passed",
 			Message: fmt.Sprintf("skills %d · MCP %d", len(teamConfig.Skills), len(teamConfig.MCPServers)),
 		},
 		{
@@ -948,9 +943,6 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	if preflight.RuntimeNodeID == uuid.Nil || strings.TrimSpace(preflight.NodeID) == "" {
 		return fmt.Errorf("%w: runtime node is unavailable", ErrRuntimeUnavailable)
 	}
-	if preflight.TeamID != uuid.Nil && !preflight.HasActiveTeamConfig {
-		return fmt.Errorf("%w: active team governance config is required before provisioning", ErrEffectiveConfigRequired)
-	}
 	if !preflight.RuntimeOnline {
 		return fmt.Errorf("%w: runtime node is not online", ErrRuntimeUnavailable)
 	}
@@ -992,7 +984,6 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"provider_type":               providerType,
 		"provider_run_protocol":       providerRunProtocol,
 		"agent_home_dir":              instance.AgentHomeDir,
-		"team_config_revision_id":     nullUUIDString(preview.TeamConfigRevisionID),
 		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
 		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
 		"session_policy":              cloneMap(req.SessionPolicy),
@@ -1111,9 +1102,7 @@ func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput Emplo
 	builder.WriteString("- Persist durable results through platform artifacts, evidence, or structured writeback.\n")
 	if preview != nil {
 		builder.WriteString("\n# Active Configuration\n\n")
-		builder.WriteString("- Team config revision: ")
-		builder.WriteString(preview.TeamConfigRevisionID.String())
-		builder.WriteString("\n- Employee config revision: ")
+		builder.WriteString("- Employee config revision: ")
 		builder.WriteString(preview.EmployeeConfigRevisionID.String())
 		builder.WriteString("\n")
 	}
@@ -1562,13 +1551,9 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
-	if req.TeamConfig.ID != uuid.Nil && req.TeamConfig.Status != "" && req.TeamConfig.Status != TeamConfigRevisionStatusActive {
-		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
-	}
 	teamLess := req.TeamConfig.ID == uuid.Nil
 
 	effectiveConfig := map[string]any{
-		"team_config_revision_id":     nullUUIDString(req.TeamConfig.ID),
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
 		"constitution": map[string]any{
 			"team":     cloneMap(req.TeamConfig.Constitution),
@@ -1591,13 +1576,12 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 		Warnings:       []ValidationIssue{},
 	}
 	if !teamLess {
-		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySubset(req.TeamConfig.CapabilityPolicy, req.EmployeeConfig.CapabilitySelection)...)
+		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySelection(req.EmployeeConfig.CapabilitySelection)...)
 		validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
 		validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
 	}
 
 	return &EffectiveConfigPreview{
-		TeamConfigRevisionID:     req.TeamConfig.ID,
 		EmployeeConfigRevisionID: req.EmployeeConfig.ID,
 		EffectiveConfig:          effectiveConfig,
 		Validation:               validation,
@@ -1690,45 +1674,6 @@ func executionInstanceFromRecord(record DigitalEmployeeExecutionInstanceRecord) 
 	}
 }
 
-func validateCapabilitySubset(teamPolicy, employeeSelection map[string]any) []ValidationIssue {
-	pairs := []struct {
-		teamKey     string
-		employeeKey string
-	}{
-		{teamKey: "allowed_mcp_servers", employeeKey: "enabled_mcp_servers"},
-		{teamKey: "allowed_skills", employeeKey: "enabled_skills"},
-		{teamKey: "allowed_plugins", employeeKey: "enabled_plugins"},
-		{teamKey: "allowed_external_capabilities", employeeKey: "enabled_external_capabilities"},
-		{teamKey: "allowed_provider_types", employeeKey: "enabled_provider_types"},
-	}
-	issues := []ValidationIssue{}
-	for _, pair := range pairs {
-		allowed, allowedIssues := stringListPolicyValue(teamPolicy, pair.teamKey, fmt.Sprintf("capability_policy.%s", pair.teamKey))
-		enabled, enabledIssues := stringListPolicyValue(employeeSelection, pair.employeeKey, fmt.Sprintf("capability_selection.%s", pair.employeeKey))
-		issues = append(issues, allowedIssues...)
-		issues = append(issues, enabledIssues...)
-		if len(enabled) == 0 {
-			continue
-		}
-		allowedSet := stringSet(allowed)
-		var outside []string
-		for _, item := range enabled {
-			if !allowedSet[item] {
-				outside = append(outside, item)
-			}
-		}
-		if len(outside) == 0 {
-			continue
-		}
-		issues = append(issues, ValidationIssue{
-			Code:    "capability_outside_team_allowlist",
-			Path:    fmt.Sprintf("capability_selection.%s", pair.employeeKey),
-			Message: fmt.Sprintf("capabilities are outside team allowlist: %s", strings.Join(outside, ", ")),
-		})
-	}
-	return issues
-}
-
 func validateContextSubset(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
 	keys := []struct {
 		overrideKey string
@@ -1764,6 +1709,21 @@ func validateContextSubset(teamPolicy, employeeOverride map[string]any) []Valida
 			Path:    fmt.Sprintf("context_policy_override.%s", key.overrideKey),
 			Message: fmt.Sprintf("context refs are outside team scope: %s", strings.Join(outside, ", ")),
 		})
+	}
+	return issues
+}
+
+func validateCapabilitySelection(employeeSelection map[string]any) []ValidationIssue {
+	keys := []string{
+		"enabled_mcp_servers",
+		"enabled_skills",
+		"enabled_plugins",
+		"enabled_provider_types",
+	}
+	issues := []ValidationIssue{}
+	for _, key := range keys {
+		_, valueIssues := stringListPolicyValue(employeeSelection, key, fmt.Sprintf("capability_selection.%s", key))
+		issues = append(issues, valueIssues...)
 	}
 	return issues
 }
@@ -1946,14 +1906,6 @@ func validUUIDPtr(value *uuid.UUID) *uuid.UUID {
 	}
 	copied := *value
 	return &copied
-}
-
-func teamConfigRevisionIDPtr(teamConfig TeamConfigInput) *uuid.UUID {
-	if teamConfig.ID == uuid.Nil {
-		return nil
-	}
-	id := teamConfig.ID
-	return &id
 }
 
 func nullUUIDString(value uuid.UUID) string {

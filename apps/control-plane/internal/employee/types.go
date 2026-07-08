@@ -11,7 +11,6 @@ var (
 	ErrInvalidInput            = errors.New("invalid employee input")
 	ErrNotFound                = errors.New("employee not found")
 	ErrConflict                = errors.New("employee conflict")
-	ErrEffectiveConfigRequired = errors.New("employee effective config required")
 	ErrRuntimeUnavailable      = errors.New("employee runtime unavailable")
 	ErrProviderUnavailable     = errors.New("employee provider unavailable")
 	ErrRuntimeIdentityMismatch = errors.New("employee runtime identity mismatch")
@@ -60,13 +59,6 @@ type ConfigRevisionStatus string
 const (
 	ConfigRevisionStatusDraft  ConfigRevisionStatus = "draft"
 	ConfigRevisionStatusActive ConfigRevisionStatus = "active"
-)
-
-type TeamConfigRevisionStatus string
-
-const (
-	TeamConfigRevisionStatusDraft  TeamConfigRevisionStatus = "draft"
-	TeamConfigRevisionStatusActive TeamConfigRevisionStatus = "active"
 )
 
 type ValidationIssue struct {
@@ -330,8 +322,6 @@ type TeamConfigInput struct {
 	ID                          uuid.UUID
 	TenantID                    uuid.UUID
 	TeamID                      uuid.UUID
-	RevisionNumber              int32
-	Status                      TeamConfigRevisionStatus
 	Constitution                map[string]any
 	CapabilityPolicy            map[string]any
 	ContextPolicy               map[string]any
@@ -429,7 +419,6 @@ type DigitalEmployeeConfigRevision struct {
 }
 
 type EffectiveConfigPreview struct {
-	TeamConfigRevisionID     uuid.UUID
 	EmployeeConfigRevisionID uuid.UUID
 	EffectiveConfig          map[string]any
 	Validation               EffectiveConfigValidation

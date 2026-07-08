@@ -252,9 +252,9 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
 		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
 			employeeID: {
-				DigitalEmployeeID:     employeeID,
-				ProviderType:          "codex",
-				ExecutionStatus:       "unavailable",
+				DigitalEmployeeID: employeeID,
+				ProviderType:      "codex",
+				ExecutionStatus:   "unavailable",
 			},
 		},
 	})
@@ -4476,6 +4476,9 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	repo.coordinationJobs = append(repo.coordinationJobs, job, inputJob)
 	task := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demand.ID, Title: "审查 PR", Status: "pending"}
 	repo.tasks = append(repo.tasks, task)
+	summary := ExecutionSummary{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ProjectTaskID: task.ID, DigitalEmployeeID: ownerID, Conclusion: "已完成审查"}
+	unrelatedSummary := ExecutionSummary{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ProjectTaskID: uuid.New(), DigitalEmployeeID: ownerID, Conclusion: "其他需求结果"}
+	repo.executionSummaries = append(repo.executionSummaries, summary, unrelatedSummary)
 	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
 	decisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"}
 	taskDecisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ProjectTaskID: &task.ID, TargetUserID: ownerID, DecisionType: "task_review", TitleSnapshot: "确认任务", StatusSnapshot: "pending"}
@@ -4512,6 +4515,9 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	}
 	if len(detail.CoordinationJobs) != 2 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 2 {
 		t.Fatalf("expected related facts, got %#v", detail)
+	}
+	if len(detail.ExecutionSummaries) != 1 || detail.ExecutionSummaries[0].ID != summary.ID {
+		t.Fatalf("expected task-scoped execution summary in launch detail, got %#v", detail.ExecutionSummaries)
 	}
 	if len(detail.RecentEvents) != 4 {
 		t.Fatalf("expected demand event in launch detail: %#v", detail.RecentEvents)
@@ -9677,6 +9683,23 @@ func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID,
 		}
 	}
 	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error) {
+	taskIDSet := make(map[uuid.UUID]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskIDSet[taskID] = struct{}{}
+	}
+	filtered := make([]ExecutionSummary, 0, len(r.executionSummaries))
+	for _, summary := range r.executionSummaries {
+		if summary.TenantID != tenantID || summary.ProjectID != projectID {
+			continue
+		}
+		if _, ok := taskIDSet[summary.ProjectTaskID]; ok {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered, nil
 }
 
 func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {

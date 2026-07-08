@@ -36,12 +36,10 @@ import {
 import type { McpBinding } from "@/lib/api/capabilities";
 import { bindTeamSkill, listSkills, listTeamSkills, unbindTeamSkill } from "@/lib/api/skills";
 import type { Skill } from "@/lib/api/skills";
-import type { TeamConfigRevision } from "@/lib/api/teams";
 
 type TeamCapabilitiesTabProps = {
   apiOptions: ApiClientOptions;
   canEdit: boolean;
-  currentRevision?: TeamConfigRevision;
   teamId: string;
 };
 

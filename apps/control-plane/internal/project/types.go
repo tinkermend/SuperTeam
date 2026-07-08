@@ -1131,14 +1131,15 @@ type ProjectDemand struct {
 }
 
 type DemandLaunchDetail struct {
-	Demand           ProjectDemand
-	Project          Project
-	Reviewer         *ReviewerPreference
-	CoordinationJobs []CoordinationJob
-	RouteDecisions   []RouteDecision
-	ProjectTasks     []ProjectTask
-	DecisionRequests []DecisionRequest
-	RecentEvents     []ProjectEvent
+	Demand             ProjectDemand
+	Project            Project
+	Reviewer           *ReviewerPreference
+	CoordinationJobs   []CoordinationJob
+	RouteDecisions     []RouteDecision
+	ProjectTasks       []ProjectTask
+	ExecutionSummaries []ExecutionSummary
+	DecisionRequests   []DecisionRequest
+	RecentEvents       []ProjectEvent
 }
 
 type ProjectConfigRevision struct {

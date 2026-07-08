@@ -87,8 +87,8 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
-  allowedEmployeeTypes = ["database_admin"],
   teamInheritedCapabilitySelection,
+  teamConfigOverrides,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -98,8 +98,8 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
-  allowedEmployeeTypes?: string[];
   teamInheritedCapabilitySelection?: Record<string, unknown>;
+  teamConfigOverrides?: Record<string, unknown>;
 } = {}) {
   const firstRuntimeAvailable = runtimeAvailability === "all";
   const secondRuntimeAvailable = runtimeAvailability !== "none";
@@ -159,19 +159,10 @@ function createOptionsFixture({
       id: "55555555-5555-4555-8555-555555555555",
       tenant_id: "22222222-2222-4222-8222-222222222222",
       team_id: team.id,
-      revision_number: 3,
-      status: "approved",
-      allowed_employee_types: allowedEmployeeTypes,
-      allowed_provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
-      allowed_skills: ["incident-diagnosis", "sql-review"],
-      allowed_mcp_servers: ["postgres"],
-      allowed_external_capabilities: ["jira.search"],
-      capability_policy: { mode: "allow_list" },
-      context_policy: { max_refs: 8 },
-      approval_policy: { required: true },
-      artifact_contract: { required: ["summary"] },
-      internal_collaboration_policy: { handoff: "structured" },
-      runtime_scope_policy: { allowed_nodes: ["runtime-a"] },
+      constitution: { summary: "团队默认宪法基线" },
+      skills: ["sql-review"],
+      mcp_servers: ["postgres"],
+      ...teamConfigOverrides,
     },
     employee_types: [
       {
@@ -185,7 +176,6 @@ function createOptionsFixture({
         default_capability_selection: {
           enabled_skills: ["sql-review"],
           enabled_mcp_servers: ["postgres"],
-          enabled_external_capabilities: ["jira.search"],
         },
         default_context_policy_override: { max_refs: 8 },
         default_approval_policy: { min_risk_for_human: "high" },
@@ -204,7 +194,6 @@ function createOptionsFixture({
               default_capability_selection: {
                 enabled_skills: ["frontend-implementation"],
                 enabled_mcp_servers: ["browser"],
-                enabled_provider_types: ["codex"],
               },
               default_context_policy_override: { max_refs: 6 },
               default_approval_policy: { min_risk_for_human: "medium" },
@@ -217,16 +206,9 @@ function createOptionsFixture({
       provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
       skills: ["incident-diagnosis", "sql-review"],
       mcp_servers: ["postgres"],
-      external_capabilities: ["jira.search"],
     },
     runtime_provider_options: runtimeProviderOptions,
     creation_checks: [
-      {
-        key: "team_governance",
-        label: "团队治理版本",
-        status: "passed",
-        message: "#3 approved",
-      },
       {
         key: "employee_templates",
         label: "专业模板",
@@ -245,7 +227,7 @@ function createOptionsFixture({
               key: capabilityBoundaryKey,
               label: "能力边界",
               status: "blocked",
-              message: "技能 0 · MCP 0 · 外部能力 0",
+              message: "技能 0 · MCP 0",
             },
           ]
         : []),
@@ -291,8 +273,8 @@ function createWizardFetcher({
   teams = [team],
   createOptionsErrorForTeamId,
   pendingCreateOptionsForTeamId,
-  allowedEmployeeTypes = ["database_admin"],
   teamInheritedCapabilitySelection,
+  teamConfigOverrides,
 }: {
   expectedCreateBody?: ExpectedCreateBody;
   expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
@@ -311,8 +293,8 @@ function createWizardFetcher({
   teams?: Array<typeof team>;
   createOptionsErrorForTeamId?: string;
   pendingCreateOptionsForTeamId?: string;
-  allowedEmployeeTypes?: string[];
   teamInheritedCapabilitySelection?: Record<string, unknown>;
+  teamConfigOverrides?: Record<string, unknown>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -332,15 +314,14 @@ function createWizardFetcher({
       if (createOptionsErrorForTeamId && url.searchParams.get("team_id") === createOptionsErrorForTeamId) {
         return jsonResponse(
           {
-            code: "team_governance_config_required",
-            message: "employee effective config required: active team governance config is required",
+            code: "create_options_unavailable",
+            message: "temporary create options failure",
           },
-          422,
+          500,
         );
       }
       return jsonResponse(
         createOptionsFixture({
-          allowedEmployeeTypes,
           capabilityBoundaryKey,
           includeFrontendTemplate,
           includeCapabilityBoundaryBlock,
@@ -350,6 +331,7 @@ function createWizardFetcher({
           runtimeCount,
           sameRuntimeNodeProviders,
           teamInheritedCapabilitySelection,
+          teamConfigOverrides,
         }),
       );
     }
@@ -374,9 +356,8 @@ function createWizardFetcher({
           title: "数据库管理员",
         },
         capability_selection: {
-          enabled_skills: ["sql-review"],
-          enabled_mcp_servers: ["postgres"],
-          enabled_external_capabilities: ["jira.search"],
+          enabled_skills: [],
+          enabled_mcp_servers: [],
         },
         context_policy_override: { max_refs: 8 },
         approval_policy_override: { min_risk_for_human: "high" },
@@ -562,7 +543,6 @@ describe("CreateEmployeeView", () => {
     expect(tableText).toContain("技能 1");
     expect(tableText).toContain("MCP 1");
     expect(tableText).toContain("Provider 1");
-    expect(tableText).toContain("外部能力 1");
     expect(tableText).toContain("高");
     expect(tableText).not.toContain("推荐能力");
     expect(tableText).not.toContain("风险触发");
@@ -618,6 +598,25 @@ describe("CreateEmployeeView", () => {
     expect(screen.getByLabelText("员工类型").query()).toBeNull();
     expect(document.body.textContent).toContain("数据库管理员");
     expect(document.body.textContent).toContain("负责数据库变更、备份、性能诊断和恢复验证");
+  });
+
+  it("renders a three-step wizard with capability and provider steps only", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+
+    await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
+    expect(document.body.textContent).toContain("能力");
+    expect(document.body.textContent).toContain("Provider 类型");
+    expect(document.body.querySelectorAll('[data-testid="employee-configure-actions"]').length).toBe(1);
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue('{\n  "max_refs": 8\n}');
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
+    await expect.element(screen.getByLabelText("每日 Token 预算上限")).toBeVisible();
   });
 
   it("keeps edited configuration when change-template confirmation is cancelled", async () => {
@@ -706,7 +705,7 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("加载创建选项");
   });
 
-  it("shows a business blocker when selected team lacks governance config", async () => {
+  it("surfaces a generic create-options error when team-scoped loading fails", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({ teams: [team, secondTeam], createOptionsErrorForTeamId: secondTeam.id }),
     );
@@ -714,21 +713,8 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
-    await expect.element(screen.getByText("该团队尚未启用治理配置，不能在此团队下创建数字员工。")).toBeVisible();
+    await expect.element(screen.getByText("创建选项加载失败")).toBeVisible();
     expect(document.body.textContent).not.toContain("employee effective config required");
-    await expect.element(screen.getByRole("button", { name: "先不归属团队创建" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "下一步" })).toBeDisabled();
-  });
-
-  it("blocks blank custom when selected team does not allow custom_agent", async () => {
-    const screen = await renderCreateEmployeeView(
-      createWizardFetcher({ teams: [team], allowedEmployeeTypes: ["database_admin"] }),
-    );
-
-    await enterBlankCustomConfiguration(screen);
-    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
-
-    await expect.element(screen.getByText("该团队不允许创建自定义数字员工。")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "下一步" })).toBeDisabled();
   });
 
@@ -748,7 +734,6 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByLabelText("Codex")).toBeChecked();
 
     await enterConfirmCreation(screen);
@@ -756,10 +741,12 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("Codex")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    expect(navigate).toHaveBeenCalledWith({
-      params: { employeeId: "11111111-1111-4111-8111-111111111111" },
-      to: "/employees/$employeeId",
-    });
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        params: { employeeId: "11111111-1111-4111-8111-111111111111" },
+        to: "/employees/$employeeId",
+      }),
+    );
   });
 
   it("starts blank-custom configuration without template-injected capabilities", async () => {
@@ -777,9 +764,8 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).not.toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).not.toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "postgres" })).not.toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "sql-review" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
   });
 
   it("shows 团队继承能力 and 员工扩展能力 as separate capability sections", async () => {
@@ -815,7 +801,6 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
 
     expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
-    expect(screen.getByText("技能 0 · MCP 0 · 外部能力 0", { exact: true }).query()).toBeNull();
     await userEvent.fill(screen.getByLabelText("名称"), "空白自定义员工");
     await userEvent.fill(screen.getByLabelText("职责定位"), "自定义诊断职责");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -850,7 +835,6 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("其他阻断", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("需要先完成外部前置条件", { exact: true })).toBeVisible();
     expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
-    expect(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0").query()).toBeNull();
   });
 
   it("does not show capability boundary as a template configuration summary blocker", async () => {
@@ -860,7 +844,6 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
 
     expect(screen.getByText("能力边界", { exact: true }).query()).toBeNull();
-    expect(screen.getByText("能力边界: 技能 0 · MCP 0 · 外部能力 0").query()).toBeNull();
     await userEvent.fill(screen.getByLabelText("名称"), "模板员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
@@ -873,7 +856,6 @@ describe("CreateEmployeeView", () => {
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByLabelText("Codex"));
@@ -899,7 +881,6 @@ describe("CreateEmployeeView", () => {
         capability_selection: {
           enabled_skills: [],
           enabled_mcp_servers: [],
-          enabled_external_capabilities: [],
         },
         context_policy_override: {},
         approval_policy_override: {},
@@ -918,7 +899,6 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByLabelText("Codex"));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
@@ -929,7 +909,6 @@ describe("CreateEmployeeView", () => {
     expect(body.capability_selection).toEqual({
       enabled_skills: [],
       enabled_mcp_servers: [],
-      enabled_external_capabilities: [],
     });
     expect(body.context_policy_override).toEqual({});
     expect(body.approval_policy_override).toEqual({});
@@ -944,11 +923,11 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByRole("checkbox", { name: "sql-review" })).toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "postgres" })).toBeChecked();
-    await expect.element(screen.getByRole("checkbox", { name: "jira.search" })).toBeChecked();
+    await expect.element(screen.getByText("sql-review")).toBeVisible();
+    await expect.element(screen.getByText("postgres")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "sql-review" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
@@ -957,36 +936,44 @@ describe("CreateEmployeeView", () => {
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.capability_selection).toEqual({
-      enabled_skills: ["sql-review"],
-      enabled_mcp_servers: ["postgres"],
-      enabled_external_capabilities: ["jira.search"],
+      enabled_skills: [],
+      enabled_mcp_servers: [],
     });
     expect(body.context_policy_override).toEqual({ max_refs: 8 });
     expect(body.approval_policy_override).toEqual({ min_risk_for_human: "high" });
     expect(body.metadata).toBeUndefined();
   });
 
-  it("renders governance defaults with Chinese risk labels", async () => {
+  it("shows policy defaults again on the confirm step", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.fill(screen.getByLabelText("每日 Token 预算上限"), "200000");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await enterConfirmCreation(screen);
+
+    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue('{\n  "max_refs": 8\n}');
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
+    expect(document.body.textContent).toContain("200000 Token");
+  });
+
+  it("renders capability defaults with Chinese risk labels", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await enterConfiguration(screen);
+    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("高");
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByText("审批策略")).toBeVisible();
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     expect(document.body.textContent).toContain("高");
-    expect(document.body.textContent).not.toContain("high");
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
   });
 
   it("excludes 团队继承能力 from submitted 员工扩展能力", async () => {
-    const fetcher = createWizardFetcher({
-      teamInheritedCapabilitySelection: {
-        team_inherited_skills: ["sql-review"],
-        team_inherited_mcp_servers: ["postgres"],
-        team_inherited_external_capabilities: ["jira.search"],
-      },
-    });
+    const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -997,7 +984,6 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
     await userEvent.click(screen.getByRole("checkbox", { name: "incident-diagnosis" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -1007,20 +993,11 @@ describe("CreateEmployeeView", () => {
     expect(body.capability_selection).toEqual({
       enabled_skills: ["incident-diagnosis"],
       enabled_mcp_servers: [],
-      enabled_external_capabilities: [],
     });
   });
 
   it("does not expose inherited capabilities as editable employee extensions", async () => {
-    const screen = await renderCreateEmployeeView(
-      createWizardFetcher({
-        teamInheritedCapabilitySelection: {
-          team_inherited_skills: ["sql-review"],
-          team_inherited_mcp_servers: ["postgres"],
-          team_inherited_external_capabilities: ["jira.search"],
-        },
-      }),
-    );
+    const screen = await renderCreateEmployeeView(createWizardFetcher());
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
@@ -1030,7 +1007,28 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByRole("checkbox", { name: "incident-diagnosis" })).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "sql-review" }).query()).toBeNull();
     expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
-    expect(screen.getByRole("checkbox", { name: "jira.search" }).query()).toBeNull();
+  });
+
+  it("reads inherited skills and MCP from team_config as read-only baseline", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        teamConfigOverrides: {
+          skills: ["incident-diagnosis"],
+          mcp_servers: ["postgres"],
+        },
+        teamInheritedCapabilitySelection: {},
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("incident-diagnosis")).toBeVisible();
+    await expect.element(screen.getByText("postgres")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "incident-diagnosis" }).query()).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "postgres" }).query()).toBeNull();
   });
 
   it("shows provider choices without exposing canonical provider values", async () => {
@@ -1038,7 +1036,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
@@ -1059,7 +1056,6 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue("");
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
@@ -1084,8 +1080,7 @@ describe("CreateEmployeeView", () => {
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "12000");
+    await userEvent.fill(screen.getByLabelText("每日 Token 预算上限"), "200000");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByLabelText("Codex")).toBeChecked();
     await enterConfirmCreation(screen);
@@ -1094,7 +1089,7 @@ describe("CreateEmployeeView", () => {
     const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
-    expect(body.budget_policy).toEqual({ daily_token_limit: 12000 });
+    expect(body.budget_policy).toEqual({ daily_token_limit: 200000 });
   });
 
   it("submits environment variables from the runtime step when creating a digital employee", async () => {
@@ -1105,7 +1100,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
@@ -1123,15 +1117,13 @@ describe("CreateEmployeeView", () => {
     ]);
   });
 
-  it("omits daily token budget when the field is empty", async () => {
+  it("omits daily token budget by default", async () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
@@ -1142,21 +1134,18 @@ describe("CreateEmployeeView", () => {
     expect(body.budget_policy).toEqual({});
   });
 
-  it.each(["0", "12.5"])("blocks invalid daily token budget %s on the governance step", async (invalidValue) => {
-    const fetcher = createWizardFetcher();
-    const screen = await renderCreateEmployeeView(fetcher);
+  it("blocks the capability step when daily token budget is not a positive integer", async () => {
+    const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
+    await userEvent.fill(screen.getByLabelText("每日 Token 预算上限"), "0");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
-    await expect.element(screen.getByRole("heading", { name: "治理" })).toBeVisible();
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeUndefined();
+    await expect.element(screen.getByRole("heading", { name: "能力" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Provider 类型" }).query()).toBeNull();
   });
 
   it("blocks the next step until identity fields are valid", async () => {
@@ -1185,7 +1174,6 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByLabelText("Codex")).toBeChecked();
     await expect.element(screen.getByText("2 个 Runtime 节点候选会在项目运行准备中评估")).toBeVisible();
@@ -1197,7 +1185,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
@@ -1230,7 +1217,6 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeChecked();
     await expect.element(screen.getByText("1/2 个 Runtime 节点当前在线，仅用于项目运行准备参考")).toBeVisible();
@@ -1249,7 +1235,7 @@ describe("CreateEmployeeView", () => {
       .toBeVisible();
   });
 
-  it("does not expose runtime preview providers outside team policy as selectable providers", async () => {
+  it("shows providers that are only present in runtime preview options", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
         includePolicyExcludedProvider: true,
@@ -1260,9 +1246,9 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByLabelText("Codex")).toBeChecked();
+    await expect.element(screen.getByLabelText("Codex")).toBeVisible();
+    await expect.element(screen.getByLabelText("Claude Code")).toBeVisible();
     expect(document.body.textContent).not.toContain("claude_code");
   });
 
@@ -1275,7 +1261,6 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByLabelText("Codex"));
@@ -1303,7 +1288,6 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("严重");
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
@@ -1335,7 +1319,6 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("button", { name: "进入确认创建" })).toBeDisabled();
     await expect.element(screen.getByLabelText("Codex")).not.toBeChecked();
@@ -1352,9 +1335,11 @@ describe("CreateEmployeeView", () => {
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.provider_type).toBe("claude-code");
 
-    expect(navigate).toHaveBeenCalledWith({
-      params: { employeeId: "11111111-1111-4111-8111-111111111111" },
-      to: "/employees/$employeeId",
-    });
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        params: { employeeId: "11111111-1111-4111-8111-111111111111" },
+        to: "/employees/$employeeId",
+      }),
+    );
   });
 });

@@ -67,8 +67,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	var optionsBody struct {
 		TeamConfig struct {
-			TeamID string `json:"team_id"`
-			Skills []string `json:"skills"`
+			TeamID     string   `json:"team_id"`
+			Skills     []string `json:"skills"`
 			MCPServers []string `json:"mcp_servers"`
 		} `json:"team_config"`
 		EmployeeTypes []struct {
@@ -115,7 +115,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if optionsBody.PolicyDefaults.SessionPolicy["mode"] != "reuse_latest" {
 		t.Fatalf("expected policy defaults, got %#v", optionsBody.PolicyDefaults)
 	}
-	assertCreateOptionCheck(t, optionsBody.CreationChecks, "team_governance", "passed")
+	assertCreateOptionCheck(t, optionsBody.CreationChecks, "team_baseline", "passed")
 	assertCreateOptionCheck(t, optionsBody.CreationChecks, "employee_templates", "passed")
 	assertCreateOptionCheck(t, optionsBody.CreationChecks, "runtime_provider", "passed")
 
@@ -946,55 +946,6 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	}
 	if emptyTypesBody.EmployeeTypes == nil || len(emptyTypesBody.EmployeeTypes) != 0 {
 		t.Fatalf("expected employee_types to decode as empty array, got %#v", emptyTypesBody.EmployeeTypes)
-	}
-}
-
-func TestDigitalEmployeeCreateOptionsReturnsStructuredTeamGovernanceError(t *testing.T) {
-	authService, err := auth.NewService(newRouteAuthRepo())
-	if err != nil {
-		t.Fatalf("new auth service: %v", err)
-	}
-	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	teamID := uuid.New()
-	service := &routeEmployeeService{
-		createOptionsErr: fmt.Errorf("%w: active team governance config is required", employee.ErrEffectiveConfigRequired),
-	}
-	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
-		authService,
-		nil,
-		&routeAuthorizer{allowed: true},
-	)
-	server.SetEmployeeHandler(employee.NewHandler(service))
-	cookie := routeLogin(t, server, "admin", "admin")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
-	req.AddCookie(cookie)
-	resp := httptest.NewRecorder()
-
-	server.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected structured governance error status 422, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if !strings.Contains(resp.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("expected JSON content type, got %q", resp.Header().Get("Content-Type"))
-	}
-	var body struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode structured governance error: %v", err)
-	}
-	if body.Code != "team_governance_config_required" {
-		t.Fatalf("expected team governance error code, got %#v", body)
-	}
-	if !strings.Contains(body.Message, "active team governance config is required") {
-		t.Fatalf("expected governance message, got %#v", body)
 	}
 }
 

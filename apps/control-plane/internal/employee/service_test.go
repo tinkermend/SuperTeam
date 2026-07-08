@@ -282,9 +282,8 @@ func TestCreateOptionsUsePlatformFullEmployeeTypes(t *testing.T) {
 
 func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
-		"allowed_skills":                []any{"policy-only-skill"},
-		"allowed_mcp_servers":           []any{"policy-only-mcp"},
-		"allowed_external_capabilities": []any{"change-ticket"},
+		"allowed_skills":      []any{"policy-only-skill"},
+		"allowed_mcp_servers": []any{"policy-only-mcp"},
 	}, nil)
 	delete(repo.currentTeamConfigByTeam, teamID)
 	repo.teamBaselines[teamID] = TeamBaseline{
@@ -547,7 +546,6 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 		ID:       teamConfigID,
 		TenantID: tenantID,
 		TeamID:   teamID,
-		Status:   TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{
 			"allowed_employee_types": []any{"backend_engineer"},
 			"allowed_provider_types": []any{"codex"},
@@ -1066,11 +1064,10 @@ func TestCreateDigitalEmployeeAllowsProviderOutsideFormerTeamPolicyBeforeCreatin
 	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
 	teamConfig := repo.teamConfigs[teamConfigID]
 	teamConfig.CapabilityPolicy = map[string]any{
-		"allowed_employee_types":        []any{"database_admin"},
-		"allowed_provider_types":        []any{"codex"},
-		"allowed_skills":                []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
-		"allowed_mcp_servers":           []any{"postgres-readonly", "mysql-readonly"},
-		"allowed_external_capabilities": []any{"change-ticket"},
+		"allowed_employee_types": []any{"database_admin"},
+		"allowed_provider_types": []any{"codex"},
+		"allowed_skills":         []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
+		"allowed_mcp_servers":    []any{"postgres-readonly", "mysql-readonly"},
 	}
 	teamConfig.RuntimeScopePolicy = map[string]any{
 		"allowed_provider_types": []any{"codex"},
@@ -1742,7 +1739,6 @@ func TestPreviewEffectiveConfigIncludesBudgetPolicy(t *testing.T) {
 			ID:       uuid.New(),
 			TenantID: tenantID,
 			TeamID:   uuid.New(),
-			Status:   TeamConfigRevisionStatusActive,
 		},
 		EmployeeConfig: EmployeeConfigInput{
 			ID:                uuid.New(),
@@ -1761,7 +1757,7 @@ func TestPreviewEffectiveConfigIncludesBudgetPolicy(t *testing.T) {
 	}
 }
 
-func TestPreviewEffectiveConfigBlocksCapabilityOutsideTeamAllowlist(t *testing.T) {
+func TestPreviewEffectiveConfigAllowsCapabilitySelectionOutsideFormerTeamAllowlist(t *testing.T) {
 	svc := newTestService(t)
 	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
 		TenantID:          uuid.New(),
@@ -1779,7 +1775,9 @@ func TestPreviewEffectiveConfigBlocksCapabilityOutsideTeamAllowlist(t *testing.T
 		t.Fatalf("preview effective config: %v", err)
 	}
 
-	assertBlockingIssue(t, preview.Validation, "capability_outside_team_allowlist")
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no capability allowlist blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
 }
 
 func TestPreviewEffectiveConfigBlocksContextOutsideTeamScope(t *testing.T) {
@@ -2146,8 +2144,6 @@ func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePol
 		ID:                 teamConfigID,
 		TenantID:           tenantID,
 		TeamID:             teamID,
-		RevisionNumber:     1,
-		Status:             TeamConfigRevisionStatusActive,
 		CapabilityPolicy:   cloneMap(capabilityPolicy),
 		RuntimeScopePolicy: cloneMap(runtimeScopePolicy),
 	}
@@ -2170,17 +2166,14 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	teamConfigID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.teamConfigs[teamConfigID] = TeamConfigInput{
-		ID:             teamConfigID,
-		TenantID:       tenantID,
-		TeamID:         teamID,
-		RevisionNumber: 7,
-		Status:         TeamConfigRevisionStatusActive,
+		ID:       teamConfigID,
+		TenantID: tenantID,
+		TeamID:   teamID,
 		CapabilityPolicy: map[string]any{
-			"allowed_employee_types":        []any{"database_admin"},
-			"allowed_provider_types":        []any{"codex"},
-			"allowed_skills":                []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
-			"allowed_mcp_servers":           []any{"postgres-readonly", "mysql-readonly"},
-			"allowed_external_capabilities": []any{"change-ticket"},
+			"allowed_employee_types": []any{"database_admin"},
+			"allowed_provider_types": []any{"codex"},
+			"allowed_skills":         []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
+			"allowed_mcp_servers":    []any{"postgres-readonly", "mysql-readonly"},
 		},
 		ContextPolicy: map[string]any{
 			"sources": []any{"runbook", "monitoring", "database_schema"},
@@ -2196,9 +2189,8 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
 	repo.preflight.GovernanceSnapshot = map[string]any{
-		"team_config_revision_id": teamConfigID.String(),
-		"authorization":           "Bearer raw-token",
-		"capability_policy":       map[string]any{"api_key": "raw-key"},
+		"authorization":     "Bearer raw-token",
+		"capability_policy": map[string]any{"api_key": "raw-key"},
 	}
 	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
 	dispatcher.connected["runtime-node-1"] = true
@@ -2297,14 +2289,12 @@ func firstEmployeeID(repo *memoryRepository) uuid.UUID {
 
 func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID) RuntimeProvisioningPreflight {
 	return RuntimeProvisioningPreflight{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: runtimeNodeID,
-		NodeID:        "runtime-node-1",
-		AgentHomeDir:  "/runtime/reported/agent-home",
-		GovernanceSnapshot: map[string]any{
-			"team_config_revision_id": uuid.NewString(),
-		},
+		TenantID:              tenantID,
+		TeamID:                teamID,
+		RuntimeNodeID:         runtimeNodeID,
+		NodeID:                "runtime-node-1",
+		AgentHomeDir:          "/runtime/reported/agent-home",
+		GovernanceSnapshot:    map[string]any{},
 		HasActiveTeamConfig:   true,
 		RuntimeOnline:         true,
 		EnrollmentApproved:    true,
@@ -2501,18 +2491,6 @@ func (r *memoryRepository) GetTeamBaseline(_ context.Context, tenantID, teamID u
 		Skills:       append([]string(nil), baseline.Skills...),
 		MCPServers:   append([]string(nil), baseline.MCPServers...),
 	}, nil
-}
-
-func (r *memoryRepository) GetCurrentTeamConfigRevision(_ context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
-	teamConfigID, ok := r.currentTeamConfigByTeam[teamID]
-	if !ok {
-		return TeamConfigInput{}, ErrNotFound
-	}
-	record, ok := r.teamConfigs[teamConfigID]
-	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamConfigRevisionStatusActive {
-		return TeamConfigInput{}, ErrNotFound
-	}
-	return record, nil
 }
 
 func (r *memoryRepository) ListRuntimeProviderOptionsForCreate(_ context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
@@ -2765,14 +2743,6 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 	return record, nil
 }
 
-func (r *memoryRepository) GetTeamConfigRevision(_ context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error) {
-	record, ok := r.teamConfigs[teamConfigRevisionID]
-	if !ok || record.TenantID != tenantID {
-		return TeamConfigInput{}, ErrNotFound
-	}
-	return record, nil
-}
-
 func (r *memoryRepository) GetDigitalEmployeeConfigRevision(_ context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
 	record, ok := r.employeeConfigs[employeeConfigRevisionID]
 	if !ok || record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
@@ -2815,7 +2785,6 @@ func (r *memoryRepository) GetSchedulingCapabilityFacts(_ context.Context, tenan
 	}
 	return r.schedulingCapabilityFacts, nil
 }
-
 
 func (r *memoryRepository) GetDigitalEmployeeRunStats(_ context.Context, _, _ uuid.UUID) (DigitalEmployeeRunStats, error) {
 	return DigitalEmployeeRunStats{}, nil

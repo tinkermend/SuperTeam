@@ -230,8 +230,8 @@ func TestOverviewItemsSQLCarriesProviderAvailabilityForWorkbenchStatus(t *testin
 func TestOverviewItemsSQLUsesLatestGovernanceStatusForCard(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
 
-	require.Contains(t, normalizedSQL, "governance_configs AS")
-	require.Contains(t, normalizedSQL, "COALESCE(gc.status, 'missing')::text AS governance_status")
+	require.Contains(t, normalizedSQL, "employee_config_states AS")
+	require.Contains(t, normalizedSQL, "COALESCE(ecs.governance_status, 'missing')::text AS governance_status")
 }
 
 func TestOverviewItemsSQLExcludesDeletedTaskEvents(t *testing.T) {

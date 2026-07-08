@@ -37,12 +37,12 @@ import { listTeams, type TeamListItem } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
   findTemplateByType,
+  templateAvailabilityStatus,
   orderedEmployeeTypes,
   templateCapabilityPreview,
   templateCapabilitySummary,
   templateDefaultInjectionLine,
   templateDefaultInjectionSummary,
-  templateGovernanceStatus,
   templateRisk,
 } from "./template-utils";
 
@@ -77,7 +77,7 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
   return (
     <TemplateShell
       title="数字员工模板"
-      subtitle="只读查看内置模板、能力默认值和团队治理影响"
+      subtitle="只读查看内置模板、能力默认值和团队继承基线"
       actions={
         <V3Button asChild>
           <Link to="/employees/new">
@@ -142,7 +142,7 @@ export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: Templa
   return (
     <TemplateShell
       title="模板详情"
-      subtitle="查看模板默认画像、注入策略和团队约束"
+      subtitle="查看模板默认画像、注入策略和团队继承基线"
       back={<ShellPageHeaderBack ariaLabel="返回数字员工模板列表" to="/employees/templates" />}
     >
       <TemplateQuerySurface state={state}>
@@ -245,15 +245,14 @@ function TemplateTableRow({
   scopeLabel: string;
   template: DigitalEmployeeTypeOption;
 }) {
-  const governance = templateGovernanceStatus(options, template);
-  const blocked = governance.label === "被治理过滤";
-  const tone: V3Tone = blocked ? "warn" : "ok";
+  const availability = templateAvailabilityStatus(options);
+  const tone: V3Tone = availability.label === "继承团队基线" ? "brand" : "ok";
 
   return (
-    <V3Tr tone={blocked ? "warn" : undefined}>
+    <V3Tr>
       <V3Td className="min-w-[240px]">
         <div className="flex min-w-0 items-start gap-3">
-          <IconTile tone={blocked ? "warn" : "brand"} size="sm">
+          <IconTile tone="brand" size="sm">
             <Sparkles />
           </IconTile>
           <div className="min-w-0">
@@ -273,7 +272,7 @@ function TemplateTableRow({
       <V3Td>{templateDefaultInjectionLine(template)}</V3Td>
       <V3Td>{scopeLabel}</V3Td>
       <V3Td>
-        <StatusPill tone={tone}>{governance.label}</StatusPill>
+        <StatusPill tone={tone}>{availability.label}</StatusPill>
       </V3Td>
       <V3Td>
         <V3Button asChild variant="outline" size="sm">
@@ -301,8 +300,8 @@ function TemplateDetailContent({
 }) {
   const capability = templateCapabilitySummary(template);
   const defaultInjection = templateDefaultInjectionSummary(template);
-  const governance = templateGovernanceStatus(options, template);
-  const blocked = governance.label === "被治理过滤";
+  const availability = templateAvailabilityStatus(options);
+  const inherited = availability.label === "继承团队基线";
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -310,7 +309,7 @@ function TemplateDetailContent({
         <SoftCard className="p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-              <IconTile tone={blocked ? "warn" : "brand"} size="lg">
+              <IconTile tone="brand" size="lg">
                 <LayoutTemplate />
               </IconTile>
               <div className="min-w-0">
@@ -318,7 +317,7 @@ function TemplateDetailContent({
                 <p className="mt-1 max-w-2xl text-[13px] text-v3-ink-2">{template.description}</p>
               </div>
             </div>
-            <StatusPill tone={blocked ? "warn" : "ok"}>{governance.label}</StatusPill>
+            <StatusPill tone={inherited ? "brand" : "ok"}>{availability.label}</StatusPill>
           </div>
           <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <DetailFact label="模板标识" value={template.type} monospace />
@@ -352,7 +351,6 @@ function TemplateDetailContent({
           <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
             <InjectionCount label="技能" value={defaultInjection.skills.length} />
             <InjectionCount label="MCP" value={defaultInjection.mcpServers.length} />
-            <InjectionCount label="外部能力" value={defaultInjection.externalCapabilities.length} />
             <InjectionCount label="Provider" value={defaultInjection.providerTypes.length} />
           </div>
         </WorkSurface>
@@ -361,30 +359,30 @@ function TemplateDetailContent({
       <div className="flex min-w-0 flex-col gap-4">
         <SoftCard className="p-5">
           <div className="flex items-start gap-3">
-            <IconTile tone={blocked ? "warn" : "ok"} size="sm">
-              {blocked ? <ShieldAlert /> : <CheckCircle2 />}
+            <IconTile tone={inherited ? "brand" : "ok"} size="sm">
+              {inherited ? <ShieldAlert /> : <CheckCircle2 />}
             </IconTile>
             <div className="min-w-0">
-              <h3 className="text-[17px] font-bold text-v3-ink">治理影响</h3>
+              <h3 className="text-[17px] font-bold text-v3-ink">继承基线</h3>
               <p className="mt-1 text-[13px] text-v3-ink-2">
-                根据当前团队 allow-list 计算模板默认能力是否会被过滤。
+                模板默认值基于平台目录展示；创建时仍会叠加当前团队的只读继承基线。
               </p>
             </div>
           </div>
-          {governance.blockedReasons.length > 0 ? (
+          {availability.notes.length > 0 ? (
             <ul className="mt-4 space-y-2">
-              {governance.blockedReasons.map((reason) => (
+              {availability.notes.map((note) => (
                 <li
-                  key={reason}
-                  className="rounded-v3-inner bg-v3-warn-soft px-3 py-2 text-[13px] font-semibold text-v3-warn"
+                  key={note}
+                  className="rounded-v3-inner bg-v3-brand-soft px-3 py-2 text-[13px] font-semibold text-v3-brand"
                 >
-                  {reason}
+                  {note}
                 </li>
               ))}
             </ul>
           ) : (
             <p className="mt-4 rounded-v3-inner bg-v3-ok-soft px-3 py-2 text-[13px] font-semibold text-v3-ok">
-              当前默认注入通过团队治理检查
+              当前模板直接使用平台默认值，不会被旧治理 allow-list 过滤。
             </p>
           )}
         </SoftCard>

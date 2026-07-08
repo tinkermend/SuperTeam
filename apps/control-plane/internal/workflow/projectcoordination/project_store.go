@@ -2277,6 +2277,15 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		DispatchGateResultID:          &gate.Gate.ID,
 	})
 	if err != nil {
+		if errors.Is(err, project.ErrProjectConflict) {
+			latest, latestErr := s.repository.GetProjectTask(ctx, input.TenantID, input.TaskID)
+			if latestErr != nil {
+				return latestErr
+			}
+			if latest.CurrentAttemptID != nil && latest.DigitalEmployeeRunID != nil && latest.RuntimeTaskID != nil {
+				return s.advanceDispatchedTaskDemand(ctx, input, latest)
+			}
+		}
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
 	if queueResult.Attempt.ID != uuid.Nil {
@@ -2327,6 +2336,15 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		ExecutionContextPacketVersion: "v1",
 	})
 	if err != nil {
+		if errors.Is(err, project.ErrProjectConflict) {
+			latest, latestErr := s.repository.GetProjectTask(ctx, input.TenantID, input.TaskID)
+			if latestErr != nil {
+				return latestErr
+			}
+			if projectTaskBoundToAttemptRun(latest, queueResult.Attempt.ID, run) {
+				return s.advanceDispatchedTaskDemand(ctx, input, latest)
+			}
+		}
 		return err
 	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
@@ -2425,6 +2443,15 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		ExecutionContextPacketVersion: nonEmptyString(attempt.ExecutionContextPacketVersion, "v1"),
 	})
 	if err != nil {
+		if errors.Is(err, project.ErrProjectConflict) {
+			latest, latestErr := s.repository.GetProjectTask(ctx, input.TenantID, input.TaskID)
+			if latestErr != nil {
+				return latestErr
+			}
+			if projectTaskBoundToAttemptRun(latest, attempt.ID, run) {
+				return s.advanceDispatchedTaskDemand(ctx, input, latest)
+			}
+		}
 		return err
 	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
@@ -2527,6 +2554,19 @@ func projectTaskDispatchAllowed(status string) bool {
 
 func projectTaskQueuedWithoutRunBinding(task project.ProjectTask) bool {
 	return task.Status == project.ProjectTaskStatusQueued && task.CurrentAttemptID != nil && task.DigitalEmployeeRunID == nil && task.RuntimeTaskID == nil
+}
+
+func projectTaskBoundToRun(task project.ProjectTask, run StartProjectTaskRunResult) bool {
+	return task.DigitalEmployeeRunID != nil &&
+		task.RuntimeTaskID != nil &&
+		*task.DigitalEmployeeRunID == run.RunID &&
+		*task.RuntimeTaskID == run.RuntimeTaskID
+}
+
+func projectTaskBoundToAttemptRun(task project.ProjectTask, attemptID uuid.UUID, run StartProjectTaskRunResult) bool {
+	return task.CurrentAttemptID != nil &&
+		*task.CurrentAttemptID == attemptID &&
+		projectTaskBoundToRun(task, run)
 }
 
 func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {

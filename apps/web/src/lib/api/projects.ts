@@ -479,6 +479,7 @@ export type ProjectDemandLaunchDetail = {
   coordination_jobs: ProjectCoordinationJob[];
   route_decisions: ProjectRouteDecision[];
   project_tasks: ProjectTask[];
+  execution_summaries: ProjectExecutionSummary[];
   decision_requests: ProjectDecisionRequest[];
   recent_events: ProjectEvent[];
 };

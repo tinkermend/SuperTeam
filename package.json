@@ -7,7 +7,7 @@
     "build:web": "corepack pnpm --filter @superteam/web build",
     "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane --config apps/control-plane/config/config.yaml",
     "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.yaml",
-    "generate:control-plane": "cd apps/control-plane && go generate ./internal/api",
+    "generate:control-plane": "cd apps/control-plane && go generate . ./internal/api",
     "verify:contracts": "node scripts/verify-foundation-contracts.mjs",
     "verify:foundation": "corepack pnpm verify:contracts && corepack pnpm test:ts && corepack pnpm typecheck && corepack pnpm test:go && corepack pnpm test:rust",
     "verify:design-system": "node docs/design-system/verify-design-system.mjs",

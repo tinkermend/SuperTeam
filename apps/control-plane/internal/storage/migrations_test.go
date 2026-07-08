@@ -373,6 +373,14 @@ func TestMigration046TeamConstitutionAndSkillBindingRenameAppliedSchema(t *testi
 	assertColumnExists(t, pool, schemaName, "tenant_teams", "constitution")
 }
 
+func TestMigration047DropsGovernanceTables(t *testing.T) {
+	pool, schemaName := applyAllMigrations(t)
+
+	assertTableAbsent(t, pool, schemaName, "tenant_team_config_revisions")
+	assertTableAbsent(t, pool, schemaName, "digital_employee_effective_configs")
+	assertTableExists(t, pool, schemaName, "digital_employee_config_revisions")
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {
@@ -2076,8 +2084,8 @@ func TestMigrationProjectRuntimeNodes(t *testing.T) {
 	assertTableExists(t, pool, schemaName, "project_employee_node_affinity")
 }
 
-func TestMigration048BackfillProjectRuntimeNodesFromPlacements(t *testing.T) {
-	sql := readMigration(t, "048_backfill_project_runtime_nodes_from_placements.sql")
+func TestMigration049BackfillProjectRuntimeNodesFromPlacements(t *testing.T) {
+	sql := readMigration(t, "049_backfill_project_runtime_nodes_from_placements.sql")
 
 	for _, expected := range []string{
 		"INSERT INTO project_runtime_nodes (tenant_id, project_id, runtime_node_id)",

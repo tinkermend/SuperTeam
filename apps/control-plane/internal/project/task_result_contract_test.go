@@ -510,6 +510,27 @@ func TestTaskResultContractPlanShapeCompatibility(t *testing.T) {
 	require.NotContains(t, string(partialPayload), "verification")
 }
 
+func TestTaskResultContractUnmarshalAcceptsSingularEvidenceRef(t *testing.T) {
+	var contract TaskResultContract
+	err := json.Unmarshal([]byte(`{
+		"status": "completed",
+		"summary": "runtime completed",
+		"evidence_ref": {"type": "runtime_command", "ref": "runtime-command://cmd-1"},
+		"acceptance_results": [
+			{"criterion": "输出结论", "status": "passed", "evidence_ref": "runtime-command://cmd-1"}
+		],
+		"verification": [
+			{"type": "runtime_smoke", "status": "passed", "evidence_ref": {"type": "runtime_command", "ref": "runtime-command://cmd-1"}}
+		]
+	}`), &contract)
+	require.NoError(t, err)
+	require.Len(t, contract.EvidenceRefs, 1)
+	require.Equal(t, "runtime-command://cmd-1", contract.EvidenceRefs[0].Ref)
+	require.Equal(t, []string{"runtime-command://cmd-1"}, contract.AcceptanceResults[0].EvidenceRefs)
+	require.Len(t, contract.Verification[0].EvidenceRefs, 1)
+	require.Equal(t, "runtime-command://cmd-1", contract.Verification[0].EvidenceRefs[0].Ref)
+}
+
 func taskResultContractTask() ProjectTask {
 	return ProjectTask{
 		ExpectedOutputs: []any{

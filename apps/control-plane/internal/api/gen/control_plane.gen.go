@@ -144,24 +144,6 @@ func (e CreatePromptTemplateRequestScope) Valid() bool {
 	}
 }
 
-// Defines values for CreateTeamConfigRevisionRequestStatus.
-const (
-	CreateTeamConfigRevisionRequestStatusActive CreateTeamConfigRevisionRequestStatus = "active"
-	CreateTeamConfigRevisionRequestStatusDraft  CreateTeamConfigRevisionRequestStatus = "draft"
-)
-
-// Valid indicates whether the value is a known member of the CreateTeamConfigRevisionRequestStatus enum.
-func (e CreateTeamConfigRevisionRequestStatus) Valid() bool {
-	switch e {
-	case CreateTeamConfigRevisionRequestStatusActive:
-		return true
-	case CreateTeamConfigRevisionRequestStatusDraft:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for CreateTeamMemberRoleRequestRequestedRole.
 const (
 	CreateTeamMemberRoleRequestRequestedRoleAdmin    CreateTeamMemberRoleRequestRequestedRole = "admin"
@@ -1076,34 +1058,34 @@ func (e ProjectRuntimePlacementState) Valid() bool {
 
 // Defines values for ProjectRuntimePlacementStatus.
 const (
-	ProjectRuntimePlacementStatusCapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
-	ProjectRuntimePlacementStatusCommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
-	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
-	ProjectRuntimePlacementStatusMissing                    ProjectRuntimePlacementStatus = "missing"
-	ProjectRuntimePlacementStatusProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
-	ProjectRuntimePlacementStatusReady                      ProjectRuntimePlacementStatus = "ready"
-	ProjectRuntimePlacementStatusRuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
-	ProjectRuntimePlacementStatusWorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
+	CapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
+	CommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
+	ContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
+	Missing                    ProjectRuntimePlacementStatus = "missing"
+	ProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
+	Ready                      ProjectRuntimePlacementStatus = "ready"
+	RuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
+	WorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
 )
 
 // Valid indicates whether the value is a known member of the ProjectRuntimePlacementStatus enum.
 func (e ProjectRuntimePlacementStatus) Valid() bool {
 	switch e {
-	case ProjectRuntimePlacementStatusCapacityFull:
+	case CapacityFull:
 		return true
-	case ProjectRuntimePlacementStatusCommandChannelDisconnected:
+	case CommandChannelDisconnected:
 		return true
-	case ProjectRuntimePlacementStatusContractMismatch:
+	case ContractMismatch:
 		return true
-	case ProjectRuntimePlacementStatusMissing:
+	case Missing:
 		return true
-	case ProjectRuntimePlacementStatusProviderUnavailable:
+	case ProviderUnavailable:
 		return true
-	case ProjectRuntimePlacementStatusReady:
+	case Ready:
 		return true
-	case ProjectRuntimePlacementStatusRuntimeOffline:
+	case RuntimeOffline:
 		return true
-	case ProjectRuntimePlacementStatusWorkspacePending:
+	case WorkspacePending:
 		return true
 	default:
 		return false
@@ -1554,30 +1536,6 @@ func (e TaskStatus) Valid() bool {
 	}
 }
 
-// Defines values for TeamConfigRevisionStatus.
-const (
-	TeamConfigRevisionStatusActive   TeamConfigRevisionStatus = "active"
-	TeamConfigRevisionStatusArchived TeamConfigRevisionStatus = "archived"
-	TeamConfigRevisionStatusDraft    TeamConfigRevisionStatus = "draft"
-	TeamConfigRevisionStatusRejected TeamConfigRevisionStatus = "rejected"
-)
-
-// Valid indicates whether the value is a known member of the TeamConfigRevisionStatus enum.
-func (e TeamConfigRevisionStatus) Valid() bool {
-	switch e {
-	case TeamConfigRevisionStatusActive:
-		return true
-	case TeamConfigRevisionStatusArchived:
-		return true
-	case TeamConfigRevisionStatusDraft:
-		return true
-	case TeamConfigRevisionStatusRejected:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for TeamLendingApprovalMode.
 const (
 	TeamLendingApprovalModeAuto   TeamLendingApprovalMode = "auto"
@@ -1673,19 +1631,19 @@ func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestStatus.
 const (
-	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
-	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
-	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
+	Approved TeamMemberRoleRequestStatus = "approved"
+	Pending  TeamMemberRoleRequestStatus = "pending"
+	Rejected TeamMemberRoleRequestStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
 func (e TeamMemberRoleRequestStatus) Valid() bool {
 	switch e {
-	case TeamMemberRoleRequestStatusApproved:
+	case Approved:
 		return true
-	case TeamMemberRoleRequestStatusPending:
+	case Pending:
 		return true
-	case TeamMemberRoleRequestStatusRejected:
+	case Rejected:
 		return true
 	default:
 		return false
@@ -2213,22 +2171,6 @@ type CreateTaskRequest struct {
 	Title         string                  `json:"title"`
 	WorkspacePath *string                 `json:"workspace_path,omitempty"`
 }
-
-// CreateTeamConfigRevisionRequest defines model for CreateTeamConfigRevisionRequest.
-type CreateTeamConfigRevisionRequest struct {
-	ApprovalPolicy              *map[string]interface{}                `json:"approval_policy,omitempty"`
-	ArtifactContract            *map[string]interface{}                `json:"artifact_contract,omitempty"`
-	CapabilityPolicy            *map[string]interface{}                `json:"capability_policy,omitempty"`
-	Constitution                *map[string]interface{}                `json:"constitution,omitempty"`
-	ContextPolicy               *map[string]interface{}                `json:"context_policy,omitempty"`
-	HumanOwnerUserIds           []openapi_types.UUID                   `json:"human_owner_user_ids"`
-	InternalCollaborationPolicy *map[string]interface{}                `json:"internal_collaboration_policy,omitempty"`
-	RuntimeScopePolicy          *map[string]interface{}                `json:"runtime_scope_policy,omitempty"`
-	Status                      *CreateTeamConfigRevisionRequestStatus `json:"status,omitempty"`
-}
-
-// CreateTeamConfigRevisionRequestStatus defines model for CreateTeamConfigRevisionRequest.Status.
-type CreateTeamConfigRevisionRequestStatus string
 
 // CreateTeamMemberRoleRequest defines model for CreateTeamMemberRoleRequest.
 type CreateTeamMemberRoleRequest struct {
@@ -2905,36 +2847,8 @@ type FailTaskRequest struct {
 	Error string `json:"error"`
 }
 
-// GovernanceDiffSummary defines model for GovernanceDiffSummary.
-type GovernanceDiffSummary struct {
-	AddedHardRules       int32                       `json:"added_hard_rules"`
-	BlockingErrors       []GovernanceValidationIssue `json:"blocking_errors"`
-	ChangedApprovalRules int32                       `json:"changed_approval_rules"`
-	ChangedCapabilities  int32                       `json:"changed_capabilities"`
-	Warnings             []GovernanceValidationIssue `json:"warnings"`
-}
-
-// GovernanceDraftInput defines model for GovernanceDraftInput.
-type GovernanceDraftInput struct {
-	ApprovalPolicy              *map[string]interface{} `json:"approval_policy,omitempty"`
-	ArtifactContract            *map[string]interface{} `json:"artifact_contract,omitempty"`
-	CapabilityPolicy            *map[string]interface{} `json:"capability_policy,omitempty"`
-	Constitution                *map[string]interface{} `json:"constitution,omitempty"`
-	ContextPolicy               *map[string]interface{} `json:"context_policy,omitempty"`
-	HumanOwnerUserIds           *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
-	InternalCollaborationPolicy *map[string]interface{} `json:"internal_collaboration_policy,omitempty"`
-	RuntimeScopePolicy          *map[string]interface{} `json:"runtime_scope_policy,omitempty"`
-}
-
 // GovernanceSummaryStatus defines model for GovernanceSummaryStatus.
 type GovernanceSummaryStatus string
-
-// GovernanceValidationIssue defines model for GovernanceValidationIssue.
-type GovernanceValidationIssue struct {
-	Field    string `json:"field"`
-	Message  string `json:"message"`
-	Severity string `json:"severity"`
-}
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -3360,14 +3274,15 @@ type ProjectDemand struct {
 
 // ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.
 type ProjectDemandLaunchDetail struct {
-	CoordinationJobs []ProjectCoordinationJob `json:"coordination_jobs"`
-	DecisionRequests []ProjectDecisionRequest `json:"decision_requests"`
-	Demand           ProjectDemand            `json:"demand"`
-	Project          Project                  `json:"project"`
-	ProjectTasks     []ProjectTask            `json:"project_tasks"`
-	RecentEvents     []ProjectEvent           `json:"recent_events"`
-	Reviewer         *ReviewerPreference      `json:"reviewer"`
-	RouteDecisions   []ProjectRouteDecision   `json:"route_decisions"`
+	CoordinationJobs   []ProjectCoordinationJob  `json:"coordination_jobs"`
+	DecisionRequests   []ProjectDecisionRequest  `json:"decision_requests"`
+	Demand             ProjectDemand             `json:"demand"`
+	ExecutionSummaries []ProjectExecutionSummary `json:"execution_summaries"`
+	Project            Project                   `json:"project"`
+	ProjectTasks       []ProjectTask             `json:"project_tasks"`
+	RecentEvents       []ProjectEvent            `json:"recent_events"`
+	Reviewer           *ReviewerPreference       `json:"reviewer"`
+	RouteDecisions     []ProjectRouteDecision    `json:"route_decisions"`
 }
 
 // ProjectDemandSourceType defines model for ProjectDemandSourceType.
@@ -4515,16 +4430,17 @@ type TaskStatus string
 
 // Team defines model for Team.
 type Team struct {
-	CreatedAt         *time.Time             `json:"created_at,omitempty"`
-	HumanOwnerUserIds *[]openapi_types.UUID  `json:"human_owner_user_ids,omitempty"`
-	HumanOwners       *[]TeamHumanOwner      `json:"human_owners,omitempty"`
-	Id                openapi_types.UUID     `json:"id"`
-	Metadata          map[string]interface{} `json:"metadata"`
-	Name              string                 `json:"name"`
-	Slug              string                 `json:"slug"`
-	Status            TeamStatus             `json:"status"`
-	TenantId          openapi_types.UUID     `json:"tenant_id"`
-	UpdatedAt         *time.Time             `json:"updated_at,omitempty"`
+	Constitution      *map[string]interface{} `json:"constitution,omitempty"`
+	CreatedAt         *time.Time              `json:"created_at,omitempty"`
+	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
+	HumanOwners       *[]TeamHumanOwner       `json:"human_owners,omitempty"`
+	Id                openapi_types.UUID      `json:"id"`
+	Metadata          map[string]interface{}  `json:"metadata"`
+	Name              string                  `json:"name"`
+	Slug              string                  `json:"slug"`
+	Status            TeamStatus              `json:"status"`
+	TenantId          openapi_types.UUID      `json:"tenant_id"`
+	UpdatedAt         *time.Time              `json:"updated_at,omitempty"`
 }
 
 // TeamAuditEvent defines model for TeamAuditEvent.
@@ -4541,30 +4457,6 @@ type TeamAuditEvent struct {
 	ResourceType string                 `json:"resource_type"`
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
-
-// TeamConfigRevision defines model for TeamConfigRevision.
-type TeamConfigRevision struct {
-	ApprovalPolicy              map[string]interface{}   `json:"approval_policy"`
-	ApprovedAt                  *time.Time               `json:"approved_at,omitempty"`
-	ApprovedBy                  *openapi_types.UUID      `json:"approved_by,omitempty"`
-	ArtifactContract            map[string]interface{}   `json:"artifact_contract"`
-	CapabilityPolicy            map[string]interface{}   `json:"capability_policy"`
-	Constitution                map[string]interface{}   `json:"constitution"`
-	ContextPolicy               map[string]interface{}   `json:"context_policy"`
-	CreatedAt                   *time.Time               `json:"created_at,omitempty"`
-	HumanOwnerUserIds           *[]openapi_types.UUID    `json:"human_owner_user_ids,omitempty"`
-	Id                          openapi_types.UUID       `json:"id"`
-	InternalCollaborationPolicy map[string]interface{}   `json:"internal_collaboration_policy"`
-	RevisionNumber              int32                    `json:"revision_number"`
-	RuntimeScopePolicy          map[string]interface{}   `json:"runtime_scope_policy"`
-	Status                      TeamConfigRevisionStatus `json:"status"`
-	TeamId                      openapi_types.UUID       `json:"team_id"`
-	TenantId                    openapi_types.UUID       `json:"tenant_id"`
-	UpdatedAt                   *time.Time               `json:"updated_at,omitempty"`
-}
-
-// TeamConfigRevisionStatus defines model for TeamConfigRevision.Status.
-type TeamConfigRevisionStatus string
 
 // TeamHumanOwner defines model for TeamHumanOwner.
 type TeamHumanOwner struct {
@@ -4625,6 +4517,7 @@ type TeamLendingRequestStatus string
 // TeamListItem defines model for TeamListItem.
 type TeamListItem struct {
 	CapabilityCount      int32                   `json:"capability_count"`
+	Constitution         *map[string]interface{} `json:"constitution,omitempty"`
 	CreatedAt            *time.Time              `json:"created_at,omitempty"`
 	CurrentRevision      *int32                  `json:"current_revision,omitempty"`
 	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
@@ -4690,7 +4583,6 @@ type TeamMemberRoleRequestStatus string
 type TeamOverview struct {
 	AllowedActions       []AllowedTeamAction `json:"allowed_actions"`
 	CapabilityCount      int32               `json:"capability_count"`
-	CurrentRevision      *TeamConfigRevision `json:"current_revision,omitempty"`
 	DigitalEmployeeCount int32               `json:"digital_employee_count"`
 	MemberCount          int32               `json:"member_count"`
 	PendingDraftCount    int32               `json:"pending_draft_count"`
@@ -4741,6 +4633,9 @@ type UpdateProjectConfigRequest struct {
 type UpdateTaskStatusRequest struct {
 	Status TaskStatus `json:"status"`
 }
+
+// UpdateTeamConstitutionRequest defines model for UpdateTeamConstitutionRequest.
+type UpdateTeamConstitutionRequest map[string]interface{}
 
 // UpdateTeamRequest defines model for UpdateTeamRequest.
 type UpdateTeamRequest struct {
@@ -4957,9 +4852,6 @@ type EventId = openapi_types.UUID
 
 // EvidenceId defines model for EvidenceId.
 type EvidenceId = openapi_types.UUID
-
-// GovernanceDraftId defines model for GovernanceDraftId.
-type GovernanceDraftId = openapi_types.UUID
 
 // Limit defines model for Limit.
 type Limit = int
@@ -5357,12 +5249,6 @@ type ListTeamAuditEventsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// ListTeamGovernanceDraftsParams defines parameters for ListTeamGovernanceDrafts.
-type ListTeamGovernanceDraftsParams struct {
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
-}
-
 // ListTeamLendingRequestsParams defines parameters for ListTeamLendingRequests.
 type ListTeamLendingRequestsParams struct {
 	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -5573,14 +5459,8 @@ type CreateTeamJSONRequestBody = CreateTeamRequest
 // UpdateTeamJSONRequestBody defines body for UpdateTeam for application/json ContentType.
 type UpdateTeamJSONRequestBody = UpdateTeamRequest
 
-// CreateTeamConfigRevisionJSONRequestBody defines body for CreateTeamConfigRevision for application/json ContentType.
-type CreateTeamConfigRevisionJSONRequestBody = CreateTeamConfigRevisionRequest
-
-// CreateTeamGovernanceDraftJSONRequestBody defines body for CreateTeamGovernanceDraft for application/json ContentType.
-type CreateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
-
-// UpdateTeamGovernanceDraftJSONRequestBody defines body for UpdateTeamGovernanceDraft for application/json ContentType.
-type UpdateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
+// UpdateTeamConstitutionJSONRequestBody defines body for UpdateTeamConstitution for application/json ContentType.
+type UpdateTeamConstitutionJSONRequestBody = UpdateTeamConstitutionRequest
 
 // UpsertTeamLendingPolicyJSONRequestBody defines body for UpsertTeamLendingPolicy for application/json ContentType.
 type UpsertTeamLendingPolicyJSONRequestBody = UpsertTeamLendingPolicy
@@ -6508,36 +6388,12 @@ type ServerInterface interface {
 	// List team audit events
 	// (GET /api/v1/teams/{teamId}/audit)
 	ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams)
-	// Create a team governance config revision
-	// (POST /api/v1/teams/{teamId}/config-revisions)
-	CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Get the current active team governance config revision
-	// (GET /api/v1/teams/{teamId}/config-revisions/current)
-	GetCurrentTeamConfigRevision(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Update a tenant team's constitution
+	// (PATCH /api/v1/teams/{teamId}/constitution)
+	UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Disable a tenant team
 	// (POST /api/v1/teams/{teamId}/disable)
 	DisableTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Get the current active team governance revision
-	// (GET /api/v1/teams/{teamId}/governance/current)
-	GetCurrentTeamGovernance(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// List draft team governance revisions
-	// (GET /api/v1/teams/{teamId}/governance/drafts)
-	ListTeamGovernanceDrafts(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamGovernanceDraftsParams)
-	// Create a draft team governance revision
-	// (POST /api/v1/teams/{teamId}/governance/drafts)
-	CreateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Update a draft team governance revision
-	// (PATCH /api/v1/teams/{teamId}/governance/drafts/{draftId})
-	UpdateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
-	// Approve a draft team governance revision
-	// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/approve)
-	ApproveTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
-	// Preview governance draft differences before approval
-	// (GET /api/v1/teams/{teamId}/governance/drafts/{draftId}/diff)
-	PreviewTeamGovernanceDiff(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
-	// Reject a draft team governance revision
-	// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject)
-	RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
 	// Read the team lending policy
 	// (GET /api/v1/teams/{teamId}/lending-policy)
 	GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7507,63 +7363,15 @@ func (_ Unimplemented) ListTeamAuditEvents(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Create a team governance config revision
-// (POST /api/v1/teams/{teamId}/config-revisions)
-func (_ Unimplemented) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get the current active team governance config revision
-// (GET /api/v1/teams/{teamId}/config-revisions/current)
-func (_ Unimplemented) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+// Update a tenant team's constitution
+// (PATCH /api/v1/teams/{teamId}/constitution)
+func (_ Unimplemented) UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Disable a tenant team
 // (POST /api/v1/teams/{teamId}/disable)
 func (_ Unimplemented) DisableTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get the current active team governance revision
-// (GET /api/v1/teams/{teamId}/governance/current)
-func (_ Unimplemented) GetCurrentTeamGovernance(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List draft team governance revisions
-// (GET /api/v1/teams/{teamId}/governance/drafts)
-func (_ Unimplemented) ListTeamGovernanceDrafts(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamGovernanceDraftsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a draft team governance revision
-// (POST /api/v1/teams/{teamId}/governance/drafts)
-func (_ Unimplemented) CreateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Update a draft team governance revision
-// (PATCH /api/v1/teams/{teamId}/governance/drafts/{draftId})
-func (_ Unimplemented) UpdateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Approve a draft team governance revision
-// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/approve)
-func (_ Unimplemented) ApproveTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Preview governance draft differences before approval
-// (GET /api/v1/teams/{teamId}/governance/drafts/{draftId}/diff)
-func (_ Unimplemented) PreviewTeamGovernanceDiff(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Reject a draft team governance revision
-// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject)
-func (_ Unimplemented) RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13314,8 +13122,8 @@ func (siw *ServerInterfaceWrapper) ListTeamAuditEvents(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
-// CreateTeamConfigRevision operation middleware
-func (siw *ServerInterfaceWrapper) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
+// UpdateTeamConstitution operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTeamConstitution(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -13330,33 +13138,7 @@ func (siw *ServerInterfaceWrapper) CreateTeamConfigRevision(w http.ResponseWrite
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTeamConfigRevision(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetCurrentTeamConfigRevision operation middleware
-func (siw *ServerInterfaceWrapper) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetCurrentTeamConfigRevision(w, r, teamId)
+		siw.Handler.UpdateTeamConstitution(w, r, teamId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13383,253 +13165,6 @@ func (siw *ServerInterfaceWrapper) DisableTeam(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DisableTeam(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetCurrentTeamGovernance operation middleware
-func (siw *ServerInterfaceWrapper) GetCurrentTeamGovernance(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetCurrentTeamGovernance(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListTeamGovernanceDrafts operation middleware
-func (siw *ServerInterfaceWrapper) ListTeamGovernanceDrafts(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListTeamGovernanceDraftsParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTeamGovernanceDrafts(w, r, teamId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateTeamGovernanceDraft operation middleware
-func (siw *ServerInterfaceWrapper) CreateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTeamGovernanceDraft(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateTeamGovernanceDraft operation middleware
-func (siw *ServerInterfaceWrapper) UpdateTeamGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "draftId" -------------
-	var draftId GovernanceDraftId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "draftId", chi.URLParam(r, "draftId"), &draftId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "draftId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateTeamGovernanceDraft(w, r, teamId, draftId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ApproveTeamGovernanceDraft operation middleware
-func (siw *ServerInterfaceWrapper) ApproveTeamGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "draftId" -------------
-	var draftId GovernanceDraftId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "draftId", chi.URLParam(r, "draftId"), &draftId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "draftId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApproveTeamGovernanceDraft(w, r, teamId, draftId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PreviewTeamGovernanceDiff operation middleware
-func (siw *ServerInterfaceWrapper) PreviewTeamGovernanceDiff(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "draftId" -------------
-	var draftId GovernanceDraftId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "draftId", chi.URLParam(r, "draftId"), &draftId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "draftId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PreviewTeamGovernanceDiff(w, r, teamId, draftId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RejectTeamGovernanceDraft operation middleware
-func (siw *ServerInterfaceWrapper) RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "draftId" -------------
-	var draftId GovernanceDraftId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "draftId", chi.URLParam(r, "draftId"), &draftId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "draftId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RejectTeamGovernanceDraft(w, r, teamId, draftId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15206,34 +14741,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/audit", wrapper.ListTeamAuditEvents)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/config-revisions", wrapper.CreateTeamConfigRevision)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/config-revisions/current", wrapper.GetCurrentTeamConfigRevision)
+		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/constitution", wrapper.UpdateTeamConstitution)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/disable", wrapper.DisableTeam)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/governance/current", wrapper.GetCurrentTeamGovernance)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts", wrapper.ListTeamGovernanceDrafts)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts", wrapper.CreateTeamGovernanceDraft)
-	})
-	r.Group(func(r chi.Router) {
-		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}", wrapper.UpdateTeamGovernanceDraft)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}/approve", wrapper.ApproveTeamGovernanceDraft)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}/diff", wrapper.PreviewTeamGovernanceDiff)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}/reject", wrapper.RejectTeamGovernanceDraft)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.GetTeamLendingPolicy)

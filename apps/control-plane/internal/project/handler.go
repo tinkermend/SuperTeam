@@ -2375,14 +2375,15 @@ type projectDemandResponse struct {
 }
 
 type demandLaunchDetailResponse struct {
-	Demand           projectDemandResponse       `json:"demand"`
-	Project          projectResponse             `json:"project"`
-	Reviewer         *reviewerPreferenceResponse `json:"reviewer"`
-	CoordinationJobs []coordinationJobResponse   `json:"coordination_jobs"`
-	RouteDecisions   []routeDecisionResponse     `json:"route_decisions"`
-	ProjectTasks     []projectTaskResponse       `json:"project_tasks"`
-	DecisionRequests []decisionRequestResponse   `json:"decision_requests"`
-	RecentEvents     []projectEventResponse      `json:"recent_events"`
+	Demand             projectDemandResponse       `json:"demand"`
+	Project            projectResponse             `json:"project"`
+	Reviewer           *reviewerPreferenceResponse `json:"reviewer"`
+	CoordinationJobs   []coordinationJobResponse   `json:"coordination_jobs"`
+	RouteDecisions     []routeDecisionResponse     `json:"route_decisions"`
+	ProjectTasks       []projectTaskResponse       `json:"project_tasks"`
+	ExecutionSummaries []executionSummaryResponse  `json:"execution_summaries"`
+	DecisionRequests   []decisionRequestResponse   `json:"decision_requests"`
+	RecentEvents       []projectEventResponse      `json:"recent_events"`
 }
 
 type reviewerPreferenceResponse struct {
@@ -3337,14 +3338,15 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 
 func demandLaunchDetailResponseFromDomain(detail DemandLaunchDetail) demandLaunchDetailResponse {
 	return demandLaunchDetailResponse{
-		Demand:           demandResponseFromDomain(detail.Demand),
-		Project:          projectResponseFromDomain(detail.Project),
-		Reviewer:         reviewerPreferenceResponseFromDomain(detail.Reviewer),
-		CoordinationJobs: coordinationJobResponses(detail.CoordinationJobs),
-		RouteDecisions:   routeDecisionResponses(detail.RouteDecisions),
-		ProjectTasks:     taskResponses(detail.ProjectTasks),
-		DecisionRequests: decisionRequestResponses(detail.DecisionRequests),
-		RecentEvents:     eventResponses(detail.RecentEvents),
+		Demand:             demandResponseFromDomain(detail.Demand),
+		Project:            projectResponseFromDomain(detail.Project),
+		Reviewer:           reviewerPreferenceResponseFromDomain(detail.Reviewer),
+		CoordinationJobs:   coordinationJobResponses(detail.CoordinationJobs),
+		RouteDecisions:     routeDecisionResponses(detail.RouteDecisions),
+		ProjectTasks:       taskResponses(detail.ProjectTasks),
+		ExecutionSummaries: executionSummaryResponses(detail.ExecutionSummaries),
+		DecisionRequests:   decisionRequestResponses(detail.DecisionRequests),
+		RecentEvents:       eventResponses(detail.RecentEvents),
 	}
 }
 

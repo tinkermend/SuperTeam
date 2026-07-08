@@ -211,17 +211,6 @@ ORDER BY s.slug ASC
 	}, nil
 }
 
-func (r *PgRepository) GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
-	revision, err := r.q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	if err != nil {
-		return TeamConfigInput{}, mapNoRows(err)
-	}
-	return teamConfigInputFromQuery(revision)
-}
-
 func (r *PgRepository) ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
 	rows, err := r.q.ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx, queries.ListRuntimeProviderOptionsForDigitalEmployeeCreateParams{
 		TenantID: tenantID,
@@ -764,17 +753,6 @@ func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, 
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
 	return configRevisionRecordFromQuery(revision)
-}
-
-func (r *PgRepository) GetTeamConfigRevision(ctx context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error) {
-	revision, err := r.q.GetTenantTeamConfigRevision(ctx, queries.GetTenantTeamConfigRevisionParams{
-		ID:       teamConfigRevisionID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return TeamConfigInput{}, mapNoRows(err)
-	}
-	return teamConfigInputFromQuery(revision)
 }
 
 func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
@@ -1832,51 +1810,6 @@ func configRevisionRecordFromQuery(revision queries.DigitalEmployeeConfigRevisio
 		ArchivedAt:             timePtrFromTimestamptz(revision.ArchivedAt),
 		CreatedAt:              timeFromTimestamptz(revision.CreatedAt),
 		UpdatedAt:              timeFromTimestamptz(revision.UpdatedAt),
-	}, nil
-}
-
-func teamConfigInputFromQuery(revision queries.TenantTeamConfigRevision) (TeamConfigInput, error) {
-	constitution, err := mapFromJSONB(revision.Constitution, "constitution")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	capabilityPolicy, err := mapFromJSONB(revision.CapabilityPolicy, "capability_policy")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	contextPolicy, err := mapFromJSONB(revision.ContextPolicy, "context_policy")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	approvalPolicy, err := mapFromJSONB(revision.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	artifactContract, err := mapFromJSONB(revision.ArtifactContract, "artifact_contract")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	internalCollaborationPolicy, err := mapFromJSONB(revision.InternalCollaborationPolicy, "internal_collaboration_policy")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	runtimeScopePolicy, err := mapFromJSONB(revision.RuntimeScopePolicy, "runtime_scope_policy")
-	if err != nil {
-		return TeamConfigInput{}, err
-	}
-	return TeamConfigInput{
-		ID:                          revision.ID,
-		TenantID:                    revision.TenantID,
-		TeamID:                      revision.TeamID,
-		RevisionNumber:              revision.RevisionNumber,
-		Status:                      TeamConfigRevisionStatus(revision.Status),
-		Constitution:                constitution,
-		CapabilityPolicy:            capabilityPolicy,
-		ContextPolicy:               contextPolicy,
-		ApprovalPolicy:              approvalPolicy,
-		ArtifactContract:            artifactContract,
-		InternalCollaborationPolicy: internalCollaborationPolicy,
-		RuntimeScopePolicy:          runtimeScopePolicy,
 	}, nil
 }
 

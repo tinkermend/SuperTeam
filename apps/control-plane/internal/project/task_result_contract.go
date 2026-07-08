@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -76,6 +77,21 @@ type TaskResultContract struct {
 	Cancellation       *TaskResultCancellation       `json:"cancellation,omitempty"`
 }
 
+func (c *TaskResultContract) UnmarshalJSON(data []byte) error {
+	type alias TaskResultContract
+	aux := struct {
+		EvidenceRef *TaskResultRef `json:"evidence_ref,omitempty"`
+		*alias
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(c.EvidenceRefs) == 0 && aux.EvidenceRef != nil {
+		c.EvidenceRefs = []TaskResultRef{*aux.EvidenceRef}
+	}
+	return nil
+}
+
 type TaskResultAcceptanceResult struct {
 	ID                  string                    `json:"id,omitempty"`
 	Criterion           string                    `json:"criterion,omitempty"`
@@ -85,6 +101,21 @@ type TaskResultAcceptanceResult struct {
 	Summary             string                    `json:"summary,omitempty"`
 	EvidenceRefs        []string                  `json:"evidence_refs,omitempty"`
 	HumanAcceptedReason string                    `json:"human_accepted_reason,omitempty"`
+}
+
+func (r *TaskResultAcceptanceResult) UnmarshalJSON(data []byte) error {
+	type alias TaskResultAcceptanceResult
+	aux := struct {
+		EvidenceRef string `json:"evidence_ref,omitempty"`
+		*alias
+	}{alias: (*alias)(r)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(r.EvidenceRefs) == 0 && strings.TrimSpace(aux.EvidenceRef) != "" {
+		r.EvidenceRefs = []string{strings.TrimSpace(aux.EvidenceRef)}
+	}
+	return nil
 }
 
 type TaskResultRef struct {
@@ -114,6 +145,21 @@ type TaskResultVerification struct {
 	Summary      string                       `json:"summary,omitempty"`
 	Method       string                       `json:"method,omitempty"`
 	EvidenceRefs []TaskResultRef              `json:"evidence_refs,omitempty"`
+}
+
+func (v *TaskResultVerification) UnmarshalJSON(data []byte) error {
+	type alias TaskResultVerification
+	aux := struct {
+		EvidenceRef *TaskResultRef `json:"evidence_ref,omitempty"`
+		*alias
+	}{alias: (*alias)(v)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(v.EvidenceRefs) == 0 && aux.EvidenceRef != nil {
+		v.EvidenceRefs = []TaskResultRef{*aux.EvidenceRef}
+	}
+	return nil
 }
 
 type TaskResultRisk struct {

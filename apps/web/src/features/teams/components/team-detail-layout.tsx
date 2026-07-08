@@ -1,4 +1,6 @@
-import { Archive, Plus, RotateCcw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { Archive, RotateCcw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useLocation } from "@tanstack/react-router";
 import { IconTile, StatusPill, V3Button, V3Tabs } from "@/components/superteam";
 import {
   AlertDialog,
@@ -15,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
-import { TeamGovernanceTab } from "./team-governance-tab";
+import { TeamConstitutionTab } from "./team-constitution-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 function TeamStatusPill({ status }: { status: TeamStatus }) {
@@ -39,31 +41,36 @@ function TeamStatusPill({ status }: { status: TeamStatus }) {
 
 type TeamDetailLayoutProps = {
   apiOptions: ApiClientOptions;
-  currentRevision?: TeamOverview["current_revision"];
   onArchiveTeam?: () => void;
   onDeleteTeam?: () => void;
   onDisableTeam?: () => void;
   onRestoreTeam?: () => void;
+  onTeamChanged?: () => void;
   overview: TeamOverview;
 };
 
 export function TeamDetailLayout({
   apiOptions,
-  currentRevision,
   onArchiveTeam,
   onDeleteTeam,
   onDisableTeam,
   onRestoreTeam,
+  onTeamChanged,
   overview,
 }: TeamDetailLayoutProps) {
+  const location = useLocation();
   const team = overview.team;
   const isActive = team.status === "active";
-  const canCreateGovernance = isActive && overview.allowed_actions.includes("team.governance.edit");
-  const canApproveGovernance = isActive && overview.allowed_actions.includes("team.governance.approve");
+  const canEditConstitution = isActive && overview.allowed_actions.includes("team.governance.edit");
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
   const canDelete = overview.allowed_actions.includes("team.delete");
+  const [activeTab, setActiveTab] = useState(() => resolveTeamDetailTab(location.hash));
+
+  useEffect(() => {
+    setActiveTab(resolveTeamDetailTab(location.hash));
+  }, [location.hash]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -85,12 +92,6 @@ export function TeamDetailLayout({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canCreateGovernance ? (
-            <V3Button disabled size="sm" variant="outline">
-              <Plus data-icon="inline-start" />
-              创建治理草案
-            </V3Button>
-          ) : null}
           {canDisable ? (
             <V3Button onClick={onDisableTeam} size="sm" variant="outline">
               <ShieldCheck data-icon="inline-start" />
@@ -136,7 +137,7 @@ export function TeamDetailLayout({
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs onValueChange={setActiveTab} value={activeTab}>
         <V3Tabs className="mb-4">
           <TabsList className="h-auto bg-transparent p-0 text-v3-ink-2">
             <TabsTrigger
@@ -149,13 +150,13 @@ export function TeamDetailLayout({
               className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
               value="capabilities"
             >
-              能力与知识
+              能力
             </TabsTrigger>
             <TabsTrigger
               className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-              value="governance"
+              value="constitution"
             >
-              治理策略
+              宪法
             </TabsTrigger>
           </TabsList>
         </V3Tabs>
@@ -171,17 +172,16 @@ export function TeamDetailLayout({
         <TabsContent className="mt-0" value="capabilities">
           <TeamCapabilitiesTab
             apiOptions={apiOptions}
-            canEdit={canCreateGovernance}
-            currentRevision={currentRevision ?? overview.current_revision}
+            canEdit={canEditConstitution}
             teamId={team.id}
           />
         </TabsContent>
-        <TabsContent className="mt-0" value="governance">
-          <TeamGovernanceTab
+        <TabsContent className="mt-0" value="constitution">
+          <TeamConstitutionTab
             apiOptions={apiOptions}
-            canApprove={canApproveGovernance}
-            canEdit={canCreateGovernance}
-            currentRevision={currentRevision ?? overview.current_revision}
+            canEdit={canEditConstitution}
+            constitution={team.constitution}
+            onSaved={onTeamChanged}
             teamId={team.id}
           />
         </TabsContent>
@@ -196,4 +196,14 @@ function teamOwnerLabel(team: TeamOverview["team"]) {
     return owner.display_name || owner.username || owner.email || owner.user_id;
   }
   return team.human_owner_user_ids?.join(", ") || "未设置";
+}
+
+function resolveTeamDetailTab(hash: string) {
+  switch (hash) {
+    case "capabilities":
+    case "constitution":
+      return hash;
+    default:
+      return "overview";
+  }
 }

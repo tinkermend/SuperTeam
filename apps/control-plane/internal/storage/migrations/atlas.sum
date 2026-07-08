@@ -1,4 +1,4 @@
-h1:7R7qhFyUif+LlKcuOIvdyO0f0tDGpu02TATv/Tp0y2k=
+h1:nD+zRGYrmOo4qX0MYw9YefV9d2QNgqyoWKrVJQtOWUc=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -44,5 +44,6 @@ h1:7R7qhFyUif+LlKcuOIvdyO0f0tDGpu02TATv/Tp0y2k=
 044_project_plan_revision_created_event.sql h1:OotXt0izPbiulukGjcmVKZEQrdTb1uA6Rd0dooELVeY=
 045_digital_employee_provider_identity.sql h1:Hx6LUE+U9+LBQMwWRHsOCRz28jb2/G6A5RlsSDu0vTM=
 046_team_constitution_and_skill_binding_rename.sql h1:E2W6beutt0/TxBSmEiZOk781aN8i+DR7iu2TQXrx1xg=
-047_project_runtime_nodes_and_affinity.sql h1:gYaMG3XgaMqByl412wBOr+9bPReRJK8dhKZUCrpZYkg=
-048_backfill_project_runtime_nodes_from_placements.sql h1:ndoyT56nPzap34vysSNQoVX1EbYcOC3bD8IklMKImXY=
+047_drop_team_governance_and_effective_config.sql h1:OcF+Mwc193e+QdazmAnrU9DcFVyjTWI7UoafV91BZHA=
+048_project_runtime_nodes_and_affinity.sql h1:HoQqtHOj68T9bUrsz9SKmgTf+x6ZO1oOkVhNvIpsmyg=
+049_backfill_project_runtime_nodes_from_placements.sql h1:7Iad8h/ozT7ChLDxsolXgoO3WUB+p5W6SJ2ks+CikIs=

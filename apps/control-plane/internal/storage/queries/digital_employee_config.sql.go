@@ -117,75 +117,6 @@ func (q *Queries) CreateDigitalEmployeeConfigRevision(ctx context.Context, arg C
 	return i, err
 }
 
-const CreateDigitalEmployeeEffectiveConfig = `-- name: CreateDigitalEmployeeEffectiveConfig :one
-INSERT INTO digital_employee_effective_configs (
-    tenant_id,
-    digital_employee_id,
-    tenant_team_config_revision_id,
-    employee_config_revision_id,
-    effective_config_snapshot,
-    validation_result,
-    status,
-    approved_by,
-    approved_at
-)
-VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    $4::uuid,
-    COALESCE($5::jsonb, '{}'::jsonb),
-    COALESCE($6::jsonb, '{}'::jsonb),
-    $7::varchar,
-    $8::uuid,
-    $9::timestamptz
-)
-RETURNING id, tenant_id, digital_employee_id, tenant_team_config_revision_id, employee_config_revision_id, effective_config_snapshot, validation_result, status, approved_by, approved_at, revoked_at, created_at, updated_at
-`
-
-type CreateDigitalEmployeeEffectiveConfigParams struct {
-	TenantID                   uuid.UUID          `json:"tenant_id"`
-	DigitalEmployeeID          uuid.UUID          `json:"digital_employee_id"`
-	TenantTeamConfigRevisionID uuid.NullUUID      `json:"tenant_team_config_revision_id"`
-	EmployeeConfigRevisionID   uuid.UUID          `json:"employee_config_revision_id"`
-	EffectiveConfigSnapshot    []byte             `json:"effective_config_snapshot"`
-	ValidationResult           []byte             `json:"validation_result"`
-	Status                     string             `json:"status"`
-	ApprovedBy                 uuid.NullUUID      `json:"approved_by"`
-	ApprovedAt                 pgtype.Timestamptz `json:"approved_at"`
-}
-
-func (q *Queries) CreateDigitalEmployeeEffectiveConfig(ctx context.Context, arg CreateDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error) {
-	row := q.db.QueryRow(ctx, CreateDigitalEmployeeEffectiveConfig,
-		arg.TenantID,
-		arg.DigitalEmployeeID,
-		arg.TenantTeamConfigRevisionID,
-		arg.EmployeeConfigRevisionID,
-		arg.EffectiveConfigSnapshot,
-		arg.ValidationResult,
-		arg.Status,
-		arg.ApprovedBy,
-		arg.ApprovedAt,
-	)
-	var i DigitalEmployeeEffectiveConfig
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.DigitalEmployeeID,
-		&i.TenantTeamConfigRevisionID,
-		&i.EmployeeConfigRevisionID,
-		&i.EffectiveConfigSnapshot,
-		&i.ValidationResult,
-		&i.Status,
-		&i.ApprovedBy,
-		&i.ApprovedAt,
-		&i.RevokedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const GetCurrentDigitalEmployeeConfigRevision = `-- name: GetCurrentDigitalEmployeeConfigRevision :one
 SELECT id,
     tenant_id,
@@ -350,41 +281,6 @@ func (q *Queries) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, ar
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.BudgetPolicy,
-	)
-	return i, err
-}
-
-const GetLatestDigitalEmployeeEffectiveConfig = `-- name: GetLatestDigitalEmployeeEffectiveConfig :one
-SELECT id, tenant_id, digital_employee_id, tenant_team_config_revision_id, employee_config_revision_id, effective_config_snapshot, validation_result, status, approved_by, approved_at, revoked_at, created_at, updated_at
-FROM digital_employee_effective_configs
-WHERE tenant_id = $1::uuid
-  AND digital_employee_id = $2::uuid
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-type GetLatestDigitalEmployeeEffectiveConfigParams struct {
-	TenantID          uuid.UUID `json:"tenant_id"`
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-}
-
-func (q *Queries) GetLatestDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetLatestDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error) {
-	row := q.db.QueryRow(ctx, GetLatestDigitalEmployeeEffectiveConfig, arg.TenantID, arg.DigitalEmployeeID)
-	var i DigitalEmployeeEffectiveConfig
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.DigitalEmployeeID,
-		&i.TenantTeamConfigRevisionID,
-		&i.EmployeeConfigRevisionID,
-		&i.EffectiveConfigSnapshot,
-		&i.ValidationResult,
-		&i.Status,
-		&i.ApprovedBy,
-		&i.ApprovedAt,
-		&i.RevokedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -126,36 +126,3 @@ SELECT (COALESCE(MAX(revision_number), 0) + 1)::integer
 FROM digital_employee_config_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid;
-
--- name: CreateDigitalEmployeeEffectiveConfig :one
-INSERT INTO digital_employee_effective_configs (
-    tenant_id,
-    digital_employee_id,
-    tenant_team_config_revision_id,
-    employee_config_revision_id,
-    effective_config_snapshot,
-    validation_result,
-    status,
-    approved_by,
-    approved_at
-)
-VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('digital_employee_id')::uuid,
-    sqlc.narg('tenant_team_config_revision_id')::uuid,
-    sqlc.arg('employee_config_revision_id')::uuid,
-    COALESCE(sqlc.arg('effective_config_snapshot')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('validation_result')::jsonb, '{}'::jsonb),
-    sqlc.arg('status')::varchar,
-    sqlc.narg('approved_by')::uuid,
-    sqlc.narg('approved_at')::timestamptz
-)
-RETURNING *;
-
--- name: GetLatestDigitalEmployeeEffectiveConfig :one
-SELECT *
-FROM digital_employee_effective_configs
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-ORDER BY created_at DESC
-LIMIT 1;

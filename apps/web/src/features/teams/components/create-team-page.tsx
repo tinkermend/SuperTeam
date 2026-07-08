@@ -17,7 +17,7 @@ import {
 
 export type CreateTeamCreatedHandler = (
   overview: TeamOverview,
-  options: { goToGovernance: boolean },
+  options: { goToConstitution: boolean },
 ) => void;
 
 type CreateTeamViewProps = {
@@ -46,14 +46,14 @@ export function CreateTeamView({
   const [currentStep, setCurrentStep] = useState(1);
   const [draft, setDraft] = useState<CreateTeamDraft>(emptyCreateTeamDraft);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [goToGovernance, setGoToGovernance] = useState(false);
+  const [goToConstitution, setGoToConstitution] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: () =>
       createTeam({ baseUrl: apiBaseUrl, fetcher }, toCreateTeamInput(draft)),
     onSuccess: (overview) => {
       void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
-      onCreated?.(overview, { goToGovernance });
+      onCreated?.(overview, { goToConstitution });
     },
   });
 
@@ -179,8 +179,8 @@ export function CreateTeamView({
         {currentStep === 4 && (
           <CreateTeamStepReview
             draft={draft}
-            goToGovernance={goToGovernance}
-            setGoToGovernance={setGoToGovernance}
+            goToConstitution={goToConstitution}
+            setGoToConstitution={setGoToConstitution}
           />
         )}
 

@@ -252,8 +252,6 @@ func runStartRetryable(err error) bool {
 	switch {
 	case errors.Is(err, employee.ErrInvalidInput):
 		return false
-	case errors.Is(err, employee.ErrEffectiveConfigRequired):
-		return false
 	case isRunStartIdempotencyFingerprintMismatch(err):
 		return false
 	case errors.Is(err, project.ErrProjectTaskPinnedNodeOffline):

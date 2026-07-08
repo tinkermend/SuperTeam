@@ -17,3 +17,18 @@ func TestGeneratedSchedulingSkillCountQueryMatchesEffectiveSkillPrecedence(t *te
 		t.Fatal("scheduling skill count query must not suppress inherited skills using personal bindings")
 	}
 }
+
+func TestRuntimeProviderQueriesDoNotRequireLegacyTeamProviderPolicy(t *testing.T) {
+	for name, query := range map[string]string{
+		"create_options":          ListRuntimeProviderOptionsForDigitalEmployeeCreate,
+		"provisioning_preflight": GetRuntimeProvisioningPreflight,
+	} {
+		normalized := strings.Join(strings.Fields(query), " ")
+		if strings.Contains(normalized, "allowed_provider_types") {
+			t.Fatalf("%s query must not require legacy team allowed_provider_types policy", name)
+		}
+		if strings.Contains(normalized, "provider_outside_team_policy") {
+			t.Fatalf("%s query must not emit legacy provider_outside_team_policy disabled reason", name)
+		}
+	}
+}
