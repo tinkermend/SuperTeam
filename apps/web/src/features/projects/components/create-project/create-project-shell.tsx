@@ -18,6 +18,7 @@ import { ProjectDigitalEmployeesStep } from "./project-digital-employees-step";
 import { ProjectHumanOwnersStep } from "./project-human-owners-step";
 import { ProjectPolicyStep } from "./project-policy-step";
 import { ProjectReviewPanel } from "./project-review-panel";
+import { ProjectRuntimeNodesStep } from "./project-runtime-nodes-step";
 
 type CreateProjectShellProps = {
   apiBaseUrl: string;
@@ -113,6 +114,11 @@ export function CreateProjectShell({
       setActiveStep("digitalEmployees");
       return;
     }
+    if (!validation.runtimeNodes) {
+      setLocalError("请至少选择一个可运行节点");
+      setActiveStep("runtimeNodes");
+      return;
+    }
     setLocalError("");
     onSubmit(buildProjectCreateInput(draft, currentUser));
   }
@@ -121,6 +127,7 @@ export function CreateProjectShell({
     validation.basics &&
     validation.currentUser &&
     validation.teamAuthorized &&
+    validation.runtimeNodes &&
     !authorizationError &&
     !isAuthorizationLoading;
 
@@ -210,6 +217,13 @@ export function CreateProjectShell({
                 fetcher={fetcher}
                 onChange={setDraft}
                 selectableTeams={selectableTeams}
+              />
+            ) : activeStep === "runtimeNodes" ? (
+              <ProjectRuntimeNodesStep
+                apiBaseUrl={apiBaseUrl}
+                draft={draft}
+                fetcher={fetcher}
+                onChange={setDraft}
               />
             ) : activeStep === "policies" ? (
               <ProjectPolicyStep draft={draft} onChange={setDraft} />

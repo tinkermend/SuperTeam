@@ -1942,6 +1942,7 @@ describe("ProjectsView", () => {
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
       expect(
         fetchCalls(fetcher).some(([url, init]) => {
@@ -2009,6 +2010,10 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByText("测试工程师"));
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("checkbox", { name: "local-dev-node" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: "local-dev-node" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: /高风险审批/ }));
     await userEvent.click(screen.getByRole("button", { name: "创建项目", exact: true }));
 
@@ -2022,6 +2027,7 @@ describe("ProjectsView", () => {
         human_owner_user_id: CURRENT_USER_ID,
         name: "客户验收推进",
         team_id: TEAM_REVIEW_ID,
+        runtime_node_ids: ["runtime-node-1"],
         approval_policy: {
           budget_overrun_requires_owner_approval: true,
           high_risk_action_requires_confirmation: true,
@@ -2060,6 +2066,51 @@ describe("ProjectsView", () => {
     });
   });
 
+  it("lists runtime nodes and lets the user select and deselect them", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjectCreate(fetcher);
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "节点选择校验");
+    await userEvent.fill(screen.getByLabelText("项目目标 *"), "验证可运行节点多选");
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("选择可运行节点")).toBeInTheDocument();
+    const nodeCheckbox = screen.getByRole("checkbox", { name: "local-dev-node" });
+    await expect.element(nodeCheckbox).toBeInTheDocument();
+    await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "false");
+    await expect.element(screen.getByText(/负载 0\/2/)).toBeInTheDocument();
+
+    await userEvent.click(nodeCheckbox);
+    await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(nodeCheckbox);
+    await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("requires selecting at least one runtime node before creating a project", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjectCreate(fetcher);
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "缺少运行节点");
+    await userEvent.fill(screen.getByLabelText("项目目标 *"), "未选择运行节点时不能创建项目");
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("checkbox", { name: "local-dev-node" })).toHaveAttribute("aria-checked", "false");
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
+    expect(
+      fetchCalls(fetcher).some(([url, init]) => {
+        return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
+      }),
+    ).toBe(false);
+  });
+
   it("does not offer unauthorized teams as digital-employee source teams", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
@@ -2072,6 +2123,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByRole("button", { name: "平台运营" })).toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "未授权团队" })).not.toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     expect(
@@ -2105,6 +2157,7 @@ describe("ProjectsView", () => {
     );
     await expect.element(screen.getByRole("button", { name: "平台运营" })).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
     expect(
@@ -2123,6 +2176,7 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByText("暂无可选团队")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByRole("button", { name: "创建项目", exact: true })).toBeDisabled();
   });
@@ -2173,6 +2227,7 @@ describe("ProjectsView", () => {
     try {
       await userEvent.fill(screen.getByLabelText("项目名称 *"), "等待团队");
       await userEvent.fill(screen.getByLabelText("项目目标 *"), "团队加载中");
+      await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));

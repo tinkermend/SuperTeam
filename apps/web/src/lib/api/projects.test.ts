@@ -79,6 +79,7 @@ describe("project API", () => {
         },
       ],
       coordination_policy: { cadence: "daily" },
+      runtime_node_ids: ["44444444-4444-4444-8444-444444444444"],
     };
 
     await expect(

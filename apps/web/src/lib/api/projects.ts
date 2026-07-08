@@ -821,6 +821,7 @@ export type CreateProjectInput = {
   coordination_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;
   evidence_policy?: Record<string, unknown>;
+  runtime_node_ids: string[];
 };
 
 export type CreateProjectResponse = {

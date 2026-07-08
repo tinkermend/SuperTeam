@@ -2,12 +2,13 @@ import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
 import type { DigitalEmployee } from "@/lib/api/employees";
 import type { CreateProjectInput, ProjectMemberInput } from "@/lib/api/projects";
 
-export type ProjectCreateStep = "basics" | "owners" | "digitalEmployees" | "policies";
+export type ProjectCreateStep = "basics" | "owners" | "digitalEmployees" | "runtimeNodes" | "policies";
 
 export const projectCreateSteps: Array<{ id: ProjectCreateStep; label: string }> = [
   { id: "basics", label: "基础信息" },
   { id: "owners", label: "人类负责人" },
   { id: "digitalEmployees", label: "数字员工池" },
+  { id: "runtimeNodes", label: "可运行节点" },
   { id: "policies", label: "策略预设" },
 ];
 
@@ -26,6 +27,7 @@ export type ProjectCreateDraft = {
     newDemandNeedsHumanConfirmation: boolean;
     requireEvidenceBeforeAcceptance: boolean;
   };
+  runtimeNodeIds: string[];
   selectedDigitalEmployees: DigitalEmployee[];
   sourceTeamIds: string[];
 };
@@ -43,6 +45,7 @@ export const emptyProjectCreateDraft: ProjectCreateDraft = {
     requireEvidenceBeforeAcceptance: true,
   },
   ownerUsers: [],
+  runtimeNodeIds: [],
   selectedDigitalEmployees: [],
   sourceTeamIds: [],
 };
@@ -109,6 +112,7 @@ export function projectCreateValidation(
     currentUser: Boolean(currentUserId),
     digitalEmployees: true, // global constraint: optional
     policies: draft.policyToggles.auditLogEnabled,
+    runtimeNodes: draft.runtimeNodeIds.length > 0,
     sourceTeams: sourceTeamsAuthorized,
     teamAuthorized: sourceTeamsAuthorized,
   };
@@ -158,6 +162,7 @@ export function buildProjectCreateInput(
     human_owner_user_id: currentUser.id,
     members,
     name: draft.name.trim(),
+    runtime_node_ids: draft.runtimeNodeIds,
     team_id: draft.sourceTeamIds[0],
   };
 }
