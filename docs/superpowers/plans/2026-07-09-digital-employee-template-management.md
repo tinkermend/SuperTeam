@@ -19,7 +19,7 @@
 - Deleting a template never touches existing `digital_employees` rows — there is no FK between them.
 - Web tests run via `corepack pnpm --filter ./apps/web run test` only (never raw `npx vitest`/`playwright install`).
 - Web internal navigation uses TanStack Router `Link`/`navigate`, never raw `<a href>`.
-- Every task that touches Go code ends with `go build ./...` and `go test ./...` passing in `apps/control-plane`; every task touching web code ends with the web test command passing for the affected files.
+- Every task that touches Go code ends with `go vet ./...` and `go test ./...` passing in `apps/control-plane` (never `go build ./...` — see the note on Task 16 Step 1 for why); every task touching web code ends with the web test command passing for the affected files.
 
 ---
 
@@ -269,9 +269,9 @@ Run:
 ```bash
 cd apps/control-plane
 sqlc generate
-go build ./...
+go vet ./...
 ```
-Expected: `internal/storage/queries/digital_employee_templates.sql.go` is created; `go build` succeeds.
+Expected: `internal/storage/queries/digital_employee_templates.sql.go` is created; `go vet` succeeds.
 
 - [ ] **Step 3: Commit**
 
@@ -394,7 +394,7 @@ In `repository.go`, add to the `Repository` interface (after line 46 `ListRunsDe
 
 - [ ] **Step 3: Verify compile (expected to fail — interface not yet implemented)**
 
-Run: `cd apps/control-plane && go build ./...`
+Run: `cd apps/control-plane && go vet ./...`
 Expected: FAIL — `*PgRepository does not implement Repository` (missing methods). This confirms the interface changed; Task 4 implements it.
 
 - [ ] **Step 4: Commit**
@@ -697,7 +697,7 @@ func mapTemplateConstraintError(err error) error {
 
 - [ ] **Step 2: Verify compile**
 
-Run: `cd apps/control-plane && go build ./...`
+Run: `cd apps/control-plane && go vet ./...`
 Expected: PASS (interface now fully implemented).
 
 - [ ] **Step 3: Integration test against a real Postgres**
@@ -1045,8 +1045,8 @@ func (r *memoryRepository) ListEmployeeTemplateLabels(ctx context.Context, tenan
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cd apps/control-plane && go build ./... && go vet ./internal/employee/...`
-Expected: PASS (note: this will still fail until Task 6/7 remove the now-dangling `DefaultEmployeeTypeDefinitions()`/`EmployeeTypeDefinitionByType` calls elsewhere — that's expected at this point; if it fails for any *other* reason, stop and investigate before continuing).
+Run: `cd apps/control-plane && go vet ./internal/employee/...`
+Expected: FAIL — this will still fail until Task 6/7 remove the now-dangling `DefaultEmployeeTypeDefinitions()`/`EmployeeTypeDefinitionByType` calls elsewhere. That is expected at this point; if it fails for any *other* reason, stop and investigate before continuing.
 
 - [ ] **Step 4: Commit**
 
@@ -1384,7 +1384,7 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 
 - [ ] **Step 5: Verify compile**
 
-Run: `cd apps/control-plane && go build ./...`
+Run: `cd apps/control-plane && go vet ./...`
 Expected: FAIL only on `pg_repository.go` (`overviewEmployeeTypeLabel` etc. still reference the deleted functions) and on `*_test.go` files still calling `DefaultEmployeeTypeDefinitions()`/`EmployeeTypeDefinitionByType()` — Tasks 7 and 8 fix these. If the failure list includes anything in `service.go` itself, stop and fix before proceeding.
 
 - [ ] **Step 6: Commit**
@@ -1549,7 +1549,7 @@ func overviewEmployeeTypeLabel(value string, labelsByType map[string]string) str
 
 - [ ] **Step 4: Verify compile**
 
-Run: `cd apps/control-plane && go build ./...`
+Run: `cd apps/control-plane && go vet ./...`
 Expected: FAIL only in `*_test.go` files (Task 8 fixes these).
 
 - [ ] **Step 5: Commit**
@@ -1754,10 +1754,10 @@ to:
 Run:
 ```bash
 cd apps/control-plane
-go build ./...
+go vet ./...
 go test ./internal/employee/... -v 2>&1 | tail -100
 ```
-Expected: `go build` passes; `go test` passes (integration tests requiring `TEST_DATABASE_URL` will `SKIP`, that's fine — all non-skipped tests must pass).
+Expected: `go vet` passes; `go test` passes (integration tests requiring `TEST_DATABASE_URL` will `SKIP`, that's fine — all non-skipped tests must pass).
 
 - [ ] **Step 6: Commit**
 
@@ -2065,7 +2065,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Run the full package test suite**
 
-Run: `cd apps/control-plane && go build ./... && go test ./internal/employee/...`
+Run: `cd apps/control-plane && go vet ./... && go test ./internal/employee/...`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -2375,7 +2375,7 @@ In `internal/api/server.go`, inside the `if s.employeeHandler != nil { ... }` bl
 
 - [ ] **Step 4: Verify compile**
 
-Run: `cd apps/control-plane && go build ./...`
+Run: `cd apps/control-plane && go vet ./...`
 Expected: PASS.
 
 - [ ] **Step 5: Write and run handler tests**
@@ -2701,14 +2701,14 @@ Run:
 ```bash
 cd apps/control-plane
 go generate ./...
-go build ./...
+go vet ./...
 git diff --stat gen/control_plane.gen.go internal/api/gen/control_plane.gen.go
 ```
-Expected: `go build` passes; both generated files show a diff containing `EmployeeTemplate`, `ListEmployeeTemplates`, etc.
+Expected: `go vet` passes; both generated files show a diff containing `EmployeeTemplate`, `ListEmployeeTemplates`, etc.
 
 - [ ] **Step 4: Contract validation**
 
-There is no dedicated `openapi.yaml` lint/validate command in this repo (confirmed: no `make`/`package.json` target references it outside the `apps/control-plane` codegen path). The available validation signal is `go generate ./... && go build ./...` from Step 3 succeeding — that already exercises the spec through `oapi-codegen`, which fails loudly on malformed YAML or schema errors.
+There is no dedicated `openapi.yaml` lint/validate command in this repo (confirmed: no `make`/`package.json` target references it outside the `apps/control-plane` codegen path). The available validation signal is `go generate ./... && go vet ./...` from Step 3 succeeding — that already exercises the spec through `oapi-codegen`, which fails loudly on malformed YAML or schema errors.
 
 - [ ] **Step 5: Commit**
 
@@ -3221,11 +3221,10 @@ git commit -m "test(web): cover template CRUD interactions in templates.test.tsx
 Run:
 ```bash
 cd apps/control-plane
-go build ./...
 go vet ./...
 go test ./...
 ```
-Expected: all PASS (DB-gated integration tests SKIP if no `TEST_DATABASE_URL`/`DATABASE_URL` — note which ones skipped in the report).
+Expected: all PASS (DB-gated integration tests SKIP if no `TEST_DATABASE_URL`/`DATABASE_URL` — note which ones skipped in the report). Note: `go build ./...` is deliberately not used anywhere in this plan — `apps/control-plane/generate.go` is a `package main` file with no `func main()` (it exists only to hold a `//go:generate` directive), so `go build ./...` always fails at the repo root with "function main is undeclared" regardless of any change in this plan. This is pre-existing, confirmed present on `main` before this branch. `go vet ./...` compiles every package without attempting to link a binary and is the correct "does it compile" signal; `make build` (which targets `./cmd/control-plane` specifically) is the correct way to verify an actual binary links.
 
 - [ ] **Step 2: Full frontend test suite**
 
