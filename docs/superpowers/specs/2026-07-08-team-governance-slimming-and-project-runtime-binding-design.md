@@ -2,128 +2,142 @@
 
 - 日期：2026-07-08
 - 范围：Control Plane 契约 / Go / DB 迁移 / Web 控制台
-- 状态：设计已确认，待写实现计划
+- 状态：设计已确认（含探查纠偏），待写实现计划
+- 拆分：本设计拆成两份实现计划——A 团队治理瘦身、B 项目绑定可运行节点。先做 A。
 
 ## 1. 背景与问题
 
-当前"团队治理"把大量本不属于团队的配置堆在了 `TeamConfigRevision`（契约 `TeamConfigRevision` 8301、`DigitalEmployeeCreateTeamConfig` 10126）上：`approval_policy`、`context_policy`、`artifact_contract`、`internal_collaboration_policy`、`runtime_scope_policy`，以及作为"能力天花板白名单"的 `capability_policy.allowed_*`、`allowed_employee_types`、`allowed_provider_types`。
+当前"团队治理"把大量本不属于团队的配置堆在 `TeamConfigRevision`（契约 `TeamConfigRevision` 8301、`DigitalEmployeeCreateTeamConfig` 10126、DB `tenant_team_config_revisions`）上：`approval_policy`、`context_policy`、`artifact_contract`、`internal_collaboration_policy`、`runtime_scope_policy`，以及作为"能力天花板白名单"的 `capability_policy.allowed_*`、`allowed_employee_types`、`allowed_provider_types`。
 
-这套是"团队 = 封闭治理沙盒、员工被团队锁死"的旧模型产物，和现有业务模型直接冲突：
+这是"团队 = 封闭治理沙盒、员工被团队锁死"的旧模型产物，与现有业务模型冲突：
 
 - 员工不绑定任何 runtime agent。
 - 项目绑定多个 runtime agent。
 - 项目可跨多个团队调用数字员工。
 
-于是"团队限定 provider / employee type / runtime scope"这类白名单和真实调度路径矛盾：员工被 A 团队"允许的 provider"限制，却要在项目绑定的、属于别处的 runtime 上跑，白名单无从执行。
+"团队限定 provider / employee type / runtime scope"这类白名单与真实调度路径矛盾：员工被 A 团队"允许的 provider"限制，却要在项目绑定的、属于别处的 runtime 上跑，白名单无从执行。
 
-团队的设计初衷是把**公共部分抽出来**：团队有团队公共的技能、MCP、外部能力和宪法；员工加入团队即自动继承这些公共能力与宪法，个人再叠加专属能力——与现实团队一致。
+### 1.1 探查纠偏（关键）：团队能力已有真实归属，存在双事实源
 
-同时，被错误地放在团队上的"运行范围"，其合法归宿是**项目**：项目创建时应显式多选可运行的 runtime 节点，而不是塞进一个 policy blob。
+代码探查发现团队公共能力**已经**以真实绑定表存在，`capability_policy.allowed_*` 是**冗余的第二事实源**：
 
-## 2. 目标模型
+| 能力 | 真实归属（现有） | 冗余白名单（要删） |
+| --- | --- | --- |
+| 团队技能 | `skill_team_bindings`（迁移 018，team-capabilities-tab 用 `bindTeamSkill/listTeamSkills`） | `capability_policy.allowed_skills` |
+| 团队 MCP | `team_mcp_bindings` + `team_mcp_servers`（迁移 037） | `capability_policy.allowed_mcp_servers` |
+| 团队宪法 | **无独立归属**，仅 `tenant_team_config_revisions.constitution` blob | — |
+| 团队外部能力 | **无绑定表，也无外部能力注册表**（仅自由字符串） | `capability_policy.allowed_external_capabilities` |
+
+而员工创建的继承却读 `capability_policy.allowed_*`（service.go:346/364/949/1909），**不读绑定表** → 团队技能/MCP 有两个事实源，会漂移。这是"团队治理"遗留的真实祸根。
+
+被错误放在团队上的"运行范围"，其合法归宿是**项目**（计划 B）。
+
+## 2. 目标模型（A）
 
 ### 2.1 团队（Team）终态
 
-```
-Team = {
-  id, tenant_id, slug, name, display(metadata),
-  human_owner_user_ids,                 // 团队负责人：管理员工、技能、MCP
-  constitution:          { hard_rules: string[] },   // 团队宪法，成员继承
-  skills:                text[],        // 团队公共技能，继承基线
-  mcp_servers:           text[],        // 团队公共 MCP，继承基线
-  external_capabilities: text[],        // 团队公共外部能力，继承基线
-}
-```
-
-团队负责人（team owner）负责团队管理：数字员工的添加、技能管理、MCP 管理、外部能力管理、宪法维护。这与项目人类负责人（负责审批、通知、任务管理）职责不同，互不混淆。
-
-### 2.2 能力语义：继承基线（叠加，无上限）
-
-团队的技能 / MCP / 外部能力对成员是**继承基线**，不是白名单天花板：
+团队公共能力 = 复用现有绑定表 + 一个新的宪法列，**不引入新的能力列/第三事实源**：
 
 ```
-员工有效技能     = 团队.skills                ∪ 员工.personal_skills
-员工有效 MCP      = 团队.mcp_servers           ∪ 员工.personal_mcp_servers
-员工有效外部能力  = 团队.external_capabilities  ∪ 员工.personal_external_capabilities
-员工有效宪法     = 团队.constitution.hard_rules ++ 员工.constitution_addendum
+团队技能基线  = skill_team_bindings（重命名为 team_skill_bindings）
+团队 MCP 基线 = team_mcp_bindings（不动）
+团队宪法      = tenant_teams.constitution（新增 jsonb 列，{ hard_rules: string[] }）
+团队身份      = tenant_teams 现有列（slug/name/display/human_owner_user_ids）
+```
+
+- 团队负责人（team owner）负责团队管理：数字员工添加、技能绑定、MCP 绑定、宪法维护。与项目人类负责人（审批、通知、任务管理）职责不同，互不混淆。
+- **外部能力移出本次范围**：团队层无外部能力绑定表、平台无外部能力注册表；`allowed_external_capabilities` 及员工创建里的外部能力 plumbing 一并删除，等真正要引用外部能力时再单独设计实现。
+
+### 2.2 命名约定（team-first）
+
+统一团队维度绑定表命名为 `team_<subject>_bindings`：
+
+- `team_mcp_bindings`：不动（已符合）。
+- `skill_team_bindings` → **重命名** `team_skill_bindings`（迁移 rename + 更新 sqlc 查询与 Go 引用）。
+- 本次不新增外部能力绑定表。
+
+### 2.3 能力语义：继承基线（叠加，无上限）
+
+团队的技能 / MCP 对成员是**继承基线**，不是白名单天花板：
+
+```
+员工有效技能  = team_skill_bindings(团队)      ∪ 员工个人技能绑定
+员工有效 MCP   = team_mcp_bindings(团队)        ∪ 员工个人 MCP 绑定
+员工有效宪法  = tenant_teams.constitution.hard_rules ++ 员工 constitution_addendum
 无团队员工：团队部分为空，只保留个人部分。
 ```
 
-- 团队基线对员工是**纯只读继承，不可退订**：公共能力是强制基线，成员一律拥有，只能在其上叠加个人能力。
-- 持久化只存员工的**个人追加**部分；继承在读取 / 派发时合成。
+- 团队基线对员工**纯只读继承、不可退订**：公共能力是强制基线，成员一律拥有，只能在其上叠加个人能力。
+- 持久化只存员工个人追加部分；继承在读取/派发时合成。
 - 团队不再对 approval、context、provider 类型、employee 类型有任何发言权。
+- **员工创建的继承来源从 `capability_policy.allowed_*` 改指到 `team_skill_bindings` / `team_mcp_bindings`**，消除双事实源。
 
-### 2.3 项目绑定可运行节点（新增）
+## 3. 删除与改动清单（A · 全栈）
 
-从团队删除的"运行范围"落到项目，并升级为一等的显式多选：
+### 3.1 DB 迁移（`apps/control-plane/internal/storage/migrations/`）
 
-```
-CreateProjectRequest 新增：
-  runtime_node_ids: uuid[]     // 项目可运行的 runtime 节点，多选，创建时强制至少一个
+两个迁移，遵循"先加后删"以保证每步可重放、代码始终可编译可测：
 
-DB 新增关联表：
-  project_runtime_nodes (project_id, runtime_node_id, tenant_id, created_at)
-  // 一个项目 ↔ 多个 runtime 节点
+- **迁移 M1（加列 + 回填 + 改名）：**
+  - `tenant_teams` 增加 `constitution JSONB NOT NULL DEFAULT '{}'::jsonb`。
+  - 回填：把每个团队 active `tenant_team_config_revisions.constitution` 迁到 `tenant_teams.constitution`（无 active 取 `{}`）。
+  - 重命名 `skill_team_bindings` → `team_skill_bindings`。
+- **迁移 M2（删旧治理，代码不再引用后执行）：**
+  - 删除 `tenant_team_config_revisions` 表。
+  - 删除 `digital_employee_effective_configs` 中依赖团队 revision 的外键/列（若存在），或整表按其真实使用情况处理（实现时确认引用面）。
+- 迁移必须可重放，更新 `atlas.sum`，用 `make -C apps/control-plane migrate-validate` 校验。
 
-调度约束：
-  项目派任务时只在绑定的 runtime_node_ids 集合内选节点；
-  provider 可用性 = 这些节点上真实注册的 provider。
-```
+### 3.2 契约（`contracts/control-plane/openapi.yaml`）
 
-## 3. 删除清单（全栈）
-
-### 3.1 契约（`contracts/control-plane/openapi.yaml`）
-
-- 删除 `TeamConfigRevision`、`CreateTeamConfigRevisionRequest` 及团队治理 revision 相关路径（draft / current / approve / reject / diff 全套）。
-- `DigitalEmployeeCreateTeamConfig` 精简为 team baseline：`{ team_id?, constitution, skills[], mcp_servers[], external_capabilities[] }`；删除 `allowed_employee_types`、`allowed_provider_types`、`allowed_skills`、`allowed_mcp_servers`、`allowed_external_capabilities`、六个 policy blob、`revision_number`、`status`。
-- `DigitalEmployeeCreateOptions`：`employee_types` 恒为平台全量、`capability_options` 恒为平台全量可选池（不再按团队裁剪）；删除团队治理相关 `creation_checks`。
-- Team schema 增加 `constitution`、`skills`、`mcp_servers`、`external_capabilities` 字段。
-- `CreateProjectRequest` 增加 `runtime_node_ids: uuid[]`（required，minItems 1）。
+- 删除 `TeamConfigRevision`、`CreateTeamConfigRevisionRequest` 及团队治理 revision 相关路径（config-revisions / governance 的 current / drafts / approve / reject / diff 全套）。
+- `DigitalEmployeeCreateTeamConfig` 精简为 team baseline：`{ team_id?, constitution, skills[], mcp_servers[] }`（`skills`/`mcp_servers` 来自绑定表）；删除 `allowed_employee_types`、`allowed_provider_types`、`allowed_skills`、`allowed_mcp_servers`、`allowed_external_capabilities`、六个 policy blob、`revision_number`、`status`。
+- `DigitalEmployeeCapabilityOptions`：删除 `external_capabilities`；`skills`/`mcp_servers`/`provider_types` 恒为平台全量可选池。
+- `DigitalEmployeeCreateOptions`：`employee_types` 恒为平台全量（不再按团队裁剪）；删除团队治理相关 `creation_checks`。
+- Team schema 增加 `constitution`（`{ hard_rules: string[] }`）。
 - 重新生成 gen 代码，跑契约验证。
 
-### 3.2 Control Plane Go
+### 3.3 Control Plane Go
 
-- `apps/control-plane/internal/employee/service.go`：删除 `ErrEffectiveConfigRequired` 闸（约 492）、`allowedEmployeeTypesFromTeamConfig`（400）、`validateEmployeeTypeAllowedByTeamConfig`（498）、`employeeTypesForTeamConfig` 的团队裁剪逻辑、`capability_policy.allowed_*` 天花板过滤；`capabilityOptionsForTeamConfig` 改为返回平台全量池 + 团队基线。
-- `apps/control-plane/internal/tenant`：删除 `TeamConfigRevision` 类型、draft/approve/reject/diff service 与 repository；team 增加 constitution / skills / mcp_servers / external_capabilities 读写。
-- `apps/control-plane/internal/project`：新增 `project_runtime_nodes` 绑定的 service / repository / handler；创建时校验 `runtime_node_ids` 非空、同租户、节点存在；`team_id` 保持不变（可选锚点，仅参与 `validateProjectTeamScopeAccess` 权限校验，不动）。
+- `apps/control-plane/internal/employee/service.go`：
+  - 删除 `ErrEffectiveConfigRequired` 闸（约 492）、`allowedEmployeeTypesFromTeamConfig`（400）、`validateEmployeeTypeAllowedByTeamConfig`（498）、`employeeTypesForTeamConfig` 团队裁剪、`capability_policy.allowed_*` 天花板过滤（346/364/366/949/952/1909 等）、外部能力相关 `AllowedExternalCaps` / `ExternalCapabilities`。
+  - `capabilityOptionsForTeamConfig` → 返回平台全量池；团队 baseline（skills/mcp）改从 `team_skill_bindings` / `team_mcp_bindings` 读取，作为只读继承展示与运行时合成来源。
+- `apps/control-plane/internal/tenant`：删除 `TeamConfigRevision` 类型、draft/approve/reject/diff service 与 repository、对应 handler 与路由（server.go:347-362）；team 增加 `constitution` 读写；`skill_team_bindings` 相关 sqlc 查询与 Go 引用改名到 `team_skill_bindings`。
+- `apps/control-plane/internal/api/server.go`：删除 config-revisions / governance 路由。
 - 清理各 `*.gen.go` 中被删 schema 的生成代码。
-
-### 3.3 DB 迁移（`apps/control-plane/internal/storage/migrations/`）
-
-- 新增 team 列：`constitution jsonb`、`skills text[]`、`mcp_servers text[]`、`external_capabilities text[]`。
-- 数据搬运：把每个团队 active `team_config_revision` 的 `constitution.hard_rules` 与 `capability_policy.allowed_skills / allowed_mcp_servers / allowed_external_capabilities` 迁到新 team 列（值保留，语义从"天花板"变"基线"）；无 active revision 的团队取空。
-- 删除 `team_config_revisions` 表及相关列。
-- 新增 `project_runtime_nodes` 表。
-- 迁移必须可重放，更新 `atlas.sum`，用 `make -C apps/control-plane migrate-validate` 校验。
 
 ### 3.4 Web 控制台
 
-- 删除 `apps/web/src/features/teams/components/team-governance-tab.tsx` 及其 draft/approve/reject/diff API 调用；团队详情改为直接编辑 constitution + skills + mcp_servers + external_capabilities（团队负责人可编辑）。
-- `apps/web/src/features/employees/create.tsx`：删除"治理"步（`configSteps` 从 `["身份","能力","治理","Provider 类型"]` 变为三步）；删除团队治理版本 / 允许员工类型 / 允许 Provider 展示（1516–1531）；员工自有 approval/context 默认值并入"能力"或"身份"步；继承能力保持**只读**展示（承接现有"团队继承能力"，`inheritedCapabilitySelection` / `withoutValues` 复用）。
-- 项目创建向导（`apps/web/src/features/projects/components/create-project/`）：用 `listRuntimeNodes`（`GET /api/v1/runtime/nodes`）拉可用节点，多选勾选，展示节点名 / 状态 / 负载 / provider；强制至少选一个。
+- 删除 `apps/web/src/features/teams/components/team-governance-tab.tsx` 及 draft/approve/reject/diff API 调用；团队详情 governance tab 改为**宪法编辑 tab**（只编辑 `constitution.hard_rules`，团队负责人可编辑）。技能/MCP 继续用现有 `team-capabilities-tab.tsx`（绑定表）。
+- `apps/web/src/features/employees/create.tsx`：
+  - `configSteps` 从 `["身份","能力","治理","Provider 类型"]` 改为三步，删除"治理"步及团队治理版本/允许员工类型/允许 Provider 展示（1516-1531）。
+  - 员工自有 approval/context 默认值并入"能力"或"身份"步。
+  - 删除外部能力相关展示与 `enabled_external_capabilities` 处理。
+  - 继承能力保持**只读**展示（承接现有"团队继承能力"，`inheritedCapabilitySelection` / `withoutValues` 复用），来源改为团队技能/MCP 绑定。
+- `apps/web/src/lib/api/teams.ts` 等：删除 governance draft/diff API 客户端；`skill_team_bindings` 对应客户端命名如涉及一并对齐（表改名不影响前端 API 路径时可不动，实现时确认）。
 
-## 4. 数据流与错误处理
+## 4. 数据流与错误处理（A）
 
-- **有效能力解析**为单一事实源：持久化只存个人追加，运行时合成 `团队基线 ∪ 个人`。
+- **有效能力解析**为单一事实源：团队基线来自绑定表，持久化只存个人追加，运行时合成 `团队基线 ∪ 个人`。
 - 删除 `ErrEffectiveConfigRequired` 后，团队存在即可建员工；无团队员工团队基线为空。
-- 员工类型来自平台注册表 `DefaultEmployeeTypeDefinitions()`；provider 可用性来自项目绑定节点上真实注册的 provider。
-- 项目 `runtime_node_ids`：创建时强制非空、校验同租户且节点存在；空列表在创建阶段直接拒绝（非派发阶段才发现）。
-- 迁移兼容：旧治理数据按 3.3 搬运，其余 policy 列直接 drop。
+- 员工类型来自平台注册表 `DefaultEmployeeTypeDefinitions()`；provider 可用性来自 runtime 节点上真实注册的 provider。
+- 迁移兼容：constitution 按 3.1 回填；`capability_policy.allowed_*`（含外部能力）随 revision 表删除，不迁移（技能/MCP 真实归属在绑定表，已存在）。
 
-## 5. 测试与验证
+## 5. 测试与验证（A）
 
 ### 5.1 自动化测试
 
-- Web（`corepack pnpm --filter ./apps/web run test`）：员工创建三步向导快照 / 交互；继承能力只读展示；团队详情能力 + 宪法编辑；项目创建节点多选与"至少一个"校验。
-- Go：员工创建不再依赖 team revision；有效能力合成；项目 ↔ 节点绑定 CRUD + 权限校验 + 非空校验；删除治理后旧路由 / 字段的回归清理。
+- Web（`corepack pnpm --filter ./apps/web run test`）：员工创建三步向导快照/交互；继承能力只读展示（来源绑定表）；团队详情宪法编辑 tab；无外部能力项。
+- Go：员工创建不再依赖 team revision；有效能力从绑定表合成；`team_skill_bindings` 改名后查询通过；删除治理后旧路由/字段回归清理。
 - 契约：重新生成 + 契约验证。
 
 ### 5.2 真实端到端验证（CLAUDE.md 强制完成条件）
 
-迁移 → `scripts/dev-services.sh restart control-plane` → Web 真实建团队（配公共技能 / MCP / 外部能力 / 宪法）→ 建员工（验证继承 + 平台全量类型 / provider，无治理步）→ 建项目（多选节点绑定，至少一个）→ 走真实 Web / 接口确认结果不是 mock、缓存或旧服务。涉及迁移与前后端行为，必须确认运行中的服务已加载当前代码。
+迁移 → `scripts/dev-services.sh restart control-plane` → Web 真实建团队（绑定公共技能/MCP、编辑宪法）→ 建员工（验证从绑定表继承 + 平台全量类型/provider，无治理步、无外部能力）→ 走真实 Web/接口确认结果不是 mock、缓存或旧服务。涉及迁移与前后端行为，必须确认运行中的服务已加载当前代码。
 
 ## 6. 明确排除的范围
 
 - 项目 `team_id` 字段：现为可选锚点，仅参与 `validateProjectTeamScopeAccess` 权限校验，与跨团队 `members[]` 并存，无真冲突，本次不动。
-- 项目自身的 `approval_policy` / `coordination_policy` / `evidence_policy`：属于项目 / 人类决策层，本次不涉及。
-- 员工自有 approval/context 默认值的语义：保留现状，仅调整创建向导的呈现位置。
+- 项目自身的 `approval_policy` / `coordination_policy` / `evidence_policy`：属于项目/人类决策层，本次不涉及。
+- 员工自有 approval/context 默认值语义：保留现状，仅调整创建向导呈现位置。
+- 外部能力：团队与员工创建路径中的外部能力 plumbing 本次删除；外部能力的注册表与团队绑定留待真正要引用外部能力时单独设计。
+- 项目绑定可运行节点：属计划 B，本设计不在 A 中实现。
