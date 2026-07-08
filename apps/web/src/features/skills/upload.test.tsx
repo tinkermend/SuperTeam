@@ -230,6 +230,25 @@ describe("SkillUploadView", () => {
     expect(onUploaded).toHaveBeenCalledWith(uploadedSkill);
   });
 
+  it("shows a localized message when uploaded zip does not include SKILL.md", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse(
+        {
+          error: "invalid skill input: zip archive must include SKILL.md",
+        },
+        400,
+      ),
+    );
+    const screen = await renderUploadView({ fetcher });
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "broken.zip", { type: "application/zip" }));
+    await userEvent.fill(screen.getByLabelText("技能中文名称"), "错误技能包");
+    await userEvent.click(screen.getByRole("button", { name: "发布到技能市场" }));
+
+    await expect.element(screen.getByText("上传失败：技能压缩包必须包含 SKILL.md 文件")).toBeVisible();
+    expect(document.body.textContent).not.toContain("upload skill request failed");
+  });
+
   it("keeps dependency tokens intact when users type them character by character", async () => {
     const captured: Record<string, FormDataEntryValue | null> = {};
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

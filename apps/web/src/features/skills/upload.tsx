@@ -31,6 +31,7 @@ import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ApiRequestError } from "@/lib/api/client";
 import { uploadSkill, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -288,7 +289,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   {upload.error instanceof Error ? (
                     <Alert variant="destructive">
                       <AlertTitle>上传失败</AlertTitle>
-                      <AlertDescription>{upload.error.message}</AlertDescription>
+                      <AlertDescription>{skillUploadErrorMessage(upload.error)}</AlertDescription>
                     </Alert>
                   ) : null}
                   <div className="flex flex-col gap-2.5 border-t pt-4">
@@ -316,6 +317,17 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
       </Main>
     </>
   );
+}
+
+function skillUploadErrorMessage(error: Error): string {
+  if (
+    error instanceof ApiRequestError
+    && error.status === 400
+    && error.detail?.includes("zip archive must include SKILL.md")
+  ) {
+    return "上传失败：技能压缩包必须包含 SKILL.md 文件";
+  }
+  return error.message;
 }
 
 function PackageStatusBand({
