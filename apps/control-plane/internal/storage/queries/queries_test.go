@@ -312,7 +312,6 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			provider_sessions,
 			digital_employee_execution_instances,
 			digital_employee_mcp_bindings,
-			digital_employee_effective_configs,
 			digital_employee_config_revisions,
 			digital_employees,
 			team_mcp_servers,

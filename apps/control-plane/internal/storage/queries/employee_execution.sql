@@ -702,7 +702,7 @@ SELECT
         workspace_capability.metadata ->> 'workspace_base_dir',
         ''
     )::text AS workspace_base_dir,
-    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(config_state.budget_policy, '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
     (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
@@ -771,16 +771,15 @@ LEFT JOIN LATERAL (
 ) runtime_session ON TRUE
 LEFT JOIN LATERAL (
     SELECT
-        dec.id AS effective_config_id,
-        dec.effective_config_snapshot
-    FROM digital_employee_effective_configs dec
-    WHERE dec.tenant_id = de.tenant_id
-      AND dec.digital_employee_id = de.id
-      AND dec.status = 'approved'
-      AND dec.revoked_at IS NULL
-    ORDER BY dec.created_at DESC, dec.updated_at DESC
+        decr.budget_policy
+    FROM digital_employee_config_revisions decr
+    WHERE decr.tenant_id = de.tenant_id
+      AND decr.digital_employee_id = de.id
+      AND decr.status = 'active'
+      AND decr.archived_at IS NULL
+    ORDER BY decr.revision_number DESC, decr.updated_at DESC
     LIMIT 1
-) ec ON TRUE
+) config_state ON TRUE
 LEFT JOIN LATERAL (
     SELECT
         LEAST(
