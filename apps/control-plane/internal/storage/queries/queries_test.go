@@ -1251,7 +1251,7 @@ func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {
 	require.False(t, allowed)
 }
 
-func TestTeamConstitutionAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
+func TestTeamConstitutionAndDigitalEmployeeConfigRevisionQueries(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)
 
@@ -1322,31 +1322,8 @@ func TestTeamConstitutionAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) 
 	})
 	require.NoError(t, err)
 
-	effective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employee.ID,
-		EmployeeConfigRevisionID: employeeConfig.ID,
-		EffectiveConfigSnapshot:  []byte(`{"team":{"constitution":{"hard_rules":["禁止执行未审批的生产写操作"]}},"employee":{"revision":1}}`),
-		ValidationResult:         []byte(`{"blocking_errors":[],"warnings":[]}`),
-		Status:                   "approved",
-		ApprovedBy:               uuid.NullUUID{UUID: owner.ID, Valid: true},
-		ApprovedAt:               pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
-	})
-	require.NoError(t, err)
-	require.Equal(t, employee.ID, effective.DigitalEmployeeID)
-	require.False(t, effective.TenantTeamConfigRevisionID.Valid)
-
-	pendingEffective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
-		TenantID:                 tenantID,
-		DigitalEmployeeID:        employee.ID,
-		EmployeeConfigRevisionID: draftEmployeeConfig.ID,
-		EffectiveConfigSnapshot:  []byte(`{"team":{"constitution":{"hard_rules":["禁止执行未审批的生产写操作"]}},"employee":{"revision":2}}`),
-		ValidationResult:         []byte(`{"blocking_errors":[],"warnings":["等待审批"]}`),
-		Status:                   "pending_approval",
-	})
-	require.NoError(t, err)
-	require.Equal(t, employee.ID, pendingEffective.DigitalEmployeeID)
-	require.False(t, pendingEffective.TenantTeamConfigRevisionID.Valid)
+	require.Equal(t, int32(1), employeeConfig.RevisionNumber)
+	require.Equal(t, int32(2), draftEmployeeConfig.RevisionNumber)
 
 	currentEmployeeConfig, err := testQueries.GetCurrentDigitalEmployeeConfigRevision(ctx, queries.GetCurrentDigitalEmployeeConfigRevisionParams{
 		TenantID:          tenantID,

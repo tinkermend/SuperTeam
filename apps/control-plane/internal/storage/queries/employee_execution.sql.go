@@ -62,22 +62,6 @@ aborted_configs AS (
       AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
     RETURNING decr.id
 ),
-aborted_effective_configs AS (
-    UPDATE digital_employee_effective_configs deec
-    SET status = CASE
-            WHEN deec.status = 'revoked' THEN deec.status
-            ELSE 'revoked'
-        END,
-        revoked_at = COALESCE(deec.revoked_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE deec.tenant_id = abort_args.tenant_id
-      AND deec.digital_employee_id = abort_args.digital_employee_id
-      AND deec.revoked_at IS NULL
-      AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
-    RETURNING deec.id
-),
 aborted_workspace_files AS (
     UPDATE digital_employee_workspace_files dewf
     SET status = 'deleted',
@@ -527,27 +511,21 @@ latest_runs AS (
       AND t.deleted_at IS NULL
     ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
 ),
-effective_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.id AS effective_config_id,
-        ec.status
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    WHERE ec.status = 'approved'
-      AND ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
-),
-governance_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.status
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    WHERE ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+employee_config_states AS (
+    SELECT DISTINCT ON (decr.tenant_id, decr.digital_employee_id)
+        decr.tenant_id,
+        decr.digital_employee_id,
+        decr.id AS effective_config_id,
+        decr.revision_number AS employee_revision_number,
+        CASE
+            WHEN decr.status = 'active' AND decr.archived_at IS NULL THEN 'approved'
+            WHEN decr.status IN ('draft', 'pending_approval') AND decr.archived_at IS NULL THEN 'pending_approval'
+            WHEN decr.status = 'archived' OR decr.archived_at IS NOT NULL THEN 'stale'
+            ELSE COALESCE(NULLIF(BTRIM(decr.status), ''), 'missing')
+        END::text AS governance_status
+    FROM digital_employee_config_revisions decr
+    JOIN overview_args args ON args.tenant_id = decr.tenant_id
+    ORDER BY decr.tenant_id, decr.digital_employee_id, decr.revision_number DESC, decr.updated_at DESC
 ),
 overview_rows AS (
     SELECT
@@ -570,8 +548,8 @@ overview_rows AS (
         COALESCE(pc.status, '')::text AS provider_status,
         COALESCE(pc.health_status, '')::text AS provider_health_status,
         COALESCE(lr.status, 'none')::text AS run_status,
-        ec.effective_config_id,
-        COALESCE(gc.status, 'missing')::text AS governance_status
+        ecs.effective_config_id,
+        COALESCE(ecs.governance_status, 'missing')::text AS governance_status
     FROM digital_employees de
     CROSS JOIN overview_args args
     LEFT JOIN digital_employee_execution_instances dei
@@ -588,12 +566,9 @@ overview_rows AS (
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
-    LEFT JOIN effective_configs ec
-      ON ec.tenant_id = de.tenant_id
-     AND ec.digital_employee_id = de.id
-    LEFT JOIN governance_configs gc
-      ON gc.tenant_id = de.tenant_id
-     AND gc.digital_employee_id = de.id
+    LEFT JOIN employee_config_states ecs
+      ON ecs.tenant_id = de.tenant_id
+     AND ecs.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
@@ -767,7 +742,7 @@ SELECT
     dei.runtime_selector,
     dei.session_policy,
     dei.workspace_policy,
-    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(config_state.budget_policy, '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
     EXISTS (
@@ -794,16 +769,15 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 LEFT JOIN LATERAL (
     SELECT
-        dec.id AS effective_config_id,
-        dec.effective_config_snapshot
-    FROM digital_employee_effective_configs dec
-    WHERE dec.tenant_id = de.tenant_id
-      AND dec.digital_employee_id = de.id
-      AND dec.status = 'approved'
-      AND dec.revoked_at IS NULL
-    ORDER BY dec.created_at DESC, dec.updated_at DESC
+        decr.budget_policy
+    FROM digital_employee_config_revisions decr
+    WHERE decr.tenant_id = de.tenant_id
+      AND decr.digital_employee_id = de.id
+      AND decr.status = 'active'
+      AND decr.archived_at IS NULL
+    ORDER BY decr.revision_number DESC, decr.updated_at DESC
     LIMIT 1
-) ec ON true
+) config_state ON true
 LEFT JOIN LATERAL (
     SELECT
         LEAST(
@@ -965,7 +939,7 @@ SELECT
         workspace_capability.metadata ->> 'workspace_base_dir',
         ''
     )::text AS workspace_base_dir,
-    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(config_state.budget_policy, '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
     (runtime_session.id IS NOT NULL)::boolean AS runtime_session_active,
@@ -1031,16 +1005,15 @@ LEFT JOIN LATERAL (
 ) runtime_session ON TRUE
 LEFT JOIN LATERAL (
     SELECT
-        dec.id AS effective_config_id,
-        dec.effective_config_snapshot
-    FROM digital_employee_effective_configs dec
-    WHERE dec.tenant_id = de.tenant_id
-      AND dec.digital_employee_id = de.id
-      AND dec.status = 'approved'
-      AND dec.revoked_at IS NULL
-    ORDER BY dec.created_at DESC, dec.updated_at DESC
+        decr.budget_policy
+    FROM digital_employee_config_revisions decr
+    WHERE decr.tenant_id = de.tenant_id
+      AND decr.digital_employee_id = de.id
+      AND decr.status = 'active'
+      AND decr.archived_at IS NULL
+    ORDER BY decr.revision_number DESC, decr.updated_at DESC
     LIMIT 1
-) ec ON TRUE
+) config_state ON TRUE
 LEFT JOIN LATERAL (
     SELECT
         LEAST(
@@ -1782,46 +1755,28 @@ today_budget_usage AS (
       AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
     GROUP BY tr.tenant_id, tr.digital_employee_id
 ),
-effective_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.id AS effective_config_id,
-        ec.status,
-        ec.effective_config_snapshot -> 'budget_policy' AS budget_policy,
-        NULLIF(ec.effective_config_snapshot #>> '{budget_policy,daily_token_limit}', '') AS daily_token_limit_text,
-        NULL::integer AS team_revision_number,
+employee_config_states AS (
+    SELECT DISTINCT ON (decr.tenant_id, decr.digital_employee_id)
+        decr.tenant_id,
+        decr.digital_employee_id,
+        decr.id AS effective_config_id,
+        decr.budget_policy,
+        NULLIF(decr.budget_policy #>> '{daily_token_limit}', '') AS daily_token_limit_text,
         decr.revision_number AS employee_revision_number,
         CASE
-            WHEN jsonb_typeof(ec.effective_config_snapshot #> '{capability_selection,enabled_mcp_servers}') = 'array'
-            THEN jsonb_array_length(ec.effective_config_snapshot #> '{capability_selection,enabled_mcp_servers}')
+            WHEN jsonb_typeof(decr.capability_selection -> 'enabled_mcp_servers') = 'array'
+            THEN jsonb_array_length(decr.capability_selection -> 'enabled_mcp_servers')
             ELSE 0
         END::integer AS mcp_servers_count,
-        COALESCE(
-            ec.effective_config_snapshot #>> '{constitution,ref}',
-            ec.effective_config_snapshot #>> '{constitution,team,ref}',
-            ec.effective_config_snapshot #>> '{constitution,team,document_ref}',
-            ''
-        )::text AS constitution_ref
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    LEFT JOIN digital_employee_config_revisions decr
-      ON decr.id = ec.employee_config_revision_id
-     AND decr.tenant_id = ec.tenant_id
-     AND decr.digital_employee_id = ec.digital_employee_id
-    WHERE ec.status = 'approved'
-      AND ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
-),
-governance_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.status
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    WHERE ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+        CASE
+            WHEN decr.status = 'active' AND decr.archived_at IS NULL THEN 'approved'
+            WHEN decr.status IN ('draft', 'pending_approval') AND decr.archived_at IS NULL THEN 'pending_approval'
+            WHEN decr.status = 'archived' OR decr.archived_at IS NOT NULL THEN 'stale'
+            ELSE COALESCE(NULLIF(BTRIM(decr.status), ''), 'missing')
+        END::text AS governance_status
+    FROM digital_employee_config_revisions decr
+    JOIN overview_args args ON args.tenant_id = decr.tenant_id
+    ORDER BY decr.tenant_id, decr.digital_employee_id, decr.revision_number DESC, decr.updated_at DESC
 ),
 skill_counts AS (
     SELECT
@@ -1952,14 +1907,14 @@ overview_rows AS (
         lr.error_message AS latest_run_error_message,
         COALESCE(lr.error_family, '')::text AS latest_run_error_family,
         COALESCE(lr.error_code, '')::text AS latest_run_error_code,
-        ec.effective_config_id,
-        COALESCE(gc.status, 'missing')::text AS governance_status,
-        COALESCE(ec.daily_token_limit_text, '')::text AS daily_token_limit_text,
-        ec.team_revision_number,
-        ec.employee_revision_number,
+        ecs.effective_config_id,
+        COALESCE(ecs.governance_status, 'missing')::text AS governance_status,
+        COALESCE(ecs.daily_token_limit_text, '')::text AS daily_token_limit_text,
+        NULL::integer AS team_revision_number,
+        ecs.employee_revision_number,
         COALESCE(sc.skills_count, 0)::integer AS skills_count,
-        COALESCE(ec.mcp_servers_count, 0)::integer AS mcp_servers_count,
-        COALESCE(ec.constitution_ref, '')::text AS constitution_ref,
+        COALESCE(ecs.mcp_servers_count, 0)::integer AS mcp_servers_count,
+        COALESCE(tt.constitution #>> '{ref}', tt.constitution #>> '{document_ref}', '')::text AS constitution_ref,
         COALESCE(tbu.today_budget_usage_tokens, 0)::integer AS today_budget_usage_tokens,
         br.budget_usage_tokens_30d,
         COALESCE(br.budget_run_count_30d, 0)::integer AS budget_run_count_30d,
@@ -2000,12 +1955,9 @@ overview_rows AS (
     LEFT JOIN today_budget_usage tbu
       ON tbu.tenant_id = de.tenant_id
      AND tbu.digital_employee_id = de.id
-    LEFT JOIN effective_configs ec
-      ON ec.tenant_id = de.tenant_id
-     AND ec.digital_employee_id = de.id
-    LEFT JOIN governance_configs gc
-      ON gc.tenant_id = de.tenant_id
-     AND gc.digital_employee_id = de.id
+    LEFT JOIN employee_config_states ecs
+      ON ecs.tenant_id = de.tenant_id
+     AND ecs.digital_employee_id = de.id
     LEFT JOIN skill_counts sc
       ON sc.tenant_id = de.tenant_id
      AND sc.digital_employee_id = de.id
@@ -2360,27 +2312,20 @@ latest_runs AS (
       AND t.deleted_at IS NULL
     ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
 ),
-effective_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.id AS effective_config_id,
-        ec.status
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    WHERE ec.status = 'approved'
-      AND ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
-),
-governance_configs AS (
-    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
-        ec.tenant_id,
-        ec.digital_employee_id,
-        ec.status
-    FROM digital_employee_effective_configs ec
-    JOIN overview_args args ON args.tenant_id = ec.tenant_id
-    WHERE ec.revoked_at IS NULL
-    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+employee_config_states AS (
+    SELECT DISTINCT ON (decr.tenant_id, decr.digital_employee_id)
+        decr.tenant_id,
+        decr.digital_employee_id,
+        decr.id AS effective_config_id,
+        CASE
+            WHEN decr.status = 'active' AND decr.archived_at IS NULL THEN 'approved'
+            WHEN decr.status IN ('draft', 'pending_approval') AND decr.archived_at IS NULL THEN 'pending_approval'
+            WHEN decr.status = 'archived' OR decr.archived_at IS NOT NULL THEN 'stale'
+            ELSE COALESCE(NULLIF(BTRIM(decr.status), ''), 'missing')
+        END::text AS governance_status
+    FROM digital_employee_config_revisions decr
+    JOIN overview_args args ON args.tenant_id = decr.tenant_id
+    ORDER BY decr.tenant_id, decr.digital_employee_id, decr.revision_number DESC, decr.updated_at DESC
 ),
 pending_employee_decisions AS (
     SELECT
@@ -2477,8 +2422,8 @@ overview_rows AS (
         COALESCE(lr.status, 'none')::text AS latest_run_status,
         COALESCE(lr.error_family, '')::text AS latest_run_error_family,
         COALESCE(lr.error_code, '')::text AS latest_run_error_code,
-        ec.effective_config_id,
-        COALESCE(gc.status, 'missing')::text AS governance_status,
+        ecs.effective_config_id,
+        COALESCE(ecs.governance_status, 'missing')::text AS governance_status,
         coalesce(eof.operational_has_employee_scoped_human_blocker, false)::boolean AS operational_has_employee_scoped_human_blocker,
         coalesce(eof.operational_has_project_acceptance_blocker, false)::boolean AS operational_has_project_acceptance_blocker,
         coalesce(eof.operational_has_queued_work, false)::boolean AS operational_has_queued_work,
@@ -2501,12 +2446,9 @@ overview_rows AS (
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
-    LEFT JOIN effective_configs ec
-      ON ec.tenant_id = de.tenant_id
-     AND ec.digital_employee_id = de.id
-    LEFT JOIN governance_configs gc
-      ON gc.tenant_id = de.tenant_id
-     AND gc.digital_employee_id = de.id
+    LEFT JOIN employee_config_states ecs
+      ON ecs.tenant_id = de.tenant_id
+     AND ecs.digital_employee_id = de.id
     LEFT JOIN employee_operational_facts eof
       ON eof.tenant_id = de.tenant_id
      AND eof.digital_employee_id = de.id

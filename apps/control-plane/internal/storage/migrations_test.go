@@ -373,6 +373,14 @@ func TestMigration046TeamConstitutionAndSkillBindingRenameAppliedSchema(t *testi
 	assertColumnExists(t, pool, schemaName, "tenant_teams", "constitution")
 }
 
+func TestMigration047DropsGovernanceTables(t *testing.T) {
+	pool, schemaName := applyAllMigrations(t)
+
+	assertTableAbsent(t, pool, schemaName, "tenant_team_config_revisions")
+	assertTableAbsent(t, pool, schemaName, "digital_employee_effective_configs")
+	assertTableExists(t, pool, schemaName, "digital_employee_config_revisions")
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {
