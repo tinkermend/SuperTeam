@@ -87,9 +87,9 @@ export function UserIdentity({ className, size = "md", showSecondary = false, us
   const isSmall = size === "sm";
 
   return (
-    <div className={cn("flex min-w-0 items-center", isSmall ? "gap-2" : "gap-3", className)} data-size={size}>
+    <div className={cn("flex min-w-0 items-center text-left", isSmall ? "gap-2" : "gap-3", className)} data-size={size}>
       <UserIdentityAvatar className={isSmall ? "size-7" : "size-9"} user={user} />
-      <div className="min-w-0 flex-1 overflow-hidden">
+      <div className="min-w-0 flex-1 overflow-hidden text-left">
         <div className={cn("truncate font-medium", isSmall ? "text-xs" : "text-sm")}>{label.primary}</div>
         {showSecondary ? (
           <div className={cn("truncate text-muted-foreground", isSmall ? "text-[11px]" : "text-xs")}>{label.secondary}</div>

@@ -59,7 +59,7 @@ export function UserSearchSelect({
         type="search"
         value={q}
       />
-      <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex max-h-72 min-w-0 flex-col gap-1 overflow-y-auto">
         {usersQuery.isLoading ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">加载用户中</p>
         ) : usersQuery.isError ? (

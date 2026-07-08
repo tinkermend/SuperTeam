@@ -1,14 +1,27 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Bot, Plus, X } from "lucide-react";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
 import { UserIdentity } from "@/components/superteam/user-identity";
+import { IconTile, StatusPill, type V3Tone } from "@/components/superteam/v3-components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
+import {
+  listDigitalEmployees,
+  type DigitalEmployee,
+  type DigitalEmployeeStatus,
+} from "@/lib/api/employees";
 import type { UserSummary } from "@/lib/api/auth";
 import { TeamIconTile } from "@/components/superteam/team-icon-tile";
 import type { CreateTeamDraft } from "./create-team-draft";
+
+const EMPLOYEE_STATUS_PRESENTATION: Record<DigitalEmployeeStatus, { label: string; tone: V3Tone }> = {
+  draft: { label: "草稿", tone: "mute" },
+  ready: { label: "就绪", tone: "ok" },
+  active: { label: "运行中", tone: "info" },
+  disabled: { label: "已禁用", tone: "mute" },
+  error: { label: "异常", tone: "danger" },
+};
 
 export function CreateTeamStepMembers({
   apiBaseUrl,
@@ -133,7 +146,7 @@ export function CreateTeamStepMembers({
                 value={employeeQuery}
               />
               
-              <div className="flex flex-col gap-2">
+              <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
                 {employeesQuery.isLoading ? (
                   <p className="py-4 text-center text-sm text-muted-foreground">加载中...</p>
                 ) : employeesQuery.isError ? (
@@ -145,24 +158,37 @@ export function CreateTeamStepMembers({
                       : "没有匹配的数字员工"}
                   </p>
                 ) : (
-                  candidateEmployees.map((employee) => (
-                    <div
-                      className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 hover:bg-muted/30"
-                      key={employee.id}
-                    >
-                      <div className="flex min-w-0 flex-col">
-                        <div className="truncate text-sm font-medium">{employee.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">状态: {employee.status}</div>
-                      </div>
-                      <Button
-                        onClick={() => addEmployee(employee)}
-                        size="sm"
-                        variant="ghost"
+                  candidateEmployees.map((employee) => {
+                    const presentation = EMPLOYEE_STATUS_PRESENTATION[employee.status] ?? {
+                      label: employee.status,
+                      tone: "mute" as V3Tone,
+                    };
+                    return (
+                      <div
+                        className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 hover:bg-muted/30"
+                        key={employee.id}
                       >
-                        <Plus className="size-4 text-muted-foreground hover:text-primary" />
-                      </Button>
-                    </div>
-                  ))
+                        <IconTile size="sm" tone="mute">
+                          <Bot />
+                        </IconTile>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <div className="truncate text-sm font-medium">{employee.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">{employee.role}</div>
+                        </div>
+                        <StatusPill className="shrink-0" tone={presentation.tone}>
+                          {presentation.label}
+                        </StatusPill>
+                        <Button
+                          className="shrink-0"
+                          onClick={() => addEmployee(employee)}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <Plus className="size-4 text-muted-foreground hover:text-primary" />
+                        </Button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
