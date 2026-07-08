@@ -68,3 +68,44 @@
   - `apps/control-plane/internal/storage/queries/tenant_team_config.sql.go`
 - Those files were intentionally left out of this task’s commit to respect the ownership boundary.
 - Full storage-query integration coverage was not exercised because the dedicated test DB and Redis env vars were unset in this workspace.
+
+---
+
+## Task 2 generated-output consistency fix
+
+### Investigation
+
+- Checked the dirty generated diffs in:
+  - `apps/control-plane/internal/storage/queries/models.go`
+  - `apps/control-plane/internal/storage/queries/tenant_team.sql.go`
+  - `apps/control-plane/internal/storage/queries/tenant_team_config.sql.go`
+- Confirmed they are legitimate `sqlc` output drift caused by schema/query sources already present on this branch:
+  - migration `apps/control-plane/internal/storage/migrations/046_team_constitution_and_skill_binding_rename.sql` adds `tenant_teams.constitution`
+  - `apps/control-plane/internal/storage/queries/tenant_team.sql` uses `RETURNING *`
+  - `apps/control-plane/internal/storage/queries/tenant_team_config.sql` uses `SELECT *` and `tt.*`
+- Regenerating with `make -C apps/control-plane generate-sqlc` reproduced the same dirty output, proving the files are generated from current sources rather than hand edits.
+
+### What the generated diffs contain
+
+- `models.go`
+  - replaces the stale `SkillTeamBinding` model with `TeamSkillBinding`
+  - adds `Constitution []byte` to `TenantTeam`
+- `tenant_team.sql.go`
+  - widens `SoftDeleteTeam` scan/return shape to include `constitution`
+- `tenant_team_config.sql.go`
+  - widens generated scans/results for `tenant_teams`-backed queries to include `constitution`
+
+### Verification
+
+1. `make -C apps/control-plane generate-sqlc`
+   - passed
+2. `go build ./apps/control-plane/...`
+   - passed
+3. `go test ./apps/control-plane/internal/storage/queries/... -v`
+   - passed; integration tests were skipped because `TEST_DATABASE_URL` and `TEST_REDIS_URL` were not set
+4. `git diff --check`
+   - passed
+
+### Resolution
+
+- Included the three generated files in the Task 2 checkpoint so the branch no longer carries sqlc generated-code drift from migration 046 / team constitution / team-skill-binding rename.

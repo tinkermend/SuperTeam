@@ -2133,20 +2133,6 @@ type SkillInstallation struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
-// 技能与团队归属绑定表
-type SkillTeamBinding struct {
-	// 技能团队绑定主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 绑定所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 绑定的技能 ID
-	SkillID uuid.UUID `json:"skill_id"`
-	// 归属团队 ID
-	TeamID uuid.UUID `json:"team_id"`
-	// 绑定创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
 // 任务主表
 type Task struct {
 	// 任务主键 UUID
@@ -2479,6 +2465,20 @@ type TeamMcpServer struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 技能与团队归属绑定表
+type TeamSkillBinding struct {
+	// 技能团队绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定的技能 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 归属团队 ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 租户表
 type Tenant struct {
 	// 租户主键 UUID
@@ -2568,6 +2568,7 @@ type TenantTeam struct {
 	// 团队最后更新时间
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	HumanOwnerUserIds []uuid.UUID        `json:"human_owner_user_ids"`
+	Constitution      []byte             `json:"constitution"`
 }
 
 // 团队治理配置版本表
