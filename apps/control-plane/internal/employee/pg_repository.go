@@ -170,7 +170,6 @@ JOIN skills s
  AND s.deleted_at IS NULL
 WHERE stb.tenant_id = $1
   AND stb.team_id = $2
-  AND stb.deleted_at IS NULL
 ORDER BY s.slug ASC
 `, tenantID, teamID)
 	if err != nil {

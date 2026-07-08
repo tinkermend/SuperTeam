@@ -146,3 +146,51 @@ Blocker Evidence
 Why I stopped
 - The task instructions explicitly said not to change production code unless the fixed fixture revealed a production bug, and to report `BLOCKED` with evidence before making broader changes.
 - The fixture is now executable; the remaining failure is a production bug requiring a separate fix decision.
+
+---
+
+Task 3a Production Query/Schema Mismatch Fix
+
+Status
+- Implemented the narrow production fix in `GetTeamBaseline` only.
+- Removed the nonexistent `stb.deleted_at` filter from the team skill binding query to match the current hard-delete schema.
+- Did not add a migration, soft-delete column, or wider repository/query refactor.
+
+Root Cause
+- `TestGetTeamBaseline` reached the real production SQL path and failed with:
+  - `ERROR: column stb.deleted_at does not exist (SQLSTATE 42703)`
+- `team_skill_bindings` comes from migration 009 via later rename in migration 046 and does not have a `deleted_at` column.
+- The query already filters deleted skills via `s.deleted_at IS NULL`; the extra binding-table soft-delete filter was invalid for this schema.
+
+Change
+- File: `apps/control-plane/internal/employee/pg_repository.go`
+- Edit: removed `AND stb.deleted_at IS NULL` from the skill binding lookup inside `GetTeamBaseline`.
+
+Verification Evidence
+1. DB-backed targeted test:
+   - Command:
+     `TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable' go test ./apps/control-plane/internal/employee/... -run TestGetTeamBaseline -v`
+   - Result:
+     pass
+
+2. Skip-safe targeted test without env:
+   - Command:
+     `go test ./apps/control-plane/internal/employee/... -run TestGetTeamBaseline -v`
+   - Result:
+     skip as expected when DB env is absent
+
+3. Control Plane build:
+   - Command:
+     `go build ./apps/control-plane/...`
+   - Result:
+     success
+
+4. Diff hygiene:
+   - Command:
+     `git diff --check`
+   - Result:
+     success
+
+Notes
+- Scope was intentionally limited to production query/schema alignment for Task 3a.
+- Current binding semantics remain hard-delete only, matching the task brief.
