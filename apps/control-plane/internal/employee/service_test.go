@@ -306,8 +306,14 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 	require.Equal(t, map[string]any{"mission": "stabilize ops"}, options.TeamConfig.Constitution)
 	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.TeamConfig.Skills)
 	require.Equal(t, []string{"baseline-mcp"}, options.TeamConfig.MCPServers)
-	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.CapabilityOptions.Skills)
-	require.Equal(t, []string{"baseline-mcp"}, options.CapabilityOptions.MCPServers)
+	require.NotEqual(t, []string{"baseline-skill", "shared-skill"}, options.CapabilityOptions.Skills)
+	require.NotEqual(t, []string{"baseline-mcp"}, options.CapabilityOptions.MCPServers)
+	require.Contains(t, options.CapabilityOptions.Skills, "database-troubleshooting")
+	require.Contains(t, options.CapabilityOptions.Skills, "frontend-implementation")
+	require.Contains(t, options.CapabilityOptions.MCPServers, "browser")
+	require.Contains(t, options.CapabilityOptions.MCPServers, "postgres-readonly")
+	require.NotContains(t, options.CapabilityOptions.Skills, "baseline-skill")
+	require.NotContains(t, options.CapabilityOptions.MCPServers, "baseline-mcp")
 }
 
 func TestGetCreateOptionsIncludesCustomAgentRegardlessOfTeamAllowlist(t *testing.T) {

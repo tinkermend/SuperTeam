@@ -235,7 +235,7 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
-	capabilityOptions := capabilityOptionsFromTeamConfig(teamConfig)
+	capabilityOptions := capabilityOptionsForCreate()
 
 	return &CreateOptions{
 		TeamConfig:             teamConfigOption,
@@ -307,7 +307,7 @@ func createOptionChecks(
 	return []CreateOptionCheck{
 		{
 			Key:     "team_governance",
-			Label:   "团队治理版本",
+			Label:   "团队治理基线",
 			Status:  checkStatus(teamGovernanceReady, false),
 			Message: fmt.Sprintf("skills %d · MCP %d", len(teamConfig.Skills), len(teamConfig.MCPServers)),
 		},
@@ -353,66 +353,12 @@ func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption,
 	}, nil
 }
 
-func capabilityOptionsFromTeamConfig(teamConfig TeamConfigInput) CapabilityOptions {
+func capabilityOptionsForCreate() CapabilityOptions {
 	return CapabilityOptions{
 		ProviderTypes: supportedProviderTypes(),
-		Skills:        optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
-		MCPServers:    optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
+		Skills:        platformSkillOptions(),
+		MCPServers:    platformMCPServerOptions(),
 	}
-}
-
-func employeeTypesForTeamConfig(teamConfig TeamConfigInput) ([]EmployeeTypeDefinition, error) {
-	allowedTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
-	if err != nil {
-		return nil, err
-	}
-	defaultTypes := DefaultEmployeeTypeDefinitions()
-	if len(allowedTypes) == 0 {
-		filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
-		for _, definition := range defaultTypes {
-			filtered = append(filtered, employeeTypeDefinitionForTeamConfig(definition, teamConfig))
-		}
-		return filtered, nil
-	}
-	allowedSet := stringSet(allowedTypes)
-	filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
-	for _, definition := range defaultTypes {
-		if allowedSet[definition.Type] {
-			filtered = append(filtered, employeeTypeDefinitionForTeamConfig(definition, teamConfig))
-		}
-	}
-	return filtered, nil
-}
-
-func employeeTypeDefinitionForTeamConfig(definition EmployeeTypeDefinition, teamConfig TeamConfigInput) EmployeeTypeDefinition {
-	filtered := cloneEmployeeTypeDefinition(definition)
-	filtered.DefaultCapabilitySelection = constrainedDefaultCapabilitySelection(definition.DefaultCapabilitySelection, teamConfig)
-	filtered.DefaultContextPolicyOverride = constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
-	return filtered
-}
-
-func allowedEmployeeTypesFromTeamConfig(teamConfig TeamConfigInput) ([]string, error) {
-	values, present, issues := stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types")
-	if len(issues) != 0 {
-		return nil, fmt.Errorf("%w: invalid capability_policy.allowed_employee_types", ErrInvalidInput)
-	}
-	if present {
-		if len(values) == 0 {
-			return nil, fmt.Errorf("%w: capability_policy.allowed_employee_types must not be empty", ErrInvalidInput)
-		}
-		return values, nil
-	}
-	values, present, issues = stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types")
-	if len(issues) != 0 {
-		return nil, fmt.Errorf("%w: invalid runtime_scope_policy employee type allowlist", ErrInvalidInput)
-	}
-	if present {
-		if len(values) == 0 {
-			return nil, fmt.Errorf("%w: runtime_scope_policy employee type allowlist must not be empty", ErrInvalidInput)
-		}
-		return values, nil
-	}
-	return nil, nil
 }
 
 func stringListFromAnyPolicy(value any) []string {
@@ -604,34 +550,6 @@ func defaultRiskLevelForEmployeeType(definition EmployeeTypeDefinition) string {
 	return "medium"
 }
 
-func validateEmployeeTypeAllowedByTeamConfig(employeeType string, teamConfig TeamConfigInput) error {
-	allowedTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
-	if err != nil {
-		return err
-	}
-	if len(allowedTypes) == 0 {
-		return nil
-	}
-	if !stringSet(allowedTypes)[employeeType] {
-		return fmt.Errorf("%w: employee_type %q is outside team policy", ErrInvalidInput, employeeType)
-	}
-	return nil
-}
-
-func validateProviderTypeAllowedByTeamConfig(providerType string, teamConfig TeamConfigInput) error {
-	allowedProviderTypes := firstNonEmptyStringList(
-		optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
-		optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
-	)
-	if len(allowedProviderTypes) == 0 {
-		return nil
-	}
-	if !stringSet(allowedProviderTypes)[providerType] {
-		return fmt.Errorf("%w: provider_type %q is outside team policy", ErrInvalidInput, providerType)
-	}
-	return nil
-}
-
 func supportedProviderTypes() []string {
 	types := make([]string, 0, len(supportedDigitalEmployeeProviderTypes))
 	for providerType := range supportedDigitalEmployeeProviderTypes {
@@ -639,6 +557,53 @@ func supportedProviderTypes() []string {
 	}
 	sort.Strings(types)
 	return types
+}
+
+func platformSkillOptions() []string {
+	values := make(map[string]struct{})
+	for _, definition := range DefaultEmployeeTypeDefinitions() {
+		for _, skill := range definition.RecommendedSkills {
+			if skill == "" {
+				continue
+			}
+			values[skill] = struct{}{}
+		}
+		for _, skill := range stringList(definition.DefaultCapabilitySelection["enabled_skills"]) {
+			if skill == "" {
+				continue
+			}
+			values[skill] = struct{}{}
+		}
+	}
+	return sortedKeys(values)
+}
+
+func platformMCPServerOptions() []string {
+	values := make(map[string]struct{})
+	for _, definition := range DefaultEmployeeTypeDefinitions() {
+		for _, serverID := range definition.RecommendedMCPServers {
+			if serverID == "" {
+				continue
+			}
+			values[serverID] = struct{}{}
+		}
+		for _, serverID := range stringList(definition.DefaultCapabilitySelection["enabled_mcp_servers"]) {
+			if serverID == "" {
+				continue
+			}
+			values[serverID] = struct{}{}
+		}
+	}
+	return sortedKeys(values)
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for value := range values {
+		keys = append(keys, value)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (s *Service) validateInitialEffectiveConfig(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID) error {
@@ -936,16 +901,6 @@ func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition Emp
 func initialContextPolicyOverride(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
 	defaults := constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
 	return mergePolicyMaps(defaults, req.ContextPolicyOverride)
-}
-
-func constrainedDefaultCapabilitySelection(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
-	selection := cloneMap(defaults)
-	filterDefaultStringListByPolicy(selection, "enabled_skills", teamConfig.CapabilityPolicy, "allowed_skills")
-	filterDefaultStringListByPolicy(selection, "enabled_mcp_servers", teamConfig.CapabilityPolicy, "allowed_mcp_servers")
-	filterDefaultStringListByPolicy(selection, "enabled_plugins", teamConfig.CapabilityPolicy, "allowed_plugins")
-	filterDefaultStringListByPolicy(selection, "enabled_external_capabilities", teamConfig.CapabilityPolicy, "allowed_external_capabilities")
-	filterDefaultStringListByPolicy(selection, "enabled_provider_types", teamConfig.CapabilityPolicy, "allowed_provider_types")
-	return selection
 }
 
 func constrainedDefaultContextPolicyOverride(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
