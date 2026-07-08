@@ -347,6 +347,24 @@ func TestDigitalEmployeeProviderIdentityMigrationObjects(t *testing.T) {
 	require.Contains(t, sql, "provider_type VARCHAR(100)")
 }
 
+func TestMigration046TeamConstitutionAndSkillBindingRename(t *testing.T) {
+	sql := readMigration(t, "046_team_constitution_and_skill_binding_rename.sql")
+
+	for _, expected := range []string{
+		"ALTER TABLE tenant_teams",
+		"ADD COLUMN IF NOT EXISTS constitution JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"UPDATE tenant_teams t",
+		"SET constitution = r.constitution",
+		"FROM tenant_team_config_revisions r",
+		"r.tenant_id = t.tenant_id",
+		"r.team_id = t.id",
+		"r.status = 'active'",
+		"ALTER TABLE skill_team_bindings RENAME TO team_skill_bindings",
+	} {
+		assertMigrationContains(t, sql, expected)
+	}
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {
