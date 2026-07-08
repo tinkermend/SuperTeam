@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { AuthProvider } from '@/features/auth/auth-provider'
 import { ApiRequestError } from '@/lib/api'
 import { resolveControlPlaneUrl } from '@/lib/config/control-plane-url'
+import { shouldRetryQuery } from '@/query-client'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
@@ -24,12 +25,7 @@ import './styles/index.css'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error) => {
-        if (error instanceof ApiRequestError && [401, 403].includes(error.status)) {
-          return false
-        }
-        return failureCount < 2
-      },
+      retry: shouldRetryQuery,
       refetchOnWindowFocus: import.meta.env.PROD,
       staleTime: 10 * 1000, // 10s
     },

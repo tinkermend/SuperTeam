@@ -290,6 +290,7 @@ function createWizardFetcher({
   includeOtherBlockedCheck = false,
   teams = [team],
   createOptionsErrorForTeamId,
+  pendingCreateOptionsForTeamId,
   allowedEmployeeTypes = ["database_admin"],
   teamInheritedCapabilitySelection,
 }: {
@@ -309,6 +310,7 @@ function createWizardFetcher({
   includeOtherBlockedCheck?: boolean;
   teams?: Array<typeof team>;
   createOptionsErrorForTeamId?: string;
+  pendingCreateOptionsForTeamId?: string;
   allowedEmployeeTypes?: string[];
   teamInheritedCapabilitySelection?: Record<string, unknown>;
 } = {}) {
@@ -323,6 +325,9 @@ function createWizardFetcher({
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
       if (url.searchParams.has("team_id")) {
         expect(teams.map((item) => item.id)).toContain(url.searchParams.get("team_id"));
+      }
+      if (pendingCreateOptionsForTeamId && url.searchParams.get("team_id") === pendingCreateOptionsForTeamId) {
+        return await new Promise<Response>(() => {});
       }
       if (createOptionsErrorForTeamId && url.searchParams.get("team_id") === createOptionsErrorForTeamId) {
         return jsonResponse(
@@ -684,6 +689,21 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).toContain("自定义身份");
     expect(document.body.textContent).not.toContain("选择员工类型");
     expect(document.body.textContent).not.toContain("配置预检");
+  });
+
+  it("keeps the identity form visible while team-scoped create options are loading", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({ teams: [team, secondTeam], pendingCreateOptionsForTeamId: secondTeam.id }),
+    );
+
+    await enterBlankCustomConfiguration(screen);
+    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
+
+    await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
+    await expect.element(screen.getByLabelText("名称")).toBeVisible();
+    await expect.element(screen.getByLabelText("职责定位")).toBeVisible();
+    expect(document.body.textContent).not.toContain("加载创建选项");
   });
 
   it("shows a business blocker when selected team lacks governance config", async () => {

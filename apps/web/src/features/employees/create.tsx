@@ -276,6 +276,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const teamGovernanceBlocker = teamGovernanceBlockerMessage(createOptions.error);
   const customAgentTeamBlocker = customAgentTeamBlockerMessage(draft, createOptions.data);
   const configurationBlocked = Boolean(teamGovernanceBlocker || customAgentTeamBlocker);
+  const isIdentityStepReady = !teams.isLoading && !avatarAssets.isLoading && currentStep === "身份";
+  const shouldShowConfigureLoading =
+    teams.isLoading ||
+    avatarAssets.isLoading ||
+    (currentStep !== "身份" && createOptions.isLoading);
 
   function updateDraft(patch: Partial<WizardDraft>) {
     if (flowStep === "configure") {
@@ -502,13 +507,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
               <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4">
                 <div className="min-h-0 rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
-                  {teams.isLoading || avatarAssets.isLoading || createOptions.isLoading ? (
+                  {shouldShowConfigureLoading ? (
                     <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-v3-ink-3">
                       <Loader2 className="size-4 animate-spin" />
                       加载创建选项
                     </div>
                   ) : null}
-                  {!teams.isLoading && !avatarAssets.isLoading && !createOptions.isLoading && currentStep === "身份" ? (
+                  {isIdentityStepReady ? (
                     <IdentityStep
                       avatarAssets={avatarAssets.data ?? []}
                       draft={draft}
