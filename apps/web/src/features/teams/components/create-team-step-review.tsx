@@ -8,12 +8,12 @@ import { TeamIconTile } from "@/components/superteam/team-icon-tile";
 
 export function CreateTeamStepReview({
   draft,
-  goToGovernance,
-  setGoToGovernance,
+  goToConstitution,
+  setGoToConstitution,
 }: {
   draft: CreateTeamDraft;
-  goToGovernance: boolean;
-  setGoToGovernance: (val: boolean) => void;
+  goToConstitution: boolean;
+  setGoToConstitution: (val: boolean) => void;
 }) {
   const previewName = draft.name.trim() || "未命名团队";
   const previewSlug = draft.slug.trim() || "team-slug";
@@ -53,7 +53,7 @@ export function CreateTeamStepReview({
             icon={<ShieldCheck className="size-4" />}
             state="创建后配置"
             stateTone="neutral"
-            title="治理策略"
+            title="宪法"
             tone="text-emerald-600 bg-emerald-500/10"
           />
           <LifecycleRow
@@ -94,14 +94,14 @@ export function CreateTeamStepReview({
       <div className="rounded-xl border bg-card p-5 shadow-sm">
         <Label className="flex cursor-pointer items-start gap-2.5">
           <Checkbox
-            checked={goToGovernance}
+            checked={goToConstitution}
             className="mt-0.5"
-            onCheckedChange={(checked) => setGoToGovernance(checked === true)}
+            onCheckedChange={(checked) => setGoToConstitution(checked === true)}
           />
           <span className="text-sm">
-            <span className="font-medium">创建后前往治理配置</span>
+            <span className="font-medium">创建后前往宪法</span>
             <span className="mt-0.5 block text-xs text-muted-foreground">
-              立即进入治理草稿，补齐章程与审批策略。如果不勾选，您将返回团队列表。
+              立即进入团队宪法编辑。
             </span>
           </span>
         </Label>

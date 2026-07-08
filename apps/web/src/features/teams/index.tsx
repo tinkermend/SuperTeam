@@ -57,9 +57,9 @@ export function CreateTeamPage() {
           apiBaseUrl={apiBaseUrl}
           showHeading={false}
           onCancel={() => void navigate({ to: "/teams" })}
-          onCreated={(overview, { goToGovernance }) =>
+          onCreated={(overview, { goToConstitution }) =>
             void navigate({
-              hash: goToGovernance ? "governance" : undefined,
+              hash: goToConstitution ? "constitution" : undefined,
               params: { teamId: overview.team.id },
               to: "/teams/$teamId",
             })

@@ -1,7 +1,7 @@
 import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { TeamDetailView, TeamsView } from "@/features/teams";
 
@@ -29,6 +29,23 @@ vi.mock("@tanstack/react-router", () => {
     params?: Record<string, string>;
     to: string;
   };
+  const useLocation = ({
+    select,
+  }: {
+    select?: (location: {
+      hash: string;
+      href: string;
+      pathname: string;
+    }) => unknown;
+  } = {}) => {
+    const location = {
+      hash: window.location.hash.slice(1),
+      href: window.location.href,
+      pathname: window.location.pathname,
+    };
+
+    return select ? select(location) : location;
+  };
   const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
     ({ children, params, to, ...props }, ref) => (
       <a
@@ -47,7 +64,11 @@ vi.mock("@tanstack/react-router", () => {
   );
   Link.displayName = "MockRouterLink";
 
-  return { Link, useNavigate: () => () => undefined };
+  return { Link, useLocation, useNavigate: () => () => undefined };
+});
+
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
 });
 
 function createQueryClient() {
@@ -926,7 +947,7 @@ describe("TeamsView", () => {
 });
 
 describe("TeamDetailView", () => {
-  it("shows only overview, capabilities, and governance tabs on team detail", async () => {
+  it("shows only overview, capabilities, and constitution tabs on team detail", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -938,7 +959,7 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力与知识", "治理策略"]) {
+    for (const tab of ["概览", "能力", "宪法"]) {
       await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
     }
     await expect
@@ -979,16 +1000,13 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力与知识", "治理策略"]) {
+    for (const tab of ["概览", "能力", "宪法"]) {
       await expect
         .element(screen.getByRole("tab", { name: tab }))
         .toBeVisible();
     }
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "创建治理草案" }))
-      .toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "禁用团队" }))
       .toBeVisible();
@@ -999,6 +1017,26 @@ describe("TeamDetailView", () => {
     expect(document.querySelectorAll('[data-slot="v3-tabs"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
+  });
+
+  it("opens the constitution tab when arriving with the constitution hash", async () => {
+    window.history.replaceState({}, "", "/teams/team-1#constitution");
+
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect
+      .element(screen.getByRole("tab", { name: "宪法" }))
+      .toHaveAttribute("data-state", "active");
+    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
+    await expect
+      .element(screen.getByRole("heading", { name: "数字员工" }))
+      .not.toBeInTheDocument();
   });
 
   it("calls lifecycle APIs from detail actions", async () => {
@@ -1143,7 +1181,7 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
 
     await expect
       .element(screen.getByRole("heading", { name: "公共技能" }))
@@ -1228,7 +1266,7 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
 
     await expect
       .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
@@ -1240,7 +1278,7 @@ describe("TeamDetailView", () => {
       .toBeVisible();
   });
 
-  it("renders governance editor with JSON preview and approval action", async () => {
+  it("renders constitution editor and preserves existing keys while saving hard rules", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1250,24 +1288,16 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+    await userEvent.click(screen.getByRole("tab", { name: "宪法" }));
 
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
-    await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
-    await expect.element(screen.getByText("JSON 快照预览")).toBeVisible();
-    await userEvent.click(
-      screen.getByRole("switch", { name: "启用审批策略" }),
-    );
-    await userEvent.click(screen.getByRole("combobox", { name: "风险阈值" }));
-    await userEvent.click(
-      screen.getByRole("option", { name: "high - 仅高风险触发" }),
-    );
+    await expect.element(screen.getByText("1 条硬性规则")).toBeVisible();
+    await expect.element(screen.getByText("审批策略")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
     await userEvent.fill(
-      screen.getByLabelText("必须审批的动作（每行一条）"),
-      "deploy\n delete ",
+      screen.getByLabelText("团队宪法"),
+      "所有生产写操作必须审批\n变更窗口必须登记",
     );
-    await userEvent.clear(screen.getByLabelText("最小审批人数"));
-    await userEvent.fill(screen.getByLabelText("最小审批人数"), "3");
     await userEvent.click(screen.getByRole("button", { name: "保存宪法" }));
     await expect
       .poll(() =>
@@ -1292,60 +1322,13 @@ describe("TeamDetailView", () => {
         "PATCH",
       ),
     ).toEqual({
-      approval_policy: {
-        high_risk: "required",
-        enabled: true,
-        risk_threshold: "high",
-        required_actions: ["deploy", "delete"],
-        min_approvers: 3,
-      },
-      hard_rules: ["所有生产写操作必须审批"],
-      principles: ["安全优先，稳定可靠"],
-    });
-  });
-
-  it("preserves untouched approval policy when saving hard rules only", async () => {
-    const fetcher = createTeamsFetcher();
-    const screen = await renderWithQueryClient(
-      <TeamDetailView
-        apiBaseUrl="http://control-plane.local"
-        fetcher={fetcher}
-        teamId="team-1"
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
-    await userEvent.fill(
-      screen.getByLabelText("团队宪法"),
-      "所有生产写操作必须审批\n变更窗口必须登记",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存宪法" }));
-    await expect
-      .poll(() =>
-        hasRequest(
-          fetcher,
-          "/api/v1/teams/team-1/constitution",
-          "PATCH",
-        ),
-      )
-      .toBe(true);
-
-    expect(
-      requestBody(
-        fetcher,
-        "/api/v1/teams/team-1/constitution",
-        "PATCH",
-      ),
-    ).toEqual({
-      approval_policy: {
-        high_risk: "required",
-      },
+      approval_policy: { high_risk: "required" },
       hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
       principles: ["安全优先，稳定可靠"],
     });
   });
 
-  it("uses a structured approval policy editor without principles or runtime fields", async () => {
+  it("does not render approval, principles, or diff fields in constitution tab", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1354,18 +1337,17 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "治理策略" }));
+    await userEvent.click(screen.getByRole("tab", { name: "宪法" }));
 
-    await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
-    await expect.element(screen.getByLabelText("启用审批策略")).toBeVisible();
-    await expect.element(screen.getByLabelText("风险阈值")).toBeVisible();
-    await expect.element(screen.getByLabelText("必须审批的动作（每行一条）")).toBeVisible();
-    await expect.element(screen.getByLabelText("最小审批人数")).toBeVisible();
+    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
+    await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("相对当前版本的变更")).not.toBeInTheDocument();
+    await expect.element(screen.getByLabelText("审批策略")).not.toBeInTheDocument();
     await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
     await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
   });
 
-  it("does not show member or governance creation actions for a disabled team", async () => {
+  it("does not show member or constitution actions for a disabled team", async () => {
     const fetcher = createTeamsFetcher({ disabledOverview: true });
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1383,7 +1365,7 @@ describe("TeamDetailView", () => {
       .element(screen.getByRole("button", { name: "添加成员" }))
       .not.toBeInTheDocument();
     await expect
-      .element(screen.getByRole("button", { name: "创建治理草案" }))
+      .element(screen.getByRole("button", { name: "保存宪法" }))
       .not.toBeInTheDocument();
     await screen.getByRole("button", { name: "恢复团队" }).click();
     expect(fetcher).toHaveBeenCalledWith(

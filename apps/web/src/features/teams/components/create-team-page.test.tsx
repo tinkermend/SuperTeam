@@ -193,7 +193,7 @@ describe("CreateTeamView", () => {
       slug: "security",
     });
     await expect.poll(() => onCreated.mock.calls.length).toBe(1);
-    expect(onCreated.mock.calls[0][1]).toEqual({ goToGovernance: false });
+    expect(onCreated.mock.calls[0][1]).toEqual({ goToConstitution: false });
   });
 
   it("surfaces a create error returned by the API", async () => {
