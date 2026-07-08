@@ -2069,3 +2069,9 @@ func TestProjectManagementV1TemporalCoordinationMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrationProjectRuntimeNodes(t *testing.T) {
+	pool, schemaName := applyAllMigrations(t)
+	assertTableExists(t, pool, schemaName, "project_runtime_nodes")
+	assertTableExists(t, pool, schemaName, "project_employee_node_affinity")
+}
