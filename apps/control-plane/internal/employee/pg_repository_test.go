@@ -506,6 +506,88 @@ func TestOverviewOperationalStatusCountsFromStatesInitializesMap(t *testing.T) {
 	require.Empty(t, emptyCounts)
 }
 
+func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRepoIntegrationTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_templates_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepoTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	repo := NewPgRepository(queries.New(conn), conn)
+
+	// The migration seeds 9 builtin templates for the default tenant.
+	seeded, err := repo.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: tenantID})
+	require.NoError(t, err)
+	require.Len(t, seeded, 9)
+
+	created, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:                   tenantID,
+		Type:                       "custom_reviewer",
+		Label:                      "自定义评审员",
+		Description:                "自定义模板",
+		DefaultRole:                "custom_reviewer",
+		RecommendedSkills:          []string{"code-review"},
+		RecommendedMCPServers:      []string{},
+		RecommendedProviderTypes:   []string{"codex"},
+		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"code-review"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "custom_reviewer", created.Type)
+	require.False(t, created.IsSystem)
+	require.Equal(t, "active", created.Status)
+
+	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "重复类型",
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	updated, err := repo.UpdateEmployeeTemplate(ctx, UpdateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		ID:          created.ID,
+		Label:       "评审员（已更新）",
+		Description: "更新后的描述",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "评审员（已更新）", updated.Label)
+
+	disabled, err := repo.SetEmployeeTemplateStatus(ctx, tenantID, created.ID, "disabled")
+	require.NoError(t, err)
+	require.Equal(t, "disabled", disabled.Status)
+
+	active, err := repo.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: tenantID, ActiveOnly: true})
+	require.NoError(t, err)
+	for _, tmpl := range active {
+		require.NotEqual(t, created.ID, tmpl.ID)
+	}
+
+	require.NoError(t, repo.SoftDeleteEmployeeTemplate(ctx, tenantID, created.ID))
+	_, err = repo.GetEmployeeTemplate(ctx, tenantID, created.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	err = repo.SoftDeleteEmployeeTemplate(ctx, tenantID, created.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	labels, err := repo.ListEmployeeTemplateLabels(ctx, tenantID)
+	require.NoError(t, err)
+	require.Equal(t, "数据库管理", labels["database_admin"])
+}
+
 func normalizeSQL(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
