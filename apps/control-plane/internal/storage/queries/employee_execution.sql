@@ -70,7 +70,7 @@ personal_skills AS (
      AND s.deleted_at IS NULL
     WHERE NOT EXISTS (
         SELECT 1
-        FROM skill_team_bindings inherited_binding
+        FROM team_skill_bindings inherited_binding
         WHERE inherited_binding.tenant_id = te.tenant_id
           AND inherited_binding.team_id = te.team_id
           AND inherited_binding.skill_id = sab.skill_id
@@ -79,7 +79,7 @@ personal_skills AS (
 inherited_skills AS (
     SELECT stb.skill_id
     FROM target_employee te
-    JOIN skill_team_bindings stb
+    JOIN team_skill_bindings stb
       ON stb.tenant_id = te.tenant_id
      AND stb.team_id = te.team_id
     JOIN skills s

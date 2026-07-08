@@ -34,7 +34,7 @@ mounted_skills AS (
       ON de.tenant_id = dei.tenant_id
      AND de.id = dei.digital_employee_id
      AND de.deleted_at IS NULL
-    JOIN skill_team_bindings stb
+    JOIN team_skill_bindings stb
       ON stb.tenant_id = de.tenant_id
      AND stb.team_id = de.team_id
     JOIN skills s

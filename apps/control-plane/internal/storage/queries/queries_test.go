@@ -1904,7 +1904,7 @@ func TestListRequiredToolsForNodeReturnsMountedSkillTools(t *testing.T) {
 	`, tenantID, agentSkillID, employeeID, noDepsSkillID, noDepsEmployeeID, otherNodeSkillID, otherNodeEmployeeID)
 	require.NoError(t, err)
 	_, err = testDB.Exec(ctx, `
-		INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+		INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 		VALUES ($1, $2, $3)
 	`, tenantID, teamSkillID, teamID)
 	require.NoError(t, err)
@@ -1946,7 +1946,7 @@ func TestGetDigitalEmployeeSchedulingSkillCountsUsesTeamPrecedence(t *testing.T)
 	personalOnlySkillID := insertSkill("personal-only-scheduling-skill")
 
 	_, err := db.Exec(ctx, `
-		INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+		INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 		VALUES ($1, $2, $4), ($1, $3, $4)
 	`, tenantID, duplicateSkillID, teamOnlySkillID, teamID)
 	require.NoError(t, err)
