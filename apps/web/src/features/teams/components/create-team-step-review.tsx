@@ -1,6 +1,6 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, Share2, Boxes, Plug, ScrollText } from "lucide-react";
+import { ShieldCheck, Boxes, Plug, ScrollText } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { CreateTeamDraft } from "./create-team-draft";
@@ -55,14 +55,6 @@ export function CreateTeamStepReview({
             stateTone="neutral"
             title="宪法"
             tone="text-emerald-600 bg-emerald-500/10"
-          />
-          <LifecycleRow
-            desc="本团队员工可被哪些项目调用 · 预算 / 能力上限 · 超纲走团队负责人审批"
-            icon={<Share2 className="size-4" />}
-            state="创建后配置"
-            stateTone="neutral"
-            title="对外借调策略"
-            tone="text-blue-600 bg-blue-500/10"
           />
           <LifecycleRow
             desc="从员工池调度可执行的数字员工"

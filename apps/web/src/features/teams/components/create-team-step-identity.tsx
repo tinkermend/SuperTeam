@@ -33,7 +33,9 @@ export function CreateTeamStepIdentity({
     });
   }
 
-  function updateSlug(slug: string) {
+  function updateSlug(rawSlug: string) {
+    // 实时规整为后端可接受的字符集：小写字母、数字、中划线；剔除大写/下划线/空格等。
+    const slug = rawSlug.toLowerCase().replace(/[^a-z0-9-]/g, "");
     onChange({
       ...draft,
       display: draft.displayTouched

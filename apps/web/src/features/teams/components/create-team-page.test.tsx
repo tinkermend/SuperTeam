@@ -138,6 +138,58 @@ describe("CreateTeamView", () => {
     ).toBe(false);
   });
 
+  it("rejects a slug that the backend tenant validation would reject", async () => {
+    const fetcher = createFetcher();
+    const screen = await renderView(
+      <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队名称", exact: true }),
+      "2024 团队",
+    );
+    // 数字开头的 slug 前端曾放行、后端返回 400 invalid slug format。
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+      "2024-team",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "下一步: 负责人和数字员工" }),
+    );
+
+    await expect
+      .element(
+        screen.getByText(
+          "团队标识需以小写字母开头，仅含小写字母、数字和中划线，且以字母或数字结尾",
+        ),
+      )
+      .toBeVisible();
+
+    expect(
+      fetchCalls(fetcher).some(
+        ([url, init]) =>
+          String(url).endsWith("/api/v1/teams") && init?.method === "POST",
+      ),
+    ).toBe(false);
+  });
+
+  it("strips disallowed characters from slug input", async () => {
+    const fetcher = createFetcher();
+    const screen = await renderView(
+      <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+      "My_Team",
+    );
+
+    await expect
+      .element(screen.getByRole("textbox", { name: "团队标识 slug", exact: true }))
+      .toHaveValue("myteam");
+  });
+
   it("creates a team through the multi-step wizard", async () => {
     const fetcher = createFetcher();
     const onCreated = vi.fn();

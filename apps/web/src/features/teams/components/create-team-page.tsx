@@ -61,10 +61,15 @@ export function CreateTeamView({
     const nextErrors: Record<string, string> = {};
     if (step === 1) {
       if (!draft.name.trim()) nextErrors.name = "团队名称不能为空";
-      if (!draft.slug.trim()) {
+      const slug = draft.slug.trim();
+      if (!slug) {
         nextErrors.slug = "团队标识不能为空";
-      } else if (!/^[a-zA-Z0-9\-_]+$/.test(draft.slug.trim())) {
-        nextErrors.slug = "团队标识只允许包含英文、数字、中划线和下划线";
+      } else if (slug.length < 3 || slug.length > 64) {
+        nextErrors.slug = "团队标识需为 3-64 个字符";
+      } else if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(slug)) {
+        // 与后端 tenant 校验保持一致：小写字母开头，仅含小写字母/数字/中划线，字母或数字结尾。
+        nextErrors.slug =
+          "团队标识需以小写字母开头，仅含小写字母、数字和中划线，且以字母或数字结尾";
       }
     } else if (step === 2) {
       if (draft.owners.length === 0) nextErrors.owner = "请至少选择一位负责人";
