@@ -145,6 +145,12 @@ type SchedulingCapabilityFacts struct {
 	MissingEnvironmentNames []string
 }
 
+type TeamBaseline struct {
+	Constitution map[string]any
+	Skills       []string
+	MCPServers   []string
+}
+
 type DigitalEmployee struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID

@@ -1,10 +1,15 @@
 package employee
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -14,6 +19,107 @@ func TestOverviewInt32FromJSONString(t *testing.T) {
 	require.Equal(t, int32(1600), int32FromJSONString("1600"))
 	require.Equal(t, int32(0), int32FromJSONString(""))
 	require.Equal(t, int32(0), int32FromJSONString("not-a-number"))
+}
+
+func TestGetTeamBaseline(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRepoIntegrationTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_team_baseline_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepoTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	skillAID := uuid.New()
+	skillBID := uuid.New()
+	mcpID := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+
+		INSERT INTO tenant_teams (id, tenant_id, slug, name, status, constitution)
+		VALUES ($2, $1, 'default', '默认团队', 'active', '{"hard_rules":["r1"]}'::jsonb)
+		ON CONFLICT (id) DO UPDATE SET
+			status = EXCLUDED.status,
+			constitution = EXCLUDED.constitution;
+
+		INSERT INTO skills (
+			id, tenant_id, slug, name, description,
+			archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
+		) VALUES
+			($3, $1, 'skill-a', 'skill-a', '', 's3://skills/skill-a', 'skill-a.zip', 1, repeat('a', 64), 1),
+			($4, $1, 'skill-b', 'skill-b', '', 's3://skills/skill-b', 'skill-b.zip', 1, repeat('b', 64), 1);
+
+		INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
+		VALUES ($1, $3, $2), ($1, $4, $2);
+
+		INSERT INTO mcp_servers (
+			id, tenant_id, name, server_key, description, transport, url, auth_strategy,
+			required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata
+		) VALUES (
+			$5, $1, 'Postgres Readonly', 'postgres-readonly', '', 'http', 'https://mcp.local/postgres', 'none',
+			ARRAY[]::text[], ARRAY[]::text[], '{"codex":true}'::jsonb, ARRAY[]::text[], 'medium', '{}'::jsonb
+		);
+
+		INSERT INTO team_mcp_bindings (tenant_id, team_id, mcp_server_id, metadata)
+		VALUES ($1, $2, $5, '{}'::jsonb);
+	`, tenantID, teamID, skillAID, skillBID, mcpID)
+	require.NoError(t, err)
+
+	repo := NewPgRepository(queries.New(conn), conn)
+	got, err := repo.GetTeamBaseline(ctx, tenantID, teamID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"skill-a", "skill-b"}, got.Skills)
+	require.ElementsMatch(t, []string{"postgres-readonly"}, got.MCPServers)
+	require.Equal(t, []any{"r1"}, got.Constitution["hard_rules"])
+}
+
+type employeeRepoIntegrationConfig struct {
+	databaseURL string
+}
+
+func employeeRepoIntegrationTestConfig() (employeeRepoIntegrationConfig, bool) {
+	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
+	if employeeRunRepositoryEnvBool("ALLOW_DATABASE_URL_FOR_QUERY_TESTS") && databaseURL == "" {
+		databaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	}
+	if databaseURL == "" {
+		return employeeRepoIntegrationConfig{}, false
+	}
+	return employeeRepoIntegrationConfig{databaseURL: databaseURL}, true
+}
+
+func runEmployeeRepoTestMigrations(ctx context.Context, conn *pgx.Conn) error {
+	files, err := filepath.Glob(filepath.Join("..", "storage", "migrations", "*.sql"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		if _, err := conn.Exec(ctx, string(content)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func TestOverviewInt32PtrFromJSONString(t *testing.T) {

@@ -2703,6 +2703,7 @@ type memoryRepository struct {
 	abortContextErrors        []error
 	createdEmployeeCount      int
 	teamConfigs               map[uuid.UUID]TeamConfigInput
+	teamBaselines             map[uuid.UUID]TeamBaseline
 	currentTeamConfigByTeam   map[uuid.UUID]uuid.UUID
 	runtimeProviderOptions    []RuntimeProviderOption
 	employeeConfigs           map[uuid.UUID]EmployeeConfigInput
@@ -2731,6 +2732,7 @@ func newMemoryRepository() *memoryRepository {
 		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
 		commandReceipts:          make(map[string]*RuntimeCommandReceipt),
 		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
+		teamBaselines:            make(map[uuid.UUID]TeamBaseline),
 		currentTeamConfigByTeam:  make(map[uuid.UUID]uuid.UUID),
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
@@ -2863,6 +2865,21 @@ func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID 
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *memoryRepository) GetTeamBaseline(_ context.Context, tenantID, teamID uuid.UUID) (TeamBaseline, error) {
+	if err := r.EnsureTeamExists(context.Background(), tenantID, teamID); err != nil {
+		return TeamBaseline{}, err
+	}
+	baseline, ok := r.teamBaselines[teamID]
+	if !ok {
+		return TeamBaseline{}, nil
+	}
+	return TeamBaseline{
+		Constitution: cloneMap(baseline.Constitution),
+		Skills:       append([]string(nil), baseline.Skills...),
+		MCPServers:   append([]string(nil), baseline.MCPServers...),
+	}, nil
 }
 
 func (r *memoryRepository) GetCurrentTeamConfigRevision(_ context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {

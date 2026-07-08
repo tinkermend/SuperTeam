@@ -144,6 +144,73 @@ func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uu
 	return nil
 }
 
+func (r *PgRepository) GetTeamBaseline(ctx context.Context, tenantID, teamID uuid.UUID) (TeamBaseline, error) {
+	if r.sql == nil {
+		return TeamBaseline{}, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	team, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
+		ID:       teamID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return TeamBaseline{}, mapNoRows(err)
+	}
+
+	constitution, err := mapFromJSONB(team.Constitution, "constitution")
+	if err != nil {
+		return TeamBaseline{}, err
+	}
+
+	skillRows, err := r.sql.Query(ctx, `
+SELECT s.slug
+FROM team_skill_bindings stb
+JOIN skills s
+  ON s.tenant_id = stb.tenant_id
+ AND s.id = stb.skill_id
+ AND s.deleted_at IS NULL
+WHERE stb.tenant_id = $1
+  AND stb.team_id = $2
+  AND stb.deleted_at IS NULL
+ORDER BY s.slug ASC
+`, tenantID, teamID)
+	if err != nil {
+		return TeamBaseline{}, err
+	}
+	defer skillRows.Close()
+
+	skills := make([]string, 0)
+	for skillRows.Next() {
+		var slug string
+		if err := skillRows.Scan(&slug); err != nil {
+			return TeamBaseline{}, err
+		}
+		skills = append(skills, slug)
+	}
+	if err := skillRows.Err(); err != nil {
+		return TeamBaseline{}, err
+	}
+
+	mcpRows, err := r.q.ListTeamMCPBindings(ctx, queries.ListTeamMCPBindingsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return TeamBaseline{}, err
+	}
+	mcpServers := make([]string, 0, len(mcpRows))
+	for _, row := range mcpRows {
+		if strings.EqualFold(strings.TrimSpace(row.Status), "active") {
+			mcpServers = append(mcpServers, row.ServerKey)
+		}
+	}
+
+	return TeamBaseline{
+		Constitution: constitution,
+		Skills:       skills,
+		MCPServers:   mcpServers,
+	}, nil
+}
+
 func (r *PgRepository) GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
 	revision, err := r.q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
 		TenantID: tenantID,
