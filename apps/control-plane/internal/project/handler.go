@@ -69,6 +69,7 @@ type HandlerService interface {
 	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
 	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error)
+	ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error)
 }
 
 type projectTaskAttemptResultSubmitter interface {
@@ -266,12 +267,26 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		ApprovalPolicy:     req.ApprovalPolicy,
 		EvidencePolicy:     req.EvidencePolicy,
 		RepoBinding:        req.RepoBinding,
+		RuntimeNodeIDs:     req.RuntimeNodeIDs,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, createProjectResponseFromDomain(created))
+}
+
+func (h *HTTPHandler) ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	nodes, err := service.ListProjectRuntimeNodes(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectRuntimeNodeResponses(nodes))
 }
 
 func (h *HTTPHandler) GetProject(w http.ResponseWriter, r *http.Request) {
@@ -1605,7 +1620,7 @@ func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, target any) 
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
@@ -1641,6 +1656,19 @@ type createProjectBody struct {
 	ApprovalPolicy     map[string]any           `json:"approval_policy"`
 	EvidencePolicy     map[string]any           `json:"evidence_policy"`
 	RepoBinding        *ProjectRepoBindingInput `json:"repo_binding"`
+	RuntimeNodeIDs     []uuid.UUID              `json:"runtime_node_ids"`
+}
+
+type projectRuntimeNodeResponse struct {
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+}
+
+func projectRuntimeNodeResponses(nodes []ProjectRuntimeNode) []projectRuntimeNodeResponse {
+	responses := make([]projectRuntimeNodeResponse, 0, len(nodes))
+	for _, node := range nodes {
+		responses = append(responses, projectRuntimeNodeResponse{RuntimeNodeID: node.RuntimeNodeID})
+	}
+	return responses
 }
 
 type putProjectRuntimePlacementBody struct {

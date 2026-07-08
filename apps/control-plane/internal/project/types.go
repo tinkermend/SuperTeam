@@ -20,6 +20,7 @@ var (
 	ErrInvalidProjectAcceptance     = errors.New("invalid project acceptance")
 	ErrProjectArchiveBlocked        = errors.New("project archive blocked")
 	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
+	ErrProjectRuntimeNodesRequired  = errors.New("project requires at least one runtime node")
 )
 
 type ProjectStatus string
@@ -1301,6 +1302,17 @@ type CreateProjectRequest struct {
 	ApprovalPolicy     map[string]any
 	EvidencePolicy     map[string]any
 	RepoBinding        *ProjectRepoBindingInput
+	RuntimeNodeIDs     []uuid.UUID
+}
+
+// ProjectRuntimeNode is a runtime node bound to a project's eligibility set —
+// the pool of nodes a task dispatched under this project may be placed on.
+type ProjectRuntimeNode struct {
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	RuntimeNodeID uuid.UUID
+	CreatedAt     time.Time
 }
 
 type CreateProjectResult struct {

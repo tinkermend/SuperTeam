@@ -272,6 +272,7 @@ func (s *Server) registerRoutes() {
 				r.Put("/projects/{projectId}/runtime-placement", s.projectHandler.PutProjectRuntimePlacement)
 				r.Delete("/projects/{projectId}/runtime-placement", s.projectHandler.ReleaseProjectRuntimePlacement)
 				r.Get("/projects/{projectId}/runtime-readiness", s.projectHandler.GetProjectRuntimeReadiness)
+				r.Get("/projects/{projectId}/runtime-nodes", s.projectHandler.ListProjectRuntimeNodes)
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)
 				r.Put("/projects/{projectId}/members", s.projectHandler.ReplaceProjectMembers)
 				r.Get("/projects/{projectId}/tasks", s.projectHandler.ListProjectTasks)

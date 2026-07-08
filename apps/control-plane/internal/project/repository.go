@@ -122,6 +122,8 @@ type Repository interface {
 	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
 	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error)
+	InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error)
+	ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error)
 }
 
 type ProjectTaskRuntimeBindingRepository interface {

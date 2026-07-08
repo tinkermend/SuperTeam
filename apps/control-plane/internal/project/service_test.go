@@ -25,6 +25,8 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 	tenantID := uuid.New()
 	ownerID := uuid.New()
 	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
@@ -36,6 +38,7 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 			{PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID, ProjectRole: ProjectRoleOwner, DisplayNameSnapshot: "王佩"},
 			{PrincipalType: PrincipalTypeDigitalEmployee, PrincipalID: employeeID, ProjectRole: ProjectRoleExecutor, DisplayNameSnapshot: "后端执行 A", Settings: map[string]any{"concurrency_slots": float64(2)}},
 		},
+		RuntimeNodeIDs: []uuid.UUID{runtimeNodeID},
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
@@ -4043,7 +4046,9 @@ func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
 	actorID := uuid.New()
 	ownerID := uuid.New()
 	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
 	repo.authorizeProjectTeamScope(tenantID, actorID, teamID)
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
@@ -4058,6 +4063,7 @@ func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
 			ProjectRole:         ProjectRoleObserver,
 			DisplayNameSnapshot: "研发团队",
 		}},
+		RuntimeNodeIDs: []uuid.UUID{runtimeNodeID},
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
@@ -4108,7 +4114,9 @@ func TestCreateProjectAllowsAuthorizedMemberOnlyTeamScope(t *testing.T) {
 	actorID := uuid.New()
 	ownerID := uuid.New()
 	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
 	repo.authorizeProjectTeamScope(tenantID, actorID, teamID)
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
@@ -4122,6 +4130,7 @@ func TestCreateProjectAllowsAuthorizedMemberOnlyTeamScope(t *testing.T) {
 			ProjectRole:         ProjectRoleObserver,
 			DisplayNameSnapshot: "研发团队",
 		}},
+		RuntimeNodeIDs: []uuid.UUID{runtimeNodeID},
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
@@ -4141,6 +4150,8 @@ func TestCreateProjectWithoutTeamScopeSucceedsWithoutAuthorizer(t *testing.T) {
 	actorID := uuid.New()
 	ownerID := uuid.New()
 	employeeID := uuid.New()
+	runtimeNodeID := uuid.New()
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
@@ -4154,6 +4165,7 @@ func TestCreateProjectWithoutTeamScopeSucceedsWithoutAuthorizer(t *testing.T) {
 			ProjectRole:         ProjectRoleExecutor,
 			DisplayNameSnapshot: "后端执行 A",
 		}},
+		RuntimeNodeIDs: []uuid.UUID{runtimeNodeID},
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
@@ -4161,6 +4173,53 @@ func TestCreateProjectWithoutTeamScopeSucceedsWithoutAuthorizer(t *testing.T) {
 	if created.Project.TeamID != nil {
 		t.Fatalf("expected no team id, got %#v", created.Project.TeamID)
 	}
+}
+
+func TestCreateProjectRequiresRuntimeNodes(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+
+	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      ownerID,
+		Name:             "缺少运行节点的项目",
+		Goal:             "验证运行节点资格集必填",
+		HumanOwnerUserID: ownerID,
+		RuntimeNodeIDs:   nil,
+	})
+	require.ErrorIs(t, err, ErrProjectRuntimeNodesRequired)
+	assertNoCreateProjectSideEffects(t, repo, coordinator)
+}
+
+func TestCreateProjectPersistsRuntimeNodes(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	nodeA := uuid.New()
+	nodeB := uuid.New()
+	stubProjectRuntimeNodeReader(service, tenantID, nodeA, nodeB)
+
+	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      ownerID,
+		Name:             "带运行节点资格集的项目",
+		Goal:             "验证运行节点资格集写入并可读取",
+		HumanOwnerUserID: ownerID,
+		RuntimeNodeIDs:   []uuid.UUID{nodeA, nodeB},
+	})
+	require.NoError(t, err)
+
+	nodes, err := service.ListProjectRuntimeNodes(context.Background(), tenantID, created.Project.ID)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	gotIDs := []uuid.UUID{nodes[0].RuntimeNodeID, nodes[1].RuntimeNodeID}
+	require.ElementsMatch(t, []uuid.UUID{nodeA, nodeB}, gotIDs)
 }
 
 func TestCreateProjectRequiresMandatoryFields(t *testing.T) {
@@ -4187,6 +4246,8 @@ func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
 	tenantID := uuid.New()
 	ownerID := uuid.New()
 	credentialRef := "  git-credential:primary  "
+	runtimeNodeID := uuid.New()
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 
 	unbound, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
@@ -4194,6 +4255,7 @@ func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
 		Name:             "无仓库绑定项目",
 		Goal:             "验证仓库绑定可为空",
 		HumanOwnerUserID: ownerID,
+		RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
 	})
 	require.NoError(t, err)
 	require.Equal(t, ProjectRepoBindingStatusUnbound, unbound.Project.RepoBinding.Status)
@@ -4208,6 +4270,7 @@ func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
 		Name:             "仓库绑定项目",
 		Goal:             "验证仓库绑定归一化",
 		HumanOwnerUserID: ownerID,
+		RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
 		RepoBinding: &ProjectRepoBindingInput{
 			URL:              "  https://github.com/acme/superteam.git  ",
 			DefaultBranch:    "  main  ",
@@ -8062,6 +8125,7 @@ type memoryRepository struct {
 	archiveProjectErr             error
 	projectTaskRunRuntimeNodes    map[uuid.UUID]uuid.UUID
 	projectTaskRunWorkProducts    map[uuid.UUID][]any
+	projectRuntimeNodes           map[uuid.UUID][]ProjectRuntimeNode
 }
 
 type projectTaskResultMemoryRepository struct {
@@ -8231,6 +8295,17 @@ func (r *fakeProjectRuntimeNodeReader) ListRuntimeCapabilitiesForNode(ctx contex
 
 func (r *fakeProjectRuntimeNodeReader) IsConnected(nodeID string) bool {
 	return r.connected[nodeID]
+}
+
+// stubProjectRuntimeNodeReader registers the given runtime node ids as
+// belonging to tenantID, so CreateProject's requireRuntimeNodeForTenant
+// eligibility check accepts them.
+func stubProjectRuntimeNodeReader(service *Service, tenantID uuid.UUID, runtimeNodeIDs ...uuid.UUID) {
+	nodes := make([]runtimepkg.NodeRecord, 0, len(runtimeNodeIDs))
+	for _, id := range runtimeNodeIDs {
+		nodes = append(nodes, runtimepkg.NodeRecord{ID: id, TenantID: tenantID})
+	}
+	service.SetProjectRuntimeNodeReader(&fakeProjectRuntimeNodeReader{nodes: nodes})
 }
 
 func readinessBlockingCodes(reasons []ProjectReadinessReason) []string {
@@ -8574,6 +8649,36 @@ func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendP
 	r.events = append(r.events, projectEvent)
 	r.eventTypes = append(r.eventTypes, event.EventType)
 	return projectEvent, nil
+}
+
+func (r *memoryRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error) {
+	if r.projectRuntimeNodes == nil {
+		r.projectRuntimeNodes = map[uuid.UUID][]ProjectRuntimeNode{}
+	}
+	for _, existing := range r.projectRuntimeNodes[projectID] {
+		if existing.RuntimeNodeID == runtimeNodeID {
+			return existing, nil
+		}
+	}
+	node := ProjectRuntimeNode{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		CreatedAt:     time.Now(),
+	}
+	r.projectRuntimeNodes[projectID] = append(r.projectRuntimeNodes[projectID], node)
+	return node, nil
+}
+
+func (r *memoryRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error) {
+	items := make([]ProjectRuntimeNode, 0, len(r.projectRuntimeNodes[projectID]))
+	for _, node := range r.projectRuntimeNodes[projectID] {
+		if node.TenantID == tenantID {
+			items = append(items, node)
+		}
+	}
+	return items, nil
 }
 
 func (r *memoryRepository) GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error) {

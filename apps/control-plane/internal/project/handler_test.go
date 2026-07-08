@@ -2050,6 +2050,10 @@ func (s *handlerTestService) ListProjectMembers(ctx context.Context, tenantID, p
 	return nil, nil
 }
 
+func (s *handlerTestService) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error) {
+	return nil, nil
+}
+
 func (s *handlerTestService) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
 	return nil, nil
 }

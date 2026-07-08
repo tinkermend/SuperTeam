@@ -148,11 +148,22 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 	req.RepoBinding = projectRepoBindingInputFromBinding(repoBinding)
 
+	runtimeNodeIDs, err := s.validateRuntimeNodeIDs(ctx, req.TenantID, req.RuntimeNodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	req.RuntimeNodeIDs = runtimeNodeIDs
+
 	projectID := uuid.New()
 	workflowID := fmt.Sprintf("project-coordinator:%s", projectID)
 	project, err := s.repository.CreateProject(ctx, req, projectID, workflowID)
 	if err != nil {
 		return nil, err
+	}
+	for _, runtimeNodeID := range runtimeNodeIDs {
+		if _, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, project.ID, runtimeNodeID); err != nil {
+			return nil, err
+		}
 	}
 	members, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, project.ID, ensureOwnerMember(req))
 	if err != nil {
@@ -235,6 +246,45 @@ func (s *Service) validateProjectTeamScopeAccess(ctx context.Context, tenantID, 
 		}
 	}
 	return nil
+}
+
+// validateRuntimeNodeIDs requires at least one runtime node id, dedupes the
+// input (preserving first-seen order), and confirms every id resolves to a
+// runtime node registered for the tenant.
+func (s *Service) validateRuntimeNodeIDs(ctx context.Context, tenantID uuid.UUID, runtimeNodeIDs []uuid.UUID) ([]uuid.UUID, error) {
+	if len(runtimeNodeIDs) == 0 {
+		return nil, ErrProjectRuntimeNodesRequired
+	}
+	seen := make(map[uuid.UUID]struct{}, len(runtimeNodeIDs))
+	deduped := make([]uuid.UUID, 0, len(runtimeNodeIDs))
+	for _, runtimeNodeID := range runtimeNodeIDs {
+		if runtimeNodeID == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[runtimeNodeID]; ok {
+			continue
+		}
+		seen[runtimeNodeID] = struct{}{}
+		deduped = append(deduped, runtimeNodeID)
+	}
+	if len(deduped) == 0 {
+		return nil, ErrProjectRuntimeNodesRequired
+	}
+	for _, runtimeNodeID := range deduped {
+		if err := s.requireRuntimeNodeForTenant(ctx, tenantID, runtimeNodeID); err != nil {
+			return nil, err
+		}
+	}
+	return deduped, nil
+}
+
+// ListProjectRuntimeNodes returns the runtime node eligibility set bound to a
+// project — the pool of nodes a task under this project may be dispatched to.
+func (s *Service) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	return s.repository.ListProjectRuntimeNodes(ctx, tenantID, projectID)
 }
 
 func (s *Service) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error) {

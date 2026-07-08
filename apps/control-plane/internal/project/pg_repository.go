@@ -5109,6 +5109,43 @@ func (r *PgRepository) GetConfigRevision(ctx context.Context, tenantID, projectI
 	return configRevisionFromRecord(row)
 }
 
+func (r *PgRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error) {
+	row, err := r.q.InsertProjectRuntimeNode(ctx, queries.InsertProjectRuntimeNodeParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+	})
+	if err != nil {
+		return ProjectRuntimeNode{}, err
+	}
+	return projectRuntimeNodeFromRecord(row), nil
+}
+
+func (r *PgRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error) {
+	rows, err := r.q.ListProjectRuntimeNodes(ctx, queries.ListProjectRuntimeNodesParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ProjectRuntimeNode, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, projectRuntimeNodeFromRecord(row))
+	}
+	return items, nil
+}
+
+func projectRuntimeNodeFromRecord(row queries.ProjectRuntimeNode) ProjectRuntimeNode {
+	return ProjectRuntimeNode{
+		ID:            row.ID,
+		TenantID:      row.TenantID,
+		ProjectID:     row.ProjectID,
+		RuntimeNodeID: row.RuntimeNodeID,
+		CreatedAt:     row.CreatedAt.Time,
+	}
+}
+
 func projectRepositoryError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrProjectNotFound

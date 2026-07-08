@@ -1226,6 +1226,10 @@ func (s *routeProjectService) ListProjectMembers(ctx context.Context, tenantID, 
 	return nil, nil
 }
 
+func (s *routeProjectService) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectRuntimeNode, error) {
+	return nil, nil
+}
+
 func (s *routeProjectService) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]project.ProjectTask, error) {
 	return nil, nil
 }
