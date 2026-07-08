@@ -3844,6 +3844,43 @@ func TestProjectStoreDispatchProjectTaskBindConflictIsIdempotentWhenSameAttemptR
 	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
 }
 
+func TestProjectStoreDispatchProjectTaskQueueConflictIsIdempotentWhenTaskAlreadyDispatchedConcurrently(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord:                        project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:                               project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		members:                              []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		queueConflictAfterConcurrentDispatch: true,
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Empty(t, starter.requests)
+	require.Len(t, repo.queueRequests, 1)
+	require.Empty(t, repo.bindAttemptRunRequests)
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
+	require.Equal(t, 1, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
+	require.NotNil(t, repo.tasks[0].DigitalEmployeeRunID)
+	require.NotNil(t, repo.tasks[0].RuntimeTaskID)
+}
+
 func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4249,6 +4286,7 @@ type projectStoreMemoryRepository struct {
 	bindErr                               error
 	bindConflictAfterApplyingFirst        bool
 	queueErr                              error
+	queueConflictAfterConcurrentDispatch  bool
 	advanceDemandErr                      error
 	advanceDemandCalls                    int
 	appendProjectEventErr                 error
@@ -5304,6 +5342,19 @@ func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.C
 		task.WaitingRequestID = nil
 		task.StatusChangedAt = now
 		task.UpdatedAt = now
+		if r.queueConflictAfterConcurrentDispatch && len(r.queueRequests) == 1 {
+			concurrentRunID := uuid.New()
+			concurrentRuntimeTaskID := uuid.New()
+			concurrentRuntimeNodeID := uuid.New()
+			attempt.DigitalEmployeeRunID = &concurrentRunID
+			attempt.RuntimeTaskID = &concurrentRuntimeTaskID
+			attempt.RuntimeNodeID = &concurrentRuntimeNodeID
+			r.projectTaskAttempts[len(r.projectTaskAttempts)-1] = attempt
+			task.DigitalEmployeeRunID = &concurrentRunID
+			task.RuntimeTaskID = &concurrentRuntimeTaskID
+			r.tasks[i] = task
+			return project.QueueProjectTaskResult{}, project.ErrProjectConflict
+		}
 		r.tasks[i] = task
 		return project.QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, nil
 	}

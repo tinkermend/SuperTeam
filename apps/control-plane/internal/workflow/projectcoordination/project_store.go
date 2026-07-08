@@ -2255,6 +2255,15 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		DispatchGateResultID:          &gate.Gate.ID,
 	})
 	if err != nil {
+		if errors.Is(err, project.ErrProjectConflict) {
+			latest, latestErr := s.repository.GetProjectTask(ctx, input.TenantID, input.TaskID)
+			if latestErr != nil {
+				return latestErr
+			}
+			if latest.CurrentAttemptID != nil && latest.DigitalEmployeeRunID != nil && latest.RuntimeTaskID != nil {
+				return s.advanceDispatchedTaskDemand(ctx, input, latest)
+			}
+		}
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
 	if queueResult.Attempt.ID != uuid.Nil {
