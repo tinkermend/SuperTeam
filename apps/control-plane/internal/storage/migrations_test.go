@@ -365,6 +365,14 @@ func TestMigration046TeamConstitutionAndSkillBindingRename(t *testing.T) {
 	}
 }
 
+func TestMigration046TeamConstitutionAndSkillBindingRenameAppliedSchema(t *testing.T) {
+	pool, schemaName := applyAllMigrations(t)
+
+	assertTableExists(t, pool, schemaName, "team_skill_bindings")
+	assertTableAbsent(t, pool, schemaName, "skill_team_bindings")
+	assertColumnExists(t, pool, schemaName, "tenant_teams", "constitution")
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {
@@ -1723,6 +1731,93 @@ ORDER BY c.table_name, c.ordinal_position`, schemaName, uuidFirstTables)
 	if len(uncommented) > 0 {
 		t.Fatalf("expected all SuperTeam-owned columns to have comments, missing: %s", strings.Join(uncommented, ", "))
 	}
+}
+
+func applyAllMigrations(t *testing.T) (*pgxpool.Pool, string) {
+	t.Helper()
+
+	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("set TEST_DATABASE_URL to run executable migration schema tests")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect test database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	schemaName := "migration_contract_" + strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(t.Name()), "/", "_"), "-", "_")
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire test database connection: %v", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`); err != nil {
+		t.Fatalf("drop test schema: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `CREATE SCHEMA `+schemaName); err != nil {
+		t.Fatalf("create test schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	})
+
+	if _, err := conn.Exec(ctx, `SET search_path TO `+schemaName); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	if _, err := conn.Exec(ctx, migrationsSQL(t)); err != nil {
+		t.Fatalf("apply all migrations: %v", err)
+	}
+
+	return pool, schemaName
+}
+
+func assertTableExists(t *testing.T, pool *pgxpool.Pool, schemaName, table string) {
+	t.Helper()
+
+	var exists bool
+	if err := pool.QueryRow(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.tables
+	WHERE table_schema = $1 AND table_name = $2
+)`, schemaName, table).Scan(&exists); err != nil {
+		t.Fatalf("check table %s: %v", table, err)
+	}
+	require.Truef(t, exists, "expected table %s to exist", table)
+}
+
+func assertTableAbsent(t *testing.T, pool *pgxpool.Pool, schemaName, table string) {
+	t.Helper()
+
+	var exists bool
+	if err := pool.QueryRow(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.tables
+	WHERE table_schema = $1 AND table_name = $2
+)`, schemaName, table).Scan(&exists); err != nil {
+		t.Fatalf("check table %s absence: %v", table, err)
+	}
+	require.Falsef(t, exists, "expected table %s to be absent", table)
+}
+
+func assertColumnExists(t *testing.T, pool *pgxpool.Pool, schemaName, table, column string) {
+	t.Helper()
+
+	var exists bool
+	if err := pool.QueryRow(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.columns
+	WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+)`, schemaName, table, column).Scan(&exists); err != nil {
+		t.Fatalf("check column %s.%s: %v", table, column, err)
+	}
+	require.Truef(t, exists, "expected column %s.%s to exist", table, column)
 }
 
 func assertColumnType(t *testing.T, pool *pgxpool.Pool, schemaName, table, column, want string) {
