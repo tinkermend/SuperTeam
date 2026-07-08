@@ -8126,6 +8126,43 @@ type memoryRepository struct {
 	projectTaskRunRuntimeNodes    map[uuid.UUID]uuid.UUID
 	projectTaskRunWorkProducts    map[uuid.UUID][]any
 	projectRuntimeNodes           map[uuid.UUID][]ProjectRuntimeNode
+	projectEmployeeNodeAffinity   map[uuid.UUID]map[uuid.UUID]ProjectEmployeeNodeAffinity
+}
+
+func (r *memoryRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
+	if byEmployee, ok := r.projectEmployeeNodeAffinity[projectID]; ok {
+		if affinity, ok := byEmployee[digitalEmployeeID]; ok {
+			return affinity, nil
+		}
+	}
+	return ProjectEmployeeNodeAffinity{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) UpsertProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID, runtimeNodeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
+	if r.projectEmployeeNodeAffinity == nil {
+		r.projectEmployeeNodeAffinity = map[uuid.UUID]map[uuid.UUID]ProjectEmployeeNodeAffinity{}
+	}
+	if r.projectEmployeeNodeAffinity[projectID] == nil {
+		r.projectEmployeeNodeAffinity[projectID] = map[uuid.UUID]ProjectEmployeeNodeAffinity{}
+	}
+	now := time.Now().UTC()
+	existing, ok := r.projectEmployeeNodeAffinity[projectID][digitalEmployeeID]
+	affinity := ProjectEmployeeNodeAffinity{
+		ID:                existing.ID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: digitalEmployeeID,
+		RuntimeNodeID:     runtimeNodeID,
+		LastRunAt:         &now,
+		CreatedAt:         existing.CreatedAt,
+		UpdatedAt:         now,
+	}
+	if !ok {
+		affinity.ID = uuid.New()
+		affinity.CreatedAt = now
+	}
+	r.projectEmployeeNodeAffinity[projectID][digitalEmployeeID] = affinity
+	return affinity, nil
 }
 
 type projectTaskResultMemoryRepository struct {

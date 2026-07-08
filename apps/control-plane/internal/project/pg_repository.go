@@ -5146,6 +5146,48 @@ func projectRuntimeNodeFromRecord(row queries.ProjectRuntimeNode) ProjectRuntime
 	}
 }
 
+func (r *PgRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
+	row, err := r.q.GetProjectEmployeeNodeAffinity(ctx, queries.GetProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return ProjectEmployeeNodeAffinity{}, projectRepositoryError(err)
+	}
+	return projectEmployeeNodeAffinityFromRecord(row), nil
+}
+
+func (r *PgRepository) UpsertProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID, runtimeNodeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
+	row, err := r.q.UpsertProjectEmployeeNodeAffinity(ctx, queries.UpsertProjectEmployeeNodeAffinityParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: digitalEmployeeID,
+		RuntimeNodeID:     runtimeNodeID,
+	})
+	if err != nil {
+		return ProjectEmployeeNodeAffinity{}, projectRepositoryError(err)
+	}
+	return projectEmployeeNodeAffinityFromRecord(row), nil
+}
+
+func projectEmployeeNodeAffinityFromRecord(row queries.ProjectEmployeeNodeAffinity) ProjectEmployeeNodeAffinity {
+	affinity := ProjectEmployeeNodeAffinity{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		DigitalEmployeeID: row.DigitalEmployeeID,
+		RuntimeNodeID:     row.RuntimeNodeID,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+	}
+	if row.LastRunAt.Valid {
+		lastRunAt := row.LastRunAt.Time
+		affinity.LastRunAt = &lastRunAt
+	}
+	return affinity
+}
+
 func projectRepositoryError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrProjectNotFound

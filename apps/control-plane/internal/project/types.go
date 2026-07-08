@@ -1315,6 +1315,21 @@ type ProjectRuntimeNode struct {
 	CreatedAt     time.Time
 }
 
+// ProjectEmployeeNodeAffinity records the soft, per-(project, digital employee)
+// preference for a runtime node. It is written after a node is chosen for a new
+// task so that later tasks for the same employee prefer the same node (sticky
+// placement) while still allowing a cross-task switch when that node is offline.
+type ProjectEmployeeNodeAffinity struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	RuntimeNodeID     uuid.UUID
+	LastRunAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type CreateProjectResult struct {
 	Project Project
 	Members []ProjectMember
