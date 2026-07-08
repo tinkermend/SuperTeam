@@ -32,6 +32,19 @@
 
 被错误放在团队上的"运行范围"，其合法归宿是**项目**（计划 B）。
 
+### 1.2 探查纠偏（关键）：团队 revision 是派发前置门禁的一半输入
+
+`digital_employee_effective_configs`（员工"有效配置"审批）是派发/运行的强制前置：
+
+- `run_service.go:822/860`：员工跑任务前必须 `HasApprovedEffectiveConfig`，否则 `ErrEffectiveConfigRequired` 挡住。
+- `project/service.go:993-996`：项目派发闸——员工 effective config 未批准就返回 `employee_workspace_pending`，阻断派发。
+- effective config 快照输入 = 团队 revision id + 员工 revision id。
+- 控制台**无任何 UI 触发这道审批**（前端零引用）——一个无 UI 可满足却挡着派发的死闸，与 golden path 跑不通吻合。
+
+**决定：一并删除这道门禁**。删除 `digital_employee_effective_configs`（合并快照 + 审批）+ `HasApprovedEffectiveConfig` 前置门 + 项目派发的 effective-config gate + 团队 `tenant_team_config_revisions`。
+
+**保留**：`digital_employee_config_revisions` 作为员工自身配置（role_profile / constitution_addendum / capability_selection / context_policy_override / approval_policy_override）的事实源。运行时有效能力 = 员工个人配置 ∪ 团队基线（绑定表 + constitution 列），读/派发时合成，不再有审批快照。
+
 ## 2. 目标模型（A）
 
 ### 2.1 团队（Team）终态
@@ -82,14 +95,16 @@
   - `tenant_teams` 增加 `constitution JSONB NOT NULL DEFAULT '{}'::jsonb`。
   - 回填：把每个团队 active `tenant_team_config_revisions.constitution` 迁到 `tenant_teams.constitution`（无 active 取 `{}`）。
   - 重命名 `skill_team_bindings` → `team_skill_bindings`。
-- **迁移 M2（删旧治理，代码不再引用后执行）：**
+- **迁移 M2（删旧治理 + effective-config，代码不再引用后执行）：**
   - 删除 `tenant_team_config_revisions` 表。
-  - 删除 `digital_employee_effective_configs` 中依赖团队 revision 的外键/列（若存在），或整表按其真实使用情况处理（实现时确认引用面）。
+  - 删除 `digital_employee_effective_configs` 表（含对团队 revision 的外键）。
+  - 保留 `digital_employee_config_revisions`（员工自身配置事实源）。
 - 迁移必须可重放，更新 `atlas.sum`，用 `make -C apps/control-plane migrate-validate` 校验。
 
 ### 3.2 契约（`contracts/control-plane/openapi.yaml`）
 
 - 删除 `TeamConfigRevision`、`CreateTeamConfigRevisionRequest` 及团队治理 revision 相关路径（config-revisions / governance 的 current / drafts / approve / reject / diff 全套）。
+- 删除 effective-config 相关 schema 与路径（`.../effective-configs/preview`、`.../effective-configs/approve`、`.../effective-config`）；保留 `.../config-revisions`（员工自身配置）如仍需要。
 - `DigitalEmployeeCreateTeamConfig` 精简为 team baseline：`{ team_id?, constitution, skills[], mcp_servers[] }`（`skills`/`mcp_servers` 来自绑定表）；删除 `allowed_employee_types`、`allowed_provider_types`、`allowed_skills`、`allowed_mcp_servers`、`allowed_external_capabilities`、六个 policy blob、`revision_number`、`status`。
 - `DigitalEmployeeCapabilityOptions`：删除 `external_capabilities`；`skills`/`mcp_servers`/`provider_types` 恒为平台全量可选池。
 - `DigitalEmployeeCreateOptions`：`employee_types` 恒为平台全量（不再按团队裁剪）；删除团队治理相关 `creation_checks`。
@@ -102,7 +117,10 @@
   - 删除 `ErrEffectiveConfigRequired` 闸（约 492）、`allowedEmployeeTypesFromTeamConfig`（400）、`validateEmployeeTypeAllowedByTeamConfig`（498）、`employeeTypesForTeamConfig` 团队裁剪、`capability_policy.allowed_*` 天花板过滤（346/364/366/949/952/1909 等）、外部能力相关 `AllowedExternalCaps` / `ExternalCapabilities`。
   - `capabilityOptionsForTeamConfig` → 返回平台全量池；团队 baseline（skills/mcp）改从 `team_skill_bindings` / `team_mcp_bindings` 读取，作为只读继承展示与运行时合成来源。
 - `apps/control-plane/internal/tenant`：删除 `TeamConfigRevision` 类型、draft/approve/reject/diff service 与 repository、对应 handler 与路由（server.go:347-362）；team 增加 `constitution` 读写；`skill_team_bindings` 相关 sqlc 查询与 Go 引用改名到 `team_skill_bindings`。
-- `apps/control-plane/internal/api/server.go`：删除 config-revisions / governance 路由。
+- `apps/control-plane/internal/employee/run_service.go`：删除 `HasApprovedEffectiveConfig` 前置门（822/860/902/1031）及 `ErrEffectiveConfigRequired` 相关 preflight；员工能力从个人配置 ∪ 团队基线合成。
+- `apps/control-plane/internal/employee` effective-config：删除 `PreviewDigitalEmployeeEffectiveConfig` / `ApproveDigitalEmployeeEffectiveConfig` / `GetDigitalEmployeeEffectiveConfig`（handler.go:600/638/680）、effective-config repository 与快照构建；保留 `digital_employee_config_revisions` 相关 CRUD。
+- `apps/control-plane/internal/project/service.go:993-996`：删除派发的 `EffectiveConfigStatus` gate（`employee_workspace_pending`）。
+- `apps/control-plane/internal/api/server.go`：删除 config-revisions / governance 路由（347-362）与 effective-config 路由（251-254）。
 - 清理各 `*.gen.go` 中被删 schema 的生成代码。
 
 ### 3.4 Web 控制台
@@ -132,7 +150,7 @@
 
 ### 5.2 真实端到端验证（CLAUDE.md 强制完成条件）
 
-迁移 → `scripts/dev-services.sh restart control-plane` → Web 真实建团队（绑定公共技能/MCP、编辑宪法）→ 建员工（验证从绑定表继承 + 平台全量类型/provider，无治理步、无外部能力）→ 走真实 Web/接口确认结果不是 mock、缓存或旧服务。涉及迁移与前后端行为，必须确认运行中的服务已加载当前代码。
+迁移 → `scripts/dev-services.sh restart control-plane` → Web 真实建团队（绑定公共技能/MCP、编辑宪法）→ 建员工（验证从绑定表继承 + 平台全量类型/provider，无治理步、无外部能力）→ **派任务不再被 effective-config 审批门挡住**（验证 golden path 派发前置不再要求 approved effective config）→ 走真实 Web/接口确认结果不是 mock、缓存或旧服务。涉及迁移与前后端行为，必须确认运行中的服务已加载当前代码。
 
 ## 6. 明确排除的范围
 
