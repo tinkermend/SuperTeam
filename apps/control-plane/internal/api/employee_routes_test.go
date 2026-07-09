@@ -2088,6 +2088,30 @@ func (s *routeEmployeeService) GetSchedulingReadiness(ctx context.Context, tenan
 	}, nil
 }
 
+func (s *routeEmployeeService) ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]employee.EmployeeTemplateRecord, error) {
+	return nil, nil
+}
+
+func (s *routeEmployeeService) GetEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (employee.EmployeeTemplateRecord, error) {
+	return employee.EmployeeTemplateRecord{}, nil
+}
+
+func (s *routeEmployeeService) CreateEmployeeTemplate(ctx context.Context, params employee.CreateEmployeeTemplateParams) (employee.EmployeeTemplateRecord, error) {
+	return employee.EmployeeTemplateRecord{}, nil
+}
+
+func (s *routeEmployeeService) UpdateEmployeeTemplate(ctx context.Context, params employee.UpdateEmployeeTemplateParams) (employee.EmployeeTemplateRecord, error) {
+	return employee.EmployeeTemplateRecord{}, nil
+}
+
+func (s *routeEmployeeService) SetEmployeeTemplateStatus(ctx context.Context, tenantID, templateID uuid.UUID, status string) (employee.EmployeeTemplateRecord, error) {
+	return employee.EmployeeTemplateRecord{}, nil
+}
+
+func (s *routeEmployeeService) DeleteEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) error {
+	return nil
+}
+
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||

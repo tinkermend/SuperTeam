@@ -434,6 +434,27 @@ type DigitalEmployeeRuntimeReadiness struct {
 	IsRuntimeReady    bool      `json:"is_runtime_ready"`
 }
 
+type DigitalEmployeeTemplate struct {
+	ID                           uuid.UUID          `json:"id"`
+	TenantID                     uuid.UUID          `json:"tenant_id"`
+	Type                         string             `json:"type"`
+	Label                        string             `json:"label"`
+	Description                  string             `json:"description"`
+	DefaultRole                  string             `json:"default_role"`
+	RecommendedSkills            []byte             `json:"recommended_skills"`
+	RecommendedMcpServers        []byte             `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes     []byte             `json:"recommended_provider_types"`
+	DefaultCapabilitySelection   []byte             `json:"default_capability_selection"`
+	DefaultContextPolicyOverride []byte             `json:"default_context_policy_override"`
+	DefaultApprovalPolicy        []byte             `json:"default_approval_policy"`
+	Metadata                     []byte             `json:"metadata"`
+	Status                       string             `json:"status"`
+	IsSystem                     bool               `json:"is_system"`
+	DeletedAt                    pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 数字员工工作目录受控文件身份表
 type DigitalEmployeeWorkspaceFile struct {
 	// 受控文件主键 UUID

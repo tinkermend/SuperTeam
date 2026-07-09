@@ -290,7 +290,7 @@ func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
 		{FilterType: "run_status", Value: "none", Label: "none"},
 		{FilterType: "provider", Value: "codex", Label: "codex"},
 		{FilterType: "provider", Value: "custom-provider", Label: "custom-provider"},
-	})
+	}, map[string]string{})
 
 	require.Equal(t, []OverviewFilterOption{{Value: "active", Label: "活跃中"}}, filters.Statuses)
 	require.Equal(t, []OverviewFilterOption{{Value: "medium", Label: "中风险"}}, filters.RiskLevels)
@@ -308,7 +308,7 @@ func TestOverviewItemFromQueryHandlesMissingExecutionInstance(t *testing.T) {
 	row.ExecutionStatus = "missing"
 	row.RuntimeNodeID = uuid.NullUUID{}
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Nil(t, item.ExecutionSummary.ExecutionInstanceID)
 	require.Equal(t, OverviewExecutionStatusMissing, item.ExecutionSummary.Status)
@@ -319,7 +319,7 @@ func TestOverviewItemFromQueryHandlesMissingLatestRun(t *testing.T) {
 	row.LatestRunID = uuid.NullUUID{}
 	row.LatestRunStatus = "none"
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Nil(t, item.LatestRunSummary)
 }
@@ -329,7 +329,7 @@ func TestOverviewItemFromQueryHandlesMissingEffectiveConfig(t *testing.T) {
 	row.EffectiveConfigID = uuid.NullUUID{}
 	row.GovernanceStatus = "missing"
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Nil(t, item.GovernanceSummary.EffectiveConfigID)
 	require.Equal(t, "missing", item.GovernanceSummary.Status)
@@ -339,7 +339,7 @@ func TestOverviewItemFromQueryTreatsMissingAgentHomeAsPendingBinding(t *testing.
 	row := baseOverviewItemRow()
 	row.AgentHomeDirAvailable = false
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
 }
@@ -348,7 +348,7 @@ func TestOverviewItemFromQueryTreatsUnavailableProviderAsError(t *testing.T) {
 	row := baseOverviewItemRow()
 	row.ProviderAvailable = false
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
 }
@@ -357,7 +357,7 @@ func TestOverviewItemFromQueryTreatsDisabledExecutionAsError(t *testing.T) {
 	row := baseOverviewItemRow()
 	row.ExecutionStatus = "disabled"
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
 }
@@ -366,7 +366,7 @@ func TestOverviewItemFromQueryTreatsPendingGovernanceAsPendingBinding(t *testing
 	row := baseOverviewItemRow()
 	row.GovernanceStatus = "pending_approval"
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, "pending_approval", item.GovernanceSummary.Status)
 	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
@@ -375,7 +375,7 @@ func TestOverviewItemFromQueryTreatsPendingGovernanceAsPendingBinding(t *testing
 func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
 	row := baseOverviewItemRow()
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusReady, item.WorkbenchStatus)
 	require.NotNil(t, item.BudgetSummary.DailyTokenLimit)
@@ -396,7 +396,7 @@ func TestOverviewItemFromQueryMapsOperationalState(t *testing.T) {
 	row.OperationalHasProjectAcceptanceBlocker = true
 	row.OperationalHasQueuedWork = true
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusReady, item.WorkbenchStatus)
 	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusWaitingHuman, false, []DigitalEmployeeOperationalReason{
@@ -408,7 +408,7 @@ func TestOverviewItemFromQueryDoesNotMapProjectAcceptanceToEmployeeWaiting(t *te
 	row := baseOverviewItemRow()
 	row.OperationalHasProjectAcceptanceBlocker = true
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusIdle, true, []DigitalEmployeeOperationalReason{})
 }
@@ -428,7 +428,7 @@ func TestOverviewItemFromQueryMapsRunStatusFacts(t *testing.T) {
 			row := baseOverviewItemRow()
 			row.LatestRunStatus = tt.runStatus
 
-			item := overviewItemFromQuery(row)
+			item := overviewItemFromQuery(row, map[string]string{})
 
 			assertDigitalEmployeeOperationalState(t, item.OperationalState, tt.wantStatus, true, []DigitalEmployeeOperationalReason{})
 		})
@@ -440,7 +440,7 @@ func TestOverviewItemFromQueryMapsLatestProviderFailure(t *testing.T) {
 	row.LatestRunStatus = string(OverviewRunStatusFailed)
 	row.LatestRunErrorFamily = "provider_timeout"
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusError, false, []DigitalEmployeeOperationalReason{
 		{Code: "provider_failure", Message: "Provider 执行失败或不可用"},
@@ -462,7 +462,7 @@ func TestOverviewItemFromQueryMapsLatestTaskFailure(t *testing.T) {
 			row.LatestRunStatus = string(OverviewRunStatusFailed)
 			row.LatestRunErrorFamily = tt.errorFamily
 
-			item := overviewItemFromQuery(row)
+			item := overviewItemFromQuery(row, map[string]string{})
 
 			assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusError, false, []DigitalEmployeeOperationalReason{
 				{Code: "task_failed", Message: "任务失败，等待恢复策略或后续处理"},
@@ -481,7 +481,7 @@ func TestOverviewItemFromQueryMapsConfigurationBeforeUnavailable(t *testing.T) {
 	row.RuntimeStatus = "offline"
 	row.AgentHomeDirAvailable = false
 
-	item := overviewItemFromQuery(row)
+	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
 	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusNeedsConfiguration, false, []DigitalEmployeeOperationalReason{
@@ -504,6 +504,90 @@ func TestOverviewOperationalStatusCountsFromStatesInitializesMap(t *testing.T) {
 	emptyCounts := overviewOperationalStatusCountsFromStates(nil)
 	require.NotNil(t, emptyCounts)
 	require.Empty(t, emptyCounts)
+}
+
+func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRepoIntegrationTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_templates_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepoTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	repo := NewPgRepository(queries.New(conn), conn)
+
+	// The platform ships no default templates; every tenant starts empty.
+	seeded, err := repo.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: tenantID})
+	require.NoError(t, err)
+	require.Empty(t, seeded)
+
+	created, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:                   tenantID,
+		Type:                       "custom_reviewer",
+		Label:                      "自定义评审员",
+		Description:                "自定义模板",
+		DefaultRole:                "custom_reviewer",
+		RecommendedSkills:          []string{"code-review"},
+		RecommendedMCPServers:      []string{},
+		RecommendedProviderTypes:   []string{"codex"},
+		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"code-review"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "custom_reviewer", created.Type)
+	require.False(t, created.IsSystem)
+	require.Equal(t, "active", created.Status)
+
+	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "重复类型",
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	updated, err := repo.UpdateEmployeeTemplate(ctx, UpdateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		ID:          created.ID,
+		Label:       "评审员（已更新）",
+		Description: "更新后的描述",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "评审员（已更新）", updated.Label)
+
+	disabled, err := repo.SetEmployeeTemplateStatus(ctx, tenantID, created.ID, "disabled")
+	require.NoError(t, err)
+	require.Equal(t, "disabled", disabled.Status)
+
+	active, err := repo.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: tenantID, ActiveOnly: true})
+	require.NoError(t, err)
+	for _, tmpl := range active {
+		require.NotEqual(t, created.ID, tmpl.ID)
+	}
+
+	require.NoError(t, repo.SoftDeleteEmployeeTemplate(ctx, tenantID, created.ID))
+	_, err = repo.GetEmployeeTemplate(ctx, tenantID, created.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	err = repo.SoftDeleteEmployeeTemplate(ctx, tenantID, created.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	labels, err := repo.ListEmployeeTemplateLabels(ctx, tenantID)
+	require.NoError(t, err)
+	// ListEmployeeTemplateLabels intentionally does not filter deleted_at,
+	// so the soft-deleted custom_reviewer template (renamed above) still resolves.
+	require.Equal(t, "评审员（已更新）", labels["custom_reviewer"])
 }
 
 func normalizeSQL(value string) string {

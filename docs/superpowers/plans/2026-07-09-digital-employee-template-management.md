@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go 1.x, chi router, sqlc (pgx/v5), Atlas migrations, Postgres JSONB; React + TanStack Router/Query, Vitest browser tests.
 
+**SCOPE CHANGE (mid-execution, after Task 10, user-directed):** The user explicitly rejected seeding the 9 "builtin" templates (database_admin, devops_engineer, security_engineer, qa_engineer, frontend_engineer, backend_engineer, fullstack_engineer, implementation_engineer, general_engineer) — they are mock data that doesn't reflect anything real. `digital_employee_templates` now starts **empty** for every tenant; migration 050 creates the table/indexes/constraint only, no seed `INSERT`. The `is_system` column and mechanism stay in the schema (still meaningful for any future real system-owned template), it's just that nothing is pre-populated. `builtinEmployeeTemplateFixtures` in `service_test.go` (Task 4a) returns an empty slice for the same reason. Every test that implicitly relied on 9 pre-seeded templates (Task 1's migration seed assertions, Task 4's integration test, Task 8's fixture-derived count/type-existence checks, pre-existing employee-creation tests using literal type strings like `"database_admin"`/`"backend_engineer"` as fixtures) was updated to either assert emptiness or explicitly seed the one template a given test needs via `CreateEmployeeTemplate`, rather than relying on implicit global seed data. Frontend Tasks 12-16 (not yet implemented at the time of this note) must treat the template list as empty by default and must not hardcode any assumption of pre-existing rows — the acceptance bar is "create-template capability works end-to-end from an empty list," not "9 built-in templates render correctly."
+
 ## Global Constraints
 
 - Migration files live only in `apps/control-plane/internal/storage/migrations/`; after adding one, run `atlas migrate hash` and `make -C apps/control-plane migrate-validate`.
@@ -3246,7 +3248,7 @@ Expected: control-plane restart runs the Atlas migration automatically (per this
 - [ ] **Step 4: Real end-to-end walkthrough in the browser**
 
 Using the Chrome dev tools / codex chrome plug per this repo's testing convention (`docs/DESIGN.md` review not required here since no visual/layout system change, only new controls added to an existing page — but re-check `DESIGN.md` if any new component pattern was introduced in Task 14 that isn't already used elsewhere in the app):
-1. Navigate to `/employees/templates`. Confirm the 9 built-in templates render with an "内置" badge and "已启用" status.
+1. Navigate to `/employees/templates`. Confirm the list renders empty (per the scope-change note: no templates are pre-seeded).
 2. Click "新建模板", fill in `type=e2e_test_template`, `label=E2E 测试模板`, save. Confirm it appears in the list with an active status and no "内置" badge.
 3. Click "配置" on it, change the label, save. Confirm the updated label renders.
 4. Click "禁用" on it. Confirm status flips to "已禁用".

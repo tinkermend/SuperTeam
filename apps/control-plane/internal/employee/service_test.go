@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,75 +19,15 @@ import (
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
-func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
-	types := DefaultEmployeeTypeDefinitions()
-	if len(types) < 6 {
-		t.Fatalf("expected professional engineer types, got %#v", types)
-	}
-	for _, item := range types {
-		if strings.Contains(item.Type, "coordinator") || strings.Contains(item.Label, "协调") {
-			t.Fatalf("project coordinator must not be a reusable employee type: %#v", item)
-		}
-	}
-	if _, ok := EmployeeTypeDefinitionByType("database_admin"); !ok {
-		t.Fatalf("expected database_admin type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("devops_engineer"); !ok {
-		t.Fatalf("expected devops_engineer type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("security_engineer"); !ok {
-		t.Fatalf("expected security_engineer type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("qa_engineer"); !ok {
-		t.Fatalf("expected qa_engineer type")
-	}
-}
-
-func TestEmployeeTypeRegistryReturnsClonedDefinitions(t *testing.T) {
-	types := DefaultEmployeeTypeDefinitions()
-	if len(types) == 0 {
-		t.Fatalf("expected employee type definitions")
-	}
-	typeIndex := firstTypeWithDefaultSkills(t, types)
-	originalSkill := types[typeIndex].RecommendedSkills[0]
-	types[typeIndex].RecommendedSkills[0] = "mutated-skill"
-	enabledSkills, ok := types[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
-	if !ok || len(enabledSkills) == 0 {
-		t.Fatalf("expected enabled_skills default selection, got %#v", types[typeIndex].DefaultCapabilitySelection)
-	}
-	enabledSkills[0] = "mutated-enabled-skill"
-
-	fresh := DefaultEmployeeTypeDefinitions()
-	if fresh[typeIndex].RecommendedSkills[0] != originalSkill {
-		t.Fatalf("expected recommended skills to be cloned, got %#v", fresh[typeIndex].RecommendedSkills)
-	}
-	freshEnabledSkills, ok := fresh[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
-	if !ok || len(freshEnabledSkills) == 0 {
-		t.Fatalf("expected fresh enabled_skills default selection, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
-	}
-	if freshEnabledSkills[0] == "mutated-enabled-skill" {
-		t.Fatalf("expected default capability selection to be cloned, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
-	}
-}
-
-func firstTypeWithDefaultSkills(t *testing.T, types []EmployeeTypeDefinition) int {
-	t.Helper()
-	for index, definition := range types {
-		if len(definition.RecommendedSkills) == 0 {
-			continue
-		}
-		enabledSkills, ok := definition.DefaultCapabilitySelection["enabled_skills"].([]string)
-		if ok && len(enabledSkills) > 0 {
-			return index
-		}
-	}
-	t.Fatalf("expected at least one employee type with default skills, got %#v", types)
-	return 0
+func TestBuiltinEmployeeTemplateFixturesAreEmptyByDefault(t *testing.T) {
+	// The platform ships no default digital employee templates — every
+	// tenant starts with an empty catalog and templates must be created
+	// explicitly via CreateEmployeeTemplate.
+	require.Empty(t, builtinEmployeeTemplateFixtures(uuid.New()))
 }
 
 func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *testing.T) {
-	definition, ok := EmployeeTypeDefinitionByType(" custom_agent ")
-	require.True(t, ok)
+	definition := customAgentEmployeeTypeDefinition()
 	require.Equal(t, "custom_agent", definition.Type)
 	require.Equal(t, "自定义数字员工", definition.Label)
 	require.Empty(t, definition.DefaultRole)
@@ -142,7 +83,7 @@ func TestGetCreateOptionsReturnsTeamBaselineAndPlatformCandidates(t *testing.T) 
 	if got := options.TeamConfig.Skills; len(got) != 2 || got[0] != "database-troubleshooting" {
 		t.Fatalf("expected baseline skills, got %#v", got)
 	}
-	if len(options.EmployeeTypes) != len(DefaultEmployeeTypeDefinitions()) {
+	if len(options.EmployeeTypes) != len(builtinEmployeeTemplateFixtures(tenantID))+1 {
 		t.Fatalf("expected full employee types, got %#v", options.EmployeeTypes)
 	}
 	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
@@ -272,8 +213,7 @@ func TestCreateOptionsUsePlatformFullEmployeeTypes(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, options.EmployeeTypes, len(DefaultEmployeeTypeDefinitions()))
-	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "database_admin"))
+	require.Len(t, options.EmployeeTypes, len(builtinEmployeeTemplateFixtures(tenantID))+1)
 	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
 	require.Contains(t, options.CapabilityOptions.ProviderTypes, "codex")
 	require.Contains(t, options.CapabilityOptions.ProviderTypes, "opencode")
@@ -293,6 +233,28 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 		Skills:     []string{"baseline-skill", "shared-skill"},
 		MCPServers: []string{"baseline-mcp"},
 	}
+	// Seed two tenant templates whose recommended skills/mcp servers differ
+	// from the team baseline, to prove CapabilityOptions reflects the
+	// tenant's template catalog rather than the team baseline.
+	ctx := context.Background()
+	_, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:              tenantID,
+		Type:                  "database_admin",
+		Label:                 "数据库管理",
+		DefaultRole:           "database_admin",
+		RecommendedSkills:     []string{"database-troubleshooting"},
+		RecommendedMCPServers: []string{"postgres-readonly"},
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:              tenantID,
+		Type:                  "frontend_engineer",
+		Label:                 "前端开发",
+		DefaultRole:           "frontend_engineer",
+		RecommendedSkills:     []string{"frontend-implementation"},
+		RecommendedMCPServers: []string{"browser"},
+	})
+	require.NoError(t, err)
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
@@ -317,10 +279,19 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 }
 
 func TestGetCreateOptionsIncludesCustomAgentRegardlessOfTeamAllowlist(t *testing.T) {
-	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{"custom_agent"},
 		"allowed_provider_types": []any{"codex"},
 	}, map[string]any{})
+	// Seed a template the team's allow-list does NOT mention, to prove the
+	// returned catalog is the tenant's full template set, not filtered down
+	// to the allow-list.
+	_, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "评审员",
+	})
+	require.NoError(t, err)
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
@@ -610,6 +581,14 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 		},
 	}
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		Type:        "backend_engineer",
+		Label:       "后端开发",
+		DefaultRole: "backend_engineer",
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
 	service, err := NewService(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -1366,6 +1345,14 @@ func TestServiceValidation(t *testing.T) {
 	employeeID := uuid.New()
 	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
+	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		Type:        "backend_engineer",
+		Label:       "后端开发",
+		DefaultRole: "backend_engineer",
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
 	validCreateReq := func() CreateDigitalEmployeeRequest {
 		return CreateDigitalEmployeeRequest{
 			TenantID:      tenantID,
@@ -2242,6 +2229,17 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 		},
 	}
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID:                   tenantID,
+		Type:                       "database_admin",
+		Label:                      "数据库管理",
+		DefaultRole:                "database_admin",
+		RecommendedSkills:          []string{"database-troubleshooting", "sql-review"},
+		RecommendedMCPServers:      []string{"postgres-readonly"},
+		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"database-troubleshooting", "sql-review"}},
+	}); err != nil {
+		t.Fatalf("seed database_admin template: %v", err)
+	}
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
 	repo.preflight.GovernanceSnapshot = map[string]any{
 		"authorization":     "Bearer raw-token",
@@ -2394,6 +2392,7 @@ type memoryRepository struct {
 	transactionCommitCount    int
 	transactionRollbackCount  int
 	inTransaction             bool
+	templates                 map[uuid.UUID][]EmployeeTemplateRecord
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -2408,7 +2407,140 @@ func newMemoryRepository() *memoryRepository {
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		envVars:                  make(map[string]EnvironmentVariableRecord),
 		nextConfigRevisionNumber: 1,
+		templates:                make(map[uuid.UUID][]EmployeeTemplateRecord),
 	}
+}
+
+// builtinEmployeeTemplateFixtures intentionally returns no default templates.
+// The platform does not ship any pre-seeded digital employee templates —
+// every tenant starts with an empty template catalog and templates are
+// created explicitly via CreateEmployeeTemplate. Callers still invoke this
+// helper (e.g. via len(builtinEmployeeTemplateFixtures(tenantID))+1 for the
+// custom_agent sentinel) so the signature is preserved for a length of 0.
+func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecord {
+	return []EmployeeTemplateRecord{}
+}
+
+func (r *memoryRepository) templatesForTenant(tenantID uuid.UUID) []EmployeeTemplateRecord {
+	if _, ok := r.templates[tenantID]; !ok {
+		r.templates[tenantID] = builtinEmployeeTemplateFixtures(tenantID)
+	}
+	return r.templates[tenantID]
+}
+
+func (r *memoryRepository) ListEmployeeTemplates(ctx context.Context, params ListEmployeeTemplatesParams) ([]EmployeeTemplateRecord, error) {
+	result := make([]EmployeeTemplateRecord, 0)
+	for _, tmpl := range r.templatesForTenant(params.TenantID) {
+		if params.ActiveOnly && tmpl.Status != "active" {
+			continue
+		}
+		result = append(result, tmpl)
+	}
+	return result, nil
+}
+
+func (r *memoryRepository) GetEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		if tmpl.ID == templateID {
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetEmployeeTemplateByType(ctx context.Context, tenantID uuid.UUID, employeeType string) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		if tmpl.Type == employeeType {
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) CreateEmployeeTemplate(ctx context.Context, params CreateEmployeeTemplateParams) (EmployeeTemplateRecord, error) {
+	for _, tmpl := range r.templatesForTenant(params.TenantID) {
+		if tmpl.Type == params.Type {
+			return EmployeeTemplateRecord{}, fmt.Errorf("%w: template type already exists for this tenant", ErrInvalidInput)
+		}
+	}
+	now := time.Now().UTC()
+	record := EmployeeTemplateRecord{
+		ID:                           uuid.New(),
+		TenantID:                     params.TenantID,
+		Type:                         params.Type,
+		Label:                        params.Label,
+		Description:                  params.Description,
+		DefaultRole:                  params.DefaultRole,
+		RecommendedSkills:            params.RecommendedSkills,
+		RecommendedMCPServers:        params.RecommendedMCPServers,
+		RecommendedProviderTypes:     params.RecommendedProviderTypes,
+		DefaultCapabilitySelection:   params.DefaultCapabilitySelection,
+		DefaultContextPolicyOverride: params.DefaultContextPolicyOverride,
+		DefaultApprovalPolicy:        params.DefaultApprovalPolicy,
+		Metadata:                     params.Metadata,
+		Status:                       "active",
+		IsSystem:                     false,
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
+	}
+	r.templates[params.TenantID] = append(r.templatesForTenant(params.TenantID), record)
+	return record, nil
+}
+
+func (r *memoryRepository) UpdateEmployeeTemplate(ctx context.Context, params UpdateEmployeeTemplateParams) (EmployeeTemplateRecord, error) {
+	templates := r.templatesForTenant(params.TenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == params.ID {
+			tmpl.Label = params.Label
+			tmpl.Description = params.Description
+			tmpl.DefaultRole = params.DefaultRole
+			tmpl.RecommendedSkills = params.RecommendedSkills
+			tmpl.RecommendedMCPServers = params.RecommendedMCPServers
+			tmpl.RecommendedProviderTypes = params.RecommendedProviderTypes
+			tmpl.DefaultCapabilitySelection = params.DefaultCapabilitySelection
+			tmpl.DefaultContextPolicyOverride = params.DefaultContextPolicyOverride
+			tmpl.DefaultApprovalPolicy = params.DefaultApprovalPolicy
+			tmpl.Metadata = params.Metadata
+			tmpl.UpdatedAt = time.Now().UTC()
+			templates[i] = tmpl
+			r.templates[params.TenantID] = templates
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) SetEmployeeTemplateStatus(ctx context.Context, tenantID, templateID uuid.UUID, status string) (EmployeeTemplateRecord, error) {
+	templates := r.templatesForTenant(tenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == templateID {
+			tmpl.Status = status
+			tmpl.UpdatedAt = time.Now().UTC()
+			templates[i] = tmpl
+			r.templates[tenantID] = templates
+			return tmpl, nil
+		}
+	}
+	return EmployeeTemplateRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) SoftDeleteEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) error {
+	templates := r.templatesForTenant(tenantID)
+	for i, tmpl := range templates {
+		if tmpl.ID == templateID {
+			r.templates[tenantID] = append(templates[:i], templates[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (r *memoryRepository) ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) (map[string]string, error) {
+	labels := make(map[string]string)
+	for _, tmpl := range r.templatesForTenant(tenantID) {
+		labels[tmpl.Type] = tmpl.Label
+	}
+	return labels, nil
 }
 
 type overviewRepositoryStub struct {

@@ -543,6 +543,24 @@ func (e EffectiveEmployeeSkillSourceScope) Valid() bool {
 	}
 }
 
+// Defines values for EmployeeTemplateStatus.
+const (
+	EmployeeTemplateStatusActive   EmployeeTemplateStatus = "active"
+	EmployeeTemplateStatusDisabled EmployeeTemplateStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the EmployeeTemplateStatus enum.
+func (e EmployeeTemplateStatus) Valid() bool {
+	switch e {
+	case EmployeeTemplateStatusActive:
+		return true
+	case EmployeeTemplateStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -1425,6 +1443,24 @@ func (e SchedulingReadinessCheckStatus) Valid() bool {
 	}
 }
 
+// Defines values for SetEmployeeTemplateStatusRequestStatus.
+const (
+	SetEmployeeTemplateStatusRequestStatusActive   SetEmployeeTemplateStatusRequestStatus = "active"
+	SetEmployeeTemplateStatusRequestStatusDisabled SetEmployeeTemplateStatusRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the SetEmployeeTemplateStatusRequestStatus enum.
+func (e SetEmployeeTemplateStatusRequestStatus) Valid() bool {
+	switch e {
+	case SetEmployeeTemplateStatusRequestStatusActive:
+		return true
+	case SetEmployeeTemplateStatusRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkillInstallationProviderType.
 const (
 	ClaudeCode SkillInstallationProviderType = "claude-code"
@@ -2048,6 +2084,21 @@ type CreateDigitalEmployeeRunRequest struct {
 	Prompt           *string                   `json:"prompt,omitempty"`
 	SecretRefs       *[]string                 `json:"secret_refs,omitempty"`
 	TimeoutSec       *int32                    `json:"timeout_sec,omitempty"`
+}
+
+// CreateEmployeeTemplateRequest defines model for CreateEmployeeTemplateRequest.
+type CreateEmployeeTemplateRequest struct {
+	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
+	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
+	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
+	DefaultRole                  *string                 `json:"default_role,omitempty"`
+	Description                  *string                 `json:"description,omitempty"`
+	Label                        string                  `json:"label"`
+	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
+	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
+	Type                         string                  `json:"type"`
 }
 
 // CreateMCPBindingRequest defines model for CreateMCPBindingRequest.
@@ -2837,6 +2888,30 @@ type EffectiveMCPConfigServer struct {
 	Transport        MCPTransport       `json:"transport"`
 	Url              string             `json:"url"`
 }
+
+// EmployeeTemplate defines model for EmployeeTemplate.
+type EmployeeTemplate struct {
+	CreatedAt                    time.Time               `json:"created_at"`
+	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
+	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
+	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
+	DefaultRole                  *string                 `json:"default_role,omitempty"`
+	Description                  *string                 `json:"description,omitempty"`
+	Id                           openapi_types.UUID      `json:"id"`
+	IsSystem                     bool                    `json:"is_system"`
+	Label                        string                  `json:"label"`
+	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
+	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
+	Status                       EmployeeTemplateStatus  `json:"status"`
+	TenantId                     openapi_types.UUID      `json:"tenant_id"`
+	Type                         string                  `json:"type"`
+	UpdatedAt                    time.Time               `json:"updated_at"`
+}
+
+// EmployeeTemplateStatus defines model for EmployeeTemplate.Status.
+type EmployeeTemplateStatus string
 
 // ExecuteInboxActionRequest defines model for ExecuteInboxActionRequest.
 type ExecuteInboxActionRequest struct {
@@ -4299,6 +4374,14 @@ type SchedulingReadinessSkillSummary struct {
 	PersonalCount   int32    `json:"personal_count"`
 }
 
+// SetEmployeeTemplateStatusRequest defines model for SetEmployeeTemplateStatusRequest.
+type SetEmployeeTemplateStatusRequest struct {
+	Status SetEmployeeTemplateStatusRequestStatus `json:"status"`
+}
+
+// SetEmployeeTemplateStatusRequestStatus defines model for SetEmployeeTemplateStatusRequest.Status.
+type SetEmployeeTemplateStatusRequestStatus string
+
 // Skill defines model for Skill.
 type Skill struct {
 	AgentBindings         []SkillAgentBinding `json:"agent_bindings"`
@@ -4667,6 +4750,20 @@ type TeamUserAvatarStyle string
 // UpdateDigitalEmployeeStatusRequest defines model for UpdateDigitalEmployeeStatusRequest.
 type UpdateDigitalEmployeeStatusRequest struct {
 	Status DigitalEmployeeStatus `json:"status"`
+}
+
+// UpdateEmployeeTemplateRequest defines model for UpdateEmployeeTemplateRequest.
+type UpdateEmployeeTemplateRequest struct {
+	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
+	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
+	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
+	DefaultRole                  *string                 `json:"default_role,omitempty"`
+	Description                  *string                 `json:"description,omitempty"`
+	Label                        string                  `json:"label"`
+	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
+	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
 }
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
@@ -5345,6 +5442,15 @@ type ListWorkflowInstancesParams struct {
 	Offset    *Offset                 `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// CreateEmployeeTemplateJSONRequestBody defines body for CreateEmployeeTemplate for application/json ContentType.
+type CreateEmployeeTemplateJSONRequestBody = CreateEmployeeTemplateRequest
+
+// UpdateEmployeeTemplateJSONRequestBody defines body for UpdateEmployeeTemplate for application/json ContentType.
+type UpdateEmployeeTemplateJSONRequestBody = UpdateEmployeeTemplateRequest
+
+// SetEmployeeTemplateStatusJSONRequestBody defines body for SetEmployeeTemplateStatus for application/json ContentType.
+type SetEmployeeTemplateStatusJSONRequestBody = SetEmployeeTemplateStatusRequest
+
 // CreateDigitalEmployeeJSONRequestBody defines body for CreateDigitalEmployee for application/json ContentType.
 type CreateDigitalEmployeeJSONRequestBody = CreateDigitalEmployeeRequest
 
@@ -6016,6 +6122,24 @@ type ServerInterface interface {
 	// List digital employee avatar assets
 	// (GET /api/v1/digital-employee-avatar-assets)
 	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
+	// List digital employee templates for the current tenant
+	// (GET /api/v1/digital-employee-templates)
+	ListEmployeeTemplates(w http.ResponseWriter, r *http.Request)
+	// Create a digital employee template
+	// (POST /api/v1/digital-employee-templates)
+	CreateEmployeeTemplate(w http.ResponseWriter, r *http.Request)
+	// Soft-delete a digital employee template
+	// (DELETE /api/v1/digital-employee-templates/{templateId})
+	DeleteEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID)
+	// Get a digital employee template
+	// (GET /api/v1/digital-employee-templates/{templateId})
+	GetEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID)
+	// Update a digital employee template's configuration
+	// (PATCH /api/v1/digital-employee-templates/{templateId})
+	UpdateEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID)
+	// Enable or disable a digital employee template
+	// (PATCH /api/v1/digital-employee-templates/{templateId}/status)
+	SetEmployeeTemplateStatus(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID)
 	// List digital employees
 	// (GET /api/v1/digital-employees)
 	ListDigitalEmployees(w http.ResponseWriter, r *http.Request, params ListDigitalEmployeesParams)
@@ -6562,6 +6686,42 @@ func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, p
 // List digital employee avatar assets
 // (GET /api/v1/digital-employee-avatar-assets)
 func (_ Unimplemented) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List digital employee templates for the current tenant
+// (GET /api/v1/digital-employee-templates)
+func (_ Unimplemented) ListEmployeeTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a digital employee template
+// (POST /api/v1/digital-employee-templates)
+func (_ Unimplemented) CreateEmployeeTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Soft-delete a digital employee template
+// (DELETE /api/v1/digital-employee-templates/{templateId})
+func (_ Unimplemented) DeleteEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a digital employee template
+// (GET /api/v1/digital-employee-templates/{templateId})
+func (_ Unimplemented) GetEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a digital employee template's configuration
+// (PATCH /api/v1/digital-employee-templates/{templateId})
+func (_ Unimplemented) UpdateEmployeeTemplate(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Enable or disable a digital employee template
+// (PATCH /api/v1/digital-employee-templates/{templateId}/status)
+func (_ Unimplemented) SetEmployeeTemplateStatus(w http.ResponseWriter, r *http.Request, templateId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7713,6 +7873,138 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeAvatarAssets(w http.Respon
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDigitalEmployeeAvatarAssets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmployeeTemplates operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateEmployeeTemplate operation middleware
+func (siw *ServerInterfaceWrapper) CreateEmployeeTemplate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateEmployeeTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteEmployeeTemplate operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEmployeeTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", chi.URLParam(r, "templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteEmployeeTemplate(w, r, templateId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetEmployeeTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetEmployeeTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", chi.URLParam(r, "templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEmployeeTemplate(w, r, templateId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateEmployeeTemplate operation middleware
+func (siw *ServerInterfaceWrapper) UpdateEmployeeTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", chi.URLParam(r, "templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateEmployeeTemplate(w, r, templateId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetEmployeeTemplateStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetEmployeeTemplateStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", chi.URLParam(r, "templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetEmployeeTemplateStatus(w, r, templateId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14402,6 +14694,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employee-templates", wrapper.ListEmployeeTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employee-templates", wrapper.CreateEmployeeTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employee-templates/{templateId}", wrapper.DeleteEmployeeTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employee-templates/{templateId}", wrapper.GetEmployeeTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/digital-employee-templates/{templateId}", wrapper.UpdateEmployeeTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/digital-employee-templates/{templateId}/status", wrapper.SetEmployeeTemplateStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees", wrapper.ListDigitalEmployees)

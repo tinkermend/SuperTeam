@@ -2,6 +2,7 @@ import type {
   DigitalEmployeeCreateOptions,
   DigitalEmployeeTypeOption,
 } from "@/lib/api/employees";
+import type { EmployeeTemplate } from "@/lib/api/employee-templates";
 
 export const preferredEmployeeTypeOrder = [
   "frontend_engineer",
@@ -23,11 +24,6 @@ export type TemplateDefaultInjectionSummary = {
   skills: string[];
   mcpServers: string[];
   providerTypes: string[];
-};
-
-export type TemplateAvailabilityStatus = {
-  label: "平台默认" | "继承团队基线";
-  notes: string[];
 };
 
 export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
@@ -113,30 +109,6 @@ export function templateCapabilityPreview(typeOption: DigitalEmployeeTypeOption)
   ].filter(Boolean).join(" · ") || "无模板能力";
 }
 
-export function templateAvailabilityStatus(
-  options: DigitalEmployeeCreateOptions | undefined,
-): TemplateAvailabilityStatus {
-  if (!options) {
-    return { label: "平台默认", notes: [] };
-  }
-
-  const teamConfig = options.team_config;
-  const notes: string[] = [];
-  if ((teamConfig.skills ?? []).length > 0) {
-    notes.push(`团队继承技能 ${teamConfig.skills.length}`);
-  }
-  if ((teamConfig.mcp_servers ?? []).length > 0) {
-    notes.push(`团队继承 MCP ${teamConfig.mcp_servers.length}`);
-  }
-  if (Object.keys(teamConfig.constitution ?? {}).length > 0) {
-    notes.push("创建时会继承团队宪法基线");
-  }
-  return {
-    label: notes.length > 0 ? "继承团队基线" : "平台默认",
-    notes,
-  };
-}
-
 export function findTemplateByType(
   options: DigitalEmployeeCreateOptions | undefined,
   templateType: string | undefined,
@@ -153,4 +125,12 @@ export function stringList(value: unknown) {
 
 export function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function templateStatusLabel(template: EmployeeTemplate): "已启用" | "已禁用" {
+  return template.status === "active" ? "已启用" : "已禁用";
+}
+
+export function templateStatusTone(template: EmployeeTemplate): "ok" | "mute" {
+  return template.status === "active" ? "ok" : "mute";
 }
