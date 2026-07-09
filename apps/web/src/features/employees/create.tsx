@@ -386,13 +386,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     if (nextTeamId === draft.team_id) {
       return;
     }
-    if (draftTouched && !window.confirm("更换团队会重置当前配置草稿，是否继续？")) {
-      return;
-    }
-    resetDraftForTeam(nextTeamId, draft.creation_mode);
-    if (draft.creation_mode === "blank_custom") {
-      setFlowStep("configure");
-    }
+    updateDraft({ team_id: nextTeamId });
   }
 
   return (
@@ -1640,6 +1634,7 @@ function ProviderOption({
   selected?: boolean;
 }) {
   const preview = providerDispatchPreview(options, providerType);
+  const dispatchPreviewText = providerDispatchPreviewText(preview);
 
   return (
     <label
@@ -1659,13 +1654,7 @@ function ProviderOption({
         <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
           {providerLabel(providerType)}
         </span>
-        <span className="mt-1 block text-v3-ink-3">
-          {preview.availableCount > 0
-            ? preview.availableCount === preview.matchingCount
-              ? `${preview.matchingCount} 个 Runtime 节点候选会在项目运行准备中评估`
-              : `${preview.availableCount}/${preview.matchingCount} 个 Runtime 节点当前在线，仅用于项目运行准备参考`
-            : "当前没有在线 Runtime 节点支持该 Provider；创建时仍会记录必选 Provider 类型"}
-        </span>
+        <span className="mt-1 block text-v3-ink-3">{dispatchPreviewText}</span>
       </span>
     </label>
   );
@@ -1837,10 +1826,37 @@ function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefin
   const matchingOptions = (options?.runtime_provider_options ?? []).filter(
     (option) => normalizeProviderValue(option.provider_type) === providerType,
   );
+  const inactiveSessionCount = matchingOptions.filter(
+    (option) => !option.available && option.disabled_reason === "runtime_session_inactive",
+  ).length;
+  const onlineHealthyCount = matchingOptions.filter(
+    (option) =>
+      option.runtime_status === "online" &&
+      option.provider_status === "healthy" &&
+      option.health_status === "healthy",
+  ).length;
   return {
     matchingCount: matchingOptions.length,
     availableCount: matchingOptions.filter((option) => option.available).length,
+    inactiveSessionCount,
+    onlineHealthyCount,
   };
+}
+
+function providerDispatchPreviewText(preview: ReturnType<typeof providerDispatchPreview>) {
+  if (preview.availableCount > 0) {
+    if (preview.availableCount === preview.matchingCount) {
+      return `${preview.matchingCount} 个 Runtime 节点候选会在项目运行准备中评估`;
+    }
+    return `${preview.availableCount}/${preview.matchingCount} 个 Runtime 节点当前可用于调度，仅用于项目运行准备参考`;
+  }
+  if (preview.inactiveSessionCount > 0) {
+    return `${preview.inactiveSessionCount} 个 Runtime 节点已上报该 Provider，但当前会话未激活。`;
+  }
+  if (preview.onlineHealthyCount > 0) {
+    return `${preview.onlineHealthyCount} 个 Runtime 节点已上报该 Provider，但当前不可用于调度。`;
+  }
+  return "当前没有在线 Runtime 节点支持该 Provider；创建时仍会记录必选 Provider 类型";
 }
 
 function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {

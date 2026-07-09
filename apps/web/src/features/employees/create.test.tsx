@@ -75,7 +75,7 @@ const avatarAsset = {
   status: "active",
 };
 
-type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none";
+type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none" | "session-inactive";
 type ExpectedCreateBody = Record<string, unknown>;
 
 function createOptionsFixture({
@@ -101,37 +101,47 @@ function createOptionsFixture({
   teamInheritedCapabilitySelection?: Record<string, unknown>;
   teamConfigOverrides?: Record<string, unknown>;
 } = {}) {
+  const firstRuntimeSessionInactive = runtimeAvailability === "session-inactive";
   const firstRuntimeAvailable = runtimeAvailability === "all";
-  const secondRuntimeAvailable = runtimeAvailability !== "none";
+  const firstRuntimeHealthy = firstRuntimeAvailable || firstRuntimeSessionInactive;
+  const secondRuntimeAvailable = runtimeAvailability !== "none" && !firstRuntimeSessionInactive;
   const firstRuntimeOption = {
     runtime_node_id: "33333333-3333-4333-8333-333333333333",
     node_id: "runtime-a",
     runtime_name: "客户侧执行机 A",
     provider_type: "codex",
-    runtime_status: firstRuntimeAvailable ? "online" : "offline",
-    provider_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
-    health_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    runtime_status: firstRuntimeHealthy ? "online" : "offline",
+    provider_status: firstRuntimeHealthy ? "healthy" : "unhealthy",
+    health_status: firstRuntimeHealthy ? "healthy" : "unhealthy",
     current_load: 0,
     max_slots: 2,
     agent_home_dir: "/Users/wangpei/.codex",
-    agent_home_dir_available: firstRuntimeAvailable,
+    agent_home_dir_available: firstRuntimeHealthy,
     available: firstRuntimeAvailable,
-    disabled_reason: firstRuntimeAvailable ? undefined : "runtime_session_inactive",
+    disabled_reason: firstRuntimeAvailable
+      ? undefined
+      : firstRuntimeSessionInactive
+        ? "runtime_session_inactive"
+        : "runtime_not_online",
   };
   const sameNodeProviderOption = {
     runtime_node_id: "33333333-3333-4333-8333-333333333333",
     node_id: "runtime-a",
     runtime_name: "客户侧执行机 A",
     provider_type: "claude_code",
-    runtime_status: firstRuntimeAvailable ? "online" : "offline",
-    provider_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
-    health_status: firstRuntimeAvailable ? "healthy" : "unhealthy",
+    runtime_status: firstRuntimeHealthy ? "online" : "offline",
+    provider_status: firstRuntimeHealthy ? "healthy" : "unhealthy",
+    health_status: firstRuntimeHealthy ? "healthy" : "unhealthy",
     current_load: 0,
     max_slots: 2,
     agent_home_dir: "/Users/wangpei/.claude",
-    agent_home_dir_available: firstRuntimeAvailable,
+    agent_home_dir_available: firstRuntimeHealthy,
     available: firstRuntimeAvailable,
-    disabled_reason: firstRuntimeAvailable ? undefined : "runtime_session_inactive",
+    disabled_reason: firstRuntimeAvailable
+      ? undefined
+      : firstRuntimeSessionInactive
+        ? "runtime_session_inactive"
+        : "runtime_not_online",
   };
   const secondRuntimeOption = {
     runtime_node_id: "44444444-4444-4444-8444-444444444444",
@@ -146,7 +156,7 @@ function createOptionsFixture({
     agent_home_dir: "/Users/wangpei/.codex",
     agent_home_dir_available: secondRuntimeAvailable,
     available: secondRuntimeAvailable,
-    disabled_reason: secondRuntimeAvailable ? undefined : "runtime_session_inactive",
+    disabled_reason: secondRuntimeAvailable ? undefined : "runtime_not_online",
   };
   const runtimeProviderOptions = [
     firstRuntimeOption,
@@ -647,8 +657,8 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("名称")).toHaveValue("");
   });
 
-  it("keeps edited configuration when team-change confirmation is cancelled", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("updates the team field without resetting the current configuration draft", async () => {
+    const confirm = vi.spyOn(window, "confirm");
     const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
 
     await enterConfiguration(screen);
@@ -656,35 +666,23 @@ describe("CreateEmployeeView", () => {
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
-    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
-    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
+    expect(confirm).not.toHaveBeenCalled();
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
     await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
   });
 
-  it("resets the configuration draft when team-change confirmation is accepted", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
-
-    await enterConfiguration(screen);
-    await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
-    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
-
-    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
-    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
-    await expect.element(screen.getByLabelText("名称")).toHaveValue("");
-  });
-
-  it("returns blank-custom team changes to employee type selection after confirmation", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("keeps blank-custom configuration when changing the team field", async () => {
+    const confirm = vi.spyOn(window, "confirm");
     const screen = await renderCreateEmployeeView(createWizardFetcher({ teams: [team, secondTeam] }));
 
     await enterBlankCustomConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), secondTeam.id);
 
-    expect(confirm).toHaveBeenCalledWith("更换团队会重置当前配置草稿，是否继续？");
+    expect(confirm).not.toHaveBeenCalled();
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+    await expect.element(screen.getByLabelText("归属团队")).toHaveValue(secondTeam.id);
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("数据库管理员工");
     expect(document.body.textContent).toContain("自定义身份");
     expect(document.body.textContent).not.toContain("选择员工类型");
     expect(document.body.textContent).not.toContain("配置预检");
@@ -1219,7 +1217,26 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeChecked();
-    await expect.element(screen.getByText("1/2 个 Runtime 节点当前在线，仅用于项目运行准备参考")).toBeVisible();
+    await expect.element(screen.getByText("1/2 个 Runtime 节点当前可用于调度，仅用于项目运行准备参考")).toBeVisible();
+  });
+
+  it("distinguishes inactive runtime sessions from missing online runtime support", async () => {
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({
+        runtimeAvailability: "session-inactive",
+      }),
+    );
+
+    await enterConfiguration(screen);
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("radio", { name: "Codex" })).toBeChecked();
+    await expect
+      .element(screen.getByText("1 个 Runtime 节点已上报该 Provider，但当前会话未激活。"))
+      .toBeVisible();
+    expect(document.body.textContent).not.toContain("当前没有在线 Runtime 节点支持该 Provider");
   });
 
   it("shows runtime provider summary without blocking configuration when there are no bindable options", async () => {

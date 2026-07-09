@@ -94,6 +94,36 @@ func TestGetCreateOptionsReturnsTeamBaselineAndPlatformCandidates(t *testing.T) 
 	}
 }
 
+func TestCreateOptionChecksDescribeInactiveRuntimeSessions(t *testing.T) {
+	runtimeOptions := []RuntimeProviderOption{
+		{
+			RuntimeNodeID:         uuid.New(),
+			NodeID:                "runtime-a",
+			RuntimeName:           "Runtime A",
+			ProviderType:          "codex",
+			RuntimeStatus:         "online",
+			ProviderStatus:        "healthy",
+			HealthStatus:          "healthy",
+			AgentHomeDirAvailable: true,
+			Available:             false,
+			DisabledReason:        "runtime_session_inactive",
+		},
+	}
+
+	checks := createOptionChecks(
+		TeamConfigCreateOption{Skills: []string{"sql-review"}},
+		[]EmployeeTypeDefinition{customAgentEmployeeTypeDefinition()},
+		CapabilityOptions{ProviderTypes: []string{"codex"}},
+		runtimeOptions,
+	)
+
+	require.Len(t, checks, 4)
+	require.Equal(t, "runtime_provider", checks[3].Key)
+	require.Equal(t, "warning", checks[3].Status)
+	require.Equal(t, "0/1 个 Provider 候选当前可用于调度；1 个 Runtime 会话未激活", checks[3].Message)
+	require.NotContains(t, checks[3].Message, "当前在线")
+}
+
 func TestGetCreateOptionsIgnoresEmptyAllowedEmployeeTypes(t *testing.T) {
 	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{},

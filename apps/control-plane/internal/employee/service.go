@@ -299,9 +299,14 @@ func createOptionChecks(
 	runtimeOptions []RuntimeProviderOption,
 ) []CreateOptionCheck {
 	availableRuntimeCount := 0
+	inactiveRuntimeSessionCount := 0
 	for _, option := range runtimeOptions {
 		if option.Available {
 			availableRuntimeCount++
+			continue
+		}
+		if option.DisabledReason == "runtime_session_inactive" {
+			inactiveRuntimeSessionCount++
 		}
 	}
 
@@ -330,9 +335,17 @@ func createOptionChecks(
 			Key:     "runtime_provider",
 			Label:   "Provider 类型预览",
 			Status:  checkStatus(availableRuntimeCount > 0, true),
-			Message: fmt.Sprintf("%d/%d 个 Provider 候选当前在线；创建时不绑定 Runtime 节点", availableRuntimeCount, len(runtimeOptions)),
+			Message: runtimeProviderCreateOptionMessage(availableRuntimeCount, len(runtimeOptions), inactiveRuntimeSessionCount),
 		},
 	}
+}
+
+func runtimeProviderCreateOptionMessage(availableRuntimeCount, totalRuntimeCount, inactiveRuntimeSessionCount int) string {
+	message := fmt.Sprintf("%d/%d 个 Provider 候选当前可用于调度；创建时不绑定 Runtime 节点", availableRuntimeCount, totalRuntimeCount)
+	if availableRuntimeCount == 0 && inactiveRuntimeSessionCount > 0 {
+		message = fmt.Sprintf("%d/%d 个 Provider 候选当前可用于调度；%d 个 Runtime 会话未激活", availableRuntimeCount, totalRuntimeCount, inactiveRuntimeSessionCount)
+	}
+	return message
 }
 
 func checkStatus(passed bool, warning bool) string {
