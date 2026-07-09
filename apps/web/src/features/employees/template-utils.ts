@@ -2,6 +2,7 @@ import type {
   DigitalEmployeeCreateOptions,
   DigitalEmployeeTypeOption,
 } from "@/lib/api/employees";
+import type { EmployeeTemplate } from "@/lib/api/employee-templates";
 
 export const preferredEmployeeTypeOrder = [
   "frontend_engineer",
@@ -153,4 +154,12 @@ export function stringList(value: unknown) {
 
 export function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function templateStatusLabel(template: EmployeeTemplate): "已启用" | "已禁用" {
+  return template.status === "active" ? "已启用" : "已禁用";
+}
+
+export function templateStatusTone(template: EmployeeTemplate): "ok" | "mute" {
+  return template.status === "active" ? "ok" : "mute";
 }
