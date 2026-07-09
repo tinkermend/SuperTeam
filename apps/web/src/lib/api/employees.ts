@@ -480,12 +480,8 @@ export type CreateDigitalEmployeeInput = {
   approval_policy?: Record<string, unknown>;
   risk_level?: string;
   metadata?: Record<string, unknown>;
-  role_profile?: Record<string, unknown>;
-  constitution_addendum?: Record<string, unknown>;
-  capability_selection?: Record<string, unknown>;
-  context_policy_override?: Record<string, unknown>;
-  approval_policy_override?: Record<string, unknown>;
-  output_contract_addendum?: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
   runtime_node_id?: string;
   provider_type: string;
   session_policy?: Record<string, unknown>;
@@ -506,6 +502,14 @@ export type DigitalEmployeeEnvironmentVariableSummary = {
 export type UpsertDigitalEmployeeEnvironmentVariableInput = {
   value: string;
   sensitive?: boolean;
+};
+
+export type CapabilityBindings = {
+  skills?: string[];
+  mcp_servers?: string[];
+  external_capabilities?: string[];
+  environment_variable_refs?: string[];
+  [key: string]: unknown;
 };
 
 type LegacyDraftDigitalEmployeeInput = {
@@ -557,14 +561,10 @@ export type DigitalEmployeeConfigRevision = {
   tenant_id: string;
   digital_employee_id: string;
   revision_number: number;
-  role_profile: Record<string, unknown>;
-  constitution_addendum: Record<string, unknown>;
-  capability_selection: Record<string, unknown>;
-  context_policy_override: Record<string, unknown>;
-  approval_policy_override: Record<string, unknown>;
-  output_contract_addendum: Record<string, unknown>;
+  persona_memory_markdown: string;
+  capability_bindings: CapabilityBindings;
   budget_policy: BudgetPolicy;
-  status: "draft";
+  status: "draft" | "active" | "archived";
   approved_by?: string;
   approved_at?: string;
   archived_at?: string;
@@ -573,14 +573,10 @@ export type DigitalEmployeeConfigRevision = {
 };
 
 export type CreateDigitalEmployeeConfigRevisionInput = {
-  role_profile?: Record<string, unknown>;
-  constitution_addendum?: Record<string, unknown>;
-  capability_selection?: Record<string, unknown>;
-  context_policy_override?: Record<string, unknown>;
-  approval_policy_override?: Record<string, unknown>;
-  output_contract_addendum?: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
   budget_policy?: BudgetPolicy;
-  status?: "draft";
+  status?: "draft" | "active" | "archived";
 };
 
 export type WorkspaceFile = {

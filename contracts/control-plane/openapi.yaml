@@ -9843,25 +9843,12 @@ components:
           additionalProperties: true
         risk_level:
           type: string
-        role_profile:
-          type: object
-          additionalProperties: true
-        constitution_addendum:
-          type: object
-          additionalProperties: true
-        capability_selection:
-          type: object
-          additionalProperties: true
-        context_policy_override:
-          type: object
-          additionalProperties: true
-        approval_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         budget_policy:
-          type: object
-          additionalProperties: true
-        output_contract_addendum:
           type: object
           additionalProperties: true
         runtime_node_id:
@@ -10045,13 +10032,15 @@ components:
           type: array
           items:
             type: string
-        default_capability_selection:
-          type: object
-          additionalProperties: true
-        default_context_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         default_approval_policy:
+          type: object
+          additionalProperties: true
+        budget_policy:
           type: object
           additionalProperties: true
         metadata:
@@ -10095,13 +10084,15 @@ components:
           type: array
           items:
             type: string
-        default_capability_selection:
-          type: object
-          additionalProperties: true
-        default_context_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         default_approval_policy:
+          type: object
+          additionalProperties: true
+        budget_policy:
           type: object
           additionalProperties: true
         metadata:
@@ -10144,13 +10135,15 @@ components:
           type: array
           items:
             type: string
-        default_capability_selection:
-          type: object
-          additionalProperties: true
-        default_context_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         default_approval_policy:
+          type: object
+          additionalProperties: true
+        budget_policy:
           type: object
           additionalProperties: true
         metadata:
@@ -10306,13 +10299,9 @@ components:
         - tenant_id
         - digital_employee_id
         - revision_number
-        - role_profile
-        - constitution_addendum
-        - capability_selection
-        - context_policy_override
-        - approval_policy_override
+        - persona_memory_markdown
+        - capability_bindings
         - budget_policy
-        - output_contract_addendum
         - status
       properties:
         id:
@@ -10327,31 +10316,17 @@ components:
         revision_number:
           type: integer
           format: int32
-        role_profile:
-          type: object
-          additionalProperties: true
-        constitution_addendum:
-          type: object
-          additionalProperties: true
-        capability_selection:
-          type: object
-          additionalProperties: true
-        context_policy_override:
-          type: object
-          additionalProperties: true
-        approval_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         budget_policy:
           type: object
           additionalProperties: true
-        output_contract_addendum:
-          type: object
-          additionalProperties: true
         status:
           type: string
-          enum:
-            - draft
+          enum: [draft, active, archived]
         approved_by:
           type: string
           format: uuid
@@ -10370,31 +10345,17 @@ components:
     CreateDigitalEmployeeConfigRevisionRequest:
       type: object
       properties:
-        role_profile:
-          type: object
-          additionalProperties: true
-        constitution_addendum:
-          type: object
-          additionalProperties: true
-        capability_selection:
-          type: object
-          additionalProperties: true
-        context_policy_override:
-          type: object
-          additionalProperties: true
-        approval_policy_override:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
         budget_policy:
           type: object
           additionalProperties: true
-        output_contract_addendum:
-          type: object
-          additionalProperties: true
         status:
           type: string
-          enum:
-            - draft
+          enum: [draft, active, archived]
     EffectiveConfigValidationIssue:
       type: object
       required:

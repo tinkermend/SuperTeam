@@ -412,12 +412,13 @@ describe("digital employee API", () => {
           approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
-          role_profile: { title: "database administrator" },
-          constitution_addendum: { principles: ["evidence_first"] },
-          capability_selection: { skills: ["incident-diagnosis"] },
-          context_policy_override: { max_refs: 8 },
-          approval_policy_override: { high_risk: "required" },
-          output_contract_addendum: { required: ["summary"] },
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           runtime_node_id: "33333333-3333-4333-8333-333333333333",
           provider_type: "codex",
           session_policy: { reuse: false },
@@ -442,12 +443,13 @@ describe("digital employee API", () => {
           approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
-          role_profile: { title: "database administrator" },
-          constitution_addendum: { principles: ["evidence_first"] },
-          capability_selection: { skills: ["incident-diagnosis"] },
-          context_policy_override: { max_refs: 8 },
-          approval_policy_override: { high_risk: "required" },
-          output_contract_addendum: { required: ["summary"] },
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           runtime_node_id: "33333333-3333-4333-8333-333333333333",
           provider_type: "codex",
           session_policy: { reuse: false },
@@ -469,8 +471,18 @@ describe("digital employee API", () => {
     const requestBody = JSON.parse(String(requestInit.body));
     expect(requestBody).not.toHaveProperty("owner_user_id");
     expect(requestBody).toMatchObject({
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
     });
+    expect(requestBody).not.toHaveProperty("role_profile");
+    expect(requestBody).not.toHaveProperty("constitution_addendum");
+    expect(requestBody).not.toHaveProperty("capability_selection");
   });
 
   it("rejects legacy draft creation input before posting to the backend", async () => {
@@ -591,14 +603,15 @@ describe("digital employee API", () => {
       tenant_id: "22222222-2222-4222-8222-222222222222",
       digital_employee_id: "11111111-1111-4111-8111-111111111111",
       revision_number: 1,
-      role_profile: { title: "requirements analyst" },
-      constitution_addendum: {},
-      capability_selection: { enabled_skills: ["incident-diagnosis"] },
-      context_policy_override: {},
-      approval_policy_override: {},
-      output_contract_addendum: {},
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
-      status: "draft",
+      status: "active",
     } satisfies DigitalEmployeeConfigRevision;
     const fetcher = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -615,10 +628,15 @@ describe("digital employee API", () => {
       },
       "employee 1/primary",
       {
-        role_profile: { title: "requirements analyst" },
-        capability_selection: { enabled_skills: ["incident-diagnosis"] },
+        persona_memory_markdown: "# 人格画像\n证据优先",
+        capability_bindings: {
+          skills: ["incident-diagnosis"],
+          mcp_servers: ["postgres-readonly"],
+          external_capabilities: [],
+          environment_variable_refs: ["PG_DSN"],
+        },
         budget_policy: { daily_token_limit: 12000 },
-        status: "draft",
+        status: "active",
       },
     );
 
@@ -629,10 +647,15 @@ describe("digital employee API", () => {
       "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/config-revisions",
       {
         body: JSON.stringify({
-          role_profile: { title: "requirements analyst" },
-          capability_selection: { enabled_skills: ["incident-diagnosis"] },
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           budget_policy: { daily_token_limit: 12000 },
-          status: "draft",
+          status: "active",
         }),
         credentials: "include",
         headers: {
@@ -647,6 +670,13 @@ describe("digital employee API", () => {
       RequestInit,
     ];
     expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
     });
   });
