@@ -2313,25 +2313,29 @@ type DecideTeamMemberRoleRequest struct {
 
 // DigitalEmployee defines model for DigitalEmployee.
 type DigitalEmployee struct {
-	AllowedActions   *[]string               `json:"allowed_actions,omitempty"`
-	ApprovalPolicy   map[string]interface{}  `json:"approval_policy"`
-	ArchivedAt       *time.Time              `json:"archived_at,omitempty"`
-	ContextPolicy    map[string]interface{}  `json:"context_policy"`
-	CreatedAt        *time.Time              `json:"created_at,omitempty"`
-	Description      *string                 `json:"description,omitempty"`
-	DisabledAt       *time.Time              `json:"disabled_at,omitempty"`
-	EmployeeType     string                  `json:"employee_type"`
-	Id               openapi_types.UUID      `json:"id"`
-	Metadata         *map[string]interface{} `json:"metadata,omitempty"`
-	Name             string                  `json:"name"`
-	OwnerUserId      openapi_types.UUID      `json:"owner_user_id"`
-	PermissionPolicy map[string]interface{}  `json:"permission_policy"`
-	RiskLevel        string                  `json:"risk_level"`
-	Role             string                  `json:"role"`
-	Status           DigitalEmployeeStatus   `json:"status"`
-	TeamId           openapi_types.UUID      `json:"team_id"`
-	TenantId         openapi_types.UUID      `json:"tenant_id"`
-	UpdatedAt        *time.Time              `json:"updated_at,omitempty"`
+	AllowedActions        *[]string               `json:"allowed_actions,omitempty"`
+	ApprovalPolicy        map[string]interface{}  `json:"approval_policy"`
+	ArchivedAt            *time.Time              `json:"archived_at,omitempty"`
+	BudgetPolicy          map[string]interface{}  `json:"budget_policy"`
+	CapabilityBindings    map[string]interface{}  `json:"capability_bindings"`
+	ContextPolicy         map[string]interface{}  `json:"context_policy"`
+	CreatedAt             *time.Time              `json:"created_at,omitempty"`
+	Description           *string                 `json:"description,omitempty"`
+	DisabledAt            *time.Time              `json:"disabled_at,omitempty"`
+	EmployeeType          string                  `json:"employee_type"`
+	Id                    openapi_types.UUID      `json:"id"`
+	Metadata              *map[string]interface{} `json:"metadata,omitempty"`
+	Name                  string                  `json:"name"`
+	OwnerUserId           openapi_types.UUID      `json:"owner_user_id"`
+	PermissionPolicy      map[string]interface{}  `json:"permission_policy"`
+	PersonaMemoryMarkdown string                  `json:"persona_memory_markdown"`
+	ProviderType          string                  `json:"provider_type"`
+	RiskLevel             string                  `json:"risk_level"`
+	Role                  string                  `json:"role"`
+	Status                DigitalEmployeeStatus   `json:"status"`
+	TeamId                openapi_types.UUID      `json:"team_id"`
+	TenantId              openapi_types.UUID      `json:"tenant_id"`
+	UpdatedAt             *time.Time              `json:"updated_at,omitempty"`
 }
 
 // DigitalEmployeeAvatarAsset defines model for DigitalEmployeeAvatarAsset.

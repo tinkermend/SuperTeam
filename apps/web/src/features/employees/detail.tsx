@@ -132,12 +132,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   const instanceNotFound =
     instance.error instanceof ApiRequestError && instance.error.status === 404;
-  const effectiveConfigState = {
-    isLoading: false,
-    isError: false,
-    noApprovedConfig: true,
-  };
-
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
   const personalSkillCount = skillsQuery.data?.filter((skill) => !skill.inherited).length ?? 0;
@@ -257,10 +251,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             />
 
             <EmployeeMetricsStrip
-              commandChannelConnected={runtimeNode?.command_channel_connected ?? false}
+              commandChannelConnected={runtimeNode?.command_channel_connected}
               currentStatusLabel={employee.data.status}
-              providerType={instance.data?.provider_type ?? "未绑定"}
-              runtimeNodeLabel={instance.data?.runtime_node_id ?? "未绑定"}
+              providerType={providerDisplayName(employee.data.provider_type)}
+              runtimeNodeLabel={instance.data?.runtime_node_id ?? "由项目运行时决定"}
               stats={runStats.data}
             />
 
@@ -293,7 +287,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                   readiness={schedulingReadiness.data}
                 />
                 <EffectiveContextPanel
-                  effectiveConfig={effectiveConfigState}
                   employee={employee.data}
                   employeeId={employeeId}
                   envVars={{
@@ -326,6 +319,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             <ContextInjectionChain
               envConfiguredCount={configuredEnvCount}
               envTotalCount={envVarsQuery.data?.length ?? 0}
+              hasPersonaMemory={Boolean(employee.data.persona_memory_markdown?.trim())}
               inheritedSkillCount={inheritedSkillCount}
               mcpCount={mcpQuery.data?.length ?? 0}
               personalSkillCount={personalSkillCount}
@@ -503,7 +497,7 @@ function EmployeeConfigSnapshotSection({
     effective_config_label: metadata.effective_config_label,
     effective_config_status: metadata.effective_config_status,
     execution_instance_status: executionInstance?.status,
-    provider_type: executionInstance?.provider_type,
+    provider_type: employee.provider_type,
     runtime_node_id: executionInstance?.runtime_node_id,
   };
 
@@ -540,4 +534,16 @@ function formatConfigSnapshotJson(value: Record<string, unknown>) {
 
 function hasRuntimeState(value: Record<string, unknown>) {
   return Object.values(value).some((item) => item !== undefined && item !== "");
+}
+
+function providerDisplayName(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  const labels: Record<string, string> = {
+    codex: "Codex",
+    opencode: "OpenCode",
+    "open-code": "OpenCode",
+    "claude-code": "Claude Code",
+    claude: "Claude Code",
+  };
+  return labels[normalized] ?? value;
 }

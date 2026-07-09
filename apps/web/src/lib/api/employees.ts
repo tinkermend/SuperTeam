@@ -27,6 +27,7 @@ export type DigitalEmployee = {
   team_id?: string;
   owner_user_id: string;
   employee_type: string;
+  provider_type: string;
   name: string;
   role: string;
   description?: string;

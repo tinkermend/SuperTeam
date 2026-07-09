@@ -53,6 +53,7 @@ function createQueryClient() {
 
 const employee = {
   id: "11111111-1111-4111-8111-111111111111",
+  provider_type: "codex",
   name: "需求分析员工",
   role: "requirements_analyst",
   description: "负责需求拆解和交付风险识别",

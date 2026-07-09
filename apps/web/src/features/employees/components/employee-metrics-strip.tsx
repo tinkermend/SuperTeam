@@ -6,7 +6,7 @@ type EmployeeMetricsStripProps = {
   stats: DigitalEmployeeRunStats | undefined;
   providerType: string;
   runtimeNodeLabel: string;
-  commandChannelConnected: boolean;
+  commandChannelConnected?: boolean;
   currentStatusLabel: string;
 };
 
@@ -27,8 +27,15 @@ export function EmployeeMetricsStrip({
         iconTone="info"
         label="Runtime 执行位置"
         meta={
-          <StatusPill showDot tone={commandChannelConnected ? "ok" : "danger"}>
-            {commandChannelConnected ? "命令通道在线" : "Runtime 命令通道未连接"}
+          <StatusPill
+            showDot={commandChannelConnected !== undefined}
+            tone={commandChannelConnected === undefined ? "mute" : commandChannelConnected ? "ok" : "danger"}
+          >
+            {commandChannelConnected === undefined
+              ? "项目调度时选择"
+              : commandChannelConnected
+                ? "命令通道在线"
+                : "Runtime 命令通道未连接"}
           </StatusPill>
         }
         value={runtimeNodeLabel}

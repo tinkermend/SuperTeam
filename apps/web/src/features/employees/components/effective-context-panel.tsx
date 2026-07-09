@@ -7,7 +7,6 @@ type EffectiveContextPanelProps = {
   employee: DigitalEmployee;
   executionInstance: DigitalEmployeeExecutionInstance | undefined;
   employeeId: string;
-  effectiveConfig: { isLoading: boolean; isError: boolean; noApprovedConfig: boolean };
   skills: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
   mcp: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
   envVars: {
@@ -24,7 +23,6 @@ export function EffectiveContextPanel({
   employee,
   executionInstance,
   employeeId,
-  effectiveConfig,
   skills,
   mcp,
   envVars,
@@ -44,10 +42,10 @@ export function EffectiveContextPanel({
       <section className="space-y-2">
         <p className="text-xs font-semibold text-v3-ink-3">基本信息</p>
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <InfoItem label="Provider" value={executionInstance?.provider_type ?? "未绑定"} />
+          <InfoItem label="Provider" value={providerDisplayName(employee.provider_type)} />
           <InfoItem label="角色" value={employee.role} />
           <InfoItem label="状态" value={employee.status} />
-          <InfoItem label="工作目录" value={executionInstance?.agent_home_dir ?? "未配置"} />
+          <InfoItem label="工作目录" value={executionInstance?.agent_home_dir ?? "由项目 Runtime 创建"} />
         </div>
       </section>
 
@@ -102,23 +100,15 @@ export function EffectiveContextPanel({
           <IconTile size="sm" tone="artifact">
             <ScrollText />
           </IconTile>
-          宪法与记忆
+          项目宪法与人格记忆
         </p>
-        {effectiveConfig.isLoading ? (
-          <p className="text-xs text-v3-ink-3">加载中</p>
-        ) : effectiveConfig.noApprovedConfig ? (
-          <p className="text-xs text-v3-ink-3">尚无已批准的生效配置</p>
-        ) : effectiveConfig.isError ? (
-          <p className="text-xs text-destructive">生效配置加载失败</p>
-        ) : (
-          <p className="text-xs text-v3-ink-2">宪法层级：团队 + 个人补充（2 层）</p>
-        )}
+        <p className="text-xs text-v3-ink-2">项目宪法：执行任务时按所属项目注入，不属于数字员工配置。</p>
         <div className="flex items-center gap-2">
           <IconTile size="sm" tone="mute">
             <BookOpen />
           </IconTile>
-          <StatusPill showDot={false} tone="mute">
-            记忆：待接入
+          <StatusPill showDot={false} tone={employee.persona_memory_markdown?.trim() ? "info" : "mute"}>
+            人格记忆：{employee.persona_memory_markdown?.trim() ? "已配置" : "未设置"}
           </StatusPill>
         </div>
       </section>
@@ -167,4 +157,16 @@ function InfoItem({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium text-v3-ink">{value}</p>
     </div>
   );
+}
+
+function providerDisplayName(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  const labels: Record<string, string> = {
+    codex: "Codex",
+    opencode: "OpenCode",
+    "open-code": "OpenCode",
+    "claude-code": "Claude Code",
+    claude: "Claude Code",
+  };
+  return labels[normalized] ?? value;
 }
