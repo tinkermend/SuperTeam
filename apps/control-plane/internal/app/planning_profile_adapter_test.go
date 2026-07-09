@@ -34,15 +34,14 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 		},
 		configs: map[uuid.UUID]employee.EmployeeConfigInput{
 			employeeID: {
-				TenantID:          tenantID,
-				DigitalEmployeeID: employeeID,
-				RoleProfile:       map[string]any{"primary_role": "backend_engineer"},
-				CapabilitySelection: map[string]any{
-					"enabled_external_capabilities": []any{"text_generation", "codebase.analysis"},
-					"enabled_skills":                []any{"backend-implementation"},
-					"enabled_mcp_servers":           []any{"postgres-readonly"},
+				TenantID:              tenantID,
+				DigitalEmployeeID:     employeeID,
+				PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+				CapabilityBindings: map[string]any{
+					"external_capabilities": []any{"text_generation", "codebase.analysis"},
+					"skills":                []any{"backend-implementation"},
+					"mcp_servers":           []any{"postgres-readonly"},
 				},
-				ContextPolicyOverride: map[string]any{"max_context_classification": "confidential"},
 			},
 		},
 		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
@@ -72,14 +71,14 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	require.Equal(t, "ready", record.ExecutionStatus)
 	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
 	require.Equal(t, "codex", record.ProviderType)
-	require.Equal(t, map[string]any{"primary_role": "backend_engineer"}, record.RoleProfile)
+	require.Equal(t, "# 人格画像\n证据优先", record.PersonaMemoryMarkdown)
 	require.Equal(t, map[string]any{
-		"enabled_external_capabilities": []any{"text_generation", "codebase.analysis"},
-		"enabled_skills":                []any{"backend-implementation"},
-		"enabled_mcp_servers":           []any{"postgres-readonly"},
-	}, record.CapabilitySelection)
+		"external_capabilities": []any{"text_generation", "codebase.analysis"},
+		"skills":                []any{"backend-implementation"},
+		"mcp_servers":           []any{"postgres-readonly"},
+	}, record.CapabilityBindings)
 	require.Equal(t, map[string]any{"grants": []any{"database.read:dev_database"}}, record.PermissionPolicy)
-	require.Equal(t, map[string]any{"max_context_classification": "confidential"}, record.ContextPolicy)
+	require.Equal(t, map[string]any{"max_context_classification": "internal"}, record.ContextPolicy)
 	require.Equal(t, map[string]any{
 		"in_flight_tasks": int32(2),
 		"available_slots": int32(0),

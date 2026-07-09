@@ -1735,87 +1735,6 @@ func executionInstanceFromRecord(record DigitalEmployeeExecutionInstanceRecord) 
 	}
 }
 
-func validateContextSubset(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
-	keys := []struct {
-		overrideKey string
-		teamKeys    []string
-	}{
-		{overrideKey: "sources", teamKeys: []string{"sources", "allowed_sources"}},
-		{overrideKey: "knowledge_bases", teamKeys: []string{"knowledge_bases", "allowed_knowledge_bases"}},
-		{overrideKey: "documents", teamKeys: []string{"documents", "allowed_documents"}},
-		{overrideKey: "repositories", teamKeys: []string{"repositories", "allowed_repositories"}},
-		{overrideKey: "log_sources", teamKeys: []string{"log_sources", "allowed_log_sources"}},
-	}
-	issues := []ValidationIssue{}
-	for _, key := range keys {
-		allowed, _, allowedIssues := firstStringListPolicyValue(teamPolicy, key.teamKeys...)
-		requested, requestedIssues := stringListPolicyValue(employeeOverride, key.overrideKey, fmt.Sprintf("context_policy_override.%s", key.overrideKey))
-		issues = append(issues, allowedIssues...)
-		issues = append(issues, requestedIssues...)
-		if len(requested) == 0 {
-			continue
-		}
-		allowedSet := stringSet(allowed)
-		var outside []string
-		for _, item := range requested {
-			if !allowedSet[item] {
-				outside = append(outside, item)
-			}
-		}
-		if len(outside) == 0 {
-			continue
-		}
-		issues = append(issues, ValidationIssue{
-			Code:    "context_outside_team_scope",
-			Path:    fmt.Sprintf("context_policy_override.%s", key.overrideKey),
-			Message: fmt.Sprintf("context refs are outside team scope: %s", strings.Join(outside, ", ")),
-		})
-	}
-	return issues
-}
-
-func validateCapabilitySelection(employeeSelection map[string]any) []ValidationIssue {
-	keys := []string{
-		"enabled_mcp_servers",
-		"enabled_skills",
-		"enabled_plugins",
-		"enabled_provider_types",
-	}
-	issues := []ValidationIssue{}
-	for _, key := range keys {
-		_, valueIssues := stringListPolicyValue(employeeSelection, key, fmt.Sprintf("capability_selection.%s", key))
-		issues = append(issues, valueIssues...)
-	}
-	return issues
-}
-
-func validateApprovalOverride(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
-	issues := []ValidationIssue{}
-	teamRank, _, teamRiskIssues := riskPolicyValue(teamPolicy, "min_risk_for_human", "approval_policy.min_risk_for_human")
-	overrideRank, _, overrideRiskIssues := riskPolicyValue(employeeOverride, "min_risk_for_human", "approval_policy_override.min_risk_for_human")
-	issues = append(issues, teamRiskIssues...)
-	issues = append(issues, overrideRiskIssues...)
-	if teamRank > 0 && overrideRank > teamRank {
-		issues = append(issues, ValidationIssue{
-			Code:    "approval_policy_downgrade",
-			Path:    "approval_policy_override.min_risk_for_human",
-			Message: "approval override cannot lower team approval requirements",
-		})
-	}
-	teamWriteRequired, teamWriteSet, teamWriteIssues := boolPolicyValue(teamPolicy, "write_actions_require_human", "approval_policy.write_actions_require_human")
-	overrideWriteRequired, overrideWriteSet, overrideWriteIssues := boolPolicyValue(employeeOverride, "write_actions_require_human", "approval_policy_override.write_actions_require_human")
-	issues = append(issues, teamWriteIssues...)
-	issues = append(issues, overrideWriteIssues...)
-	if teamWriteSet && teamWriteRequired && overrideWriteSet && !overrideWriteRequired {
-		issues = append(issues, ValidationIssue{
-			Code:    "approval_policy_downgrade",
-			Path:    "approval_policy_override.write_actions_require_human",
-			Message: "approval override cannot remove human approval for write actions",
-		})
-	}
-	return issues
-}
-
 func stringListPolicyValue(values map[string]any, key, path string) ([]string, []ValidationIssue) {
 	value, ok := values[key]
 	if !ok {
@@ -1855,34 +1774,6 @@ func firstStringListPolicyValue(values map[string]any, keys ...string) ([]string
 		return values, true, issues
 	}
 	return nil, false, nil
-}
-
-func riskPolicyValue(values map[string]any, key, path string) (int, bool, []ValidationIssue) {
-	value, ok := values[key]
-	if !ok {
-		return 0, false, nil
-	}
-	text, ok := value.(string)
-	if !ok {
-		return 0, true, []ValidationIssue{invalidPolicyValueIssue(path, "risk value must be a string")}
-	}
-	rank := riskRank(text)
-	if rank == 0 {
-		return 0, true, []ValidationIssue{invalidPolicyValueIssue(path, "risk value must be one of low, medium, high, critical")}
-	}
-	return rank, true, nil
-}
-
-func boolPolicyValue(values map[string]any, key, path string) (bool, bool, []ValidationIssue) {
-	value, ok := values[key]
-	if !ok {
-		return false, false, nil
-	}
-	typed, ok := value.(bool)
-	if !ok {
-		return false, true, []ValidationIssue{invalidPolicyValueIssue(path, "policy value must be a boolean")}
-	}
-	return typed, true, nil
 }
 
 func invalidPolicyValueIssue(path, message string) ValidationIssue {

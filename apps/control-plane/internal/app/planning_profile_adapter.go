@@ -139,6 +139,7 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			DigitalEmployeeID: employeeRecord.ID,
 			EmployeeType:      employeeRecord.EmployeeType,
 			Role:              employeeRecord.Role,
+			Description:       strings.TrimSpace(stringPointerValue(employeeRecord.Description)),
 			EmployeeStatus:    string(employeeRecord.Status),
 			ProviderType:      employeeRecord.ProviderType,
 			PermissionPolicy:  clonePlanningProfileMap(employeeRecord.PermissionPolicy),
@@ -150,11 +151,8 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 				return nil, err
 			}
 		} else {
-			record.RoleProfile = clonePlanningProfileMap(config.RoleProfile)
-			record.CapabilitySelection = clonePlanningProfileMap(config.CapabilitySelection)
-			if len(config.ContextPolicyOverride) > 0 {
-				record.ContextPolicy = clonePlanningProfileMap(config.ContextPolicyOverride)
-			}
+			record.PersonaMemoryMarkdown = strings.TrimSpace(config.PersonaMemoryMarkdown)
+			record.CapabilityBindings = clonePlanningProfileMap(config.CapabilityBindings)
 		}
 		preflightApplied := false
 		if a.projectTaskRuns != nil && projectID != uuid.Nil {
@@ -417,6 +415,13 @@ func runtimeNodeOnline(node runtimepkg.NodeRecord, now time.Time) bool {
 	}
 	heartbeatAt := node.LastHeartbeatAt.Time.UTC()
 	return !heartbeatAt.After(now) && now.Sub(heartbeatAt) <= runtimeNodeHeartbeatTTL
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func runtimeProviderSupported(node runtimepkg.NodeRecord, providerType string) bool {

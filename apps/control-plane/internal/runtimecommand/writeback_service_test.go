@@ -187,6 +187,10 @@ func (f fakeRunRepository) ListWorkspaceFilesForSync(context.Context, uuid.UUID,
 	return nil, employee.ErrInvalidInput
 }
 
+func (f fakeRunRepository) GetLatestDigitalEmployeeConfigRevision(context.Context, uuid.UUID, uuid.UUID) (employee.EmployeeConfigInput, error) {
+	return employee.EmployeeConfigInput{}, employee.ErrInvalidInput
+}
+
 func (f fakeRunRepository) UpsertWorkspaceFileSync(context.Context, employee.UpsertWorkspaceFileSyncParams) error {
 	return employee.ErrInvalidInput
 }

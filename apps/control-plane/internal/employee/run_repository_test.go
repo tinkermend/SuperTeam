@@ -334,23 +334,18 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			tenant_id,
 			digital_employee_id,
 			revision_number,
-			role_profile,
-			constitution_addendum,
-			capability_selection,
-			context_policy_override,
-			approval_policy_override,
-			output_contract_addendum,
+			persona_memory_markdown,
+			capability_bindings,
+			budget_policy,
 			status
 		) VALUES (
 			$7,
 			$1,
 			$5,
 			1,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
+			'# 人格画像
+证据优先',
+			'{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"],"external_capabilities":[],"environment_variable_refs":["PG_DSN"]}'::jsonb,
 			'{}'::jsonb,
 			'draft'
 		);
@@ -542,12 +537,8 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			tenant_id,
 			digital_employee_id,
 			revision_number,
-			role_profile,
-			constitution_addendum,
-			capability_selection,
-			context_policy_override,
-			approval_policy_override,
-			output_contract_addendum,
+			persona_memory_markdown,
+			capability_bindings,
 			budget_policy,
 			status
 		) VALUES (
@@ -555,11 +546,9 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			$1,
 			$5,
 			1,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
+			'# 人格画像
+证据优先',
+			'{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"],"external_capabilities":[],"environment_variable_refs":["PG_DSN"]}'::jsonb,
 			'{}'::jsonb,
 			'{"daily_token_limit":1000}'::jsonb,
 			'active'

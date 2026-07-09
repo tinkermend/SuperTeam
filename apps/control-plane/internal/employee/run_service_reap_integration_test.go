@@ -265,13 +265,15 @@ func seedEmployeeRunGraph(
 		);
 
 		INSERT INTO digital_employee_config_revisions (
-			id, tenant_id, digital_employee_id, revision_number, role_profile,
-			constitution_addendum, capability_selection,
-			context_policy_override, approval_policy_override,
-			output_contract_addendum, status
+			id, tenant_id, digital_employee_id, revision_number,
+			persona_memory_markdown, capability_bindings, budget_policy, status
 		) VALUES (
-			'%s', '%s', '%s', 1, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-			'{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'draft'
+			'%s', '%s', '%s', 1,
+			'# 人格画像
+证据优先',
+			'{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"],"external_capabilities":[],"environment_variable_refs":["PG_DSN"]}'::jsonb,
+			'{"daily_token_limit":12000}'::jsonb,
+			'draft'
 		);
 	`,
 		tenantID,

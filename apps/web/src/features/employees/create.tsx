@@ -79,9 +79,9 @@ type CreationMode = "template" | "blank_custom";
 type WizardDraft = {
   creation_mode: CreationMode;
   capability_bindings: Record<string, unknown>;
-  capability_selection: {
-    enabled_mcp_servers: string[];
-    enabled_skills: string[];
+  capability_binding_draft: {
+    mcp_servers: string[];
+    skills: string[];
   };
   context_policy: Record<string, unknown>;
   daily_token_limit: string;
@@ -122,9 +122,9 @@ const emptyDraft: WizardDraft = {
   approval_policy: {},
   capability_bindings: {},
   creation_mode: "template",
-  capability_selection: {
-    enabled_mcp_servers: [],
-    enabled_skills: [],
+  capability_binding_draft: {
+    mcp_servers: [],
+    skills: [],
   },
   context_policy: {},
   daily_token_limit: "",
@@ -1087,7 +1087,7 @@ function CreationPreflightPanel({
           <SummaryItem label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           <SummaryItem
             label="能力选择"
-            value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
+            value={`技能 ${draft.capability_binding_draft.skills.length} · MCP ${draft.capability_binding_draft.mcp_servers.length}`}
           />
           <SummaryItem
             label="Provider 类型"
@@ -1168,7 +1168,7 @@ function ConfirmCreationStep({
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
-              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
+              value={`技能 ${draft.capability_binding_draft.skills.length} · MCP ${draft.capability_binding_draft.mcp_servers.length}`}
             />
             <InlineSummary
               label="Provider 类型"
@@ -1348,23 +1348,23 @@ function CapabilityStep({
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const capabilityOptions = options?.capability_options;
-  const inheritedCapabilities = inheritedCapabilitySelection(options);
+  const inheritedCapabilities = inheritedCapabilityBindings(options);
   const capabilityBindingsPreview = formatCapabilityBindingsPreview(
     capabilityBindingsFromDraft(draft, options),
   );
   const extensionCapabilityOptions = {
-    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.enabled_mcp_servers),
-    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.enabled_skills),
+    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
+    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
   };
 
-  function toggle(kind: keyof WizardDraft["capability_selection"], value: string) {
-    const currentValues = draft.capability_selection[kind];
+  function toggle(kind: keyof WizardDraft["capability_binding_draft"], value: string) {
+    const currentValues = draft.capability_binding_draft[kind];
     const nextValues = currentValues.includes(value)
       ? currentValues.filter((item) => item !== value)
       : [...currentValues, value];
     onUpdate({
-      capability_selection: {
-        ...draft.capability_selection,
+      capability_binding_draft: {
+        ...draft.capability_binding_draft,
         [kind]: nextValues,
       },
     });
@@ -1380,8 +1380,8 @@ function CapabilityStep({
         <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
-          <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.enabled_skills} />
-          <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.enabled_mcp_servers} />
+          <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.skills} />
+          <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.mcp_servers} />
         </div>
       </section>
       <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
@@ -1401,15 +1401,15 @@ function CapabilityStep({
         <JsonReadOnlyCard label="能力绑定" value={capabilityBindingsPreview} />
       </div>
       <CapabilityGroup
-        checkedValues={draft.capability_selection.enabled_skills}
+        checkedValues={draft.capability_binding_draft.skills}
         label="技能"
-        onToggle={(value) => toggle("enabled_skills", value)}
+        onToggle={(value) => toggle("skills", value)}
         values={extensionCapabilityOptions.skills}
       />
       <CapabilityGroup
-        checkedValues={draft.capability_selection.enabled_mcp_servers}
+        checkedValues={draft.capability_binding_draft.mcp_servers}
         label="MCP Server"
-        onToggle={(value) => toggle("enabled_mcp_servers", value)}
+        onToggle={(value) => toggle("mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
       />
       <section className="grid gap-4 rounded-[14px] border border-v3-line bg-v3-card p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -1725,9 +1725,9 @@ function applyTypeDefaults(
     ...current,
     approval_policy: policyDefaults?.approval_policy ?? {},
     capability_bindings: structuredCloneSafe(typeOption.capability_bindings ?? {}),
-    capability_selection: {
-      enabled_mcp_servers: stringList(typeOption.capability_bindings?.mcp_servers),
-      enabled_skills: stringList(typeOption.capability_bindings?.skills),
+    capability_binding_draft: {
+      mcp_servers: stringList(typeOption.capability_bindings?.mcp_servers),
+      skills: stringList(typeOption.capability_bindings?.skills),
     },
     context_policy: {},
     daily_token_limit: dailyTokenLimit,
@@ -1744,9 +1744,9 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
     creation_mode: "blank_custom",
     approval_policy: {},
     capability_bindings: {},
-    capability_selection: {
-      enabled_mcp_servers: [],
-      enabled_skills: [],
+    capability_binding_draft: {
+      mcp_servers: [],
+      skills: [],
     },
     context_policy: {},
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
@@ -1756,24 +1756,24 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
   };
 }
 
-function inheritedCapabilitySelection(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_selection"] {
+function inheritedCapabilityBindings(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_binding_draft"] {
   const teamConfig = options?.team_config as Record<string, unknown> | undefined;
 
   return {
-    enabled_mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
-    enabled_skills: uniqueStringList(teamConfig?.skills),
+    mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
+    skills: uniqueStringList(teamConfig?.skills),
   };
 }
 
-function employeeExtensionCapabilitySelection(
-  selection: WizardDraft["capability_selection"],
+function employeeExtensionCapabilityBindings(
+  selection: WizardDraft["capability_binding_draft"],
   options: DigitalEmployeeCreateOptions | undefined,
-): WizardDraft["capability_selection"] {
-  const inherited = inheritedCapabilitySelection(options);
+): WizardDraft["capability_binding_draft"] {
+  const inherited = inheritedCapabilityBindings(options);
 
   return {
-    enabled_mcp_servers: withoutValues(selection.enabled_mcp_servers, inherited.enabled_mcp_servers),
-    enabled_skills: withoutValues(selection.enabled_skills, inherited.enabled_skills),
+    mcp_servers: withoutValues(selection.mcp_servers, inherited.mcp_servers),
+    skills: withoutValues(selection.skills, inherited.skills),
   };
 }
 
@@ -1781,11 +1781,11 @@ function capabilityBindingsFromDraft(
   draft: WizardDraft,
   options: DigitalEmployeeCreateOptions | undefined,
 ): Record<string, unknown> {
-  const extension = employeeExtensionCapabilitySelection(draft.capability_selection, options);
+  const extension = employeeExtensionCapabilityBindings(draft.capability_binding_draft, options);
   const bindings = structuredCloneSafe(draft.capability_bindings);
 
-  bindings.skills = uniqueStringList(extension.enabled_skills);
-  bindings.mcp_servers = uniqueStringList(extension.enabled_mcp_servers);
+  bindings.skills = uniqueStringList(extension.skills);
+  bindings.mcp_servers = uniqueStringList(extension.mcp_servers);
 
   return bindings;
 }

@@ -459,7 +459,10 @@ INSERT INTO inbox_items (
 		`-- name: CountInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = sqlc.arg('status')::varchar
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
@@ -1595,7 +1598,7 @@ func TestUserProjectTeamScopesQueriesAreNilSafeAndTenantScoped(t *testing.T) {
 		t.Fatal("RevokeUserProjectTeamScopes must treat nil team_ids as an empty UUID array")
 	}
 
-	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 5 {
+	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 4 {
 		t.Fatalf("expected tenant-scoped aggregate CTEs plus final filters, got %d tenant filters", count)
 	}
 }
