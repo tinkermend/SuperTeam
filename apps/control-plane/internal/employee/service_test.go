@@ -19,8 +19,8 @@ import (
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
-func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
-	types := DefaultEmployeeTypeDefinitions()
+func TestBuiltinEmployeeTemplateFixturesExcludeProjectCoordinator(t *testing.T) {
+	types := builtinEmployeeTemplateFixtures(uuid.New())
 	if len(types) < 6 {
 		t.Fatalf("expected professional engineer types, got %#v", types)
 	}
@@ -29,65 +29,23 @@ func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
 			t.Fatalf("project coordinator must not be a reusable employee type: %#v", item)
 		}
 	}
-	if _, ok := EmployeeTypeDefinitionByType("database_admin"); !ok {
-		t.Fatalf("expected database_admin type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("devops_engineer"); !ok {
-		t.Fatalf("expected devops_engineer type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("security_engineer"); !ok {
-		t.Fatalf("expected security_engineer type")
-	}
-	if _, ok := EmployeeTypeDefinitionByType("qa_engineer"); !ok {
-		t.Fatalf("expected qa_engineer type")
-	}
-}
-
-func TestEmployeeTypeRegistryReturnsClonedDefinitions(t *testing.T) {
-	types := DefaultEmployeeTypeDefinitions()
-	if len(types) == 0 {
-		t.Fatalf("expected employee type definitions")
-	}
-	typeIndex := firstTypeWithDefaultSkills(t, types)
-	originalSkill := types[typeIndex].RecommendedSkills[0]
-	types[typeIndex].RecommendedSkills[0] = "mutated-skill"
-	enabledSkills, ok := types[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
-	if !ok || len(enabledSkills) == 0 {
-		t.Fatalf("expected enabled_skills default selection, got %#v", types[typeIndex].DefaultCapabilitySelection)
-	}
-	enabledSkills[0] = "mutated-enabled-skill"
-
-	fresh := DefaultEmployeeTypeDefinitions()
-	if fresh[typeIndex].RecommendedSkills[0] != originalSkill {
-		t.Fatalf("expected recommended skills to be cloned, got %#v", fresh[typeIndex].RecommendedSkills)
-	}
-	freshEnabledSkills, ok := fresh[typeIndex].DefaultCapabilitySelection["enabled_skills"].([]string)
-	if !ok || len(freshEnabledSkills) == 0 {
-		t.Fatalf("expected fresh enabled_skills default selection, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
-	}
-	if freshEnabledSkills[0] == "mutated-enabled-skill" {
-		t.Fatalf("expected default capability selection to be cloned, got %#v", fresh[typeIndex].DefaultCapabilitySelection)
-	}
-}
-
-func firstTypeWithDefaultSkills(t *testing.T, types []EmployeeTypeDefinition) int {
-	t.Helper()
-	for index, definition := range types {
-		if len(definition.RecommendedSkills) == 0 {
-			continue
+	wantTypes := []string{"database_admin", "devops_engineer", "security_engineer", "qa_engineer"}
+	for _, wantType := range wantTypes {
+		found := false
+		for _, item := range types {
+			if item.Type == wantType {
+				found = true
+				break
+			}
 		}
-		enabledSkills, ok := definition.DefaultCapabilitySelection["enabled_skills"].([]string)
-		if ok && len(enabledSkills) > 0 {
-			return index
+		if !found {
+			t.Fatalf("expected %s type in fixtures, got %#v", wantType, types)
 		}
 	}
-	t.Fatalf("expected at least one employee type with default skills, got %#v", types)
-	return 0
 }
 
 func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *testing.T) {
-	definition, ok := EmployeeTypeDefinitionByType(" custom_agent ")
-	require.True(t, ok)
+	definition := customAgentEmployeeTypeDefinition()
 	require.Equal(t, "custom_agent", definition.Type)
 	require.Equal(t, "自定义数字员工", definition.Label)
 	require.Empty(t, definition.DefaultRole)
@@ -143,7 +101,7 @@ func TestGetCreateOptionsReturnsTeamBaselineAndPlatformCandidates(t *testing.T) 
 	if got := options.TeamConfig.Skills; len(got) != 2 || got[0] != "database-troubleshooting" {
 		t.Fatalf("expected baseline skills, got %#v", got)
 	}
-	if len(options.EmployeeTypes) != len(DefaultEmployeeTypeDefinitions()) {
+	if len(options.EmployeeTypes) != len(builtinEmployeeTemplateFixtures(tenantID))+1 {
 		t.Fatalf("expected full employee types, got %#v", options.EmployeeTypes)
 	}
 	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
@@ -273,7 +231,7 @@ func TestCreateOptionsUsePlatformFullEmployeeTypes(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, options.EmployeeTypes, len(DefaultEmployeeTypeDefinitions()))
+	require.Len(t, options.EmployeeTypes, len(builtinEmployeeTemplateFixtures(tenantID))+1)
 	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "database_admin"))
 	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
 	require.Contains(t, options.CapabilityOptions.ProviderTypes, "codex")
@@ -2362,17 +2320,18 @@ func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecor
 		label        string
 		defaultRole  string
 		skills       []string
+		mcpServers   []string
 	}
 	seeds := []seed{
-		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}},
-		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}},
-		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}},
-		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}},
-		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}},
-		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}},
-		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}},
-		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}},
-		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}},
+		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}, []string{"postgres-readonly", "mysql-readonly"}},
+		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}, []string{"kubernetes-readonly", "prometheus-readonly", "grafana-readonly"}},
+		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}, []string{"postgres-readonly", "http-connector"}},
+		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}, []string{"browser"}},
+		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}, []string{"browser"}},
+		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}, []string{"postgres-readonly"}},
+		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}, []string{"browser", "postgres-readonly"}},
+		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}, []string{"http-connector"}},
+		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}, []string{}},
 	}
 	records := make([]EmployeeTemplateRecord, 0, len(seeds))
 	for _, s := range seeds {
@@ -2384,7 +2343,7 @@ func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecor
 			Description:                s.label,
 			DefaultRole:                s.defaultRole,
 			RecommendedSkills:          s.skills,
-			RecommendedMCPServers:      []string{},
+			RecommendedMCPServers:      s.mcpServers,
 			RecommendedProviderTypes:   []string{"codex", "opencode"},
 			DefaultCapabilitySelection: map[string]any{"enabled_skills": s.skills},
 			Status:                     "active",
