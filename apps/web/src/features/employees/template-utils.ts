@@ -26,11 +26,6 @@ export type TemplateDefaultInjectionSummary = {
   providerTypes: string[];
 };
 
-export type TemplateAvailabilityStatus = {
-  label: "平台默认" | "继承团队基线";
-  notes: string[];
-};
-
 export function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
   return [...employeeTypes]
     .filter((item) => !item.metadata?.["system_type"])
@@ -112,30 +107,6 @@ export function templateCapabilityPreview(typeOption: DigitalEmployeeTypeOption)
     summary.mcpServers[0],
     summary.providerTypes[0],
   ].filter(Boolean).join(" · ") || "无模板能力";
-}
-
-export function templateAvailabilityStatus(
-  options: DigitalEmployeeCreateOptions | undefined,
-): TemplateAvailabilityStatus {
-  if (!options) {
-    return { label: "平台默认", notes: [] };
-  }
-
-  const teamConfig = options.team_config;
-  const notes: string[] = [];
-  if ((teamConfig.skills ?? []).length > 0) {
-    notes.push(`团队继承技能 ${teamConfig.skills.length}`);
-  }
-  if ((teamConfig.mcp_servers ?? []).length > 0) {
-    notes.push(`团队继承 MCP ${teamConfig.mcp_servers.length}`);
-  }
-  if (Object.keys(teamConfig.constitution ?? {}).length > 0) {
-    notes.push("创建时会继承团队宪法基线");
-  }
-  return {
-    label: notes.length > 0 ? "继承团队基线" : "平台默认",
-    notes,
-  };
 }
 
 export function findTemplateByType(
