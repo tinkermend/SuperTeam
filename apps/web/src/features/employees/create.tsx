@@ -250,7 +250,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           budget_policy: budgetPolicyFromDraft(draft),
           capability_bindings: capabilityBindingsFromDraft(draft, createOptions.data),
           context_policy: draft.context_policy,
-          persona_memory_markdown: draft.persona_memory_markdown,
+          persona_memory_markdown: draft.persona_memory_markdown.trim(),
           risk_level: draft.risk_level,
           provider_type: draft.provider_type,
           session_policy: { mode: "reuse_latest" },
@@ -1781,12 +1781,11 @@ function capabilityBindingsFromDraft(
   draft: WizardDraft,
   options: DigitalEmployeeCreateOptions | undefined,
 ): Record<string, unknown> {
-  const inherited = inheritedCapabilitySelection(options);
   const extension = employeeExtensionCapabilitySelection(draft.capability_selection, options);
   const bindings = structuredCloneSafe(draft.capability_bindings);
 
-  bindings.skills = uniqueStringList([...inherited.enabled_skills, ...extension.enabled_skills]);
-  bindings.mcp_servers = uniqueStringList([...inherited.enabled_mcp_servers, ...extension.enabled_mcp_servers]);
+  bindings.skills = uniqueStringList(extension.enabled_skills);
+  bindings.mcp_servers = uniqueStringList(extension.enabled_mcp_servers);
 
   return bindings;
 }

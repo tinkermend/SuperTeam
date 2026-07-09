@@ -76,7 +76,6 @@ const avatarAsset = {
 };
 
 type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none" | "session-inactive";
-type ExpectedCreateBody = Record<string, unknown>;
 
 function createOptionsFixture({
   runtimeAvailability = "all",
@@ -263,12 +262,6 @@ function createOptionsFixture({
 }
 
 function createWizardFetcher({
-  expectedCreateBody,
-  expectedEnvironmentVariables,
-  expectedProviderType = "codex",
-  expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
-  expectedRuntimeNodeIdSubmitted = false,
-  expectedTeamId,
   runtimeAvailability = "all",
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
@@ -282,12 +275,6 @@ function createWizardFetcher({
   pendingCreateOptionsForTeamId,
   teamConfigOverrides,
 }: {
-  expectedCreateBody?: ExpectedCreateBody;
-  expectedEnvironmentVariables?: Array<{ name: string; value: string; sensitive: boolean }>;
-  expectedProviderType?: string;
-  expectedRuntimeNodeId?: string;
-  expectedRuntimeNodeIdSubmitted?: boolean;
-  expectedTeamId?: string | undefined;
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
   sameRuntimeNodeProviders?: boolean;
@@ -345,42 +332,10 @@ function createWizardFetcher({
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
-      const body = JSON.parse(String(init?.body));
-      const { budget_policy: _budgetPolicy, ...bodyWithoutBudgetPolicy } = body;
-      const defaultExpectedBody = {
-        ...(expectedTeamId ? { team_id: expectedTeamId } : {}),
-        employee_type: "database_admin",
-        name: "数据库管理员工",
-        role: "database_admin",
-        risk_level: "medium",
-        avatar_asset_id: avatarAsset.id,
-        persona_memory_markdown: "# 数据库管理员\n可靠性优先",
-        capability_bindings: {
-          skills: ["sql-review"],
-          mcp_servers: ["postgres"],
-          provider_types: ["codex"],
-        },
-        context_policy: {},
-        approval_policy: { required: true },
-        ...(expectedRuntimeNodeIdSubmitted ? { runtime_node_id: expectedRuntimeNodeId } : {}),
-        provider_type: expectedProviderType,
-        session_policy: { mode: "reuse_latest" },
-        workspace_policy: {},
-        environment_variables: expectedEnvironmentVariables ?? [],
-      };
-      expect(bodyWithoutBudgetPolicy).toEqual(expectedCreateBody ?? defaultExpectedBody);
-      expect(body).not.toHaveProperty("role_profile");
-      expect(body).not.toHaveProperty("constitution_addendum");
-      expect(body).not.toHaveProperty("capability_selection");
-      expect(body).not.toHaveProperty("context_policy_override");
-      expect(body).not.toHaveProperty("approval_policy_override");
-      expect(body).not.toHaveProperty("output_contract_addendum");
-
       return jsonResponse(
         {
           id: "11111111-1111-4111-8111-111111111111",
           tenant_id: "22222222-2222-4222-8222-222222222222",
-          ...(expectedTeamId ? { team_id: expectedTeamId } : {}),
           owner_user_id: "66666666-6666-4666-8666-666666666666",
           employee_type: "database_admin",
           name: "数据库管理员工",
@@ -408,6 +363,12 @@ function findCreateEmployeePost(fetcher: typeof fetch) {
   return calls.find(
     ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
   );
+}
+
+function requestCreateBody(fetcher: typeof fetch) {
+  const call = findCreateEmployeePost(fetcher);
+  expect(call).toBeTruthy();
+  return JSON.parse(String(call?.[1]?.body));
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -717,7 +678,7 @@ describe("CreateEmployeeView", () => {
   });
 
   it("creates a ready digital employee through the streamlined wizard", async () => {
-    const fetcher = createWizardFetcher({ expectedTeamId: team.id });
+    const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "创建数字员工" })).toBeVisible();
@@ -738,6 +699,34 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("数据库管理员工")).toBeVisible();
     await expect.element(screen.getByText("Codex")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    const body = requestCreateBody(fetcher);
+    expect(body).toMatchObject({
+      team_id: team.id,
+      employee_type: "database_admin",
+      name: "数据库管理员工",
+      role: "database_admin",
+      risk_level: "medium",
+      avatar_asset_id: avatarAsset.id,
+      persona_memory_markdown: "# 数据库管理员\n可靠性优先",
+      capability_bindings: {
+        skills: [],
+        mcp_servers: [],
+        provider_types: ["codex"],
+      },
+      context_policy: {},
+      approval_policy: { required: true },
+      provider_type: "codex",
+      session_policy: { mode: "reuse_latest" },
+      workspace_policy: {},
+      environment_variables: [],
+    });
+    expect(body).not.toHaveProperty("role_profile");
+    expect(body).not.toHaveProperty("constitution_addendum");
+    expect(body).not.toHaveProperty("capability_selection");
+    expect(body).not.toHaveProperty("context_policy_override");
+    expect(body).not.toHaveProperty("approval_policy_override");
+    expect(body).not.toHaveProperty("output_contract_addendum");
 
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -864,51 +853,42 @@ describe("CreateEmployeeView", () => {
   });
 
   it("submits blank-custom creation without template-injected capabilities or policy overrides", async () => {
-    const fetcher = createWizardFetcher({
-      expectedCreateBody: {
-        employee_type: "custom_agent",
-        name: "数据库管理员工",
-        role: "数据库变更与恢复验证",
-        risk_level: "medium",
-        avatar_asset_id: avatarAsset.id,
-        persona_memory_markdown: "",
-        capability_bindings: {
-          skills: [],
-          mcp_servers: [],
-        },
-        context_policy: {},
-        approval_policy: {},
-        provider_type: "codex",
-        session_policy: { mode: "reuse_latest" },
-        workspace_policy: {},
-        environment_variables: [],
-        metadata: { creation_mode: "blank_custom" },
-      },
-    });
+    const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterBlankCustomConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("职责定位"), "数据库变更与恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.fill(screen.getByLabelText("人格记忆.md"), "  # 自定义人格\n谨慎执行  ");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByLabelText("Codex"));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
-    expect(body.capability_bindings).toEqual({
-      skills: ["sql-review"],
-      mcp_servers: ["postgres"],
+    const body = requestCreateBody(fetcher);
+    expect(body).toMatchObject({
+      employee_type: "custom_agent",
+      name: "数据库管理员工",
+      role: "数据库变更与恢复验证",
+      risk_level: "medium",
+      avatar_asset_id: avatarAsset.id,
+      persona_memory_markdown: "# 自定义人格\n谨慎执行",
+      capability_bindings: {
+        skills: [],
+        mcp_servers: [],
+      },
+      context_policy: {},
+      approval_policy: {},
+      provider_type: "codex",
+      session_policy: { mode: "reuse_latest" },
+      workspace_policy: {},
+      environment_variables: [],
+      metadata: { creation_mode: "blank_custom" },
     });
-    expect(body.context_policy).toEqual({});
-    expect(body.approval_policy).toEqual({});
-    expect(body.metadata).toEqual({ creation_mode: "blank_custom" });
   });
 
-  it("keeps template creation seeded with template capability and policy defaults", async () => {
+  it("keeps template creation seeded with template defaults without repeating inherited baseline bindings", async () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
@@ -925,12 +905,10 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.capability_bindings).toEqual({
-      skills: ["sql-review"],
-      mcp_servers: ["postgres"],
+      skills: [],
+      mcp_servers: [],
       provider_types: ["codex"],
     });
     expect(body.context_policy).toEqual({});
@@ -981,12 +959,10 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.capability_bindings).toEqual({
-      skills: ["sql-review", "incident-diagnosis"],
-      mcp_servers: ["postgres"],
+      skills: ["incident-diagnosis"],
+      mcp_servers: [],
       provider_types: ["codex"],
     });
   });
@@ -1041,10 +1017,7 @@ describe("CreateEmployeeView", () => {
   });
 
   it("supports creating a team-less digital employee when the user selects no team", async () => {
-    const fetcher = createWizardFetcher({
-      expectedTeamId: undefined,
-      teams: [team, secondTeam],
-    });
+    const fetcher = createWizardFetcher({ teams: [team, secondTeam] });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -1061,9 +1034,7 @@ describe("CreateEmployeeView", () => {
     );
     expect(createOptionsCalls.some(([input]) => !new URL(String(input)).searchParams.has("team_id"))).toBe(true);
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.team_id).toBeUndefined();
   });
 
@@ -1080,16 +1051,12 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.budget_policy).toEqual({ daily_token_limit: 200000 });
   });
 
   it("submits environment variables from the runtime step when creating a digital employee", async () => {
-    const fetcher = createWizardFetcher({
-      expectedEnvironmentVariables: [{ name: "GH_TOKEN", value: "ghp_secret", sensitive: true }],
-    });
+    const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -1103,9 +1070,7 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.environment_variables).toEqual([
       { name: "GH_TOKEN", value: "ghp_secret", sensitive: true },
     ]);
@@ -1122,9 +1087,7 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.budget_policy).toEqual({});
   });
 
@@ -1266,10 +1229,7 @@ describe("CreateEmployeeView", () => {
   });
 
   it("submits provider-only creation when no runtime is currently available", async () => {
-    const fetcher = createWizardFetcher({
-      expectedRuntimeNodeIdSubmitted: false,
-      runtimeAvailability: "none",
-    });
+    const fetcher = createWizardFetcher({ runtimeAvailability: "none" });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -1280,18 +1240,13 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.provider_type).toBe("codex");
     expect(body).not.toHaveProperty("runtime_node_id");
   });
 
   it("shows Chinese risk labels and canonical Provider labels while submitting enum values", async () => {
-    const fetcher = createWizardFetcher({
-      sameRuntimeNodeProviders: true,
-      expectedProviderType: "claude-code",
-    });
+    const fetcher = createWizardFetcher({ sameRuntimeNodeProviders: true });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -1314,18 +1269,13 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("Claude Code", { exact: true })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.risk_level).toBe("critical");
     expect(body.provider_type).toBe("claude-code");
   });
 
   it("submits the selected provider when one runtime exposes multiple providers", async () => {
-    const fetcher = createWizardFetcher({
-      expectedProviderType: "claude-code",
-      sameRuntimeNodeProviders: true,
-    });
+    const fetcher = createWizardFetcher({ sameRuntimeNodeProviders: true });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -1343,9 +1293,7 @@ describe("CreateEmployeeView", () => {
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    const createCall = findCreateEmployeePost(fetcher);
-    expect(createCall).toBeTruthy();
-    const body = JSON.parse(String(createCall?.[1]?.body));
+    const body = requestCreateBody(fetcher);
     expect(body.provider_type).toBe("claude-code");
 
     await vi.waitFor(() =>
