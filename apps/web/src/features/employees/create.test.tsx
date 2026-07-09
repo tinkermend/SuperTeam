@@ -369,6 +369,12 @@ function createWizardFetcher({
         environment_variables: expectedEnvironmentVariables ?? [],
       };
       expect(bodyWithoutBudgetPolicy).toEqual(expectedCreateBody ?? defaultExpectedBody);
+      expect(body).not.toHaveProperty("role_profile");
+      expect(body).not.toHaveProperty("constitution_addendum");
+      expect(body).not.toHaveProperty("capability_selection");
+      expect(body).not.toHaveProperty("context_policy_override");
+      expect(body).not.toHaveProperty("approval_policy_override");
+      expect(body).not.toHaveProperty("output_contract_addendum");
 
       return jsonResponse(
         {
@@ -614,6 +620,10 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
+    expect(screen.getByText("角色配置").query()).toBeNull();
+    expect(screen.getByText("能力与策略").query()).toBeNull();
+    await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
+    await expect.element(screen.getByLabelText("能力绑定")).toBeVisible();
     await expect.element(screen.getByLabelText("上下文策略")).toHaveValue("{}");
     await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
     await expect.element(screen.getByLabelText("每日 Token 预算上限")).toBeVisible();

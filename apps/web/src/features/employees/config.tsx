@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
@@ -32,48 +32,19 @@ type EmployeeConfigViewProps = {
   fetcher?: typeof fetch;
 };
 
-type AdvancedJsonFieldKey = Exclude<
-  keyof CreateDigitalEmployeeConfigRevisionInput,
-  "budget_policy" | "status"
->;
-
-const advancedJsonFieldLabels: Record<AdvancedJsonFieldKey, string> = {
-  role_profile: "Role Profile",
-  constitution_addendum: "Constitution Addendum",
-  capability_selection: "Capability Selection",
-  context_policy_override: "Context Policy Override",
-  approval_policy_override: "Approval Policy Override",
-  output_contract_addendum: "Output Contract Addendum",
-};
-
-const createAdvancedJsonFieldState = <T,>(value: T) => ({
-  role_profile: value,
-  constitution_addendum: value,
-  capability_selection: value,
-  context_policy_override: value,
-  approval_policy_override: value,
-  output_contract_addendum: value,
-});
-
 export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: EmployeeConfigViewProps) {
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const queryClient = useQueryClient();
 
-  const [roleProfile, setRoleProfile] = useState("{}");
-  const [constitutionAddendum, setConstitutionAddendum] = useState("{}");
-  const [capabilitySelection, setCapabilitySelection] = useState("{}");
-  const [contextPolicyOverride, setContextPolicyOverride] = useState("{}");
-  const [approvalPolicyOverride, setApprovalPolicyOverride] = useState("{}");
-  const [outputContractAddendum, setOutputContractAddendum] = useState("{}");
+  const [personaMemoryMarkdown, setPersonaMemoryMarkdown] = useState("");
+  const [capabilityBindings, setCapabilityBindings] = useState("{}");
   const [dailyTokenLimit, setDailyTokenLimit] = useState("");
-  const [advancedDirty, setAdvancedDirty] = useState<Record<AdvancedJsonFieldKey, boolean>>(
-    createAdvancedJsonFieldState(false),
-  );
-  const [advancedErrors, setAdvancedErrors] = useState<Record<AdvancedJsonFieldKey, string>>(
-    createAdvancedJsonFieldState(""),
-  );
+  const [personaDirty, setPersonaDirty] = useState(false);
+  const [capabilityDirty, setCapabilityDirty] = useState(false);
   const [budgetDirty, setBudgetDirty] = useState(false);
+  const [capabilityError, setCapabilityError] = useState("");
   const [budgetError, setBudgetError] = useState("");
+  const [hydratedEmployeeId, setHydratedEmployeeId] = useState("");
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
@@ -84,53 +55,46 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     mutationFn: (input: CreateDigitalEmployeeConfigRevisionInput) =>
       createDigitalEmployeeConfigRevision(apiOptions, employeeId, input),
     onSuccess: () => {
-      setAdvancedDirty(createAdvancedJsonFieldState(false));
-      setAdvancedErrors(createAdvancedJsonFieldState(""));
+      setPersonaDirty(false);
+      setCapabilityDirty(false);
       setBudgetDirty(false);
+      setCapabilityError("");
       setBudgetError("");
       queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
     },
   });
 
-  const advancedJsonFields = [
-    { key: "role_profile", value: roleProfile },
-    { key: "constitution_addendum", value: constitutionAddendum },
-    { key: "capability_selection", value: capabilitySelection },
-    { key: "context_policy_override", value: contextPolicyOverride },
-    { key: "approval_policy_override", value: approvalPolicyOverride },
-    { key: "output_contract_addendum", value: outputContractAddendum },
-  ] satisfies { key: AdvancedJsonFieldKey; value: string }[];
-  const hasDirtyConfig = budgetDirty || Object.values(advancedDirty).some(Boolean);
+  useEffect(() => {
+    if (!employee.data || hydratedEmployeeId === employee.data.id) return;
+    setPersonaMemoryMarkdown(employee.data.persona_memory_markdown ?? "");
+    setCapabilityBindings(formatJsonObject(employee.data.capability_bindings ?? {}));
+    setDailyTokenLimit(budgetPolicyValue(employee.data.budget_policy ?? {}));
+    setPersonaDirty(false);
+    setCapabilityDirty(false);
+    setBudgetDirty(false);
+    setCapabilityError("");
+    setBudgetError("");
+    setHydratedEmployeeId(employee.data.id);
+  }, [employee.data, hydratedEmployeeId]);
 
-  const updateAdvancedField = (
-    key: AdvancedJsonFieldKey,
-    value: string,
-    setValue: React.Dispatch<React.SetStateAction<string>>,
-  ) => {
-    setValue(value);
-    setAdvancedDirty((current) => ({ ...current, [key]: true }));
-    setAdvancedErrors((current) => ({ ...current, [key]: "" }));
-  };
+  const hasDirtyConfig = personaDirty || capabilityDirty || budgetDirty;
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const input: CreateDigitalEmployeeConfigRevisionInput = { status: "draft" };
-    const nextAdvancedErrors = createAdvancedJsonFieldState("");
-    let hasAdvancedError = false;
+    setCapabilityError("");
 
-    advancedJsonFields.forEach((field) => {
-      if (!advancedDirty[field.key]) return;
-
-      try {
-        input[field.key] = JSON.parse(field.value);
-      } catch {
-        nextAdvancedErrors[field.key] = `${advancedJsonFieldLabels[field.key]} 必须是有效 JSON`;
-        hasAdvancedError = true;
+    if (personaDirty) {
+      input.persona_memory_markdown = personaMemoryMarkdown.trim();
+    }
+    if (capabilityDirty) {
+      const parsed = parseJsonObject(capabilityBindings, "能力绑定");
+      if (!parsed.ok) {
+        setCapabilityError(parsed.error);
+        return;
       }
-    });
-
-    setAdvancedErrors(nextAdvancedErrors);
-    if (hasAdvancedError) return;
+      input.capability_bindings = parsed.value;
+    }
 
     setBudgetError("");
     if (budgetDirty) {
@@ -149,109 +113,46 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     <form className="space-y-4" noValidate onSubmit={handleSubmit}>
       <Card>
         <CardHeader>
-          <CardTitle>角色配置</CardTitle>
+          <CardTitle>人格记忆.md</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="role-profile">Role Profile (JSON)</Label>
+            <Label htmlFor="persona-memory-markdown">人格记忆.md</Label>
             <Textarea
-              id="role-profile"
-              value={roleProfile}
-              onChange={(e) => updateAdvancedField("role_profile", e.target.value, setRoleProfile)}
-              rows={4}
+              id="persona-memory-markdown"
+              value={personaMemoryMarkdown}
+              onChange={(event) => {
+                setPersonaMemoryMarkdown(event.target.value);
+                setPersonaDirty(true);
+              }}
+              rows={10}
               className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.role_profile)}
             />
-            {advancedErrors.role_profile ? (
-              <p className="text-sm text-destructive">{advancedErrors.role_profile}</p>
-            ) : null}
-          </div>
-          <div>
-            <Label htmlFor="constitution">Constitution Addendum (JSON)</Label>
-            <Textarea
-              id="constitution"
-              value={constitutionAddendum}
-              onChange={(e) =>
-                updateAdvancedField("constitution_addendum", e.target.value, setConstitutionAddendum)
-              }
-              rows={4}
-              className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.constitution_addendum)}
-            />
-            {advancedErrors.constitution_addendum ? (
-              <p className="text-sm text-destructive">{advancedErrors.constitution_addendum}</p>
-            ) : null}
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>能力与策略</CardTitle>
+          <CardTitle>能力绑定</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="capability">Capability Selection (JSON)</Label>
+            <Label htmlFor="capability-bindings">能力绑定</Label>
             <Textarea
-              id="capability"
-              value={capabilitySelection}
-              onChange={(e) =>
-                updateAdvancedField("capability_selection", e.target.value, setCapabilitySelection)
-              }
-              rows={4}
+              id="capability-bindings"
+              value={capabilityBindings}
+              onChange={(event) => {
+                setCapabilityBindings(event.target.value);
+                setCapabilityDirty(true);
+                setCapabilityError("");
+              }}
+              rows={10}
               className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.capability_selection)}
+              aria-invalid={Boolean(capabilityError)}
             />
-            {advancedErrors.capability_selection ? (
-              <p className="text-sm text-destructive">{advancedErrors.capability_selection}</p>
-            ) : null}
-          </div>
-          <div>
-            <Label htmlFor="context-policy">Context Policy Override (JSON)</Label>
-            <Textarea
-              id="context-policy"
-              value={contextPolicyOverride}
-              onChange={(e) =>
-                updateAdvancedField("context_policy_override", e.target.value, setContextPolicyOverride)
-              }
-              rows={4}
-              className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.context_policy_override)}
-            />
-            {advancedErrors.context_policy_override ? (
-              <p className="text-sm text-destructive">{advancedErrors.context_policy_override}</p>
-            ) : null}
-          </div>
-          <div>
-            <Label htmlFor="approval-policy">Approval Policy Override (JSON)</Label>
-            <Textarea
-              id="approval-policy"
-              value={approvalPolicyOverride}
-              onChange={(e) =>
-                updateAdvancedField("approval_policy_override", e.target.value, setApprovalPolicyOverride)
-              }
-              rows={4}
-              className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.approval_policy_override)}
-            />
-            {advancedErrors.approval_policy_override ? (
-              <p className="text-sm text-destructive">{advancedErrors.approval_policy_override}</p>
-            ) : null}
-          </div>
-          <div>
-            <Label htmlFor="output-contract">Output Contract Addendum (JSON)</Label>
-            <Textarea
-              id="output-contract"
-              value={outputContractAddendum}
-              onChange={(e) =>
-                updateAdvancedField("output_contract_addendum", e.target.value, setOutputContractAddendum)
-              }
-              rows={4}
-              className="font-mono text-xs"
-              aria-invalid={Boolean(advancedErrors.output_contract_addendum)}
-            />
-            {advancedErrors.output_contract_addendum ? (
-              <p className="text-sm text-destructive">{advancedErrors.output_contract_addendum}</p>
+            {capabilityError ? (
+              <p className="text-sm text-destructive">{capabilityError}</p>
             ) : null}
           </div>
         </CardContent>
@@ -308,7 +209,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
           />
         }
         title={employee.data?.name ?? "数字员工配置"}
-        subtitle="配置员工技能、策略和输出契约"
+        subtitle="配置员工人格记忆、能力绑定和预算策略"
       />
       <Main>
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
@@ -351,6 +252,39 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       </Main>
     </>
   );
+}
+
+function formatJsonObject(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2);
+}
+
+function budgetPolicyValue(value: Record<string, unknown>) {
+  const rawValue = value.daily_token_limit;
+  if (typeof rawValue === "number" && Number.isInteger(rawValue) && rawValue > 0) {
+    return String(rawValue);
+  }
+  if (typeof rawValue === "string") {
+    const trimmed = rawValue.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function parseJsonObject(
+  value: string,
+  label: string,
+): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  try {
+    const parsed = JSON.parse(value || "{}") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, error: `${label}必须是有效 JSON object` };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  } catch {
+    return { ok: false, error: `${label}必须是有效 JSON object` };
+  }
 }
 
 function budgetPolicyFromDailyTokenLimit(dailyTokenLimit: string) {

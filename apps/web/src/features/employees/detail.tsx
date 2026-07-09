@@ -8,7 +8,7 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { StatusPill } from "@/components/superteam";
+import { SoftCard, StatusPill } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,8 +24,10 @@ import {
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
+  type DigitalEmployee,
   type DigitalEmployeeDeleteBlockedErrorResponse,
   type DigitalEmployeeDeleteBlocker,
+  type DigitalEmployeeExecutionInstance,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
@@ -329,6 +331,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
               personalSkillCount={personalSkillCount}
               roleLabel={employee.data.role}
             />
+
+            <EmployeeConfigSnapshotSection
+              employee={employee.data}
+              executionInstance={instance.data}
+            />
           </div>
         ) : null}
       </Main>
@@ -482,4 +489,55 @@ function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker 
       </p>
     </li>
   );
+}
+
+function EmployeeConfigSnapshotSection({
+  employee,
+  executionInstance,
+}: {
+  employee: DigitalEmployee;
+  executionInstance?: DigitalEmployeeExecutionInstance;
+}) {
+  const metadata = employee.metadata ?? {};
+  const runtimeState = {
+    effective_config_label: metadata.effective_config_label,
+    effective_config_status: metadata.effective_config_status,
+    execution_instance_status: executionInstance?.status,
+    provider_type: executionInstance?.provider_type,
+    runtime_node_id: executionInstance?.runtime_node_id,
+  };
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <ConfigSnapshotCard label="人格记忆.md" value={employee.persona_memory_markdown || "未设置"} />
+      <ConfigSnapshotCard
+        label="能力绑定"
+        value={formatConfigSnapshotJson(employee.capability_bindings ?? {})}
+      />
+      <ConfigSnapshotCard label="预算策略" value={formatConfigSnapshotJson(employee.budget_policy ?? {})} />
+      <ConfigSnapshotCard
+        label="运行与缓存状态"
+        value={hasRuntimeState(runtimeState) ? formatConfigSnapshotJson(runtimeState) : "暂无运行与缓存状态"}
+      />
+    </section>
+  );
+}
+
+function ConfigSnapshotCard({ label, value }: { label: string; value: string }) {
+  return (
+    <SoftCard className="p-4">
+      <div className="text-sm font-semibold text-v3-ink">{label}</div>
+      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-[14px] border border-v3-line bg-v3-card-soft p-3 font-mono text-xs text-v3-ink">
+        {value}
+      </pre>
+    </SoftCard>
+  );
+}
+
+function formatConfigSnapshotJson(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2);
+}
+
+function hasRuntimeState(value: Record<string, unknown>) {
+  return Object.values(value).some((item) => item !== undefined && item !== "");
 }

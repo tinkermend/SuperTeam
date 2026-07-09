@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import {
   GlassCard,
   IconTile,
@@ -1348,6 +1349,9 @@ function CapabilityStep({
 }) {
   const capabilityOptions = options?.capability_options;
   const inheritedCapabilities = inheritedCapabilitySelection(options);
+  const capabilityBindingsPreview = formatCapabilityBindingsPreview(
+    capabilityBindingsFromDraft(draft, options),
+  );
   const extensionCapabilityOptions = {
     mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.enabled_mcp_servers),
     skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.enabled_skills),
@@ -1384,6 +1388,18 @@ function CapabilityStep({
         <div className="text-sm font-semibold text-v3-ink">员工扩展能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">这里只提交员工个人扩展项。</p>
       </section>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Field label="人格记忆.md">
+          <Textarea
+            className="min-h-[220px] border-v3-line bg-v3-card font-mono text-xs text-v3-ink"
+            id="persona-memory-markdown"
+            onChange={(event) => onUpdate({ persona_memory_markdown: event.target.value })}
+            placeholder="# 人格画像"
+            value={draft.persona_memory_markdown}
+          />
+        </Field>
+        <JsonReadOnlyCard label="能力绑定" value={capabilityBindingsPreview} />
+      </div>
       <CapabilityGroup
         checkedValues={draft.capability_selection.enabled_skills}
         label="技能"
@@ -1682,6 +1698,8 @@ function Field({
 }
 
 const labelId: Record<string, string> = {
+  "人格记忆.md": "persona-memory-markdown",
+  能力绑定: "capability-bindings",
   名称: "employee-name",
   上下文策略: "context-policy",
   审批策略: "approval-policy",
@@ -1813,6 +1831,15 @@ function parseDailyTokenLimit(rawValue: string) {
 
 function formatJsonSummary(value: Record<string, unknown>) {
   return JSON.stringify(value, null, 2);
+}
+
+function formatCapabilityBindingsPreview(value: Record<string, unknown>) {
+  return [
+    `技能：${stringList(value.skills).length}`,
+    `MCP Server：${stringList(value.mcp_servers).length}`,
+    `外部能力：${stringList(value.external_capabilities).length}`,
+    `环境变量引用：${stringList(value.environment_variable_refs).length}`,
+  ].join("\n");
 }
 
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {

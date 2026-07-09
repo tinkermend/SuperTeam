@@ -339,6 +339,8 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByRole("link", { exact: true, name: "查看" })).toHaveAttribute("href", "/run-overview");
     await expect.element(screen.getByText("命令已下发")).toBeVisible();
     await expect.element(screen.getByText("配置 v2 已审批 · skills 8 · MCP 3").first()).toBeVisible();
+    expect(readyArticle.element().textContent).not.toContain("角色配置");
+    expect(readyArticle.element().textContent).not.toContain("能力与策略");
     await expect
       .element(screen.getByRole("link", { exact: true, name: "详情" }))
       .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");

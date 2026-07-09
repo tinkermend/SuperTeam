@@ -65,6 +65,14 @@ const employee = {
   permission_policy: {},
   context_policy: {},
   approval_policy: {},
+  persona_memory_markdown: "# 人格画像\n证据优先",
+  capability_bindings: {
+    skills: ["incident-diagnosis"],
+    mcp_servers: ["postgres-readonly"],
+    external_capabilities: [],
+    environment_variable_refs: ["PG_DSN"],
+  },
+  budget_policy: {},
   risk_level: "medium",
   created_at: "2026-06-07T00:00:00Z",
   updated_at: "2026-06-07T00:00:00Z",
@@ -170,13 +178,15 @@ describe("EmployeeConfigView", () => {
     );
 
     await expect.element(screen.getByText(employee.name)).toBeVisible();
-    await expect.element(screen.getByText("配置员工技能、策略和输出契约")).toBeVisible();
+    await expect.element(screen.getByText("配置员工人格记忆、能力绑定和预算策略")).toBeVisible();
     await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
-    await expect.element(screen.getByLabelText("Role Profile (JSON)")).toBeVisible();
-    await expect.element(screen.getByLabelText("Constitution Addendum (JSON)")).toBeVisible();
+    expect(screen.getByText("角色配置").query()).toBeNull();
+    expect(screen.getByText("能力与策略").query()).toBeNull();
+    await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
+    await expect.element(screen.getByLabelText("能力绑定")).toBeVisible();
   });
 
-  it("submits changed advanced JSON config revision on save", async () => {
+  it("submits persona memory config revision on save", async () => {
     const queryClient = createQueryClient();
     const fetcher = createEmployeeConfigFetcher();
 
@@ -192,13 +202,13 @@ describe("EmployeeConfigView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("Role Profile (JSON)"), '{"title":"analyst"}');
+    await userEvent.fill(screen.getByLabelText("人格记忆.md"), "# 人格画像\n需求拆解优先");
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
     await expect.element(screen.getByText("配置已保存")).toBeVisible();
 
     const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
     expect(body).toEqual({
-      role_profile: { title: "analyst" },
+      persona_memory_markdown: "# 人格画像\n需求拆解优先",
       status: "draft",
     });
   });
@@ -319,10 +329,10 @@ describe("EmployeeConfigView", () => {
     );
 
     await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
-    await userEvent.fill(screen.getByLabelText("Role Profile (JSON)"), '{"title":');
+    await userEvent.fill(screen.getByLabelText("能力绑定"), '{"skills":');
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
 
-    await expect.element(screen.getByText("Role Profile 必须是有效 JSON")).toBeVisible();
+    await expect.element(screen.getByText("能力绑定必须是有效 JSON object")).toBeVisible();
     const postCall = fetcher.mock.calls.find(
       ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
     );

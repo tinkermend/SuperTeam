@@ -34,6 +34,9 @@ export type DigitalEmployee = {
   permission_policy: Record<string, unknown>;
   context_policy: Record<string, unknown>;
   approval_policy: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
+  budget_policy?: BudgetPolicy;
   risk_level: string;
   metadata?: Record<string, unknown> & {
     avatar?: Record<string, unknown>;
