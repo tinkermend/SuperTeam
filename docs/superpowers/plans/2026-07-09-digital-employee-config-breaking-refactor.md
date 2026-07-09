@@ -85,7 +85,6 @@ func TestDigitalEmployeeConfigFinalModelMigration(t *testing.T) {
 		"DELETE FROM digital_employee_workspace_file_revisions",
 		"DELETE FROM digital_employee_workspace_files",
 		"DELETE FROM digital_employee_execution_instances",
-		"DELETE FROM digital_employee_effective_configs",
 		"DELETE FROM digital_employee_config_revisions",
 		"DELETE FROM digital_employees",
 		"ADD COLUMN IF NOT EXISTS persona_memory_markdown TEXT NOT NULL DEFAULT ''",
@@ -166,7 +165,6 @@ WHERE digital_employee_id IS NOT NULL;
 DELETE FROM provider_sessions
 WHERE digital_employee_id IS NOT NULL;
 DELETE FROM digital_employee_execution_instances;
-DELETE FROM digital_employee_effective_configs;
 DELETE FROM digital_employee_config_revisions;
 DELETE FROM digital_employees;
 
@@ -188,13 +186,58 @@ COMMENT ON COLUMN digital_employee_config_revisions.capability_bindings IS '数�
 COMMENT ON COLUMN digital_employee_config_revisions.budget_policy IS '数字员工预算策略，包含每日 token 上限；空对象表示无预算上限';
 ```
 
-If implementation finds a referenced table does not exist in the current branch, first verify the concrete table inventory:
+Before keeping any destructive `DELETE`, verify the table exists in the post-migration dev schema, not only in historical migration files. A table can be created in an early migration and dropped later.
+
+Prefer a live schema check against the intended development database:
 
 ```bash
-rg -n "CREATE TABLE .*(digital_employee_environment_variables|skill_installations|digital_employee_mcp_bindings_v2|digital_employee_mcp_bindings|skill_agent_bindings|project_employee_node_affinity|project_task_attempts|project_tasks|task_runs|digital_employee_workspace_file_syncs|digital_employee_workspace_file_revisions|digital_employee_workspace_files|runtime_command_receipts|provider_session_events|provider_sessions|digital_employee_execution_instances|digital_employee_effective_configs|digital_employee_config_revisions|digital_employees)" apps/control-plane/internal/storage/migrations
+DEV_DATABASE_URL="$(
+  awk '
+    /^[A-Za-z]/ { section=$1 }
+    section=="postgres:" && $1=="url:" {
+      line=$0
+      sub(/^[^"]*"/, "", line)
+      sub(/".*$/, "", line)
+      print line
+      exit
+    }
+  ' apps/control-plane/config/config.yaml
+)"
+test -n "$DEV_DATABASE_URL"
+psql "$DEV_DATABASE_URL" -Atc "
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN (
+    'digital_employee_environment_variables',
+    'skill_installations',
+    'digital_employee_mcp_bindings_v2',
+    'digital_employee_mcp_bindings',
+    'skill_agent_bindings',
+    'project_employee_node_affinity',
+    'project_task_attempts',
+    'project_tasks',
+    'task_runs',
+    'digital_employee_workspace_file_syncs',
+    'digital_employee_workspace_file_revisions',
+    'digital_employee_workspace_files',
+    'runtime_command_receipts',
+    'provider_session_events',
+    'provider_sessions',
+    'digital_employee_execution_instances',
+    'digital_employee_config_revisions',
+    'digital_employees'
+  )
+ORDER BY table_name;"
 ```
 
-Then remove a `DELETE` only when that table is genuinely absent from the current branch.
+If a live database is unavailable during Task 1 implementation, validate net existence by reading both creates and drops:
+
+```bash
+rg -n "CREATE TABLE.*digital_employee_|DROP TABLE IF EXISTS digital_employee_|CREATE TABLE.*(skill_installations|skill_agent_bindings|project_employee_node_affinity|project_task_attempts|project_tasks|task_runs|runtime_command_receipts|provider_session_events|provider_sessions)|DROP TABLE IF EXISTS (skill_installations|skill_agent_bindings|project_employee_node_affinity|project_task_attempts|project_tasks|task_runs|runtime_command_receipts|provider_session_events|provider_sessions)" apps/control-plane/internal/storage/migrations
+```
+
+Then remove a `DELETE` when the table is genuinely absent after the latest migration. Do not add `DELETE FROM digital_employee_effective_configs`; that table was removed by migration `047_drop_team_governance_and_effective_config.sql`.
 
 - [ ] **Step 4: Run the migration test**
 
