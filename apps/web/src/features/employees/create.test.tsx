@@ -87,6 +87,7 @@ function createOptionsFixture({
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
   teamConfigOverrides,
+  templateCapabilityBindingsOverrides,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -97,6 +98,7 @@ function createOptionsFixture({
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
   teamConfigOverrides?: Record<string, unknown>;
+  templateCapabilityBindingsOverrides?: Record<string, unknown>;
 } = {}) {
   const firstRuntimeSessionInactive = runtimeAvailability === "session-inactive";
   const firstRuntimeAvailable = runtimeAvailability === "all";
@@ -184,7 +186,7 @@ function createOptionsFixture({
         capability_bindings: {
           skills: ["sql-review"],
           mcp_servers: ["postgres"],
-          provider_types: ["codex"],
+          ...templateCapabilityBindingsOverrides,
         },
         budget_policy: {},
         metadata: { title: "数据库管理员" },
@@ -203,7 +205,6 @@ function createOptionsFixture({
               capability_bindings: {
                 skills: ["frontend-implementation"],
                 mcp_servers: ["browser"],
-                provider_types: ["codex"],
               },
               budget_policy: {},
               metadata: { title: "前端开发" },
@@ -274,6 +275,7 @@ function createWizardFetcher({
   createOptionsErrorForTeamId,
   pendingCreateOptionsForTeamId,
   teamConfigOverrides,
+  templateCapabilityBindingsOverrides,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -287,6 +289,7 @@ function createWizardFetcher({
   createOptionsErrorForTeamId?: string;
   pendingCreateOptionsForTeamId?: string;
   teamConfigOverrides?: Record<string, unknown>;
+  templateCapabilityBindingsOverrides?: Record<string, unknown>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -323,6 +326,7 @@ function createWizardFetcher({
           runtimeCount,
           sameRuntimeNodeProviders,
           teamConfigOverrides,
+          templateCapabilityBindingsOverrides,
         }),
       );
     }
@@ -712,7 +716,6 @@ describe("CreateEmployeeView", () => {
       capability_bindings: {
         skills: [],
         mcp_servers: [],
-        provider_types: ["codex"],
       },
       context_policy: {},
       approval_policy: { required: true },
@@ -889,7 +892,13 @@ describe("CreateEmployeeView", () => {
   });
 
   it("keeps template creation seeded with template defaults without repeating inherited baseline bindings", async () => {
-    const fetcher = createWizardFetcher();
+    const fetcher = createWizardFetcher({
+      templateCapabilityBindingsOverrides: {
+        external_capabilities: ["deploy"],
+        environment_variable_refs: ["PG_DSN"],
+        provider_types: ["codex"],
+      },
+    });
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -907,9 +916,10 @@ describe("CreateEmployeeView", () => {
 
     const body = requestCreateBody(fetcher);
     expect(body.capability_bindings).toEqual({
+      external_capabilities: ["deploy"],
+      environment_variable_refs: ["PG_DSN"],
       skills: [],
       mcp_servers: [],
-      provider_types: ["codex"],
     });
     expect(body.context_policy).toEqual({});
     expect(body.approval_policy).toEqual({ required: true });
@@ -963,7 +973,6 @@ describe("CreateEmployeeView", () => {
     expect(body.capability_bindings).toEqual({
       skills: ["incident-diagnosis"],
       mcp_servers: [],
-      provider_types: ["codex"],
     });
   });
 

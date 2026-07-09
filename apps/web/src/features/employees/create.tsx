@@ -1724,7 +1724,7 @@ function applyTypeDefaults(
   return {
     ...current,
     approval_policy: policyDefaults?.approval_policy ?? {},
-    capability_bindings: structuredCloneSafe(typeOption.capability_bindings ?? {}),
+    capability_bindings: capabilityBindingDefaults(typeOption.capability_bindings),
     capability_binding_draft: {
       mcp_servers: stringList(typeOption.capability_bindings?.mcp_servers),
       skills: stringList(typeOption.capability_bindings?.skills),
@@ -1782,10 +1782,23 @@ function capabilityBindingsFromDraft(
   options: DigitalEmployeeCreateOptions | undefined,
 ): Record<string, unknown> {
   const extension = employeeExtensionCapabilityBindings(draft.capability_binding_draft, options);
-  const bindings = structuredCloneSafe(draft.capability_bindings);
+  const bindings = capabilityBindingDefaults(draft.capability_bindings);
 
   bindings.skills = uniqueStringList(extension.skills);
   bindings.mcp_servers = uniqueStringList(extension.mcp_servers);
+
+  return bindings;
+}
+
+function capabilityBindingDefaults(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  const source = structuredCloneSafe(value ?? {});
+  const bindings: Record<string, unknown> = {};
+
+  for (const key of ["external_capabilities", "environment_variable_refs"]) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      bindings[key] = source[key];
+    }
+  }
 
   return bindings;
 }

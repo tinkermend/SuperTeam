@@ -70,7 +70,6 @@ func TestBuildDigitalEmployeePlanningProfileTreatsEmptySourceFactsAsMissing(t *t
 			"skills":                []any{"", "   "},
 			"mcp_servers":           []any{},
 			"external_capabilities": []any{123},
-			"provider_types":        []any{"   "},
 		},
 	}, true)
 
@@ -101,7 +100,6 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 			"skills":                []any{"sql.analysis", "data.quality.check"},
 			"mcp_servers":           []any{"postgres.readonly"},
 			"external_capabilities": []any{"database.read"},
-			"provider_types":        []any{"codex"},
 		},
 		PermissionPolicy: map[string]any{
 			"grants": []any{"database.read:dev_database"},
@@ -171,17 +169,36 @@ func TestBuildDigitalEmployeePlanningProfileMarksDispatchNotReadyWithoutHardFail
 		DigitalEmployeeID: employeeID,
 		EmployeeType:      "implementation",
 		EmployeeStatus:    "active",
-		CapabilityBindings: map[string]any{
-			"provider_types": []any{"codex"},
-		},
-		ProviderType:    "codex",
-		ExecutionStatus: "ready",
+		ProviderType:      "codex",
+		ExecutionStatus:   "ready",
 	}, false)
 
 	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
 	require.Equal(t, "not_ready", profile.RuntimeRequirements.DispatchReadinessStatus)
 	require.Equal(t, []string{"runtime_not_ready"}, profile.RuntimeRequirements.DispatchBlockingReasons)
 	require.Empty(t, profile.HardFailures)
+}
+
+func TestBuildDigitalEmployeePlanningProfileIgnoresProviderTypesInCapabilityBindings(t *testing.T) {
+	employeeID := uuid.New()
+	member := project.ProjectMember{
+		PrincipalID:         employeeID,
+		ProjectRole:         project.ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("执行员工"),
+	}
+
+	profile := BuildDigitalEmployeePlanningProfile(member, DigitalEmployeePlanningProfileSourceRecord{
+		DigitalEmployeeID: employeeID,
+		CapabilityBindings: map[string]any{
+			"provider_types": []any{"codex"},
+		},
+	}, true)
+
+	require.Empty(t, profile.RuntimeRequirements.ProviderTypes)
+	require.Equal(t, "unknown", profile.RuntimeRequirements.ProviderStatus)
+	require.Equal(t, "unknown", profile.ProfileFreshness.SourceState)
+	require.Contains(t, profile.SelectionWarnings, "profile_source_missing")
 }
 
 func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {

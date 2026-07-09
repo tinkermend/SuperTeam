@@ -97,21 +97,21 @@ type PlanningProfileFreshness struct {
 }
 
 type DigitalEmployeePlanningProfileSourceRecord struct {
-	DigitalEmployeeID       uuid.UUID      `json:"digital_employee_id"`
-	EmployeeType            string         `json:"employee_type,omitempty"`
-	Role                    string         `json:"role,omitempty"`
-	Description             string         `json:"description,omitempty"`
-	PersonaMemoryMarkdown   string         `json:"persona_memory_markdown,omitempty"`
-	EmployeeStatus          string         `json:"employee_status,omitempty"`
-	CapabilityBindings      map[string]any `json:"capability_bindings,omitempty"`
-	PermissionPolicy        map[string]any `json:"permission_policy,omitempty"`
-	ContextPolicy           map[string]any `json:"context_policy,omitempty"`
-	RuntimeNodeID           uuid.UUID      `json:"runtime_node_id,omitempty"`
-	ProviderType            string         `json:"provider_type,omitempty"`
-	ExecutionStatus         string         `json:"execution_status,omitempty"`
-	LoadState               map[string]any `json:"load_state,omitempty"`
-	ReliabilitySignals      map[string]any `json:"reliability_signals,omitempty"`
-	FetchedAt               time.Time      `json:"fetched_at,omitempty"`
+	DigitalEmployeeID     uuid.UUID      `json:"digital_employee_id"`
+	EmployeeType          string         `json:"employee_type,omitempty"`
+	Role                  string         `json:"role,omitempty"`
+	Description           string         `json:"description,omitempty"`
+	PersonaMemoryMarkdown string         `json:"persona_memory_markdown,omitempty"`
+	EmployeeStatus        string         `json:"employee_status,omitempty"`
+	CapabilityBindings    map[string]any `json:"capability_bindings,omitempty"`
+	PermissionPolicy      map[string]any `json:"permission_policy,omitempty"`
+	ContextPolicy         map[string]any `json:"context_policy,omitempty"`
+	RuntimeNodeID         uuid.UUID      `json:"runtime_node_id,omitempty"`
+	ProviderType          string         `json:"provider_type,omitempty"`
+	ExecutionStatus       string         `json:"execution_status,omitempty"`
+	LoadState             map[string]any `json:"load_state,omitempty"`
+	ReliabilitySignals    map[string]any `json:"reliability_signals,omitempty"`
+	FetchedAt             time.Time      `json:"fetched_at,omitempty"`
 }
 
 type PlanningTaskRequirements struct {
@@ -288,9 +288,7 @@ func buildPlanningToolBindings(capabilityBindings map[string]any) []PlanningTool
 }
 
 func buildPlanningRuntimeRequirements(source DigitalEmployeePlanningProfileSourceRecord, runtimeReady bool, sourceMissing bool) PlanningRuntimeRequirements {
-	requirements := PlanningRuntimeRequirements{
-		ProviderTypes: stringSliceFromMap(source.CapabilityBindings, "provider_types"),
-	}
+	requirements := PlanningRuntimeRequirements{}
 	if !runtimeReady {
 		requirements.DispatchReadinessStatus = "not_ready"
 		requirements.DispatchBlockingReasons = []string{"runtime_not_ready"}
@@ -534,8 +532,7 @@ func planningProfileSourceHasFacts(source DigitalEmployeePlanningProfileSourceRe
 	}
 	if len(buildPlanningCapabilities(source.CapabilityBindings)) > 0 ||
 		len(buildPlanningSkills(source.CapabilityBindings)) > 0 ||
-		len(buildPlanningToolBindings(source.CapabilityBindings)) > 0 ||
-		len(stringSliceFromMap(source.CapabilityBindings, "provider_types")) > 0 {
+		len(buildPlanningToolBindings(source.CapabilityBindings)) > 0 {
 		return true
 	}
 	if len(buildPlanningPermissions(source.PermissionPolicy)) > 0 {

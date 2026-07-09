@@ -136,7 +136,6 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 			EmployeeStatus:    "ready",
 			CapabilityBindings: map[string]any{
 				"external_capabilities": []any{"implementation"},
-				"provider_types":        []any{"codex"},
 			},
 			RuntimeNodeID:   runtimeNodeID,
 			ProviderType:    "codex",
@@ -210,7 +209,6 @@ func TestLoadProjectCoordinationSnapshotKeepsPlannableEmployeesWhenRuntimeNotRea
 			EmployeeStatus:    "ready",
 			CapabilityBindings: map[string]any{
 				"external_capabilities": []any{"implementation"},
-				"provider_types":        []any{"codex"},
 			},
 			RuntimeNodeID:   runtimeNodeID,
 			ProviderType:    "codex",
@@ -270,7 +268,6 @@ func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 				CapabilityBindings: map[string]any{
 					"external_capabilities": []any{"database.read"},
 					"skills":                []any{"sql.analysis"},
-					"provider_types":        []any{"codex"},
 				},
 				ExecutionStatus: "ready",
 			},
