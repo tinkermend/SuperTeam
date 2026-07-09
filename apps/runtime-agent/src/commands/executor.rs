@@ -1086,10 +1086,7 @@ fn materialize_persona_memory(
     agent_home_dir: &Path,
     persona_memory: Option<&str>,
 ) -> anyhow::Result<()> {
-    let Some(markdown) = persona_memory
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(markdown) = persona_memory.filter(|value| !value.trim().is_empty()) else {
         return Ok(());
     };
 
