@@ -2345,10 +2345,14 @@ fn normalize_verification_evidence_refs(
             object.insert("summary".to_string(), serde_json::Value::String(evidence));
         }
     }
-    if let Some(refs) = object
+    let mut refs: Vec<serde_json::Value> = object
         .remove("evidence_refs")
         .and_then(|value| value.as_array().cloned())
-    {
+        .unwrap_or_default();
+    if let Some(singular) = object.remove("evidence_ref") {
+        refs.push(singular);
+    }
+    if !refs.is_empty() {
         object.insert(
             "evidence_refs".to_string(),
             serde_json::Value::Array(normalized_result_refs(&refs, "evidence")),
@@ -3244,6 +3248,65 @@ mod tests {
                     }
                 ]
             })]
+        );
+    }
+
+    #[test]
+    fn parsed_result_contract_normalizes_verification_singular_evidence_ref() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "verification": [
+                    {
+                        "type": "input_review",
+                        "evidence_ref": "user_provided_demand_content",
+                        "summary": "Confirmed the output is a short confirmation string matching the demand content."
+                    },
+                    {
+                        "type": "object_review",
+                        "evidence_ref": {"ref": "evidence://object-ref", "summary": "object-typed singular evidence"},
+                        "evidence_refs": ["verification.already_plural"]
+                    }
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert!(
+            contract.verification[0].get("evidence_ref").is_none(),
+            "singular evidence_ref must be removed from verification entry: {}",
+            contract.verification[0]
+        );
+        assert_eq!(
+            contract.verification[0]["evidence_refs"],
+            json!([
+                {
+                    "type": "evidence",
+                    "ref": "user_provided_demand_content"
+                }
+            ])
+        );
+        assert!(
+            contract.verification[1].get("evidence_ref").is_none(),
+            "singular evidence_ref must be removed when plural evidence_refs is also present: {}",
+            contract.verification[1]
+        );
+        assert_eq!(
+            contract.verification[1]["evidence_refs"],
+            json!([
+                {
+                    "type": "evidence",
+                    "ref": "verification.already_plural"
+                },
+                {
+                    "type": "evidence",
+                    "ref": "evidence://object-ref",
+                    "summary": "object-typed singular evidence"
+                }
+            ])
         );
     }
 
