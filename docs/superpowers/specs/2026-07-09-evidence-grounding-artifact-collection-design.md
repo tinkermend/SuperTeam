@@ -46,23 +46,49 @@ artifact_ref_id     | (NULL)
 
 因此 `/projects/{id}/artifacts` 恒空，`project_evidence_refs.artifact_ref_id` 恒 NULL——证据与产出物之间那条链根本没有接上。
 
-### 1.4 唯一的第三方事实源，躺在执行机磁盘上
+### 1.4 第三方事实源被 parser 丢弃，从未存在于任何一层
 
-`apps/runtime-agent/src/providers/claude.rs:29` 以 `--output-format stream-json` 运行 claude-code；`apps/runtime-agent/src/runs.rs:278` `append_event` 把完整的 provider 事件流 append 进 `{log_dir}/{run_id}/events.jsonl`。
+**这是本 spec 最根本的发现。**
 
-这个文件里是每一次 tool call 和每一次 **tool result**——`pnpm test` 的真实退出码、命令的真实 stdout、读了哪些文件、改了哪几行。**它是全链路里唯一由工具而非数字员工产生的事实**，数字员工无法伪造其中的退出码。
+`apps/runtime-agent/src/providers/claude.rs:29` 以 `--output-format stream-json` 运行 claude-code。它的 stdout 里确实含有 `tool_use` 与 `tool_result`——包括命令的真实退出码。但 `parse_claude_event`（`claude.rs:78`）只有三个 match 分支：
 
-它从不上传、从不清理、从不离开节点。
+| 输入 | 处理 |
+|---|---|
+| `"system"` | → `SessionStarted` |
+| `"assistant"` | 只取 content 中**第一个含 `text` 的 block**；同消息内的 `tool_use` block 丢弃 |
+| `"result"` | → `TurnCompleted` |
+| `"user"` | **没有这个分支** → `_ => Ok(None)` 丢弃。claude-code 的 `tool_result` 正是包在 `type:"user"` 消息里 |
+
+原始 stdout 行由 `providers/mod.rs:120` 的 `BufReader::lines()` 逐行喂给 parser，返回 `None` 即就地丢弃，**从不落盘**。
+
+因此：
+
+- `{log_dir}/{run_id}/events.jsonl`（`runs.rs:278`）保存的是**解析后**的 `ProviderEvent` 流，同样不含 tool 事件。
+- 控制平面的 `execution_ledger_events` 中 97 条 `provider.event` 只有四种：`session_started`(18) / `text_delta`(43) / `turn_completed`(18) / `run_completed`(18)。**`tool_use`、`tool_result` 零条。**
+- `events.rs:24-30` 早已定义 `ProviderEvent::ToolStarted` / `ToolCompleted`，`executor.rs:1518`、`1527` 早已在消费它们——**没有任何 provider adapter 生产过**。下游管道全通，源头没接。
+
+现实后果，可在库中直接看到：某条 `run_completed` 的 `output_summary` 是模型自己写的
+
+> 「证据：命令退出码 `0`；stdout 为 `final-sanity-20260709014431`。」
+
+**那个 `0` 是数字员工声称的。平台从未见过真正的退出码。**
 
 这条决定了本 spec 中「证据」的定义：
 
 | 候选 | 由谁产生 | 是否构成证据 |
 |---|---|---|
 | result contract 的 `summary` | 数字员工自己 | 否，自证 |
-| `events.jsonl` 事件流 | 工具执行结果 | 是 |
+| `text_delta` 事件（模型旁白） | 数字员工自己 | 否，自证 |
+| provider 原始 stdout 中的 `tool_result` | claude-code 进程写出的字节 | **是**，数字员工无法伪造 |
 | `git diff` | 产出物本身，可独立复核 | 是 |
 
 **证据 = 不由声称者自己产生、且可独立复核的事实。** 一个只有 `conclusion.md` 的任务，即使 artifact 计数非零，证据仍然为零。
+
+推论：**在停止丢弃 tool_result 之前，采集任何东西上传对象存储都不产生证据。**
+
+修复 parser、捕获 tool 事件、以及由此带来的 Web 执行过程显示，构成一个独立且更靠前的问题，拆分至
+`docs/superpowers/specs/2026-07-09-provider-transcript-tool-event-capture-design.md`。
+本 spec 依赖其产物 `raw.jsonl`（见 4.0），不再重复其设计。
 
 ### 1.5 已有但未接线的基础设施
 
@@ -146,6 +172,19 @@ Control Plane 收到 result 时内容已在对象存储中，可以在同一个 
 
 ## 4. 组件设计
 
+### 4.0 前置依赖：Provider Transcript 与 Tool 事件捕获
+
+本 spec **依赖** `docs/superpowers/specs/2026-07-09-provider-transcript-tool-event-capture-design.md` 先行落地。
+
+在 tool 事件被 parser 丢弃的前提下（1.4），采集任何东西上传对象存储都不产生证据。该 spec 负责：
+
+- `ProviderParser` 签名改为返回 `Vec<ProviderEvent>`
+- `parse_claude_event` 补全 `tool_use` / `tool_result` 解析，`ProviderEvent::ToolStarted` / `ToolCompleted` 扩字段
+- provider 原始 stdout 逐行落 `{log_dir}/{run_id}/raw.jsonl`
+- tool 事件经既有 `execution_ledger_events` + WS 通路流向 Web
+
+本 spec 只消费其产物：`raw.jsonl` 即 4.1 中 `execution_transcript` 所采集、上传的对象。
+
 ### 4.1 Runtime：`artifacts.rs` 重写
 
 `ArtifactCollector` 改为不持有 S3Client，而是持有 Control Plane client：
@@ -153,7 +192,7 @@ Control Plane 收到 result 时内容已在对象存储中，可以在同一个 
 ```rust
 pub struct CollectedArtifact {
     pub artifact_type: String,   // execution_transcript | diff | declared | conclusion
-    pub name: String,            // events.jsonl / changes.diff / conclusion.md / 相对路径
+    pub name: String,            // raw.jsonl / changes.diff / conclusion.md / 相对路径
     pub sha256: String,          // hex，脱敏后字节的哈希
     pub size_bytes: u64,
     pub content_type: String,
@@ -164,7 +203,7 @@ pub struct CollectedArtifact {
 
 职责：
 
-1. `collect(workspace_path, run_id, contract) -> Vec<(CollectedArtifact, Bytes)>`（`run_id` 用于定位 `{log_dir}/{run_id}/events.jsonl`）
+1. `collect(workspace_path, run_id, contract) -> Vec<(CollectedArtifact, Bytes)>`（`run_id` 用于定位 `{log_dir}/{run_id}/raw.jsonl`）
 2. 对每个 artifact 调 `POST /api/v1/runtime/artifacts/presign` 换取 PUT URL（服务端返回 `already_exists: true` 时跳过上传）
 3. PUT 到对象存储，带指数退避重试
 4. 返回 `artifact_refs` JSON 数组供 result contract 使用
@@ -173,7 +212,7 @@ pub struct CollectedArtifact {
 
 | artifact_type | 来源 | 条件 | 是否构成证据 |
 |---|---|---|---|
-| `execution_transcript` | `{log_dir}/{run_id}/events.jsonl` | 总是（provider 跑过就有） | 是 |
+| `execution_transcript` | `{log_dir}/{run_id}/raw.jsonl`（由前置 spec 产出） | 总是（provider 跑过就有） | 是 |
 | `diff` | worktree 内 `git diff` 输出落成 `changes.diff` | 存在 git worktree 且有变更 | 是 |
 | `declared` | `handoff_contract.artifact_globs` 按 glob 收集 | 该字段非空时 | 是 |
 | `conclusion` | result contract 的 `summary` 落成 `conclusion.md` | 总是 | **否**，自证，仅便于人类阅读 |
@@ -190,7 +229,7 @@ transcript 常见为数百 KB 到数 MB，通常在单文件上限内。超过 1
 
 ### 4.1.1 Transcript 脱敏
 
-`events.jsonl` 可能包含 tool result 里回显的环境变量、token、密钥。上传前 runtime 按行做正则脱敏：
+`raw.jsonl` 可能包含 tool result 里回显的环境变量、token、密钥。上传前 runtime 按行做正则脱敏：
 
 - 已知敏感 env 变量名的值（从 provider 进程环境快照取键名，替换其值）
 - 常见凭证形态：`sk-[A-Za-z0-9]{20,}`、`ghp_*`、AWS AKIA/ASIA 前缀、`Bearer <token>`、JWT 三段式
@@ -296,7 +335,7 @@ Auth: console user
 | 任务总量超 200MB | 按 `execution_transcript` > `diff` > `declared` > `conclusion` 优先级采集直到触顶，其余文件名记入 `metadata.skipped_files`。**证据优先于自述**：`conclusion` 是唯一可被完全丢弃的类型 |
 | `HeadObject` 在物化时发现对象不存在 | 事务回滚，任务不完成 |
 | 对象存储整体不可用 | 任务无法完成，attempt 重试；持续失败最终由现有租约超时逻辑处理 |
-| `events.jsonl` 不存在（provider 未产生任何事件） | 零证据完成 → 事务回滚，任务不完成 |
+| `raw.jsonl` 不存在（provider 未产生任何输出） | 零证据完成 → 事务回滚，任务不完成 |
 | 脱敏正则命中 | 替换为 `[REDACTED:{reason}]`，`metadata.redaction_count` 递增；不阻断上传 |
 
 ## 6. 测试策略
