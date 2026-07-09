@@ -334,7 +334,6 @@ describe("digital employee API", () => {
       policy_defaults: {
         permission_policy: { mode: "least_privilege" },
         approval_policy: { high_risk: "required" },
-        runtime_selector: { strategy: "pinned" },
         workspace_policy: { mode: "ephemeral" },
         session_policy: { reuse: false },
         metadata: { source: "team_config" },
