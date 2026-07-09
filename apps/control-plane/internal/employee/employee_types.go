@@ -7,16 +7,17 @@ package employee
 // offer a fully custom starting point.
 func customAgentEmployeeTypeDefinition() EmployeeTypeDefinition {
 	return EmployeeTypeDefinition{
-		Type:                         "custom_agent",
-		Label:                        "自定义数字员工",
-		Description:                  "由用户直接定义职责定位、能力扩展、治理策略和执行器类型的自定义数字员工。",
-		DefaultRole:                  "",
-		RecommendedSkills:            []string{},
-		RecommendedMCPServers:        []string{},
-		RecommendedProviderTypes:     []string{"codex", "opencode", "claude-code"},
-		DefaultCapabilitySelection:   map[string]any{},
-		DefaultContextPolicyOverride: map[string]any{},
-		DefaultApprovalPolicy:        map[string]any{},
+		Type:                     "custom_agent",
+		Label:                    "自定义数字员工",
+		Description:              "由用户直接定义职责定位、能力扩展、治理策略和执行器类型的自定义数字员工。",
+		DefaultRole:              "",
+		RecommendedSkills:        []string{},
+		RecommendedMCPServers:    []string{},
+		RecommendedProviderTypes: []string{"codex", "opencode", "claude-code"},
+		PersonaMemoryMarkdown:    "",
+		CapabilityBindings:       map[string]any{},
+		BudgetPolicy:             map[string]any{},
+		DefaultApprovalPolicy:    map[string]any{},
 		Metadata: map[string]any{
 			"creation_mode": "blank_custom",
 			"system_type":   true,

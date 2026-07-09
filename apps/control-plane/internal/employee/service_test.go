@@ -33,7 +33,9 @@ func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *tes
 	require.Empty(t, definition.DefaultRole)
 	require.Empty(t, definition.RecommendedSkills)
 	require.Empty(t, definition.RecommendedMCPServers)
-	require.Empty(t, definition.DefaultCapabilitySelection)
+	require.Empty(t, definition.PersonaMemoryMarkdown)
+	require.Empty(t, definition.CapabilityBindings)
+	require.Empty(t, definition.BudgetPolicy)
 	require.Contains(t, definition.Metadata, "creation_mode")
 	require.Equal(t, "blank_custom", definition.Metadata["creation_mode"])
 }
@@ -177,6 +179,19 @@ func TestGetCreateOptionsSupportsTeamLessWithBuiltInDefaults(t *testing.T) {
 	}
 	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
 		t.Fatalf("expected team-less runtime provider option, got %#v", options.RuntimeProviderOptions)
+	}
+	if len(options.EmployeeTypes) == 0 {
+		t.Fatalf("expected employee types, got %#v", options.EmployeeTypes)
+	}
+	definition := options.EmployeeTypes[0]
+	if definition.CapabilityBindings == nil {
+		t.Fatalf("expected create-options employee type capability bindings to use final field, got %#v", definition.CapabilityBindings)
+	}
+	if definition.BudgetPolicy == nil {
+		t.Fatalf("expected create-options employee type budget policy to use final field, got %#v", definition.BudgetPolicy)
+	}
+	if options.PolicyDefaults.WorkspacePolicy == nil || options.PolicyDefaults.SessionPolicy == nil {
+		t.Fatalf("expected create-options policy defaults to keep final fields, got %#v", options.PolicyDefaults)
 	}
 }
 

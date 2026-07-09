@@ -30,17 +30,18 @@ type EmployeeTemplateRecord struct {
 // shape consumed by the create-employee wizard and creation-time defaults.
 func (r EmployeeTemplateRecord) ToDefinition() EmployeeTypeDefinition {
 	return EmployeeTypeDefinition{
-		Type:                         r.Type,
-		Label:                        r.Label,
-		Description:                  r.Description,
-		DefaultRole:                  r.DefaultRole,
-		RecommendedSkills:            cloneStringSlice(r.RecommendedSkills),
-		RecommendedMCPServers:        cloneStringSlice(r.RecommendedMCPServers),
-		RecommendedProviderTypes:     cloneStringSlice(r.RecommendedProviderTypes),
-		DefaultCapabilitySelection:   cloneEmployeeTypeMap(r.DefaultCapabilitySelection),
-		DefaultContextPolicyOverride: cloneEmployeeTypeMap(r.DefaultContextPolicyOverride),
-		DefaultApprovalPolicy:        cloneEmployeeTypeMap(r.DefaultApprovalPolicy),
-		Metadata:                     cloneEmployeeTypeMap(r.Metadata),
+		Type:                     r.Type,
+		Label:                    r.Label,
+		Description:              r.Description,
+		DefaultRole:              r.DefaultRole,
+		RecommendedSkills:        cloneStringSlice(r.RecommendedSkills),
+		RecommendedMCPServers:    cloneStringSlice(r.RecommendedMCPServers),
+		RecommendedProviderTypes: cloneStringSlice(r.RecommendedProviderTypes),
+		PersonaMemoryMarkdown:    "",
+		CapabilityBindings:       legacyDefaultCapabilitySelectionToBindings(r.DefaultCapabilitySelection),
+		BudgetPolicy:             map[string]any{},
+		DefaultApprovalPolicy:    cloneEmployeeTypeMap(r.DefaultApprovalPolicy),
+		Metadata:                 cloneEmployeeTypeMap(r.Metadata),
 	}
 }
 

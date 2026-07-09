@@ -1014,17 +1014,18 @@ type teamConfigCreateOptionResponse struct {
 }
 
 type employeeTypeOptionResponse struct {
-	Type                         string         `json:"type"`
-	Label                        string         `json:"label"`
-	Description                  string         `json:"description"`
-	DefaultRole                  string         `json:"default_role"`
-	RecommendedSkills            []string       `json:"recommended_skills"`
-	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
-	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
-	Metadata                     map[string]any `json:"metadata"`
+	Type                     string         `json:"type"`
+	Label                    string         `json:"label"`
+	Description              string         `json:"description"`
+	DefaultRole              string         `json:"default_role"`
+	RecommendedSkills        []string       `json:"recommended_skills"`
+	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+	CapabilityBindings       map[string]any `json:"capability_bindings"`
+	BudgetPolicy             map[string]any `json:"budget_policy"`
+	DefaultApprovalPolicy    map[string]any `json:"default_approval_policy"`
+	Metadata                 map[string]any `json:"metadata"`
 }
 
 type capabilityOptionsResponse struct {
@@ -1050,14 +1051,11 @@ type runtimeProviderOptionResponse struct {
 }
 
 type policyDefaultsResponse struct {
-	PermissionPolicy      map[string]any `json:"permission_policy"`
-	ContextPolicyOverride map[string]any `json:"context_policy_override"`
-	ApprovalPolicy        map[string]any `json:"approval_policy"`
-	CapabilitySelection   map[string]any `json:"capability_selection"`
-	RuntimeSelector       map[string]any `json:"runtime_selector"`
-	WorkspacePolicy       map[string]any `json:"workspace_policy"`
-	SessionPolicy         map[string]any `json:"session_policy"`
-	Metadata              map[string]any `json:"metadata"`
+	PermissionPolicy map[string]any `json:"permission_policy"`
+	ApprovalPolicy   map[string]any `json:"approval_policy"`
+	WorkspacePolicy  map[string]any `json:"workspace_policy"`
+	SessionPolicy    map[string]any `json:"session_policy"`
+	Metadata         map[string]any `json:"metadata"`
 }
 
 type executionInstanceResponse struct {
@@ -1570,17 +1568,18 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 	employeeTypes := make([]employeeTypeOptionResponse, 0, len(options.EmployeeTypes))
 	for _, definition := range options.EmployeeTypes {
 		employeeTypes = append(employeeTypes, employeeTypeOptionResponse{
-			Type:                         definition.Type,
-			Label:                        definition.Label,
-			Description:                  definition.Description,
-			DefaultRole:                  definition.DefaultRole,
-			RecommendedSkills:            stringSliceForJSON(definition.RecommendedSkills),
-			RecommendedMCPServers:        stringSliceForJSON(definition.RecommendedMCPServers),
-			RecommendedProviderTypes:     stringSliceForJSON(definition.RecommendedProviderTypes),
-			DefaultCapabilitySelection:   cloneMap(definition.DefaultCapabilitySelection),
-			DefaultContextPolicyOverride: cloneMap(definition.DefaultContextPolicyOverride),
-			DefaultApprovalPolicy:        cloneMap(definition.DefaultApprovalPolicy),
-			Metadata:                     cloneMap(definition.Metadata),
+			Type:                     definition.Type,
+			Label:                    definition.Label,
+			Description:              definition.Description,
+			DefaultRole:              definition.DefaultRole,
+			RecommendedSkills:        stringSliceForJSON(definition.RecommendedSkills),
+			RecommendedMCPServers:    stringSliceForJSON(definition.RecommendedMCPServers),
+			RecommendedProviderTypes: stringSliceForJSON(definition.RecommendedProviderTypes),
+			PersonaMemoryMarkdown:    definition.PersonaMemoryMarkdown,
+			CapabilityBindings:       cloneMap(definition.CapabilityBindings),
+			BudgetPolicy:             cloneMap(definition.BudgetPolicy),
+			DefaultApprovalPolicy:    cloneMap(definition.DefaultApprovalPolicy),
+			Metadata:                 cloneMap(definition.Metadata),
 		})
 	}
 	domainChecks := options.CreationChecks
@@ -1614,14 +1613,11 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 		RuntimeProviderOptions: runtimeOptions,
 		CreationChecks:         creationChecks,
 		PolicyDefaults: policyDefaultsResponse{
-			PermissionPolicy:      cloneMap(options.PolicyDefaults.PermissionPolicy),
-			ContextPolicyOverride: cloneMap(options.PolicyDefaults.ContextPolicyOverride),
-			ApprovalPolicy:        cloneMap(options.PolicyDefaults.ApprovalPolicy),
-			CapabilitySelection:   cloneMap(options.PolicyDefaults.CapabilitySelection),
-			RuntimeSelector:       cloneMap(options.PolicyDefaults.RuntimeSelector),
-			WorkspacePolicy:       cloneMap(options.PolicyDefaults.WorkspacePolicy),
-			SessionPolicy:         cloneMap(options.PolicyDefaults.SessionPolicy),
-			Metadata:              cloneMap(options.PolicyDefaults.Metadata),
+			PermissionPolicy: cloneMap(options.PolicyDefaults.PermissionPolicy),
+			ApprovalPolicy:   cloneMap(options.PolicyDefaults.ApprovalPolicy),
+			WorkspacePolicy:  cloneMap(options.PolicyDefaults.WorkspacePolicy),
+			SessionPolicy:    cloneMap(options.PolicyDefaults.SessionPolicy),
+			Metadata:         cloneMap(options.PolicyDefaults.Metadata),
 		},
 	}
 }

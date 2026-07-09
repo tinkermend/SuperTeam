@@ -375,17 +375,18 @@ type UpsertWorkspaceFileStoreRequest struct {
 }
 
 type EmployeeTypeDefinition struct {
-	Type                         string
-	Label                        string
-	Description                  string
-	DefaultRole                  string
-	RecommendedSkills            []string
-	RecommendedMCPServers        []string
-	RecommendedProviderTypes     []string
-	DefaultCapabilitySelection   map[string]any
-	DefaultContextPolicyOverride map[string]any
-	DefaultApprovalPolicy        map[string]any
-	Metadata                     map[string]any
+	Type                     string
+	Label                    string
+	Description              string
+	DefaultRole              string
+	RecommendedSkills        []string
+	RecommendedMCPServers    []string
+	RecommendedProviderTypes []string
+	PersonaMemoryMarkdown    string
+	CapabilityBindings       map[string]any
+	BudgetPolicy             map[string]any
+	DefaultApprovalPolicy    map[string]any
+	Metadata                 map[string]any
 }
 
 type TeamConfigInput struct {
@@ -440,14 +441,11 @@ type CreateOptionCheck struct {
 }
 
 type PolicyDefaults struct {
-	PermissionPolicy      map[string]any
-	ContextPolicyOverride map[string]any
-	ApprovalPolicy        map[string]any
-	CapabilitySelection   map[string]any
-	RuntimeSelector       map[string]any
-	WorkspacePolicy       map[string]any
-	SessionPolicy         map[string]any
-	Metadata              map[string]any
+	PermissionPolicy map[string]any
+	ApprovalPolicy   map[string]any
+	WorkspacePolicy  map[string]any
+	SessionPolicy    map[string]any
+	Metadata         map[string]any
 }
 
 type BudgetPolicy struct {

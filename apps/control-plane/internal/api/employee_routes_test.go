@@ -923,9 +923,12 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			MCPServers   []string       `json:"mcp_servers"`
 		} `json:"team_config"`
 		EmployeeTypes []struct {
-			RecommendedSkills        []string `json:"recommended_skills"`
-			RecommendedMCPServers    []string `json:"recommended_mcp_servers"`
-			RecommendedProviderTypes []string `json:"recommended_provider_types"`
+			RecommendedSkills        []string       `json:"recommended_skills"`
+			RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+			RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+			PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+			CapabilityBindings       map[string]any `json:"capability_bindings"`
+			BudgetPolicy             map[string]any `json:"budget_policy"`
 		} `json:"employee_types"`
 		CapabilityOptions struct {
 			ProviderTypes []string `json:"provider_types"`
@@ -942,8 +945,16 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			Status  string `json:"status"`
 			Message string `json:"message"`
 		} `json:"creation_checks"`
+		PolicyDefaults struct {
+			PermissionPolicy map[string]any `json:"permission_policy"`
+			ApprovalPolicy   map[string]any `json:"approval_policy"`
+			WorkspacePolicy  map[string]any `json:"workspace_policy"`
+			SessionPolicy    map[string]any `json:"session_policy"`
+			Metadata         map[string]any `json:"metadata"`
+		} `json:"policy_defaults"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	bodyJSON := resp.Body.String()
+	if err := json.NewDecoder(strings.NewReader(bodyJSON)).Decode(&body); err != nil {
 		t.Fatalf("decode create options: %v", err)
 	}
 	if body.TeamConfig.TeamID != teamID.String() {
@@ -957,6 +968,15 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_skills", body.EmployeeTypes[0].RecommendedSkills)
 	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_mcp_servers", body.EmployeeTypes[0].RecommendedMCPServers)
 	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_provider_types", body.EmployeeTypes[0].RecommendedProviderTypes)
+	if body.EmployeeTypes[0].PersonaMemoryMarkdown != "" {
+		t.Fatalf("expected create-options employee type persona_memory_markdown default to be empty, got %#v", body.EmployeeTypes[0].PersonaMemoryMarkdown)
+	}
+	if body.EmployeeTypes[0].CapabilityBindings == nil {
+		t.Fatalf("expected create-options employee type capability_bindings to decode as {}, got %#v", body.EmployeeTypes[0].CapabilityBindings)
+	}
+	if body.EmployeeTypes[0].BudgetPolicy == nil {
+		t.Fatalf("expected create-options employee type budget_policy to decode as {}, got %#v", body.EmployeeTypes[0].BudgetPolicy)
+	}
 	assertNonNilEmptyStringSlice(t, "capability_options.provider_types", body.CapabilityOptions.ProviderTypes)
 	assertNonNilEmptyStringSlice(t, "capability_options.skills", body.CapabilityOptions.Skills)
 	assertNonNilEmptyStringSlice(t, "capability_options.mcp_servers", body.CapabilityOptions.MCPServers)
@@ -969,6 +989,15 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	}
 	if body.CreationChecks[3].Status == "blocked" {
 		t.Fatalf("runtime_provider must be advisory, got %#v", body.CreationChecks[3])
+	}
+	if body.PolicyDefaults.PermissionPolicy == nil || body.PolicyDefaults.ApprovalPolicy == nil || body.PolicyDefaults.WorkspacePolicy == nil || body.PolicyDefaults.SessionPolicy == nil || body.PolicyDefaults.Metadata == nil {
+		t.Fatalf("expected final policy_defaults fields to decode as objects, got %#v", body.PolicyDefaults)
+	}
+	if strings.Contains(bodyJSON, "\"default_capability_selection\"") ||
+		strings.Contains(bodyJSON, "\"default_context_policy_override\"") ||
+		strings.Contains(bodyJSON, "\"context_policy_override\"") ||
+		strings.Contains(bodyJSON, "\"capability_selection\"") {
+		t.Fatalf("expected legacy create-options keys to be absent, got %s", bodyJSON)
 	}
 
 	service.createOptions.EmployeeTypes = nil
@@ -1830,14 +1859,11 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 			Available:             true,
 		}},
 		PolicyDefaults: employee.PolicyDefaults{
-			PermissionPolicy:      map[string]any{},
-			ContextPolicyOverride: map[string]any{},
-			ApprovalPolicy:        map[string]any{},
-			CapabilitySelection:   map[string]any{},
-			RuntimeSelector:       map[string]any{},
-			WorkspacePolicy:       map[string]any{},
-			SessionPolicy:         map[string]any{"mode": "reuse_latest"},
-			Metadata:              map[string]any{},
+			PermissionPolicy: map[string]any{},
+			ApprovalPolicy:   map[string]any{},
+			WorkspacePolicy:  map[string]any{},
+			SessionPolicy:    map[string]any{"mode": "reuse_latest"},
+			Metadata:         map[string]any{},
 		},
 	}, nil
 }

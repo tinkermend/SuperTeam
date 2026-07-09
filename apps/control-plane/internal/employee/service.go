@@ -419,14 +419,11 @@ func firstNonEmptyStringList(candidates ...[]string) []string {
 
 func emptyPolicyDefaults() PolicyDefaults {
 	return PolicyDefaults{
-		PermissionPolicy:      map[string]any{},
-		ContextPolicyOverride: map[string]any{},
-		ApprovalPolicy:        map[string]any{},
-		CapabilitySelection:   map[string]any{},
-		RuntimeSelector:       map[string]any{},
-		WorkspacePolicy:       map[string]any{},
-		SessionPolicy:         map[string]any{},
-		Metadata:              map[string]any{},
+		PermissionPolicy: map[string]any{},
+		ApprovalPolicy:   map[string]any{},
+		WorkspacePolicy:  map[string]any{},
+		SessionPolicy:    map[string]any{},
+		Metadata:         map[string]any{},
 	}
 }
 
@@ -610,7 +607,7 @@ func platformSkillOptions(employeeTypes []EmployeeTypeDefinition) []string {
 			}
 			values[skill] = struct{}{}
 		}
-		for _, skill := range stringList(definition.DefaultCapabilitySelection["enabled_skills"]) {
+		for _, skill := range stringList(definition.CapabilityBindings["skills"]) {
 			if skill == "" {
 				continue
 			}
@@ -629,7 +626,7 @@ func platformMCPServerOptions(employeeTypes []EmployeeTypeDefinition) []string {
 			}
 			values[serverID] = struct{}{}
 		}
-		for _, serverID := range stringList(definition.DefaultCapabilitySelection["enabled_mcp_servers"]) {
+		for _, serverID := range stringList(definition.CapabilityBindings["mcp_servers"]) {
 			if serverID == "" {
 				continue
 			}
@@ -905,7 +902,7 @@ func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uu
 }
 
 func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := legacyDefaultCapabilitySelectionToBindings(definition.DefaultCapabilitySelection)
+	defaults := cloneMap(definition.CapabilityBindings)
 	return mergePolicyMaps(defaults, req.CapabilityBindings)
 }
 
@@ -938,7 +935,7 @@ func stringSliceToAnySlice(values []string) []any {
 }
 
 func initialContextPolicyOverride(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
+	defaults := map[string]any{}
 	return defaults
 }
 
