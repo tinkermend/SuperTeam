@@ -52,6 +52,10 @@ func (s *fakeTemplateHandlerService) ListDigitalEmployees(ctx context.Context, r
 	return nil, nil
 }
 
+func (s *fakeTemplateHandlerService) DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error {
+	return nil
+}
+
 func (s *fakeTemplateHandlerService) GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
 	return nil, nil
 }
