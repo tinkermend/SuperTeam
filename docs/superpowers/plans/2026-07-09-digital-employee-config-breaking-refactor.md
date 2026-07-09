@@ -976,6 +976,8 @@ git commit -m "feat(contracts): expose final employee config fields"
 ### Task 5: Templates And Create Options Use Persona/Bindings/Budget
 
 **Files:**
+- Modify: `contracts/control-plane/openapi.yaml`
+- Generated: `apps/control-plane/internal/api/gen/control_plane.gen.go`
 - Modify: `apps/control-plane/internal/employee/template_types.go`
 - Modify: `apps/control-plane/internal/employee/template_repository.go`
 - Modify: `apps/control-plane/internal/employee/template_service.go`
@@ -990,6 +992,11 @@ git commit -m "feat(contracts): expose final employee config fields"
 **Interfaces:**
 - Produces template fields `persona_memory_markdown`, `capability_bindings`, `budget_policy`.
 - Removes template fields `default_capability_selection`, `default_context_policy_override`, and `default_approval_policy`.
+
+**Execution Boundary:**
+- Task 4 updates create employee and config revision contract/type surfaces. Task 5 owns the remaining template contract/backend/UI surface and must remove template OpenAPI fields `default_capability_selection`, `default_context_policy_override`, and `default_approval_policy` from create/update/response schemas.
+- The generated Control Plane API file in the current repo is `apps/control-plane/internal/api/gen/control_plane.gen.go`.
+- Run `corepack pnpm generate:control-plane` and `corepack pnpm verify:contracts` after changing template OpenAPI schemas.
 
 - [ ] **Step 1: Write failing backend template test**
 
@@ -1094,6 +1101,36 @@ Reject old fields in template create/update handlers using the same raw-map chec
 []string{"default_capability_selection", "default_context_policy_override", "default_approval_policy"}
 ```
 
+Update `contracts/control-plane/openapi.yaml` template create/update/response schemas:
+
+- Remove:
+
+```yaml
+default_capability_selection
+default_context_policy_override
+default_approval_policy
+```
+
+- Add:
+
+```yaml
+persona_memory_markdown:
+  type: string
+capability_bindings:
+  type: object
+  additionalProperties: true
+budget_policy:
+  type: object
+  additionalProperties: true
+```
+
+Then regenerate:
+
+```bash
+corepack pnpm generate:control-plane
+corepack pnpm verify:contracts
+```
+
 - [ ] **Step 6: Update Web template UI**
 
 In `apps/web/src/features/employees/templates.tsx`, replace the JSON editors for old defaults with:
@@ -1130,6 +1167,8 @@ git add apps/control-plane/internal/storage/migrations/052_digital_employee_temp
   apps/control-plane/internal/storage/migrations/atlas.sum \
   apps/control-plane/internal/storage/queries/digital_employee_templates.sql \
   apps/control-plane/internal/storage/queries/digital_employee_templates.sql.go \
+  contracts/control-plane/openapi.yaml \
+  apps/control-plane/internal/api/gen/control_plane.gen.go \
   apps/control-plane/internal/employee/template_types.go \
   apps/control-plane/internal/employee/template_repository.go \
   apps/control-plane/internal/employee/template_service.go \
