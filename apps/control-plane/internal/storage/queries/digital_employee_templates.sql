@@ -17,7 +17,7 @@ WHERE tenant_id = $1 AND type = $2 AND deleted_at IS NULL;
 INSERT INTO digital_employee_templates (
   tenant_id, type, label, description, default_role,
   recommended_skills, recommended_mcp_servers, recommended_provider_types,
-  default_capability_selection, default_context_policy_override, default_approval_policy,
+  persona_memory_markdown, capability_bindings, budget_policy,
   metadata, status, is_system
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', false
@@ -32,9 +32,9 @@ UPDATE digital_employee_templates SET
   recommended_skills = $6,
   recommended_mcp_servers = $7,
   recommended_provider_types = $8,
-  default_capability_selection = $9,
-  default_context_policy_override = $10,
-  default_approval_policy = $11,
+  persona_memory_markdown = $9,
+  capability_bindings = $10,
+  budget_policy = $11,
   metadata = $12,
   updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL

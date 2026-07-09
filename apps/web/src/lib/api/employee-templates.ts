@@ -16,7 +16,6 @@ export type EmployeeTemplate = {
   recommended_provider_types: string[];
   persona_memory_markdown?: string;
   capability_bindings?: CapabilityBindings;
-  default_approval_policy: Record<string, unknown>;
   budget_policy?: BudgetPolicy;
   metadata: Record<string, unknown>;
   status: EmployeeTemplateStatus;
@@ -35,7 +34,6 @@ export type CreateEmployeeTemplateInput = {
   recommended_provider_types?: string[];
   persona_memory_markdown?: string;
   capability_bindings?: CapabilityBindings;
-  default_approval_policy?: Record<string, unknown>;
   budget_policy?: BudgetPolicy;
   metadata?: Record<string, unknown>;
 };

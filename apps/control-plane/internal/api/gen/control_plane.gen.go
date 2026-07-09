@@ -2094,7 +2094,6 @@ type CreateDigitalEmployeeRunRequest struct {
 type CreateEmployeeTemplateRequest struct {
 	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
 	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	DefaultApprovalPolicy    *map[string]interface{} `json:"default_approval_policy,omitempty"`
 	DefaultRole              *string                 `json:"default_role,omitempty"`
 	Description              *string                 `json:"description,omitempty"`
 	Label                    string                  `json:"label"`
@@ -2798,7 +2797,6 @@ type DigitalEmployeeStatus string
 type DigitalEmployeeTypeOption struct {
 	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
 	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	DefaultApprovalPolicy    *map[string]interface{} `json:"default_approval_policy,omitempty"`
 	DefaultRole              string                  `json:"default_role"`
 	Description              string                  `json:"description"`
 	Label                    string                  `json:"label"`
@@ -2896,7 +2894,6 @@ type EmployeeTemplate struct {
 	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
 	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
 	CreatedAt                time.Time               `json:"created_at"`
-	DefaultApprovalPolicy    *map[string]interface{} `json:"default_approval_policy,omitempty"`
 	DefaultRole              *string                 `json:"default_role,omitempty"`
 	Description              *string                 `json:"description,omitempty"`
 	Id                       openapi_types.UUID      `json:"id"`
@@ -4757,16 +4754,16 @@ type UpdateDigitalEmployeeStatusRequest struct {
 
 // UpdateEmployeeTemplateRequest defines model for UpdateEmployeeTemplateRequest.
 type UpdateEmployeeTemplateRequest struct {
-	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
-	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
-	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
-	DefaultRole                  *string                 `json:"default_role,omitempty"`
-	Description                  *string                 `json:"description,omitempty"`
-	Label                        string                  `json:"label"`
-	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
-	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
-	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
-	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
+	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole              *string                 `json:"default_role,omitempty"`
+	Description              *string                 `json:"description,omitempty"`
+	Label                    string                  `json:"label"`
+	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
+	PersonaMemoryMarkdown    *string                 `json:"persona_memory_markdown,omitempty"`
+	RecommendedMcpServers    *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
 }
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.

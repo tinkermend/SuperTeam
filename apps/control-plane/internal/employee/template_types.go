@@ -16,9 +16,9 @@ type EmployeeTemplateRecord struct {
 	RecommendedSkills            []string
 	RecommendedMCPServers        []string
 	RecommendedProviderTypes     []string
-	DefaultCapabilitySelection   map[string]any
-	DefaultContextPolicyOverride map[string]any
-	DefaultApprovalPolicy        map[string]any
+	PersonaMemoryMarkdown        string
+	CapabilityBindings           map[string]any
+	BudgetPolicy                 map[string]any
 	Metadata                     map[string]any
 	Status                       string
 	IsSystem                     bool
@@ -37,10 +37,10 @@ func (r EmployeeTemplateRecord) ToDefinition() EmployeeTypeDefinition {
 		RecommendedSkills:        cloneStringSlice(r.RecommendedSkills),
 		RecommendedMCPServers:    cloneStringSlice(r.RecommendedMCPServers),
 		RecommendedProviderTypes: cloneStringSlice(r.RecommendedProviderTypes),
-		PersonaMemoryMarkdown:    "",
-		CapabilityBindings:       legacyDefaultCapabilitySelectionToBindings(r.DefaultCapabilitySelection),
-		BudgetPolicy:             map[string]any{},
-		DefaultApprovalPolicy:    cloneEmployeeTypeMap(r.DefaultApprovalPolicy),
+		PersonaMemoryMarkdown:    r.PersonaMemoryMarkdown,
+		CapabilityBindings:       cloneEmployeeTypeMap(r.CapabilityBindings),
+		BudgetPolicy:             cloneEmployeeTypeMap(r.BudgetPolicy),
+		DefaultApprovalPolicy:    map[string]any{},
 		Metadata:                 cloneEmployeeTypeMap(r.Metadata),
 	}
 }
@@ -59,9 +59,9 @@ type CreateEmployeeTemplateParams struct {
 	RecommendedSkills            []string
 	RecommendedMCPServers        []string
 	RecommendedProviderTypes     []string
-	DefaultCapabilitySelection   map[string]any
-	DefaultContextPolicyOverride map[string]any
-	DefaultApprovalPolicy        map[string]any
+	PersonaMemoryMarkdown        string
+	CapabilityBindings           map[string]any
+	BudgetPolicy                 map[string]any
 	Metadata                     map[string]any
 }
 
@@ -74,8 +74,8 @@ type UpdateEmployeeTemplateParams struct {
 	RecommendedSkills            []string
 	RecommendedMCPServers        []string
 	RecommendedProviderTypes     []string
-	DefaultCapabilitySelection   map[string]any
-	DefaultContextPolicyOverride map[string]any
-	DefaultApprovalPolicy        map[string]any
+	PersonaMemoryMarkdown        string
+	CapabilityBindings           map[string]any
+	BudgetPolicy                 map[string]any
 	Metadata                     map[string]any
 }

@@ -81,11 +81,11 @@ export function templateCapabilitySummary(typeOption: DigitalEmployeeTypeOption)
 export function templateDefaultInjectionSummary(
   typeOption: DigitalEmployeeTypeOption,
 ): TemplateDefaultInjectionSummary {
-  const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
+  const capabilityBindings = typeOption.capability_bindings ?? {};
   return {
-    skills: stringList(defaultCapabilitySelection.enabled_skills),
-    mcpServers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
-    providerTypes: stringList(defaultCapabilitySelection.enabled_provider_types),
+    skills: stringList(capabilityBindings.skills),
+    mcpServers: stringList(capabilityBindings.mcp_servers),
+    providerTypes: stringList(capabilityBindings.provider_types),
   };
 }
 

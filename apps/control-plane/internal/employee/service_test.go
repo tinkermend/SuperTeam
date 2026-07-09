@@ -2267,13 +2267,13 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	}
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
 	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
-		TenantID:                   tenantID,
-		Type:                       "database_admin",
-		Label:                      "数据库管理",
-		DefaultRole:                "database_admin",
-		RecommendedSkills:          []string{"database-troubleshooting", "sql-review"},
-		RecommendedMCPServers:      []string{"postgres-readonly"},
-		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"database-troubleshooting", "sql-review"}},
+		TenantID:              tenantID,
+		Type:                  "database_admin",
+		Label:                 "数据库管理",
+		DefaultRole:           "database_admin",
+		RecommendedSkills:     []string{"database-troubleshooting", "sql-review"},
+		RecommendedMCPServers: []string{"postgres-readonly"},
+		CapabilityBindings:    map[string]any{"skills": []string{"database-troubleshooting", "sql-review"}},
 	}); err != nil {
 		t.Fatalf("seed database_admin template: %v", err)
 	}
@@ -2510,9 +2510,9 @@ func (r *memoryRepository) CreateEmployeeTemplate(ctx context.Context, params Cr
 		RecommendedSkills:            params.RecommendedSkills,
 		RecommendedMCPServers:        params.RecommendedMCPServers,
 		RecommendedProviderTypes:     params.RecommendedProviderTypes,
-		DefaultCapabilitySelection:   params.DefaultCapabilitySelection,
-		DefaultContextPolicyOverride: params.DefaultContextPolicyOverride,
-		DefaultApprovalPolicy:        params.DefaultApprovalPolicy,
+		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
+		CapabilityBindings:           cloneMap(params.CapabilityBindings),
+		BudgetPolicy:                 cloneMap(params.BudgetPolicy),
 		Metadata:                     params.Metadata,
 		Status:                       "active",
 		IsSystem:                     false,
@@ -2533,9 +2533,9 @@ func (r *memoryRepository) UpdateEmployeeTemplate(ctx context.Context, params Up
 			tmpl.RecommendedSkills = params.RecommendedSkills
 			tmpl.RecommendedMCPServers = params.RecommendedMCPServers
 			tmpl.RecommendedProviderTypes = params.RecommendedProviderTypes
-			tmpl.DefaultCapabilitySelection = params.DefaultCapabilitySelection
-			tmpl.DefaultContextPolicyOverride = params.DefaultContextPolicyOverride
-			tmpl.DefaultApprovalPolicy = params.DefaultApprovalPolicy
+			tmpl.PersonaMemoryMarkdown = params.PersonaMemoryMarkdown
+			tmpl.CapabilityBindings = cloneMap(params.CapabilityBindings)
+			tmpl.BudgetPolicy = cloneMap(params.BudgetPolicy)
 			tmpl.Metadata = params.Metadata
 			tmpl.UpdatedAt = time.Now().UTC()
 			templates[i] = tmpl

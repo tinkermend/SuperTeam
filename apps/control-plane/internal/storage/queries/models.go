@@ -427,24 +427,27 @@ type DigitalEmployeeRuntimeReadiness struct {
 }
 
 type DigitalEmployeeTemplate struct {
-	ID                           uuid.UUID          `json:"id"`
-	TenantID                     uuid.UUID          `json:"tenant_id"`
-	Type                         string             `json:"type"`
-	Label                        string             `json:"label"`
-	Description                  string             `json:"description"`
-	DefaultRole                  string             `json:"default_role"`
-	RecommendedSkills            []byte             `json:"recommended_skills"`
-	RecommendedMcpServers        []byte             `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []byte             `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   []byte             `json:"default_capability_selection"`
-	DefaultContextPolicyOverride []byte             `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        []byte             `json:"default_approval_policy"`
-	Metadata                     []byte             `json:"metadata"`
-	Status                       string             `json:"status"`
-	IsSystem                     bool               `json:"is_system"`
-	DeletedAt                    pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+	ID                       uuid.UUID          `json:"id"`
+	TenantID                 uuid.UUID          `json:"tenant_id"`
+	Type                     string             `json:"type"`
+	Label                    string             `json:"label"`
+	Description              string             `json:"description"`
+	DefaultRole              string             `json:"default_role"`
+	RecommendedSkills        []byte             `json:"recommended_skills"`
+	RecommendedMcpServers    []byte             `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []byte             `json:"recommended_provider_types"`
+	Metadata                 []byte             `json:"metadata"`
+	Status                   string             `json:"status"`
+	IsSystem                 bool               `json:"is_system"`
+	DeletedAt                pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	// 模板预填的人格记忆 Markdown
+	PersonaMemoryMarkdown string `json:"persona_memory_markdown"`
+	// 模板预填的数字员工能力绑定
+	CapabilityBindings []byte `json:"capability_bindings"`
+	// 模板预填的预算策略
+	BudgetPolicy []byte `json:"budget_policy"`
 }
 
 // 数字员工工作目录受控文件身份表

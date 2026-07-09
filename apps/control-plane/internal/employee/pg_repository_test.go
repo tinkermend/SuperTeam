@@ -587,20 +587,24 @@ func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
 	require.Empty(t, seeded)
 
 	created, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
-		TenantID:                   tenantID,
-		Type:                       "custom_reviewer",
-		Label:                      "自定义评审员",
-		Description:                "自定义模板",
-		DefaultRole:                "custom_reviewer",
-		RecommendedSkills:          []string{"code-review"},
-		RecommendedMCPServers:      []string{},
-		RecommendedProviderTypes:   []string{"codex"},
-		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"code-review"}},
+		TenantID:                 tenantID,
+		Type:                     "custom_reviewer",
+		Label:                    "自定义评审员",
+		Description:              "自定义模板",
+		DefaultRole:              "custom_reviewer",
+		RecommendedSkills:        []string{"code-review"},
+		RecommendedMCPServers:    []string{},
+		RecommendedProviderTypes: []string{"codex"},
+		PersonaMemoryMarkdown:    "# 人格画像\n评审优先",
+		CapabilityBindings:       map[string]any{"skills": []string{"code-review"}},
+		BudgetPolicy:             map[string]any{"daily_token_limit": float64(15000)},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "custom_reviewer", created.Type)
 	require.False(t, created.IsSystem)
 	require.Equal(t, "active", created.Status)
+	require.Equal(t, "# 人格画像\n评审优先", created.PersonaMemoryMarkdown)
+	require.Equal(t, float64(15000), created.BudgetPolicy["daily_token_limit"])
 
 	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
 		TenantID: tenantID,

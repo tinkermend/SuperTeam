@@ -76,6 +76,9 @@ export type DigitalEmployeeTypeOption = {
   recommended_skills?: string[];
   recommended_mcp_servers?: string[];
   recommended_provider_types?: string[];
+  persona_memory_markdown?: string;
+  capability_bindings?: Record<string, unknown>;
+  budget_policy?: Record<string, unknown>;
   default_capability_selection?: Record<string, unknown>;
   default_context_policy_override?: Record<string, unknown>;
   default_approval_policy?: Record<string, unknown>;

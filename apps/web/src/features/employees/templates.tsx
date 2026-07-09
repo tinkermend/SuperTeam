@@ -576,9 +576,9 @@ type TemplateFormDraft = {
   recommendedSkills: string;
   recommendedMcpServers: string;
   recommendedProviderTypes: string;
-  defaultCapabilitySelection: string;
-  defaultContextPolicyOverride: string;
-  defaultApprovalPolicy: string;
+  personaMemoryMarkdown: string;
+  capabilityBindings: string;
+  budgetPolicy: string;
 };
 
 function draftFromTemplate(template?: EmployeeTemplate): TemplateFormDraft {
@@ -590,9 +590,9 @@ function draftFromTemplate(template?: EmployeeTemplate): TemplateFormDraft {
     recommendedSkills: (template?.recommended_skills ?? []).join(", "),
     recommendedMcpServers: (template?.recommended_mcp_servers ?? []).join(", "),
     recommendedProviderTypes: (template?.recommended_provider_types ?? []).join(", "),
-    defaultCapabilitySelection: JSON.stringify(template?.default_capability_selection ?? {}, null, 2),
-    defaultContextPolicyOverride: JSON.stringify(template?.default_context_policy_override ?? {}, null, 2),
-    defaultApprovalPolicy: JSON.stringify(template?.default_approval_policy ?? {}, null, 2),
+    personaMemoryMarkdown: template?.persona_memory_markdown ?? "",
+    capabilityBindings: JSON.stringify(template?.capability_bindings ?? {}, null, 2),
+    budgetPolicy: JSON.stringify(template?.budget_policy ?? {}, null, 2),
   };
 }
 
@@ -620,15 +620,13 @@ function TemplateFormDialog({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      let capabilitySelection: Record<string, unknown>;
-      let contextPolicyOverride: Record<string, unknown>;
-      let approvalPolicy: Record<string, unknown>;
+      let capabilityBindings: Record<string, unknown>;
+      let budgetPolicy: Record<string, unknown>;
       try {
-        capabilitySelection = JSON.parse(draft.defaultCapabilitySelection || "{}");
-        contextPolicyOverride = JSON.parse(draft.defaultContextPolicyOverride || "{}");
-        approvalPolicy = JSON.parse(draft.defaultApprovalPolicy || "{}");
+        capabilityBindings = JSON.parse(draft.capabilityBindings || "{}");
+        budgetPolicy = JSON.parse(draft.budgetPolicy || "{}");
       } catch {
-        throw new Error("默认能力选择 / 上下文策略 / 审批策略必须是合法 JSON");
+        throw new Error("能力绑定 / 预算策略必须是合法 JSON");
       }
       const payload = {
         label: draft.label.trim(),
@@ -637,9 +635,9 @@ function TemplateFormDialog({
         recommended_skills: parseCommaList(draft.recommendedSkills),
         recommended_mcp_servers: parseCommaList(draft.recommendedMcpServers),
         recommended_provider_types: parseCommaList(draft.recommendedProviderTypes),
-        default_capability_selection: capabilitySelection,
-        default_context_policy_override: contextPolicyOverride,
-        default_approval_policy: approvalPolicy,
+        persona_memory_markdown: draft.personaMemoryMarkdown.trim(),
+        capability_bindings: capabilityBindings,
+        budget_policy: budgetPolicy,
       };
       if (mode === "create") {
         await createEmployeeTemplate(apiOptions, { ...payload, type: draft.type.trim() });
@@ -718,30 +716,30 @@ function TemplateFormDialog({
             />
           </div>
           <div className="grid gap-2">
-            <Label>默认能力选择（JSON）</Label>
+            <Label>人格记忆.md</Label>
             <Textarea
               className="font-mono text-xs"
               rows={4}
-              value={draft.defaultCapabilitySelection}
-              onChange={(e) => setDraft((prev) => ({ ...prev, defaultCapabilitySelection: e.target.value }))}
+              value={draft.personaMemoryMarkdown}
+              onChange={(e) => setDraft((prev) => ({ ...prev, personaMemoryMarkdown: e.target.value }))}
             />
           </div>
           <div className="grid gap-2">
-            <Label>默认上下文策略覆盖（JSON）</Label>
+            <Label>能力绑定</Label>
             <Textarea
               className="font-mono text-xs"
               rows={4}
-              value={draft.defaultContextPolicyOverride}
-              onChange={(e) => setDraft((prev) => ({ ...prev, defaultContextPolicyOverride: e.target.value }))}
+              value={draft.capabilityBindings}
+              onChange={(e) => setDraft((prev) => ({ ...prev, capabilityBindings: e.target.value }))}
             />
           </div>
           <div className="grid gap-2">
-            <Label>默认审批策略（JSON）</Label>
+            <Label>预算策略</Label>
             <Textarea
               className="font-mono text-xs"
               rows={4}
-              value={draft.defaultApprovalPolicy}
-              onChange={(e) => setDraft((prev) => ({ ...prev, defaultApprovalPolicy: e.target.value }))}
+              value={draft.budgetPolicy}
+              onChange={(e) => setDraft((prev) => ({ ...prev, budgetPolicy: e.target.value }))}
             />
           </div>
           {error ? <p className="text-sm font-semibold text-destructive">{error}</p> : null}

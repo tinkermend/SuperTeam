@@ -644,6 +644,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### 数字员工模板最终配置模型对齐 (2026-07-09 14:21)
+
+- 将数字员工模板的默认配置字段统一为 `persona_memory_markdown`、`capability_bindings` 和 `budget_policy`，同步收敛 Control Plane 模板接口、sqlc 查询、Web 模板管理页和生成代码。
+- 为模板创建/更新接口补充旧字段拒绝校验，显式拒绝 `default_capability_selection`、`default_context_policy_override` 和 `default_approval_policy`。
+
 #### 项目需求启动详情分页前过滤 (2026-06-12 17:48)
 
 - 修复需求启动详情读模型先按项目分页再内存过滤导致相关事实被较新无关记录截断的问题，改为在仓储查询层按需求、任务、决策和事件关联条件过滤后再限制返回数量。

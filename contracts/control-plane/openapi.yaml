@@ -10037,9 +10037,6 @@ components:
         capability_bindings:
           type: object
           additionalProperties: true
-        default_approval_policy:
-          type: object
-          additionalProperties: true
         budget_policy:
           type: object
           additionalProperties: true
@@ -10087,9 +10084,6 @@ components:
         persona_memory_markdown:
           type: string
         capability_bindings:
-          type: object
-          additionalProperties: true
-        default_approval_policy:
           type: object
           additionalProperties: true
         budget_policy:
@@ -10140,9 +10134,6 @@ components:
         capability_bindings:
           type: object
           additionalProperties: true
-        default_approval_policy:
-          type: object
-          additionalProperties: true
         budget_policy:
           type: object
           additionalProperties: true
@@ -10172,13 +10163,12 @@ components:
           type: array
           items:
             type: string
-        default_capability_selection:
+        persona_memory_markdown:
+          type: string
+        capability_bindings:
           type: object
           additionalProperties: true
-        default_context_policy_override:
-          type: object
-          additionalProperties: true
-        default_approval_policy:
+        budget_policy:
           type: object
           additionalProperties: true
         metadata:
