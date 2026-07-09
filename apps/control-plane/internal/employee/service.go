@@ -1642,8 +1642,6 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
-	teamLess := req.TeamConfig.ID == uuid.Nil
-
 	effectiveConfig := map[string]any{
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
 		"persona_memory_markdown":     req.EmployeeConfig.PersonaMemoryMarkdown,
@@ -1654,7 +1652,6 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 		BlockingErrors: []ValidationIssue{},
 		Warnings:       []ValidationIssue{},
 	}
-	_ = teamLess
 
 	return &EffectiveConfigPreview{
 		EmployeeConfigRevisionID: req.EmployeeConfig.ID,

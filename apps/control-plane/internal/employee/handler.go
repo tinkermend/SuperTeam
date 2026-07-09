@@ -173,6 +173,15 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if field, ok := firstLegacyEmployeeConfigField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
+	}
 	var req struct {
 		TeamID                *uuid.UUID     `json:"team_id"`
 		EmployeeType          string         `json:"employee_type"`
@@ -198,7 +207,12 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 			Sensitive *bool  `json:"sensitive"`
 		} `json:"environment_variables"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(payload, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -588,18 +602,9 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	for _, field := range []string{
-		"role_profile",
-		"constitution_addendum",
-		"capability_selection",
-		"context_policy_override",
-		"approval_policy_override",
-		"output_contract_addendum",
-	} {
-		if _, exists := raw[field]; exists {
-			http.Error(w, field+" is no longer supported", http.StatusBadRequest)
-			return
-		}
+	if field, ok := firstLegacyEmployeeConfigField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
 	}
 	var req struct {
 		PersonaMemoryMarkdown *string              `json:"persona_memory_markdown"`
@@ -625,6 +630,22 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 		return
 	}
 	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
+}
+
+func firstLegacyEmployeeConfigField(raw map[string]json.RawMessage) (string, bool) {
+	for _, field := range []string{
+		"role_profile",
+		"constitution_addendum",
+		"capability_selection",
+		"context_policy_override",
+		"approval_policy_override",
+		"output_contract_addendum",
+	} {
+		if _, exists := raw[field]; exists {
+			return field, true
+		}
+	}
+	return "", false
 }
 
 const (

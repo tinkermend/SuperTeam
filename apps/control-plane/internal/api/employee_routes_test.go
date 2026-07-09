@@ -455,6 +455,42 @@ func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
 	}
 }
 
+func TestCreateDigitalEmployeeRouteRejectsLegacyFields(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(nil, nil, authService, nil, &routeAuthorizer{allowed: true})
+	server.SetEmployeeHandler(employee.NewHandler(service))
+
+	body := `{
+		"employee_type":"database_admin",
+		"name":"Database administrator",
+		"avatar_asset_id":"engineer-m-01",
+		"role":"database_admin",
+		"provider_type":"codex",
+		"role_profile":{"title":"legacy"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(req, user.SessionToken)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected legacy create fields to be rejected, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "role_profile is no longer supported") {
+		t.Fatalf("expected legacy field rejection body, got %s", resp.Body.String())
+	}
+	if service.createCalled {
+		t.Fatalf("expected create service not to be called on legacy field rejection")
+	}
+}
+
 func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
