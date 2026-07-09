@@ -47,7 +47,7 @@ export function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOpt
 }
 
 export function templateRisk(typeOption: DigitalEmployeeTypeOption) {
-  return stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium";
+  return "medium";
 }
 
 export function riskSortValue(risk: string) {

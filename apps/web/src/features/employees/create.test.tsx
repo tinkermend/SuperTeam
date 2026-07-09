@@ -87,7 +87,6 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock = false,
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
-  teamInheritedCapabilitySelection,
   teamConfigOverrides,
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
@@ -98,7 +97,6 @@ function createOptionsFixture({
   includeCapabilityBoundaryBlock?: boolean;
   capabilityBoundaryKey?: "capability_policy" | "capability_boundary";
   includeOtherBlockedCheck?: boolean;
-  teamInheritedCapabilitySelection?: Record<string, unknown>;
   teamConfigOverrides?: Record<string, unknown>;
 } = {}) {
   const firstRuntimeSessionInactive = runtimeAvailability === "session-inactive";
@@ -183,12 +181,13 @@ function createOptionsFixture({
         recommended_skills: ["incident-diagnosis"],
         recommended_mcp_servers: ["postgres"],
         recommended_provider_types: ["codex"],
-        default_capability_selection: {
-          enabled_skills: ["sql-review"],
-          enabled_mcp_servers: ["postgres"],
+        persona_memory_markdown: "# 数据库管理员\n可靠性优先",
+        capability_bindings: {
+          skills: ["sql-review"],
+          mcp_servers: ["postgres"],
+          provider_types: ["codex"],
         },
-        default_context_policy_override: { max_refs: 8 },
-        default_approval_policy: { min_risk_for_human: "high" },
+        budget_policy: {},
         metadata: { title: "数据库管理员" },
       },
       ...(includeFrontendTemplate
@@ -201,12 +200,13 @@ function createOptionsFixture({
               recommended_skills: ["frontend-implementation"],
               recommended_mcp_servers: ["browser"],
               recommended_provider_types: ["codex"],
-              default_capability_selection: {
-                enabled_skills: ["frontend-implementation"],
-                enabled_mcp_servers: ["browser"],
+              persona_memory_markdown: "# 前端开发\n界面一致性优先",
+              capability_bindings: {
+                skills: ["frontend-implementation"],
+                mcp_servers: ["browser"],
+                provider_types: ["codex"],
               },
-              default_context_policy_override: { max_refs: 6 },
-              default_approval_policy: { min_risk_for_human: "medium" },
+              budget_policy: {},
               metadata: { title: "前端开发" },
             },
           ]
@@ -254,9 +254,7 @@ function createOptionsFixture({
     ],
     policy_defaults: {
       permission_policy: { mode: "least_privilege" },
-      context_policy_override: { max_refs: 6 },
       approval_policy: { required: true },
-      capability_selection: teamInheritedCapabilitySelection ?? { source: "team_default" },
       runtime_selector: { strategy: "manual" },
       workspace_policy: { mode: "ephemeral" },
       session_policy: { mode: "reuse_latest" },
@@ -283,7 +281,6 @@ function createWizardFetcher({
   teams = [team],
   createOptionsErrorForTeamId,
   pendingCreateOptionsForTeamId,
-  teamInheritedCapabilitySelection,
   teamConfigOverrides,
 }: {
   expectedCreateBody?: ExpectedCreateBody;
@@ -303,7 +300,6 @@ function createWizardFetcher({
   teams?: Array<typeof team>;
   createOptionsErrorForTeamId?: string;
   pendingCreateOptionsForTeamId?: string;
-  teamInheritedCapabilitySelection?: Record<string, unknown>;
   teamConfigOverrides?: Record<string, unknown>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -340,7 +336,6 @@ function createWizardFetcher({
           runtimeAvailability,
           runtimeCount,
           sameRuntimeNodeProviders,
-          teamInheritedCapabilitySelection,
           teamConfigOverrides,
         }),
       );
@@ -358,20 +353,16 @@ function createWizardFetcher({
         employee_type: "database_admin",
         name: "数据库管理员工",
         role: "database_admin",
-        risk_level: "high",
+        risk_level: "medium",
         avatar_asset_id: avatarAsset.id,
-        role_profile: {
-          employee_type: "database_admin",
-          role: "database_admin",
-          title: "数据库管理员",
+        persona_memory_markdown: "# 数据库管理员\n可靠性优先",
+        capability_bindings: {
+          skills: ["sql-review"],
+          mcp_servers: ["postgres"],
+          provider_types: ["codex"],
         },
-        capability_selection: {
-          enabled_skills: [],
-          enabled_mcp_servers: [],
-        },
-        context_policy_override: { max_refs: 8 },
-        approval_policy_override: { min_risk_for_human: "high" },
-        output_contract_addendum: {},
+        context_policy: {},
+        approval_policy: { required: true },
         ...(expectedRuntimeNodeIdSubmitted ? { runtime_node_id: expectedRuntimeNodeId } : {}),
         provider_type: expectedProviderType,
         session_policy: { mode: "reuse_latest" },
@@ -553,7 +544,7 @@ describe("CreateEmployeeView", () => {
     expect(tableText).toContain("技能 1");
     expect(tableText).toContain("MCP 1");
     expect(tableText).toContain("Provider 1");
-    expect(tableText).toContain("高");
+    expect(tableText).toContain("中");
     expect(tableText).not.toContain("推荐能力");
     expect(tableText).not.toContain("风险触发");
     expect(tableText).not.toContain("运行可用性");
@@ -624,8 +615,8 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
-    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue('{\n  "max_refs": 8\n}');
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
+    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue("{}");
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
     await expect.element(screen.getByLabelText("每日 Token 预算上限")).toBeVisible();
   });
 
@@ -726,7 +717,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.selectOptions(screen.getByLabelText("归属团队"), team.id);
     expect(screen.getByLabelText("员工类型").query()).toBeNull();
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("database_admin");
-    await expect.element(screen.getByLabelText("风险等级")).toHaveValue("high");
+    await expect.element(screen.getByLabelText("风险等级")).toHaveValue("medium");
     await expect.element(screen.getByAltText("工程师头像 M01")).toBeVisible();
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
@@ -871,18 +862,13 @@ describe("CreateEmployeeView", () => {
         role: "数据库变更与恢复验证",
         risk_level: "medium",
         avatar_asset_id: avatarAsset.id,
-        role_profile: {
-          employee_type: "custom_agent",
-          role: "数据库变更与恢复验证",
-          title: "custom_agent",
+        persona_memory_markdown: "",
+        capability_bindings: {
+          skills: [],
+          mcp_servers: [],
         },
-        capability_selection: {
-          enabled_skills: [],
-          enabled_mcp_servers: [],
-        },
-        context_policy_override: {},
-        approval_policy_override: {},
-        output_contract_addendum: {},
+        context_policy: {},
+        approval_policy: {},
         provider_type: "codex",
         session_policy: { mode: "reuse_latest" },
         workspace_policy: {},
@@ -904,12 +890,12 @@ describe("CreateEmployeeView", () => {
     const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
-    expect(body.capability_selection).toEqual({
-      enabled_skills: [],
-      enabled_mcp_servers: [],
+    expect(body.capability_bindings).toEqual({
+      skills: ["sql-review"],
+      mcp_servers: ["postgres"],
     });
-    expect(body.context_policy_override).toEqual({});
-    expect(body.approval_policy_override).toEqual({});
+    expect(body.context_policy).toEqual({});
+    expect(body.approval_policy).toEqual({});
     expect(body.metadata).toEqual({ creation_mode: "blank_custom" });
   });
 
@@ -933,12 +919,13 @@ describe("CreateEmployeeView", () => {
     const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
-    expect(body.capability_selection).toEqual({
-      enabled_skills: [],
-      enabled_mcp_servers: [],
+    expect(body.capability_bindings).toEqual({
+      skills: ["sql-review"],
+      mcp_servers: ["postgres"],
+      provider_types: ["codex"],
     });
-    expect(body.context_policy_override).toEqual({ max_refs: 8 });
-    expect(body.approval_policy_override).toEqual({ min_risk_for_human: "high" });
+    expect(body.context_policy).toEqual({});
+    expect(body.approval_policy).toEqual({ required: true });
     expect(body.metadata).toBeUndefined();
   });
 
@@ -952,8 +939,8 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
 
-    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue('{\n  "max_refs": 8\n}');
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
+    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue("{}");
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
     expect(document.body.textContent).toContain("200000 Token");
   });
 
@@ -961,13 +948,13 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
-    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("高");
+    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("中");
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
-    expect(document.body.textContent).toContain("高");
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "min_risk_for_human": "high"\n}');
+    expect(document.body.textContent).toContain("中");
+    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
   });
 
   it("excludes 团队继承能力 from submitted 员工扩展能力", async () => {
@@ -988,9 +975,10 @@ describe("CreateEmployeeView", () => {
     const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
-    expect(body.capability_selection).toEqual({
-      enabled_skills: ["incident-diagnosis"],
-      enabled_mcp_servers: [],
+    expect(body.capability_bindings).toEqual({
+      skills: ["sql-review", "incident-diagnosis"],
+      mcp_servers: ["postgres"],
+      provider_types: ["codex"],
     });
   });
 
@@ -1014,7 +1002,6 @@ describe("CreateEmployeeView", () => {
           skills: ["incident-diagnosis"],
           mcp_servers: ["postgres"],
         },
-        teamInheritedCapabilitySelection: {},
       }),
     );
 
@@ -1299,7 +1286,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
-    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("高");
+    await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("中");
     expect(document.body.textContent).not.toContain("风险 high");
     await userEvent.selectOptions(screen.getByLabelText("风险等级"), "critical");
     await expect.element(screen.getByLabelText("风险等级")).toHaveDisplayValue("严重");

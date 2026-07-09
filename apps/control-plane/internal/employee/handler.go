@@ -1024,7 +1024,6 @@ type employeeTypeOptionResponse struct {
 	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
 	CapabilityBindings       map[string]any `json:"capability_bindings"`
 	BudgetPolicy             map[string]any `json:"budget_policy"`
-	DefaultApprovalPolicy    map[string]any `json:"default_approval_policy"`
 	Metadata                 map[string]any `json:"metadata"`
 }
 
@@ -1578,7 +1577,6 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			PersonaMemoryMarkdown:    definition.PersonaMemoryMarkdown,
 			CapabilityBindings:       cloneMap(definition.CapabilityBindings),
 			BudgetPolicy:             cloneMap(definition.BudgetPolicy),
-			DefaultApprovalPolicy:    cloneMap(definition.DefaultApprovalPolicy),
 			Metadata:                 cloneMap(definition.Metadata),
 		})
 	}

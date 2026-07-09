@@ -79,9 +79,6 @@ export type DigitalEmployeeTypeOption = {
   persona_memory_markdown?: string;
   capability_bindings?: Record<string, unknown>;
   budget_policy?: Record<string, unknown>;
-  default_capability_selection?: Record<string, unknown>;
-  default_context_policy_override?: Record<string, unknown>;
-  default_approval_policy?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 };
 
@@ -116,9 +113,7 @@ export type DigitalEmployeeCreateOptionCheck = {
 
 export type DigitalEmployeePolicyDefaults = {
   permission_policy: Record<string, unknown>;
-  context_policy_override: Record<string, unknown>;
   approval_policy: Record<string, unknown>;
-  capability_selection: Record<string, unknown>;
   runtime_selector: Record<string, unknown>;
   workspace_policy: Record<string, unknown>;
   session_policy: Record<string, unknown>;
