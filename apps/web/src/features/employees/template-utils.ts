@@ -46,7 +46,7 @@ export function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOpt
   return orderedEmployeeTypes(employeeTypes)[0];
 }
 
-export function templateRisk(typeOption: DigitalEmployeeTypeOption) {
+export function templateRisk(_typeOption: DigitalEmployeeTypeOption) {
   return "medium";
 }
 
