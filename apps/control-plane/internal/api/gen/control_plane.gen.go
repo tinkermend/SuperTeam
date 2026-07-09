@@ -2625,14 +2625,11 @@ type DigitalEmployeeOverviewSummary struct {
 
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.
 type DigitalEmployeePolicyDefaults struct {
-	ApprovalPolicy        map[string]interface{} `json:"approval_policy"`
-	CapabilitySelection   map[string]interface{} `json:"capability_selection"`
-	ContextPolicyOverride map[string]interface{} `json:"context_policy_override"`
-	Metadata              map[string]interface{} `json:"metadata"`
-	PermissionPolicy      map[string]interface{} `json:"permission_policy"`
-	RuntimeSelector       map[string]interface{} `json:"runtime_selector"`
-	SessionPolicy         map[string]interface{} `json:"session_policy"`
-	WorkspacePolicy       map[string]interface{} `json:"workspace_policy"`
+	ApprovalPolicy   map[string]interface{} `json:"approval_policy"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	PermissionPolicy map[string]interface{} `json:"permission_policy"`
+	SessionPolicy    map[string]interface{} `json:"session_policy"`
+	WorkspacePolicy  map[string]interface{} `json:"workspace_policy"`
 }
 
 // DigitalEmployeeRecentEventSummary defines model for DigitalEmployeeRecentEventSummary.

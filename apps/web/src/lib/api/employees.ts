@@ -114,7 +114,6 @@ export type DigitalEmployeeCreateOptionCheck = {
 export type DigitalEmployeePolicyDefaults = {
   permission_policy: Record<string, unknown>;
   approval_policy: Record<string, unknown>;
-  runtime_selector: Record<string, unknown>;
   workspace_policy: Record<string, unknown>;
   session_policy: Record<string, unknown>;
   metadata: Record<string, unknown>;

@@ -255,7 +255,6 @@ function createOptionsFixture({
     policy_defaults: {
       permission_policy: { mode: "least_privilege" },
       approval_policy: { required: true },
-      runtime_selector: { strategy: "manual" },
       workspace_policy: { mode: "ephemeral" },
       session_policy: { mode: "reuse_latest" },
       metadata: { source: "team_config" },

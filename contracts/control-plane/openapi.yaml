@@ -10250,10 +10250,7 @@ components:
       type: object
       required:
         - permission_policy
-        - context_policy_override
         - approval_policy
-        - capability_selection
-        - runtime_selector
         - workspace_policy
         - session_policy
         - metadata
@@ -10261,16 +10258,7 @@ components:
         permission_policy:
           type: object
           additionalProperties: true
-        context_policy_override:
-          type: object
-          additionalProperties: true
         approval_policy:
-          type: object
-          additionalProperties: true
-        capability_selection:
-          type: object
-          additionalProperties: true
-        runtime_selector:
           type: object
           additionalProperties: true
         workspace_policy:
