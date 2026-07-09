@@ -886,17 +886,18 @@ func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecor
 		label        string
 		defaultRole  string
 		skills       []string
+		mcpServers   []string
 	}
 	seeds := []seed{
-		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}},
-		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}},
-		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}},
-		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}},
-		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}},
-		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}},
-		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}},
-		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}},
-		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}},
+		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}, []string{"postgres-readonly", "mysql-readonly"}},
+		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}, []string{"kubernetes-readonly", "prometheus-readonly", "grafana-readonly"}},
+		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}, []string{"postgres-readonly", "http-connector"}},
+		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}, []string{"browser"}},
+		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}, []string{"browser"}},
+		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}, []string{"postgres-readonly"}},
+		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}, []string{"browser", "postgres-readonly"}},
+		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}, []string{"http-connector"}},
+		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}, []string{}},
 	}
 	records := make([]EmployeeTemplateRecord, 0, len(seeds))
 	for _, s := range seeds {
@@ -908,7 +909,7 @@ func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecor
 			Description:                s.label,
 			DefaultRole:                s.defaultRole,
 			RecommendedSkills:          s.skills,
-			RecommendedMCPServers:      []string{},
+			RecommendedMCPServers:      s.mcpServers,
 			RecommendedProviderTypes:   []string{"codex", "opencode"},
 			DefaultCapabilitySelection: map[string]any{"enabled_skills": s.skills},
 			Status:                     "active",
