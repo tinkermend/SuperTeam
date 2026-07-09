@@ -3517,6 +3517,139 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employee-templates:
+    get:
+      operationId: listEmployeeTemplates
+      summary: List digital employee templates for the current tenant
+      responses:
+        "200":
+          description: Employee templates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeTemplate"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createEmployeeTemplate
+      summary: Create a digital employee template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeTemplateRequest"
+      responses:
+        "201":
+          description: Employee template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employee-templates/{templateId}:
+    get:
+      operationId: getEmployeeTemplate
+      summary: Get a digital employee template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Employee template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeTemplate"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateEmployeeTemplate
+      summary: Update a digital employee template's configuration
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeTemplateRequest"
+      responses:
+        "200":
+          description: Employee template updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteEmployeeTemplate
+      summary: Soft-delete a digital employee template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Employee template deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employee-templates/{templateId}/status:
+    patch:
+      operationId: setEmployeeTemplateStatus
+      summary: Enable or disable a digital employee template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetEmployeeTemplateStatusRequest"
+      responses:
+        "200":
+          description: Employee template status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/templates:
     get:
       operationId: listPromptTemplates
@@ -9861,6 +9994,148 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    EmployeeTemplate:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - type
+        - label
+        - status
+        - is_system
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default_role:
+          type: string
+        recommended_skills:
+          type: array
+          items:
+            type: string
+        recommended_mcp_servers:
+          type: array
+          items:
+            type: string
+        recommended_provider_types:
+          type: array
+          items:
+            type: string
+        default_capability_selection:
+          type: object
+          additionalProperties: true
+        default_context_policy_override:
+          type: object
+          additionalProperties: true
+        default_approval_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [active, disabled]
+        is_system:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateEmployeeTemplateRequest:
+      type: object
+      required:
+        - type
+        - label
+      properties:
+        type:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default_role:
+          type: string
+        recommended_skills:
+          type: array
+          items:
+            type: string
+        recommended_mcp_servers:
+          type: array
+          items:
+            type: string
+        recommended_provider_types:
+          type: array
+          items:
+            type: string
+        default_capability_selection:
+          type: object
+          additionalProperties: true
+        default_context_policy_override:
+          type: object
+          additionalProperties: true
+        default_approval_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateEmployeeTemplateRequest:
+      type: object
+      required:
+        - label
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+        default_role:
+          type: string
+        recommended_skills:
+          type: array
+          items:
+            type: string
+        recommended_mcp_servers:
+          type: array
+          items:
+            type: string
+        recommended_provider_types:
+          type: array
+          items:
+            type: string
+        default_capability_selection:
+          type: object
+          additionalProperties: true
+        default_context_policy_override:
+          type: object
+          additionalProperties: true
+        default_approval_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+    SetEmployeeTemplateStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
     DigitalEmployeeCapabilityOptions:
       type: object
       required:
