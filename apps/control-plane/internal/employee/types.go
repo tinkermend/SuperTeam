@@ -206,25 +206,28 @@ type TeamBaseline struct {
 }
 
 type DigitalEmployee struct {
-	ID               uuid.UUID
-	TenantID         uuid.UUID
-	TeamID           *uuid.UUID
-	OwnerUserID      uuid.UUID
-	EmployeeType     string
-	ProviderType     string
-	Name             string
-	Role             string
-	Description      *string
-	Status           DigitalEmployeeStatus
-	PermissionPolicy map[string]any
-	ContextPolicy    map[string]any
-	ApprovalPolicy   map[string]any
-	RiskLevel        string
-	Metadata         map[string]any
-	DisabledAt       *time.Time
-	ArchivedAt       *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	TeamID                *uuid.UUID
+	OwnerUserID           uuid.UUID
+	EmployeeType          string
+	ProviderType          string
+	Name                  string
+	Role                  string
+	Description           *string
+	Status                DigitalEmployeeStatus
+	PermissionPolicy      map[string]any
+	ContextPolicy         map[string]any
+	ApprovalPolicy        map[string]any
+	RiskLevel             string
+	Metadata              map[string]any
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	DisabledAt            *time.Time
+	ArchivedAt            *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type WorkspaceFile struct {

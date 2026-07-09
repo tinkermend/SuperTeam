@@ -466,7 +466,11 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		return nil, err
 	}
 
-	return employeeFromRecord(record), nil
+	employee := employeeFromRecord(record)
+	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+		return nil, err
+	}
+	return employee, nil
 }
 
 func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantID, teamID uuid.UUID) error {
@@ -1380,7 +1384,11 @@ func (s *Service) ListDigitalEmployees(ctx context.Context, req ListDigitalEmplo
 	}
 	employees := make([]*DigitalEmployee, 0, len(records))
 	for _, record := range records {
-		employees = append(employees, employeeFromRecord(record))
+		employee := employeeFromRecord(record)
+		if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+			return nil, err
+		}
+		employees = append(employees, employee)
 	}
 	return employees, nil
 }
@@ -1396,7 +1404,11 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	if err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
-	return employeeFromRecord(record), nil
+	employee := employeeFromRecord(record)
+	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+		return nil, err
+	}
+	return employee, nil
 }
 
 func (s *Service) DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error {
@@ -1659,26 +1671,48 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 
 func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 	return &DigitalEmployee{
-		ID:               record.ID,
-		TenantID:         record.TenantID,
-		TeamID:           validUUIDPtr(record.TeamID),
-		OwnerUserID:      record.OwnerUserID,
-		EmployeeType:     record.EmployeeType,
-		ProviderType:     record.ProviderType,
-		Name:             record.Name,
-		Role:             record.Role,
-		Description:      trimOptionalString(record.Description),
-		Status:           record.Status,
-		PermissionPolicy: cloneMap(record.PermissionPolicy),
-		ContextPolicy:    cloneMap(record.ContextPolicy),
-		ApprovalPolicy:   cloneMap(record.ApprovalPolicy),
-		RiskLevel:        record.RiskLevel,
-		Metadata:         cloneMap(record.Metadata),
-		DisabledAt:       cloneTimePtr(record.DisabledAt),
-		ArchivedAt:       cloneTimePtr(record.ArchivedAt),
-		CreatedAt:        record.CreatedAt,
-		UpdatedAt:        record.UpdatedAt,
+		ID:                 record.ID,
+		TenantID:           record.TenantID,
+		TeamID:             validUUIDPtr(record.TeamID),
+		OwnerUserID:        record.OwnerUserID,
+		EmployeeType:       record.EmployeeType,
+		ProviderType:       record.ProviderType,
+		Name:               record.Name,
+		Role:               record.Role,
+		Description:        trimOptionalString(record.Description),
+		Status:             record.Status,
+		PermissionPolicy:   cloneMap(record.PermissionPolicy),
+		ContextPolicy:      cloneMap(record.ContextPolicy),
+		ApprovalPolicy:     cloneMap(record.ApprovalPolicy),
+		RiskLevel:          record.RiskLevel,
+		Metadata:           cloneMap(record.Metadata),
+		CapabilityBindings: map[string]any{},
+		BudgetPolicy:       map[string]any{},
+		DisabledAt:         cloneTimePtr(record.DisabledAt),
+		ArchivedAt:         cloneTimePtr(record.ArchivedAt),
+		CreatedAt:          record.CreatedAt,
+		UpdatedAt:          record.UpdatedAt,
 	}
+}
+
+func (s *Service) attachLatestConfigRevision(ctx context.Context, employee *DigitalEmployee) error {
+	if employee == nil {
+		return nil
+	}
+	config, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, employee.TenantID, employee.ID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			employee.PersonaMemoryMarkdown = ""
+			employee.CapabilityBindings = map[string]any{}
+			employee.BudgetPolicy = map[string]any{}
+			return nil
+		}
+		return fmt.Errorf("get latest digital employee config revision: %w", err)
+	}
+	employee.PersonaMemoryMarkdown = config.PersonaMemoryMarkdown
+	employee.CapabilityBindings = cloneMap(config.CapabilityBindings)
+	employee.BudgetPolicy = cloneMap(config.BudgetPolicy)
+	return nil
 }
 
 func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *DigitalEmployeeConfigRevision {

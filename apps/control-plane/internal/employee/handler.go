@@ -790,26 +790,29 @@ func (h *HTTPHandler) allowedEmployeeActions(ctx context.Context, tenantID, empl
 }
 
 type digitalEmployeeResponse struct {
-	ID               string                `json:"id"`
-	TenantID         string                `json:"tenant_id"`
-	TeamID           *string               `json:"team_id,omitempty"`
-	OwnerUserID      string                `json:"owner_user_id"`
-	EmployeeType     string                `json:"employee_type"`
-	ProviderType     string                `json:"provider_type"`
-	Name             string                `json:"name"`
-	Role             string                `json:"role"`
-	Description      *string               `json:"description,omitempty"`
-	Status           DigitalEmployeeStatus `json:"status"`
-	PermissionPolicy map[string]any        `json:"permission_policy"`
-	ContextPolicy    map[string]any        `json:"context_policy"`
-	ApprovalPolicy   map[string]any        `json:"approval_policy"`
-	RiskLevel        string                `json:"risk_level"`
-	Metadata         map[string]any        `json:"metadata"`
-	DisabledAt       *string               `json:"disabled_at,omitempty"`
-	ArchivedAt       *string               `json:"archived_at,omitempty"`
-	AllowedActions   []string              `json:"allowed_actions,omitempty"`
-	CreatedAt        string                `json:"created_at,omitempty"`
-	UpdatedAt        string                `json:"updated_at,omitempty"`
+	ID                    string                `json:"id"`
+	TenantID              string                `json:"tenant_id"`
+	TeamID                *string               `json:"team_id,omitempty"`
+	OwnerUserID           string                `json:"owner_user_id"`
+	EmployeeType          string                `json:"employee_type"`
+	ProviderType          string                `json:"provider_type"`
+	Name                  string                `json:"name"`
+	Role                  string                `json:"role"`
+	Description           *string               `json:"description,omitempty"`
+	Status                DigitalEmployeeStatus `json:"status"`
+	PermissionPolicy      map[string]any        `json:"permission_policy"`
+	ContextPolicy         map[string]any        `json:"context_policy"`
+	ApprovalPolicy        map[string]any        `json:"approval_policy"`
+	RiskLevel             string                `json:"risk_level"`
+	Metadata              map[string]any        `json:"metadata"`
+	PersonaMemoryMarkdown string                `json:"persona_memory_markdown"`
+	CapabilityBindings    map[string]any        `json:"capability_bindings"`
+	BudgetPolicy          map[string]any        `json:"budget_policy"`
+	DisabledAt            *string               `json:"disabled_at,omitempty"`
+	ArchivedAt            *string               `json:"archived_at,omitempty"`
+	AllowedActions        []string              `json:"allowed_actions,omitempty"`
+	CreatedAt             string                `json:"created_at,omitempty"`
+	UpdatedAt             string                `json:"updated_at,omitempty"`
 }
 
 type digitalEmployeeOverviewResponse struct {
@@ -1235,25 +1238,28 @@ func employeeResponses(employees []*DigitalEmployee) []digitalEmployeeResponse {
 
 func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeResponse {
 	return digitalEmployeeResponse{
-		ID:               employee.ID.String(),
-		TenantID:         employee.TenantID.String(),
-		TeamID:           uuidStringPtr(employee.TeamID),
-		OwnerUserID:      employee.OwnerUserID.String(),
-		EmployeeType:     employee.EmployeeType,
-		ProviderType:     employee.ProviderType,
-		Name:             employee.Name,
-		Role:             employee.Role,
-		Description:      employee.Description,
-		Status:           employee.Status,
-		PermissionPolicy: cloneMap(employee.PermissionPolicy),
-		ContextPolicy:    cloneMap(employee.ContextPolicy),
-		ApprovalPolicy:   cloneMap(employee.ApprovalPolicy),
-		RiskLevel:        employee.RiskLevel,
-		Metadata:         cloneMap(employee.Metadata),
-		DisabledAt:       timeStringPtr(employee.DisabledAt),
-		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
-		CreatedAt:        timeString(employee.CreatedAt),
-		UpdatedAt:        timeString(employee.UpdatedAt),
+		ID:                    employee.ID.String(),
+		TenantID:              employee.TenantID.String(),
+		TeamID:                uuidStringPtr(employee.TeamID),
+		OwnerUserID:           employee.OwnerUserID.String(),
+		EmployeeType:          employee.EmployeeType,
+		ProviderType:          employee.ProviderType,
+		Name:                  employee.Name,
+		Role:                  employee.Role,
+		Description:           employee.Description,
+		Status:                employee.Status,
+		PermissionPolicy:      cloneMap(employee.PermissionPolicy),
+		ContextPolicy:         cloneMap(employee.ContextPolicy),
+		ApprovalPolicy:        cloneMap(employee.ApprovalPolicy),
+		RiskLevel:             employee.RiskLevel,
+		Metadata:              cloneMap(employee.Metadata),
+		PersonaMemoryMarkdown: employee.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(employee.CapabilityBindings),
+		BudgetPolicy:          cloneMap(employee.BudgetPolicy),
+		DisabledAt:            timeStringPtr(employee.DisabledAt),
+		ArchivedAt:            timeStringPtr(employee.ArchivedAt),
+		CreatedAt:             timeString(employee.CreatedAt),
+		UpdatedAt:             timeString(employee.UpdatedAt),
 	}
 }
 
