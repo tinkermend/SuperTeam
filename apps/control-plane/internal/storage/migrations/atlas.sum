@@ -1,4 +1,4 @@
-h1:YDKlJuaL76nNshrgwSLMTBWgowMuE+wWPiQl0HffYtQ=
+h1:SUX+0a2GNVXRSkpDd9p1kEeO8MQzGmqEL3uV7a+WXQY=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -47,4 +47,4 @@ h1:YDKlJuaL76nNshrgwSLMTBWgowMuE+wWPiQl0HffYtQ=
 047_drop_team_governance_and_effective_config.sql h1:OcF+Mwc193e+QdazmAnrU9DcFVyjTWI7UoafV91BZHA=
 048_project_runtime_nodes_and_affinity.sql h1:HoQqtHOj68T9bUrsz9SKmgTf+x6ZO1oOkVhNvIpsmyg=
 049_backfill_project_runtime_nodes_from_placements.sql h1:7Iad8h/ozT7ChLDxsolXgoO3WUB+p5W6SJ2ks+CikIs=
-050_digital_employee_templates.sql h1:b6IGWQjuCANJrhmK0uA+GdXZbv6WISK3m9oWJUCJrmA=
+050_digital_employee_templates.sql h1:Z4VLjokZYR9mbi3Y3aO2dIJ+JBdHM674n489IwT+2G0=

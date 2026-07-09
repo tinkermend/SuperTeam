@@ -529,10 +529,10 @@ func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	repo := NewPgRepository(queries.New(conn), conn)
 
-	// The migration seeds 9 builtin templates for the default tenant.
+	// The platform ships no default templates; every tenant starts empty.
 	seeded, err := repo.ListEmployeeTemplates(ctx, ListEmployeeTemplatesParams{TenantID: tenantID})
 	require.NoError(t, err)
-	require.Len(t, seeded, 9)
+	require.Empty(t, seeded)
 
 	created, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
 		TenantID:                   tenantID,
@@ -585,7 +585,9 @@ func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
 
 	labels, err := repo.ListEmployeeTemplateLabels(ctx, tenantID)
 	require.NoError(t, err)
-	require.Equal(t, "数据库管理", labels["database_admin"])
+	// ListEmployeeTemplateLabels intentionally does not filter deleted_at,
+	// so the soft-deleted custom_reviewer template (renamed above) still resolves.
+	require.Equal(t, "评审员（已更新）", labels["custom_reviewer"])
 }
 
 func normalizeSQL(value string) string {

@@ -19,29 +19,11 @@ import (
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
-func TestBuiltinEmployeeTemplateFixturesExcludeProjectCoordinator(t *testing.T) {
-	types := builtinEmployeeTemplateFixtures(uuid.New())
-	if len(types) < 6 {
-		t.Fatalf("expected professional engineer types, got %#v", types)
-	}
-	for _, item := range types {
-		if strings.Contains(item.Type, "coordinator") || strings.Contains(item.Label, "协调") {
-			t.Fatalf("project coordinator must not be a reusable employee type: %#v", item)
-		}
-	}
-	wantTypes := []string{"database_admin", "devops_engineer", "security_engineer", "qa_engineer"}
-	for _, wantType := range wantTypes {
-		found := false
-		for _, item := range types {
-			if item.Type == wantType {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("expected %s type in fixtures, got %#v", wantType, types)
-		}
-	}
+func TestBuiltinEmployeeTemplateFixturesAreEmptyByDefault(t *testing.T) {
+	// The platform ships no default digital employee templates — every
+	// tenant starts with an empty catalog and templates must be created
+	// explicitly via CreateEmployeeTemplate.
+	require.Empty(t, builtinEmployeeTemplateFixtures(uuid.New()))
 }
 
 func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *testing.T) {
@@ -232,7 +214,6 @@ func TestCreateOptionsUsePlatformFullEmployeeTypes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, options.EmployeeTypes, len(builtinEmployeeTemplateFixtures(tenantID))+1)
-	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "database_admin"))
 	require.True(t, employeeTypeOptionExists(options.EmployeeTypes, "custom_agent"))
 	require.Contains(t, options.CapabilityOptions.ProviderTypes, "codex")
 	require.Contains(t, options.CapabilityOptions.ProviderTypes, "opencode")
@@ -252,6 +233,28 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 		Skills:     []string{"baseline-skill", "shared-skill"},
 		MCPServers: []string{"baseline-mcp"},
 	}
+	// Seed two tenant templates whose recommended skills/mcp servers differ
+	// from the team baseline, to prove CapabilityOptions reflects the
+	// tenant's template catalog rather than the team baseline.
+	ctx := context.Background()
+	_, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:              tenantID,
+		Type:                  "database_admin",
+		Label:                 "数据库管理",
+		DefaultRole:           "database_admin",
+		RecommendedSkills:     []string{"database-troubleshooting"},
+		RecommendedMCPServers: []string{"postgres-readonly"},
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:              tenantID,
+		Type:                  "frontend_engineer",
+		Label:                 "前端开发",
+		DefaultRole:           "frontend_engineer",
+		RecommendedSkills:     []string{"frontend-implementation"},
+		RecommendedMCPServers: []string{"browser"},
+	})
+	require.NoError(t, err)
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
@@ -276,10 +279,19 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 }
 
 func TestGetCreateOptionsIncludesCustomAgentRegardlessOfTeamAllowlist(t *testing.T) {
-	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
 		"allowed_employee_types": []any{"custom_agent"},
 		"allowed_provider_types": []any{"codex"},
 	}, map[string]any{})
+	// Seed a template the team's allow-list does NOT mention, to prove the
+	// returned catalog is the tenant's full template set, not filtered down
+	// to the allow-list.
+	_, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "评审员",
+	})
+	require.NoError(t, err)
 
 	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
 		TenantID: tenantID,
@@ -514,6 +526,14 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 		},
 	}
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		Type:        "backend_engineer",
+		Label:       "后端开发",
+		DefaultRole: "backend_engineer",
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
 	service, err := NewService(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -1270,6 +1290,14 @@ func TestServiceValidation(t *testing.T) {
 	employeeID := uuid.New()
 	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
+	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID:    tenantID,
+		Type:        "backend_engineer",
+		Label:       "后端开发",
+		DefaultRole: "backend_engineer",
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
 	validCreateReq := func() CreateDigitalEmployeeRequest {
 		return CreateDigitalEmployeeRequest{
 			TenantID:      tenantID,
@@ -2146,6 +2174,17 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 		},
 	}
 	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID:                   tenantID,
+		Type:                       "database_admin",
+		Label:                      "数据库管理",
+		DefaultRole:                "database_admin",
+		RecommendedSkills:          []string{"database-troubleshooting", "sql-review"},
+		RecommendedMCPServers:      []string{"postgres-readonly"},
+		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"database-troubleshooting", "sql-review"}},
+	}); err != nil {
+		t.Fatalf("seed database_admin template: %v", err)
+	}
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
 	repo.preflight.GovernanceSnapshot = map[string]any{
 		"authorization":     "Bearer raw-token",
@@ -2313,46 +2352,14 @@ func newMemoryRepository() *memoryRepository {
 	}
 }
 
+// builtinEmployeeTemplateFixtures intentionally returns no default templates.
+// The platform does not ship any pre-seeded digital employee templates —
+// every tenant starts with an empty template catalog and templates are
+// created explicitly via CreateEmployeeTemplate. Callers still invoke this
+// helper (e.g. via len(builtinEmployeeTemplateFixtures(tenantID))+1 for the
+// custom_agent sentinel) so the signature is preserved for a length of 0.
 func builtinEmployeeTemplateFixtures(tenantID uuid.UUID) []EmployeeTemplateRecord {
-	now := time.Now().UTC()
-	type seed struct {
-		templateType string
-		label        string
-		defaultRole  string
-		skills       []string
-		mcpServers   []string
-	}
-	seeds := []seed{
-		{"database_admin", "数据库管理", "database_admin", []string{"database-troubleshooting"}, []string{"postgres-readonly", "mysql-readonly"}},
-		{"devops_engineer", "DevOps 运维", "devops_engineer", []string{"incident-diagnosis"}, []string{"kubernetes-readonly", "prometheus-readonly", "grafana-readonly"}},
-		{"security_engineer", "安全工程", "security_engineer", []string{"security-review"}, []string{"postgres-readonly", "http-connector"}},
-		{"qa_engineer", "测试工程", "qa_engineer", []string{"test-planning"}, []string{"browser"}},
-		{"frontend_engineer", "前端开发", "frontend_engineer", []string{"frontend-implementation"}, []string{"browser"}},
-		{"backend_engineer", "后端开发", "backend_engineer", []string{"backend-implementation"}, []string{"postgres-readonly"}},
-		{"fullstack_engineer", "全栈开发", "fullstack_engineer", []string{"frontend-implementation", "backend-implementation"}, []string{"browser", "postgres-readonly"}},
-		{"implementation_engineer", "实施工程师", "implementation_engineer", []string{"environment-check"}, []string{"http-connector"}},
-		{"general_engineer", "通用工程执行", "general_engineer", []string{"code-reading"}, []string{}},
-	}
-	records := make([]EmployeeTemplateRecord, 0, len(seeds))
-	for _, s := range seeds {
-		records = append(records, EmployeeTemplateRecord{
-			ID:                         uuid.New(),
-			TenantID:                   tenantID,
-			Type:                       s.templateType,
-			Label:                      s.label,
-			Description:                s.label,
-			DefaultRole:                s.defaultRole,
-			RecommendedSkills:          s.skills,
-			RecommendedMCPServers:      s.mcpServers,
-			RecommendedProviderTypes:   []string{"codex", "opencode"},
-			DefaultCapabilitySelection: map[string]any{"enabled_skills": s.skills},
-			Status:                     "active",
-			IsSystem:                   true,
-			CreatedAt:                  now,
-			UpdatedAt:                  now,
-		})
-	}
-	return records
+	return []EmployeeTemplateRecord{}
 }
 
 func (r *memoryRepository) templatesForTenant(tenantID uuid.UUID) []EmployeeTemplateRecord {

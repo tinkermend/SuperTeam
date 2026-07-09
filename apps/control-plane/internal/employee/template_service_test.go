@@ -46,8 +46,15 @@ func TestCreateEmployeeTemplateRejectsDuplicateTypeForTenant(t *testing.T) {
 
 	_, err = svc.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
 		TenantID: tenantID,
-		Type:     "database_admin",
-		Label:    "重复的数据库管理",
+		Type:     "custom_reviewer",
+		Label:    "评审员",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "重复的评审员",
 	})
 
 	require.ErrorIs(t, err, ErrInvalidInput)
@@ -134,10 +141,26 @@ func TestDeleteEmployeeTemplateAllowsDeletingSystemTemplates(t *testing.T) {
 	svc, err := NewService(repo)
 	require.NoError(t, err)
 	tenantID := uuid.New()
-	templates, err := svc.ListEmployeeTemplates(context.Background(), tenantID)
+
+	// is_system is never settable through CreateEmployeeTemplate (no template
+	// ships pre-seeded); flip it directly on the test double's storage to
+	// exercise deletion of a system-owned template.
+	created, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
+		TenantID: tenantID,
+		Type:     "custom_reviewer",
+		Label:    "自定义评审员",
+	})
 	require.NoError(t, err)
-	require.NotEmpty(t, templates)
-	target := templates[0]
+	templates := repo.templates[tenantID]
+	for i := range templates {
+		if templates[i].ID == created.ID {
+			templates[i].IsSystem = true
+		}
+	}
+	repo.templates[tenantID] = templates
+
+	target, err := svc.GetEmployeeTemplate(context.Background(), tenantID, created.ID)
+	require.NoError(t, err)
 	require.True(t, target.IsSystem)
 
 	err = svc.DeleteEmployeeTemplate(context.Background(), tenantID, target.ID)
