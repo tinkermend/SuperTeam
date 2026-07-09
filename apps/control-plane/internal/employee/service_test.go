@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -980,6 +981,62 @@ func TestLegacyProvisioningPayloadCarriesEffectiveCapabilityArrays(t *testing.T)
 	}
 	if _, ok := server["permission_scope"].(map[string]any); !ok {
 		t.Fatalf("expected MCP permission_scope object, got %#v", server["permission_scope"])
+	}
+}
+
+func TestBuildProvisionInstancePayloadIncludesPersonaMemoryAndCapabilityBindings(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.teamBaselines[*req.TeamID] = TeamBaseline{
+		Constitution: map[string]any{"mission": "keep services healthy"},
+		Skills:       []string{"database-troubleshooting"},
+		MCPServers:   []string{"postgres-readonly"},
+	}
+	req.PersonaMemoryMarkdown = "# 人格画像\n证据优先"
+	req.CapabilityBindings = map[string]any{
+		"skills":                    []string{"database-troubleshooting"},
+		"mcp_servers":               []string{"postgres-readonly"},
+		"external_capabilities":     []string{},
+		"environment_variable_refs": []string{"PG_DSN"},
+	}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+
+	record := repo.employees[created.ID]
+	configInput := latestConfigInputForTest(t, repo, req.TenantID, created.ID)
+	preview := latestEffectiveConfigPreviewForTest(t, repo, req.TenantID, created.ID)
+	_, _, payload, err := createProvisioningInstanceAndReceipt(context.Background(), repo, svc.skillLister, record, req, repo.preflight, configInput, preview)
+	if err != nil {
+		t.Fatalf("create legacy provisioning payload: %v", err)
+	}
+	payload = runtimeCommandPayloadForTest(t, payload)
+
+	if payload["persona_memory_markdown"] != "# 人格画像\n证据优先" {
+		t.Fatalf("expected persona_memory_markdown in payload, got %#v", payload["persona_memory_markdown"])
+	}
+	bindings, ok := payload["capability_bindings"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected capability_bindings object, got %#v", payload["capability_bindings"])
+	}
+	if !reflect.DeepEqual(bindings["mcp_servers"], []any{"postgres-readonly"}) {
+		t.Fatalf("expected capability_bindings.mcp_servers [postgres-readonly], got %#v", bindings["mcp_servers"])
+	}
+	if _, ok := payload["role_profile"]; ok {
+		t.Fatalf("did not expect legacy role_profile in payload: %#v", payload["role_profile"])
+	}
+	if _, ok := payload["capability_selection"]; ok {
+		t.Fatalf("did not expect legacy capability_selection in payload: %#v", payload["capability_selection"])
+	}
+
+	mcpServers, ok := payload["mcp_servers"].([]any)
+	if !ok || len(mcpServers) != 1 {
+		t.Fatalf("expected one MCP server payload, got %#v", payload["mcp_servers"])
+	}
+	server, ok := mcpServers[0].(map[string]any)
+	if !ok || server["server_key"] != "postgres-readonly" {
+		t.Fatalf("unexpected MCP server payload: %#v", mcpServers[0])
 	}
 }
 
@@ -2501,23 +2558,23 @@ func (r *memoryRepository) CreateEmployeeTemplate(ctx context.Context, params Cr
 	}
 	now := time.Now().UTC()
 	record := EmployeeTemplateRecord{
-		ID:                           uuid.New(),
-		TenantID:                     params.TenantID,
-		Type:                         params.Type,
-		Label:                        params.Label,
-		Description:                  params.Description,
-		DefaultRole:                  params.DefaultRole,
-		RecommendedSkills:            params.RecommendedSkills,
-		RecommendedMCPServers:        params.RecommendedMCPServers,
-		RecommendedProviderTypes:     params.RecommendedProviderTypes,
-		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
-		CapabilityBindings:           cloneMap(params.CapabilityBindings),
-		BudgetPolicy:                 cloneMap(params.BudgetPolicy),
-		Metadata:                     params.Metadata,
-		Status:                       "active",
-		IsSystem:                     false,
-		CreatedAt:                    now,
-		UpdatedAt:                    now,
+		ID:                       uuid.New(),
+		TenantID:                 params.TenantID,
+		Type:                     params.Type,
+		Label:                    params.Label,
+		Description:              params.Description,
+		DefaultRole:              params.DefaultRole,
+		RecommendedSkills:        params.RecommendedSkills,
+		RecommendedMCPServers:    params.RecommendedMCPServers,
+		RecommendedProviderTypes: params.RecommendedProviderTypes,
+		PersonaMemoryMarkdown:    params.PersonaMemoryMarkdown,
+		CapabilityBindings:       cloneMap(params.CapabilityBindings),
+		BudgetPolicy:             cloneMap(params.BudgetPolicy),
+		Metadata:                 params.Metadata,
+		Status:                   "active",
+		IsSystem:                 false,
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 	r.templates[params.TenantID] = append(r.templatesForTenant(params.TenantID), record)
 	return record, nil

@@ -56,6 +56,29 @@ fn parses_valid_start_session_payload() {
 }
 
 #[test]
+fn parses_persona_memory_and_capability_bindings_for_session_payload() {
+    let mut payload = valid_payload();
+    payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
+    payload["capability_bindings"] = json!({
+        "skills": ["incident-diagnosis"],
+        "mcp_servers": ["postgres-readonly"],
+        "external_capabilities": [],
+        "environment_variable_refs": ["PG_DSN"]
+    });
+
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid");
+
+    assert_eq!(
+        parsed.persona_memory_markdown.as_deref(),
+        Some("# 人格画像\n证据优先")
+    );
+    assert_eq!(
+        parsed.capability_bindings["mcp_servers"][0],
+        "postgres-readonly"
+    );
+}
+
+#[test]
 fn project_workspace_accessor_exposes_capability_auth_attestation_and_budget_metadata() {
     let mut payload = valid_payload();
     payload["metadata"] = json!({
@@ -420,6 +443,33 @@ fn parses_provision_payload_with_effective_capabilities() {
         "public"
     );
     assert_eq!(parsed.mcp_servers[0].permission_scope["readonly"], true);
+}
+
+#[test]
+fn parses_persona_memory_and_capability_bindings_for_provision_payload() {
+    let mut command = RuntimeCommand {
+        id: "cmd-persona".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload: valid_provision_payload("cmd-persona"),
+    };
+    command.payload["persona_memory_markdown"] = serde_json::json!("# 人格画像\n证据优先");
+    command.payload["capability_bindings"] = serde_json::json!({
+        "skills": ["incident-diagnosis"],
+        "mcp_servers": ["postgres-readonly"],
+        "external_capabilities": [],
+        "environment_variable_refs": ["PG_DSN"]
+    });
+
+    let payload = RuntimeProvisionInstanceCommandPayload::from_command(&command).unwrap();
+
+    assert_eq!(
+        payload.persona_memory_markdown.as_deref(),
+        Some("# 人格画像\n证据优先")
+    );
+    assert_eq!(
+        payload.capability_bindings["skills"][0],
+        "incident-diagnosis"
+    );
 }
 
 fn valid_provision_payload(command_id: &str) -> serde_json::Value {

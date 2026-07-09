@@ -1106,6 +1106,10 @@ func (f *fakeRunWritebackRepository) GetDigitalEmployeeRunStats(context.Context,
 	return DigitalEmployeeRunStats{}, nil
 }
 
+func (f *fakeRunWritebackRepository) GetLatestDigitalEmployeeConfigRevision(context.Context, uuid.UUID, uuid.UUID) (EmployeeConfigInput, error) {
+	return EmployeeConfigInput{}, nil
+}
+
 func (f *fakeRunWritebackRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
 	f.transactionCount++
 	return fn(f)

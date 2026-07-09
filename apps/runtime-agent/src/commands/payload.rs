@@ -130,6 +130,10 @@ pub struct RuntimeProvisionInstanceCommandPayload {
     pub provider_type: String,
     pub agent_home_dir: String,
     #[serde(default)]
+    pub persona_memory_markdown: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub capability_bindings: serde_json::Value,
+    #[serde(default)]
     pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
     #[serde(default)]
     pub skills: Vec<RuntimeSkillPayload>,
@@ -204,6 +208,10 @@ pub struct RuntimeSessionCommandPayload {
     pub provider_type: String,
     #[serde(default)]
     pub agent_home_dir: Option<String>,
+    #[serde(default)]
+    pub persona_memory_markdown: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub capability_bindings: serde_json::Value,
     #[serde(default)]
     pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
     #[serde(default)]
@@ -547,6 +555,10 @@ fn default_metadata() -> serde_json::Value {
     serde_json::json!({})
 }
 
+fn default_json_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,6 +652,8 @@ mod tests {
             runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
@@ -695,6 +709,8 @@ mod tests {
                 runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
                 provider_type: "codex".to_string(),
                 agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+                persona_memory_markdown: None,
+                capability_bindings: serde_json::json!({}),
                 workspace_files: Vec::new(),
                 skills: Vec::new(),
                 mcp_servers: Vec::new(),
@@ -726,6 +742,8 @@ mod tests {
             runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),

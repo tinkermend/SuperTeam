@@ -63,6 +63,26 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 	return runPreflightFromQuery(preflight)
 }
 
+func (r *PgRunRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	revision, err := r.q.GetLatestDigitalEmployeeConfigRevision(ctx, queries.GetLatestDigitalEmployeeConfigRevisionParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return EmployeeConfigInput{}, mapNoRows(err)
+	}
+
+	return employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    revision.ID,
+		tenantID:              revision.TenantID,
+		digitalEmployeeID:     revision.DigitalEmployeeID,
+		revisionNumber:        revision.RevisionNumber,
+		personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		capabilityBindings:    revision.CapabilityBindings,
+		budgetPolicy:          revision.BudgetPolicy,
+	})
+}
+
 func (r *PgRunRepository) GetProjectTaskRunPreflight(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (StartProjectTaskRunPreflight, error) {
 	preflight, err := r.q.GetProjectTaskRunPreflight(ctx, queries.GetProjectTaskRunPreflightParams{
 		TenantID:          tenantID,
@@ -111,23 +131,23 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 	}
 
 	return RunPreflight{
-		TenantID:                   preflight.TenantID,
-		TeamID:                     preflight.TeamID.UUID,
-		DigitalEmployeeID:          preflight.DigitalEmployeeID,
-		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
-		ExecutionInstanceID:        preflight.ExecutionInstanceID,
-		ExecutionStatus:            ExecutionInstanceStatus(preflight.ExecutionStatus),
-		RuntimeNodeID:              preflight.RuntimeNodeID,
-		NodeID:                     preflight.NodeID,
-		ProviderType:               preflight.ProviderType,
-		AgentHomeDir:               preflight.AgentHomeDir,
-		RuntimeSelector:            runtimeSelector,
-		SessionPolicy:              sessionPolicy,
-		WorkspacePolicy:            workspacePolicy,
-		BudgetPolicy:               budgetPolicy,
-		TodayTokenUsage:            preflight.TodayTokenUsage,
-		BusinessTimezone:           preflight.BusinessTimezone,
-		ProviderHealthy:            preflight.ProviderHealthy,
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID.UUID,
+		DigitalEmployeeID:     preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		ExecutionInstanceID:   preflight.ExecutionInstanceID,
+		ExecutionStatus:       ExecutionInstanceStatus(preflight.ExecutionStatus),
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		ProviderType:          preflight.ProviderType,
+		AgentHomeDir:          preflight.AgentHomeDir,
+		RuntimeSelector:       runtimeSelector,
+		SessionPolicy:         sessionPolicy,
+		WorkspacePolicy:       workspacePolicy,
+		BudgetPolicy:          budgetPolicy,
+		TodayTokenUsage:       preflight.TodayTokenUsage,
+		BusinessTimezone:      preflight.BusinessTimezone,
+		ProviderHealthy:       preflight.ProviderHealthy,
 	}, nil
 }
 
@@ -137,19 +157,19 @@ func projectTaskRunPreflightFromQuery(preflight queries.GetProjectTaskRunPreflig
 		return StartProjectTaskRunPreflight{}, err
 	}
 	return StartProjectTaskRunPreflight{
-		TenantID:                   preflight.TenantID,
-		TeamID:                     preflight.TeamID.UUID,
-		DigitalEmployeeID:          preflight.DigitalEmployeeID,
-		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
-		RuntimeNodeID:              preflight.RuntimeNodeID,
-		NodeID:                     preflight.NodeID,
-		ProviderType:               preflight.ProviderType,
-		WorkspaceBaseDir:           preflight.WorkspaceBaseDir,
-		BudgetPolicy:               budgetPolicy,
-		TodayTokenUsage:            preflight.TodayTokenUsage,
-		BusinessTimezone:           preflight.BusinessTimezone,
-		RuntimeSessionActive:       preflight.RuntimeSessionActive,
-		ProviderHealthy:            preflight.ProviderHealthy,
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID.UUID,
+		DigitalEmployeeID:     preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		ProviderType:          preflight.ProviderType,
+		WorkspaceBaseDir:      preflight.WorkspaceBaseDir,
+		BudgetPolicy:          budgetPolicy,
+		TodayTokenUsage:       preflight.TodayTokenUsage,
+		BusinessTimezone:      preflight.BusinessTimezone,
+		RuntimeSessionActive:  preflight.RuntimeSessionActive,
+		ProviderHealthy:       preflight.ProviderHealthy,
 	}, nil
 }
 
@@ -159,19 +179,19 @@ func projectTaskRunPreflightForNodeFromQuery(preflight queries.GetProjectTaskRun
 		return StartProjectTaskRunPreflight{}, err
 	}
 	return StartProjectTaskRunPreflight{
-		TenantID:                   preflight.TenantID,
-		TeamID:                     preflight.TeamID.UUID,
-		DigitalEmployeeID:          preflight.DigitalEmployeeID,
-		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
-		RuntimeNodeID:              preflight.RuntimeNodeID,
-		NodeID:                     preflight.NodeID,
-		ProviderType:               preflight.ProviderType,
-		WorkspaceBaseDir:           preflight.WorkspaceBaseDir,
-		BudgetPolicy:               budgetPolicy,
-		TodayTokenUsage:            preflight.TodayTokenUsage,
-		BusinessTimezone:           preflight.BusinessTimezone,
-		RuntimeSessionActive:       preflight.RuntimeSessionActive,
-		ProviderHealthy:            preflight.ProviderHealthy,
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID.UUID,
+		DigitalEmployeeID:     preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		ProviderType:          preflight.ProviderType,
+		WorkspaceBaseDir:      preflight.WorkspaceBaseDir,
+		BudgetPolicy:          budgetPolicy,
+		TodayTokenUsage:       preflight.TodayTokenUsage,
+		BusinessTimezone:      preflight.BusinessTimezone,
+		RuntimeSessionActive:  preflight.RuntimeSessionActive,
+		ProviderHealthy:       preflight.ProviderHealthy,
 	}, nil
 }
 

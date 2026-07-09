@@ -1324,8 +1324,8 @@ func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
 	return out
 }
 
-func runtimeMCPServersPayload(capabilitySelection map[string]any) []map[string]any {
-	keys := stringList(capabilitySelection["enabled_mcp_servers"])
+func runtimeMCPServersPayload(capabilityBindings map[string]any) []map[string]any {
+	keys := stringList(capabilityBindings["mcp_servers"])
 	out := make([]map[string]any, 0, len(keys))
 	for _, key := range keys {
 		payload := runtimeMCPServerPayload{

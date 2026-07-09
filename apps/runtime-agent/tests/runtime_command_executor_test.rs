@@ -1737,6 +1737,42 @@ async fn provision_instance_materializes_team_employee_home() {
 }
 
 #[tokio::test]
+async fn provision_instance_projects_persona_memory_into_employee_home() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config.clone());
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = config
+        .workspace
+        .base_dir
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    let mut command = provision_command(
+        "cmd-provision-persona",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        "# Execution Contract\n",
+    );
+    command.payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
+
+    executor
+        .handle_command(command)
+        .await
+        .expect("provision accepted");
+
+    assert_eq!(
+        std::fs::read_to_string(home.join("人格记忆.md")).unwrap(),
+        "# 人格画像\n证据优先"
+    );
+}
+
+#[tokio::test]
 async fn start_session_rejects_disabled_codex_provider() {
     let temp = TempDir::new().expect("tempdir");
     let fake_claude = make_script(

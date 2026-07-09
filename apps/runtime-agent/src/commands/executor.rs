@@ -28,7 +28,7 @@ use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, Pr
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 use crate::skills::materialize_skills;
 use crate::workspace_files::{
-    WorkspaceMaterializationPlan, materialize_workspace, provider_home_kind,
+    WorkspaceMaterializationPlan, atomic_write, materialize_workspace, provider_home_kind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -578,6 +578,16 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        if let Err(error) = materialize_persona_memory(
+            &result.agent_home_dir,
+            payload.persona_memory_markdown.as_deref(),
+        ) {
+            let error = self.recorded_error(&command.id, error);
+            let message = error.to_string();
+            self.write_provisioning_failure(&command.id, message)
+                .await?;
+            return Err(error);
+        }
 
         if !payload.skills.is_empty() {
             if let (Some(s3_client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
@@ -680,6 +690,16 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        if let Err(error) = materialize_persona_memory(
+            &result.agent_home_dir,
+            payload.persona_memory_markdown.as_deref(),
+        ) {
+            let error = self.recorded_error(&command.id, error);
+            let message = error.to_string();
+            self.write_workspace_sync_failure(&command.id, message)
+                .await?;
+            return Err(error);
+        }
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .complete_runtime_command(
@@ -1060,6 +1080,20 @@ impl RuntimeCommandExecutor {
             .record_rejection(command_id, &error.to_string());
         error
     }
+}
+
+fn materialize_persona_memory(
+    agent_home_dir: &Path,
+    persona_memory: Option<&str>,
+) -> anyhow::Result<()> {
+    let Some(markdown) = persona_memory
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+
+    atomic_write(&agent_home_dir.join("人格记忆.md"), markdown.as_bytes())
 }
 
 fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Option<String>) {
@@ -2812,6 +2846,8 @@ mod tests {
             runtime_node_id: None,
             provider_type: "claude-code".to_string(),
             agent_home_dir: Some("/tmp/runtime-agent-test".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
