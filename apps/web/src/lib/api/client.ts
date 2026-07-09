@@ -7,13 +7,15 @@ export class ApiRequestError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly detail?: string;
+  readonly payload?: unknown;
 
-  constructor(resource: string, status: number, detail?: string, code?: string) {
+  constructor(resource: string, status: number, detail?: string, code?: string, payload?: unknown) {
     super(`${resource} request failed with status ${status}${detail ? `: ${detail}` : ""}`);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.payload = payload;
   }
 }
 
@@ -24,7 +26,7 @@ export function buildApiUrl(baseUrl: string, path: string): string {
 export async function parseJson<T>(response: Response, resource: string): Promise<T> {
   if (!response.ok) {
     const errorDetail = await readErrorDetail(response);
-    throw new ApiRequestError(resource, response.status, errorDetail.detail, errorDetail.code);
+    throw new ApiRequestError(resource, response.status, errorDetail.detail, errorDetail.code, errorDetail.payload);
   }
 
   return (await response.json()) as T;
@@ -146,6 +148,7 @@ export async function deleteJsonWithResponse<T>(
 type ParsedErrorDetail = {
   detail?: string;
   code?: string;
+  payload?: unknown;
 };
 
 async function readErrorDetail(response: Response): Promise<ParsedErrorDetail> {
@@ -168,6 +171,7 @@ async function readErrorDetail(response: Response): Promise<ParsedErrorDetail> {
       return {
         detail,
         code: typeof parsed.code === "string" && parsed.code ? parsed.code : undefined,
+        payload: parsed,
       };
     } catch {
       return { detail: body };

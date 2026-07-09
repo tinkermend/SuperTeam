@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createDigitalEmployee,
   createDigitalEmployeeConfigRevision,
+  deleteDigitalEmployee,
   getDigitalEmployeeCreateOptions,
   getDigitalEmployeeOverview,
   createDigitalEmployeeRun,
@@ -536,6 +537,52 @@ describe("digital employee API", () => {
         method: "GET",
       },
     );
+  });
+
+  it("deletes a digital employee with encoded employee id", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+
+    await expect(
+      deleteDigitalEmployee(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("surfaces delete blockers from the API payload", async () => {
+    const payload = {
+      code: "digital_employee_delete_blocked",
+      message: "该数字员工仍有排队或执行中的工作，停止或完成后再删除。",
+      blockers: [{ type: "project_task", id: "task-1", status: "queued", title: "项目任务" }],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(payload), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    await expect(
+      deleteDigitalEmployee(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee-1",
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "digital_employee_delete_blocked",
+      payload,
+    });
   });
 
   it("creates config revision with encoded employee id and JSON body", async () => {

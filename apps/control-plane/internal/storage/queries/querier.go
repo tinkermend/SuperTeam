@@ -22,6 +22,7 @@ type Querier interface {
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	// 仅 pending（manual/超纲转人工）请求可被人工通过；通过时落定授予额度。
 	ApproveTeamLendingRequest(ctx context.Context, arg ApproveTeamLendingRequestParams) (TeamLendingRequest, error)
+	ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx context.Context, arg ArchiveDigitalEmployeeConfigRevisionsForDeleteParams) ([]uuid.UUID, error)
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
 	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)
@@ -138,6 +139,7 @@ type Querier interface {
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
+	DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams) ([]uuid.UUID, error)
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
@@ -146,6 +148,7 @@ type Querier interface {
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
@@ -168,6 +171,7 @@ type Querier interface {
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
+	GetDigitalEmployeeForDelete(ctx context.Context, arg GetDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (TaskRun, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
@@ -286,6 +290,8 @@ type Querier interface {
 	ListDemandLaunchProjectTasks(ctx context.Context, arg ListDemandLaunchProjectTasksParams) ([]ProjectTask, error)
 	ListDemandLaunchRouteDecisions(ctx context.Context, arg ListDemandLaunchRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	ListDependentsOfTask(ctx context.Context, arg ListDependentsOfTaskParams) ([]uuid.UUID, error)
+	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
+	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
 	ListDigitalEmployeeMCPBindings(ctx context.Context, arg ListDigitalEmployeeMCPBindingsParams) ([]ListDigitalEmployeeMCPBindingsRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
@@ -421,6 +427,12 @@ type Querier interface {
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
+	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
+	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)
+	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
+	SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams) ([]uuid.UUID, error)
+	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
+	SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error

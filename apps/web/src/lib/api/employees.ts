@@ -48,8 +48,24 @@ export type DigitalEmployee = {
   };
   disabled_at?: string;
   archived_at?: string;
+  allowed_actions?: string[];
   created_at?: string;
   updated_at?: string;
+};
+
+export type DigitalEmployeeDeleteBlocker = {
+  type: "run" | "project_task";
+  id: string;
+  status: string;
+  title: string;
+  run_id?: string;
+  project_id?: string;
+};
+
+export type DigitalEmployeeDeleteBlockedErrorResponse = {
+  code: "digital_employee_delete_blocked";
+  message: string;
+  blockers: DigitalEmployeeDeleteBlocker[];
 };
 
 export type DigitalEmployeeTypeOption = {
@@ -682,6 +698,17 @@ export function getDigitalEmployee(
     options,
     `/api/v1/digital-employees/${encodePathSegment(employeeId)}`,
     "digital employee",
+  );
+}
+
+export function deleteDigitalEmployee(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<void> {
+  return deleteJson(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}`,
+    "delete digital employee",
   );
 }
 

@@ -1,21 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { AlertTriangle } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
+import { StatusPill } from "@/components/superteam";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ApiRequestError } from "@/lib/api/client";
 import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
 import {
   createDigitalEmployeeRun,
+  deleteDigitalEmployee,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeSchedulingReadiness,
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
+  type DigitalEmployeeDeleteBlockedErrorResponse,
+  type DigitalEmployeeDeleteBlocker,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
@@ -54,6 +64,7 @@ type EmployeeDetailViewProps = {
 
 export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: EmployeeDetailViewProps) {
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<DigitalEmployeeRunStatus | undefined>(undefined);
@@ -61,6 +72,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
   const [startTaskOpen, setStartTaskOpen] = useState(false);
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteBlocked, setDeleteBlocked] =
+    useState<DigitalEmployeeDeleteBlockedErrorResponse | undefined>(undefined);
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
@@ -177,9 +192,47 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     },
   });
 
+  const deleteEmployee = useMutation({
+    mutationFn: () => deleteDigitalEmployee(apiOptions, employeeId),
+    onMutate: () => {
+      setDeleteBlocked(undefined);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["digital-employees"] }),
+        queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ["digital-employee-overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["digital-employees-overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["unassigned-digital-employees"] }),
+        queryClient.invalidateQueries({ queryKey: ["digital-employee-create-options"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+      await navigate({ to: "/employees" });
+    },
+    onError: (error) => {
+      if (isDeleteBlockedError(error)) {
+        setDeleteBlocked(error.payload);
+      }
+    },
+  });
+
   const handleStopped = async (_run: DigitalEmployeeRun) => {
     await refreshRunFacts();
   };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    setDeleteDialogOpen(open);
+    if (!open) {
+      setDeleteConfirmation("");
+      setDeleteBlocked(undefined);
+      deleteEmployee.reset();
+    }
+  };
+
+  const employeeName = employee.data?.name ?? "";
+  const deleteConfirmReady = deleteConfirmation === employeeName;
+  const genericDeleteError =
+    deleteEmployee.isError && !deleteBlocked ? getDeleteErrorMessage(deleteEmployee.error) : undefined;
 
   return (
     <>
@@ -196,6 +249,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
           <div className="flex flex-col gap-4">
             <EmployeeDetailHeader
               employee={employee.data}
+              onDelete={() => setDeleteDialogOpen(true)}
               onManageCapabilities={() => setCapabilitiesOpen(true)}
               onStartTask={() => setStartTaskOpen(true)}
             />
@@ -308,10 +362,124 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
           </div>
         </SheetContent>
       </Sheet>
+
+      {employee.data ? (
+        <ConfirmDialog
+          cancelBtnText="取消"
+          className="sm:max-w-xl"
+          confirmText="确认删除"
+          desc={
+            <div className="space-y-2">
+              <p>
+                删除后该数字员工会从当前员工列表、团队候选和项目候选中隐藏；历史运行、项目任务、
+                工件和审计记录会保留。Runtime 工作目录不会在本次操作中物理删除。
+              </p>
+              <p>
+                如仍有排队、分发中、运行中、取消中运行，或排队、运行中、处理中项目任务，删除会被阻断。
+              </p>
+            </div>
+          }
+          destructive
+          disabled={!deleteConfirmReady || deleteEmployee.isPending}
+          form="delete-digital-employee-form"
+          isLoading={deleteEmployee.isPending}
+          onOpenChange={handleDeleteDialogOpenChange}
+          open={deleteDialogOpen}
+          title="删除数字员工"
+        >
+          <form
+            className="space-y-4"
+            id="delete-digital-employee-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (deleteConfirmReady) {
+                deleteEmployee.mutate();
+              }
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="delete-digital-employee-confirmation">输入员工名称确认删除</Label>
+              <Input
+                autoComplete="off"
+                id="delete-digital-employee-confirmation"
+                onChange={(event) => {
+                  setDeleteConfirmation(event.currentTarget.value);
+                  if (deleteBlocked) setDeleteBlocked(undefined);
+                }}
+                value={deleteConfirmation}
+              />
+            </div>
+            {deleteBlocked ? <DeleteBlockedAlert blocked={deleteBlocked} /> : null}
+            {genericDeleteError ? (
+              <p className="text-sm text-v3-danger">{genericDeleteError}</p>
+            ) : null}
+          </form>
+        </ConfirmDialog>
+      ) : null}
     </>
   );
 }
 
 function isActiveRun(status: DigitalEmployeeRunStatus) {
   return activeRunStatuses.has(status);
+}
+
+function isDeleteBlockedError(
+  error: unknown,
+): error is ApiRequestError & { payload: DigitalEmployeeDeleteBlockedErrorResponse } {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 409 &&
+    error.code === "digital_employee_delete_blocked" &&
+    isDeleteBlockedPayload(error.payload)
+  );
+}
+
+function isDeleteBlockedPayload(payload: unknown): payload is DigitalEmployeeDeleteBlockedErrorResponse {
+  if (!payload || typeof payload !== "object") return false;
+  const value = payload as Partial<DigitalEmployeeDeleteBlockedErrorResponse>;
+  return (
+    value.code === "digital_employee_delete_blocked" &&
+    typeof value.message === "string" &&
+    Array.isArray(value.blockers)
+  );
+}
+
+function getDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.detail) return error.detail;
+  if (error instanceof Error) return error.message;
+  return "删除失败，请稍后重试。";
+}
+
+function DeleteBlockedAlert({ blocked }: { blocked: DigitalEmployeeDeleteBlockedErrorResponse }) {
+  return (
+    <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
+      <AlertTriangle className="size-4" />
+      <AlertTitle>删除被阻断</AlertTitle>
+      <AlertDescription>
+        <p>{blocked.message}</p>
+        <ul className="mt-3 space-y-2">
+          {blocked.blockers.map((blocker) => (
+            <DeleteBlockerItem blocker={blocker} key={`${blocker.type}:${blocker.id}`} />
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker }) {
+  return (
+    <li className="rounded-v3-inner border border-v3-danger/25 bg-v3-card px-3 py-2 text-v3-ink">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold">{blocker.title}</span>
+        <StatusPill tone="danger">{`${blocker.type} · ${blocker.status}`}</StatusPill>
+      </div>
+      <p className="mt-1 break-all font-mono text-[11px] text-v3-ink-3">
+        {blocker.project_id ? `project ${blocker.project_id} · ` : ""}
+        {blocker.run_id ? `run ${blocker.run_id} · ` : ""}
+        id {blocker.id}
+      </p>
+    </li>
+  );
 }

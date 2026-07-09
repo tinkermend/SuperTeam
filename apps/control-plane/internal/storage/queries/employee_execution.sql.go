@@ -116,6 +116,43 @@ func (q *Queries) AbortProvisionedDigitalEmployee(ctx context.Context, arg Abort
 	return err
 }
 
+const ArchiveDigitalEmployeeConfigRevisionsForDelete = `-- name: ArchiveDigitalEmployeeConfigRevisionsForDelete :many
+UPDATE digital_employee_config_revisions
+SET status = 'archived',
+    archived_at = COALESCE(archived_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND archived_at IS NULL
+RETURNING id
+`
+
+type ArchiveDigitalEmployeeConfigRevisionsForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx context.Context, arg ArchiveDigitalEmployeeConfigRevisionsForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, ArchiveDigitalEmployeeConfigRevisionsForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const AreEmployeesRuntimeReady = `-- name: AreEmployeesRuntimeReady :many
 SELECT
     digital_employee_id,
@@ -347,6 +384,74 @@ func (q *Queries) DeleteDigitalEmployeeExecutionInstance(ctx context.Context, ar
 	return err
 }
 
+const DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete = `-- name: DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete :many
+DELETE FROM project_employee_node_affinity
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+RETURNING id
+`
+
+type DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+func (q *Queries) DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const DisableSkillAgentBindingsForDelete = `-- name: DisableSkillAgentBindingsForDelete :many
+UPDATE skill_agent_bindings
+SET status = 'disabled',
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND status = 'enabled'
+RETURNING id
+`
+
+type DisableSkillAgentBindingsForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, DisableSkillAgentBindingsForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const GetDigitalEmployee = `-- name: GetDigitalEmployee :one
 SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 FROM digital_employees
@@ -466,6 +571,48 @@ func (q *Queries) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Co
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetDigitalEmployeeForDelete = `-- name: GetDigitalEmployeeForDelete :one
+SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
+FROM digital_employees
+WHERE id = $1::uuid
+  AND tenant_id = $2::uuid
+  AND deleted_at IS NULL
+FOR UPDATE
+`
+
+type GetDigitalEmployeeForDeleteParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetDigitalEmployeeForDelete(ctx context.Context, arg GetDigitalEmployeeForDeleteParams) (DigitalEmployee, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeForDelete, arg.ID, arg.TenantID)
+	var i DigitalEmployee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Role,
+		&i.Description,
+		&i.Status,
+		&i.PermissionPolicy,
+		&i.ContextPolicy,
+		&i.ApprovalPolicy,
+		&i.RiskLevel,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
+		&i.ProviderType,
 	)
 	return i, err
 }
@@ -1580,6 +1727,126 @@ func (q *Queries) GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, a
 		&i.RuntimePolicyAllowed,
 	)
 	return i, err
+}
+
+const ListDigitalEmployeeDeleteProjectTaskBlockers = `-- name: ListDigitalEmployeeDeleteProjectTaskBlockers :many
+SELECT
+    'project_task'::text AS blocker_type,
+    pt.id,
+    pt.status,
+    (COALESCE(NULLIF(pt.title, ''), pt.id::text))::text AS title,
+    NULL::uuid AS run_id,
+    pt.project_id
+FROM project_tasks pt
+WHERE pt.tenant_id = $1::uuid
+  AND pt.assigned_digital_employee_id = $2::uuid
+  AND pt.status IN ('queued', 'running', 'in_progress')
+ORDER BY pt.updated_at DESC, pt.created_at DESC
+LIMIT 20
+`
+
+type ListDigitalEmployeeDeleteProjectTaskBlockersParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListDigitalEmployeeDeleteProjectTaskBlockersRow struct {
+	BlockerType string        `json:"blocker_type"`
+	ID          uuid.UUID     `json:"id"`
+	Status      string        `json:"status"`
+	Title       string        `json:"title"`
+	RunID       uuid.NullUUID `json:"run_id"`
+	ProjectID   uuid.UUID     `json:"project_id"`
+}
+
+func (q *Queries) ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeDeleteProjectTaskBlockers, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeDeleteProjectTaskBlockersRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeDeleteProjectTaskBlockersRow
+		if err := rows.Scan(
+			&i.BlockerType,
+			&i.ID,
+			&i.Status,
+			&i.Title,
+			&i.RunID,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDigitalEmployeeDeleteRunBlockers = `-- name: ListDigitalEmployeeDeleteRunBlockers :many
+SELECT
+    'run'::text AS blocker_type,
+    tr.id,
+    tr.status,
+    COALESCE(t.title, tr.task_id::text) AS title,
+    tr.id AS run_id,
+    pt.project_id
+FROM task_runs tr
+LEFT JOIN tasks t
+  ON t.tenant_id = tr.tenant_id
+ AND t.id = tr.task_id
+LEFT JOIN project_tasks pt
+  ON pt.tenant_id = tr.tenant_id
+ AND pt.digital_employee_run_id = tr.id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+ORDER BY tr.updated_at DESC, tr.created_at DESC
+LIMIT 20
+`
+
+type ListDigitalEmployeeDeleteRunBlockersParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListDigitalEmployeeDeleteRunBlockersRow struct {
+	BlockerType string        `json:"blocker_type"`
+	ID          uuid.UUID     `json:"id"`
+	Status      string        `json:"status"`
+	Title       string        `json:"title"`
+	RunID       uuid.UUID     `json:"run_id"`
+	ProjectID   uuid.NullUUID `json:"project_id"`
+}
+
+func (q *Queries) ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeDeleteRunBlockers, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeDeleteRunBlockersRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeDeleteRunBlockersRow
+		if err := rows.Scan(
+			&i.BlockerType,
+			&i.ID,
+			&i.Status,
+			&i.Title,
+			&i.RunID,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListDigitalEmployeeExecutionInstances = `-- name: ListDigitalEmployeeExecutionInstances :many
@@ -3084,6 +3351,253 @@ func (q *Queries) ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Contex
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete = `-- name: SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete :many
+UPDATE digital_employee_environment_variables
+SET status = 'disabled',
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id
+`
+
+type SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const SoftDeleteDigitalEmployeeExecutionInstancesForDelete = `-- name: SoftDeleteDigitalEmployeeExecutionInstancesForDelete :many
+UPDATE digital_employee_execution_instances
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, $1::timestamptz),
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, runtime_node_id, provider_type, agent_home_dir
+`
+
+type SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+type SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow struct {
+	ID            uuid.UUID `json:"id"`
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	ProviderType  string    `json:"provider_type"`
+	AgentHomeDir  string    `json:"agent_home_dir"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error) {
+	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeExecutionInstancesForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow{}
+	for rows.Next() {
+		var i SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RuntimeNodeID,
+			&i.ProviderType,
+			&i.AgentHomeDir,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const SoftDeleteDigitalEmployeeForDelete = `-- name: SoftDeleteDigitalEmployeeForDelete :one
+UPDATE digital_employees
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, $1::timestamptz),
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
+`
+
+type SoftDeleteDigitalEmployeeForDeleteParams struct {
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	ID        uuid.UUID          `json:"id"`
+	TenantID  uuid.UUID          `json:"tenant_id"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error) {
+	row := q.db.QueryRow(ctx, SoftDeleteDigitalEmployeeForDelete, arg.DeletedAt, arg.ID, arg.TenantID)
+	var i DigitalEmployee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Role,
+		&i.Description,
+		&i.Status,
+		&i.PermissionPolicy,
+		&i.ContextPolicy,
+		&i.ApprovalPolicy,
+		&i.RiskLevel,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
+		&i.ProviderType,
+	)
+	return i, err
+}
+
+const SoftDeleteDigitalEmployeeMCPBindingsForDelete = `-- name: SoftDeleteDigitalEmployeeMCPBindingsForDelete :many
+UPDATE digital_employee_mcp_bindings
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, $1::timestamptz),
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id
+`
+
+type SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeMCPBindingsForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete = `-- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many
+UPDATE digital_employee_mcp_bindings_v2
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, $1::timestamptz),
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id
+`
+
+type SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const SoftDeleteDigitalEmployeeWorkspaceFilesForDelete = `-- name: SoftDeleteDigitalEmployeeWorkspaceFilesForDelete :many
+UPDATE digital_employee_workspace_files
+SET status = 'deleted',
+    archived_at = COALESCE(archived_at, $1::timestamptz),
+    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2::uuid
+  AND digital_employee_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id
+`
+
+type SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams struct {
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+}
+
+func (q *Queries) SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeWorkspaceFilesForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

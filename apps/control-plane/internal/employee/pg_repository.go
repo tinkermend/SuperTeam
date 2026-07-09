@@ -134,6 +134,152 @@ func (r *PgRepository) GetDigitalEmployee(ctx context.Context, tenantID, employe
 	return digitalEmployeeRecordFromQuery(employee)
 }
 
+func (r *PgRepository) GetDigitalEmployeeForDelete(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error) {
+	employee, err := r.q.GetDigitalEmployeeForDelete(ctx, queries.GetDigitalEmployeeForDeleteParams{
+		ID:       employeeID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return DigitalEmployeeRecord{}, mapNoRows(err)
+	}
+	return digitalEmployeeRecordFromQuery(employee)
+}
+
+func (r *PgRepository) ListDigitalEmployeeDeleteBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]DigitalEmployeeDeleteBlocker, error) {
+	runRows, err := r.q.ListDigitalEmployeeDeleteRunBlockers(ctx, queries.ListDigitalEmployeeDeleteRunBlockersParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	projectRows, err := r.q.ListDigitalEmployeeDeleteProjectTaskBlockers(ctx, queries.ListDigitalEmployeeDeleteProjectTaskBlockersParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	blockers := make([]DigitalEmployeeDeleteBlocker, 0, len(runRows)+len(projectRows))
+	for _, row := range runRows {
+		blockers = append(blockers, DigitalEmployeeDeleteBlocker{
+			Type:      DigitalEmployeeDeleteBlockerTypeRun,
+			ID:        row.ID,
+			Status:    row.Status,
+			Title:     row.Title,
+			RunID:     uuidPtr(row.RunID),
+			ProjectID: uuidPtrFromNull(row.ProjectID),
+		})
+	}
+	for _, row := range projectRows {
+		blockers = append(blockers, DigitalEmployeeDeleteBlocker{
+			Type:      DigitalEmployeeDeleteBlockerTypeProjectTask,
+			ID:        row.ID,
+			Status:    row.Status,
+			Title:     row.Title,
+			RunID:     uuidPtrFromNull(row.RunID),
+			ProjectID: uuidPtr(row.ProjectID),
+		})
+	}
+	return blockers, nil
+}
+
+func (r *PgRepository) SoftDeleteDigitalEmployeeCascade(ctx context.Context, params SoftDeleteDigitalEmployeeCascadeParams) (DigitalEmployeeDeleteCascadeResult, error) {
+	deletedAt := pgtype.Timestamptz{Time: params.DeletedAt.UTC(), Valid: true}
+	cascade := DigitalEmployeeDeleteCascadeResult{}
+
+	instances, err := r.q.SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx, queries.SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams{
+		TenantID:          params.TenantID,
+		DigitalEmployeeID: params.DigitalEmployeeID,
+		DeletedAt:         deletedAt,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.ExecutionInstances = int64(len(instances))
+	if len(instances) > 0 {
+		first := instances[0]
+		cascade.ExecutionInstanceID = uuidPtr(first.ID)
+		cascade.RuntimeNodeID = uuidPtr(first.RuntimeNodeID)
+		cascade.ProviderType = first.ProviderType
+		cascade.AgentHomeDir = first.AgentHomeDir
+	}
+
+	envRows, err := r.q.SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx, queries.SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.EnvironmentVariables = int64(len(envRows))
+
+	mcpRows, err := r.q.SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx, queries.SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.MCPBindings = int64(len(mcpRows))
+	cascade.MCPBindingIDs = appendUUIDs(cascade.MCPBindingIDs, mcpRows)
+
+	mcpV2Rows, err := r.q.SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx, queries.SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.MCPBindingsV2 = int64(len(mcpV2Rows))
+	cascade.MCPBindingV2IDs = appendUUIDs(cascade.MCPBindingV2IDs, mcpV2Rows)
+
+	skillRows, err := r.q.DisableSkillAgentBindingsForDelete(ctx, queries.DisableSkillAgentBindingsForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.SkillBindings = int64(len(skillRows))
+	cascade.SkillBindingIDs = appendUUIDs(cascade.SkillBindingIDs, skillRows)
+
+	configRows, err := r.q.ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx, queries.ArchiveDigitalEmployeeConfigRevisionsForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.ConfigRevisions = int64(len(configRows))
+
+	workspaceRows, err := r.q.SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx, queries.SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.WorkspaceFiles = int64(len(workspaceRows))
+	cascade.WorkspaceFileIDs = appendUUIDs(cascade.WorkspaceFileIDs, workspaceRows)
+
+	affinityRows, err := r.q.DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx, queries.DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.ProjectAffinities = int64(len(affinityRows))
+
+	_, err = r.q.SoftDeleteDigitalEmployeeForDelete(ctx, queries.SoftDeleteDigitalEmployeeForDeleteParams{
+		ID:        params.DigitalEmployeeID,
+		TenantID:  params.TenantID,
+		DeletedAt: deletedAt,
+	})
+	if err != nil {
+		return cascade, mapNoRows(err)
+	}
+	return cascade, nil
+}
+
+func (r *PgRepository) CreateDigitalEmployeeDeleteAuditEvent(ctx context.Context, params DigitalEmployeeDeleteAuditEventParams) error {
+	details, err := json.Marshal(digitalEmployeeDeleteAuditDetails(params))
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "digital_employee_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "digital_employee", Valid: true},
+		ResourceID:   pgtype.Text{String: params.Employee.ID.String(), Valid: true},
+		Action:       "digital_employee.delete",
+		Details:      details,
+	})
+	return err
+}
+
 func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
 	if _, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
 		ID:       teamID,
@@ -1933,6 +2079,78 @@ func uuidPtrFromNull(value uuid.NullUUID) *uuid.UUID {
 	}
 	copied := value.UUID
 	return &copied
+}
+
+func uuidPtr(value uuid.UUID) *uuid.UUID {
+	if value == uuid.Nil {
+		return nil
+	}
+	copied := value
+	return &copied
+}
+
+func appendUUIDs(dst []uuid.UUID, src []uuid.UUID) []uuid.UUID {
+	return append(dst, src...)
+}
+
+func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventParams) map[string]any {
+	teamID := ""
+	if params.Employee.TeamID != nil {
+		teamID = params.Employee.TeamID.String()
+	}
+	executionInstanceID := ""
+	if params.CascadeResult.ExecutionInstanceID != nil {
+		executionInstanceID = params.CascadeResult.ExecutionInstanceID.String()
+	}
+	runtimeNodeID := ""
+	if params.CascadeResult.RuntimeNodeID != nil {
+		runtimeNodeID = params.CascadeResult.RuntimeNodeID.String()
+	}
+	return map[string]any{
+		"digital_employee_id":   params.Employee.ID.String(),
+		"name":                  params.Employee.Name,
+		"team_id":               teamID,
+		"provider_type":         coalesceString(params.CascadeResult.ProviderType, params.Employee.ProviderType),
+		"runtime_node_id":       runtimeNodeID,
+		"execution_instance_id": executionInstanceID,
+		"agent_home_dir":        params.CascadeResult.AgentHomeDir,
+		"cascade_counts": map[string]any{
+			"execution_instances":   params.CascadeResult.ExecutionInstances,
+			"environment_variables": params.CascadeResult.EnvironmentVariables,
+			"mcp_bindings":          params.CascadeResult.MCPBindings,
+			"mcp_bindings_v2":       params.CascadeResult.MCPBindingsV2,
+			"skill_bindings":        params.CascadeResult.SkillBindings,
+			"config_revisions":      params.CascadeResult.ConfigRevisions,
+			"workspace_files":       params.CascadeResult.WorkspaceFiles,
+			"project_affinities":    params.CascadeResult.ProjectAffinities,
+		},
+		"cleanup_candidates": map[string]any{
+			"agent_home_dir":     params.CascadeResult.AgentHomeDir,
+			"workspace_file_ids": uuidStrings(params.CascadeResult.WorkspaceFileIDs),
+			"mcp_binding_ids":    uuidStrings(append(params.CascadeResult.MCPBindingIDs, params.CascadeResult.MCPBindingV2IDs...)),
+			"skill_binding_ids":  uuidStrings(params.CascadeResult.SkillBindingIDs),
+		},
+		"deleted_at": params.DeletedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func coalesceString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func uuidStrings(values []uuid.UUID) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != uuid.Nil {
+			out = append(out, value.String())
+		}
+	}
+	return out
 }
 
 func textFromPtr(value *string) pgtype.Text {

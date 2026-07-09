@@ -404,6 +404,61 @@ func TestEmployeeServiceGetOverviewRejectsInvalidFilters(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
+func TestServiceDeleteDigitalEmployeeBlocksActiveWorkAndRollsBack(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	actorID := uuid.New()
+	now := time.Now().UTC()
+	repo.employees[employeeID] = DigitalEmployeeRecord{ID: employeeID, TenantID: tenantID, OwnerUserID: actorID, EmployeeType: "devops_engineer", ProviderType: "codex", Name: "阻断员工", Role: "devops", Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now}
+	repo.deleteBlockers = []DigitalEmployeeDeleteBlocker{{Type: DigitalEmployeeDeleteBlockerTypeRun, ID: uuid.New(), Status: "running", Title: "运行中的任务"}}
+
+	err = svc.DeleteDigitalEmployee(context.Background(), DeleteDigitalEmployeeRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, ActorUserID: actorID})
+	require.ErrorIs(t, err, ErrDigitalEmployeeDeleteBlocked)
+	var blocked *DigitalEmployeeDeleteBlockedError
+	require.ErrorAs(t, err, &blocked)
+	require.Len(t, blocked.Blockers, 1)
+	require.Nil(t, repo.employees[employeeID].DeletedAt)
+	require.Equal(t, 0, repo.deleteCascadeCount)
+	require.Len(t, repo.deleteAuditEvents, 0)
+	require.Equal(t, 0, repo.transactionCommitCount)
+}
+
+func TestServiceDeleteDigitalEmployeeSoftDeletesCascadeAndAudits(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	employeeID := uuid.New()
+	actorID := uuid.New()
+	executionInstanceID := uuid.New()
+	runtimeNodeID := uuid.New()
+	now := time.Now().UTC()
+	repo.employees[employeeID] = DigitalEmployeeRecord{ID: employeeID, TenantID: tenantID, TeamID: &teamID, OwnerUserID: actorID, EmployeeType: "devops_engineer", ProviderType: "codex", Name: "可删除员工", Role: "devops", Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now}
+	repo.deleteCascadeResult = DigitalEmployeeDeleteCascadeResult{ExecutionInstances: 1, EnvironmentVariables: 2, MCPBindings: 1, MCPBindingsV2: 1, SkillBindings: 1, ConfigRevisions: 1, WorkspaceFiles: 1, ProjectAffinities: 1, ExecutionInstanceID: &executionInstanceID, RuntimeNodeID: &runtimeNodeID, AgentHomeDir: "/srv/superteam/agents/emp", ProviderType: "codex", WorkspaceFileIDs: []uuid.UUID{uuid.New()}}
+
+	err = svc.DeleteDigitalEmployee(context.Background(), DeleteDigitalEmployeeRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, ActorUserID: actorID})
+	require.NoError(t, err)
+	require.NotNil(t, repo.employees[employeeID].DeletedAt)
+	require.Equal(t, DigitalEmployeeStatusDisabled, repo.employees[employeeID].Status)
+	require.Equal(t, 1, repo.deleteCascadeCount)
+	require.Len(t, repo.deleteAuditEvents, 1)
+	require.Equal(t, actorID, repo.deleteAuditEvents[0].ActorUserID)
+	require.Equal(t, employeeID, repo.deleteAuditEvents[0].Employee.ID)
+	require.Equal(t, int64(1), repo.deleteAuditEvents[0].CascadeResult.ExecutionInstances)
+	require.Equal(t, 1, repo.transactionCommitCount)
+}
+
+func TestServiceDeleteDigitalEmployeeValidatesRequiredIDs(t *testing.T) {
+	svc, err := NewService(newMemoryRepository())
+	require.NoError(t, err)
+	err = svc.DeleteDigitalEmployee(context.Background(), DeleteDigitalEmployeeRequest{})
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
 func TestServiceUpsertsWorkspaceFileWithRoleAndCurrentRevision(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -2330,6 +2385,10 @@ type memoryRepository struct {
 	createdConfigRevision     CreateConfigRevisionParams
 	digitalEmployeeOverview   *DigitalEmployeeOverview
 	lastOverviewRequest       GetDigitalEmployeeOverviewRequest
+	deleteBlockers            []DigitalEmployeeDeleteBlocker
+	deleteCascadeResult       DigitalEmployeeDeleteCascadeResult
+	deleteCascadeCount        int
+	deleteAuditEvents         []DigitalEmployeeDeleteAuditEventParams
 	waitHook                  func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
 	transactionCount          int
 	transactionCommitCount    int
@@ -2447,6 +2506,34 @@ func (r *memoryRepository) GetDigitalEmployee(_ context.Context, tenantID, emplo
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeForDelete(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error) {
+	return r.GetDigitalEmployee(ctx, tenantID, employeeID)
+}
+
+func (r *memoryRepository) ListDigitalEmployeeDeleteBlockers(_ context.Context, _, _ uuid.UUID) ([]DigitalEmployeeDeleteBlocker, error) {
+	return append([]DigitalEmployeeDeleteBlocker(nil), r.deleteBlockers...), nil
+}
+
+func (r *memoryRepository) SoftDeleteDigitalEmployeeCascade(_ context.Context, params SoftDeleteDigitalEmployeeCascadeParams) (DigitalEmployeeDeleteCascadeResult, error) {
+	employee, ok := r.employees[params.DigitalEmployeeID]
+	if !ok || employee.TenantID != params.TenantID || employee.DeletedAt != nil {
+		return DigitalEmployeeDeleteCascadeResult{}, ErrNotFound
+	}
+	deletedAt := params.DeletedAt.UTC()
+	employee.Status = DigitalEmployeeStatusDisabled
+	employee.DisabledAt = &deletedAt
+	employee.DeletedAt = &deletedAt
+	employee.UpdatedAt = deletedAt
+	r.employees[params.DigitalEmployeeID] = employee
+	r.deleteCascadeCount++
+	return r.deleteCascadeResult, nil
+}
+
+func (r *memoryRepository) CreateDigitalEmployeeDeleteAuditEvent(_ context.Context, params DigitalEmployeeDeleteAuditEventParams) error {
+	r.deleteAuditEvents = append(r.deleteAuditEvents, params)
+	return nil
 }
 
 func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
@@ -2927,6 +3014,8 @@ type memoryRepositorySnapshot struct {
 	nextConfigRevisionNumber int32
 	createdEmployeeCount     int
 	createdConfigRevision    CreateConfigRevisionParams
+	deleteCascadeCount       int
+	deleteAuditEvents        []DigitalEmployeeDeleteAuditEventParams
 }
 
 func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
@@ -2941,6 +3030,8 @@ func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 		nextConfigRevisionNumber: r.nextConfigRevisionNumber,
 		createdEmployeeCount:     r.createdEmployeeCount,
 		createdConfigRevision:    cloneCreateConfigRevisionParams(r.createdConfigRevision),
+		deleteCascadeCount:       r.deleteCascadeCount,
+		deleteAuditEvents:        append([]DigitalEmployeeDeleteAuditEventParams(nil), r.deleteAuditEvents...),
 	}
 }
 
@@ -2955,6 +3046,8 @@ func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
 	r.nextConfigRevisionNumber = snapshot.nextConfigRevisionNumber
 	r.createdEmployeeCount = snapshot.createdEmployeeCount
 	r.createdConfigRevision = snapshot.createdConfigRevision
+	r.deleteCascadeCount = snapshot.deleteCascadeCount
+	r.deleteAuditEvents = snapshot.deleteAuditEvents
 }
 
 func cloneEmployeeRecordMap(values map[uuid.UUID]DigitalEmployeeRecord) map[uuid.UUID]DigitalEmployeeRecord {

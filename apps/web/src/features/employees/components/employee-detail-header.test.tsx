@@ -27,7 +27,12 @@ describe("EmployeeDetailHeader", () => {
     const onStartTask = vi.fn();
     const onManageCapabilities = vi.fn();
     const screen = await render(
-      <EmployeeDetailHeader employee={employee} onManageCapabilities={onManageCapabilities} onStartTask={onStartTask} />,
+      <EmployeeDetailHeader
+        employee={employee}
+        onDelete={vi.fn()}
+        onManageCapabilities={onManageCapabilities}
+        onStartTask={onStartTask}
+      />,
     );
 
     await expect.element(screen.getByRole("heading", { level: 2, name: "后端实现员" })).toBeVisible();
@@ -37,5 +42,36 @@ describe("EmployeeDetailHeader", () => {
 
     await startButton.click();
     expect(onStartTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the delete action only when the employee exposes employee.delete", async () => {
+    const onDelete = vi.fn();
+    const screen = await render(
+      <EmployeeDetailHeader
+        employee={{ ...employee, allowed_actions: ["employee.delete"] }}
+        onDelete={onDelete}
+        onManageCapabilities={vi.fn()}
+        onStartTask={vi.fn()}
+      />,
+    );
+
+    const deleteButton = screen.getByRole("button", { name: "删除员工" });
+    await expect.element(deleteButton).toHaveAttribute("data-variant", "danger");
+
+    await deleteButton.click();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the delete action when employee.delete is not allowed", async () => {
+    const screen = await render(
+      <EmployeeDetailHeader
+        employee={{ ...employee, allowed_actions: ["employee.run.create"] }}
+        onDelete={vi.fn()}
+        onManageCapabilities={vi.fn()}
+        onStartTask={vi.fn()}
+      />,
+    );
+
+    await expect.element(screen.getByRole("button", { name: "删除员工" })).not.toBeInTheDocument();
   });
 });

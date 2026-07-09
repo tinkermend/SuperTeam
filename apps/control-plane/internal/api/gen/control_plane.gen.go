@@ -234,6 +234,39 @@ func (e DigitalEmployeeCreateOptionCheckStatus) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeDeleteBlockedErrorCode.
+const (
+	DigitalEmployeeDeleteBlocked DigitalEmployeeDeleteBlockedErrorCode = "digital_employee_delete_blocked"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeDeleteBlockedErrorCode enum.
+func (e DigitalEmployeeDeleteBlockedErrorCode) Valid() bool {
+	switch e {
+	case DigitalEmployeeDeleteBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DigitalEmployeeDeleteBlockerType.
+const (
+	DigitalEmployeeDeleteBlockerTypeProjectTask DigitalEmployeeDeleteBlockerType = "project_task"
+	DigitalEmployeeDeleteBlockerTypeRun         DigitalEmployeeDeleteBlockerType = "run"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeDeleteBlockerType enum.
+func (e DigitalEmployeeDeleteBlockerType) Valid() bool {
+	switch e {
+	case DigitalEmployeeDeleteBlockerTypeProjectTask:
+		return true
+	case DigitalEmployeeDeleteBlockerTypeRun:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeEnvironmentVariableSummaryStatus.
 const (
 	DigitalEmployeeEnvironmentVariableSummaryStatusActive   DigitalEmployeeEnvironmentVariableSummaryStatus = "active"
@@ -2225,6 +2258,7 @@ type DecideTeamMemberRoleRequest struct {
 
 // DigitalEmployee defines model for DigitalEmployee.
 type DigitalEmployee struct {
+	AllowedActions   *[]string               `json:"allowed_actions,omitempty"`
 	ApprovalPolicy   map[string]interface{}  `json:"approval_policy"`
 	ArchivedAt       *time.Time              `json:"archived_at,omitempty"`
 	ContextPolicy    map[string]interface{}  `json:"context_policy"`
@@ -2335,6 +2369,29 @@ type DigitalEmployeeCreateTeamConfig struct {
 	TeamId   *openapi_types.UUID `json:"team_id,omitempty"`
 	TenantId openapi_types.UUID  `json:"tenant_id"`
 }
+
+// DigitalEmployeeDeleteBlockedError defines model for DigitalEmployeeDeleteBlockedError.
+type DigitalEmployeeDeleteBlockedError struct {
+	Blockers []DigitalEmployeeDeleteBlocker        `json:"blockers"`
+	Code     DigitalEmployeeDeleteBlockedErrorCode `json:"code"`
+	Message  string                                `json:"message"`
+}
+
+// DigitalEmployeeDeleteBlockedErrorCode defines model for DigitalEmployeeDeleteBlockedError.Code.
+type DigitalEmployeeDeleteBlockedErrorCode string
+
+// DigitalEmployeeDeleteBlocker defines model for DigitalEmployeeDeleteBlocker.
+type DigitalEmployeeDeleteBlocker struct {
+	Id        openapi_types.UUID               `json:"id"`
+	ProjectId *openapi_types.UUID              `json:"project_id,omitempty"`
+	RunId     *openapi_types.UUID              `json:"run_id,omitempty"`
+	Status    string                           `json:"status"`
+	Title     string                           `json:"title"`
+	Type      DigitalEmployeeDeleteBlockerType `json:"type"`
+}
+
+// DigitalEmployeeDeleteBlockerType defines model for DigitalEmployeeDeleteBlocker.Type.
+type DigitalEmployeeDeleteBlockerType string
 
 // DigitalEmployeeEnvironmentVariableSummary defines model for DigitalEmployeeEnvironmentVariableSummary.
 type DigitalEmployeeEnvironmentVariableSummary struct {
@@ -5971,6 +6028,9 @@ type ServerInterface interface {
 	// Get digital employee workbench overview
 	// (GET /api/v1/digital-employees/overview)
 	GetDigitalEmployeeOverview(w http.ResponseWriter, r *http.Request, params GetDigitalEmployeeOverviewParams)
+	// Delete a digital employee
+	// (DELETE /api/v1/digital-employees/{employeeId})
+	DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get a digital employee
 	// (GET /api/v1/digital-employees/{employeeId})
 	GetDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -6526,6 +6586,12 @@ func (_ Unimplemented) GetDigitalEmployeeCreateOptions(w http.ResponseWriter, r 
 // Get digital employee workbench overview
 // (GET /api/v1/digital-employees/overview)
 func (_ Unimplemented) GetDigitalEmployeeOverview(w http.ResponseWriter, r *http.Request, params GetDigitalEmployeeOverviewParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a digital employee
+// (DELETE /api/v1/digital-employees/{employeeId})
+func (_ Unimplemented) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7929,6 +7995,32 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeOverview(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDigitalEmployeeOverview(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDigitalEmployee operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDigitalEmployee(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14322,6 +14414,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/overview", wrapper.GetDigitalEmployeeOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}", wrapper.DeleteDigitalEmployee)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}", wrapper.GetDigitalEmployee)

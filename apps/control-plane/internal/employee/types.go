@@ -8,13 +8,83 @@ import (
 )
 
 var (
-	ErrInvalidInput            = errors.New("invalid employee input")
-	ErrNotFound                = errors.New("employee not found")
-	ErrConflict                = errors.New("employee conflict")
-	ErrRuntimeUnavailable      = errors.New("employee runtime unavailable")
-	ErrProviderUnavailable     = errors.New("employee provider unavailable")
-	ErrRuntimeIdentityMismatch = errors.New("employee runtime identity mismatch")
+	ErrInvalidInput                 = errors.New("invalid employee input")
+	ErrNotFound                     = errors.New("employee not found")
+	ErrConflict                     = errors.New("employee conflict")
+	ErrDigitalEmployeeDeleteBlocked = errors.New("digital employee delete blocked")
+	ErrRuntimeUnavailable           = errors.New("employee runtime unavailable")
+	ErrProviderUnavailable          = errors.New("employee provider unavailable")
+	ErrRuntimeIdentityMismatch      = errors.New("employee runtime identity mismatch")
 )
+
+const DigitalEmployeeDeleteBlockedCode = "digital_employee_delete_blocked"
+
+type DeleteDigitalEmployeeRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	ActorUserID       uuid.UUID
+}
+
+type DigitalEmployeeDeleteBlockerType string
+
+const (
+	DigitalEmployeeDeleteBlockerTypeRun         DigitalEmployeeDeleteBlockerType = "run"
+	DigitalEmployeeDeleteBlockerTypeProjectTask DigitalEmployeeDeleteBlockerType = "project_task"
+)
+
+type DigitalEmployeeDeleteBlocker struct {
+	Type      DigitalEmployeeDeleteBlockerType
+	ID        uuid.UUID
+	Status    string
+	Title     string
+	RunID     *uuid.UUID
+	ProjectID *uuid.UUID
+}
+
+type DigitalEmployeeDeleteBlockedError struct {
+	Blockers []DigitalEmployeeDeleteBlocker
+}
+
+func (e *DigitalEmployeeDeleteBlockedError) Error() string {
+	return ErrDigitalEmployeeDeleteBlocked.Error()
+}
+
+func (e *DigitalEmployeeDeleteBlockedError) Unwrap() error {
+	return ErrDigitalEmployeeDeleteBlocked
+}
+
+type SoftDeleteDigitalEmployeeCascadeParams struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	DeletedAt         time.Time
+}
+
+type DigitalEmployeeDeleteCascadeResult struct {
+	ExecutionInstances   int64
+	EnvironmentVariables int64
+	MCPBindings          int64
+	MCPBindingsV2        int64
+	SkillBindings        int64
+	ConfigRevisions      int64
+	WorkspaceFiles       int64
+	ProjectAffinities    int64
+	WorkspaceFileIDs     []uuid.UUID
+	MCPBindingIDs        []uuid.UUID
+	MCPBindingV2IDs      []uuid.UUID
+	SkillBindingIDs      []uuid.UUID
+	ExecutionInstanceID  *uuid.UUID
+	RuntimeNodeID        *uuid.UUID
+	AgentHomeDir         string
+	ProviderType         string
+}
+
+type DigitalEmployeeDeleteAuditEventParams struct {
+	TenantID      uuid.UUID
+	ActorUserID   uuid.UUID
+	Employee      DigitalEmployeeRecord
+	CascadeResult DigitalEmployeeDeleteCascadeResult
+	DeletedAt     time.Time
+}
 
 type DigitalEmployeeStatus string
 

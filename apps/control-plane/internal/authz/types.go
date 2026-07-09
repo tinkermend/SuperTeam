@@ -39,6 +39,7 @@ const (
 	ActionEmployeeCreate         = "employee.create"
 	ActionEmployeeRead           = "employee.read"
 	ActionEmployeeStatusUpdate   = "employee.status.update"
+	ActionEmployeeDelete         = "employee.delete"
 	ActionEmployeeExecutionBind  = "employee.execution.bind"
 	ActionEmployeeConfigCreate   = "employee.config.create"
 	ActionEmployeeConfigPreview  = "employee.config.preview"

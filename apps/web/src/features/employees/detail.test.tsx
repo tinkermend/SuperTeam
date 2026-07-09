@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { EmployeeDetailView } from "./detail";
 
+const mockNavigate = vi.fn();
+
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
 }));
@@ -36,6 +38,7 @@ vi.mock("@tanstack/react-router", () => ({
       : "";
     return <a href={`${to}${query}`}>{children}</a>;
   },
+  useNavigate: () => mockNavigate,
 }));
 
 function createQueryClient() {
@@ -170,6 +173,7 @@ function runsPayload(items: Array<Record<string, unknown>>) {
 }
 
 function createDetailFetcher({
+  employeePayload = employee,
   events = [
     {
       event_type: "provider.stdout",
@@ -211,7 +215,10 @@ function createDetailFetcher({
     provider_capabilities: [],
     recent_events: [],
   },
+  deleteStatus = 204,
+  deletePayload,
 }: {
+  employeePayload?: Record<string, unknown>;
   events?: Array<Record<string, unknown>>;
   run?: Record<string, unknown>;
   runs?: Array<Record<string, unknown>>;
@@ -221,6 +228,8 @@ function createDetailFetcher({
   readiness?: Record<string, unknown>;
   readinessStatus?: number;
   runtimeOverview?: Record<string, unknown>;
+  deleteStatus?: number;
+  deletePayload?: Record<string, unknown>;
 } = {}) {
   let currentRun = run;
   let currentRuns = runs ?? [currentRun];
@@ -230,7 +239,14 @@ function createDetailFetcher({
     const path = url.pathname;
 
     if (path === `/api/v1/digital-employees/${employee.id}` && method === "GET") {
-      return jsonResponse(employee);
+      return jsonResponse(employeePayload);
+    }
+
+    if (path === `/api/v1/digital-employees/${employee.id}` && method === "DELETE") {
+      if (deleteStatus === 204) {
+        return noContentResponse();
+      }
+      return jsonResponse(deletePayload ?? { error: "delete failed" }, deleteStatus);
     }
 
     if (path === `/api/v1/digital-employees/${employee.id}/execution-instance` && method === "GET") {
@@ -322,6 +338,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function noContentResponse() {
+  return new Response(null, { status: 204 });
+}
+
 function fetchCallCount(fetcher: typeof fetch, path: string, method: string) {
   return (
     fetcher as unknown as {
@@ -335,6 +355,8 @@ function fetchCallCount(fetcher: typeof fetch, path: string, method: string) {
 }
 
 async function renderEmployeeDetail(fetcher = createDetailFetcher()) {
+  mockNavigate.mockClear();
+
   return await render(
     <QueryClientProvider client={createQueryClient()}>
       <EmployeeDetailView
@@ -600,5 +622,68 @@ describe("EmployeeDetailView", () => {
     await userEvent.click(screen.getByText("旧失败任务"));
     await expect.element(screen.getByText("旧运行失败")).toBeVisible();
     await expect.element(screen.getByText(/历史失败事件/)).toBeVisible();
+  });
+
+  it("requires the employee name before deleting and redirects after success", async () => {
+    const fetcher = createDetailFetcher({
+      employeePayload: { ...employee, allowed_actions: ["employee.delete"] },
+      run: runFixture({ status: "completed" }),
+    });
+    const screen = await renderEmployeeDetail(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除员工" }));
+    await expect.element(screen.getByRole("heading", { name: "删除数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+
+    await userEvent.fill(screen.getByLabelText("输入员工名称确认删除"), "需求分析员");
+    await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+
+    await userEvent.fill(screen.getByLabelText("输入员工名称确认删除"), "需求分析员工");
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await expect
+      .poll(() => fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}`, "DELETE"))
+      .toBe(1);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: "/employees" });
+  });
+
+  it("keeps the dialog open and renders delete blockers on 409", async () => {
+    const fetcher = createDetailFetcher({
+      employeePayload: { ...employee, allowed_actions: ["employee.delete"] },
+      run: runFixture({ status: "completed" }),
+      deleteStatus: 409,
+      deletePayload: {
+        code: "digital_employee_delete_blocked",
+        message: "该数字员工仍有排队或执行中的工作，停止或完成后再删除。",
+        blockers: [
+          {
+            type: "run",
+            id: "run-1",
+            status: "running",
+            title: "运行中的实现任务",
+            run_id: "run-1",
+          },
+          {
+            type: "project_task",
+            id: "task-1",
+            status: "in_progress",
+            title: "项目内待办",
+            project_id: "project-1",
+          },
+        ],
+      },
+    });
+    const screen = await renderEmployeeDetail(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除员工" }));
+    await userEvent.fill(screen.getByLabelText("输入员工名称确认删除"), "需求分析员工");
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await expect.element(screen.getByText("该数字员工仍有排队或执行中的工作，停止或完成后再删除。")).toBeVisible();
+    await expect.element(screen.getByText("运行中的实现任务")).toBeVisible();
+    await expect.element(screen.getByText("run · running")).toBeVisible();
+    await expect.element(screen.getByText("项目内待办")).toBeVisible();
+    await expect.element(screen.getByText("project_task · in_progress")).toBeVisible();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

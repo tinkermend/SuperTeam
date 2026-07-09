@@ -38,6 +38,14 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL;
 
+-- name: GetDigitalEmployeeForDelete :one
+SELECT *
+FROM digital_employees
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+FOR UPDATE;
+
 -- name: ListDigitalEmployees :many
 SELECT *
 FROM digital_employees
@@ -105,6 +113,132 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
+
+-- name: ListDigitalEmployeeDeleteRunBlockers :many
+SELECT
+    'run'::text AS blocker_type,
+    tr.id,
+    tr.status,
+    COALESCE(t.title, tr.task_id::text) AS title,
+    tr.id AS run_id,
+    pt.project_id
+FROM task_runs tr
+LEFT JOIN tasks t
+  ON t.tenant_id = tr.tenant_id
+ AND t.id = tr.task_id
+LEFT JOIN project_tasks pt
+  ON pt.tenant_id = tr.tenant_id
+ AND pt.digital_employee_run_id = tr.id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+ORDER BY tr.updated_at DESC, tr.created_at DESC
+LIMIT 20;
+
+-- name: ListDigitalEmployeeDeleteProjectTaskBlockers :many
+SELECT
+    'project_task'::text AS blocker_type,
+    pt.id,
+    pt.status,
+    (COALESCE(NULLIF(pt.title, ''), pt.id::text))::text AS title,
+    NULL::uuid AS run_id,
+    pt.project_id
+FROM project_tasks pt
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.assigned_digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND pt.status IN ('queued', 'running', 'in_progress')
+ORDER BY pt.updated_at DESC, pt.created_at DESC
+LIMIT 20;
+
+-- name: SoftDeleteDigitalEmployeeForDelete :one
+UPDATE digital_employees
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDeleteDigitalEmployeeExecutionInstancesForDelete :many
+UPDATE digital_employee_execution_instances
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id, runtime_node_id, provider_type, agent_home_dir;
+
+-- name: SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete :many
+UPDATE digital_employee_environment_variables
+SET status = 'disabled',
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id;
+
+-- name: SoftDeleteDigitalEmployeeMCPBindingsForDelete :many
+UPDATE digital_employee_mcp_bindings
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id;
+
+-- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many
+UPDATE digital_employee_mcp_bindings_v2
+SET status = 'disabled',
+    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id;
+
+-- name: DisableSkillAgentBindingsForDelete :many
+UPDATE skill_agent_bindings
+SET status = 'disabled',
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND status = 'enabled'
+RETURNING id;
+
+-- name: ArchiveDigitalEmployeeConfigRevisionsForDelete :many
+UPDATE digital_employee_config_revisions
+SET status = 'archived',
+    archived_at = COALESCE(archived_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND archived_at IS NULL
+RETURNING id;
+
+-- name: SoftDeleteDigitalEmployeeWorkspaceFilesForDelete :many
+UPDATE digital_employee_workspace_files
+SET status = 'deleted',
+    archived_at = COALESCE(archived_at, sqlc.arg('deleted_at')::timestamptz),
+    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id;
+
+-- name: DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete :many
+DELETE FROM project_employee_node_affinity
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+RETURNING id;
 
 -- name: DeleteDigitalEmployee :exec
 UPDATE digital_employees

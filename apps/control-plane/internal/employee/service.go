@@ -1341,6 +1341,47 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	return employeeFromRecord(record), nil
 }
 
+func (s *Service) DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.ActorUserID == uuid.Nil {
+		return fmt.Errorf("%w: actor_user_id is required", ErrInvalidInput)
+	}
+	deletedAt := time.Now().UTC()
+	return s.repository.WithTransaction(ctx, func(repository Repository) error {
+		employee, err := repository.GetDigitalEmployeeForDelete(ctx, req.TenantID, req.DigitalEmployeeID)
+		if err != nil {
+			return err
+		}
+		blockers, err := repository.ListDigitalEmployeeDeleteBlockers(ctx, req.TenantID, req.DigitalEmployeeID)
+		if err != nil {
+			return err
+		}
+		if len(blockers) > 0 {
+			return &DigitalEmployeeDeleteBlockedError{Blockers: append([]DigitalEmployeeDeleteBlocker(nil), blockers...)}
+		}
+		cascade, err := repository.SoftDeleteDigitalEmployeeCascade(ctx, SoftDeleteDigitalEmployeeCascadeParams{
+			TenantID:          req.TenantID,
+			DigitalEmployeeID: req.DigitalEmployeeID,
+			DeletedAt:         deletedAt,
+		})
+		if err != nil {
+			return err
+		}
+		return repository.CreateDigitalEmployeeDeleteAuditEvent(ctx, DigitalEmployeeDeleteAuditEventParams{
+			TenantID:      req.TenantID,
+			ActorUserID:   req.ActorUserID,
+			Employee:      employee,
+			CascadeResult: cascade,
+			DeletedAt:     deletedAt,
+		})
+	})
+}
+
 func (s *Service) UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

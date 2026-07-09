@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Blocks, FileClock, Play, Settings } from "lucide-react";
+import { ArrowLeft, Blocks, FileClock, Play, Settings, Trash2 } from "lucide-react";
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { EmployeeAvatar } from "../avatar";
 
 type EmployeeDetailHeaderProps = {
   employee: DigitalEmployee;
+  onDelete?: () => void;
   onStartTask: () => void;
   onManageCapabilities: () => void;
 };
@@ -32,10 +33,12 @@ function avatarAssetFromMetadata(
 
 export function EmployeeDetailHeader({
   employee,
+  onDelete,
   onStartTask,
   onManageCapabilities,
 }: EmployeeDetailHeaderProps) {
   const avatarAsset = avatarAssetFromMetadata(employee.metadata);
+  const canDelete = Boolean(onDelete && employee.allowed_actions?.includes("employee.delete"));
 
   return (
     <div className="flex flex-col gap-4 rounded-v3-card border border-v3-line bg-v3-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -80,6 +83,12 @@ export function EmployeeDetailHeader({
             查看审计
           </Link>
         </V3Button>
+        {canDelete ? (
+          <V3Button onClick={onDelete} type="button" variant="danger">
+            <Trash2 className="size-4" />
+            删除员工
+          </V3Button>
+        ) : null}
         <V3Button onClick={onStartTask} type="button" variant="outline">
           <Play className="size-4" />
           开始任务

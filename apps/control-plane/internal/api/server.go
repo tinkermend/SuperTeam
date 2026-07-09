@@ -239,6 +239,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/create-options", s.employeeHandler.GetCreateOptions)
 				r.Get("/digital-employees/overview", s.employeeHandler.GetOverview)
 				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
+				r.Delete("/digital-employees/{employeeId}", s.employeeHandler.DeleteDigitalEmployee)
 				r.Get("/digital-employees/{employeeId}/scheduling-readiness", s.employeeHandler.GetSchedulingReadiness)
 				r.Get("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.ListWorkspaceFiles)
 				r.Put("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.UpsertWorkspaceFile)

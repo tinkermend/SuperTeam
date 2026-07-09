@@ -1006,6 +1006,31 @@ func newRecordingAuthorizer() *routeAuthorizer {
 	return &routeAuthorizer{allowed: true}
 }
 
+func newEmployeeRouteTestServer(t *testing.T, authorizer *routeAuthorizer, configure ...func(*routeEmployeeService)) (*Server, *routeEmployeeService, *http.Cookie) {
+	t.Helper()
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeEmployeeService{}
+	for _, fn := range configure {
+		fn(service)
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	return server, service, cookie
+}
+
 func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeEmployeeService{}
 	server := NewServer(
@@ -1390,6 +1415,7 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`, action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "create options", method: http.MethodGet, path: "/api/v1/digital-employees/create-options?team_id=" + uuid.New().String(), action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "delete", method: http.MethodDelete, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeDelete, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "list workspace files", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "upsert workspace file", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", body: `{"path":"AGENTS.md","content":"# rules"}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
@@ -1433,6 +1459,94 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		if check.Resource.Type != expected.resourceType || check.Resource.ID != expectedResourceID || check.TenantID != expectedTenantID {
 			t.Fatalf("expected tenant resource %s, got %#v", expectedTenantID, check)
 		}
+	}
+}
+
+func TestDeleteDigitalEmployeeRouteReturnsNoContent(t *testing.T) {
+	server, service, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete digital employee to return 204, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.deleteReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("expected delete employee id %s, got %#v", employeeID, service.deleteReq)
+	}
+	if service.deleteReq.TenantID != platform.DefaultTenantID {
+		t.Fatalf("expected default tenant %s, got %#v", platform.DefaultTenantID, service.deleteReq)
+	}
+	if service.deleteReq.ActorUserID == uuid.Nil {
+		t.Fatalf("expected delete actor user id, got %#v", service.deleteReq)
+	}
+}
+
+func TestDeleteDigitalEmployeeRouteReturnsBlockers(t *testing.T) {
+	blockerID := uuid.New()
+	projectID := uuid.New()
+	blockedErr := &employee.DigitalEmployeeDeleteBlockedError{Blockers: []employee.DigitalEmployeeDeleteBlocker{{
+		Type:      employee.DigitalEmployeeDeleteBlockerTypeProjectTask,
+		ID:        blockerID,
+		Status:    "queued",
+		Title:     "项目任务 A",
+		ProjectID: &projectID,
+	}}}
+	server, _, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true}, func(s *routeEmployeeService) {
+		s.deleteErr = blockedErr
+	})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected delete blockers to return 409, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Code     string `json:"code"`
+		Message  string `json:"message"`
+		Blockers []struct {
+			Type      string `json:"type"`
+			ID        string `json:"id"`
+			Status    string `json:"status"`
+			Title     string `json:"title"`
+			ProjectID string `json:"project_id"`
+		} `json:"blockers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode delete blocker response: %v", err)
+	}
+	if body.Code != employee.DigitalEmployeeDeleteBlockedCode {
+		t.Fatalf("expected blocked code, got %#v", body)
+	}
+	if !strings.Contains(body.Message, "仍有排队或执行中的工作") {
+		t.Fatalf("expected Chinese blocker message, got %#v", body.Message)
+	}
+	if len(body.Blockers) != 1 || body.Blockers[0].Type != "project_task" || body.Blockers[0].Title != "项目任务 A" || body.Blockers[0].ProjectID != projectID.String() {
+		t.Fatalf("unexpected blockers: %#v", body.Blockers)
+	}
+}
+
+func TestGetDigitalEmployeeIncludesAllowedDeleteAction(t *testing.T) {
+	server, _, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected get digital employee to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		AllowedActions []string `json:"allowed_actions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode get employee response: %v", err)
+	}
+	if !containsString(body.AllowedActions, authz.ActionEmployeeDelete) {
+		t.Fatalf("expected allowed delete action, got %#v", body.AllowedActions)
 	}
 }
 
@@ -1608,6 +1722,8 @@ type routeEmployeeService struct {
 	listEnvReq                       employee.ListEnvironmentVariablesRequest
 	upsertEnvReq                     employee.UpsertEnvironmentVariableRequest
 	deleteEnvReq                     employee.DeleteEnvironmentVariableRequest
+	deleteReq                        employee.DeleteDigitalEmployeeRequest
+	deleteErr                        error
 	bindReq                          employee.BindExecutionInstanceRequest
 	updateReq                        employee.UpdateStatusRequest
 	getTenantID                      uuid.UUID
@@ -1856,6 +1972,11 @@ func (s *routeEmployeeService) UpsertEnvironmentVariable(ctx context.Context, re
 func (s *routeEmployeeService) DeleteEnvironmentVariable(ctx context.Context, req employee.DeleteEnvironmentVariableRequest) error {
 	s.deleteEnvReq = req
 	return nil
+}
+
+func (s *routeEmployeeService) DeleteDigitalEmployee(ctx context.Context, req employee.DeleteDigitalEmployeeRequest) error {
+	s.deleteReq = req
+	return s.deleteErr
 }
 
 func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.UpdateStatusRequest) (*employee.DigitalEmployee, error) {

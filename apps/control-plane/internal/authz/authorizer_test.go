@@ -507,6 +507,9 @@ func TestDBAuthorizerEmployeeActionsUseBusinessActionSurface(t *testing.T) {
 		{name: "admin lists employees at tenant", action: ActionEmployeeRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceTenant, resourceID: tenantID.String()},
 		{name: "admin reads employee resource", action: ActionEmployeeRead, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin updates employee status", action: ActionEmployeeStatusUpdate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin deletes employee", action: ActionEmployeeDelete, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "owner deletes employee", action: ActionEmployeeDelete, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleOwner, allowed: true, matchedRule: "tenant.owner", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "member cannot delete employee", action: ActionEmployeeDelete, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleMember, denyReason: ReasonNoMembership, resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin binds execution instance", action: ActionEmployeeExecutionBind, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin creates employee config", action: ActionEmployeeConfigCreate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin edits employee capability", action: ActionEmployeeCapabilityEdit, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
@@ -643,6 +646,19 @@ func TestDBAuthorizerEmployeeOwnerCanUsePersonalEmployeeActions(t *testing.T) {
 	}
 	if decision.Allowed {
 		t.Fatalf("expected owner not to get status updates through personal owner rule, got %#v", decision)
+	}
+
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
+		Action:   ActionEmployeeDelete,
+		Resource: ownerResource,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected employee owner not to delete through personal owner rule, got %#v", decision)
 	}
 }
 

@@ -2841,6 +2841,22 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployee"
         "404":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteDigitalEmployee
+      summary: Delete a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "204":
+          description: Digital employee deleted
+        "404":
+          description: Digital employee not found
+        "409":
+          description: Digital employee has active work and cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeDeleteBlockedError"
   /api/v1/digital-employees/{employeeId}/scheduling-readiness:
     get:
       operationId: getDigitalEmployeeSchedulingReadiness
@@ -9472,12 +9488,59 @@ components:
         archived_at:
           type: string
           format: date-time
+        allowed_actions:
+          type: array
+          items:
+            type: string
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    DigitalEmployeeDeleteBlockedError:
+      type: object
+      required:
+        - code
+        - message
+        - blockers
+      properties:
+        code:
+          type: string
+          enum:
+            - digital_employee_delete_blocked
+        message:
+          type: string
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeDeleteBlocker"
+    DigitalEmployeeDeleteBlocker:
+      type: object
+      required:
+        - type
+        - id
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          enum:
+            - run
+            - project_task
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        title:
+          type: string
+        run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
     DigitalEmployeeSchedulingReadiness:
       type: object
       required:

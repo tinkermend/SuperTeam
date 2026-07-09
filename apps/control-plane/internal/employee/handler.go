@@ -26,6 +26,7 @@ type HandlerService interface {
 	UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableRequest) (EnvironmentVariableSummary, error)
 	DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
+	DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
 	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
@@ -259,7 +260,30 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
+	response := employeeResponseFromDomain(employee)
+	response.AllowedActions = h.allowedEmployeeActions(r.Context(), tenantID, employeeID)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *HTTPHandler) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeDelete, &employeeID, "digital employee delete")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	actorUserID := middleware.GetUserID(r.Context())
+	if err := service.DeleteDigitalEmployee(r.Context(), DeleteDigitalEmployeeRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, ActorUserID: actorUserID}); err != nil {
+		writeDeleteDigitalEmployeeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) GetSchedulingReadiness(w http.ResponseWriter, r *http.Request) {
@@ -711,6 +735,30 @@ func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, 
 	return tenantID, true
 }
 
+func (h *HTTPHandler) allowedEmployeeActions(ctx context.Context, tenantID, employeeID uuid.UUID) []string {
+	if h == nil || h.authorizer == nil {
+		return nil
+	}
+	userID := middleware.GetUserID(ctx)
+	if userID == uuid.Nil {
+		return nil
+	}
+	actions := []string{authz.ActionEmployeeDelete}
+	allowed := make([]string, 0, len(actions))
+	for _, action := range actions {
+		decision, err := h.authorizer.Check(ctx, authz.CheckRequest{
+			Actor:    authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
+			Action:   action,
+			Resource: authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()},
+			TenantID: tenantID,
+		})
+		if err == nil && decision.Allowed {
+			allowed = append(allowed, action)
+		}
+	}
+	return allowed
+}
+
 type digitalEmployeeResponse struct {
 	ID               string                `json:"id"`
 	TenantID         string                `json:"tenant_id"`
@@ -729,6 +777,7 @@ type digitalEmployeeResponse struct {
 	Metadata         map[string]any        `json:"metadata"`
 	DisabledAt       *string               `json:"disabled_at,omitempty"`
 	ArchivedAt       *string               `json:"archived_at,omitempty"`
+	AllowedActions   []string              `json:"allowed_actions,omitempty"`
 	CreatedAt        string                `json:"created_at,omitempty"`
 	UpdatedAt        string                `json:"updated_at,omitempty"`
 }
@@ -1066,6 +1115,21 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
+type digitalEmployeeDeleteBlockedResponse struct {
+	Code     string                                 `json:"code"`
+	Message  string                                 `json:"message"`
+	Blockers []digitalEmployeeDeleteBlockerResponse `json:"blockers"`
+}
+
+type digitalEmployeeDeleteBlockerResponse struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Title     string `json:"title"`
+	RunID     string `json:"run_id,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+}
+
 func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 	if err != nil || employeeID == uuid.Nil {
@@ -1088,6 +1152,41 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+func writeDeleteDigitalEmployeeError(w http.ResponseWriter, err error) {
+	var blocked *DigitalEmployeeDeleteBlockedError
+	if errors.As(err, &blocked) {
+		writeJSON(w, http.StatusConflict, digitalEmployeeDeleteBlockedResponse{
+			Code:     DigitalEmployeeDeleteBlockedCode,
+			Message:  "该数字员工仍有排队或执行中的工作，停止或完成后再删除。",
+			Blockers: deleteBlockerResponses(blocked.Blockers),
+		})
+		return
+	}
+	writeHandlerError(w, err)
+}
+
+func deleteBlockerResponses(blockers []DigitalEmployeeDeleteBlocker) []digitalEmployeeDeleteBlockerResponse {
+	responses := make([]digitalEmployeeDeleteBlockerResponse, 0, len(blockers))
+	for _, blocker := range blockers {
+		responses = append(responses, digitalEmployeeDeleteBlockerResponse{
+			Type:      string(blocker.Type),
+			ID:        blocker.ID.String(),
+			Status:    blocker.Status,
+			Title:     blocker.Title,
+			RunID:     uuidStringValue(blocker.RunID),
+			ProjectID: uuidStringValue(blocker.ProjectID),
+		})
+	}
+	return responses
+}
+
+func uuidStringValue(value *uuid.UUID) string {
+	if value == nil || *value == uuid.Nil {
+		return ""
+	}
+	return value.String()
 }
 
 func writeJSONError(w http.ResponseWriter, status int, code string, message string) {
