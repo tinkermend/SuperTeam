@@ -714,14 +714,11 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigWithoutRuntim
 	if repo.createdConfigRevision.ApprovedBy == nil || *repo.createdConfigRevision.ApprovedBy != req.OwnerUserID || repo.createdConfigRevision.ApprovedAt == nil {
 		t.Fatalf("expected config revision approved by owner, got approved_by=%#v approved_at=%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
 	}
-	if repo.createdConfigRevision.RoleProfile["employee_type"] != "database_admin" || repo.createdConfigRevision.RoleProfile["role"] != "database_admin" {
-		t.Fatalf("expected role profile to include owner type and role, got %#v", repo.createdConfigRevision.RoleProfile)
+	if repo.createdConfigRevision.PersonaMemoryMarkdown != "# postgres operator" {
+		t.Fatalf("expected persona memory to be persisted, got %#v", repo.createdConfigRevision.PersonaMemoryMarkdown)
 	}
-	if repo.createdConfigRevision.RoleProfile["focus"] != "postgres" {
-		t.Fatalf("expected request role profile override to be merged, got %#v", repo.createdConfigRevision.RoleProfile)
-	}
-	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_external_capabilities"], "change-ticket") {
-		t.Fatalf("expected request capability selection to be merged, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	if !stringListContains(repo.createdConfigRevision.CapabilityBindings["external_capabilities"], "change-ticket") {
+		t.Fatalf("expected request capability bindings to be merged, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(120000) {
 		t.Fatalf("expected request budget policy to be persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
@@ -924,10 +921,10 @@ func TestLegacyProvisioningPayloadCarriesEffectiveCapabilityArrays(t *testing.T)
 		{ID: uuid.New(), Slug: "database-troubleshooting", ArchiveObjectRef: "s3://bucket/skills/db-trouble.zip", ArchiveChecksum: "abc123", ArchiveSizeBytes: 1024, ArchiveFileCount: 2},
 		{ID: uuid.New(), Slug: "sql-review", ArchiveObjectRef: "s3://bucket/skills/sql-review.zip", ArchiveChecksum: "def456", ArchiveSizeBytes: 2048, ArchiveFileCount: 1},
 	}}
-	req.CapabilitySelection = map[string]any{
-		"enabled_skills":                []string{"database-troubleshooting", "sql-review"},
-		"enabled_mcp_servers":           []string{"postgres-readonly"},
-		"enabled_external_capabilities": []string{"change-ticket"},
+	req.CapabilityBindings = map[string]any{
+		"skills":                []string{"database-troubleshooting", "sql-review"},
+		"mcp_servers":           []string{"postgres-readonly"},
+		"external_capabilities": []string{"change-ticket"},
 	}
 
 	created, err := svc.CreateDigitalEmployee(context.Background(), req)
@@ -1231,7 +1228,7 @@ func TestCreateDigitalEmployeeKeepsPlatformTypeDefaultsWithoutTeamPolicyClipping
 		"provider_types": []any{"codex"},
 	}
 	repo.teamConfigs[teamConfigID] = teamConfig
-	req.CapabilitySelection = map[string]any{}
+	req.CapabilityBindings = map[string]any{}
 
 	created, err := svc.CreateDigitalEmployee(context.Background(), req)
 
@@ -1241,11 +1238,8 @@ func TestCreateDigitalEmployeeKeepsPlatformTypeDefaultsWithoutTeamPolicyClipping
 	if created.ID == uuid.Nil {
 		t.Fatalf("expected created employee id")
 	}
-	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_skills"], "database-troubleshooting") {
-		t.Fatalf("expected platform default capabilities to remain, got %#v", repo.createdConfigRevision.CapabilitySelection)
-	}
-	if len(repo.createdConfigRevision.ContextPolicyOverride) != 0 {
-		t.Fatalf("expected unmatched context defaults to remain empty, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
+	if !stringListContains(repo.createdConfigRevision.CapabilityBindings["skills"], "database-troubleshooting") {
+		t.Fatalf("expected platform default capabilities to remain, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 }
 
@@ -1504,7 +1498,6 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
-		RoleProfile:       map[string]any{"title": "finance reviewer"},
 		BudgetPolicy:      map[string]any{"daily_token_limit": 25000},
 		ApprovedBy:        &spoofedApproverID,
 	})
@@ -1676,25 +1669,39 @@ func TestNormalizeBudgetPolicyDoesNotMutateCallerMap(t *testing.T) {
 	})
 }
 
-func TestCreateConfigRevisionStoresBudgetPolicy(t *testing.T) {
+func TestCreateConfigRevisionStoresFinalFields(t *testing.T) {
 	svc, repo := newEmployeeServiceForTest(t)
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+	persona := "# 人格画像\n证据优先"
 
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		RoleProfile:       map[string]any{"role": "analyst"},
-		BudgetPolicy:      map[string]any{"daily_token_limit": float64(12000)},
-		Status:            ConfigRevisionStatusDraft,
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employeeID,
+		PersonaMemoryMarkdown: &persona,
+		CapabilityBindings:    map[string]any{"skills": []any{"incident-diagnosis"}, "mcp_servers": []any{"postgres-readonly"}},
+		BudgetPolicy:          map[string]any{"daily_token_limit": float64(12000)},
+		Status:                ConfigRevisionStatusDraft,
 	})
 
 	if err != nil {
 		t.Fatalf("create config revision: %v", err)
 	}
+	if revision.PersonaMemoryMarkdown != persona {
+		t.Fatalf("expected persona memory on revision, got %#v", revision.PersonaMemoryMarkdown)
+	}
+	if revision.CapabilityBindings["skills"] == nil {
+		t.Fatalf("expected capability bindings on revision, got %#v", revision.CapabilityBindings)
+	}
 	if revision.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy on revision, got %#v", revision.BudgetPolicy)
+	}
+	if repo.createdConfigRevision.PersonaMemoryMarkdown != persona {
+		t.Fatalf("expected persona memory persisted, got %#v", repo.createdConfigRevision.PersonaMemoryMarkdown)
+	}
+	if repo.createdConfigRevision.CapabilityBindings["skills"] == nil {
+		t.Fatalf("expected capability bindings persisted, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
@@ -1708,17 +1715,13 @@ func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *test
 	seedConfigRevisionEmployee(repo, tenantID, employeeID)
 	latestID := uuid.New()
 	repo.employeeConfigs[latestID] = EmployeeConfigInput{
-		ID:                     latestID,
-		TenantID:               tenantID,
-		DigitalEmployeeID:      employeeID,
-		RevisionNumber:         7,
-		RoleProfile:            map[string]any{"title": "security reviewer"},
-		ConstitutionAddendum:   map[string]any{"rules": []any{"require evidence"}},
-		CapabilitySelection:    map[string]any{"skills": []any{"release-review"}},
-		ContextPolicyOverride:  map[string]any{"max_files": float64(8)},
-		ApprovalPolicyOverride: map[string]any{"required": true},
-		BudgetPolicy:           map[string]any{"daily_token_limit": float64(12000), "mode": "capped"},
-		OutputContractAddendum: map[string]any{"format": "checklist"},
+		ID:                    latestID,
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employeeID,
+		RevisionNumber:        7,
+		PersonaMemoryMarkdown: "# security reviewer",
+		CapabilityBindings:    map[string]any{"skills": []any{"release-review"}, "mcp_servers": []any{"security-readonly"}},
+		BudgetPolicy:          map[string]any{"daily_token_limit": float64(12000), "mode": "capped"},
 	}
 
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
@@ -1734,23 +1737,11 @@ func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *test
 	if revision.BudgetPolicy["daily_token_limit"] != float64(24000) {
 		t.Fatalf("expected budget change to be applied, got %#v", revision.BudgetPolicy)
 	}
-	if repo.createdConfigRevision.RoleProfile["title"] != "security reviewer" {
-		t.Fatalf("expected role_profile to be preserved, got %#v", repo.createdConfigRevision.RoleProfile)
+	if repo.createdConfigRevision.PersonaMemoryMarkdown != "# security reviewer" {
+		t.Fatalf("expected persona_memory_markdown to be preserved, got %#v", repo.createdConfigRevision.PersonaMemoryMarkdown)
 	}
-	if repo.createdConfigRevision.CapabilitySelection["skills"] == nil {
-		t.Fatalf("expected capability_selection to be preserved, got %#v", repo.createdConfigRevision.CapabilitySelection)
-	}
-	if repo.createdConfigRevision.ContextPolicyOverride["max_files"] != float64(8) {
-		t.Fatalf("expected context_policy_override to be preserved, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
-	}
-	if repo.createdConfigRevision.ApprovalPolicyOverride["required"] != true {
-		t.Fatalf("expected approval_policy_override to be preserved, got %#v", repo.createdConfigRevision.ApprovalPolicyOverride)
-	}
-	if repo.createdConfigRevision.OutputContractAddendum["format"] != "checklist" {
-		t.Fatalf("expected output_contract_addendum to be preserved, got %#v", repo.createdConfigRevision.OutputContractAddendum)
-	}
-	if repo.createdConfigRevision.ConstitutionAddendum["rules"] == nil {
-		t.Fatalf("expected constitution_addendum to be preserved, got %#v", repo.createdConfigRevision.ConstitutionAddendum)
+	if repo.createdConfigRevision.CapabilityBindings["skills"] == nil {
+		t.Fatalf("expected capability_bindings to be preserved, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 }
 
@@ -1790,7 +1781,6 @@ func TestCreateConfigRevisionRequiresExistingEmployee(t *testing.T) {
 	_, err = svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
 		TenantID:          uuid.New(),
 		DigitalEmployeeID: employeeID,
-		RoleProfile:       map[string]any{"title": "finance reviewer"},
 	})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected not found for wrong-tenant employee, got %v", err)
@@ -1829,7 +1819,7 @@ func TestPreviewEffectiveConfigIncludesBudgetPolicy(t *testing.T) {
 	}
 }
 
-func TestPreviewEffectiveConfigAllowsCapabilitySelectionOutsideFormerTeamAllowlist(t *testing.T) {
+func TestPreviewEffectiveConfigAllowsCapabilityBindingsOutsideFormerTeamAllowlist(t *testing.T) {
 	svc := newTestService(t)
 	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
 		TenantID:          uuid.New(),
@@ -1839,8 +1829,8 @@ func TestPreviewEffectiveConfigAllowsCapabilitySelectionOutsideFormerTeamAllowli
 			CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 		},
 		EmployeeConfig: EmployeeConfigInput{
-			ID:                  uuid.New(),
-			CapabilitySelection: map[string]any{"enabled_skills": []any{"database-troubleshooting"}},
+			ID:                 uuid.New(),
+			CapabilityBindings: map[string]any{"skills": []any{"database-troubleshooting"}},
 		},
 	})
 	if err != nil {
@@ -1852,7 +1842,7 @@ func TestPreviewEffectiveConfigAllowsCapabilitySelectionOutsideFormerTeamAllowli
 	}
 }
 
-func TestPreviewEffectiveConfigBlocksContextOutsideTeamScope(t *testing.T) {
+func TestPreviewEffectiveConfigIgnoresFormerContextOverrideValidation(t *testing.T) {
 	svc := newTestService(t)
 	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
 		TenantID:          uuid.New(),
@@ -1862,15 +1852,15 @@ func TestPreviewEffectiveConfigBlocksContextOutsideTeamScope(t *testing.T) {
 			ContextPolicy: map[string]any{"sources": []any{"monitoring", "logs"}},
 		},
 		EmployeeConfig: EmployeeConfigInput{
-			ID:                    uuid.New(),
-			ContextPolicyOverride: map[string]any{"sources": []any{"monitoring", "customer_profile"}},
+			ID: uuid.New(),
 		},
 	})
 	if err != nil {
 		t.Fatalf("preview effective config: %v", err)
 	}
-
-	assertBlockingIssue(t, preview.Validation, "context_outside_team_scope")
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
 }
 
 func TestPreviewEffectiveConfigBlocksApprovalPolicyDowngrade(t *testing.T) {
@@ -1885,23 +1875,15 @@ func TestPreviewEffectiveConfigBlocksApprovalPolicyDowngrade(t *testing.T) {
 				"write_actions_require_human": true,
 			},
 		},
-		EmployeeConfig: EmployeeConfigInput{
-			ID: uuid.New(),
-			ApprovalPolicyOverride: map[string]any{
-				"min_risk_for_human":          "critical",
-				"write_actions_require_human": false,
-			},
-		},
+		EmployeeConfig: EmployeeConfigInput{ID: uuid.New()},
 	})
 	if err != nil {
 		t.Fatalf("preview effective config: %v", err)
 	}
 
-	if len(preview.Validation.BlockingErrors) != 2 {
-		t.Fatalf("expected two approval downgrade blocking errors, got %#v", preview.Validation.BlockingErrors)
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
 	}
-	assertBlockingIssuePath(t, preview.Validation, "approval_policy_downgrade", "approval_policy_override.min_risk_for_human")
-	assertBlockingIssuePath(t, preview.Validation, "approval_policy_downgrade", "approval_policy_override.write_actions_require_human")
 }
 
 func TestPreviewEffectiveConfigAllowsTeamInternalCollaborationPolicy(t *testing.T) {
@@ -1921,11 +1903,7 @@ func TestPreviewEffectiveConfigAllowsTeamInternalCollaborationPolicy(t *testing.
 			ApprovalPolicy:              map[string]any{"min_risk_for_human": "high"},
 			InternalCollaborationPolicy: policy,
 		},
-		EmployeeConfig: EmployeeConfigInput{
-			ID:                    uuid.New(),
-			CapabilitySelection:   map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
-			ContextPolicyOverride: map[string]any{"sources": []any{"monitoring"}},
-		},
+		EmployeeConfig: EmployeeConfigInput{ID: uuid.New()},
 	})
 	if err != nil {
 		t.Fatalf("preview effective config: %v", err)
@@ -1933,12 +1911,8 @@ func TestPreviewEffectiveConfigAllowsTeamInternalCollaborationPolicy(t *testing.
 	if len(preview.Validation.BlockingErrors) != 0 {
 		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
 	}
-	got, ok := preview.EffectiveConfig["internal_collaboration_policy"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected internal collaboration policy in effective config, got %#v", preview.EffectiveConfig["internal_collaboration_policy"])
-	}
-	if got["mode"] != "team_internal" || got["allow_same_team_handoffs"] != true {
-		t.Fatalf("expected team internal collaboration policy, got %#v", got)
+	if _, ok := preview.EffectiveConfig["internal_collaboration_policy"]; ok {
+		t.Fatalf("expected internal collaboration policy to be omitted, got %#v", preview.EffectiveConfig["internal_collaboration_policy"])
 	}
 }
 
@@ -1951,16 +1925,15 @@ func TestPreviewEffectiveConfigReportsMalformedPolicyValues(t *testing.T) {
 			ID:               uuid.New(),
 			CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 		},
-		EmployeeConfig: EmployeeConfigInput{
-			ID:                  uuid.New(),
-			CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis", 42}},
-		},
+		EmployeeConfig: EmployeeConfigInput{ID: uuid.New()},
 	})
 	if err != nil {
 		t.Fatalf("preview effective config: %v", err)
 	}
 
-	assertBlockingIssuePath(t, preview.Validation, "invalid_policy_value", "capability_selection.enabled_skills")
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
 }
 
 func TestPreviewEffectiveConfigReportsUnknownApprovalRisk(t *testing.T) {
@@ -1972,16 +1945,15 @@ func TestPreviewEffectiveConfigReportsUnknownApprovalRisk(t *testing.T) {
 			ID:             uuid.New(),
 			ApprovalPolicy: map[string]any{"min_risk_for_human": "high"},
 		},
-		EmployeeConfig: EmployeeConfigInput{
-			ID:                     uuid.New(),
-			ApprovalPolicyOverride: map[string]any{"min_risk_for_human": "severe"},
-		},
+		EmployeeConfig: EmployeeConfigInput{ID: uuid.New()},
 	})
 	if err != nil {
 		t.Fatalf("preview effective config: %v", err)
 	}
 
-	assertBlockingIssuePath(t, preview.Validation, "invalid_policy_value", "approval_policy_override.min_risk_for_human")
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
 }
 
 func TestGetSchedulingReadinessPassesForReadyEmployee(t *testing.T) {
@@ -2122,24 +2094,28 @@ func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
 
 func TestDigitalEmployeeConfigRevisionQueryMappingKeepsBudgetPolicy(t *testing.T) {
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-	revision := queries.DigitalEmployeeConfigRevision{
-		ID:                     uuid.New(),
-		TenantID:               uuid.New(),
-		DigitalEmployeeID:      uuid.New(),
-		RevisionNumber:         4,
-		RoleProfile:            []byte(`{"title":"finance reviewer"}`),
-		ConstitutionAddendum:   []byte(`{}`),
-		CapabilitySelection:    []byte(`{}`),
-		ContextPolicyOverride:  []byte(`{}`),
-		ApprovalPolicyOverride: []byte(`{}`),
-		BudgetPolicy:           []byte(`{"daily_token_limit":50000}`),
-		OutputContractAddendum: []byte(`{}`),
-		Status:                 string(ConfigRevisionStatusDraft),
-		CreatedAt:              now,
-		UpdatedAt:              now,
+	revision := queries.GetDigitalEmployeeConfigRevisionRow{
+		ID:                    uuid.New(),
+		TenantID:              uuid.New(),
+		DigitalEmployeeID:     uuid.New(),
+		RevisionNumber:        4,
+		PersonaMemoryMarkdown: "# finance reviewer",
+		CapabilityBindings:    []byte(`{"skills":["finance-reviewer"]}`),
+		BudgetPolicy:          []byte(`{"daily_token_limit":50000}`),
+		Status:                string(ConfigRevisionStatusDraft),
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 
-	input, err := employeeConfigInputFromQuery(revision)
+	input, err := employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    revision.ID,
+		tenantID:              revision.TenantID,
+		digitalEmployeeID:     revision.DigitalEmployeeID,
+		revisionNumber:        revision.RevisionNumber,
+		personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		capabilityBindings:    revision.CapabilityBindings,
+		budgetPolicy:          revision.BudgetPolicy,
+	})
 	if err != nil {
 		t.Fatalf("map employee config input: %v", err)
 	}
@@ -2147,7 +2123,23 @@ func TestDigitalEmployeeConfigRevisionQueryMappingKeepsBudgetPolicy(t *testing.T
 		t.Fatalf("expected input budget policy from query row, got %#v", input.BudgetPolicy)
 	}
 
-	record, err := configRevisionRecordFromQuery(revision)
+	record, err := configRevisionRecordFromQuery(digitalEmployeeConfigRevisionRecordAdapter{
+		digitalEmployeeConfigRevisionQueryAdapter: digitalEmployeeConfigRevisionQueryAdapter{
+			id:                    revision.ID,
+			tenantID:              revision.TenantID,
+			digitalEmployeeID:     revision.DigitalEmployeeID,
+			revisionNumber:        revision.RevisionNumber,
+			personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+			capabilityBindings:    revision.CapabilityBindings,
+			budgetPolicy:          revision.BudgetPolicy,
+		},
+		status:     revision.Status,
+		approvedBy: revision.ApprovedBy,
+		approvedAt: revision.ApprovedAt,
+		archivedAt: revision.ArchivedAt,
+		createdAt:  revision.CreatedAt,
+		updatedAt:  revision.UpdatedAt,
+	})
 	if err != nil {
 		t.Fatalf("map config revision record: %v", err)
 	}
@@ -2278,19 +2270,18 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
 	dispatcher.connected["runtime-node-1"] = true
 	return svc, repo, dispatcher, CreateDigitalEmployeeRequest{
-		TenantID:               tenantID,
-		TeamID:                 &teamID,
-		OwnerUserID:            ownerUserID,
-		EmployeeType:           "database_admin",
-		Name:                   "  Main database admin  ",
-		AvatarAssetID:          "engineer-m-01",
-		RoleProfile:            map[string]any{"focus": "postgres"},
-		CapabilitySelection:    map[string]any{"enabled_external_capabilities": []string{"change-ticket"}},
-		RuntimeNodeID:          runtimeNodeID,
-		ProviderType:           "  codex  ",
-		SessionPolicy:          map[string]any{"mode": "reuse_latest", "token": "raw-session-token"},
-		WorkspacePolicy:        map[string]any{"labels": map[string]any{"tier": "standard"}, "secret": "raw-workspace-secret"},
-		OutputContractAddendum: map[string]any{"format": "markdown"},
+		TenantID:              tenantID,
+		TeamID:                &teamID,
+		OwnerUserID:           ownerUserID,
+		EmployeeType:          "database_admin",
+		Name:                  "  Main database admin  ",
+		AvatarAssetID:         "engineer-m-01",
+		PersonaMemoryMarkdown: "# postgres operator",
+		CapabilityBindings:    map[string]any{"external_capabilities": []string{"change-ticket"}, "skills": []string{"database-troubleshooting"}},
+		RuntimeNodeID:         runtimeNodeID,
+		ProviderType:          "  codex  ",
+		SessionPolicy:         map[string]any{"mode": "reuse_latest", "token": "raw-session-token"},
+		WorkspacePolicy:       map[string]any{"labels": map[string]any{"tier": "standard"}, "secret": "raw-workspace-secret"},
 	}
 }
 
@@ -2959,35 +2950,27 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 	now := time.Now().UTC()
 	approvedAt := params.ApprovedAt
 	record := DigitalEmployeeConfigRevisionRecord{
-		ID:                     uuid.New(),
-		TenantID:               params.TenantID,
-		DigitalEmployeeID:      params.DigitalEmployeeID,
-		RevisionNumber:         params.RevisionNumber,
-		RoleProfile:            cloneMap(params.RoleProfile),
-		ConstitutionAddendum:   cloneMap(params.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(params.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(params.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(params.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(params.BudgetPolicy),
-		OutputContractAddendum: cloneMap(params.OutputContractAddendum),
-		Status:                 params.Status,
-		ApprovedBy:             validUUIDPtr(params.ApprovedBy),
-		ApprovedAt:             cloneTimePtr(approvedAt),
-		CreatedAt:              now,
-		UpdatedAt:              now,
+		ID:                    uuid.New(),
+		TenantID:              params.TenantID,
+		DigitalEmployeeID:     params.DigitalEmployeeID,
+		RevisionNumber:        params.RevisionNumber,
+		PersonaMemoryMarkdown: params.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(params.CapabilityBindings),
+		BudgetPolicy:          cloneMap(params.BudgetPolicy),
+		Status:                params.Status,
+		ApprovedBy:            validUUIDPtr(params.ApprovedBy),
+		ApprovedAt:            cloneTimePtr(approvedAt),
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	r.employeeConfigs[record.ID] = EmployeeConfigInput{
-		ID:                     record.ID,
-		TenantID:               record.TenantID,
-		DigitalEmployeeID:      record.DigitalEmployeeID,
-		RevisionNumber:         record.RevisionNumber,
-		RoleProfile:            cloneMap(record.RoleProfile),
-		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(record.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(record.BudgetPolicy),
-		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
+		ID:                    record.ID,
+		TenantID:              record.TenantID,
+		DigitalEmployeeID:     record.DigitalEmployeeID,
+		RevisionNumber:        record.RevisionNumber,
+		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(record.CapabilityBindings),
+		BudgetPolicy:          cloneMap(record.BudgetPolicy),
 	}
 	return record, nil
 }
@@ -3269,13 +3252,8 @@ func cloneCommandReceiptMap(values map[string]*RuntimeCommandReceipt) map[string
 func cloneEmployeeConfigInputMap(values map[uuid.UUID]EmployeeConfigInput) map[uuid.UUID]EmployeeConfigInput {
 	cloned := make(map[uuid.UUID]EmployeeConfigInput, len(values))
 	for id, record := range values {
-		record.RoleProfile = cloneMap(record.RoleProfile)
-		record.ConstitutionAddendum = cloneMap(record.ConstitutionAddendum)
-		record.CapabilitySelection = cloneMap(record.CapabilitySelection)
-		record.ContextPolicyOverride = cloneMap(record.ContextPolicyOverride)
-		record.ApprovalPolicyOverride = cloneMap(record.ApprovalPolicyOverride)
+		record.CapabilityBindings = cloneMap(record.CapabilityBindings)
 		record.BudgetPolicy = cloneMap(record.BudgetPolicy)
-		record.OutputContractAddendum = cloneMap(record.OutputContractAddendum)
 		cloned[id] = record
 	}
 	return cloned
@@ -3317,13 +3295,8 @@ func cloneWorkspaceFileRevisionRecords(values []WorkspaceFileRevisionRecord) []W
 }
 
 func cloneCreateConfigRevisionParams(params CreateConfigRevisionParams) CreateConfigRevisionParams {
-	params.RoleProfile = cloneMap(params.RoleProfile)
-	params.ConstitutionAddendum = cloneMap(params.ConstitutionAddendum)
-	params.CapabilitySelection = cloneMap(params.CapabilitySelection)
-	params.ContextPolicyOverride = cloneMap(params.ContextPolicyOverride)
-	params.ApprovalPolicyOverride = cloneMap(params.ApprovalPolicyOverride)
+	params.CapabilityBindings = cloneMap(params.CapabilityBindings)
 	params.BudgetPolicy = cloneMap(params.BudgetPolicy)
-	params.OutputContractAddendum = cloneMap(params.OutputContractAddendum)
 	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
 	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)
 	return params

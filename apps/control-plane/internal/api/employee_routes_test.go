@@ -170,13 +170,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		"approval_policy":{"required_for":["deploy"]},
 		"risk_level":"medium",
 		"metadata":{"source":"route-test"},
-		"role_profile":{"title":"database administrator"},
-		"constitution_addendum":{"tone":"concise"},
-		"capability_selection":{"enabled_skills":["incident-diagnosis"]},
-		"context_policy_override":{"redaction":"strict"},
-		"approval_policy_override":{"require_owner":true},
+		"persona_memory_markdown":"# Database administrator",
+		"capability_bindings":{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"]},
 		"budget_policy":{"daily_token_limit":12000},
-		"output_contract_addendum":{"format":"markdown"},
 		"runtime_node_id":"` + runtimeNodeID.String() + `",
 		"provider_type":"codex",
 		"session_policy":{"mode":"reuse_latest"},
@@ -208,11 +204,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
 		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
 	}
-	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.RoleProfile["title"] != "database administrator" || service.createReq.CapabilitySelection["enabled_skills"] == nil {
+	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.PersonaMemoryMarkdown != "# Database administrator" || service.createReq.CapabilityBindings["skills"] == nil {
 		t.Fatalf("expected policy/config fields from create body, got %#v", service.createReq)
-	}
-	if service.createReq.ContextPolicyOverride["redaction"] != "strict" || service.createReq.ApprovalPolicyOverride["require_owner"] != true || service.createReq.OutputContractAddendum["format"] != "markdown" {
-		t.Fatalf("expected override/addendum fields from create body, got %#v", service.createReq)
 	}
 	if service.createReq.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy from create body, got %#v", service.createReq.BudgetPolicy)
@@ -310,7 +303,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 
 	spoofedConfigApproverID := uuid.New()
-	configReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/config-revisions", strings.NewReader(`{"role_profile":{"title":"requirements analyst"},"capability_selection":{"enabled_skills":["incident-diagnosis"]},"budget_policy":{"daily_token_limit":9000},"approved_by":"`+spoofedConfigApproverID.String()+`"}`))
+	configReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/config-revisions", strings.NewReader(`{"persona_memory_markdown":"# requirements analyst","capability_bindings":{"skills":["incident-diagnosis"]},"budget_policy":{"daily_token_limit":9000},"approved_by":"`+spoofedConfigApproverID.String()+`"}`))
 	configReq.Header.Set("Content-Type", "application/json")
 	configReq.AddCookie(cookie)
 	configResp := httptest.NewRecorder()
@@ -322,8 +315,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.configRevisionReq.TenantID != expectedTenantID || service.configRevisionReq.DigitalEmployeeID != employeeID {
 		t.Fatalf("expected config revision tenant/employee %s/%s, got %s/%s", expectedTenantID, employeeID, service.configRevisionReq.TenantID, service.configRevisionReq.DigitalEmployeeID)
 	}
-	if service.configRevisionReq.RoleProfile["title"] != "requirements analyst" {
-		t.Fatalf("expected role profile from request, got %#v", service.configRevisionReq.RoleProfile)
+	if service.configRevisionReq.PersonaMemoryMarkdown == nil || *service.configRevisionReq.PersonaMemoryMarkdown != "# requirements analyst" {
+		t.Fatalf("expected persona memory from request, got %#v", service.configRevisionReq.PersonaMemoryMarkdown)
 	}
 	if service.configRevisionReq.BudgetPolicy["daily_token_limit"] != float64(9000) {
 		t.Fatalf("expected budget policy from config request, got %#v", service.configRevisionReq.BudgetPolicy)
@@ -339,6 +332,18 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if configCreated.BudgetPolicy["daily_token_limit"] != float64(9000) {
 		t.Fatalf("expected budget policy in config response, got %#v", configCreated.BudgetPolicy)
+	}
+
+	legacyConfigReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/config-revisions", strings.NewReader(`{"role_profile":{"title":"legacy"},"persona_memory_markdown":"# legacy"}`))
+	legacyConfigReq.Header.Set("Content-Type", "application/json")
+	legacyConfigReq.AddCookie(cookie)
+	legacyConfigResp := httptest.NewRecorder()
+	server.ServeHTTP(legacyConfigResp, legacyConfigReq)
+	if legacyConfigResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected legacy config fields to be rejected, got %d: %s", legacyConfigResp.Code, legacyConfigResp.Body.String())
+	}
+	if !strings.Contains(legacyConfigResp.Body.String(), "role_profile is no longer supported") {
+		t.Fatalf("expected legacy field rejection body, got %s", legacyConfigResp.Body.String())
 	}
 
 	readinessReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID+"/scheduling-readiness", nil)
@@ -2034,21 +2039,21 @@ func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req emp
 	s.configCalled = true
 	s.configRevisionReq = req
 	now := time.Now().UTC()
+	persona := ""
+	if req.PersonaMemoryMarkdown != nil {
+		persona = *req.PersonaMemoryMarkdown
+	}
 	return &employee.DigitalEmployeeConfigRevision{
-		ID:                     uuid.New(),
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      req.DigitalEmployeeID,
-		RevisionNumber:         1,
-		RoleProfile:            req.RoleProfile,
-		ConstitutionAddendum:   req.ConstitutionAddendum,
-		CapabilitySelection:    req.CapabilitySelection,
-		ContextPolicyOverride:  req.ContextPolicyOverride,
-		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
-		BudgetPolicy:           req.BudgetPolicy,
-		OutputContractAddendum: req.OutputContractAddendum,
-		Status:                 employee.ConfigRevisionStatusDraft,
-		CreatedAt:              now,
-		UpdatedAt:              now,
+		ID:                    uuid.New(),
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		RevisionNumber:        1,
+		PersonaMemoryMarkdown: persona,
+		CapabilityBindings:    req.CapabilityBindings,
+		BudgetPolicy:          req.BudgetPolicy,
+		Status:                employee.ConfigRevisionStatusDraft,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}, nil
 }
 

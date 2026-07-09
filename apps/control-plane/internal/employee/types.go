@@ -455,37 +455,29 @@ type BudgetPolicy struct {
 }
 
 type EmployeeConfigInput struct {
-	ID                     uuid.UUID
-	TenantID               uuid.UUID
-	DigitalEmployeeID      uuid.UUID
-	RevisionNumber         int32
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	RevisionNumber        int32
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
 }
 
 type DigitalEmployeeConfigRevision struct {
-	ID                     uuid.UUID
-	TenantID               uuid.UUID
-	DigitalEmployeeID      uuid.UUID
-	RevisionNumber         int32
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
-	Status                 ConfigRevisionStatus
-	ApprovedBy             *uuid.UUID
-	ApprovedAt             *time.Time
-	ArchivedAt             *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	RevisionNumber        int32
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	Status                ConfigRevisionStatus
+	ApprovedBy            *uuid.UUID
+	ApprovedAt            *time.Time
+	ArchivedAt            *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type EffectiveConfigPreview struct {
@@ -547,45 +539,37 @@ type CreateOptions struct {
 }
 
 type CreateDigitalEmployeeRequest struct {
-	TenantID               uuid.UUID
-	TeamID                 *uuid.UUID
-	OwnerUserID            uuid.UUID
-	EmployeeType           string
-	Name                   string
-	AvatarAssetID          string
-	Role                   string
-	Description            *string
-	PermissionPolicy       map[string]any
-	ContextPolicy          map[string]any
-	ApprovalPolicy         map[string]any
-	RiskLevel              string
-	Metadata               map[string]any
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
-	RuntimeNodeID          uuid.UUID
-	ProviderType           string
-	SessionPolicy          map[string]any
-	WorkspacePolicy        map[string]any
-	EnvironmentVariables   []InitialEnvironmentVariable
+	TenantID              uuid.UUID
+	TeamID                *uuid.UUID
+	OwnerUserID           uuid.UUID
+	EmployeeType          string
+	Name                  string
+	AvatarAssetID         string
+	Role                  string
+	Description           *string
+	PermissionPolicy      map[string]any
+	ContextPolicy         map[string]any
+	ApprovalPolicy        map[string]any
+	RiskLevel             string
+	Metadata              map[string]any
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	RuntimeNodeID         uuid.UUID
+	ProviderType          string
+	SessionPolicy         map[string]any
+	WorkspacePolicy       map[string]any
+	EnvironmentVariables  []InitialEnvironmentVariable
 }
 
 type CreateDigitalEmployeeConfigRevisionRequest struct {
-	TenantID               uuid.UUID
-	DigitalEmployeeID      uuid.UUID
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
-	Status                 ConfigRevisionStatus
-	ApprovedBy             *uuid.UUID
+	TenantID              uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	PersonaMemoryMarkdown *string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	Status                ConfigRevisionStatus
+	ApprovedBy            *uuid.UUID
 }
 
 type PreviewEffectiveConfigRequest struct {

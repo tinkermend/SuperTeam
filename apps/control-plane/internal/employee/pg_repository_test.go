@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,57 @@ func TestOverviewInt32FromJSONString(t *testing.T) {
 	require.Equal(t, int32(1600), int32FromJSONString("1600"))
 	require.Equal(t, int32(0), int32FromJSONString(""))
 	require.Equal(t, int32(0), int32FromJSONString("not-a-number"))
+}
+
+func TestDigitalEmployeeConfigRevisionQueryMappingUsesFinalFields(t *testing.T) {
+	row := queries.GetDigitalEmployeeConfigRevisionRow{
+		ID:                    uuid.New(),
+		TenantID:              uuid.New(),
+		DigitalEmployeeID:     uuid.New(),
+		RevisionNumber:        3,
+		PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+		CapabilityBindings:    []byte(`{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"],"environment_variable_refs":["PG_DSN"]}`),
+		BudgetPolicy:          []byte(`{"daily_token_limit":50000}`),
+		Status:                string(ConfigRevisionStatusActive),
+		CreatedAt:             pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedAt:             pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+
+	input, err := employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    row.ID,
+		tenantID:              row.TenantID,
+		digitalEmployeeID:     row.DigitalEmployeeID,
+		revisionNumber:        row.RevisionNumber,
+		personaMemoryMarkdown: row.PersonaMemoryMarkdown,
+		capabilityBindings:    row.CapabilityBindings,
+		budgetPolicy:          row.BudgetPolicy,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "# 人格画像\n证据优先", input.PersonaMemoryMarkdown)
+	require.Equal(t, []any{"incident-diagnosis"}, input.CapabilityBindings["skills"])
+	require.Equal(t, float64(50000), input.BudgetPolicy["daily_token_limit"])
+
+	record, err := configRevisionRecordFromQuery(digitalEmployeeConfigRevisionRecordAdapter{
+		digitalEmployeeConfigRevisionQueryAdapter: digitalEmployeeConfigRevisionQueryAdapter{
+			id:                    row.ID,
+			tenantID:              row.TenantID,
+			digitalEmployeeID:     row.DigitalEmployeeID,
+			revisionNumber:        row.RevisionNumber,
+			personaMemoryMarkdown: row.PersonaMemoryMarkdown,
+			capabilityBindings:    row.CapabilityBindings,
+			budgetPolicy:          row.BudgetPolicy,
+		},
+		status:     row.Status,
+		approvedBy: row.ApprovedBy,
+		approvedAt: row.ApprovedAt,
+		archivedAt: row.ArchivedAt,
+		createdAt:  row.CreatedAt,
+		updatedAt:  row.UpdatedAt,
+	})
+	require.NoError(t, err)
+	require.Equal(t, input.PersonaMemoryMarkdown, record.PersonaMemoryMarkdown)
+	require.Equal(t, input.CapabilityBindings, record.CapabilityBindings)
+	require.Equal(t, input.BudgetPolicy, record.BudgetPolicy)
 }
 
 func TestGetTeamBaseline(t *testing.T) {

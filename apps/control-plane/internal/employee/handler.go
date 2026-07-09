@@ -174,29 +174,25 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req struct {
-		TeamID                 *uuid.UUID     `json:"team_id"`
-		EmployeeType           string         `json:"employee_type"`
-		Name                   string         `json:"name"`
-		AvatarAssetID          string         `json:"avatar_asset_id"`
-		Role                   string         `json:"role"`
-		Description            *string        `json:"description"`
-		PermissionPolicy       map[string]any `json:"permission_policy"`
-		ContextPolicy          map[string]any `json:"context_policy"`
-		ApprovalPolicy         map[string]any `json:"approval_policy"`
-		RiskLevel              string         `json:"risk_level"`
-		Metadata               map[string]any `json:"metadata"`
-		RoleProfile            map[string]any `json:"role_profile"`
-		ConstitutionAddendum   map[string]any `json:"constitution_addendum"`
-		CapabilitySelection    map[string]any `json:"capability_selection"`
-		ContextPolicyOverride  map[string]any `json:"context_policy_override"`
-		ApprovalPolicyOverride map[string]any `json:"approval_policy_override"`
-		BudgetPolicy           map[string]any `json:"budget_policy"`
-		OutputContractAddendum map[string]any `json:"output_contract_addendum"`
-		RuntimeNodeID          uuid.UUID      `json:"runtime_node_id"`
-		ProviderType           string         `json:"provider_type"`
-		SessionPolicy          map[string]any `json:"session_policy"`
-		WorkspacePolicy        map[string]any `json:"workspace_policy"`
-		EnvironmentVariables   []struct {
+		TeamID                *uuid.UUID     `json:"team_id"`
+		EmployeeType          string         `json:"employee_type"`
+		Name                  string         `json:"name"`
+		AvatarAssetID         string         `json:"avatar_asset_id"`
+		Role                  string         `json:"role"`
+		Description           *string        `json:"description"`
+		PermissionPolicy      map[string]any `json:"permission_policy"`
+		ContextPolicy         map[string]any `json:"context_policy"`
+		ApprovalPolicy        map[string]any `json:"approval_policy"`
+		RiskLevel             string         `json:"risk_level"`
+		Metadata              map[string]any `json:"metadata"`
+		PersonaMemoryMarkdown string         `json:"persona_memory_markdown"`
+		CapabilityBindings    map[string]any `json:"capability_bindings"`
+		BudgetPolicy          map[string]any `json:"budget_policy"`
+		RuntimeNodeID         uuid.UUID      `json:"runtime_node_id"`
+		ProviderType          string         `json:"provider_type"`
+		SessionPolicy         map[string]any `json:"session_policy"`
+		WorkspacePolicy       map[string]any `json:"workspace_policy"`
+		EnvironmentVariables  []struct {
 			Name      string `json:"name"`
 			Value     string `json:"value"`
 			Sensitive *bool  `json:"sensitive"`
@@ -215,31 +211,27 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		})
 	}
 	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
-		TenantID:               tenantID,
-		TeamID:                 req.TeamID,
-		OwnerUserID:            middleware.GetUserID(r.Context()),
-		EmployeeType:           req.EmployeeType,
-		Name:                   req.Name,
-		AvatarAssetID:          req.AvatarAssetID,
-		Role:                   req.Role,
-		Description:            req.Description,
-		PermissionPolicy:       req.PermissionPolicy,
-		ContextPolicy:          req.ContextPolicy,
-		ApprovalPolicy:         req.ApprovalPolicy,
-		RiskLevel:              req.RiskLevel,
-		Metadata:               req.Metadata,
-		RoleProfile:            req.RoleProfile,
-		ConstitutionAddendum:   req.ConstitutionAddendum,
-		CapabilitySelection:    req.CapabilitySelection,
-		ContextPolicyOverride:  req.ContextPolicyOverride,
-		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
-		BudgetPolicy:           req.BudgetPolicy,
-		OutputContractAddendum: req.OutputContractAddendum,
-		RuntimeNodeID:          req.RuntimeNodeID,
-		ProviderType:           req.ProviderType,
-		SessionPolicy:          req.SessionPolicy,
-		WorkspacePolicy:        req.WorkspacePolicy,
-		EnvironmentVariables:   environmentVariables,
+		TenantID:              tenantID,
+		TeamID:                req.TeamID,
+		OwnerUserID:           middleware.GetUserID(r.Context()),
+		EmployeeType:          req.EmployeeType,
+		Name:                  req.Name,
+		AvatarAssetID:         req.AvatarAssetID,
+		Role:                  req.Role,
+		Description:           req.Description,
+		PermissionPolicy:      req.PermissionPolicy,
+		ContextPolicy:         req.ContextPolicy,
+		ApprovalPolicy:        req.ApprovalPolicy,
+		RiskLevel:             req.RiskLevel,
+		Metadata:              req.Metadata,
+		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
+		CapabilityBindings:    req.CapabilityBindings,
+		BudgetPolicy:          req.BudgetPolicy,
+		RuntimeNodeID:         req.RuntimeNodeID,
+		ProviderType:          req.ProviderType,
+		SessionPolicy:         req.SessionPolicy,
+		WorkspacePolicy:       req.WorkspacePolicy,
+		EnvironmentVariables:  environmentVariables,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -591,31 +583,42 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 	if !ok {
 		return
 	}
-	var req struct {
-		RoleProfile            map[string]any       `json:"role_profile"`
-		ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
-		CapabilitySelection    map[string]any       `json:"capability_selection"`
-		ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
-		ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
-		BudgetPolicy           map[string]any       `json:"budget_policy"`
-		OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
-		Status                 ConfigRevisionStatus `json:"status"`
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	for _, field := range []string{
+		"role_profile",
+		"constitution_addendum",
+		"capability_selection",
+		"context_policy_override",
+		"approval_policy_override",
+		"output_contract_addendum",
+	} {
+		if _, exists := raw[field]; exists {
+			http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+			return
+		}
+	}
+	var req struct {
+		PersonaMemoryMarkdown *string              `json:"persona_memory_markdown"`
+		CapabilityBindings    map[string]any       `json:"capability_bindings"`
+		BudgetPolicy          map[string]any       `json:"budget_policy"`
+		Status                ConfigRevisionStatus `json:"status"`
+	}
+	payload, _ := json.Marshal(raw)
+	if err := json.Unmarshal(payload, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	revision, err := service.CreateConfigRevision(r.Context(), CreateDigitalEmployeeConfigRevisionRequest{
-		TenantID:               tenantID,
-		DigitalEmployeeID:      employeeID,
-		RoleProfile:            req.RoleProfile,
-		ConstitutionAddendum:   req.ConstitutionAddendum,
-		CapabilitySelection:    req.CapabilitySelection,
-		ContextPolicyOverride:  req.ContextPolicyOverride,
-		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
-		BudgetPolicy:           req.BudgetPolicy,
-		OutputContractAddendum: req.OutputContractAddendum,
-		Status:                 req.Status,
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employeeID,
+		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
+		CapabilityBindings:    req.CapabilityBindings,
+		BudgetPolicy:          req.BudgetPolicy,
+		Status:                req.Status,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1059,23 +1062,19 @@ type executionInstanceResponse struct {
 }
 
 type configRevisionResponse struct {
-	ID                     string               `json:"id"`
-	TenantID               string               `json:"tenant_id"`
-	DigitalEmployeeID      string               `json:"digital_employee_id"`
-	RevisionNumber         int32                `json:"revision_number"`
-	RoleProfile            map[string]any       `json:"role_profile"`
-	ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
-	CapabilitySelection    map[string]any       `json:"capability_selection"`
-	ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
-	ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
-	BudgetPolicy           map[string]any       `json:"budget_policy"`
-	OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
-	Status                 ConfigRevisionStatus `json:"status"`
-	ApprovedBy             *string              `json:"approved_by,omitempty"`
-	ApprovedAt             *string              `json:"approved_at,omitempty"`
-	ArchivedAt             *string              `json:"archived_at,omitempty"`
-	CreatedAt              string               `json:"created_at,omitempty"`
-	UpdatedAt              string               `json:"updated_at,omitempty"`
+	ID                    string               `json:"id"`
+	TenantID              string               `json:"tenant_id"`
+	DigitalEmployeeID     string               `json:"digital_employee_id"`
+	RevisionNumber        int32                `json:"revision_number"`
+	PersonaMemoryMarkdown string               `json:"persona_memory_markdown"`
+	CapabilityBindings    map[string]any       `json:"capability_bindings"`
+	BudgetPolicy          map[string]any       `json:"budget_policy"`
+	Status                ConfigRevisionStatus `json:"status"`
+	ApprovedBy            *string              `json:"approved_by,omitempty"`
+	ApprovedAt            *string              `json:"approved_at,omitempty"`
+	ArchivedAt            *string              `json:"archived_at,omitempty"`
+	CreatedAt             string               `json:"created_at,omitempty"`
+	UpdatedAt             string               `json:"updated_at,omitempty"`
 }
 
 type schedulingReadinessResponse struct {
@@ -1639,23 +1638,19 @@ func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInsta
 
 func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) configRevisionResponse {
 	return configRevisionResponse{
-		ID:                     revision.ID.String(),
-		TenantID:               revision.TenantID.String(),
-		DigitalEmployeeID:      revision.DigitalEmployeeID.String(),
-		RevisionNumber:         revision.RevisionNumber,
-		RoleProfile:            cloneMap(revision.RoleProfile),
-		ConstitutionAddendum:   cloneMap(revision.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(revision.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(revision.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(revision.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(revision.BudgetPolicy),
-		OutputContractAddendum: cloneMap(revision.OutputContractAddendum),
-		Status:                 revision.Status,
-		ApprovedBy:             uuidStringPtr(revision.ApprovedBy),
-		ApprovedAt:             timeStringPtr(revision.ApprovedAt),
-		ArchivedAt:             timeStringPtr(revision.ArchivedAt),
-		CreatedAt:              timeString(revision.CreatedAt),
-		UpdatedAt:              timeString(revision.UpdatedAt),
+		ID:                    revision.ID.String(),
+		TenantID:              revision.TenantID.String(),
+		DigitalEmployeeID:     revision.DigitalEmployeeID.String(),
+		RevisionNumber:        revision.RevisionNumber,
+		PersonaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(revision.CapabilityBindings),
+		BudgetPolicy:          cloneMap(revision.BudgetPolicy),
+		Status:                revision.Status,
+		ApprovedBy:            uuidStringPtr(revision.ApprovedBy),
+		ApprovedAt:            timeStringPtr(revision.ApprovedAt),
+		ArchivedAt:            timeStringPtr(revision.ArchivedAt),
+		CreatedAt:             timeString(revision.CreatedAt),
+		UpdatedAt:             timeString(revision.UpdatedAt),
 	}
 }
 

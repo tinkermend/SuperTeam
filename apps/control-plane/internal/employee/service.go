@@ -763,35 +763,27 @@ func (s *Service) createInitialActiveConfigRevision(ctx context.Context, reposit
 
 func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID, revisionNumber int32, approvedBy uuid.UUID, approvedAt time.Time) CreateConfigRevisionParams {
 	return CreateConfigRevisionParams{
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      employeeID,
-		RevisionNumber:         revisionNumber,
-		RoleProfile:            initialRoleProfile(req),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
-		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
-		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(req.BudgetPolicy),
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
-		Status:                 ConfigRevisionStatusActive,
-		ApprovedBy:             &approvedBy,
-		ApprovedAt:             &approvedAt,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     employeeID,
+		RevisionNumber:        revisionNumber,
+		PersonaMemoryMarkdown: strings.TrimSpace(req.PersonaMemoryMarkdown),
+		CapabilityBindings:    normalizeCapabilityBindings(initialCapabilitySelection(req, definition, teamConfig)),
+		BudgetPolicy:          cloneMap(req.BudgetPolicy),
+		Status:                ConfigRevisionStatusActive,
+		ApprovedBy:            &approvedBy,
+		ApprovedAt:            &approvedAt,
 	}
 }
 
 func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID, configID uuid.UUID, revisionNumber int32) EmployeeConfigInput {
 	return EmployeeConfigInput{
-		ID:                     configID,
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      employeeID,
-		RevisionNumber:         revisionNumber,
-		RoleProfile:            initialRoleProfile(req),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
-		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
-		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(req.BudgetPolicy),
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+		ID:                    configID,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     employeeID,
+		RevisionNumber:        revisionNumber,
+		PersonaMemoryMarkdown: strings.TrimSpace(req.PersonaMemoryMarkdown),
+		CapabilityBindings:    normalizeCapabilityBindings(initialCapabilitySelection(req, definition, teamConfig)),
+		BudgetPolicy:          cloneMap(req.BudgetPolicy),
 	}
 }
 
@@ -913,13 +905,41 @@ func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uu
 }
 
 func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := cloneMap(definition.DefaultCapabilitySelection)
-	return mergePolicyMaps(defaults, req.CapabilitySelection)
+	defaults := legacyDefaultCapabilitySelectionToBindings(definition.DefaultCapabilitySelection)
+	return mergePolicyMaps(defaults, req.CapabilityBindings)
+}
+
+func legacyDefaultCapabilitySelectionToBindings(defaults map[string]any) map[string]any {
+	bindings := map[string]any{}
+	if len(defaults) == 0 {
+		return bindings
+	}
+	if skills := stringList(defaults["enabled_skills"]); len(skills) > 0 {
+		bindings["skills"] = stringSliceToAnySlice(skills)
+	}
+	if servers := stringList(defaults["enabled_mcp_servers"]); len(servers) > 0 {
+		bindings["mcp_servers"] = stringSliceToAnySlice(servers)
+	}
+	if externals := stringList(defaults["enabled_external_capabilities"]); len(externals) > 0 {
+		bindings["external_capabilities"] = stringSliceToAnySlice(externals)
+	}
+	if envRefs := stringList(defaults["environment_variable_refs"]); len(envRefs) > 0 {
+		bindings["environment_variable_refs"] = stringSliceToAnySlice(envRefs)
+	}
+	return bindings
+}
+
+func stringSliceToAnySlice(values []string) []any {
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func initialContextPolicyOverride(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
 	defaults := constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
-	return mergePolicyMaps(defaults, req.ContextPolicyOverride)
+	return defaults
 }
 
 func constrainedDefaultContextPolicyOverride(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
@@ -965,11 +985,17 @@ func mergePolicyMaps(base, override map[string]any) map[string]any {
 	return merged
 }
 
-func initialRoleProfile(req CreateDigitalEmployeeRequest) map[string]any {
-	profile := cloneMap(req.RoleProfile)
-	profile["employee_type"] = req.EmployeeType
-	profile["role"] = req.Role
-	return profile
+func normalizeCapabilityBindings(input map[string]any) map[string]any {
+	bindings := cloneMap(input)
+	if bindings == nil {
+		bindings = map[string]any{}
+	}
+	for _, key := range []string{"skills", "mcp_servers", "external_capabilities", "environment_variable_refs"} {
+		if _, ok := bindings[key]; !ok {
+			bindings[key] = []any{}
+		}
+	}
+	return bindings
 }
 
 func (s *Service) abortProvisioning(tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
@@ -1033,17 +1059,14 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"permission_policy":           cloneMap(employee.PermissionPolicy),
 		"context_policy":              cloneMap(employee.ContextPolicy),
 		"approval_policy":             cloneMap(employee.ApprovalPolicy),
-		"role_profile":                cloneMap(configInput.RoleProfile),
-		"context_policy_override":     cloneMap(configInput.ContextPolicyOverride),
-		"approval_policy_override":    cloneMap(configInput.ApprovalPolicyOverride),
-		"capability_selection":        cloneMap(configInput.CapabilitySelection),
+		"persona_memory_markdown":     configInput.PersonaMemoryMarkdown,
+		"capability_bindings":         cloneMap(configInput.CapabilityBindings),
 		"budget_policy":               cloneMap(configInput.BudgetPolicy),
-		"output_contract_addendum":    cloneMap(configInput.OutputContractAddendum),
 		"employee_metadata":           cloneMap(employee.Metadata),
 		"execution_instance_ref":      instance.ID.String(),
 		"workspace_files":             runtimeWorkspaceFilesPayload(workspaceFiles),
 		"skills":                      runtimeSkillsPayload(runtimeSkills),
-		"mcp_servers":                 runtimeMCPServersPayload(configInput.CapabilitySelection),
+		"mcp_servers":                 runtimeMCPServersPayload(configInput.CapabilityBindings),
 	})
 }
 
@@ -1147,10 +1170,6 @@ func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput Emplo
 		builder.WriteString("- Employee config revision: ")
 		builder.WriteString(preview.EmployeeConfigRevisionID.String())
 		builder.WriteString("\n")
-	}
-	if len(configInput.OutputContractAddendum) > 0 {
-		builder.WriteString("\n# Output Contract Addendum\n\n")
-		builder.WriteString("Additional output contract data is governed by the Control Plane effective configuration.\n")
 	}
 	return builder.String()
 }
@@ -1491,21 +1510,17 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	} else {
 		latestConfig = &latest
 	}
-	roleProfile := inheritedConfigMap(req.RoleProfile, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.RoleProfile
+	personaMemoryMarkdown := ""
+	if latestConfig != nil {
+		personaMemoryMarkdown = latestConfig.PersonaMemoryMarkdown
+	}
+	if req.PersonaMemoryMarkdown != nil {
+		personaMemoryMarkdown = strings.TrimSpace(*req.PersonaMemoryMarkdown)
+	}
+	capabilityBindings := inheritedConfigMap(req.CapabilityBindings, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.CapabilityBindings
 	})
-	constitutionAddendum := inheritedConfigMap(req.ConstitutionAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ConstitutionAddendum
-	})
-	capabilitySelection := inheritedConfigMap(req.CapabilitySelection, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.CapabilitySelection
-	})
-	contextPolicyOverride := inheritedConfigMap(req.ContextPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ContextPolicyOverride
-	})
-	approvalPolicyOverride := inheritedConfigMap(req.ApprovalPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ApprovalPolicyOverride
-	})
+	capabilityBindings = normalizeCapabilityBindings(capabilityBindings)
 	budgetPolicySource := inheritedConfigMap(req.BudgetPolicy, latestConfig, func(config EmployeeConfigInput) map[string]any {
 		return config.BudgetPolicy
 	})
@@ -1513,25 +1528,18 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if err != nil {
 		return nil, err
 	}
-	outputContractAddendum := inheritedConfigMap(req.OutputContractAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.OutputContractAddendum
-	})
 	nextRevision, err := s.repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
 		return nil, fmt.Errorf("get next digital employee config revision number: %w", err)
 	}
 	record, err := s.repository.CreateDigitalEmployeeConfigRevision(ctx, CreateConfigRevisionParams{
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      req.DigitalEmployeeID,
-		RevisionNumber:         nextRevision,
-		RoleProfile:            roleProfile,
-		ConstitutionAddendum:   constitutionAddendum,
-		CapabilitySelection:    capabilitySelection,
-		ContextPolicyOverride:  contextPolicyOverride,
-		ApprovalPolicyOverride: approvalPolicyOverride,
-		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: outputContractAddendum,
-		Status:                 status,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		RevisionNumber:        nextRevision,
+		PersonaMemoryMarkdown: personaMemoryMarkdown,
+		CapabilityBindings:    capabilityBindings,
+		BudgetPolicy:          budgetPolicy,
+		Status:                status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create digital employee config revision: %w", err)
@@ -1638,31 +1646,15 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 
 	effectiveConfig := map[string]any{
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
-		"constitution": map[string]any{
-			"team":     cloneMap(req.TeamConfig.Constitution),
-			"addendum": cloneMap(req.EmployeeConfig.ConstitutionAddendum),
-		},
-		"capability_policy":             cloneMap(req.TeamConfig.CapabilityPolicy),
-		"capability_selection":          cloneMap(req.EmployeeConfig.CapabilitySelection),
-		"context_policy":                cloneMap(req.TeamConfig.ContextPolicy),
-		"context_policy_override":       cloneMap(req.EmployeeConfig.ContextPolicyOverride),
-		"approval_policy":               cloneMap(req.TeamConfig.ApprovalPolicy),
-		"approval_policy_override":      cloneMap(req.EmployeeConfig.ApprovalPolicyOverride),
-		"budget_policy":                 cloneMap(req.EmployeeConfig.BudgetPolicy),
-		"artifact_contract":             cloneMap(req.TeamConfig.ArtifactContract),
-		"output_contract_addendum":      cloneMap(req.EmployeeConfig.OutputContractAddendum),
-		"internal_collaboration_policy": cloneMap(req.TeamConfig.InternalCollaborationPolicy),
-		"runtime_scope_policy":          cloneMap(req.TeamConfig.RuntimeScopePolicy),
+		"persona_memory_markdown":     req.EmployeeConfig.PersonaMemoryMarkdown,
+		"capability_bindings":         cloneMap(req.EmployeeConfig.CapabilityBindings),
+		"budget_policy":               cloneMap(req.EmployeeConfig.BudgetPolicy),
 	}
 	validation := EffectiveConfigValidation{
 		BlockingErrors: []ValidationIssue{},
 		Warnings:       []ValidationIssue{},
 	}
-	if !teamLess {
-		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySelection(req.EmployeeConfig.CapabilitySelection)...)
-		validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
-		validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
-	}
+	_ = teamLess
 
 	return &EffectiveConfigPreview{
 		EmployeeConfigRevisionID: req.EmployeeConfig.ID,
@@ -1697,39 +1689,31 @@ func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 
 func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *DigitalEmployeeConfigRevision {
 	return &DigitalEmployeeConfigRevision{
-		ID:                     record.ID,
-		TenantID:               record.TenantID,
-		DigitalEmployeeID:      record.DigitalEmployeeID,
-		RevisionNumber:         record.RevisionNumber,
-		RoleProfile:            cloneMap(record.RoleProfile),
-		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(record.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(record.BudgetPolicy),
-		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
-		Status:                 record.Status,
-		ApprovedBy:             validUUIDPtr(record.ApprovedBy),
-		ApprovedAt:             cloneTimePtr(record.ApprovedAt),
-		ArchivedAt:             cloneTimePtr(record.ArchivedAt),
-		CreatedAt:              record.CreatedAt,
-		UpdatedAt:              record.UpdatedAt,
+		ID:                    record.ID,
+		TenantID:              record.TenantID,
+		DigitalEmployeeID:     record.DigitalEmployeeID,
+		RevisionNumber:        record.RevisionNumber,
+		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(record.CapabilityBindings),
+		BudgetPolicy:          cloneMap(record.BudgetPolicy),
+		Status:                record.Status,
+		ApprovedBy:            validUUIDPtr(record.ApprovedBy),
+		ApprovedAt:            cloneTimePtr(record.ApprovedAt),
+		ArchivedAt:            cloneTimePtr(record.ArchivedAt),
+		CreatedAt:             record.CreatedAt,
+		UpdatedAt:             record.UpdatedAt,
 	}
 }
 
 func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) EmployeeConfigInput {
 	return EmployeeConfigInput{
-		ID:                     record.ID,
-		TenantID:               record.TenantID,
-		DigitalEmployeeID:      record.DigitalEmployeeID,
-		RevisionNumber:         record.RevisionNumber,
-		RoleProfile:            cloneMap(record.RoleProfile),
-		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(record.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(record.BudgetPolicy),
-		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
+		ID:                    record.ID,
+		TenantID:              record.TenantID,
+		DigitalEmployeeID:     record.DigitalEmployeeID,
+		RevisionNumber:        record.RevisionNumber,
+		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(record.CapabilityBindings),
+		BudgetPolicy:          cloneMap(record.BudgetPolicy),
 	}
 }
 

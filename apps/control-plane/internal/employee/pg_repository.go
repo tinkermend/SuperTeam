@@ -852,23 +852,7 @@ func (r *PgRepository) UpsertWorkspaceFileSync(ctx context.Context, params Upser
 }
 
 func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error) {
-	roleProfile, err := jsonbFromMap(params.RoleProfile, "role_profile")
-	if err != nil {
-		return DigitalEmployeeConfigRevisionRecord{}, err
-	}
-	constitutionAddendum, err := jsonbFromMap(params.ConstitutionAddendum, "constitution_addendum")
-	if err != nil {
-		return DigitalEmployeeConfigRevisionRecord{}, err
-	}
-	capabilitySelection, err := jsonbFromMap(params.CapabilitySelection, "capability_selection")
-	if err != nil {
-		return DigitalEmployeeConfigRevisionRecord{}, err
-	}
-	contextPolicyOverride, err := jsonbFromMap(params.ContextPolicyOverride, "context_policy_override")
-	if err != nil {
-		return DigitalEmployeeConfigRevisionRecord{}, err
-	}
-	approvalPolicyOverride, err := jsonbFromMap(params.ApprovalPolicyOverride, "approval_policy_override")
+	capabilityBindings, err := jsonbFromMap(params.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
@@ -876,29 +860,37 @@ func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, 
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
-	outputContractAddendum, err := jsonbFromMap(params.OutputContractAddendum, "output_contract_addendum")
-	if err != nil {
-		return DigitalEmployeeConfigRevisionRecord{}, err
-	}
 	revision, err := r.q.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
-		TenantID:               params.TenantID,
-		DigitalEmployeeID:      params.DigitalEmployeeID,
-		RevisionNumber:         params.RevisionNumber,
-		RoleProfile:            roleProfile,
-		ConstitutionAddendum:   constitutionAddendum,
-		CapabilitySelection:    capabilitySelection,
-		ContextPolicyOverride:  contextPolicyOverride,
-		ApprovalPolicyOverride: approvalPolicyOverride,
-		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: outputContractAddendum,
-		Status:                 string(params.Status),
-		ApprovedBy:             nullUUIDFromPtr(params.ApprovedBy),
-		ApprovedAt:             timestamptzFromPtr(params.ApprovedAt),
+		TenantID:              params.TenantID,
+		DigitalEmployeeID:     params.DigitalEmployeeID,
+		RevisionNumber:        params.RevisionNumber,
+		PersonaMemoryMarkdown: params.PersonaMemoryMarkdown,
+		CapabilityBindings:    capabilityBindings,
+		BudgetPolicy:          budgetPolicy,
+		Status:                string(params.Status),
+		ApprovedBy:            nullUUIDFromPtr(params.ApprovedBy),
+		ApprovedAt:            timestamptzFromPtr(params.ApprovedAt),
 	})
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
-	return configRevisionRecordFromQuery(revision)
+	return configRevisionRecordFromQuery(digitalEmployeeConfigRevisionRecordAdapter{
+		digitalEmployeeConfigRevisionQueryAdapter: digitalEmployeeConfigRevisionQueryAdapter{
+			id:                    revision.ID,
+			tenantID:              revision.TenantID,
+			digitalEmployeeID:     revision.DigitalEmployeeID,
+			revisionNumber:        revision.RevisionNumber,
+			personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+			capabilityBindings:    revision.CapabilityBindings,
+			budgetPolicy:          revision.BudgetPolicy,
+		},
+		status:     revision.Status,
+		approvedBy: revision.ApprovedBy,
+		approvedAt: revision.ApprovedAt,
+		archivedAt: revision.ArchivedAt,
+		createdAt:  revision.CreatedAt,
+		updatedAt:  revision.UpdatedAt,
+	})
 }
 
 func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
@@ -910,7 +902,15 @@ func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, ten
 	if err != nil {
 		return EmployeeConfigInput{}, mapNoRows(err)
 	}
-	return employeeConfigInputFromQuery(revision)
+	return employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    revision.ID,
+		tenantID:              revision.TenantID,
+		digitalEmployeeID:     revision.DigitalEmployeeID,
+		revisionNumber:        revision.RevisionNumber,
+		personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		capabilityBindings:    revision.CapabilityBindings,
+		budgetPolicy:          revision.BudgetPolicy,
+	})
 }
 
 func (r *PgRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
@@ -921,7 +921,15 @@ func (r *PgRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Contex
 	if err != nil {
 		return EmployeeConfigInput{}, mapNoRows(err)
 	}
-	return employeeConfigInputFromQuery(revision)
+	return employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    revision.ID,
+		tenantID:              revision.TenantID,
+		digitalEmployeeID:     revision.DigitalEmployeeID,
+		revisionNumber:        revision.RevisionNumber,
+		personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		capabilityBindings:    revision.CapabilityBindings,
+		budgetPolicy:          revision.BudgetPolicy,
+	})
 }
 
 func (r *PgRepository) GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {
@@ -1939,73 +1947,116 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 	}, nil
 }
 
-func configRevisionRecordFromQuery(revision queries.DigitalEmployeeConfigRevision) (DigitalEmployeeConfigRevisionRecord, error) {
+type digitalEmployeeConfigRevisionRecordRow interface {
+	digitalEmployeeConfigRevisionQueryRow
+	GetStatus() string
+	GetApprovedBy() uuid.NullUUID
+	GetApprovedAt() pgtype.Timestamptz
+	GetArchivedAt() pgtype.Timestamptz
+	GetCreatedAt() pgtype.Timestamptz
+	GetUpdatedAt() pgtype.Timestamptz
+}
+
+type digitalEmployeeConfigRevisionRecordAdapter struct {
+	digitalEmployeeConfigRevisionQueryAdapter
+	status     string
+	approvedBy uuid.NullUUID
+	approvedAt pgtype.Timestamptz
+	archivedAt pgtype.Timestamptz
+	createdAt  pgtype.Timestamptz
+	updatedAt  pgtype.Timestamptz
+}
+
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetStatus() string { return r.status }
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetApprovedBy() uuid.NullUUID {
+	return r.approvedBy
+}
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetApprovedAt() pgtype.Timestamptz {
+	return r.approvedAt
+}
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetArchivedAt() pgtype.Timestamptz {
+	return r.archivedAt
+}
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetCreatedAt() pgtype.Timestamptz {
+	return r.createdAt
+}
+func (r digitalEmployeeConfigRevisionRecordAdapter) GetUpdatedAt() pgtype.Timestamptz {
+	return r.updatedAt
+}
+
+func configRevisionRecordFromQuery(revision digitalEmployeeConfigRevisionRecordRow) (DigitalEmployeeConfigRevisionRecord, error) {
 	input, err := employeeConfigInputFromQuery(revision)
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
 	return DigitalEmployeeConfigRevisionRecord{
-		ID:                     input.ID,
-		TenantID:               input.TenantID,
-		DigitalEmployeeID:      input.DigitalEmployeeID,
-		RevisionNumber:         input.RevisionNumber,
-		RoleProfile:            cloneMap(input.RoleProfile),
-		ConstitutionAddendum:   cloneMap(input.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(input.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(input.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(input.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(input.BudgetPolicy),
-		OutputContractAddendum: cloneMap(input.OutputContractAddendum),
-		Status:                 ConfigRevisionStatus(revision.Status),
-		ApprovedBy:             uuidPtrFromNull(revision.ApprovedBy),
-		ApprovedAt:             timePtrFromTimestamptz(revision.ApprovedAt),
-		ArchivedAt:             timePtrFromTimestamptz(revision.ArchivedAt),
-		CreatedAt:              timeFromTimestamptz(revision.CreatedAt),
-		UpdatedAt:              timeFromTimestamptz(revision.UpdatedAt),
+		ID:                    input.ID,
+		TenantID:              input.TenantID,
+		DigitalEmployeeID:     input.DigitalEmployeeID,
+		RevisionNumber:        input.RevisionNumber,
+		PersonaMemoryMarkdown: input.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(input.CapabilityBindings),
+		BudgetPolicy:          cloneMap(input.BudgetPolicy),
+		Status:                ConfigRevisionStatus(revision.GetStatus()),
+		ApprovedBy:            uuidPtrFromNull(revision.GetApprovedBy()),
+		ApprovedAt:            timePtrFromTimestamptz(revision.GetApprovedAt()),
+		ArchivedAt:            timePtrFromTimestamptz(revision.GetArchivedAt()),
+		CreatedAt:             timeFromTimestamptz(revision.GetCreatedAt()),
+		UpdatedAt:             timeFromTimestamptz(revision.GetUpdatedAt()),
 	}, nil
 }
 
-func employeeConfigInputFromQuery(revision queries.DigitalEmployeeConfigRevision) (EmployeeConfigInput, error) {
-	roleProfile, err := mapFromJSONB(revision.RoleProfile, "role_profile")
+type digitalEmployeeConfigRevisionQueryRow interface {
+	GetID() uuid.UUID
+	GetTenantID() uuid.UUID
+	GetDigitalEmployeeID() uuid.UUID
+	GetRevisionNumber() int32
+	GetPersonaMemoryMarkdown() string
+	GetCapabilityBindings() []byte
+	GetBudgetPolicy() []byte
+}
+
+type digitalEmployeeConfigRevisionQueryAdapter struct {
+	id                    uuid.UUID
+	tenantID              uuid.UUID
+	digitalEmployeeID     uuid.UUID
+	revisionNumber        int32
+	personaMemoryMarkdown string
+	capabilityBindings    []byte
+	budgetPolicy          []byte
+}
+
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetID() uuid.UUID       { return r.id }
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetTenantID() uuid.UUID { return r.tenantID }
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetDigitalEmployeeID() uuid.UUID {
+	return r.digitalEmployeeID
+}
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetRevisionNumber() int32 { return r.revisionNumber }
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetPersonaMemoryMarkdown() string {
+	return r.personaMemoryMarkdown
+}
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetCapabilityBindings() []byte {
+	return r.capabilityBindings
+}
+func (r digitalEmployeeConfigRevisionQueryAdapter) GetBudgetPolicy() []byte { return r.budgetPolicy }
+
+func employeeConfigInputFromQuery(revision digitalEmployeeConfigRevisionQueryRow) (EmployeeConfigInput, error) {
+	capabilityBindings, err := mapFromJSONB(revision.GetCapabilityBindings(), "capability_bindings")
 	if err != nil {
 		return EmployeeConfigInput{}, err
 	}
-	constitutionAddendum, err := mapFromJSONB(revision.ConstitutionAddendum, "constitution_addendum")
-	if err != nil {
-		return EmployeeConfigInput{}, err
-	}
-	capabilitySelection, err := mapFromJSONB(revision.CapabilitySelection, "capability_selection")
-	if err != nil {
-		return EmployeeConfigInput{}, err
-	}
-	contextPolicyOverride, err := mapFromJSONB(revision.ContextPolicyOverride, "context_policy_override")
-	if err != nil {
-		return EmployeeConfigInput{}, err
-	}
-	approvalPolicyOverride, err := mapFromJSONB(revision.ApprovalPolicyOverride, "approval_policy_override")
-	if err != nil {
-		return EmployeeConfigInput{}, err
-	}
-	budgetPolicy, err := mapFromJSONB(revision.BudgetPolicy, "budget_policy")
-	if err != nil {
-		return EmployeeConfigInput{}, err
-	}
-	outputContractAddendum, err := mapFromJSONB(revision.OutputContractAddendum, "output_contract_addendum")
+	budgetPolicy, err := mapFromJSONB(revision.GetBudgetPolicy(), "budget_policy")
 	if err != nil {
 		return EmployeeConfigInput{}, err
 	}
 	return EmployeeConfigInput{
-		ID:                     revision.ID,
-		TenantID:               revision.TenantID,
-		DigitalEmployeeID:      revision.DigitalEmployeeID,
-		RevisionNumber:         revision.RevisionNumber,
-		RoleProfile:            roleProfile,
-		ConstitutionAddendum:   constitutionAddendum,
-		CapabilitySelection:    capabilitySelection,
-		ContextPolicyOverride:  contextPolicyOverride,
-		ApprovalPolicyOverride: approvalPolicyOverride,
-		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: outputContractAddendum,
+		ID:                    revision.GetID(),
+		TenantID:              revision.GetTenantID(),
+		DigitalEmployeeID:     revision.GetDigitalEmployeeID(),
+		RevisionNumber:        revision.GetRevisionNumber(),
+		PersonaMemoryMarkdown: revision.GetPersonaMemoryMarkdown(),
+		CapabilityBindings:    capabilityBindings,
+		BudgetPolicy:          budgetPolicy,
 	}, nil
 }
 
