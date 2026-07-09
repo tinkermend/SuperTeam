@@ -578,6 +578,49 @@ func TestDigitalEmployeeBudgetPolicyMigration(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeConfigFinalModelMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/051_digital_employee_config_final_model.sql")
+	require.NoError(t, err)
+	sql := string(body)
+
+	for _, expected := range []string{
+		"DELETE FROM digital_employee_environment_variables",
+		"DELETE FROM skill_installations",
+		"DELETE FROM digital_employee_mcp_bindings_v2",
+		"DELETE FROM digital_employee_mcp_bindings",
+		"DELETE FROM digital_employee_workspace_file_syncs",
+		"DELETE FROM digital_employee_workspace_file_revisions",
+		"DELETE FROM digital_employee_workspace_files",
+		"DELETE FROM digital_employee_execution_instances",
+		"DELETE FROM digital_employee_config_revisions",
+		"DELETE FROM digital_employees",
+		"ADD COLUMN IF NOT EXISTS persona_memory_markdown TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS capability_bindings JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"DROP COLUMN IF EXISTS role_profile",
+		"DROP COLUMN IF EXISTS constitution_addendum",
+		"DROP COLUMN IF EXISTS capability_selection",
+		"DROP COLUMN IF EXISTS context_policy_override",
+		"DROP COLUMN IF EXISTS approval_policy_override",
+		"DROP COLUMN IF EXISTS output_contract_addendum",
+		"COMMENT ON COLUMN digital_employee_config_revisions.persona_memory_markdown IS '数字员工人格记忆 Markdown，描述人格画像、专业边界、工作方式和表达偏好'",
+		"COMMENT ON COLUMN digital_employee_config_revisions.capability_bindings IS '数字员工能力绑定，保存 Skill、MCP、外部能力和环境变量引用'",
+	} {
+		require.Contains(t, sql, expected)
+	}
+
+	for _, forbidden := range []string{
+		"INSERT INTO digital_employee_config_revisions",
+		"role_profile JSONB",
+		"constitution_addendum JSONB",
+		"capability_selection JSONB",
+		"context_policy_override JSONB",
+		"approval_policy_override JSONB",
+		"output_contract_addendum JSONB",
+	} {
+		require.NotContains(t, sql, forbidden)
+	}
+}
+
 func TestDualLayerCapabilityManagementMigration(t *testing.T) {
 	body, err := os.ReadFile("migrations/018_dual_layer_capability_management.sql")
 	if err != nil {
