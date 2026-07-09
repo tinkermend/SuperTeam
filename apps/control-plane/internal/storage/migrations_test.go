@@ -588,9 +588,20 @@ func TestDigitalEmployeeConfigFinalModelMigration(t *testing.T) {
 		"DELETE FROM skill_installations",
 		"DELETE FROM digital_employee_mcp_bindings_v2",
 		"DELETE FROM digital_employee_mcp_bindings",
+		"DELETE FROM skill_agent_bindings",
+		"DELETE FROM project_employee_node_affinity",
+		"UPDATE project_task_attempts",
+		"SET digital_employee_id = NULL",
+		"UPDATE project_tasks",
+		"SET assigned_digital_employee_id = NULL",
+		"digital_employee_run_id = NULL",
+		"DELETE FROM task_runs",
 		"DELETE FROM digital_employee_workspace_file_syncs",
 		"DELETE FROM digital_employee_workspace_file_revisions",
 		"DELETE FROM digital_employee_workspace_files",
+		"DELETE FROM runtime_command_receipts",
+		"DELETE FROM provider_session_events",
+		"DELETE FROM provider_sessions",
 		"DELETE FROM digital_employee_execution_instances",
 		"DELETE FROM digital_employee_config_revisions",
 		"DELETE FROM digital_employees",
@@ -616,6 +627,7 @@ func TestDigitalEmployeeConfigFinalModelMigration(t *testing.T) {
 		"context_policy_override JSONB",
 		"approval_policy_override JSONB",
 		"output_contract_addendum JSONB",
+		"DELETE FROM digital_employee_effective_configs",
 	} {
 		require.NotContains(t, sql, forbidden)
 	}
