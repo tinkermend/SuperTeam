@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- 2026-07-11 00:35：计划确认面板新增「调度顺序」和「验收判据」：任务按 depends_on 拓扑排序，展示执行员工与选择原因；计划级判据展示对应说明及满足任务标题，未声明判据时给出明确空状态。验证：`corepack pnpm --filter @superteam/web test src/features/projects/components/project-operational-detail.test.tsx`（3/3）通过。真实浏览器链路未验证：当前 Web/Control Plane 为 external 进程，未加载本 worktree 代码。
+- 2026-07-11 00:54：计划级验收判据：PlanRevisionPayload/RouteDecisionPlan 新增 plan_acceptance_criteria（id/statement/satisfied_by→task_key）；落库校验拒绝空/未知 satisfier（acceptance_criterion_has_no_satisfier / satisfied_by_task_not_found）；planner 提示词产出判据；评审上下文透传；计划确认面板展示「调度顺序」与「验收判据」。验证：corepack pnpm verify:control-plane；focused web test project-operational-detail.test.tsx；真实链路证据 .scratch/smoke/plan4-acceptance-criteria-retry-20260711-005223-10714/evidence.json（判据 satisfied_by ⊆ 真实 task keys）。浏览器 UI 步因 browser tab 工具限制标为阻塞，不阻断本 plan（见 plan Self-Review）。
 
 - 2026-07-11 00:12：计划内部引用完整性：任务新增 produces 与 input_requirements.required_inputs；落库前校验祖先可达与 produces 键唯一；自由字段迁入 planner_metadata.planner_notes。验证：corepack pnpm verify:control-plane；拒绝路径 go test -run TestValidateRouteDecisionPlanRejects；真实 E2E 证据 .scratch/smoke/plan3-referential-integrity-20260710T161026Z/evidence.json （上游 produces=[cpu_memory_metrics]，下游 required_inputs 引用之，input_requirements 仅含 required_inputs）。
 
