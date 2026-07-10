@@ -1185,6 +1185,24 @@ func (e ProjectStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectTaskAttemptRawLogLogStore.
+const (
+	LocalFile   ProjectTaskAttemptRawLogLogStore = "local_file"
+	ObjectStore ProjectTaskAttemptRawLogLogStore = "object_store"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskAttemptRawLogLogStore enum.
+func (e ProjectTaskAttemptRawLogLogStore) Valid() bool {
+	switch e {
+	case LocalFile:
+		return true
+	case ObjectStore:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectTaskAttestationProviderAuthMode.
 const (
 	Employee           ProjectTaskAttestationProviderAuthMode = "employee"
@@ -2000,20 +2018,23 @@ type AuditEvent struct {
 
 // CompleteProjectTaskAttemptRequest defines model for CompleteProjectTaskAttemptRequest.
 type CompleteProjectTaskAttemptRequest struct {
-	ArtifactRefs          *[]interface{}          `json:"artifact_refs,omitempty"`
-	Conclusion            string                  `json:"conclusion"`
-	ConfidenceFactors     *map[string]interface{} `json:"confidence_factors,omitempty"`
-	EvidenceRefs          *[]interface{}          `json:"evidence_refs,omitempty"`
-	IdempotencyKey        string                  `json:"idempotency_key"`
-	LeaseToken            string                  `json:"lease_token"`
-	MissingInformation    *[]interface{}          `json:"missing_information,omitempty"`
-	ProjectTaskId         openapi_types.UUID      `json:"project_task_id"`
-	ProviderSessionId     *string                 `json:"provider_session_id,omitempty"`
-	RecommendedNextAction *string                 `json:"recommended_next_action,omitempty"`
-	RequiresHumanReview   *bool                   `json:"requires_human_review,omitempty"`
-	ResultContract        *TaskResultContract     `json:"result_contract,omitempty"`
-	RuntimeNodeId         openapi_types.UUID      `json:"runtime_node_id"`
-	Uncertainty           *string                 `json:"uncertainty,omitempty"`
+	ArtifactRefs       *[]interface{}          `json:"artifact_refs,omitempty"`
+	Conclusion         string                  `json:"conclusion"`
+	ConfidenceFactors  *map[string]interface{} `json:"confidence_factors,omitempty"`
+	EvidenceRefs       *[]interface{}          `json:"evidence_refs,omitempty"`
+	IdempotencyKey     string                  `json:"idempotency_key"`
+	LeaseToken         string                  `json:"lease_token"`
+	MissingInformation *[]interface{}          `json:"missing_information,omitempty"`
+	ProjectTaskId      openapi_types.UUID      `json:"project_task_id"`
+	ProviderSessionId  *string                 `json:"provider_session_id,omitempty"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog                *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	RecommendedNextAction *string                   `json:"recommended_next_action,omitempty"`
+	RequiresHumanReview   *bool                     `json:"requires_human_review,omitempty"`
+	ResultContract        *TaskResultContract       `json:"result_contract,omitempty"`
+	RuntimeNodeId         openapi_types.UUID        `json:"runtime_node_id"`
+	Uncertainty           *string                   `json:"uncertainty,omitempty"`
 }
 
 // CompleteProjectTaskRequest defines model for CompleteProjectTaskRequest.
@@ -2955,15 +2976,18 @@ type ExecutionLedgerEvent struct {
 
 // FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
 type FailProjectTaskAttemptRequest struct {
-	FailureFamily     string              `json:"failure_family"`
-	FailureSummary    string              `json:"failure_summary"`
-	IdempotencyKey    string              `json:"idempotency_key"`
-	LeaseToken        string              `json:"lease_token"`
-	ProjectTaskId     openapi_types.UUID  `json:"project_task_id"`
-	ProviderSessionId *string             `json:"provider_session_id,omitempty"`
-	ResultContract    *TaskResultContract `json:"result_contract,omitempty"`
-	Retryable         *bool               `json:"retryable,omitempty"`
-	RuntimeNodeId     openapi_types.UUID  `json:"runtime_node_id"`
+	FailureFamily     string             `json:"failure_family"`
+	FailureSummary    string             `json:"failure_summary"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog         *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	ResultContract *TaskResultContract       `json:"result_contract,omitempty"`
+	Retryable      *bool                     `json:"retryable,omitempty"`
+	RuntimeNodeId  openapi_types.UUID        `json:"runtime_node_id"`
 }
 
 // FailProjectTaskRequest defines model for FailProjectTaskRequest.
@@ -3746,13 +3770,30 @@ type ProjectTaskAttemptBudgetHeartbeatResponse struct {
 	Tripped    bool    `json:"tripped"`
 }
 
+// ProjectTaskAttemptRawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+type ProjectTaskAttemptRawLog struct {
+	LogBytes      int64 `json:"log_bytes"`
+	LogCompressed *bool `json:"log_compressed,omitempty"`
+
+	// LogRef Opaque, provider-neutral reference (currently the manifest object key).
+	LogRef    string                           `json:"log_ref"`
+	LogSha256 string                           `json:"log_sha256"`
+	LogStore  ProjectTaskAttemptRawLogLogStore `json:"log_store"`
+}
+
+// ProjectTaskAttemptRawLogLogStore defines model for ProjectTaskAttemptRawLog.LogStore.
+type ProjectTaskAttemptRawLogLogStore string
+
 // ProjectTaskAttemptRuntimeFields defines model for ProjectTaskAttemptRuntimeFields.
 type ProjectTaskAttemptRuntimeFields struct {
 	IdempotencyKey    string             `json:"idempotency_key"`
 	LeaseToken        string             `json:"lease_token"`
 	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
 	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
-	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog        *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	RuntimeNodeId openapi_types.UUID        `json:"runtime_node_id"`
 }
 
 // ProjectTaskAttestation defines model for ProjectTaskAttestation.
@@ -4055,7 +4096,10 @@ type RenewProjectTaskAttemptLeaseRequest struct {
 	LeaseToken        string             `json:"lease_token"`
 	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
 	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
-	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog        *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	RuntimeNodeId openapi_types.UUID        `json:"runtime_node_id"`
 }
 
 // ReplaceProjectMembersRequest defines model for ReplaceProjectMembersRequest.
@@ -4498,8 +4542,11 @@ type SubmitProjectTaskAttemptResultRequest struct {
 	LeaseToken        string             `json:"lease_token"`
 	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
 	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
-	ResultContract    TaskResultContract `json:"result_contract"`
-	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog         *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	ResultContract TaskResultContract        `json:"result_contract"`
+	RuntimeNodeId  openapi_types.UUID        `json:"runtime_node_id"`
 }
 
 // Task defines model for Task.
@@ -4864,12 +4911,15 @@ type UserCredential struct {
 
 // WaitHumanProjectTaskAttemptRequest defines model for WaitHumanProjectTaskAttemptRequest.
 type WaitHumanProjectTaskAttemptRequest struct {
-	DigitalEmployeeId          openapi_types.UUID                       `json:"digital_employee_id"`
-	IdempotencyKey             string                                   `json:"idempotency_key"`
-	LeaseToken                 string                                   `json:"lease_token"`
-	MissingContextRefs         *[]interface{}                           `json:"missing_context_refs,omitempty"`
-	ProjectTaskId              openapi_types.UUID                       `json:"project_task_id"`
-	ProviderSessionId          *string                                  `json:"provider_session_id,omitempty"`
+	DigitalEmployeeId  openapi_types.UUID `json:"digital_employee_id"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	LeaseToken         string             `json:"lease_token"`
+	MissingContextRefs *[]interface{}     `json:"missing_context_refs,omitempty"`
+	ProjectTaskId      openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId  *string            `json:"provider_session_id,omitempty"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog                     *ProjectTaskAttemptRawLog                `json:"raw_log,omitempty"`
 	Reason                     WaitHumanProjectTaskAttemptRequestReason `json:"reason"`
 	ResultContract             *TaskResultContract                      `json:"result_contract,omitempty"`
 	RuntimeNodeId              openapi_types.UUID                       `json:"runtime_node_id"`

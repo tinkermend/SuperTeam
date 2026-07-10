@@ -281,20 +281,24 @@ async fn run_provider_stream(
     provider: impl ProviderAdapter,
     spec: RunSpec,
 ) -> anyhow::Result<()> {
+    // Local debug streaming endpoint: no attempt to hang a raw log pointer on.
     let provider_run = provider
-        .start(ProviderRequest {
-            prompt: spec.prompt,
-            workspace_path: spec.workspace_path,
-            agent_home_dir: spec.agent_home_dir,
-            employee_capability_dir: spec.employee_capability_dir,
-            capability_manifest_version: spec.capability_manifest_version,
-            provider_auth_mode: spec.provider_auth_mode,
-            mcp_config_path: spec.mcp_config_path,
-            session_id: spec.session_id,
-            continue_session: spec.continue_session,
-            model: spec.model,
-            environment: spec.environment,
-        })
+        .start(
+            ProviderRequest {
+                prompt: spec.prompt,
+                workspace_path: spec.workspace_path,
+                agent_home_dir: spec.agent_home_dir,
+                employee_capability_dir: spec.employee_capability_dir,
+                capability_manifest_version: spec.capability_manifest_version,
+                provider_auth_mode: spec.provider_auth_mode,
+                mcp_config_path: spec.mcp_config_path,
+                session_id: spec.session_id,
+                continue_session: spec.continue_session,
+                model: spec.model,
+                environment: spec.environment,
+            },
+            std::sync::Arc::new(crate::raw_log::NoopRawSink),
+        )
         .await?;
 
     runs.attach_handle(&run_id, provider_run.handle).await?;

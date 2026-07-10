@@ -1498,6 +1498,16 @@ type ProjectTaskAttempt struct {
 	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
 	// 执行尝试使用的 Provider 类型，优先来自上下文包或数字员工主 Provider。
 	ProviderType pgtype.Text `json:"provider_type"`
+	// Raw transcript backend: object_store | local_file
+	LogStore pgtype.Text `json:"log_store"`
+	// Opaque reference to the raw transcript manifest
+	LogRef pgtype.Text `json:"log_ref"`
+	// Total raw transcript bytes across all segments
+	LogBytes pgtype.Int8 `json:"log_bytes"`
+	// Runtime-reported sha256 of the concatenated raw transcript; must be recomputed before being trusted
+	LogSha256 pgtype.Text `json:"log_sha256"`
+	// Whether raw transcript segments are stored compressed
+	LogCompressed bool `json:"log_compressed"`
 }
 
 type ProjectTaskAttemptContextUpdate struct {

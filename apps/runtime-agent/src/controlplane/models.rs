@@ -256,6 +256,9 @@ pub struct ProjectTaskCompleteWriteback {
     pub requires_human_review: bool,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub result_contract: Option<TaskResultContract>,
+    /// Pointer to the unparsed provider transcript uploaded by this runtime.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub raw_log: Option<crate::raw_log::RawLogSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -269,6 +272,9 @@ pub struct ProjectTaskFailWriteback {
     pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub result_contract: Option<TaskResultContract>,
+    /// Pointer to the unparsed provider transcript uploaded by this runtime.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub raw_log: Option<crate::raw_log::RawLogSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -286,6 +292,9 @@ pub struct ProjectTaskWaitHumanWriteback {
     pub suggested_resolution_options: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub result_contract: Option<TaskResultContract>,
+    /// Pointer to the unparsed provider transcript uploaded by this runtime.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub raw_log: Option<crate::raw_log::RawLogSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]

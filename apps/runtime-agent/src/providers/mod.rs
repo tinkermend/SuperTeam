@@ -4,7 +4,7 @@ pub mod codex;
 pub mod opencode;
 pub mod usage;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::Arc;
@@ -13,12 +13,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::events::ProviderEvent;
+use crate::raw_log::{RawLineSink, RawStream};
 
 pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>;
 
@@ -57,19 +58,31 @@ pub fn apply_environment(command: &mut tokio::process::Command, request: &Provid
 
 #[async_trait]
 pub trait ProviderAdapter: Send + Sync {
-    async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun>;
+    async fn start(
+        &self,
+        request: ProviderRequest,
+        raw_sink: Arc<dyn RawLineSink>,
+    ) -> anyhow::Result<ProviderRun>;
 
-    async fn run(&self, request: ProviderRequest) -> anyhow::Result<ProviderEventStream> {
-        Ok(self.start(request).await?.events)
+    async fn run(
+        &self,
+        request: ProviderRequest,
+        raw_sink: Arc<dyn RawLineSink>,
+    ) -> anyhow::Result<ProviderEventStream> {
+        Ok(self.start(request, raw_sink).await?.events)
     }
 }
 
-type ProviderParser = fn(&str) -> anyhow::Result<Option<ProviderEvent>>;
+/// A single stdout line can carry one `text` block plus N `tool_use` blocks, so
+/// a parser must be able to return more than one event per line.
+type ProviderParser = fn(&str) -> anyhow::Result<Vec<ProviderEvent>>;
 
 struct ChildStreamState {
     provider_name: &'static str,
     parser: ProviderParser,
     lines: tokio::io::Lines<BufReader<ChildStdout>>,
+    pending: VecDeque<ProviderEvent>,
+    raw_sink: Arc<dyn RawLineSink>,
     child: SharedChild,
     stderr_task: JoinHandle<std::io::Result<String>>,
 }
@@ -96,9 +109,15 @@ pub struct ProviderRun {
     pub handle: ProviderRunHandle,
 }
 
+/// Cap on the stderr text retained for the exit message. The full stderr still
+/// reaches the raw transcript line by line; only this in-memory tail is bounded,
+/// so a provider spamming stderr cannot exhaust the agent's memory.
+const STDERR_TAIL_LIMIT_BYTES: usize = 256 * 1024;
+
 pub fn stream_child_events(
     provider_name: &'static str,
     parser: ProviderParser,
+    raw_sink: Arc<dyn RawLineSink>,
     child: Child,
     stdout: ChildStdout,
     stderr: ChildStderr,
@@ -107,10 +126,19 @@ pub fn stream_child_events(
     let handle = ProviderRunHandle {
         child: child.clone(),
     };
+    let stderr_sink = raw_sink.clone();
     let stderr_task = tokio::spawn(async move {
         let mut stderr_text = String::new();
-        let mut reader = BufReader::new(stderr);
-        reader.read_to_string(&mut stderr_text).await?;
+        let mut lines = BufReader::new(stderr).lines();
+        while let Some(line) = lines.next_line().await? {
+            // Interleaving stderr with stdout line by line preserves the real
+            // ordering of the execution; reading it as one blob at exit does not.
+            stderr_sink.write_line(RawStream::Stderr, &line);
+            if stderr_text.len() < STDERR_TAIL_LIMIT_BYTES {
+                stderr_text.push_str(&line);
+                stderr_text.push('\n');
+            }
+        }
         Ok(stderr_text)
     });
 
@@ -118,6 +146,8 @@ pub fn stream_child_events(
         provider_name,
         parser,
         lines: BufReader::new(stdout).lines(),
+        pending: VecDeque::new(),
+        raw_sink,
         child: child.clone(),
         stderr_task,
     };
@@ -126,12 +156,23 @@ pub fn stream_child_events(
         let mut state = state?;
 
         loop {
+            if let Some(event) = state.pending.pop_front() {
+                return Some((Ok(event), Some(state)));
+            }
+
             match state.lines.next_line().await {
-                Ok(Some(line)) => match (state.parser)(&line) {
-                    Ok(Some(event)) => return Some((Ok(event), Some(state))),
-                    Ok(None) => continue,
-                    Err(error) => return Some((Err(error), Some(state))),
-                },
+                Ok(Some(line)) => {
+                    // Before parsing: a parser error or an unknown event type
+                    // must never cost us the original bytes.
+                    state.raw_sink.write_line(RawStream::Stdout, &line);
+                    match (state.parser)(&line) {
+                        Ok(events) => state.pending.extend(events),
+                        // `Err` means the provider reported a failure (e.g. codex
+                        // `turn.failed`), not that a line was unreadable. Parsers
+                        // drop unreadable lines themselves.
+                        Err(error) => return Some((Err(error), Some(state))),
+                    }
+                }
                 Ok(None) => {
                     let status = state.child.lock().await.wait().await;
                     let stderr = read_stderr(state.stderr_task).await;
@@ -145,6 +186,18 @@ pub fn stream_child_events(
     .boxed();
 
     ProviderRun { events, handle }
+}
+
+/// Providers interleave non-JSON noise into stdout. Such a line carries no
+/// event, but it must not fail the run — the raw stream keeps it verbatim.
+pub(crate) fn parse_line_json(provider_name: &str, line: &str) -> Option<serde_json::Value> {
+    match serde_json::from_str(line) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            eprintln!("{provider_name}: skipping unparseable stdout line: {error}");
+            None
+        }
+    }
 }
 
 async fn read_stderr(stderr_task: JoinHandle<std::io::Result<String>>) -> String {

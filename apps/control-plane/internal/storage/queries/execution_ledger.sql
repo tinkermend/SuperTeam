@@ -116,9 +116,16 @@ source_event_matches AS (
         provider_type,
         provider_session_id,
         NULLIF(provider_event_type, '')::text AS input_summary,
-        COALESCE(NULLIF(payload->>'summary', ''), NULLIF(payload->>'text', ''), provider_event_type)::text AS output_summary,
+        COALESCE(
+            NULLIF(payload->>'summary', ''),
+            NULLIF(payload->>'text', ''),
+            NULLIF(payload->>'output_excerpt', ''),
+            provider_event_type
+        )::text AS output_summary,
         last_error_family AS error_family,
-        jsonb_build_object(
+        -- The provider payload carries tool_id / name / is_error / *_excerpt.
+        -- Ledger-owned keys are applied last so a payload key cannot shadow them.
+        COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
             'command_id', command_id,
             'sequence_number', sequence_number,
             'raw_event_ref', raw_event_ref,

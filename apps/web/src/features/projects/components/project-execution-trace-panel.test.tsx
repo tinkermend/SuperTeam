@@ -194,4 +194,78 @@ describe("ProjectExecutionTracePanel", () => {
     await expect.element(screen.getByText(longOutputSummary)).toBeInTheDocument();
     await expect.element(screen.getByText(longErrorMessage)).toBeInTheDocument();
   });
+
+  it("renders a failed tool result using the provider-written is_error flag", async () => {
+    const toolTrace: ProjectExecutionTrace = {
+      ...trace,
+      attempts: [
+        {
+          ...trace.attempts[0],
+          // A succeeded attempt keeps "失败" unique to the tool result pill.
+          failure_family: undefined,
+          status: "completed",
+          events: [
+            {
+              ...trace.attempts[0].events[0],
+              error_code: undefined,
+              error_family: undefined,
+              error_message: undefined,
+              event_type: "provider.event",
+              id: "event-tool-completed",
+              input_summary: "tool_completed",
+              metadata: {
+                is_error: true,
+                output_excerpt: "bash: false: exit 1",
+                output_truncated: false,
+                tool_id: "toolu_2",
+              },
+              output_summary: "bash: false: exit 1",
+            },
+          ],
+        },
+      ],
+    };
+
+    const screen = await render(<ProjectExecutionTracePanel trace={toolTrace} />);
+
+    await expect.element(screen.getByText("工具结果")).toBeInTheDocument();
+    await expect.element(screen.getByText("失败", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders a tool call with its name and truncation notice", async () => {
+    const toolTrace: ProjectExecutionTrace = {
+      ...trace,
+      attempts: [
+        {
+          ...trace.attempts[0],
+          events: [
+            {
+              ...trace.attempts[0].events[0],
+              error_code: undefined,
+              error_family: undefined,
+              error_message: undefined,
+              event_type: "provider.event",
+              id: "event-tool-started",
+              input_summary: "tool_started",
+              metadata: {
+                input_excerpt: '{"command":"git status"}',
+                input_truncated: true,
+                name: "Bash",
+                tool_id: "toolu_1",
+              },
+              output_summary: "tool_started",
+            },
+          ],
+        },
+      ],
+    };
+
+    const screen = await render(<ProjectExecutionTracePanel trace={toolTrace} />);
+
+    await expect.element(screen.getByText("工具调用")).toBeInTheDocument();
+    await expect.element(screen.getByText("Bash")).toBeInTheDocument();
+    await expect
+      .element(screen.getByText("内容已截断，完整日志将在证据地基落地后可下载。"))
+      .toBeInTheDocument();
+  });
 });

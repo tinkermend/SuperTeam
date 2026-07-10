@@ -164,7 +164,10 @@ async fn stream_provider_events(
     provider: &impl ProviderAdapter,
     request: ProviderRequest,
 ) -> anyhow::Result<()> {
-    let mut stream = match provider.run(request).await {
+    // One-shot CLI invocation: raw transcript capture belongs to attempt-backed
+    // runs, which this path is not.
+    let raw_sink = std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink);
+    let mut stream = match provider.run(request, raw_sink).await {
         Ok(stream) => stream,
         Err(error) => {
             emit_event(&ProviderEvent::TurnError {

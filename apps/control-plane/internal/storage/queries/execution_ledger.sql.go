@@ -196,9 +196,16 @@ source_event_matches AS (
         provider_type,
         provider_session_id,
         NULLIF(provider_event_type, '')::text AS input_summary,
-        COALESCE(NULLIF(payload->>'summary', ''), NULLIF(payload->>'text', ''), provider_event_type)::text AS output_summary,
+        COALESCE(
+            NULLIF(payload->>'summary', ''),
+            NULLIF(payload->>'text', ''),
+            NULLIF(payload->>'output_excerpt', ''),
+            provider_event_type
+        )::text AS output_summary,
         last_error_family AS error_family,
-        jsonb_build_object(
+        -- The provider payload carries tool_id / name / is_error / *_excerpt.
+        -- Ledger-owned keys are applied last so a payload key cannot shadow them.
+        COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
             'command_id', command_id,
             'sequence_number', sequence_number,
             'raw_event_ref', raw_event_ref,
@@ -367,7 +374,7 @@ func (q *Queries) ListProjectExecutionLedgerEvents(ctx context.Context, arg List
 }
 
 const ListProjectTaskAttemptsForExecutionTrace = `-- name: ListProjectTaskAttemptsForExecutionTrace :many
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed
 FROM project_task_attempts pta
 JOIN project_tasks pt
   ON pt.tenant_id = pta.tenant_id
@@ -427,6 +434,11 @@ func (q *Queries) ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, 
 			&i.BudgetTripReason,
 			&i.DigitalEmployeeID,
 			&i.ProviderType,
+			&i.LogStore,
+			&i.LogRef,
+			&i.LogBytes,
+			&i.LogSha256,
+			&i.LogCompressed,
 		); err != nil {
 			return nil, err
 		}

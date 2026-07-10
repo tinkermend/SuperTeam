@@ -65,7 +65,11 @@ fn codex_cd_arg(workspace_path: &std::path::Path) -> PathBuf {
 
 #[async_trait]
 impl ProviderAdapter for CodexProvider {
-    async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun> {
+    async fn start(
+        &self,
+        request: ProviderRequest,
+        raw_sink: std::sync::Arc<dyn crate::raw_log::RawLineSink>,
+    ) -> anyhow::Result<ProviderRun> {
         let mut command = self.build_command(&request);
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
@@ -82,6 +86,7 @@ impl ProviderAdapter for CodexProvider {
         Ok(stream_child_events(
             "codex",
             parse_codex_event,
+            raw_sink,
             child,
             stdout,
             stderr,
@@ -89,8 +94,10 @@ impl ProviderAdapter for CodexProvider {
     }
 }
 
-pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
-    let event: Value = serde_json::from_str(value)?;
+pub fn parse_codex_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
+    let Some(event) = crate::providers::parse_line_json("codex", value) else {
+        return Ok(Vec::new());
+    };
     let event_type = event
         .get("type")
         .and_then(|value| value.as_str())
@@ -107,19 +114,19 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
     }
 
     if let Some(session_id) = extract_session_id(&event) {
-        return Ok(Some(ProviderEvent::SessionStarted {
+        return Ok(vec![ProviderEvent::SessionStarted {
             session_id,
             session_state: None,
-        }));
+        }]);
     }
 
     if let Some(text) = extract_text(&event) {
-        return Ok(Some(ProviderEvent::TextDelta { text }));
+        return Ok(vec![ProviderEvent::TextDelta { text }]);
     }
 
     if event_type == "item.completed" {
         if let Some(text) = extract_completed_agent_message_text(&event) {
-            return Ok(Some(ProviderEvent::TextDelta { text }));
+            return Ok(vec![ProviderEvent::TextDelta { text }]);
         }
     }
 
@@ -127,13 +134,13 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
         event_type,
         "turn.completed" | "turn_complete" | "completed" | "result" | "done"
     ) {
-        return Ok(Some(ProviderEvent::TurnCompleted {
+        return Ok(vec![ProviderEvent::TurnCompleted {
             summary: extract_summary(&event),
             usage: crate::providers::usage::extract_usage(&event),
-        }));
+        }]);
     }
 
-    Ok(None)
+    Ok(Vec::new())
 }
 
 fn extract_session_id(event: &Value) -> Option<String> {

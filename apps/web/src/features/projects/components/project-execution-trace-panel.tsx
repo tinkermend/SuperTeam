@@ -213,6 +213,7 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
     event.actor_id ? `:${event.actor_id}` : ""
   } · ${event.source_type}:${event.source_id}`;
   const errorHeader = formatErrorHeader(event);
+  const tool = readToolEvent(event);
 
   return (
     <div className="grid gap-2 rounded-v3-inner bg-v3-card p-3">
@@ -242,7 +243,9 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
         </div>
       </div>
 
-      {event.input_summary || event.output_summary ? (
+      {tool ? <ToolBlock tool={tool} /> : null}
+
+      {!tool && (event.input_summary || event.output_summary) ? (
         <div className="grid gap-2 md:grid-cols-2">
           <SummaryBlock label="Input" value={event.input_summary} />
           <SummaryBlock label="Output" value={event.output_summary} />
@@ -263,6 +266,86 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
             </p>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+type ToolEvent = {
+  excerpt: string;
+  isError?: boolean;
+  kind: "started" | "completed";
+  name?: string;
+  toolId: string;
+  truncated: boolean;
+};
+
+/**
+ * `is_error` originates from the provider process, never from model prose.
+ * See docs/superpowers/specs/2026-07-09-provider-transcript-tool-event-capture-design.md §3.3.
+ */
+function readToolEvent(event: ExecutionLedgerEvent): ToolEvent | undefined {
+  const kind =
+    event.input_summary === "tool_started"
+      ? "started"
+      : event.input_summary === "tool_completed"
+        ? "completed"
+        : undefined;
+  if (!kind) {
+    return undefined;
+  }
+
+  const metadata = event.metadata ?? {};
+  const toolId = typeof metadata.tool_id === "string" ? metadata.tool_id : "";
+  if (!toolId) {
+    return undefined;
+  }
+
+  const rawExcerpt =
+    kind === "started" ? metadata.input_excerpt : metadata.output_excerpt;
+  const rawTruncated =
+    kind === "started" ? metadata.input_truncated : metadata.output_truncated;
+
+  return {
+    excerpt: typeof rawExcerpt === "string" ? rawExcerpt : "",
+    isError: typeof metadata.is_error === "boolean" ? metadata.is_error : undefined,
+    kind,
+    name: typeof metadata.name === "string" ? metadata.name : undefined,
+    toolId,
+    truncated: rawTruncated === true,
+  };
+}
+
+function ToolBlock({ tool }: { tool: ToolEvent }) {
+  const label = tool.kind === "started" ? "工具调用" : "工具结果";
+
+  return (
+    <div className="grid gap-2 rounded-v3-inner bg-v3-card-soft p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-v3-ink-3">{label}</span>
+        {tool.name ? (
+          <span className="font-mono text-xs text-v3-ink">{tool.name}</span>
+        ) : null}
+        {tool.isError !== undefined ? (
+          <StatusPill tone={tool.isError ? "danger" : "ok"}>
+            {tool.isError ? "失败" : "成功"}
+          </StatusPill>
+        ) : null}
+      </div>
+      {tool.excerpt ? (
+        <details className="min-w-0">
+          <summary className="cursor-pointer truncate font-mono text-xs text-v3-ink-2">
+            {tool.excerpt}
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-v3-inner bg-v3-card p-2 font-mono text-xs leading-5 text-v3-ink-2">
+            {tool.excerpt}
+          </pre>
+        </details>
+      ) : null}
+      {tool.truncated ? (
+        <p className="text-[11px] text-v3-ink-3">
+          内容已截断，完整日志将在证据地基落地后可下载。
+        </p>
       ) : null}
     </div>
   );

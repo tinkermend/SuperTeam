@@ -1460,6 +1460,18 @@ type ProjectTaskAttemptRuntimeRequest struct {
 	LeaseToken        string
 	IdempotencyKey    string
 	ProviderSessionID *string
+	RawLog            *ProjectTaskAttemptRawLog
+}
+
+// ProjectTaskAttemptRawLog points at the unparsed provider stdout/stderr the
+// runtime uploaded. LogSha256 is reported by the process that produced the
+// bytes, so it is a checksum until the control plane recomputes it.
+type ProjectTaskAttemptRawLog struct {
+	LogStore      string
+	LogRef        string
+	LogBytes      int64
+	LogSha256     string
+	LogCompressed bool
 }
 
 type StartProjectTaskAttemptRequest struct {

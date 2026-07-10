@@ -3769,14 +3769,16 @@ func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx contex
 		return ProjectTaskWritebackResult{}, err
 	}
 	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.TenantID, task.ProjectID, &task.ID, req.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.EvidenceRefs))
-	if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+	finishParams := queries.FinishProjectTaskAttemptParams{
 		TenantID:          req.TenantID,
 		ID:                req.AttemptID,
 		LeaseToken:        req.LeaseToken,
 		Status:            ProjectTaskAttemptStatusSucceeded,
 		ProviderSessionID: textPtr(req.ProviderSessionID),
 		TerminalEventID:   nullUUID(&event.ID),
-	}); err != nil {
+	}
+	applyRawLog(&finishParams, req.RawLog)
+	if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
 	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
@@ -3853,14 +3855,16 @@ func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(
 		return ProjectTaskWritebackResult{}, err
 	}
 	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.Complete.TenantID, req.Task.ProjectID, &req.Task.ID, req.Complete.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.Complete.EvidenceRefs))
-	if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+	finishParams := queries.FinishProjectTaskAttemptParams{
 		TenantID:          req.Complete.TenantID,
 		ID:                req.Complete.AttemptID,
 		LeaseToken:        req.Complete.LeaseToken,
 		Status:            ProjectTaskAttemptStatusSucceeded,
 		ProviderSessionID: textPtr(req.Complete.ProviderSessionID),
 		TerminalEventID:   nullUUID(&event.ID),
-	}); err != nil {
+	}
+	applyRawLog(&finishParams, req.Complete.RawLog)
+	if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
 	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
@@ -3916,7 +3920,7 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
-		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+		finishParams := queries.FinishProjectTaskAttemptParams{
 			TenantID:          req.TenantID,
 			ID:                req.AttemptID,
 			LeaseToken:        req.LeaseToken,
@@ -3926,7 +3930,9 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 			FailureFamily:     textOrNull(req.FailureFamily),
 			FailureMessage:    textOrNull(req.FailureSummary),
 			TerminalEventID:   nullUUID(&event.ID),
-		}); err != nil {
+		}
+		applyRawLog(&finishParams, req.RawLog)
+		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
 		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, projectTaskAttemptFailureLedgerEventRequest(req, task, event)); err != nil {
@@ -3980,7 +3986,7 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
-		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+		finishParams := queries.FinishProjectTaskAttemptParams{
 			TenantID:          req.Failure.TenantID,
 			ID:                req.Failure.AttemptID,
 			LeaseToken:        req.Failure.LeaseToken,
@@ -3990,7 +3996,9 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 			FailureFamily:     textOrNull(req.Failure.FailureFamily),
 			FailureMessage:    textOrNull(req.Failure.FailureSummary),
 			TerminalEventID:   nullUUID(&event.ID),
-		}); err != nil {
+		}
+		applyRawLog(&finishParams, req.Failure.RawLog)
+		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
 		if ledgerReq, ok := recoveredProjectTaskAttemptLedgerEventRequest(req, event); ok {
@@ -4326,7 +4334,7 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
-		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+		finishParams := queries.FinishProjectTaskAttemptParams{
 			TenantID:          req.Wait.TenantID,
 			ID:                req.Wait.AttemptID,
 			LeaseToken:        req.Wait.LeaseToken,
@@ -4334,7 +4342,9 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 			ProviderSessionID: textPtr(req.Wait.ProviderSessionID),
 			FailureMessage:    textOrNull(req.Wait.Summary),
 			TerminalEventID:   nullUUID(&event.ID),
-		}); err != nil {
+		}
+		applyRawLog(&finishParams, req.Wait.RawLog)
+		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
 		decisionReq := req.Decision
@@ -6485,6 +6495,22 @@ func configRevisionsFromRecords(rows []queries.ProjectConfigRevision) ([]Project
 		revisions = append(revisions, revision)
 	}
 	return revisions, nil
+}
+
+// applyRawLog fills the raw transcript pointer columns when the runtime
+// reported one. A nil RawLog leaves the existing values untouched (the SQL
+// uses COALESCE), so a retried writeback cannot erase an earlier pointer.
+func applyRawLog(params *queries.FinishProjectTaskAttemptParams, rawLog *ProjectTaskAttemptRawLog) {
+	if rawLog == nil {
+		return
+	}
+	params.LogStore = textOrNull(rawLog.LogStore)
+	params.LogRef = textOrNull(rawLog.LogRef)
+	params.LogSha256 = textOrNull(rawLog.LogSha256)
+	if rawLog.LogBytes > 0 {
+		params.LogBytes = pgtype.Int8{Int64: rawLog.LogBytes, Valid: true}
+	}
+	params.LogCompressed = pgtype.Bool{Bool: rawLog.LogCompressed, Valid: true}
 }
 
 func textOrNull(value string) pgtype.Text {

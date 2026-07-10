@@ -50,7 +50,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
     let provider = ClaudeProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()))
+        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
         .await
         .expect("run fake claude")
         .try_collect()
@@ -90,7 +90,7 @@ printf '%s\n' '{"type":"turn.completed"}'
     let provider = OpenCodeProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()))
+        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
         .await
         .expect("run fake opencode")
         .try_collect()
@@ -130,7 +130,7 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
     let provider = CodexProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()))
+        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
         .await
         .expect("run fake codex")
         .try_collect()
@@ -153,4 +153,66 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
             },
         ]
     );
+}
+
+/// Captures what the provider layer hands to the raw transcript.
+#[derive(Default)]
+struct RecordingSink {
+    lines: std::sync::Mutex<Vec<(String, String)>>,
+}
+
+#[async_trait::async_trait]
+impl superteam_runtime_agent::raw_log::RawLineSink for RecordingSink {
+    fn write_line(&self, stream: superteam_runtime_agent::raw_log::RawStream, line: &str) {
+        let stream = match stream {
+            superteam_runtime_agent::raw_log::RawStream::Stdout => "stdout",
+            superteam_runtime_agent::raw_log::RawStream::Stderr => "stderr",
+        };
+        self.lines
+            .lock()
+            .unwrap()
+            .push((stream.to_string(), line.to_string()));
+    }
+}
+
+#[tokio::test]
+async fn raw_sink_receives_every_stdout_line_including_unparseable_ones() {
+    let temp = TempDir::new().expect("tempdir");
+    let script = make_script(
+        temp.path(),
+        "fake-claude-noise",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"s1"}'
+printf '%s\n' 'not json at all'
+printf '%s\n' 'warning to stderr' >&2
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 1"}]}}'
+printf '%s\n' '{"type":"result","result":"done"}'
+"#,
+    );
+    let provider = ClaudeProvider::new(script);
+    let sink = std::sync::Arc::new(RecordingSink::default());
+
+    let events: Vec<ProviderEvent> = provider
+        .run(request(temp.path()), sink.clone())
+        .await
+        .expect("run fake claude")
+        .try_collect()
+        .await
+        .expect("unparseable line must not fail the run");
+
+    // The malformed line produced no event but was still captured.
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ProviderEvent::ToolCompleted { is_error: true, .. }
+    )));
+
+    let lines = sink.lines.lock().unwrap();
+    let stdout: Vec<&str> = lines
+        .iter()
+        .filter(|(stream, _)| stream == "stdout")
+        .map(|(_, line)| line.as_str())
+        .collect();
+    assert_eq!(stdout.len(), 4, "every stdout line reaches the raw sink");
+    assert!(stdout.contains(&"not json at all"));
+    assert!(lines.iter().any(|(stream, line)| stream == "stderr" && line == "warning to stderr"));
 }

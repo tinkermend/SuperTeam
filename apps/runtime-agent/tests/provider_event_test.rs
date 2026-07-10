@@ -8,14 +8,20 @@ use superteam_runtime_agent::providers::opencode::parse_opencode_event;
 fn parses_claude_session_and_text_and_completion_events() {
     let session = parse_claude_event(r#"{"type":"system","session_id":"abc"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
     let text = parse_claude_event(
         r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}"#,
     )
     .expect("valid json")
+    .into_iter()
+    .next()
     .expect("event");
     let completed = parse_claude_event(r#"{"type":"result","result":"done"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
 
     assert_eq!(
@@ -44,12 +50,18 @@ fn parses_claude_session_and_text_and_completion_events() {
 fn parses_opencode_session_text_and_completion_events() {
     let session = parse_opencode_event(r#"{"type":"session.updated","sessionID":"oc-1"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
     let text = parse_opencode_event(r#"{"type":"message.delta","delta":"hello"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
     let completed = parse_opencode_event(r#"{"type":"turn.completed"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
 
     assert_eq!(
@@ -78,12 +90,18 @@ fn parses_opencode_session_text_and_completion_events() {
 fn parses_codex_session_text_and_completion_events() {
     let session = parse_codex_event(r#"{"type":"session","session_id":"codex-session"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
     let text = parse_codex_event(r#"{"type":"message.delta","delta":"hello from codex"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
     let completed = parse_codex_event(r#"{"type":"turn.completed","summary":"done"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
 
     assert_eq!(
@@ -135,7 +153,7 @@ fn parses_codex_realistic_thread_item_and_turn_events() {
 
     let events: Vec<_> = lines
         .iter()
-        .filter_map(|line| parse_codex_event(line).expect("valid codex json line"))
+        .flat_map(|line| parse_codex_event(line).expect("valid codex json line"))
         .collect();
 
     assert_eq!(
@@ -162,6 +180,8 @@ fn parses_claude_result_event_with_usage() {
         r#"{"type":"result","result":"done","usage":{"total_tokens":1500,"input_tokens":200,"output_tokens":1300}}"#,
     )
     .expect("valid json")
+    .into_iter()
+    .next()
     .expect("event");
 
     assert_eq!(
@@ -181,6 +201,8 @@ fn parses_claude_result_event_with_usage() {
 fn parses_claude_result_event_without_usage_keeps_usage_none() {
     let completed = parse_claude_event(r#"{"type":"result","result":"done"}"#)
         .expect("valid json")
+        .into_iter()
+        .next()
         .expect("event");
 
     assert_eq!(
@@ -198,6 +220,8 @@ fn parses_codex_turn_completed_with_usage() {
         r#"{"type":"turn.completed","summary":"done","usage":{"input_tokens":400,"output_tokens":600}}"#,
     )
     .expect("valid json")
+    .into_iter()
+    .next()
     .expect("event");
 
     assert_eq!(
@@ -218,6 +242,8 @@ fn parses_opencode_turn_completed_with_usage() {
     let completed =
         parse_opencode_event(r#"{"type":"turn.completed","usage":{"total_tokens":77}}"#)
             .expect("valid json")
+            .into_iter()
+            .next()
             .expect("event");
 
     assert_eq!(
@@ -230,5 +256,144 @@ fn parses_opencode_turn_completed_with_usage() {
                 output_tokens: None,
             }),
         }
+    );
+}
+
+#[test]
+fn parses_multiple_events_from_one_assistant_message() {
+    let events = parse_claude_event(
+        r#"{"type":"assistant","message":{"content":[
+            {"type":"text","text":"running two tools"},
+            {"type":"tool_use","id":"t1","name":"Bash","input":{"command":"git status"}},
+            {"type":"tool_use","id":"t2","name":"Bash","input":{"command":"false"}}
+        ]}}"#,
+    )
+    .expect("valid json");
+
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        events[0],
+        ProviderEvent::TextDelta {
+            text: "running two tools".to_string()
+        }
+    );
+    match &events[1] {
+        ProviderEvent::ToolStarted {
+            tool_id,
+            name,
+            input_excerpt,
+            input_truncated,
+        } => {
+            assert_eq!(tool_id, "t1");
+            assert_eq!(name, "Bash");
+            assert!(input_excerpt.contains("git status"));
+            assert!(!input_truncated);
+        }
+        other => panic!("expected ToolStarted, got {other:?}"),
+    }
+    match &events[2] {
+        ProviderEvent::ToolStarted { tool_id, .. } => assert_eq!(tool_id, "t2"),
+        other => panic!("expected ToolStarted, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_tool_result_error_flag_from_user_message() {
+    let events = parse_claude_event(
+        r#"{"type":"user","message":{"content":[
+            {"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"exit code 1"}
+        ]}}"#,
+    )
+    .expect("valid json");
+
+    assert_eq!(
+        events,
+        vec![ProviderEvent::ToolCompleted {
+            tool_id: "t2".to_string(),
+            is_error: true,
+            output_excerpt: "exit code 1".to_string(),
+            output_truncated: false,
+        }]
+    );
+}
+
+#[test]
+fn tool_result_is_error_defaults_to_false_when_absent() {
+    let events = parse_claude_event(
+        r#"{"type":"user","message":{"content":[
+            {"type":"tool_result","tool_use_id":"t1","content":"ok"}
+        ]}}"#,
+    )
+    .expect("valid json");
+
+    match &events[0] {
+        ProviderEvent::ToolCompleted { is_error, .. } => assert!(!is_error),
+        other => panic!("expected ToolCompleted, got {other:?}"),
+    }
+}
+
+#[test]
+fn normalizes_tool_result_content_given_as_block_array() {
+    let events = parse_claude_event(
+        r#"{"type":"user","message":{"content":[
+            {"type":"tool_result","tool_use_id":"t1","content":[
+                {"type":"text","text":"line one"},
+                {"type":"text","text":"line two"}
+            ]}
+        ]}}"#,
+    )
+    .expect("valid json");
+
+    match &events[0] {
+        ProviderEvent::ToolCompleted { output_excerpt, .. } => {
+            assert_eq!(output_excerpt, "line one\nline two");
+        }
+        other => panic!("expected ToolCompleted, got {other:?}"),
+    }
+}
+
+#[test]
+fn truncates_oversized_tool_input() {
+    let payload = "x".repeat(10_000);
+    let line = serde_json::json!({
+        "type": "assistant",
+        "message": {"content": [
+            {"type": "tool_use", "id": "t1", "name": "Write", "input": {"content": payload}}
+        ]}
+    })
+    .to_string();
+
+    let events = parse_claude_event(&line).expect("valid json");
+    match &events[0] {
+        ProviderEvent::ToolStarted {
+            input_excerpt,
+            input_truncated,
+            ..
+        } => {
+            assert!(input_truncated);
+            assert!(input_excerpt.ends_with("…[truncated]"));
+            assert!(input_excerpt.len() < 10_000);
+        }
+        other => panic!("expected ToolStarted, got {other:?}"),
+    }
+}
+
+#[test]
+fn unparseable_line_yields_no_events_instead_of_failing_the_run() {
+    let events = parse_claude_event("this is not json").expect("must not fail the run");
+    assert!(events.is_empty());
+
+    let events = parse_opencode_event("<<< warning from provider").expect("must not fail the run");
+    assert!(events.is_empty());
+}
+
+#[test]
+fn codex_failure_events_still_propagate_as_errors() {
+    // A provider-reported failure is not a parse failure; it must not be
+    // swallowed alongside unreadable lines.
+    let result = parse_codex_event(r#"{"type":"turn.failed","error":{"message":"boom"}}"#);
+    assert!(
+        result.is_err(),
+        "codex turn.failed must surface as an error"
     );
 }

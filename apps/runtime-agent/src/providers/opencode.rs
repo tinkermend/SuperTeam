@@ -42,7 +42,11 @@ impl OpenCodeProvider {
 
 #[async_trait]
 impl ProviderAdapter for OpenCodeProvider {
-    async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun> {
+    async fn start(
+        &self,
+        request: ProviderRequest,
+        raw_sink: std::sync::Arc<dyn crate::raw_log::RawLineSink>,
+    ) -> anyhow::Result<ProviderRun> {
         let mut command = self.build_command(&request);
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
@@ -58,6 +62,7 @@ impl ProviderAdapter for OpenCodeProvider {
         Ok(stream_child_events(
             "opencode",
             parse_opencode_event,
+            raw_sink,
             child,
             stdout,
             stderr,
@@ -65,8 +70,10 @@ impl ProviderAdapter for OpenCodeProvider {
     }
 }
 
-pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
-    let event: serde_json::Value = serde_json::from_str(value)?;
+pub fn parse_opencode_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
+    let Some(event) = crate::providers::parse_line_json("opencode", value) else {
+        return Ok(Vec::new());
+    };
     let event_type = event
         .get("type")
         .and_then(|v| v.as_str())
@@ -80,12 +87,12 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
             if session_id.is_empty() {
-                Ok(None)
+                Ok(Vec::new())
             } else {
-                Ok(Some(ProviderEvent::SessionStarted {
+                Ok(vec![ProviderEvent::SessionStarted {
                     session_id: session_id.to_string(),
                     session_state: None,
-                }))
+                }])
             }
         }
         "message.part.updated" | "message.delta" | "text.delta" => {
@@ -96,17 +103,17 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
             if text.is_empty() {
-                Ok(None)
+                Ok(Vec::new())
             } else {
-                Ok(Some(ProviderEvent::TextDelta {
+                Ok(vec![ProviderEvent::TextDelta {
                     text: text.to_string(),
-                }))
+                }])
             }
         }
-        "turn.completed" | "session.idle" => Ok(Some(ProviderEvent::TurnCompleted {
+        "turn.completed" | "session.idle" => Ok(vec![ProviderEvent::TurnCompleted {
             summary: None,
             usage: crate::providers::usage::extract_usage(&event),
-        })),
-        _ => Ok(None),
+        }]),
+        _ => Ok(Vec::new()),
     }
 }

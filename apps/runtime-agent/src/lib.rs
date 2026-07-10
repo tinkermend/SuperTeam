@@ -10,6 +10,8 @@ pub mod instances;
 pub mod mcp_config;
 pub mod project_workspace;
 pub mod providers;
+pub mod raw_log;
+pub mod redaction;
 pub mod runs;
 pub mod runtime_auth;
 pub mod server;

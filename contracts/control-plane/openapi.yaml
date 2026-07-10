@@ -7334,6 +7334,36 @@ components:
           type: string
         provider_session_id:
           type: string
+        raw_log:
+          $ref: "#/components/schemas/ProjectTaskAttemptRawLog"
+    ProjectTaskAttemptRawLog:
+      type: object
+      description: >-
+        Pointer to the unparsed provider stdout/stderr uploaded by the runtime.
+        log_sha256 is reported by the same process that produced the bytes, so the
+        control plane must recompute it before treating it as tamper evidence.
+      required:
+        - log_store
+        - log_ref
+        - log_bytes
+        - log_sha256
+      properties:
+        log_store:
+          type: string
+          enum:
+            - object_store
+            - local_file
+        log_ref:
+          type: string
+          description: Opaque, provider-neutral reference (currently the manifest object key).
+        log_bytes:
+          type: integer
+          format: int64
+        log_sha256:
+          type: string
+        log_compressed:
+          type: boolean
+          default: false
     ProjectTaskAttestationStatus:
       type: string
       enum:

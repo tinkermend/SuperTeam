@@ -54,6 +54,9 @@ struct RuntimeCommandWritebackSink {
     command_id: String,
     project_task: Option<ProjectTaskWritebackContext>,
     usage_tokens: Arc<AtomicI64>,
+    /// Set once the raw transcript has been finalized, so every terminal
+    /// writeback (complete, fail, wait_human) carries the same pointer.
+    raw_log: Arc<std::sync::Mutex<Option<crate::raw_log::RawLogSummary>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +164,21 @@ pub struct RuntimeCommandExecutor {
 }
 
 impl RuntimeCommandExecutor {
+    fn build_raw_sink(
+        &self,
+        run_id: &str,
+        tenant_id: Option<&str>,
+        project_task: &Option<ProjectTaskWritebackContext>,
+    ) -> Arc<dyn crate::raw_log::RawLineSink> {
+        build_raw_sink_inner(
+            self.s3_client.as_ref(),
+            self.s3_bucket.as_deref(),
+            self.runs.run_dir(run_id),
+            tenant_id,
+            project_task.as_ref().map(|task| task.attempt_id.as_str()),
+        )
+    }
+
     pub fn new(config: RuntimeConfig) -> Self {
         let (s3_client, s3_bucket) = create_s3_client(&config);
         Self {
@@ -341,6 +359,7 @@ impl RuntimeCommandExecutor {
                 command_id: payload.command_id.clone(),
                 project_task: project_task.clone(),
                 usage_tokens: Arc::new(AtomicI64::new(0)),
+                raw_log: Arc::new(std::sync::Mutex::new(None)),
             });
         if let Some(writeback) = &writeback {
             if let Err(error) = writeback.start_project_task().await {
@@ -355,7 +374,8 @@ impl RuntimeCommandExecutor {
                 });
             }
         }
-        let provider_run = match provider.start(provider_request(&spec)).await {
+        let raw_sink = self.build_raw_sink(&run_id, payload.tenant_id.as_deref(), &project_task);
+        let provider_run = match provider.start(provider_request(&spec), raw_sink.clone()).await {
             Ok(provider_run) => provider_run,
             Err(error) => {
                 let message = error.to_string();
@@ -429,6 +449,7 @@ impl RuntimeCommandExecutor {
             spec,
             provider_started_at,
             heartbeat_stop,
+            raw_sink,
         );
 
         Ok(RuntimeCommandOutcome {
@@ -485,6 +506,7 @@ impl RuntimeCommandExecutor {
                     command_id: start_command_id.to_string(),
                     project_task,
                     usage_tokens: Arc::new(AtomicI64::new(0)),
+                    raw_log: Arc::new(std::sync::Mutex::new(None)),
                 }
                 .fail_project_task("operator cancelled")
                 .await?;
@@ -1044,10 +1066,12 @@ impl RuntimeCommandExecutor {
         spec: RunSpec,
         provider_started_at: Instant,
         heartbeat_stop: Option<CancellationToken>,
+        raw_sink: Arc<dyn crate::raw_log::RawLineSink>,
     ) {
         let runs = self.runs.clone();
         let registry = self.registry.clone();
         let failure_writeback = writeback.clone();
+        let failure_raw_sink = raw_sink.clone();
         tokio::spawn(async move {
             let result = drain_provider_events(
                 runs.clone(),
@@ -1059,6 +1083,7 @@ impl RuntimeCommandExecutor {
                 spec,
                 provider_started_at,
                 heartbeat_stop,
+                raw_sink,
             )
             .await;
 
@@ -1066,6 +1091,9 @@ impl RuntimeCommandExecutor {
                 if !run_is_cancelled(&runs, &run_id).await {
                     let message = error.to_string();
                     let _ = runs.finish_failed(&run_id, message.clone()).await;
+                    // A failed run still produced a transcript; the failure
+                    // writeback must carry its pointer.
+                    finalize_raw_log(&failure_raw_sink, failure_writeback.as_ref()).await;
                     if let Some(writeback) = &failure_writeback {
                         let _ = writeback.fail(message).await;
                     }
@@ -1091,6 +1119,35 @@ fn materialize_persona_memory(
     };
 
     atomic_write(&agent_home_dir.join("人格记忆.md"), markdown.as_bytes())
+}
+
+/// Builds the raw transcript sink for a run.
+///
+/// Falls back to a no-op sink when object storage is unconfigured or the run is
+/// not backed by a project task attempt: without an attempt there is nowhere to
+/// hang the resulting pointer, and without a bucket there is nowhere to put the
+/// bytes.
+fn build_raw_sink_inner(
+    s3_client: Option<&aws_sdk_s3::Client>,
+    s3_bucket: Option<&str>,
+    local_dir: std::path::PathBuf,
+    tenant_id: Option<&str>,
+    attempt_id: Option<&str>,
+) -> Arc<dyn crate::raw_log::RawLineSink> {
+    let (Some(client), Some(bucket), Some(attempt_id)) = (s3_client, s3_bucket, attempt_id) else {
+        return Arc::new(crate::raw_log::NoopRawSink);
+    };
+    let tenant_id = tenant_id.unwrap_or("unknown-tenant");
+    let uploader = Arc::new(crate::raw_log::S3RawLogUploader::new(
+        client.clone(),
+        bucket.to_string(),
+    ));
+    Arc::new(crate::raw_log::SegmentedRawLogSink::new(
+        uploader,
+        local_dir,
+        format!("runs/{tenant_id}/{attempt_id}/"),
+        attempt_id.to_string(),
+    ))
 }
 
 fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Option<String>) {
@@ -1464,26 +1521,27 @@ impl RuntimeCommandWritebackSink {
             )
             .await?;
         if let Some(project_task) = &self.project_task {
-            let result = if let Some(writeback) = project_task_wait_human_writeback(
+            let raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
+            let result = if let Some(mut writeback) = project_task_wait_human_writeback(
                 project_task,
                 &self.command_id,
                 summary.as_deref(),
                 provider_session_id.as_deref(),
             ) {
+                writeback.raw_log = raw_log;
                 self.client
                     .wait_human_project_task_attempt(&project_task.attempt_id, &writeback)
                     .await
             } else {
+                let mut writeback = project_task_complete_writeback(
+                    project_task,
+                    &self.command_id,
+                    summary.as_deref(),
+                    provider_session_id.as_deref(),
+                );
+                writeback.raw_log = raw_log;
                 self.client
-                    .complete_project_task_attempt(
-                        &project_task.attempt_id,
-                        &project_task_complete_writeback(
-                            project_task,
-                            &self.command_id,
-                            summary.as_deref(),
-                            provider_session_id.as_deref(),
-                        ),
-                    )
+                    .complete_project_task_attempt(&project_task.attempt_id, &writeback)
                     .await
             };
             if let Err(error) = result {
@@ -1498,10 +1556,13 @@ impl RuntimeCommandWritebackSink {
 
     async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {
         if let Some(project_task) = &self.project_task {
+            let mut writeback =
+                project_task_fail_writeback(project_task, &self.command_id, error_message);
+            writeback.raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
             self.client
                 .fail_project_task_attempt(
                     &project_task.attempt_id,
-                    &project_task_fail_writeback(project_task, &self.command_id, error_message),
+                    &writeback,
                 )
                 .await?;
         }
@@ -1542,20 +1603,47 @@ fn runtime_event_writeback(
             payload.insert("text".to_string(), serde_json::Value::String(text.clone()));
             ("text_delta".to_string(), payload)
         }
-        ProviderEvent::ToolStarted { tool_id, name } => {
+        ProviderEvent::ToolStarted {
+            tool_id,
+            name,
+            input_excerpt,
+            input_truncated,
+        } => {
             let mut payload = HashMap::new();
             payload.insert(
                 "tool_id".to_string(),
                 serde_json::Value::String(tool_id.clone()),
             );
             payload.insert("name".to_string(), serde_json::Value::String(name.clone()));
+            payload.insert(
+                "input_excerpt".to_string(),
+                serde_json::Value::String(crate::redaction::redact(input_excerpt)),
+            );
+            payload.insert(
+                "input_truncated".to_string(),
+                serde_json::Value::Bool(*input_truncated),
+            );
             ("tool_started".to_string(), payload)
         }
-        ProviderEvent::ToolCompleted { tool_id } => {
+        ProviderEvent::ToolCompleted {
+            tool_id,
+            is_error,
+            output_excerpt,
+            output_truncated,
+        } => {
             let mut payload = HashMap::new();
             payload.insert(
                 "tool_id".to_string(),
                 serde_json::Value::String(tool_id.clone()),
+            );
+            payload.insert("is_error".to_string(), serde_json::Value::Bool(*is_error));
+            payload.insert(
+                "output_excerpt".to_string(),
+                serde_json::Value::String(crate::redaction::redact(output_excerpt)),
+            );
+            payload.insert(
+                "output_truncated".to_string(),
+                serde_json::Value::Bool(*output_truncated),
             );
             ("tool_completed".to_string(), payload)
         }
@@ -1807,6 +1895,7 @@ fn project_task_complete_writeback(
     }
 
     ProjectTaskCompleteWriteback {
+        raw_log: None,
         project_task_id: context.project_task_id.clone(),
         lease_token: context.lease_token.clone(),
         runtime_node_id: context.runtime_node_id.clone(),
@@ -1984,6 +2073,7 @@ fn project_task_wait_human_writeback(
         .unwrap_or_else(|| "Human input is required before this task can continue.".to_string());
 
     Some(ProjectTaskWaitHumanWriteback {
+        raw_log: None,
         project_task_id: context.project_task_id.clone(),
         lease_token: context.lease_token.clone(),
         runtime_node_id: context.runtime_node_id.clone(),
@@ -2635,6 +2725,7 @@ fn project_task_fail_writeback(
 ) -> ProjectTaskFailWriteback {
     let (failure_family, retryable) = project_task_failure_classification(error_message);
     ProjectTaskFailWriteback {
+        raw_log: None,
         project_task_id: context.project_task_id.clone(),
         lease_token: context.lease_token.clone(),
         runtime_node_id: context.runtime_node_id.clone(),
@@ -2698,6 +2789,7 @@ async fn drain_provider_events(
     spec: RunSpec,
     provider_started_at: Instant,
     heartbeat_stop: Option<CancellationToken>,
+    raw_sink: Arc<dyn crate::raw_log::RawLineSink>,
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
@@ -2762,6 +2854,9 @@ async fn drain_provider_events(
     if let Some(stop) = &heartbeat_stop {
         stop.cancel();
     }
+    // Finalize before the terminal writeback so the attempt row and the raw
+    // transcript pointer land in the same call.
+    finalize_raw_log(&raw_sink, writeback.as_ref()).await;
     if let (Some(writeback), Some(mut completion)) =
         (&writeback, terminal_writeback.finish_successful_stream())
     {
@@ -2793,6 +2888,22 @@ async fn drain_provider_events(
             .await?;
     }
     Ok(())
+}
+
+/// Idempotent: a sink whose writer already finished yields `None`, so calling
+/// this on both the success and the failure path is safe.
+async fn finalize_raw_log(
+    raw_sink: &Arc<dyn crate::raw_log::RawLineSink>,
+    writeback: Option<&RuntimeCommandWritebackSink>,
+) {
+    let Some(writeback) = writeback else {
+        return;
+    };
+    if let Some(summary) = raw_sink.finalize_log().await {
+        if let Ok(mut guard) = writeback.raw_log.lock() {
+            *guard = Some(summary);
+        }
+    }
 }
 
 fn provider_request(spec: &RunSpec) -> ProviderRequest {

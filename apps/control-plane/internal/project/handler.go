@@ -1487,6 +1487,7 @@ func projectTaskAttemptRuntimeRequestFromBody(w http.ResponseWriter, tenantID, r
 		LeaseToken:        body.LeaseToken,
 		IdempotencyKey:    body.IdempotencyKey,
 		ProviderSessionID: body.ProviderSessionID,
+		RawLog:            body.RawLog.toRawLog(),
 	}, true
 }
 
@@ -1746,11 +1747,38 @@ type resolveDecisionBody struct {
 }
 
 type ProjectTaskAttemptRuntimeBody struct {
-	ProjectTaskID     uuid.UUID `json:"project_task_id"`
-	LeaseToken        string    `json:"lease_token"`
-	RuntimeNodeID     uuid.UUID `json:"runtime_node_id"`
-	IdempotencyKey    string    `json:"idempotency_key"`
-	ProviderSessionID *string   `json:"provider_session_id"`
+	ProjectTaskID     uuid.UUID                     `json:"project_task_id"`
+	LeaseToken        string                        `json:"lease_token"`
+	RuntimeNodeID     uuid.UUID                     `json:"runtime_node_id"`
+	IdempotencyKey    string                        `json:"idempotency_key"`
+	ProviderSessionID *string                       `json:"provider_session_id"`
+	RawLog            *projectTaskAttemptRawLogBody `json:"raw_log"`
+}
+
+type projectTaskAttemptRawLogBody struct {
+	LogStore      string `json:"log_store"`
+	LogRef        string `json:"log_ref"`
+	LogBytes      int64  `json:"log_bytes"`
+	LogSha256     string `json:"log_sha256"`
+	LogCompressed bool   `json:"log_compressed"`
+}
+
+// toRawLog drops a malformed pointer rather than persisting a reference the
+// control plane cannot resolve later.
+func (b *projectTaskAttemptRawLogBody) toRawLog() *ProjectTaskAttemptRawLog {
+	if b == nil {
+		return nil
+	}
+	if b.LogStore == "" || b.LogRef == "" || b.LogSha256 == "" {
+		return nil
+	}
+	return &ProjectTaskAttemptRawLog{
+		LogStore:      b.LogStore,
+		LogRef:        b.LogRef,
+		LogBytes:      b.LogBytes,
+		LogSha256:     b.LogSha256,
+		LogCompressed: b.LogCompressed,
+	}
 }
 
 type startProjectTaskAttemptBody struct {

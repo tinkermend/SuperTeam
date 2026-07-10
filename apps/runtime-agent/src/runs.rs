@@ -271,7 +271,7 @@ impl RuntimeRunStore {
         self.event_sender.subscribe()
     }
 
-    fn run_dir(&self, run_id: &str) -> PathBuf {
+    pub fn run_dir(&self, run_id: &str) -> PathBuf {
         self.log_dir.join(run_id)
     }
 
