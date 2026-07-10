@@ -102,34 +102,54 @@ type TaskResultRevisionRequest struct {
 - `ProjectEventTaskRevisionRequested` / `RevisionCreated` / `ReplanRequested` / `TaskResultRejected`：`project/types.go` 中定义，**零处生产者**。
 - 两个能力快照构造器（`app/planning_profile_adapter.go:314` 与 `workflow/.../predispatch_gate.go:736`）逻辑重复且都从 LLM 输出取值。
 
-### 1.6 虚构词表仍在驱动控制流（Plan 1 未覆盖）
+### 1.6 虚构词表驱动控制流：一共五条腿
 
-拆掉派发闸门之后，同一个病根仍在计划阶段起作用，且**无路可逃**：
+> **勘误（2026-07-10，审查 Plan 2 实现时）**：本节初稿只列出 `scoreCapabilities` 一处。**`ScorePlanningProfile` 里有五个并行的打分维度，其中四个拿 LLM 凭空合成的词表去匹配一个无人兑现的员工字段，任一未匹配即产生 `HardFailure`，而一条 `HardFailure` 就把 `Score` 归零（`planning_profile.go:178`）并强制人工审批（`graph_validation.go:100`）。**
 
-| 模型的选择 | 后果 |
-|---|---|
-| 编造若干 `required_capabilities` | 员工的 `external_capabilities` 实质恒空 → `missing` 必非空 → `scoreCapabilities:409` 把每条 missing 变成一条 `HardFailure` → `ScorePlanningProfile:178` 把 `Score` **直接归零** → `ApplyPlanningProfileScores:78` **强制人工审批** |
-| 不写 `required_capabilities` | `graph_validation.go:34`：`required_capabilities` 为空且未标人工复核 → **整个计划被拒** |
+`ScorePlanningProfile` 的每个维度，按「判据是否有事实源」分类：
 
-也就是说，**系统强迫模型发明一套它根本没有词表的能力名，然后因为这些名字对不上而惩罚它。**
+| 维度 | 任务侧（LLM 合成） | 员工侧 | 员工侧是否有人兑现 | 结论 |
+|---|---|---|---|---|
+| `scoreCapabilities` | `required_capabilities` | `capability_bindings.external_capabilities` | **否**（runtime 从不读） | 虚构 → **Plan 2 已退役** |
+| `scorePermissionsAndTools`（tool 段） | `tool_requirements` | `capability_bindings.mcp_servers` | 注册表真实，但 MCP 由 Runtime 物化为 `mcp.json`，不经选人 | 虚构 → **已退役（`ffbe3132`）** |
+| `scorePermissionsAndTools`（permission 段） | `permission_requirements` | `permission_policy.grants` | **否**（只有 employee CRUD 读写；runtime 不读，authz 决策点不读） | 虚构 → **仍在生效** |
+| `scoreRuntime`（`unsatisfied_runtime:<x>`） | `runtime_requirements` | `profile.RuntimeRequirements` | 部分真实 | 虚构 → **仍在生效** |
+| `scoreRuntime`（`provider_status`） | 无 | runtime 心跳上报的 provider 健康 | **是** | **真实事实，保留硬失败** |
+| `scoreRole` / `scoreLoad` / `scoreReliability` | 无 | 服务端事实 | 是 | 不产生 `HardFailure`，保留 |
 
-实证（Plan 1 的 E2E，`project_tasks.id = d97bd715`）：
+**实证。** 两次真实运行的前后对照（`project_tasks`）：
 
-```json
-"selection_score": 0,
-"matched_capabilities": [],
-"missing_capabilities": ["quantum-ledger.reconcile_verification", "codebase.analysis", ...]
 ```
-`requires_human_approval = true`
+07-10 23:06   score=80   missing_capabilities=4   requires_human_approval=false   ← 含 ffbe3132
+07-10 22:46   score=0    missing_capabilities=6   requires_human_approval=true    ← 能力已退役，tool 未退役
+```
 
-那个 `quantum-ledger.reconcile_verification` 是烟测里故意编的名字。它让 `selection_score` 归零，并触发了一次人工审批——而这次审批与风险无关，纯由虚构词表触发。
+能力退役之后，`tool_requirements` 独自就足以把分数归零并强制审批。这证明这些腿是**并联**的，修一条不够。
 
-**两个后果**：
+**permission 腿的证据。** planner 惯常发明权限名：
 
-1. **每个任务都被强制人工审批。** 人类审批的触发条件不是风险，是词表对不上。这稀释了 `risk.approval` 的意义（约束四要求两层审批各司其职）。
-2. **`selection_score` 恒为 0。** §4.2 的 `selection_confidence`（阈值 0.7）**绝不能复用 `ScorePlanningProfile`**，否则上线即全线判为 `no_suitable_employee`。
+```
+07-10 23:05  ["file_read"]
+07-10 01:22  ["code_execution"]
+07-09 23:27  ["execute_shell_commands"]
+07-05 15:03  ["read:network", "read:interface", "read:packet"]
+```
 
-`graph_validation.go:53` 与 `:55` 那两条拒绝规则是**死代码**：`ValidateRouteDecisionPlan` 的唯一调用点（`openai_compatible_planner.go:133,142`）永远在 `ApplyPlanningProfileScores` 之后，而后者已经把 `reviewRequired` 置真。
+而 `digital_employees` 里有 `permission_policy.grants` 的：**0 / 13**。`permissionRequirementSatisfied`（`planning_profile.go:778`）遍历空切片必然返回 false。
+
+23:06 那次 E2E 之所以通过，是因为该任务的 `permission_requirements` 恰好为 `null`——同一批修订里另一个任务带着 `["file_read"]`。**判据是靠运气过的。**
+
+**runtime 腿的证据，最能说明问题。** `runtimeRequirementSatisfied`（`:762`）只认 `provider:<x>` 与 `runtime_node:<id>`，其余 `return false`。而 planner 实际吐出的是：
+
+```
+07-10 01:22  ["codex"]
+```
+
+`splitRequirement("codex")` → `kind="codex", value=""` → `default` → false → `HardFailure` → `Score=0`。
+
+**模型说对了东西，写错了语法**（没写成 `provider:codex`），于是那个员工被取消资格——而那个员工恰恰就是 codex。提示词从未告诉它 `kind:value` 这个格式。
+
+**这就是全部四条虚构腿的同一个病根：平台惩罚模型不遵守一套它从未被给予的词表。**
 
 ### 1.7 工具闸门读的键，服务端从未写过
 
@@ -487,7 +507,10 @@ B' 续接 B **那个任务**的会话——继续干活，上下文完整，不�
 | plannerTask 的 `RequiredCapabilities` / `MatchedCapabilities` / `MissingCapabilities` 的**判决作用** | `openai_compatible_planner.go:363-365`（字段保留于 `planner_metadata`，仅供展示） |
 | 提示词中 "copy the required, matched, and missing capability arrays" | `openai_compatible_planner.go:276` |
 | 提示词中 "A task with missing_capabilities must set requires_human_approval..." | `openai_compatible_planner.go:279` |
-| `scoreCapabilities` 把 missing 升级为 `HardFailure`（进而归零 `Score`） | `planning_profile.go:409` |
+| `scoreCapabilities` 把 missing 升级为 `HardFailure`（进而归零 `Score`） | `planning_profile.go:409` —— **Plan 2 已完成** |
+| `scorePermissionsAndTools` 的 tool 段升级为 `HardFailure` | `planning_profile.go`（`unsatisfied_tool`）—— **`ffbe3132` 已完成** |
+| `scorePermissionsAndTools` 的 permission 段升级为 `HardFailure` | `planning_profile.go:475-476` —— **待做** |
+| `scoreRuntime` 对 `runtime_requirements` 升级为 `HardFailure` | `planning_profile.go:450-451` —— **待做**（`provider_status` 的两处保留） |
 | `ApplyPlanningProfileScores` 因 missing 强制 `RequiresHumanApproval` / `RequiresHumanReview` | `graph_validation.go:78-81` |
 | `required_capabilities` 为空即拒绝整个计划 | `graph_validation.go:34-35` |
 | 因 `HardFailures` / `MissingCapabilities` 拒绝计划的两条死规则 | `graph_validation.go:53-57` |
