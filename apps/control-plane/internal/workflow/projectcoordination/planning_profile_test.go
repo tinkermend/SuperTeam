@@ -270,9 +270,9 @@ func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 		PermissionRequirements: []string{"database.write:dev_database"},
 	})
 
-	require.Contains(t, result.HardFailures, "permission_or_tool_requirement_unsatisfied")
-	require.Contains(t, result.HardFailures, "unsatisfied_permission:database.write:dev_database")
-	require.Equal(t, 0, result.Score)
+	require.Empty(t, result.HardFailures, "unmatched permission_requirements must not hard-fail; permission_policy has no consumer")
+	require.Equal(t, []string{"database.write:dev_database"}, result.MissingPermissions)
+	require.Greater(t, result.Score, 0)
 
 	result = ScorePlanningProfile(profile, PlanningTaskRequirements{
 		TaskType:         "database_analysis",
@@ -385,4 +385,24 @@ func TestPlanningProfileSnapshotHashIsStable(t *testing.T) {
 
 	require.Len(t, first, 64)
 	require.Equal(t, first, second)
+}
+
+func TestScorePlanningProfileDoesNotHardFailOnMissingPermission(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID:   uuid.New(),
+		RuntimeRequirements: PlanningRuntimeRequirements{ProviderStatus: "ready"},
+		// Nothing in the repository ever grants a permission: 0 of 13 employees
+		// carry one, and permission_policy has no consumer at all.
+		Permissions: nil,
+	}
+
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		// Names the planner invents. It was never given a vocabulary.
+		PermissionRequirements: []string{"file_read", "code_execution"},
+	})
+
+	require.Empty(t, score.HardFailures, "an unmatched permission name is not a hard failure")
+	require.Greater(t, score.Score, 0, "score must survive an unmatched permission")
+	require.Equal(t, []string{"file_read", "code_execution"}, score.MissingPermissions,
+		"the diff is still reported for display")
 }
