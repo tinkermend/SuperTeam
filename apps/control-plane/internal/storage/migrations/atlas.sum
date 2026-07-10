@@ -1,4 +1,4 @@
-h1:k2xgkfI9Sl3D4Aemi6i/VsO6SXxzvSnearxZAUY6F2w=
+h1:fzeSxrn9qNjntfSMS2C4RxSr28EhDdtQ9+msNeLajAA=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -51,3 +51,4 @@ h1:k2xgkfI9Sl3D4Aemi6i/VsO6SXxzvSnearxZAUY6F2w=
 051_digital_employee_config_final_model.sql h1:QewXoSDp8+N0VbM31D2mRcS/D1a2Fw55QW664iHknv4=
 052_digital_employee_templates_final_config.sql h1:SEtYsnvmCxJC0lPtwa26iQf7uqN8cTTDHwpmqtSKPFE=
 053_project_task_attempt_raw_log.sql h1:kuWoYlvdggwS4WsfGySZTrzECxiEheViN/XutczjYoY=
+054_project_task_plan_iteration.sql h1:Q5yxoHn915FH7bg1Bib+DWNsItJFZQKIPop+vA7Xqpg=
