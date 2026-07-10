@@ -52,7 +52,7 @@ spec §4.2 初稿写「`required_inputs[k]` 能在某个上游任务的 `expecte
 
 **不接通工具闸门。** spec §1.7 记录：`planning_profile_adapter.go:324` 读 `input_requirements["tool_requirements"]`，而服务端从未写过该键（63 个任务命中 0 次），闸门 early return，`tool.binding` / `tool.authorization` / `tool.available` 三个检查结构上不可能失败。
 
-本 plan 会给 `input_requirements` 定义 schema，但**不会**顺手把 `tool_requirements` 塞进去。`planning_profile_adapter.go:344-351` 对任何非 `mcp:<name>` 形状的字符串一律判 `RetryableUnavailable`，`predispatch_gate.go:329-330` 见此即 `tool.available` failed。planner 的 `tool_requirements` 同样是无词表自由文本——接通即复刻 capability 的 bug。它需要独立的 Plan 7（planner 拿到真实 MCP 词表 + 类型化落库 + 闸门从类型化字段读）。
+本 plan 会给 `input_requirements` 定义 schema，但**不会**顺手把 `tool_requirements` 塞进去。按 SuperTeam 的 MCP 架构，控制平面这层不做 MCP 可用性检查：runtime 派发载荷带 `mcp_servers`，`mcp_config.rs:102` 按 provider 写出原生配置（`codex.toml` / `claude.mcp.json` / `opencode.json`），由 provider 自己的加载器挂载。因此那道 tool 闸门是**该删的死代码**，不是该接的线——见 spec §1.7，删除工作记为 Plan 8。
 
 ---
 
@@ -713,7 +713,7 @@ go test ./internal/workflow/projectcoordination/ -run 'TestValidateRouteDecision
 | §4.2 自由字段迁 `planner_notes` | Task 4 |
 | §1.7 工具闸门 | **明确不做**，见前置一节 |
 
-**本 plan 不认领**：`plan_acceptance_criteria` 与 `satisfied_by`（Plan 4）、阻塞申报与图延展与迁移 054（Plan 5）、会话降维（Plan 6）、工具闸门接线（Plan 7）。
+**本 plan 不认领**：`plan_acceptance_criteria` 与 `satisfied_by`（Plan 4）、阻塞申报与图延展与迁移 054（Plan 5）、会话降维（Plan 6）、工具死闸门删除（Plan 8）。
 
 **Type consistency**
 

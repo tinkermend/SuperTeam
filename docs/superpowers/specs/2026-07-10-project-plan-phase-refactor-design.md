@@ -151,28 +151,32 @@ type TaskResultRevisionRequest struct {
 
 **这就是全部四条虚构腿的同一个病根：平台惩罚模型不遵守一套它从未被给予的词表。**
 
-### 1.7 工具闸门读的键，服务端从未写过
+### 1.7 工具闸门是死代码，应删除（不是接线）
 
-`planning_profile_adapter.go:324`：
+> **勘误二（2026-07-10）**：本节曾两度写错方向。初稿说它「是有事实源的好闸门，能力那段该照它写」；二稿改成「断线了，需要 Plan 7 补位」。**都不对。** 按 SuperTeam 的 MCP 架构，这道闸门根本不该存在——它是该删的死代码。
 
-```go
-requiredTools := gateStringList(task.InputRequirements["tool_requirements"])
-if len(requiredTools) == 0 {
-    return capabilitySnapshot, toolSnapshot, nil   // early return
-}
-```
+`planning_profile_adapter.go:320` 读 `input_requirements["tool_requirements"]`，服务端从未写过该键（63 个任务命中 0 次），闸门 early return，`tool.binding` / `tool.authorization` / `tool.available` 三个检查结构上不可能失败。同理 `workflow/.../predispatch_gate.go:743-748` 读的 `missing_tool_bindings` 等键也无人写入。
 
-planner 确实产出 `tool_requirements`，但它是 `PlannedTask` 上的**类型化字段**。`project_store.go:516` 落库时只把 `plannedTask.InputRequirements`（LLM 的自由 map）拷进 `project_tasks.input_requirements`，类型化的 `ToolRequirements` **既不进这张表的任何列，也不进 `planner_metadata`**。
+**为什么不该「补位」。** MCP 可用性由 provider 自己负责，控制平面这层不做检查：
 
-库中实证：`input_requirements` 出现过的全部键是 `demand_content`、`items`、`repository`、`scope`、`value`；**63 个任务里有 `tool_requirements` 的：0 个**。
+- runtime 派发载荷带 `mcp_servers`（`payload.rs:142`）。
+- `mcp_config.rs:102` 的 `task_mcp_config_path` 按 provider 写出**原生配置**：`codex` → `codex.toml`、`claude-code` → `claude.mcp.json`、`opencode` → `opencode.json`，落到工作区 `.superteam/mcp/`。
+- provider 自己的 MCP 加载器负责挂载与可用性（claude 侧：`--mcp-config` + `--strict-mcp-config`，`claude.rs:33`）。
 
-所以 `requiredTools` 恒为空，闸门 early return。`tool.binding` / `tool.authorization` / `tool.available` 三个检查**结构上不可能失败**。同理 `workflow/.../predispatch_gate.go:761-767` 读的 `missing_tool_bindings`、`expired_tool_authorizations`、`retryable_unavailable_tools`、`missing_context_refs` 也无人写入。
+控制平面的职责到「把 MCP 配置写成 provider 支持的形式并挂进去」为止。**在计划阶段拿 planner 编造的 `tool_requirements` 去匹配 `ListEffectiveMCPServers` 的结果，是在重复 provider 已经做的事，且用的是无词表自由文本——即 capability 的同一个 bug。**
 
-**不要顺手接通它。** `planning_profile_adapter.go:344-351` 对任何非 `mcp:<name>` 形状的字符串一律塞进 `RetryableUnavailable`，而 `predispatch_gate.go:329-330` 见此即判 `tool.available` failed。planner 的 `tool_requirements` 同样是无词表的自由文本（提示词未给候选集）——直接接通，等于把 capability 那个 bug 原样复刻到工具上。
+**该删的（Plan 待排入）：**
 
-正确的修法需要三件事同时到位：planner 拿到真实的 MCP 词表（`PlanningToolBinding` 已在 planning profile 里）、类型化字段落到类型化的位置、闸门从那里读。**这是一个独立的计划（Plan 7），不在本 spec 已排的六个计划内。**
+- `predispatch_gate.go:313-328` 的三个 `tool.*` 检查与两个 blocker。
+- `PreDispatchToolSnapshot` 及其在 `PreDispatchGateSnapshot` 上的字段。
+- `planning_profile_adapter.go:320-352` 的 `requiredTools` 段（含那次只服务于死闸门的 `ListEffectiveMCPServers` 调用；`capability.Service.ListEffectiveMCPServers` 本身**保留**——它还服务于 `/effective-mcp-servers` 端点）。
+- `workflow/.../predispatch_gate.go:743-748` 的 tool 键读取。
 
-## 2. 目标与非目标
+**不删的**：runtime 侧 `mcp_config.rs` 的整条配置生成链路、`capability` 包的 MCP 注册与 `/effective-mcp-servers` 端点、派发载荷里的 `mcp_servers`。这些是真实功能。
+
+这项删除不阻塞 Plan 3–6，可独立排期（记为 **Plan 8**，取代原先设想的「Plan 7 接线」）。
+
+## 2. 目标与非目标## 2. 目标与非目标
 
 **目标**
 

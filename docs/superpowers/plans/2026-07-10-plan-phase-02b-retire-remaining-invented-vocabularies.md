@@ -508,7 +508,7 @@ go test ./internal/workflow/projectcoordination/ -run 'TestScoreRuntimeStillHard
 | §1.6 表格第 5 行（`provider_status`，保留） | Task 2 的回归测试 |
 | §5 删除清单新增的两行「待做」 | Task 1, 2 |
 
-**本 plan 不认领**：`produces` / `required_inputs`（Plan 3）、计划级判据（Plan 4）、图延展（Plan 5）、会话降维（Plan 6）、工具闸门接线（Plan 7，spec §1.7）。
+**本 plan 不认领**：`produces` / `required_inputs`（Plan 3）、计划级判据（Plan 4）、图延展（Plan 5）、会话降维（Plan 6）、工具死闸门删除（Plan 8，spec §1.7）。
 
 **Type consistency**
 
