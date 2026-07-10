@@ -274,12 +274,14 @@ func buildPlannerSystemPrompt() string {
 		"You are the SuperTeam project coordination route planner.",
 		"Return a single JSON object only; do not wrap it in markdown.",
 		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, planner_metadata object.",
-		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, employee_selection_reason, required_capabilities, matched_capabilities, missing_capabilities, permission_requirements, tool_requirements, runtime_requirements, verification_requirements, selection_score, selection_confidence, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
+		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, employee_selection_reason, required_capabilities, matched_capabilities, missing_capabilities, permission_requirements, tool_requirements, runtime_requirements, verification_requirements, selection_score, selection_confidence, expected_outputs, produces, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
 		"For every task, choose selected_employee_id by comparing planning_profile facts and explain the choice in employee_selection_reason. The capability arrays are advisory annotations shown to a human reviewer; they never gate dispatch.",
 		"tool_requirements are advisory annotations only. Prefer an empty array. Do not invent tool names such as shell or bash: MCP is materialized into the project workspace as mcp.json by the Runtime for Claude Code / Codex / OpenCode, and tool_requirements never gate selection or approval.",
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
+		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key another task lists in input_requirements.required_inputs must appear in the produces of one of its ancestors.",
+		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
 		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
@@ -342,6 +344,7 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 			RiskLevel:                task.RiskLevel,
 			RequiresHumanApproval:    task.RequiresHumanApproval,
 			ExpectedOutputs:          nonNilStrings(task.ExpectedOutputs),
+			Produces:                 nonNilStrings(task.Produces),
 			InputRequirements:        nonNilMap(task.InputRequirements),
 			HandoffContract:          nonNilMap(task.HandoffContract),
 			BlockedByKeys:            nonNilStrings(task.BlockedByKeys),
@@ -379,6 +382,7 @@ type plannerTask struct {
 	RiskLevel                string         `json:"risk_level"`
 	RequiresHumanApproval    bool           `json:"requires_human_approval"`
 	ExpectedOutputs          []string       `json:"expected_outputs"`
+	Produces                 []string       `json:"produces"`
 	InputRequirements        map[string]any `json:"input_requirements"`
 	HandoffContract          map[string]any `json:"handoff_contract"`
 	BlockedByKeys            []string       `json:"blocked_by_keys"`
@@ -405,6 +409,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		RiskLevel                string          `json:"risk_level"`
 		RequiresHumanApproval    bool            `json:"requires_human_approval"`
 		ExpectedOutputs          json.RawMessage `json:"expected_outputs"`
+		Produces                 json.RawMessage `json:"produces"`
 		InputRequirements        json.RawMessage `json:"input_requirements"`
 		HandoffContract          json.RawMessage `json:"handoff_contract"`
 		BlockedByKeys            []string        `json:"blocked_by_keys"`
@@ -449,6 +454,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		RiskLevel:                raw.RiskLevel,
 		RequiresHumanApproval:    raw.RequiresHumanApproval,
 		ExpectedOutputs:          decodePlannerStringArray(raw.ExpectedOutputs),
+		Produces:                 decodePlannerStringArray(raw.Produces),
 		InputRequirements:        inputRequirements,
 		HandoffContract:          handoffContract,
 		BlockedByKeys:            raw.BlockedByKeys,
@@ -551,6 +557,27 @@ func decodeRequiredPlannerObject(raw json.RawMessage, field string) (map[string]
 		return map[string]any{"value": scalar}, nil
 	}
 	return nil, fmt.Errorf("planner task %s must be a JSON object", field)
+}
+
+// plannerRequiredInputs extracts the one key of input_requirements that decides
+// anything. Everything else in that map is free-form planner prose and must not
+// reach a gate or a validator. See the 2026-07-10 plan-phase refactor spec §4.2.
+func plannerRequiredInputs(raw map[string]any) []string {
+	values, ok := raw["required_inputs"].([]any)
+	if !ok {
+		return nil
+	}
+	inputs := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		if trimmed := strings.TrimSpace(text); trimmed != "" {
+			inputs = append(inputs, trimmed)
+		}
+	}
+	return inputs
 }
 
 func nonNilMap(value map[string]any) map[string]any {

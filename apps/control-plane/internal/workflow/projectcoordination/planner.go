@@ -69,9 +69,13 @@ type PlannedTask struct {
 	RiskLevel                   string
 	RequiresHumanApproval       bool
 	ExpectedOutputs             []string
-	InputRequirements           map[string]any
-	HandoffContract             map[string]any
-	BlockedByKeys               []string
+	// Produces are plan-scoped output keys other tasks may declare as
+	// required_inputs. Unlike ExpectedOutputs (prose, for humans), these are
+	// matched by the validator.
+	Produces          []string
+	InputRequirements map[string]any
+	HandoffContract   map[string]any
+	BlockedByKeys     []string
 }
 
 // activeExecutorIDs returns the active executor members of a coordination snapshot's
