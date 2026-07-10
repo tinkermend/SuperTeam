@@ -2319,6 +2319,51 @@ func TestSubmitProjectTaskAttemptResultBlockedWaitsForHumanAndKeepsLatestResult(
 	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
 }
 
+func TestSubmitProjectTaskAttemptResultBlockedResolvableUpstreamSignalsCoordinatorWithoutHumanWait(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].InputRequirements = map[string]any{"required_inputs": []any{"load_test_report"}}
+	contract := TaskResultContract{
+		Status:  TaskResultStatusBlocked,
+		Summary: "缺少上游产出 load_test_report",
+		Blocker: &TaskResultBlocker{
+			Reason:           "缺少 load_test_report 数据",
+			ResolutionPrompt: "需要上游任务补充 load_test_report",
+			RequiredBy:       "upstream_producer",
+			MissingInputs:    []string{"load_test_report"},
+		},
+	}
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-blocked-resolvable-upstream"),
+		ResultContract:                   contract,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "缺少上游产出 load_test_report", summary.Conclusion)
+	// Unlike blocked_waiting_human, this decision must not open a human decision:
+	// the platform resolves it autonomously via CreateUpstreamSupplementTasks.
+	require.Empty(t, repo.decisionRequests)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, fixture.taskID, coordinator.lastCompleted.ProjectTaskID)
+
+	results, err := repo.ListProjectTaskResults(context.Background(), ListProjectTaskResultsRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+		Limit:         10,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, contract, results[0].Contract)
+	require.Equal(t, TaskResultDecisionBlockedResolvableUpstream, results[0].Decision)
+	require.NotNil(t, repo.tasks[0].LatestTaskResultID)
+	require.Equal(t, results[0].ID, *repo.tasks[0].LatestTaskResultID)
+}
+
 func TestSubmitProjectTaskAttemptResultRetryableFailedQueuesRetryAndKeepsLatestResult(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}

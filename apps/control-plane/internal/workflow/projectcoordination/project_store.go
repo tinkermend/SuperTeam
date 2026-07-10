@@ -819,7 +819,7 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			RequiresHumanApproval:     owner.RequiresHumanApproval,
 			CoordinationJobID:         source.CoordinationJobID,
 			RouteDecisionID:           source.RouteDecisionID,
-			PlannedTaskKey:            owner.PlannedTaskKey,
+			PlannedTaskKey:            upstreamSupplementTaskKey(owner, planIteration),
 			TaskKind:                  owner.TaskKind,
 			StageIndex:                owner.StageIndex,
 			RevisionOfTaskID:          &owner.ID,
@@ -3227,6 +3227,23 @@ func revisionTaskKey(source project.ProjectTask, result project.ProjectTaskResul
 	key := base + "#revision-" + result.ID.String()[:8]
 	if len(key) > 100 {
 		key = source.ID.String()[:8] + "#revision-" + result.ID.String()[:8]
+	}
+	return &key
+}
+
+// upstreamSupplementTaskKey derives a planned_task_key for a supplement task
+// that is distinct from the owner's own key. The owner keeps its original key
+// within the same coordination job, so copying it verbatim collides with
+// uq_project_tasks_coordination_planned_key; each graph-extension round gets
+// its own suffix instead.
+func upstreamSupplementTaskKey(owner project.ProjectTask, planIteration int32) *string {
+	base := owner.ID.String()
+	if owner.PlannedTaskKey != nil && strings.TrimSpace(*owner.PlannedTaskKey) != "" {
+		base = strings.TrimSpace(*owner.PlannedTaskKey)
+	}
+	key := base + "#upstream-supplement-" + strconv.Itoa(int(planIteration))
+	if len(key) > 100 {
+		key = owner.ID.String()[:8] + "#upstream-supplement-" + strconv.Itoa(int(planIteration))
 	}
 	return &key
 }

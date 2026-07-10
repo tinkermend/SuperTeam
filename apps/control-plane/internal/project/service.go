@@ -3083,9 +3083,66 @@ func (s *Service) routeNonCompletedProjectTaskAttemptResult(ctx context.Context,
 			ResultContract:                   &req.ResultContract,
 		})
 		return err
+	case TaskResultDecisionBlockedResolvableUpstream:
+		return s.signalUpstreamSupplementResolvable(ctx, req)
 	default:
 		return ErrInvalidProjectEvidence
 	}
+}
+
+// signalUpstreamSupplementResolvable reacts to a blocked_resolvable_upstream
+// result without opening a human decision: the platform, not a human, resolves
+// the missing input by locating its producer (see CreateUpstreamSupplementTasks).
+// The result contract is already persisted by recordProjectTaskAttemptResult; this
+// only needs to append the audit event and signal the coordinator workflow so
+// handleEmployeeTaskCompleted can re-derive the decision and append the supplement.
+func (s *Service) signalUpstreamSupplementResolvable(ctx context.Context, req SubmitProjectTaskAttemptResultRequest) error {
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return err
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskResultBlocked,
+		ActorType:    "digital_employee",
+		ActorID:      digitalEmployeeIDStringForProjectTask(task),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务缺少上游产出，需要上游补做",
+		Payload: map[string]any{
+			"project_task_id": task.ID.String(),
+			"missing_inputs":  req.ResultContract.Blocker.MissingInputs,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
+		TenantID:         req.TenantID,
+		ProjectID:        task.ProjectID,
+		ProjectTaskID:    task.ID,
+		CompletedEventID: event.ID,
+		WorkflowID:       projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EmployeeTaskCompleted", "failed", err, map[string]any{
+			"project_task_id":    task.ID.String(),
+			"completed_event_id": event.ID.String(),
+		})
+		return err
+	}
+	return nil
+}
+
+func digitalEmployeeIDStringForProjectTask(task ProjectTask) string {
+	if task.AssignedDigitalEmployeeID != nil {
+		return task.AssignedDigitalEmployeeID.String()
+	}
+	return ""
 }
 
 func (s *Service) routeRejectedProjectTaskAttemptResult(ctx context.Context, runtimeReq ProjectTaskAttemptRuntimeRequest, result ProjectTaskResult, contract TaskResultContract, validation TaskResultValidation) error {
