@@ -273,10 +273,9 @@ func buildPlannerSystemPrompt() string {
 		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, planner_metadata object.",
 		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, employee_selection_reason, required_capabilities, matched_capabilities, missing_capabilities, permission_requirements, tool_requirements, runtime_requirements, verification_requirements, selection_score, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
-		"For every task, choose selected_employee_id by comparing planning_profile facts; explain the choice in employee_selection_reason and copy the required, matched, and missing capability arrays.",
+		"For every task, choose selected_employee_id by comparing planning_profile facts and explain the choice in employee_selection_reason. The capability arrays are advisory annotations shown to a human reviewer; they never gate dispatch.",
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
-		"A task with missing_capabilities must set requires_human_approval or make the whole route requires_human_review true.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
 }
