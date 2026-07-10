@@ -308,6 +308,7 @@ type startSessionDependencies struct {
 	runtimeSkills []skill.SkillRuntimeRecord
 	runtimeEnv    []RuntimeEnvironmentVariablePayload
 	runtimeMCP    []RuntimeMCPServerPayload
+	configInput   EmployeeConfigInput
 }
 
 func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, deps startSessionDependencies) (*DigitalEmployeeRun, error) {
@@ -315,11 +316,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 		return run, nil
 	}
 
-	workspaceFiles, err := s.repository.ListWorkspaceFilesForSync(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("list workspace files for start session: %w", err)
-	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
+	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -405,6 +402,11 @@ type SkillDependencyEvaluation struct {
 
 func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
 	var deps startSessionDependencies
+	configInput, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, tenantID, digitalEmployeeID)
+	if err != nil {
+		return deps, fmt.Errorf("get latest employee config revision: %w", err)
+	}
+	deps.configInput = configInput
 	if s.skillLister != nil {
 		runtimeSkills, err := s.skillLister.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
 		if err != nil {
@@ -898,23 +900,23 @@ func validateProjectTaskRunPreflight(preflight StartProjectTaskRunPreflight) err
 
 func projectTaskRunPreflightToRunPreflight(preflight StartProjectTaskRunPreflight, executionInstanceID uuid.UUID, agentHomeDir string) RunPreflight {
 	return RunPreflight{
-		TenantID:                   preflight.TenantID,
-		TeamID:                     preflight.TeamID,
-		DigitalEmployeeID:          preflight.DigitalEmployeeID,
-		DigitalEmployeeStatus:      preflight.DigitalEmployeeStatus,
-		ExecutionInstanceID:        executionInstanceID,
-		ExecutionStatus:            ExecutionInstanceStatusReady,
-		RuntimeNodeID:              preflight.RuntimeNodeID,
-		NodeID:                     preflight.NodeID,
-		ProviderType:               preflight.ProviderType,
-		AgentHomeDir:               agentHomeDir,
-		RuntimeSelector:            map[string]any{"source": "project_placement", "node_id": preflight.NodeID},
-		SessionPolicy:              map[string]any{"resume": true},
-		WorkspacePolicy:            map[string]any{"workspace_base_dir": preflight.WorkspaceBaseDir},
-		BudgetPolicy:               cloneMap(preflight.BudgetPolicy),
-		TodayTokenUsage:            preflight.TodayTokenUsage,
-		BusinessTimezone:           preflight.BusinessTimezone,
-		ProviderHealthy:            preflight.ProviderHealthy,
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID,
+		DigitalEmployeeID:     preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus: preflight.DigitalEmployeeStatus,
+		ExecutionInstanceID:   executionInstanceID,
+		ExecutionStatus:       ExecutionInstanceStatusReady,
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		ProviderType:          preflight.ProviderType,
+		AgentHomeDir:          agentHomeDir,
+		RuntimeSelector:       map[string]any{"source": "project_placement", "node_id": preflight.NodeID},
+		SessionPolicy:         map[string]any{"resume": true},
+		WorkspacePolicy:       map[string]any{"workspace_base_dir": preflight.WorkspaceBaseDir},
+		BudgetPolicy:          cloneMap(preflight.BudgetPolicy),
+		TodayTokenUsage:       preflight.TodayTokenUsage,
+		BusinessTimezone:      preflight.BusinessTimezone,
+		ProviderHealthy:       preflight.ProviderHealthy,
 	}
 }
 
@@ -1026,27 +1028,27 @@ func computeRunIdempotencyFingerprint(req CreateDigitalEmployeeRunRequest, objec
 
 func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, fingerprint string) map[string]any {
 	return map[string]any{
-		"provider_run_protocol":         providerRunProtocol,
-		"objective":                     objective,
-		"prompt":                        prompt,
-		"context_refs":                  req.ContextRefs,
-		"artifact_refs":                 req.ArtifactRefs,
-		"output_schema":                 req.OutputSchema,
-		"allowed_actions":               req.AllowedActions,
-		"forbidden_actions":             req.ForbiddenActions,
-		"secret_refs":                   req.SecretRefs,
-		"timeout_sec":                   req.TimeoutSec,
-		"grace_sec":                     req.GraceSec,
-		"metadata":                      cloneMap(req.Metadata),
-		"workspace_policy":              cloneMap(preflight.WorkspacePolicy),
-		"session_policy":                runtimeSessionPolicyPayload(preflight.SessionPolicy),
-		"runtime_selector":              cloneMap(preflight.RuntimeSelector),
-		"idempotency_fingerprint":       fingerprint,
-		"provider_healthy":              preflight.ProviderHealthy,
+		"provider_run_protocol":   providerRunProtocol,
+		"objective":               objective,
+		"prompt":                  prompt,
+		"context_refs":            req.ContextRefs,
+		"artifact_refs":           req.ArtifactRefs,
+		"output_schema":           req.OutputSchema,
+		"allowed_actions":         req.AllowedActions,
+		"forbidden_actions":       req.ForbiddenActions,
+		"secret_refs":             req.SecretRefs,
+		"timeout_sec":             req.TimeoutSec,
+		"grace_sec":               req.GraceSec,
+		"metadata":                cloneMap(req.Metadata),
+		"workspace_policy":        cloneMap(preflight.WorkspacePolicy),
+		"session_policy":          runtimeSessionPolicyPayload(preflight.SessionPolicy),
+		"runtime_selector":        cloneMap(preflight.RuntimeSelector),
+		"idempotency_fingerprint": fingerprint,
+		"provider_healthy":        preflight.ProviderHealthy,
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
@@ -1056,37 +1058,38 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		}
 	}
 	return map[string]any{
-		"provider_run_protocol": providerRunProtocol,
-		"tenant_id":             req.TenantID.String(),
-		"team_id":               preflight.TeamID.String(),
-		"task_id":               run.TaskID.String(),
-		"run_id":                run.ID.String(),
-		"command_id":            run.CommandID,
-		"digital_employee_id":   req.DigitalEmployeeID.String(),
-		"execution_instance_id": preflight.ExecutionInstanceID.String(),
-		"runtime_node_id":       preflight.RuntimeNodeID.String(),
-		"node_id":               preflight.NodeID,
-		"provider_type":         preflight.ProviderType,
-		"agent_home_dir":        preflight.AgentHomeDir,
-		"objective":             objective,
-		"prompt":                prompt,
-		"input":                 prompt,
-		"context_refs":          req.ContextRefs,
-		"artifact_refs":         req.ArtifactRefs,
-		"output_schema":         req.OutputSchema,
-		"allowed_actions":       req.AllowedActions,
-		"forbidden_actions":     req.ForbiddenActions,
-		"secret_refs":           req.SecretRefs,
-		"timeout_sec":           req.TimeoutSec,
-		"grace_sec":             req.GraceSec,
-		"workspace_policy":      cloneMap(preflight.WorkspacePolicy),
-		"session_policy":        runtimeSessionPolicyPayload(preflight.SessionPolicy),
-		"runtime_selector":      cloneMap(preflight.RuntimeSelector),
-		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
-		"skills":                runtimeSkillsPayload(runtimeSkills),
-		"environment":           runtimeEnvironmentPayload(runtimeEnv),
-		"mcp_servers":           startSessionMCPServersPayload(runtimeMCPServers),
-		"metadata":              metadata,
+		"provider_run_protocol":   providerRunProtocol,
+		"tenant_id":               req.TenantID.String(),
+		"team_id":                 preflight.TeamID.String(),
+		"task_id":                 run.TaskID.String(),
+		"run_id":                  run.ID.String(),
+		"command_id":              run.CommandID,
+		"digital_employee_id":     req.DigitalEmployeeID.String(),
+		"execution_instance_id":   preflight.ExecutionInstanceID.String(),
+		"runtime_node_id":         preflight.RuntimeNodeID.String(),
+		"node_id":                 preflight.NodeID,
+		"provider_type":           preflight.ProviderType,
+		"agent_home_dir":          preflight.AgentHomeDir,
+		"persona_memory_markdown": configInput.PersonaMemoryMarkdown,
+		"capability_bindings":     cloneMap(configInput.CapabilityBindings),
+		"objective":               objective,
+		"prompt":                  prompt,
+		"input":                   prompt,
+		"context_refs":            req.ContextRefs,
+		"artifact_refs":           req.ArtifactRefs,
+		"output_schema":           req.OutputSchema,
+		"allowed_actions":         req.AllowedActions,
+		"forbidden_actions":       req.ForbiddenActions,
+		"secret_refs":             req.SecretRefs,
+		"timeout_sec":             req.TimeoutSec,
+		"grace_sec":               req.GraceSec,
+		"workspace_policy":        cloneMap(preflight.WorkspacePolicy),
+		"session_policy":          runtimeSessionPolicyPayload(preflight.SessionPolicy),
+		"runtime_selector":        cloneMap(preflight.RuntimeSelector),
+		"skills":                  runtimeSkillsPayload(runtimeSkills),
+		"environment":             runtimeEnvironmentPayload(runtimeEnv),
+		"mcp_servers":             startSessionMCPServersPayload(runtimeMCPServers),
+		"metadata":                metadata,
 	}
 }
 

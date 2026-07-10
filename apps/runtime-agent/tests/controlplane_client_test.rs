@@ -279,39 +279,7 @@ async fn test_heartbeat_integration() {
 }
 
 #[tokio::test]
-#[ignore]
-async fn test_claim_task_timeout() {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let node_id = format!("test-node-{}", timestamp);
-    let client = ControlPlaneClient::with_node_id("http://localhost:8080", "test-token", &node_id);
-
-    // Register first
-    let register_req = RegisterNodeRequest {
-        node_id: node_id.clone(),
-        name: "Claim Test Node".to_string(),
-        supported_providers: vec!["claude-code".to_string()],
-        max_slots: 5,
-        metadata: None,
-    };
-
-    client.register(register_req).await.unwrap();
-
-    // Try to claim with short timeout (should return None if no tasks)
-    let result = client.claim_task(2).await;
-    assert!(result.is_ok(), "Claim should succeed: {:?}", result);
-
-    // Should be None if no tasks available
-    let task = result.unwrap();
-    if task.is_none() {
-        println!("No tasks available (expected in test environment)");
-    }
-}
-
-#[tokio::test]
-async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
+async fn controlplane_client_heartbeat_sends_runtime_identity_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (request_tx, request_rx) = oneshot::channel();
@@ -321,24 +289,40 @@ async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
         let request = read_http_request(&mut socket).await;
         let _ = request_tx.send(request);
 
-        socket
-            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-            .await
-            .unwrap();
+        write_json_response(
+            &mut socket,
+            serde_json::json!({
+                "node_id": "node-1",
+                "name": "runtime-node-1",
+                "supported_providers": [],
+                "required_tools": [],
+                "max_slots": 5,
+                "current_load": 0,
+                "status": "online",
+                "metadata": null,
+                "last_heartbeat_at": "2026-06-02T00:00:00Z",
+                "created_at": "2026-06-02T00:00:00Z",
+                "updated_at": "2026-06-02T00:00:00Z"
+            }),
+        )
+        .await;
     });
 
     let client =
         ControlPlaneClient::with_node_id(format!("http://{}", addr), "test-token", "node-1");
-    let result = client.claim_task(7).await.unwrap();
+    let result = client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await
+        .unwrap();
 
-    assert!(result.is_none());
+    assert_eq!(result.node_id, "node-1");
 
     let request = request_rx.await.unwrap();
     let request_line = request.lines().next().unwrap();
-    assert_eq!(
-        request_line,
-        "POST /api/v1/runtime/tasks/claim?timeout=7 HTTP/1.1"
-    );
+    assert_eq!(request_line, "POST /api/v1/runtime/heartbeat HTTP/1.1");
     assert!(request.contains("authorization: Bearer test-token"));
     assert!(request.contains("x-node-id: node-1"));
 }
@@ -356,10 +340,23 @@ async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
             request_tx.send(request).await.unwrap();
-            socket
-                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-                .await
-                .unwrap();
+            write_json_response(
+                &mut socket,
+                serde_json::json!({
+                    "node_id": "node-1",
+                    "name": "runtime-node-1",
+                    "supported_providers": [],
+                    "required_tools": [],
+                    "max_slots": 5,
+                    "current_load": 0,
+                    "status": "online",
+                    "metadata": null,
+                    "last_heartbeat_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                }),
+            )
+            .await;
         }
     });
 
@@ -369,11 +366,23 @@ async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
         .expect("initial session");
     let client = ControlPlaneClient::with_runtime_auth(format!("http://{}", addr), auth.clone());
 
-    client.claim_task(1).await.unwrap();
+    client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await
+        .unwrap();
     auth.set_session("session-2", "token-two", "2999-06-03T00:00:00Z")
         .await
         .expect("refreshed session");
-    client.claim_task(1).await.unwrap();
+    client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await
+        .unwrap();
 
     let first = request_rx.recv().await.expect("first request");
     let second = request_rx.recv().await.expect("second request");
@@ -407,7 +416,13 @@ async fn controlplane_client_classifies_runtime_auth_unauthorized() {
         .expect("session");
     let client = ControlPlaneClient::with_runtime_auth(format!("http://{}", addr), auth.clone());
 
-    let error = client.claim_task(1).await.expect_err("claim should fail");
+    let error = client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await
+        .expect_err("heartbeat should fail");
     assert!(is_runtime_auth_expired(error.as_ref()));
     assert_eq!(
         auth.snapshot().await.status,
@@ -589,4 +604,18 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+async fn write_json_response(socket: &mut TcpStream, body: serde_json::Value) {
+    write_status_response(socket, "200 OK", body).await;
+}
+
+async fn write_status_response(socket: &mut TcpStream, status: &str, body: serde_json::Value) {
+    let payload = body.to_string();
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        payload.len(),
+        payload
+    );
+    socket.write_all(response.as_bytes()).await.unwrap();
 }

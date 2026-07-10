@@ -413,7 +413,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	skillInstallService := skill.NewInstallService(skillRepository, runtimeCommands, skill.InstallServiceOptions{})
 	skillService.SetInstallService(skillInstallService)
 	runtimeService.SetRequiredToolsResolver(skillService)
-	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands, skillService)
+	employeeService, err := employee.NewService(employeeRepository)
 	if err != nil {
 		return nil, err
 	}

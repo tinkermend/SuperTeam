@@ -41,7 +41,9 @@ impl CodexProvider {
             command.arg("--skip-git-repo-check");
         } else {
             command.arg("--json");
-            command.arg("--cd").arg(codex_cd_arg(&request.workspace_path));
+            command
+                .arg("--cd")
+                .arg(codex_cd_arg(&request.workspace_path));
             command.arg("--dangerously-bypass-approvals-and-sandbox");
             command.arg("--skip-git-repo-check");
         }

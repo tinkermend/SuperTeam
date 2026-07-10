@@ -107,7 +107,10 @@ printf '%s\n' '{"type":"turn.completed"}'
             ProviderEvent::TextDelta {
                 text: "hello from opencode".to_string()
             },
-            ProviderEvent::TurnCompleted { summary: None, usage: None },
+            ProviderEvent::TurnCompleted {
+                summary: None,
+                usage: None
+            },
         ]
     );
 }

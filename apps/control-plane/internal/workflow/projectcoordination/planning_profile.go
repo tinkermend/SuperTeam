@@ -16,7 +16,7 @@ import (
 type DigitalEmployeePlanningProfile struct {
 	DigitalEmployeeID   uuid.UUID                   `json:"digital_employee_id"`
 	DisplayName         string                      `json:"display_name,omitempty"`
-	RoleProfile         PlanningRoleProfile         `json:"role_profile"`
+	RoleProfile         PlanningRoleProfile         `json:"employee_profile"`
 	Capabilities        []PlanningCapability        `json:"capabilities,omitempty"`
 	Skills              []PlanningSkill             `json:"skills,omitempty"`
 	ToolBindings        []PlanningToolBinding       `json:"tool_bindings,omitempty"`
@@ -32,10 +32,11 @@ type DigitalEmployeePlanningProfile struct {
 }
 
 type PlanningRoleProfile struct {
-	PrimaryRole  string `json:"primary_role,omitempty"`
-	Description  string `json:"description,omitempty"`
-	EmployeeType string `json:"employee_type,omitempty"`
-	SourceRole   string `json:"source_role,omitempty"`
+	PrimaryRole    string `json:"primary_role,omitempty"`
+	Description    string `json:"description,omitempty"`
+	EmployeeType   string `json:"employee_type,omitempty"`
+	SourceRole     string `json:"source_role,omitempty"`
+	PersonaSummary string `json:"persona_summary,omitempty"`
 }
 
 type PlanningCapability struct {
@@ -99,9 +100,10 @@ type DigitalEmployeePlanningProfileSourceRecord struct {
 	DigitalEmployeeID     uuid.UUID      `json:"digital_employee_id"`
 	EmployeeType          string         `json:"employee_type,omitempty"`
 	Role                  string         `json:"role,omitempty"`
+	Description           string         `json:"description,omitempty"`
+	PersonaMemoryMarkdown string         `json:"persona_memory_markdown,omitempty"`
 	EmployeeStatus        string         `json:"employee_status,omitempty"`
-	RoleProfile           map[string]any `json:"role_profile,omitempty"`
-	CapabilitySelection   map[string]any `json:"capability_selection,omitempty"`
+	CapabilityBindings    map[string]any `json:"capability_bindings,omitempty"`
 	PermissionPolicy      map[string]any `json:"permission_policy,omitempty"`
 	ContextPolicy         map[string]any `json:"context_policy,omitempty"`
 	RuntimeNodeID         uuid.UUID      `json:"runtime_node_id,omitempty"`
@@ -140,9 +142,9 @@ func BuildDigitalEmployeePlanningProfile(member project.ProjectMember, source Di
 		DigitalEmployeeID:   member.PrincipalID,
 		DisplayName:         displayNameFromMember(member),
 		RoleProfile:         buildPlanningRoleProfile(member, source),
-		Capabilities:        buildPlanningCapabilities(source.CapabilitySelection),
-		Skills:              buildPlanningSkills(source.CapabilitySelection),
-		ToolBindings:        buildPlanningToolBindings(source.CapabilitySelection),
+		Capabilities:        buildPlanningCapabilities(source.CapabilityBindings),
+		Skills:              buildPlanningSkills(source.CapabilityBindings),
+		ToolBindings:        buildPlanningToolBindings(source.CapabilityBindings),
 		RuntimeRequirements: buildPlanningRuntimeRequirements(source, runtimeReady, sourceMissing),
 		Permissions:         buildPlanningPermissions(source.PermissionPolicy),
 		ContextPolicy:       buildPlanningContextPolicy(source.ContextPolicy),
@@ -228,10 +230,11 @@ func hasPlanningSelectionEvidence(task PlannedTask) bool {
 
 func buildPlanningRoleProfile(member project.ProjectMember, source DigitalEmployeePlanningProfileSourceRecord) PlanningRoleProfile {
 	roleProfile := PlanningRoleProfile{
-		PrimaryRole:  normalizePlanningString(stringFromMap(source.RoleProfile, "primary_role")),
-		Description:  strings.TrimSpace(stringFromMap(source.RoleProfile, "description")),
-		EmployeeType: normalizePlanningString(source.EmployeeType),
-		SourceRole:   strings.TrimSpace(source.Role),
+		PrimaryRole:    normalizePlanningString(source.Role),
+		Description:    strings.TrimSpace(source.Description),
+		EmployeeType:   normalizePlanningString(source.EmployeeType),
+		SourceRole:     strings.TrimSpace(source.Role),
+		PersonaSummary: firstNonEmptyLine(source.PersonaMemoryMarkdown),
 	}
 	if roleProfile.PrimaryRole == "" {
 		roleProfile.PrimaryRole = normalizePlanningString(stringFromMap(member.Settings, "planning_role"))
@@ -245,34 +248,34 @@ func buildPlanningRoleProfile(member project.ProjectMember, source DigitalEmploy
 	return roleProfile
 }
 
-func buildPlanningCapabilities(capabilitySelection map[string]any) []PlanningCapability {
-	keys := stringSliceFromMap(capabilitySelection, "enabled_external_capabilities")
+func buildPlanningCapabilities(capabilityBindings map[string]any) []PlanningCapability {
+	keys := stringSliceFromMap(capabilityBindings, "external_capabilities")
 	capabilities := make([]PlanningCapability, 0, len(keys))
 	for _, key := range keys {
 		capabilities = append(capabilities, PlanningCapability{
 			Key:        key,
 			Level:      "strong",
-			Source:     "capability_selection.enabled_external_capabilities",
+			Source:     "capability_bindings.external_capabilities",
 			Confidence: 0.9,
 		})
 	}
 	return capabilities
 }
 
-func buildPlanningSkills(capabilitySelection map[string]any) []PlanningSkill {
-	keys := stringSliceFromMap(capabilitySelection, "enabled_skills")
+func buildPlanningSkills(capabilityBindings map[string]any) []PlanningSkill {
+	keys := stringSliceFromMap(capabilityBindings, "skills")
 	skills := make([]PlanningSkill, 0, len(keys))
 	for _, key := range keys {
 		skills = append(skills, PlanningSkill{
 			Key:    key,
-			Source: "capability_selection.enabled_skills",
+			Source: "capability_bindings.skills",
 		})
 	}
 	return skills
 }
 
-func buildPlanningToolBindings(capabilitySelection map[string]any) []PlanningToolBinding {
-	keys := stringSliceFromMap(capabilitySelection, "enabled_mcp_servers")
+func buildPlanningToolBindings(capabilityBindings map[string]any) []PlanningToolBinding {
+	keys := stringSliceFromMap(capabilityBindings, "mcp_servers")
 	tools := make([]PlanningToolBinding, 0, len(keys))
 	for _, key := range keys {
 		tools = append(tools, PlanningToolBinding{
@@ -285,9 +288,7 @@ func buildPlanningToolBindings(capabilitySelection map[string]any) []PlanningToo
 }
 
 func buildPlanningRuntimeRequirements(source DigitalEmployeePlanningProfileSourceRecord, runtimeReady bool, sourceMissing bool) PlanningRuntimeRequirements {
-	requirements := PlanningRuntimeRequirements{
-		ProviderTypes: stringSliceFromMap(source.CapabilitySelection, "enabled_provider_types"),
-	}
+	requirements := PlanningRuntimeRequirements{}
 	if !runtimeReady {
 		requirements.DispatchReadinessStatus = "not_ready"
 		requirements.DispatchBlockingReasons = []string{"runtime_not_ready"}
@@ -521,20 +522,17 @@ func planningProfileSourceMissing(source DigitalEmployeePlanningProfileSourceRec
 func planningProfileSourceHasFacts(source DigitalEmployeePlanningProfileSourceRecord) bool {
 	if normalizePlanningString(source.EmployeeType) != "" ||
 		normalizePlanningString(source.Role) != "" ||
+		strings.TrimSpace(source.Description) != "" ||
+		firstNonEmptyLine(source.PersonaMemoryMarkdown) != "" ||
 		normalizePlanningString(source.EmployeeStatus) != "" ||
 		normalizePlanningString(source.ProviderType) != "" ||
 		normalizePlanningString(source.ExecutionStatus) != "" ||
 		source.RuntimeNodeID != uuid.Nil {
 		return true
 	}
-	if normalizePlanningString(stringFromMap(source.RoleProfile, "primary_role")) != "" ||
-		strings.TrimSpace(stringFromMap(source.RoleProfile, "description")) != "" {
-		return true
-	}
-	if len(buildPlanningCapabilities(source.CapabilitySelection)) > 0 ||
-		len(buildPlanningSkills(source.CapabilitySelection)) > 0 ||
-		len(buildPlanningToolBindings(source.CapabilitySelection)) > 0 ||
-		len(stringSliceFromMap(source.CapabilitySelection, "enabled_provider_types")) > 0 {
+	if len(buildPlanningCapabilities(source.CapabilityBindings)) > 0 ||
+		len(buildPlanningSkills(source.CapabilityBindings)) > 0 ||
+		len(buildPlanningToolBindings(source.CapabilityBindings)) > 0 {
 		return true
 	}
 	if len(buildPlanningPermissions(source.PermissionPolicy)) > 0 {
@@ -564,6 +562,16 @@ func displayNameFromMember(member project.ProjectMember) string {
 
 func normalizePlanningString(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func firstNonEmptyLine(value string) string {
+	for _, line := range strings.Split(value, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func stringFromMap(values map[string]any, key string) string {

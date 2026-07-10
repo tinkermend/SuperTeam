@@ -8,7 +8,7 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { StatusPill } from "@/components/superteam";
+import { SoftCard, StatusPill } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,8 +24,10 @@ import {
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
+  type DigitalEmployee,
   type DigitalEmployeeDeleteBlockedErrorResponse,
   type DigitalEmployeeDeleteBlocker,
+  type DigitalEmployeeExecutionInstance,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
@@ -130,12 +132,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   const instanceNotFound =
     instance.error instanceof ApiRequestError && instance.error.status === 404;
-  const effectiveConfigState = {
-    isLoading: false,
-    isError: false,
-    noApprovedConfig: true,
-  };
-
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
   const personalSkillCount = skillsQuery.data?.filter((skill) => !skill.inherited).length ?? 0;
@@ -255,10 +251,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             />
 
             <EmployeeMetricsStrip
-              commandChannelConnected={runtimeNode?.command_channel_connected ?? false}
+              commandChannelConnected={runtimeNode?.command_channel_connected}
               currentStatusLabel={employee.data.status}
-              providerType={instance.data?.provider_type ?? "未绑定"}
-              runtimeNodeLabel={instance.data?.runtime_node_id ?? "未绑定"}
+              providerType={providerDisplayName(employee.data.provider_type)}
+              runtimeNodeLabel={instance.data?.runtime_node_id ?? "由项目运行时决定"}
               stats={runStats.data}
             />
 
@@ -291,7 +287,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                   readiness={schedulingReadiness.data}
                 />
                 <EffectiveContextPanel
-                  effectiveConfig={effectiveConfigState}
                   employee={employee.data}
                   employeeId={employeeId}
                   envVars={{
@@ -324,10 +319,16 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             <ContextInjectionChain
               envConfiguredCount={configuredEnvCount}
               envTotalCount={envVarsQuery.data?.length ?? 0}
+              hasPersonaMemory={Boolean(employee.data.persona_memory_markdown?.trim())}
               inheritedSkillCount={inheritedSkillCount}
               mcpCount={mcpQuery.data?.length ?? 0}
               personalSkillCount={personalSkillCount}
               roleLabel={employee.data.role}
+            />
+
+            <EmployeeConfigSnapshotSection
+              employee={employee.data}
+              executionInstance={instance.data}
             />
           </div>
         ) : null}
@@ -482,4 +483,67 @@ function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker 
       </p>
     </li>
   );
+}
+
+function EmployeeConfigSnapshotSection({
+  employee,
+  executionInstance,
+}: {
+  employee: DigitalEmployee;
+  executionInstance?: DigitalEmployeeExecutionInstance;
+}) {
+  const metadata = employee.metadata ?? {};
+  const runtimeState = {
+    effective_config_label: metadata.effective_config_label,
+    effective_config_status: metadata.effective_config_status,
+    execution_instance_status: executionInstance?.status,
+    provider_type: employee.provider_type,
+    runtime_node_id: executionInstance?.runtime_node_id,
+  };
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <ConfigSnapshotCard label="人格记忆.md" value={employee.persona_memory_markdown || "未设置"} />
+      <ConfigSnapshotCard
+        label="能力绑定"
+        value={formatConfigSnapshotJson(employee.capability_bindings ?? {})}
+      />
+      <ConfigSnapshotCard label="预算策略" value={formatConfigSnapshotJson(employee.budget_policy ?? {})} />
+      <ConfigSnapshotCard
+        label="运行与缓存状态"
+        value={hasRuntimeState(runtimeState) ? formatConfigSnapshotJson(runtimeState) : "暂无运行与缓存状态"}
+      />
+    </section>
+  );
+}
+
+function ConfigSnapshotCard({ label, value }: { label: string; value: string }) {
+  return (
+    <SoftCard className="p-4">
+      <div className="text-sm font-semibold text-v3-ink">{label}</div>
+      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-[14px] border border-v3-line bg-v3-card-soft p-3 font-mono text-xs text-v3-ink">
+        {value}
+      </pre>
+    </SoftCard>
+  );
+}
+
+function formatConfigSnapshotJson(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2);
+}
+
+function hasRuntimeState(value: Record<string, unknown>) {
+  return Object.values(value).some((item) => item !== undefined && item !== "");
+}
+
+function providerDisplayName(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  const labels: Record<string, string> = {
+    codex: "Codex",
+    opencode: "OpenCode",
+    "open-code": "OpenCode",
+    "claude-code": "Claude Code",
+    claude: "Claude Code",
+  };
+  return labels[normalized] ?? value;
 }

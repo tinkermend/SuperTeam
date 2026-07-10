@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,57 @@ func TestOverviewInt32FromJSONString(t *testing.T) {
 	require.Equal(t, int32(1600), int32FromJSONString("1600"))
 	require.Equal(t, int32(0), int32FromJSONString(""))
 	require.Equal(t, int32(0), int32FromJSONString("not-a-number"))
+}
+
+func TestDigitalEmployeeConfigRevisionQueryMappingUsesFinalFields(t *testing.T) {
+	row := queries.GetDigitalEmployeeConfigRevisionRow{
+		ID:                    uuid.New(),
+		TenantID:              uuid.New(),
+		DigitalEmployeeID:     uuid.New(),
+		RevisionNumber:        3,
+		PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+		CapabilityBindings:    []byte(`{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"],"environment_variable_refs":["PG_DSN"]}`),
+		BudgetPolicy:          []byte(`{"daily_token_limit":50000}`),
+		Status:                string(ConfigRevisionStatusActive),
+		CreatedAt:             pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedAt:             pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+
+	input, err := employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    row.ID,
+		tenantID:              row.TenantID,
+		digitalEmployeeID:     row.DigitalEmployeeID,
+		revisionNumber:        row.RevisionNumber,
+		personaMemoryMarkdown: row.PersonaMemoryMarkdown,
+		capabilityBindings:    row.CapabilityBindings,
+		budgetPolicy:          row.BudgetPolicy,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "# 人格画像\n证据优先", input.PersonaMemoryMarkdown)
+	require.Equal(t, []any{"incident-diagnosis"}, input.CapabilityBindings["skills"])
+	require.Equal(t, float64(50000), input.BudgetPolicy["daily_token_limit"])
+
+	record, err := configRevisionRecordFromQuery(digitalEmployeeConfigRevisionRecordAdapter{
+		digitalEmployeeConfigRevisionQueryAdapter: digitalEmployeeConfigRevisionQueryAdapter{
+			id:                    row.ID,
+			tenantID:              row.TenantID,
+			digitalEmployeeID:     row.DigitalEmployeeID,
+			revisionNumber:        row.RevisionNumber,
+			personaMemoryMarkdown: row.PersonaMemoryMarkdown,
+			capabilityBindings:    row.CapabilityBindings,
+			budgetPolicy:          row.BudgetPolicy,
+		},
+		status:     row.Status,
+		approvedBy: row.ApprovedBy,
+		approvedAt: row.ApprovedAt,
+		archivedAt: row.ArchivedAt,
+		createdAt:  row.CreatedAt,
+		updatedAt:  row.UpdatedAt,
+	})
+	require.NoError(t, err)
+	require.Equal(t, input.PersonaMemoryMarkdown, record.PersonaMemoryMarkdown)
+	require.Equal(t, input.CapabilityBindings, record.CapabilityBindings)
+	require.Equal(t, input.BudgetPolicy, record.BudgetPolicy)
 }
 
 func TestGetTeamBaseline(t *testing.T) {
@@ -535,20 +587,24 @@ func TestEmployeeTemplateRepositoryCRUD(t *testing.T) {
 	require.Empty(t, seeded)
 
 	created, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
-		TenantID:                   tenantID,
-		Type:                       "custom_reviewer",
-		Label:                      "自定义评审员",
-		Description:                "自定义模板",
-		DefaultRole:                "custom_reviewer",
-		RecommendedSkills:          []string{"code-review"},
-		RecommendedMCPServers:      []string{},
-		RecommendedProviderTypes:   []string{"codex"},
-		DefaultCapabilitySelection: map[string]any{"enabled_skills": []string{"code-review"}},
+		TenantID:                 tenantID,
+		Type:                     "custom_reviewer",
+		Label:                    "自定义评审员",
+		Description:              "自定义模板",
+		DefaultRole:              "custom_reviewer",
+		RecommendedSkills:        []string{"code-review"},
+		RecommendedMCPServers:    []string{},
+		RecommendedProviderTypes: []string{"codex"},
+		PersonaMemoryMarkdown:    "# 人格画像\n评审优先",
+		CapabilityBindings:       map[string]any{"skills": []string{"code-review"}},
+		BudgetPolicy:             map[string]any{"daily_token_limit": float64(15000)},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "custom_reviewer", created.Type)
 	require.False(t, created.IsSystem)
 	require.Equal(t, "active", created.Status)
+	require.Equal(t, "# 人格画像\n评审优先", created.PersonaMemoryMarkdown)
+	require.Equal(t, float64(15000), created.BudgetPolicy["daily_token_limit"])
 
 	_, err = repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
 		TenantID: tenantID,

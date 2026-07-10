@@ -56,6 +56,29 @@ fn parses_valid_start_session_payload() {
 }
 
 #[test]
+fn parses_persona_memory_and_capability_bindings_for_session_payload() {
+    let mut payload = valid_payload();
+    payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
+    payload["capability_bindings"] = json!({
+        "skills": ["incident-diagnosis"],
+        "mcp_servers": ["postgres-readonly"],
+        "external_capabilities": [],
+        "environment_variable_refs": ["PG_DSN"]
+    });
+
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid");
+
+    assert_eq!(
+        parsed.persona_memory_markdown.as_deref(),
+        Some("# 人格画像\n证据优先")
+    );
+    assert_eq!(
+        parsed.capability_bindings["mcp_servers"][0],
+        "postgres-readonly"
+    );
+}
+
+#[test]
 fn project_workspace_accessor_exposes_capability_auth_attestation_and_budget_metadata() {
     let mut payload = valid_payload();
     payload["metadata"] = json!({
@@ -283,7 +306,7 @@ fn resume_session_requires_explicit_provider_session_id_even_when_mode_is_new() 
 }
 
 #[test]
-fn parses_valid_provision_payload_with_workspace_file() {
+fn parses_valid_provision_payload_with_generic_workspace_file() {
     let command = RuntimeCommand {
         id: "cmd-provision".to_string(),
         command_type: RuntimeCommandType::ProvisionInstance,
@@ -299,7 +322,7 @@ fn parses_valid_provision_payload_with_workspace_file() {
             "workspace_files": [{
                 "file_id": "55555555-5555-4555-8555-555555555555",
                 "revision_id": "66666666-6666-4666-8666-666666666666",
-                "path": "AGENTS.md",
+                "path": "context.md",
                 "file_role": "entrypoint",
                 "mime_type": "text/markdown",
                 "sync_policy": "auto",
@@ -318,9 +341,36 @@ fn parses_valid_provision_payload_with_workspace_file() {
         parsed.team_id.as_deref(),
         Some("11111111-1111-4111-8111-111111111111")
     );
-    assert_eq!(parsed.workspace_files[0].path, "AGENTS.md");
+    assert_eq!(parsed.workspace_files[0].path, "context.md");
     assert!(parsed.skills.is_empty());
     assert!(parsed.mcp_servers.is_empty());
+}
+
+#[test]
+fn rejects_instruction_workspace_files_in_provision_payload() {
+    let mut payload = valid_provision_payload("cmd-instruction-workspace-file");
+    payload["workspace_files"] = serde_json::json!([{
+        "file_id": "55555555-5555-4555-8555-555555555555",
+        "revision_id": "66666666-6666-4666-8666-666666666666",
+        "path": "docs/AGENTS.md",
+        "file_role": "entrypoint",
+        "mime_type": "text/markdown",
+        "sync_policy": "auto",
+        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649afbf4c8996fb92427ae",
+        "size_bytes": 0,
+        "storage_backend": "db",
+        "content_text": ""
+    }]);
+
+    let command = RuntimeCommand {
+        id: "cmd-instruction-workspace-file".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload,
+    };
+    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect_err("instruction workspace files must be rejected");
+
+    assert!(error.to_string().contains("instruction workspace file"));
 }
 
 #[test]
@@ -420,6 +470,33 @@ fn parses_provision_payload_with_effective_capabilities() {
         "public"
     );
     assert_eq!(parsed.mcp_servers[0].permission_scope["readonly"], true);
+}
+
+#[test]
+fn parses_persona_memory_and_capability_bindings_for_provision_payload() {
+    let mut command = RuntimeCommand {
+        id: "cmd-persona".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload: valid_provision_payload("cmd-persona"),
+    };
+    command.payload["persona_memory_markdown"] = serde_json::json!("# 人格画像\n证据优先");
+    command.payload["capability_bindings"] = serde_json::json!({
+        "skills": ["incident-diagnosis"],
+        "mcp_servers": ["postgres-readonly"],
+        "external_capabilities": [],
+        "environment_variable_refs": ["PG_DSN"]
+    });
+
+    let payload = RuntimeProvisionInstanceCommandPayload::from_command(&command).unwrap();
+
+    assert_eq!(
+        payload.persona_memory_markdown.as_deref(),
+        Some("# 人格画像\n证据优先")
+    );
+    assert_eq!(
+        payload.capability_bindings["skills"][0],
+        "incident-diagnosis"
+    );
 }
 
 fn valid_provision_payload(command_id: &str) -> serde_json::Value {

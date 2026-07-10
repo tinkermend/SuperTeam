@@ -15,27 +15,27 @@ const CreateEmployeeTemplate = `-- name: CreateEmployeeTemplate :one
 INSERT INTO digital_employee_templates (
   tenant_id, type, label, description, default_role,
   recommended_skills, recommended_mcp_servers, recommended_provider_types,
-  default_capability_selection, default_context_policy_override, default_approval_policy,
+  persona_memory_markdown, capability_bindings, budget_policy,
   metadata, status, is_system
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', false
 )
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
 `
 
 type CreateEmployeeTemplateParams struct {
-	TenantID                     uuid.UUID `json:"tenant_id"`
-	Type                         string    `json:"type"`
-	Label                        string    `json:"label"`
-	Description                  string    `json:"description"`
-	DefaultRole                  string    `json:"default_role"`
-	RecommendedSkills            []byte    `json:"recommended_skills"`
-	RecommendedMcpServers        []byte    `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []byte    `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   []byte    `json:"default_capability_selection"`
-	DefaultContextPolicyOverride []byte    `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        []byte    `json:"default_approval_policy"`
-	Metadata                     []byte    `json:"metadata"`
+	TenantID                 uuid.UUID `json:"tenant_id"`
+	Type                     string    `json:"type"`
+	Label                    string    `json:"label"`
+	Description              string    `json:"description"`
+	DefaultRole              string    `json:"default_role"`
+	RecommendedSkills        []byte    `json:"recommended_skills"`
+	RecommendedMcpServers    []byte    `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []byte    `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string    `json:"persona_memory_markdown"`
+	CapabilityBindings       []byte    `json:"capability_bindings"`
+	BudgetPolicy             []byte    `json:"budget_policy"`
+	Metadata                 []byte    `json:"metadata"`
 }
 
 func (q *Queries) CreateEmployeeTemplate(ctx context.Context, arg CreateEmployeeTemplateParams) (DigitalEmployeeTemplate, error) {
@@ -48,9 +48,9 @@ func (q *Queries) CreateEmployeeTemplate(ctx context.Context, arg CreateEmployee
 		arg.RecommendedSkills,
 		arg.RecommendedMcpServers,
 		arg.RecommendedProviderTypes,
-		arg.DefaultCapabilitySelection,
-		arg.DefaultContextPolicyOverride,
-		arg.DefaultApprovalPolicy,
+		arg.PersonaMemoryMarkdown,
+		arg.CapabilityBindings,
+		arg.BudgetPolicy,
 		arg.Metadata,
 	)
 	var i DigitalEmployeeTemplate
@@ -64,21 +64,21 @@ func (q *Queries) CreateEmployeeTemplate(ctx context.Context, arg CreateEmployee
 		&i.RecommendedSkills,
 		&i.RecommendedMcpServers,
 		&i.RecommendedProviderTypes,
-		&i.DefaultCapabilitySelection,
-		&i.DefaultContextPolicyOverride,
-		&i.DefaultApprovalPolicy,
 		&i.Metadata,
 		&i.Status,
 		&i.IsSystem,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
 
 const GetEmployeeTemplateByID = `-- name: GetEmployeeTemplateByID :one
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 `
 
@@ -100,21 +100,21 @@ func (q *Queries) GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTe
 		&i.RecommendedSkills,
 		&i.RecommendedMcpServers,
 		&i.RecommendedProviderTypes,
-		&i.DefaultCapabilitySelection,
-		&i.DefaultContextPolicyOverride,
-		&i.DefaultApprovalPolicy,
 		&i.Metadata,
 		&i.Status,
 		&i.IsSystem,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
 
 const GetEmployeeTemplateByType = `-- name: GetEmployeeTemplateByType :one
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
 WHERE tenant_id = $1 AND type = $2 AND deleted_at IS NULL
 `
 
@@ -136,15 +136,15 @@ func (q *Queries) GetEmployeeTemplateByType(ctx context.Context, arg GetEmployee
 		&i.RecommendedSkills,
 		&i.RecommendedMcpServers,
 		&i.RecommendedProviderTypes,
-		&i.DefaultCapabilitySelection,
-		&i.DefaultContextPolicyOverride,
-		&i.DefaultApprovalPolicy,
 		&i.Metadata,
 		&i.Status,
 		&i.IsSystem,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -181,7 +181,7 @@ func (q *Queries) ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.
 
 const ListEmployeeTemplates = `-- name: ListEmployeeTemplates :many
 
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
 WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
@@ -206,15 +206,15 @@ func (q *Queries) ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID)
 			&i.RecommendedSkills,
 			&i.RecommendedMcpServers,
 			&i.RecommendedProviderTypes,
-			&i.DefaultCapabilitySelection,
-			&i.DefaultContextPolicyOverride,
-			&i.DefaultApprovalPolicy,
 			&i.Metadata,
 			&i.Status,
 			&i.IsSystem,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PersonaMemoryMarkdown,
+			&i.CapabilityBindings,
+			&i.BudgetPolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -231,7 +231,7 @@ UPDATE digital_employee_templates SET
   status = $3,
   updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
 `
 
 type SetEmployeeTemplateStatusParams struct {
@@ -253,15 +253,15 @@ func (q *Queries) SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployee
 		&i.RecommendedSkills,
 		&i.RecommendedMcpServers,
 		&i.RecommendedProviderTypes,
-		&i.DefaultCapabilitySelection,
-		&i.DefaultContextPolicyOverride,
-		&i.DefaultApprovalPolicy,
 		&i.Metadata,
 		&i.Status,
 		&i.IsSystem,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -294,28 +294,28 @@ UPDATE digital_employee_templates SET
   recommended_skills = $6,
   recommended_mcp_servers = $7,
   recommended_provider_types = $8,
-  default_capability_selection = $9,
-  default_context_policy_override = $10,
-  default_approval_policy = $11,
+  persona_memory_markdown = $9,
+  capability_bindings = $10,
+  budget_policy = $11,
   metadata = $12,
   updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, default_capability_selection, default_context_policy_override, default_approval_policy, metadata, status, is_system, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
 `
 
 type UpdateEmployeeTemplateParams struct {
-	TenantID                     uuid.UUID `json:"tenant_id"`
-	ID                           uuid.UUID `json:"id"`
-	Label                        string    `json:"label"`
-	Description                  string    `json:"description"`
-	DefaultRole                  string    `json:"default_role"`
-	RecommendedSkills            []byte    `json:"recommended_skills"`
-	RecommendedMcpServers        []byte    `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []byte    `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   []byte    `json:"default_capability_selection"`
-	DefaultContextPolicyOverride []byte    `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        []byte    `json:"default_approval_policy"`
-	Metadata                     []byte    `json:"metadata"`
+	TenantID                 uuid.UUID `json:"tenant_id"`
+	ID                       uuid.UUID `json:"id"`
+	Label                    string    `json:"label"`
+	Description              string    `json:"description"`
+	DefaultRole              string    `json:"default_role"`
+	RecommendedSkills        []byte    `json:"recommended_skills"`
+	RecommendedMcpServers    []byte    `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []byte    `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string    `json:"persona_memory_markdown"`
+	CapabilityBindings       []byte    `json:"capability_bindings"`
+	BudgetPolicy             []byte    `json:"budget_policy"`
+	Metadata                 []byte    `json:"metadata"`
 }
 
 func (q *Queries) UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployeeTemplateParams) (DigitalEmployeeTemplate, error) {
@@ -328,9 +328,9 @@ func (q *Queries) UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployee
 		arg.RecommendedSkills,
 		arg.RecommendedMcpServers,
 		arg.RecommendedProviderTypes,
-		arg.DefaultCapabilitySelection,
-		arg.DefaultContextPolicyOverride,
-		arg.DefaultApprovalPolicy,
+		arg.PersonaMemoryMarkdown,
+		arg.CapabilityBindings,
+		arg.BudgetPolicy,
 		arg.Metadata,
 	)
 	var i DigitalEmployeeTemplate
@@ -344,15 +344,15 @@ func (q *Queries) UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployee
 		&i.RecommendedSkills,
 		&i.RecommendedMcpServers,
 		&i.RecommendedProviderTypes,
-		&i.DefaultCapabilitySelection,
-		&i.DefaultContextPolicyOverride,
-		&i.DefaultApprovalPolicy,
 		&i.Metadata,
 		&i.Status,
 		&i.IsSystem,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }

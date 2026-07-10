@@ -267,7 +267,7 @@ type DigitalEmployee struct {
 	ProviderType string `json:"provider_type"`
 }
 
-// 数字员工个人治理配置版本表
+// 数字员工个人配置版本表，保存人格记忆、能力绑定和预算策略
 type DigitalEmployeeConfigRevision struct {
 	// 数字员工个人配置版本ID
 	ID uuid.UUID `json:"id"`
@@ -277,18 +277,6 @@ type DigitalEmployeeConfigRevision struct {
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 	// 个人配置版本号，同一数字员工内递增
 	RevisionNumber int32 `json:"revision_number"`
-	// 角色画像，描述数字员工专业方向和职责
-	RoleProfile []byte `json:"role_profile"`
-	// 个人宪法补充，只能收紧或补充团队宪法
-	ConstitutionAddendum []byte `json:"constitution_addendum"`
-	// 个人能力选择，只能从团队允许范围内启用MCP、技能和插件
-	CapabilitySelection []byte `json:"capability_selection"`
-	// 个人上下文策略覆盖，只能收紧团队上下文策略
-	ContextPolicyOverride []byte `json:"context_policy_override"`
-	// 个人审批策略覆盖，只能收紧团队审批策略
-	ApprovalPolicyOverride []byte `json:"approval_policy_override"`
-	// 个人输出契约补充，定义额外交接工件要求
-	OutputContractAddendum []byte `json:"output_contract_addendum"`
 	// 配置状态：draft、pending_approval、active、archived
 	Status string `json:"status"`
 	// 批准该个人配置版本的用户ID
@@ -303,6 +291,10 @@ type DigitalEmployeeConfigRevision struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 数字员工预算策略，包含每日 token 上限；空对象表示无预算上限
 	BudgetPolicy []byte `json:"budget_policy"`
+	// 数字员工人格记忆 Markdown，描述人格画像、专业边界、工作方式和表达偏好
+	PersonaMemoryMarkdown string `json:"persona_memory_markdown"`
+	// 数字员工能力绑定，保存 Skill、MCP、外部能力和环境变量引用
+	CapabilityBindings []byte `json:"capability_bindings"`
 }
 
 type DigitalEmployeeEnvironmentVariable struct {
@@ -435,24 +427,27 @@ type DigitalEmployeeRuntimeReadiness struct {
 }
 
 type DigitalEmployeeTemplate struct {
-	ID                           uuid.UUID          `json:"id"`
-	TenantID                     uuid.UUID          `json:"tenant_id"`
-	Type                         string             `json:"type"`
-	Label                        string             `json:"label"`
-	Description                  string             `json:"description"`
-	DefaultRole                  string             `json:"default_role"`
-	RecommendedSkills            []byte             `json:"recommended_skills"`
-	RecommendedMcpServers        []byte             `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []byte             `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   []byte             `json:"default_capability_selection"`
-	DefaultContextPolicyOverride []byte             `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        []byte             `json:"default_approval_policy"`
-	Metadata                     []byte             `json:"metadata"`
-	Status                       string             `json:"status"`
-	IsSystem                     bool               `json:"is_system"`
-	DeletedAt                    pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+	ID                       uuid.UUID          `json:"id"`
+	TenantID                 uuid.UUID          `json:"tenant_id"`
+	Type                     string             `json:"type"`
+	Label                    string             `json:"label"`
+	Description              string             `json:"description"`
+	DefaultRole              string             `json:"default_role"`
+	RecommendedSkills        []byte             `json:"recommended_skills"`
+	RecommendedMcpServers    []byte             `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []byte             `json:"recommended_provider_types"`
+	Metadata                 []byte             `json:"metadata"`
+	Status                   string             `json:"status"`
+	IsSystem                 bool               `json:"is_system"`
+	DeletedAt                pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	// 模板预填的人格记忆 Markdown
+	PersonaMemoryMarkdown string `json:"persona_memory_markdown"`
+	// 模板预填的数字员工能力绑定
+	CapabilityBindings []byte `json:"capability_bindings"`
+	// 模板预填的预算策略
+	BudgetPolicy []byte `json:"budget_policy"`
 }
 
 // 数字员工工作目录受控文件身份表

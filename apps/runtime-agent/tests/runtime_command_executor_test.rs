@@ -202,8 +202,8 @@ fn workspace_file(content: &str) -> serde_json::Value {
     serde_json::json!({
         "file_id": "55555555-5555-4555-8555-555555555555",
         "revision_id": "66666666-6666-4666-8666-666666666666",
-        "path": "AGENTS.md",
-        "file_role": "entrypoint",
+        "path": "context.md",
+        "file_role": "supporting_doc",
         "mime_type": "text/markdown",
         "sync_policy": "auto",
         "content_hash": superteam_runtime_agent::workspace_files::sha256_hex(content.as_bytes()),
@@ -1728,12 +1728,84 @@ async fn provision_instance_materializes_team_employee_home() {
         .expect("provision accepted");
 
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert!(home.join(".claude").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
     assert!(!home.join("state").exists());
+}
+
+#[tokio::test]
+async fn provision_instance_projects_persona_memory_into_employee_home() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config.clone());
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = config
+        .workspace
+        .base_dir
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    let mut command = provision_command(
+        "cmd-provision-persona",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        "# Execution Contract\n",
+    );
+    command.payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
+
+    executor
+        .handle_command(command)
+        .await
+        .expect("provision accepted");
+
+    assert_eq!(
+        std::fs::read_to_string(home.join("人格记忆.md")).unwrap(),
+        "# 人格画像\n证据优先"
+    );
+}
+
+#[tokio::test]
+async fn provision_instance_preserves_persona_memory_content_verbatim() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config.clone());
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = config
+        .workspace
+        .base_dir
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    let persona_memory_markdown = " \n\n# 人格画像\n证据优先\n\n ";
+    let mut command = provision_command(
+        "cmd-provision-persona-verbatim",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        "# Execution Contract\n",
+    );
+    command.payload["persona_memory_markdown"] = json!(persona_memory_markdown);
+
+    executor
+        .handle_command(command)
+        .await
+        .expect("provision accepted");
+
+    assert_eq!(
+        std::fs::read_to_string(home.join("人格记忆.md")).unwrap(),
+        persona_memory_markdown
+    );
 }
 
 #[tokio::test]
@@ -2076,10 +2148,10 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         std::fs::canonicalize(&expected_workspace).unwrap()
     );
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
-    assert!(!run.workspace_path.join("AGENTS.md").exists());
+    assert!(!run.workspace_path.join("context.md").exists());
 }
 
 #[tokio::test]
@@ -2140,7 +2212,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     assert_eq!(run.agent_home_dir.as_deref(), Some(home.as_path()));
     assert!(home.is_dir(), "derived agent home should be created");
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert_eq!(
@@ -2411,11 +2483,10 @@ async fn sync_workspace_files_materializes_team_employee_home() {
 
     assert!(outcome.accepted);
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert!(home.join(".claude").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
 }
 
 #[tokio::test]

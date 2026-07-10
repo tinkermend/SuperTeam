@@ -46,8 +46,8 @@ export function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOpt
   return orderedEmployeeTypes(employeeTypes)[0];
 }
 
-export function templateRisk(typeOption: DigitalEmployeeTypeOption) {
-  return stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium";
+export function templateRisk(_typeOption: DigitalEmployeeTypeOption) {
+  return "medium";
 }
 
 export function riskSortValue(risk: string) {
@@ -81,11 +81,11 @@ export function templateCapabilitySummary(typeOption: DigitalEmployeeTypeOption)
 export function templateDefaultInjectionSummary(
   typeOption: DigitalEmployeeTypeOption,
 ): TemplateDefaultInjectionSummary {
-  const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
+  const capabilityBindings = typeOption.capability_bindings ?? {};
   return {
-    skills: stringList(defaultCapabilitySelection.enabled_skills),
-    mcpServers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
-    providerTypes: stringList(defaultCapabilitySelection.enabled_provider_types),
+    skills: stringList(capabilityBindings.skills),
+    mcpServers: stringList(capabilityBindings.mcp_servers),
+    providerTypes: stringList(capabilityBindings.provider_types),
   };
 }
 

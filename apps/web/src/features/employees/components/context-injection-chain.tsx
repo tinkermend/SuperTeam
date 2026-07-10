@@ -3,6 +3,7 @@ import { IconTile, SoftCard } from "@/components/superteam";
 
 type ContextInjectionChainProps = {
   roleLabel: string;
+  hasPersonaMemory: boolean;
   personalSkillCount: number;
   inheritedSkillCount: number;
   mcpCount: number;
@@ -10,11 +11,11 @@ type ContextInjectionChainProps = {
   envTotalCount: number;
 };
 
-export function ContextInjectionChain({ roleLabel, personalSkillCount, inheritedSkillCount, mcpCount, envConfiguredCount, envTotalCount }: ContextInjectionChainProps) {
+export function ContextInjectionChain({ roleLabel, hasPersonaMemory, personalSkillCount, inheritedSkillCount, mcpCount, envConfiguredCount, envTotalCount }: ContextInjectionChainProps) {
   const nodes = [
     { icon: <UserRound />, title: "角色说明", meta: roleLabel },
-    { icon: <ScrollText />, title: "宪法", meta: "团队 + 个人补充" },
-    { icon: <BookOpen />, title: "记忆", meta: "待接入" },
+    { icon: <ScrollText />, title: "项目宪法", meta: "执行时由项目注入" },
+    { icon: <BookOpen />, title: "人格记忆", meta: hasPersonaMemory ? "已配置" : "未设置" },
     { icon: <Blocks />, title: "个人技能", meta: `${personalSkillCount} 项` },
     { icon: <Users />, title: "团队继承技能", meta: `${inheritedSkillCount} 项` },
     { icon: <Network />, title: "MCP", meta: `${mcpCount} 项` },

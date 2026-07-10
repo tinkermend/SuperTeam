@@ -60,14 +60,6 @@ func (s *fakeTemplateHandlerService) GetOverview(ctx context.Context, req GetDig
 	return nil, nil
 }
 
-func (s *fakeTemplateHandlerService) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
-	return nil, nil
-}
-
-func (s *fakeTemplateHandlerService) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error) {
-	return WorkspaceFile{}, nil
-}
-
 func (s *fakeTemplateHandlerService) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error) {
 	return nil, nil
 }
@@ -326,6 +318,31 @@ func TestEmployeeTemplateHandlerCreateReturns201(t *testing.T) {
 	}
 }
 
+func TestEmployeeTemplateHandlerCreateRejectsLegacyTemplateFields(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	service := &fakeTemplateHandlerService{}
+	handler := newTemplateTestHandler(service, true)
+	req := templateTestRequest(
+		http.MethodPost,
+		"/api/v1/digital-employee-templates",
+		`{"type":"sales_ops","label":"销售运营","default_capability_selection":{"enabled_skills":["sql-review"]}}`,
+		tenantID,
+		userID,
+		nil,
+	)
+	resp := httptest.NewRecorder()
+
+	handler.CreateEmployeeTemplate(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "default_capability_selection is no longer supported") {
+		t.Fatalf("expected legacy field rejection, got %q", resp.Body.String())
+	}
+}
+
 func TestEmployeeTemplateHandlerUpdateReturns200(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -345,6 +362,32 @@ func TestEmployeeTemplateHandlerUpdateReturns200(t *testing.T) {
 	}
 	if service.updateParams.ID != templateID || service.updateParams.Label != "更新后的标签" {
 		t.Fatalf("unexpected update params: %#v", service.updateParams)
+	}
+}
+
+func TestEmployeeTemplateHandlerUpdateRejectsLegacyTemplateFields(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	templateID := uuid.New()
+	service := &fakeTemplateHandlerService{}
+	handler := newTemplateTestHandler(service, true)
+	req := templateTestRequest(
+		http.MethodPatch,
+		"/api/v1/digital-employee-templates/"+templateID.String(),
+		`{"label":"更新后的标签","default_approval_policy":{"min_risk_for_human":"high"}}`,
+		tenantID,
+		userID,
+		map[string]string{"templateId": templateID.String()},
+	)
+	resp := httptest.NewRecorder()
+
+	handler.UpdateEmployeeTemplate(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "default_approval_policy is no longer supported") {
+		t.Fatalf("expected legacy field rejection, got %q", resp.Body.String())
 	}
 }
 

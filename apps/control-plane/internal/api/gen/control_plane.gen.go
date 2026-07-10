@@ -83,12 +83,18 @@ func (e AllowedTeamAction) Valid() bool {
 
 // Defines values for CreateDigitalEmployeeConfigRevisionRequestStatus.
 const (
-	CreateDigitalEmployeeConfigRevisionRequestStatusDraft CreateDigitalEmployeeConfigRevisionRequestStatus = "draft"
+	CreateDigitalEmployeeConfigRevisionRequestStatusActive   CreateDigitalEmployeeConfigRevisionRequestStatus = "active"
+	CreateDigitalEmployeeConfigRevisionRequestStatusArchived CreateDigitalEmployeeConfigRevisionRequestStatus = "archived"
+	CreateDigitalEmployeeConfigRevisionRequestStatusDraft    CreateDigitalEmployeeConfigRevisionRequestStatus = "draft"
 )
 
 // Valid indicates whether the value is a known member of the CreateDigitalEmployeeConfigRevisionRequestStatus enum.
 func (e CreateDigitalEmployeeConfigRevisionRequestStatus) Valid() bool {
 	switch e {
+	case CreateDigitalEmployeeConfigRevisionRequestStatusActive:
+		return true
+	case CreateDigitalEmployeeConfigRevisionRequestStatusArchived:
+		return true
 	case CreateDigitalEmployeeConfigRevisionRequestStatusDraft:
 		return true
 	default:
@@ -200,12 +206,18 @@ func (e CredentialType) Valid() bool {
 
 // Defines values for DigitalEmployeeConfigRevisionStatus.
 const (
-	DigitalEmployeeConfigRevisionStatusDraft DigitalEmployeeConfigRevisionStatus = "draft"
+	DigitalEmployeeConfigRevisionStatusActive   DigitalEmployeeConfigRevisionStatus = "active"
+	DigitalEmployeeConfigRevisionStatusArchived DigitalEmployeeConfigRevisionStatus = "archived"
+	DigitalEmployeeConfigRevisionStatusDraft    DigitalEmployeeConfigRevisionStatus = "draft"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeConfigRevisionStatus enum.
 func (e DigitalEmployeeConfigRevisionStatus) Valid() bool {
 	switch e {
+	case DigitalEmployeeConfigRevisionStatusActive:
+		return true
+	case DigitalEmployeeConfigRevisionStatusArchived:
+		return true
 	case DigitalEmployeeConfigRevisionStatusDraft:
 		return true
 	default:
@@ -2024,14 +2036,10 @@ type CompleteTaskRequest struct {
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
 type CreateDigitalEmployeeConfigRevisionRequest struct {
-	ApprovalPolicyOverride *map[string]interface{}                           `json:"approval_policy_override,omitempty"`
-	BudgetPolicy           *map[string]interface{}                           `json:"budget_policy,omitempty"`
-	CapabilitySelection    *map[string]interface{}                           `json:"capability_selection,omitempty"`
-	ConstitutionAddendum   *map[string]interface{}                           `json:"constitution_addendum,omitempty"`
-	ContextPolicyOverride  *map[string]interface{}                           `json:"context_policy_override,omitempty"`
-	OutputContractAddendum *map[string]interface{}                           `json:"output_contract_addendum,omitempty"`
-	RoleProfile            *map[string]interface{}                           `json:"role_profile,omitempty"`
-	Status                 *CreateDigitalEmployeeConfigRevisionRequestStatus `json:"status,omitempty"`
+	BudgetPolicy          *map[string]interface{}                           `json:"budget_policy,omitempty"`
+	CapabilityBindings    *map[string]interface{}                           `json:"capability_bindings,omitempty"`
+	PersonaMemoryMarkdown *string                                           `json:"persona_memory_markdown,omitempty"`
+	Status                *CreateDigitalEmployeeConfigRevisionRequestStatus `json:"status,omitempty"`
 }
 
 // CreateDigitalEmployeeConfigRevisionRequestStatus defines model for CreateDigitalEmployeeConfigRevisionRequest.Status.
@@ -2039,35 +2047,28 @@ type CreateDigitalEmployeeConfigRevisionRequestStatus string
 
 // CreateDigitalEmployeeRequest defines model for CreateDigitalEmployeeRequest.
 type CreateDigitalEmployeeRequest struct {
-	ApprovalPolicy         *map[string]interface{} `json:"approval_policy,omitempty"`
-	ApprovalPolicyOverride *map[string]interface{} `json:"approval_policy_override,omitempty"`
-	AvatarAssetId          string                  `json:"avatar_asset_id"`
-	BudgetPolicy           *map[string]interface{} `json:"budget_policy,omitempty"`
-	CapabilitySelection    *map[string]interface{} `json:"capability_selection,omitempty"`
-	ConstitutionAddendum   *map[string]interface{} `json:"constitution_addendum,omitempty"`
-	ContextPolicy          *map[string]interface{} `json:"context_policy,omitempty"`
-	ContextPolicyOverride  *map[string]interface{} `json:"context_policy_override,omitempty"`
-	Description            *string                 `json:"description,omitempty"`
-	EmployeeType           string                  `json:"employee_type"`
-	EnvironmentVariables   *[]struct {
+	ApprovalPolicy       *map[string]interface{} `json:"approval_policy,omitempty"`
+	AvatarAssetId        string                  `json:"avatar_asset_id"`
+	BudgetPolicy         *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings   *map[string]interface{} `json:"capability_bindings,omitempty"`
+	ContextPolicy        *map[string]interface{} `json:"context_policy,omitempty"`
+	Description          *string                 `json:"description,omitempty"`
+	EmployeeType         string                  `json:"employee_type"`
+	EnvironmentVariables *[]struct {
 		Name      string `json:"name"`
 		Sensitive *bool  `json:"sensitive,omitempty"`
 		Value     string `json:"value"`
 	} `json:"environment_variables,omitempty"`
-	Metadata               *map[string]interface{} `json:"metadata,omitempty"`
-	Name                   string                  `json:"name"`
-	OutputContractAddendum *map[string]interface{} `json:"output_contract_addendum,omitempty"`
-	PermissionPolicy       *map[string]interface{} `json:"permission_policy,omitempty"`
-	ProviderType           string                  `json:"provider_type"`
-	RiskLevel              *string                 `json:"risk_level,omitempty"`
-	Role                   *string                 `json:"role,omitempty"`
-	RoleProfile            *map[string]interface{} `json:"role_profile,omitempty"`
-	RuntimeNodeId          *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
-	SessionPolicy          *map[string]interface{} `json:"session_policy,omitempty"`
+	Metadata              *map[string]interface{} `json:"metadata,omitempty"`
+	Name                  string                  `json:"name"`
+	PermissionPolicy      *map[string]interface{} `json:"permission_policy,omitempty"`
+	PersonaMemoryMarkdown *string                 `json:"persona_memory_markdown,omitempty"`
+	ProviderType          string                  `json:"provider_type"`
+	RiskLevel             *string                 `json:"risk_level,omitempty"`
+	Role                  *string                 `json:"role,omitempty"`
 
 	// TeamId Team ID; omit or null for team-less (tenant-level) digital employees.
-	TeamId          *openapi_types.UUID     `json:"team_id,omitempty"`
-	WorkspacePolicy *map[string]interface{} `json:"workspace_policy,omitempty"`
+	TeamId *openapi_types.UUID `json:"team_id,omitempty"`
 }
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
@@ -2088,17 +2089,17 @@ type CreateDigitalEmployeeRunRequest struct {
 
 // CreateEmployeeTemplateRequest defines model for CreateEmployeeTemplateRequest.
 type CreateEmployeeTemplateRequest struct {
-	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
-	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
-	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
-	DefaultRole                  *string                 `json:"default_role,omitempty"`
-	Description                  *string                 `json:"description,omitempty"`
-	Label                        string                  `json:"label"`
-	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
-	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
-	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
-	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
-	Type                         string                  `json:"type"`
+	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole              *string                 `json:"default_role,omitempty"`
+	Description              *string                 `json:"description,omitempty"`
+	Label                    string                  `json:"label"`
+	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
+	PersonaMemoryMarkdown    *string                 `json:"persona_memory_markdown,omitempty"`
+	RecommendedMcpServers    *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
+	Type                     string                  `json:"type"`
 }
 
 // CreateMCPBindingRequest defines model for CreateMCPBindingRequest.
@@ -2309,25 +2310,29 @@ type DecideTeamMemberRoleRequest struct {
 
 // DigitalEmployee defines model for DigitalEmployee.
 type DigitalEmployee struct {
-	AllowedActions   *[]string               `json:"allowed_actions,omitempty"`
-	ApprovalPolicy   map[string]interface{}  `json:"approval_policy"`
-	ArchivedAt       *time.Time              `json:"archived_at,omitempty"`
-	ContextPolicy    map[string]interface{}  `json:"context_policy"`
-	CreatedAt        *time.Time              `json:"created_at,omitempty"`
-	Description      *string                 `json:"description,omitempty"`
-	DisabledAt       *time.Time              `json:"disabled_at,omitempty"`
-	EmployeeType     string                  `json:"employee_type"`
-	Id               openapi_types.UUID      `json:"id"`
-	Metadata         *map[string]interface{} `json:"metadata,omitempty"`
-	Name             string                  `json:"name"`
-	OwnerUserId      openapi_types.UUID      `json:"owner_user_id"`
-	PermissionPolicy map[string]interface{}  `json:"permission_policy"`
-	RiskLevel        string                  `json:"risk_level"`
-	Role             string                  `json:"role"`
-	Status           DigitalEmployeeStatus   `json:"status"`
-	TeamId           openapi_types.UUID      `json:"team_id"`
-	TenantId         openapi_types.UUID      `json:"tenant_id"`
-	UpdatedAt        *time.Time              `json:"updated_at,omitempty"`
+	AllowedActions        *[]string               `json:"allowed_actions,omitempty"`
+	ApprovalPolicy        map[string]interface{}  `json:"approval_policy"`
+	ArchivedAt            *time.Time              `json:"archived_at,omitempty"`
+	BudgetPolicy          map[string]interface{}  `json:"budget_policy"`
+	CapabilityBindings    map[string]interface{}  `json:"capability_bindings"`
+	ContextPolicy         map[string]interface{}  `json:"context_policy"`
+	CreatedAt             *time.Time              `json:"created_at,omitempty"`
+	Description           *string                 `json:"description,omitempty"`
+	DisabledAt            *time.Time              `json:"disabled_at,omitempty"`
+	EmployeeType          string                  `json:"employee_type"`
+	Id                    openapi_types.UUID      `json:"id"`
+	Metadata              *map[string]interface{} `json:"metadata,omitempty"`
+	Name                  string                  `json:"name"`
+	OwnerUserId           openapi_types.UUID      `json:"owner_user_id"`
+	PermissionPolicy      map[string]interface{}  `json:"permission_policy"`
+	PersonaMemoryMarkdown string                  `json:"persona_memory_markdown"`
+	ProviderType          string                  `json:"provider_type"`
+	RiskLevel             string                  `json:"risk_level"`
+	Role                  string                  `json:"role"`
+	Status                DigitalEmployeeStatus   `json:"status"`
+	TeamId                openapi_types.UUID      `json:"team_id"`
+	TenantId              openapi_types.UUID      `json:"tenant_id"`
+	UpdatedAt             *time.Time              `json:"updated_at,omitempty"`
 }
 
 // DigitalEmployeeAvatarAsset defines model for DigitalEmployeeAvatarAsset.
@@ -2366,23 +2371,19 @@ type DigitalEmployeeCapabilityOptions struct {
 
 // DigitalEmployeeConfigRevision defines model for DigitalEmployeeConfigRevision.
 type DigitalEmployeeConfigRevision struct {
-	ApprovalPolicyOverride map[string]interface{}              `json:"approval_policy_override"`
-	ApprovedAt             *time.Time                          `json:"approved_at,omitempty"`
-	ApprovedBy             *openapi_types.UUID                 `json:"approved_by,omitempty"`
-	ArchivedAt             *time.Time                          `json:"archived_at,omitempty"`
-	BudgetPolicy           map[string]interface{}              `json:"budget_policy"`
-	CapabilitySelection    map[string]interface{}              `json:"capability_selection"`
-	ConstitutionAddendum   map[string]interface{}              `json:"constitution_addendum"`
-	ContextPolicyOverride  map[string]interface{}              `json:"context_policy_override"`
-	CreatedAt              *time.Time                          `json:"created_at,omitempty"`
-	DigitalEmployeeId      openapi_types.UUID                  `json:"digital_employee_id"`
-	Id                     openapi_types.UUID                  `json:"id"`
-	OutputContractAddendum map[string]interface{}              `json:"output_contract_addendum"`
-	RevisionNumber         int32                               `json:"revision_number"`
-	RoleProfile            map[string]interface{}              `json:"role_profile"`
-	Status                 DigitalEmployeeConfigRevisionStatus `json:"status"`
-	TenantId               openapi_types.UUID                  `json:"tenant_id"`
-	UpdatedAt              *time.Time                          `json:"updated_at,omitempty"`
+	ApprovedAt            *time.Time                          `json:"approved_at,omitempty"`
+	ApprovedBy            *openapi_types.UUID                 `json:"approved_by,omitempty"`
+	ArchivedAt            *time.Time                          `json:"archived_at,omitempty"`
+	BudgetPolicy          map[string]interface{}              `json:"budget_policy"`
+	CapabilityBindings    map[string]interface{}              `json:"capability_bindings"`
+	CreatedAt             *time.Time                          `json:"created_at,omitempty"`
+	DigitalEmployeeId     openapi_types.UUID                  `json:"digital_employee_id"`
+	Id                    openapi_types.UUID                  `json:"id"`
+	PersonaMemoryMarkdown string                              `json:"persona_memory_markdown"`
+	RevisionNumber        int32                               `json:"revision_number"`
+	Status                DigitalEmployeeConfigRevisionStatus `json:"status"`
+	TenantId              openapi_types.UUID                  `json:"tenant_id"`
+	UpdatedAt             *time.Time                          `json:"updated_at,omitempty"`
 }
 
 // DigitalEmployeeConfigRevisionStatus defines model for DigitalEmployeeConfigRevision.Status.
@@ -2625,14 +2626,11 @@ type DigitalEmployeeOverviewSummary struct {
 
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.
 type DigitalEmployeePolicyDefaults struct {
-	ApprovalPolicy        map[string]interface{} `json:"approval_policy"`
-	CapabilitySelection   map[string]interface{} `json:"capability_selection"`
-	ContextPolicyOverride map[string]interface{} `json:"context_policy_override"`
-	Metadata              map[string]interface{} `json:"metadata"`
-	PermissionPolicy      map[string]interface{} `json:"permission_policy"`
-	RuntimeSelector       map[string]interface{} `json:"runtime_selector"`
-	SessionPolicy         map[string]interface{} `json:"session_policy"`
-	WorkspacePolicy       map[string]interface{} `json:"workspace_policy"`
+	ApprovalPolicy   map[string]interface{} `json:"approval_policy"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	PermissionPolicy map[string]interface{} `json:"permission_policy"`
+	SessionPolicy    map[string]interface{} `json:"session_policy"`
+	WorkspacePolicy  map[string]interface{} `json:"workspace_policy"`
 }
 
 // DigitalEmployeeRecentEventSummary defines model for DigitalEmployeeRecentEventSummary.
@@ -2795,17 +2793,17 @@ type DigitalEmployeeStatus string
 
 // DigitalEmployeeTypeOption defines model for DigitalEmployeeTypeOption.
 type DigitalEmployeeTypeOption struct {
-	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
-	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
-	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
-	DefaultRole                  string                  `json:"default_role"`
-	Description                  string                  `json:"description"`
-	Label                        string                  `json:"label"`
-	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
-	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
-	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
-	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
-	Type                         string                  `json:"type"`
+	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole              string                  `json:"default_role"`
+	Description              string                  `json:"description"`
+	Label                    string                  `json:"label"`
+	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
+	PersonaMemoryMarkdown    *string                 `json:"persona_memory_markdown,omitempty"`
+	RecommendedMcpServers    *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
+	Type                     string                  `json:"type"`
 }
 
 // DigitalEmployeeWorkbenchStatus defines model for DigitalEmployeeWorkbenchStatus.
@@ -2891,23 +2889,23 @@ type EffectiveMCPConfigServer struct {
 
 // EmployeeTemplate defines model for EmployeeTemplate.
 type EmployeeTemplate struct {
-	CreatedAt                    time.Time               `json:"created_at"`
-	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
-	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
-	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
-	DefaultRole                  *string                 `json:"default_role,omitempty"`
-	Description                  *string                 `json:"description,omitempty"`
-	Id                           openapi_types.UUID      `json:"id"`
-	IsSystem                     bool                    `json:"is_system"`
-	Label                        string                  `json:"label"`
-	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
-	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
-	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
-	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
-	Status                       EmployeeTemplateStatus  `json:"status"`
-	TenantId                     openapi_types.UUID      `json:"tenant_id"`
-	Type                         string                  `json:"type"`
-	UpdatedAt                    time.Time               `json:"updated_at"`
+	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
+	CreatedAt                time.Time               `json:"created_at"`
+	DefaultRole              *string                 `json:"default_role,omitempty"`
+	Description              *string                 `json:"description,omitempty"`
+	Id                       openapi_types.UUID      `json:"id"`
+	IsSystem                 bool                    `json:"is_system"`
+	Label                    string                  `json:"label"`
+	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
+	PersonaMemoryMarkdown    *string                 `json:"persona_memory_markdown,omitempty"`
+	RecommendedMcpServers    *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
+	Status                   EmployeeTemplateStatus  `json:"status"`
+	TenantId                 openapi_types.UUID      `json:"tenant_id"`
+	Type                     string                  `json:"type"`
+	UpdatedAt                time.Time               `json:"updated_at"`
 }
 
 // EmployeeTemplateStatus defines model for EmployeeTemplate.Status.
@@ -4754,16 +4752,16 @@ type UpdateDigitalEmployeeStatusRequest struct {
 
 // UpdateEmployeeTemplateRequest defines model for UpdateEmployeeTemplateRequest.
 type UpdateEmployeeTemplateRequest struct {
-	DefaultApprovalPolicy        *map[string]interface{} `json:"default_approval_policy,omitempty"`
-	DefaultCapabilitySelection   *map[string]interface{} `json:"default_capability_selection,omitempty"`
-	DefaultContextPolicyOverride *map[string]interface{} `json:"default_context_policy_override,omitempty"`
-	DefaultRole                  *string                 `json:"default_role,omitempty"`
-	Description                  *string                 `json:"description,omitempty"`
-	Label                        string                  `json:"label"`
-	Metadata                     *map[string]interface{} `json:"metadata,omitempty"`
-	RecommendedMcpServers        *[]string               `json:"recommended_mcp_servers,omitempty"`
-	RecommendedProviderTypes     *[]string               `json:"recommended_provider_types,omitempty"`
-	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
+	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole              *string                 `json:"default_role,omitempty"`
+	Description              *string                 `json:"description,omitempty"`
+	Label                    string                  `json:"label"`
+	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
+	PersonaMemoryMarkdown    *string                 `json:"persona_memory_markdown,omitempty"`
+	RecommendedMcpServers    *[]string               `json:"recommended_mcp_servers,omitempty"`
+	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
+	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
 }
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
@@ -4848,16 +4846,6 @@ type UpsertTeamLendingPolicy struct {
 	BudgetCeiling     *string                 `json:"budget_ceiling,omitempty"`
 	CapabilityCeiling *map[string]interface{} `json:"capability_ceiling,omitempty"`
 	ProjectMatch      *map[string]interface{} `json:"project_match,omitempty"`
-}
-
-// UpsertWorkspaceFileRequest defines model for UpsertWorkspaceFileRequest.
-type UpsertWorkspaceFileRequest struct {
-	ChangeNote *string `json:"change_note,omitempty"`
-	Content    string  `json:"content"`
-	FileRole   *string `json:"file_role,omitempty"`
-	MimeType   *string `json:"mime_type,omitempty"`
-	Path       string  `json:"path"`
-	SyncPolicy *string `json:"sync_policy,omitempty"`
 }
 
 // UserCredential defines model for UserCredential.
@@ -4963,27 +4951,6 @@ type WorkflowInstanceSummary struct {
 	SubmittedByUserId         openapi_types.UUID              `json:"submitted_by_user_id"`
 	Title                     string                          `json:"title"`
 	UpdatedAt                 time.Time                       `json:"updated_at"`
-}
-
-// WorkspaceFile defines model for WorkspaceFile.
-type WorkspaceFile struct {
-	ChangeNote        *string            `json:"change_note,omitempty"`
-	Content           string             `json:"content"`
-	ContentHash       string             `json:"content_hash"`
-	CreatedAt         *time.Time         `json:"created_at,omitempty"`
-	CurrentRevisionId openapi_types.UUID `json:"current_revision_id"`
-	FileRole          string             `json:"file_role"`
-	Id                openapi_types.UUID `json:"id"`
-	MimeType          string             `json:"mime_type"`
-	ObjectKey         *string            `json:"object_key,omitempty"`
-	Path              string             `json:"path"`
-	RevisionNumber    int32              `json:"revision_number"`
-	SizeBytes         int32              `json:"size_bytes"`
-	Status            string             `json:"status"`
-	StorageBackend    string             `json:"storage_backend"`
-	SyncPolicy        string             `json:"sync_policy"`
-	TeamId            openapi_types.UUID `json:"team_id"`
-	UpdatedAt         *time.Time         `json:"updated_at,omitempty"`
 }
 
 // BindingId defines model for BindingId.
@@ -5483,9 +5450,6 @@ type BindEmployeeSkillJSONRequestBody BindEmployeeSkillJSONBody
 
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
-
-// UpsertEmployeeWorkspaceFileJSONRequestBody defines body for UpsertEmployeeWorkspaceFile for application/json ContentType.
-type UpsertEmployeeWorkspaceFileJSONRequestBody = UpsertWorkspaceFileRequest
 
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
@@ -6239,12 +6203,6 @@ type ServerInterface interface {
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// List employee workspace files
-	// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
-	ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Upsert an employee workspace file
-	// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
-	UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get actionable inbox badge counts
 	// (GET /api/v1/inbox/badge)
 	GetInboxBadge(w http.ResponseWriter, r *http.Request)
@@ -6920,18 +6878,6 @@ func (_ Unimplemented) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Reques
 // Update a digital employee status
 // (PUT /api/v1/digital-employees/{employeeId}/status)
 func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List employee workspace files
-// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
-func (_ Unimplemented) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Upsert an employee workspace file
-// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
-func (_ Unimplemented) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9252,58 +9198,6 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListEmployeeWorkspaceFiles operation middleware
-func (siw *ServerInterfaceWrapper) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListEmployeeWorkspaceFiles(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpsertEmployeeWorkspaceFile operation middleware
-func (siw *ServerInterfaceWrapper) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpsertEmployeeWorkspaceFile(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14811,12 +14705,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.ListEmployeeWorkspaceFiles)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.UpsertEmployeeWorkspaceFile)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)

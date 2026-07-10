@@ -19,9 +19,9 @@ type employeeTemplateResponse struct {
 	RecommendedSkills            []string       `json:"recommended_skills"`
 	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
-	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
+	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
+	CapabilityBindings           map[string]any `json:"capability_bindings"`
+	BudgetPolicy                 map[string]any `json:"budget_policy"`
 	Metadata                     map[string]any `json:"metadata"`
 	Status                       string         `json:"status"`
 	IsSystem                     bool           `json:"is_system"`
@@ -37,9 +37,9 @@ type createEmployeeTemplateRequest struct {
 	RecommendedSkills            []string       `json:"recommended_skills"`
 	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
-	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
+	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
+	CapabilityBindings           map[string]any `json:"capability_bindings"`
+	BudgetPolicy                 map[string]any `json:"budget_policy"`
 	Metadata                     map[string]any `json:"metadata"`
 }
 
@@ -50,9 +50,9 @@ type updateEmployeeTemplateRequest struct {
 	RecommendedSkills            []string       `json:"recommended_skills"`
 	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
-	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
+	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
+	CapabilityBindings           map[string]any `json:"capability_bindings"`
+	BudgetPolicy                 map[string]any `json:"budget_policy"`
 	Metadata                     map[string]any `json:"metadata"`
 }
 
@@ -108,24 +108,34 @@ func (h *HTTPHandler) CreateEmployeeTemplate(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if field, ok := firstLegacyEmployeeTemplateField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
+	}
 	var req createEmployeeTemplateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	payload, _ := json.Marshal(raw)
+	if err := json.Unmarshal(payload, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	template, err := service.CreateEmployeeTemplate(r.Context(), CreateEmployeeTemplateParams{
-		TenantID:                     tenantID,
-		Type:                         req.Type,
-		Label:                        req.Label,
-		Description:                  req.Description,
-		DefaultRole:                  req.DefaultRole,
-		RecommendedSkills:            req.RecommendedSkills,
-		RecommendedMCPServers:        req.RecommendedMCPServers,
-		RecommendedProviderTypes:     req.RecommendedProviderTypes,
-		DefaultCapabilitySelection:   req.DefaultCapabilitySelection,
-		DefaultContextPolicyOverride: req.DefaultContextPolicyOverride,
-		DefaultApprovalPolicy:        req.DefaultApprovalPolicy,
-		Metadata:                     req.Metadata,
+		TenantID:                 tenantID,
+		Type:                     req.Type,
+		Label:                    req.Label,
+		Description:              req.Description,
+		DefaultRole:              req.DefaultRole,
+		RecommendedSkills:        req.RecommendedSkills,
+		RecommendedMCPServers:    req.RecommendedMCPServers,
+		RecommendedProviderTypes: req.RecommendedProviderTypes,
+		PersonaMemoryMarkdown:    req.PersonaMemoryMarkdown,
+		CapabilityBindings:       req.CapabilityBindings,
+		BudgetPolicy:             req.BudgetPolicy,
+		Metadata:                 req.Metadata,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -148,24 +158,34 @@ func (h *HTTPHandler) UpdateEmployeeTemplate(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "invalid templateId", http.StatusBadRequest)
 		return
 	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if field, ok := firstLegacyEmployeeTemplateField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
+	}
 	var req updateEmployeeTemplateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	payload, _ := json.Marshal(raw)
+	if err := json.Unmarshal(payload, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	template, err := service.UpdateEmployeeTemplate(r.Context(), UpdateEmployeeTemplateParams{
-		TenantID:                     tenantID,
-		ID:                           templateID,
-		Label:                        req.Label,
-		Description:                  req.Description,
-		DefaultRole:                  req.DefaultRole,
-		RecommendedSkills:            req.RecommendedSkills,
-		RecommendedMCPServers:        req.RecommendedMCPServers,
-		RecommendedProviderTypes:     req.RecommendedProviderTypes,
-		DefaultCapabilitySelection:   req.DefaultCapabilitySelection,
-		DefaultContextPolicyOverride: req.DefaultContextPolicyOverride,
-		DefaultApprovalPolicy:        req.DefaultApprovalPolicy,
-		Metadata:                     req.Metadata,
+		TenantID:                 tenantID,
+		ID:                       templateID,
+		Label:                    req.Label,
+		Description:              req.Description,
+		DefaultRole:              req.DefaultRole,
+		RecommendedSkills:        req.RecommendedSkills,
+		RecommendedMCPServers:    req.RecommendedMCPServers,
+		RecommendedProviderTypes: req.RecommendedProviderTypes,
+		PersonaMemoryMarkdown:    req.PersonaMemoryMarkdown,
+		CapabilityBindings:       req.CapabilityBindings,
+		BudgetPolicy:             req.BudgetPolicy,
+		Metadata:                 req.Metadata,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -241,13 +261,26 @@ func employeeTemplateResponseFromDomain(t EmployeeTemplateRecord) employeeTempla
 		RecommendedSkills:            stringSliceForJSON(t.RecommendedSkills),
 		RecommendedMCPServers:        stringSliceForJSON(t.RecommendedMCPServers),
 		RecommendedProviderTypes:     stringSliceForJSON(t.RecommendedProviderTypes),
-		DefaultCapabilitySelection:   cloneMap(t.DefaultCapabilitySelection),
-		DefaultContextPolicyOverride: cloneMap(t.DefaultContextPolicyOverride),
-		DefaultApprovalPolicy:        cloneMap(t.DefaultApprovalPolicy),
+		PersonaMemoryMarkdown:        t.PersonaMemoryMarkdown,
+		CapabilityBindings:           cloneMap(t.CapabilityBindings),
+		BudgetPolicy:                 cloneMap(t.BudgetPolicy),
 		Metadata:                     cloneMap(t.Metadata),
 		Status:                       t.Status,
 		IsSystem:                     t.IsSystem,
 		CreatedAt:                    timeString(t.CreatedAt),
 		UpdatedAt:                    timeString(t.UpdatedAt),
 	}
+}
+
+func firstLegacyEmployeeTemplateField(raw map[string]json.RawMessage) (string, bool) {
+	for _, field := range []string{
+		"default_capability_selection",
+		"default_context_policy_override",
+		"default_approval_policy",
+	} {
+		if _, exists := raw[field]; exists {
+			return field, true
+		}
+	}
+	return "", false
 }

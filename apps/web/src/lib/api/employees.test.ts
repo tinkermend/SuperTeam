@@ -9,17 +9,14 @@ import {
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeRun,
-  listWorkspaceFiles,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
   stopDigitalEmployeeRun,
-  upsertWorkspaceFile,
   type DigitalEmployee,
   type DigitalEmployeeConfigRevision,
   type DigitalEmployeeCreateOptions,
   type DigitalEmployeeOverview,
-  type WorkspaceFile,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -31,6 +28,7 @@ describe("digital employee API", () => {
         team_id: "99999999-9999-4999-8999-999999999999",
         owner_user_id: "22222222-2222-4222-8222-222222222222",
         employee_type: "database_admin",
+        provider_type: "codex",
         name: "数据库管理员工",
         role: "database_admin",
         status: "draft",
@@ -74,6 +72,7 @@ describe("digital employee API", () => {
         team_id: teamId,
         owner_user_id: "22222222-2222-4222-8222-222222222222",
         employee_type: "database_admin",
+        provider_type: "codex",
         name: "数据库管理员工",
         role: "database_admin",
         status: "draft",
@@ -290,9 +289,9 @@ describe("digital employee API", () => {
           recommended_skills: ["incident-diagnosis"],
           recommended_mcp_servers: ["github"],
           recommended_provider_types: ["codex"],
-          default_capability_selection: { skills: ["incident-diagnosis"] },
-          default_context_policy_override: { max_refs: 8 },
-          default_approval_policy: { high_risk: "required" },
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: { skills: ["incident-diagnosis"], mcp_servers: ["github"] },
+          budget_policy: { daily_token_limit: 12000 },
           metadata: { pinned: true },
         },
       ],
@@ -333,10 +332,7 @@ describe("digital employee API", () => {
       ],
       policy_defaults: {
         permission_policy: { mode: "least_privilege" },
-        context_policy_override: { max_refs: 8 },
         approval_policy: { high_risk: "required" },
-        capability_selection: { provider_types: ["codex"] },
-        runtime_selector: { strategy: "pinned" },
         workspace_policy: { mode: "ephemeral" },
         session_policy: { reuse: false },
         metadata: { source: "team_config" },
@@ -378,6 +374,7 @@ describe("digital employee API", () => {
       team_id: "99999999-9999-4999-8999-999999999999",
       owner_user_id: "33333333-3333-4333-8333-333333333333",
       employee_type: "database_admin",
+      provider_type: "codex",
       name: "数据库管理员工",
       role: "database_admin",
       status: "ready",
@@ -412,16 +409,14 @@ describe("digital employee API", () => {
           approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
-          role_profile: { title: "database administrator" },
-          constitution_addendum: { principles: ["evidence_first"] },
-          capability_selection: { skills: ["incident-diagnosis"] },
-          context_policy_override: { max_refs: 8 },
-          approval_policy_override: { high_risk: "required" },
-          output_contract_addendum: { required: ["summary"] },
-          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           provider_type: "codex",
-          session_policy: { reuse: false },
-          workspace_policy: { mode: "ephemeral" },
           budget_policy: { daily_token_limit: 12000 },
         },
       ),
@@ -442,16 +437,14 @@ describe("digital employee API", () => {
           approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
-          role_profile: { title: "database administrator" },
-          constitution_addendum: { principles: ["evidence_first"] },
-          capability_selection: { skills: ["incident-diagnosis"] },
-          context_policy_override: { max_refs: 8 },
-          approval_policy_override: { high_risk: "required" },
-          output_contract_addendum: { required: ["summary"] },
-          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           provider_type: "codex",
-          session_policy: { reuse: false },
-          workspace_policy: { mode: "ephemeral" },
           budget_policy: { daily_token_limit: 12000 },
         }),
         credentials: "include",
@@ -469,8 +462,18 @@ describe("digital employee API", () => {
     const requestBody = JSON.parse(String(requestInit.body));
     expect(requestBody).not.toHaveProperty("owner_user_id");
     expect(requestBody).toMatchObject({
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
     });
+    expect(requestBody).not.toHaveProperty("role_profile");
+    expect(requestBody).not.toHaveProperty("constitution_addendum");
+    expect(requestBody).not.toHaveProperty("capability_selection");
   });
 
   it("rejects legacy draft creation input before posting to the backend", async () => {
@@ -503,6 +506,7 @@ describe("digital employee API", () => {
       team_id: "99999999-9999-4999-8999-999999999999",
       owner_user_id: "22222222-2222-4222-8222-222222222222",
       employee_type: "database_admin",
+      provider_type: "codex",
       name: "数据库管理员工",
       role: "database_admin",
       status: "active",
@@ -591,14 +595,15 @@ describe("digital employee API", () => {
       tenant_id: "22222222-2222-4222-8222-222222222222",
       digital_employee_id: "11111111-1111-4111-8111-111111111111",
       revision_number: 1,
-      role_profile: { title: "requirements analyst" },
-      constitution_addendum: {},
-      capability_selection: { enabled_skills: ["incident-diagnosis"] },
-      context_policy_override: {},
-      approval_policy_override: {},
-      output_contract_addendum: {},
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
-      status: "draft",
+      status: "active",
     } satisfies DigitalEmployeeConfigRevision;
     const fetcher = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -615,10 +620,15 @@ describe("digital employee API", () => {
       },
       "employee 1/primary",
       {
-        role_profile: { title: "requirements analyst" },
-        capability_selection: { enabled_skills: ["incident-diagnosis"] },
+        persona_memory_markdown: "# 人格画像\n证据优先",
+        capability_bindings: {
+          skills: ["incident-diagnosis"],
+          mcp_servers: ["postgres-readonly"],
+          external_capabilities: [],
+          environment_variable_refs: ["PG_DSN"],
+        },
         budget_policy: { daily_token_limit: 12000 },
-        status: "draft",
+        status: "active",
       },
     );
 
@@ -629,10 +639,15 @@ describe("digital employee API", () => {
       "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/config-revisions",
       {
         body: JSON.stringify({
-          role_profile: { title: "requirements analyst" },
-          capability_selection: { enabled_skills: ["incident-diagnosis"] },
+          persona_memory_markdown: "# 人格画像\n证据优先",
+          capability_bindings: {
+            skills: ["incident-diagnosis"],
+            mcp_servers: ["postgres-readonly"],
+            external_capabilities: [],
+            environment_variable_refs: ["PG_DSN"],
+          },
           budget_policy: { daily_token_limit: 12000 },
-          status: "draft",
+          status: "active",
         }),
         credentials: "include",
         headers: {
@@ -647,6 +662,13 @@ describe("digital employee API", () => {
       RequestInit,
     ];
     expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      persona_memory_markdown: "# 人格画像\n证据优先",
+      capability_bindings: {
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["postgres-readonly"],
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: { daily_token_limit: 12000 },
     });
   });
@@ -924,91 +946,4 @@ describe("digital employee API", () => {
     );
   });
 
-  it("lists workspace files with encoded employee id", async () => {
-    const files = [
-      {
-        id: "workspace-file-1",
-        team_id: "team-1",
-        path: "AGENTS.md",
-        file_role: "entrypoint",
-        mime_type: "text/markdown",
-        sync_policy: "auto",
-        status: "active",
-        current_revision_id: "revision-1",
-        revision_number: 1,
-        content: "# 规则",
-        content_hash: "abc123",
-        size_bytes: 8,
-        storage_backend: "db",
-        updated_at: "2026-06-10T10:00:00Z",
-      },
-    ] satisfies WorkspaceFile[];
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(files), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      listWorkspaceFiles(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "employee 1/primary",
-      ),
-    ).resolves.toEqual(files);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-  });
-
-  it("upserts a workspace file with encoded employee id and JSON body", async () => {
-    const file = {
-      id: "workspace-file-1",
-      team_id: "team-1",
-      path: "docs/AGENTS.md",
-      file_role: "supporting_doc",
-      mime_type: "text/markdown",
-      sync_policy: "auto",
-      status: "active",
-      current_revision_id: "revision-2",
-      revision_number: 2,
-      content: "# 新规则",
-      content_hash: "def456",
-      size_bytes: 12,
-      storage_backend: "db",
-      updated_at: "2026-06-10T10:05:00Z",
-    } satisfies WorkspaceFile;
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(file), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      upsertWorkspaceFile(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "employee 1/primary",
-        { path: "docs/AGENTS.md", content: "# 新规则" },
-      ),
-    ).resolves.toEqual(file);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
-      {
-        body: JSON.stringify({ path: "docs/AGENTS.md", content: "# 新规则" }),
-        credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        method: "PUT",
-      },
-    );
-  });
 });

@@ -30,14 +30,6 @@ type Repository interface {
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]OperationalSignals, error)
-	CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error)
-	CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error)
-	ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error)
-	GetWorkspaceFileByPath(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, path string) (WorkspaceFileRecord, error)
-	GetNextWorkspaceFileRevisionNumber(ctx context.Context, tenantID, fileID uuid.UUID) (int32, error)
-	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
-	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
-	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error)
 	AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error
@@ -100,19 +92,15 @@ type UpsertExecutionInstanceParams struct {
 }
 
 type CreateConfigRevisionParams struct {
-	TenantID               uuid.UUID
-	DigitalEmployeeID      uuid.UUID
-	RevisionNumber         int32
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
-	Status                 ConfigRevisionStatus
-	ApprovedBy             *uuid.UUID
-	ApprovedAt             *time.Time
+	TenantID              uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	RevisionNumber        int32
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	Status                ConfigRevisionStatus
+	ApprovedBy            *uuid.UUID
+	ApprovedAt            *time.Time
 }
 
 type CreateWorkspaceFileParams struct {
@@ -203,23 +191,19 @@ type DigitalEmployeeExecutionInstanceRecord struct {
 }
 
 type DigitalEmployeeConfigRevisionRecord struct {
-	ID                     uuid.UUID
-	TenantID               uuid.UUID
-	DigitalEmployeeID      uuid.UUID
-	RevisionNumber         int32
-	RoleProfile            map[string]any
-	ConstitutionAddendum   map[string]any
-	CapabilitySelection    map[string]any
-	ContextPolicyOverride  map[string]any
-	ApprovalPolicyOverride map[string]any
-	BudgetPolicy           map[string]any
-	OutputContractAddendum map[string]any
-	Status                 ConfigRevisionStatus
-	ApprovedBy             *uuid.UUID
-	ApprovedAt             *time.Time
-	ArchivedAt             *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	RevisionNumber        int32
+	PersonaMemoryMarkdown string
+	CapabilityBindings    map[string]any
+	BudgetPolicy          map[string]any
+	Status                ConfigRevisionStatus
+	ApprovedBy            *uuid.UUID
+	ApprovedAt            *time.Time
+	ArchivedAt            *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type WorkspaceFileRecord struct {

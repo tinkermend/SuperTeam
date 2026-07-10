@@ -20,8 +20,6 @@ type HandlerService interface {
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
-	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
-	UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error)
 	ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error)
 	UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableRequest) (EnvironmentVariableSummary, error)
 	DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error
@@ -173,36 +171,43 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if field, ok := firstLegacyEmployeeConfigField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
+	}
 	var req struct {
-		TeamID                 *uuid.UUID     `json:"team_id"`
-		EmployeeType           string         `json:"employee_type"`
-		Name                   string         `json:"name"`
-		AvatarAssetID          string         `json:"avatar_asset_id"`
-		Role                   string         `json:"role"`
-		Description            *string        `json:"description"`
-		PermissionPolicy       map[string]any `json:"permission_policy"`
-		ContextPolicy          map[string]any `json:"context_policy"`
-		ApprovalPolicy         map[string]any `json:"approval_policy"`
-		RiskLevel              string         `json:"risk_level"`
-		Metadata               map[string]any `json:"metadata"`
-		RoleProfile            map[string]any `json:"role_profile"`
-		ConstitutionAddendum   map[string]any `json:"constitution_addendum"`
-		CapabilitySelection    map[string]any `json:"capability_selection"`
-		ContextPolicyOverride  map[string]any `json:"context_policy_override"`
-		ApprovalPolicyOverride map[string]any `json:"approval_policy_override"`
-		BudgetPolicy           map[string]any `json:"budget_policy"`
-		OutputContractAddendum map[string]any `json:"output_contract_addendum"`
-		RuntimeNodeID          uuid.UUID      `json:"runtime_node_id"`
-		ProviderType           string         `json:"provider_type"`
-		SessionPolicy          map[string]any `json:"session_policy"`
-		WorkspacePolicy        map[string]any `json:"workspace_policy"`
-		EnvironmentVariables   []struct {
+		TeamID                *uuid.UUID     `json:"team_id"`
+		EmployeeType          string         `json:"employee_type"`
+		Name                  string         `json:"name"`
+		AvatarAssetID         string         `json:"avatar_asset_id"`
+		Role                  string         `json:"role"`
+		Description           *string        `json:"description"`
+		PermissionPolicy      map[string]any `json:"permission_policy"`
+		ContextPolicy         map[string]any `json:"context_policy"`
+		ApprovalPolicy        map[string]any `json:"approval_policy"`
+		RiskLevel             string         `json:"risk_level"`
+		Metadata              map[string]any `json:"metadata"`
+		PersonaMemoryMarkdown string         `json:"persona_memory_markdown"`
+		CapabilityBindings    map[string]any `json:"capability_bindings"`
+		BudgetPolicy          map[string]any `json:"budget_policy"`
+		ProviderType          string         `json:"provider_type"`
+		EnvironmentVariables  []struct {
 			Name      string `json:"name"`
 			Value     string `json:"value"`
 			Sensitive *bool  `json:"sensitive"`
 		} `json:"environment_variables"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(payload, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -215,31 +220,24 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		})
 	}
 	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
-		TenantID:               tenantID,
-		TeamID:                 req.TeamID,
-		OwnerUserID:            middleware.GetUserID(r.Context()),
-		EmployeeType:           req.EmployeeType,
-		Name:                   req.Name,
-		AvatarAssetID:          req.AvatarAssetID,
-		Role:                   req.Role,
-		Description:            req.Description,
-		PermissionPolicy:       req.PermissionPolicy,
-		ContextPolicy:          req.ContextPolicy,
-		ApprovalPolicy:         req.ApprovalPolicy,
-		RiskLevel:              req.RiskLevel,
-		Metadata:               req.Metadata,
-		RoleProfile:            req.RoleProfile,
-		ConstitutionAddendum:   req.ConstitutionAddendum,
-		CapabilitySelection:    req.CapabilitySelection,
-		ContextPolicyOverride:  req.ContextPolicyOverride,
-		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
-		BudgetPolicy:           req.BudgetPolicy,
-		OutputContractAddendum: req.OutputContractAddendum,
-		RuntimeNodeID:          req.RuntimeNodeID,
-		ProviderType:           req.ProviderType,
-		SessionPolicy:          req.SessionPolicy,
-		WorkspacePolicy:        req.WorkspacePolicy,
-		EnvironmentVariables:   environmentVariables,
+		TenantID:              tenantID,
+		TeamID:                req.TeamID,
+		OwnerUserID:           middleware.GetUserID(r.Context()),
+		EmployeeType:          req.EmployeeType,
+		Name:                  req.Name,
+		AvatarAssetID:         req.AvatarAssetID,
+		Role:                  req.Role,
+		Description:           req.Description,
+		PermissionPolicy:      req.PermissionPolicy,
+		ContextPolicy:         req.ContextPolicy,
+		ApprovalPolicy:        req.ApprovalPolicy,
+		RiskLevel:             req.RiskLevel,
+		Metadata:              req.Metadata,
+		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
+		CapabilityBindings:    req.CapabilityBindings,
+		BudgetPolicy:          req.BudgetPolicy,
+		ProviderType:          req.ProviderType,
+		EnvironmentVariables:  environmentVariables,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -315,74 +313,6 @@ func (h *HTTPHandler) GetSchedulingReadiness(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, schedulingReadinessResponseFromDomain(readiness))
-}
-
-func (h *HTTPHandler) ListWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee workspace files read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	files, err := service.ListWorkspaceFiles(r.Context(), ListWorkspaceFilesRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, workspaceFileResponses(files))
-}
-
-func (h *HTTPHandler) UpsertWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee workspace file upsert")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var req struct {
-		Path       string  `json:"path"`
-		Content    string  `json:"content"`
-		FileRole   string  `json:"file_role"`
-		MimeType   string  `json:"mime_type"`
-		SyncPolicy string  `json:"sync_policy"`
-		ChangeNote *string `json:"change_note"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	updatedBy := middleware.GetUserID(r.Context())
-	file, err := service.UpsertWorkspaceFile(r.Context(), UpsertWorkspaceFileRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Path:              req.Path,
-		Content:           req.Content,
-		FileRole:          req.FileRole,
-		MimeType:          req.MimeType,
-		SyncPolicy:        req.SyncPolicy,
-		ChangeNote:        req.ChangeNote,
-		UpdatedBy:         &updatedBy,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, workspaceFileResponseFromDomain(file))
 }
 
 func (h *HTTPHandler) ListEnvironmentVariables(w http.ResponseWriter, r *http.Request) {
@@ -591,37 +521,58 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 	if !ok {
 		return
 	}
-	var req struct {
-		RoleProfile            map[string]any       `json:"role_profile"`
-		ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
-		CapabilitySelection    map[string]any       `json:"capability_selection"`
-		ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
-		ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
-		BudgetPolicy           map[string]any       `json:"budget_policy"`
-		OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
-		Status                 ConfigRevisionStatus `json:"status"`
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if field, ok := firstLegacyEmployeeConfigField(raw); ok {
+		http.Error(w, field+" is no longer supported", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		PersonaMemoryMarkdown *string              `json:"persona_memory_markdown"`
+		CapabilityBindings    map[string]any       `json:"capability_bindings"`
+		BudgetPolicy          map[string]any       `json:"budget_policy"`
+		Status                ConfigRevisionStatus `json:"status"`
+	}
+	payload, _ := json.Marshal(raw)
+	if err := json.Unmarshal(payload, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	revision, err := service.CreateConfigRevision(r.Context(), CreateDigitalEmployeeConfigRevisionRequest{
-		TenantID:               tenantID,
-		DigitalEmployeeID:      employeeID,
-		RoleProfile:            req.RoleProfile,
-		ConstitutionAddendum:   req.ConstitutionAddendum,
-		CapabilitySelection:    req.CapabilitySelection,
-		ContextPolicyOverride:  req.ContextPolicyOverride,
-		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
-		BudgetPolicy:           req.BudgetPolicy,
-		OutputContractAddendum: req.OutputContractAddendum,
-		Status:                 req.Status,
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employeeID,
+		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
+		CapabilityBindings:    req.CapabilityBindings,
+		BudgetPolicy:          req.BudgetPolicy,
+		Status:                req.Status,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
+}
+
+func firstLegacyEmployeeConfigField(raw map[string]json.RawMessage) (string, bool) {
+	for _, field := range []string{
+		"role_profile",
+		"constitution_addendum",
+		"capability_selection",
+		"context_policy_override",
+		"approval_policy_override",
+		"output_contract_addendum",
+		"runtime_node_id",
+		"session_policy",
+		"workspace_policy",
+	} {
+		if _, exists := raw[field]; exists {
+			return field, true
+		}
+	}
+	return "", false
 }
 
 const (
@@ -766,26 +717,29 @@ func (h *HTTPHandler) allowedEmployeeActions(ctx context.Context, tenantID, empl
 }
 
 type digitalEmployeeResponse struct {
-	ID               string                `json:"id"`
-	TenantID         string                `json:"tenant_id"`
-	TeamID           *string               `json:"team_id,omitempty"`
-	OwnerUserID      string                `json:"owner_user_id"`
-	EmployeeType     string                `json:"employee_type"`
-	ProviderType     string                `json:"provider_type"`
-	Name             string                `json:"name"`
-	Role             string                `json:"role"`
-	Description      *string               `json:"description,omitempty"`
-	Status           DigitalEmployeeStatus `json:"status"`
-	PermissionPolicy map[string]any        `json:"permission_policy"`
-	ContextPolicy    map[string]any        `json:"context_policy"`
-	ApprovalPolicy   map[string]any        `json:"approval_policy"`
-	RiskLevel        string                `json:"risk_level"`
-	Metadata         map[string]any        `json:"metadata"`
-	DisabledAt       *string               `json:"disabled_at,omitempty"`
-	ArchivedAt       *string               `json:"archived_at,omitempty"`
-	AllowedActions   []string              `json:"allowed_actions,omitempty"`
-	CreatedAt        string                `json:"created_at,omitempty"`
-	UpdatedAt        string                `json:"updated_at,omitempty"`
+	ID                    string                `json:"id"`
+	TenantID              string                `json:"tenant_id"`
+	TeamID                *string               `json:"team_id,omitempty"`
+	OwnerUserID           string                `json:"owner_user_id"`
+	EmployeeType          string                `json:"employee_type"`
+	ProviderType          string                `json:"provider_type"`
+	Name                  string                `json:"name"`
+	Role                  string                `json:"role"`
+	Description           *string               `json:"description,omitempty"`
+	Status                DigitalEmployeeStatus `json:"status"`
+	PermissionPolicy      map[string]any        `json:"permission_policy"`
+	ContextPolicy         map[string]any        `json:"context_policy"`
+	ApprovalPolicy        map[string]any        `json:"approval_policy"`
+	RiskLevel             string                `json:"risk_level"`
+	Metadata              map[string]any        `json:"metadata"`
+	PersonaMemoryMarkdown string                `json:"persona_memory_markdown"`
+	CapabilityBindings    map[string]any        `json:"capability_bindings"`
+	BudgetPolicy          map[string]any        `json:"budget_policy"`
+	DisabledAt            *string               `json:"disabled_at,omitempty"`
+	ArchivedAt            *string               `json:"archived_at,omitempty"`
+	AllowedActions        []string              `json:"allowed_actions,omitempty"`
+	CreatedAt             string                `json:"created_at,omitempty"`
+	UpdatedAt             string                `json:"updated_at,omitempty"`
 }
 
 type digitalEmployeeOverviewResponse struct {
@@ -931,26 +885,6 @@ type overviewPaginationResponse struct {
 	TotalCount int32 `json:"total_count"`
 }
 
-type workspaceFileResponse struct {
-	ID                string  `json:"id"`
-	TeamID            *string `json:"team_id,omitempty"`
-	Path              string  `json:"path"`
-	FileRole          string  `json:"file_role"`
-	MimeType          string  `json:"mime_type"`
-	SyncPolicy        string  `json:"sync_policy"`
-	Status            string  `json:"status"`
-	CurrentRevisionID string  `json:"current_revision_id"`
-	RevisionNumber    int32   `json:"revision_number"`
-	Content           string  `json:"content"`
-	ContentHash       string  `json:"content_hash"`
-	SizeBytes         int32   `json:"size_bytes"`
-	StorageBackend    string  `json:"storage_backend"`
-	ObjectKey         *string `json:"object_key,omitempty"`
-	ChangeNote        *string `json:"change_note,omitempty"`
-	CreatedAt         string  `json:"created_at,omitempty"`
-	UpdatedAt         string  `json:"updated_at,omitempty"`
-}
-
 type environmentVariableSummaryResponse struct {
 	ID                string                    `json:"id,omitempty"`
 	TenantID          string                    `json:"tenant_id,omitempty"`
@@ -990,17 +924,17 @@ type teamConfigCreateOptionResponse struct {
 }
 
 type employeeTypeOptionResponse struct {
-	Type                         string         `json:"type"`
-	Label                        string         `json:"label"`
-	Description                  string         `json:"description"`
-	DefaultRole                  string         `json:"default_role"`
-	RecommendedSkills            []string       `json:"recommended_skills"`
-	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
-	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
-	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
-	Metadata                     map[string]any `json:"metadata"`
+	Type                     string         `json:"type"`
+	Label                    string         `json:"label"`
+	Description              string         `json:"description"`
+	DefaultRole              string         `json:"default_role"`
+	RecommendedSkills        []string       `json:"recommended_skills"`
+	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+	CapabilityBindings       map[string]any `json:"capability_bindings"`
+	BudgetPolicy             map[string]any `json:"budget_policy"`
+	Metadata                 map[string]any `json:"metadata"`
 }
 
 type capabilityOptionsResponse struct {
@@ -1026,14 +960,11 @@ type runtimeProviderOptionResponse struct {
 }
 
 type policyDefaultsResponse struct {
-	PermissionPolicy      map[string]any `json:"permission_policy"`
-	ContextPolicyOverride map[string]any `json:"context_policy_override"`
-	ApprovalPolicy        map[string]any `json:"approval_policy"`
-	CapabilitySelection   map[string]any `json:"capability_selection"`
-	RuntimeSelector       map[string]any `json:"runtime_selector"`
-	WorkspacePolicy       map[string]any `json:"workspace_policy"`
-	SessionPolicy         map[string]any `json:"session_policy"`
-	Metadata              map[string]any `json:"metadata"`
+	PermissionPolicy map[string]any `json:"permission_policy"`
+	ApprovalPolicy   map[string]any `json:"approval_policy"`
+	WorkspacePolicy  map[string]any `json:"workspace_policy"`
+	SessionPolicy    map[string]any `json:"session_policy"`
+	Metadata         map[string]any `json:"metadata"`
 }
 
 type executionInstanceResponse struct {
@@ -1059,23 +990,19 @@ type executionInstanceResponse struct {
 }
 
 type configRevisionResponse struct {
-	ID                     string               `json:"id"`
-	TenantID               string               `json:"tenant_id"`
-	DigitalEmployeeID      string               `json:"digital_employee_id"`
-	RevisionNumber         int32                `json:"revision_number"`
-	RoleProfile            map[string]any       `json:"role_profile"`
-	ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
-	CapabilitySelection    map[string]any       `json:"capability_selection"`
-	ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
-	ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
-	BudgetPolicy           map[string]any       `json:"budget_policy"`
-	OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
-	Status                 ConfigRevisionStatus `json:"status"`
-	ApprovedBy             *string              `json:"approved_by,omitempty"`
-	ApprovedAt             *string              `json:"approved_at,omitempty"`
-	ArchivedAt             *string              `json:"archived_at,omitempty"`
-	CreatedAt              string               `json:"created_at,omitempty"`
-	UpdatedAt              string               `json:"updated_at,omitempty"`
+	ID                    string               `json:"id"`
+	TenantID              string               `json:"tenant_id"`
+	DigitalEmployeeID     string               `json:"digital_employee_id"`
+	RevisionNumber        int32                `json:"revision_number"`
+	PersonaMemoryMarkdown string               `json:"persona_memory_markdown"`
+	CapabilityBindings    map[string]any       `json:"capability_bindings"`
+	BudgetPolicy          map[string]any       `json:"budget_policy"`
+	Status                ConfigRevisionStatus `json:"status"`
+	ApprovedBy            *string              `json:"approved_by,omitempty"`
+	ApprovedAt            *string              `json:"approved_at,omitempty"`
+	ArchivedAt            *string              `json:"archived_at,omitempty"`
+	CreatedAt             string               `json:"created_at,omitempty"`
+	UpdatedAt             string               `json:"updated_at,omitempty"`
 }
 
 type schedulingReadinessResponse struct {
@@ -1218,25 +1145,28 @@ func employeeResponses(employees []*DigitalEmployee) []digitalEmployeeResponse {
 
 func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeResponse {
 	return digitalEmployeeResponse{
-		ID:               employee.ID.String(),
-		TenantID:         employee.TenantID.String(),
-		TeamID:           uuidStringPtr(employee.TeamID),
-		OwnerUserID:      employee.OwnerUserID.String(),
-		EmployeeType:     employee.EmployeeType,
-		ProviderType:     employee.ProviderType,
-		Name:             employee.Name,
-		Role:             employee.Role,
-		Description:      employee.Description,
-		Status:           employee.Status,
-		PermissionPolicy: cloneMap(employee.PermissionPolicy),
-		ContextPolicy:    cloneMap(employee.ContextPolicy),
-		ApprovalPolicy:   cloneMap(employee.ApprovalPolicy),
-		RiskLevel:        employee.RiskLevel,
-		Metadata:         cloneMap(employee.Metadata),
-		DisabledAt:       timeStringPtr(employee.DisabledAt),
-		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
-		CreatedAt:        timeString(employee.CreatedAt),
-		UpdatedAt:        timeString(employee.UpdatedAt),
+		ID:                    employee.ID.String(),
+		TenantID:              employee.TenantID.String(),
+		TeamID:                uuidStringPtr(employee.TeamID),
+		OwnerUserID:           employee.OwnerUserID.String(),
+		EmployeeType:          employee.EmployeeType,
+		ProviderType:          employee.ProviderType,
+		Name:                  employee.Name,
+		Role:                  employee.Role,
+		Description:           employee.Description,
+		Status:                employee.Status,
+		PermissionPolicy:      cloneMap(employee.PermissionPolicy),
+		ContextPolicy:         cloneMap(employee.ContextPolicy),
+		ApprovalPolicy:        cloneMap(employee.ApprovalPolicy),
+		RiskLevel:             employee.RiskLevel,
+		Metadata:              cloneMap(employee.Metadata),
+		PersonaMemoryMarkdown: employee.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(employee.CapabilityBindings),
+		BudgetPolicy:          cloneMap(employee.BudgetPolicy),
+		DisabledAt:            timeStringPtr(employee.DisabledAt),
+		ArchivedAt:            timeStringPtr(employee.ArchivedAt),
+		CreatedAt:             timeString(employee.CreatedAt),
+		UpdatedAt:             timeString(employee.UpdatedAt),
 	}
 }
 
@@ -1271,36 +1201,6 @@ func schedulingReadinessResponseFromDomain(readiness *DigitalEmployeeSchedulingR
 				MissingNames:    stringSliceForJSON(readiness.Capabilities.EnvironmentVariables.MissingNames),
 			},
 		},
-	}
-}
-
-func workspaceFileResponses(files []WorkspaceFile) []workspaceFileResponse {
-	responses := make([]workspaceFileResponse, 0, len(files))
-	for _, file := range files {
-		responses = append(responses, workspaceFileResponseFromDomain(file))
-	}
-	return responses
-}
-
-func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
-	return workspaceFileResponse{
-		ID:                file.ID.String(),
-		TeamID:            uuidStringPtr(file.TeamID),
-		Path:              file.Path,
-		FileRole:          file.FileRole,
-		MimeType:          file.MimeType,
-		SyncPolicy:        file.SyncPolicy,
-		Status:            file.Status,
-		CurrentRevisionID: file.CurrentRevisionID.String(),
-		RevisionNumber:    file.RevisionNumber,
-		Content:           file.Content,
-		ContentHash:       file.ContentHash,
-		SizeBytes:         file.SizeBytes,
-		StorageBackend:    file.StorageBackend,
-		ObjectKey:         file.ObjectKey,
-		ChangeNote:        file.ChangeNote,
-		CreatedAt:         timeString(file.CreatedAt),
-		UpdatedAt:         timeString(file.UpdatedAt),
 	}
 }
 
@@ -1550,17 +1450,17 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 	employeeTypes := make([]employeeTypeOptionResponse, 0, len(options.EmployeeTypes))
 	for _, definition := range options.EmployeeTypes {
 		employeeTypes = append(employeeTypes, employeeTypeOptionResponse{
-			Type:                         definition.Type,
-			Label:                        definition.Label,
-			Description:                  definition.Description,
-			DefaultRole:                  definition.DefaultRole,
-			RecommendedSkills:            stringSliceForJSON(definition.RecommendedSkills),
-			RecommendedMCPServers:        stringSliceForJSON(definition.RecommendedMCPServers),
-			RecommendedProviderTypes:     stringSliceForJSON(definition.RecommendedProviderTypes),
-			DefaultCapabilitySelection:   cloneMap(definition.DefaultCapabilitySelection),
-			DefaultContextPolicyOverride: cloneMap(definition.DefaultContextPolicyOverride),
-			DefaultApprovalPolicy:        cloneMap(definition.DefaultApprovalPolicy),
-			Metadata:                     cloneMap(definition.Metadata),
+			Type:                     definition.Type,
+			Label:                    definition.Label,
+			Description:              definition.Description,
+			DefaultRole:              definition.DefaultRole,
+			RecommendedSkills:        stringSliceForJSON(definition.RecommendedSkills),
+			RecommendedMCPServers:    stringSliceForJSON(definition.RecommendedMCPServers),
+			RecommendedProviderTypes: stringSliceForJSON(definition.RecommendedProviderTypes),
+			PersonaMemoryMarkdown:    definition.PersonaMemoryMarkdown,
+			CapabilityBindings:       cloneMap(definition.CapabilityBindings),
+			BudgetPolicy:             cloneMap(definition.BudgetPolicy),
+			Metadata:                 cloneMap(definition.Metadata),
 		})
 	}
 	domainChecks := options.CreationChecks
@@ -1594,14 +1494,11 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 		RuntimeProviderOptions: runtimeOptions,
 		CreationChecks:         creationChecks,
 		PolicyDefaults: policyDefaultsResponse{
-			PermissionPolicy:      cloneMap(options.PolicyDefaults.PermissionPolicy),
-			ContextPolicyOverride: cloneMap(options.PolicyDefaults.ContextPolicyOverride),
-			ApprovalPolicy:        cloneMap(options.PolicyDefaults.ApprovalPolicy),
-			CapabilitySelection:   cloneMap(options.PolicyDefaults.CapabilitySelection),
-			RuntimeSelector:       cloneMap(options.PolicyDefaults.RuntimeSelector),
-			WorkspacePolicy:       cloneMap(options.PolicyDefaults.WorkspacePolicy),
-			SessionPolicy:         cloneMap(options.PolicyDefaults.SessionPolicy),
-			Metadata:              cloneMap(options.PolicyDefaults.Metadata),
+			PermissionPolicy: cloneMap(options.PolicyDefaults.PermissionPolicy),
+			ApprovalPolicy:   cloneMap(options.PolicyDefaults.ApprovalPolicy),
+			WorkspacePolicy:  cloneMap(options.PolicyDefaults.WorkspacePolicy),
+			SessionPolicy:    cloneMap(options.PolicyDefaults.SessionPolicy),
+			Metadata:         cloneMap(options.PolicyDefaults.Metadata),
 		},
 	}
 }
@@ -1639,23 +1536,19 @@ func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInsta
 
 func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) configRevisionResponse {
 	return configRevisionResponse{
-		ID:                     revision.ID.String(),
-		TenantID:               revision.TenantID.String(),
-		DigitalEmployeeID:      revision.DigitalEmployeeID.String(),
-		RevisionNumber:         revision.RevisionNumber,
-		RoleProfile:            cloneMap(revision.RoleProfile),
-		ConstitutionAddendum:   cloneMap(revision.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(revision.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(revision.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(revision.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(revision.BudgetPolicy),
-		OutputContractAddendum: cloneMap(revision.OutputContractAddendum),
-		Status:                 revision.Status,
-		ApprovedBy:             uuidStringPtr(revision.ApprovedBy),
-		ApprovedAt:             timeStringPtr(revision.ApprovedAt),
-		ArchivedAt:             timeStringPtr(revision.ArchivedAt),
-		CreatedAt:              timeString(revision.CreatedAt),
-		UpdatedAt:              timeString(revision.UpdatedAt),
+		ID:                    revision.ID.String(),
+		TenantID:              revision.TenantID.String(),
+		DigitalEmployeeID:     revision.DigitalEmployeeID.String(),
+		RevisionNumber:        revision.RevisionNumber,
+		PersonaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(revision.CapabilityBindings),
+		BudgetPolicy:          cloneMap(revision.BudgetPolicy),
+		Status:                revision.Status,
+		ApprovedBy:            uuidStringPtr(revision.ApprovedBy),
+		ApprovedAt:            timeStringPtr(revision.ApprovedAt),
+		ArchivedAt:            timeStringPtr(revision.ArchivedAt),
+		CreatedAt:             timeString(revision.CreatedAt),
+		UpdatedAt:             timeString(revision.UpdatedAt),
 	}
 }
 

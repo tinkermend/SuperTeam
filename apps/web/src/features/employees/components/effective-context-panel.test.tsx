@@ -12,20 +12,21 @@ const employee = {
   tenant_id: "tenant-1",
   owner_user_id: "user-1",
   employee_type: "backend_engineer",
+  provider_type: "codex",
   name: "后端实现员",
   role: "backend_engineer",
   status: "active" as const,
   permission_policy: {},
   context_policy: {},
   approval_policy: {},
+  persona_memory_markdown: "# 人格画像\n证据优先",
   risk_level: "medium",
 };
 
 describe("EffectiveContextPanel", () => {
-  it("renders skill/mcp counts, constitution, env vars and memory placeholder", async () => {
+  it("renders skill/mcp counts, project constitution, env vars and persona memory status", async () => {
     const screen = await render(
       <EffectiveContextPanel
-        effectiveConfig={{ isLoading: false, isError: false, noApprovedConfig: false }}
         employee={employee}
         employeeId="employee-1"
         envVars={{
@@ -57,7 +58,7 @@ describe("EffectiveContextPanel", () => {
     await expect.element(screen.getByText("个人技能 1")).toBeVisible();
     await expect.element(screen.getByText("团队继承技能 2")).toBeVisible();
     await expect.element(screen.getByText("生效总数 3")).toBeVisible();
-    await expect.element(screen.getByText("待接入")).toBeVisible();
+    await expect.element(screen.getByText("人格记忆：已配置")).toBeVisible();
     await expect.element(screen.getByText("已配置 1")).toBeVisible();
     await expect.element(screen.getByText("REDIS_URL")).toBeVisible();
   });

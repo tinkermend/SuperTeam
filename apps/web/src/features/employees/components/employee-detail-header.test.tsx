@@ -12,6 +12,7 @@ const employee = {
   tenant_id: "tenant-1",
   owner_user_id: "user-1",
   employee_type: "backend_engineer",
+  provider_type: "codex",
   name: "后端实现员",
   role: "backend_engineer",
   description: "负责后端实现、接口补全、数据库迁移与测试修复",

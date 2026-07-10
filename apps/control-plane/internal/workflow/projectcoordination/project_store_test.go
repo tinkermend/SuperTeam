@@ -134,9 +134,8 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 			DigitalEmployeeID: employeeID,
 			EmployeeType:      "implementation",
 			EmployeeStatus:    "ready",
-			CapabilitySelection: map[string]any{
-				"enabled_external_capabilities": []any{"implementation"},
-				"enabled_provider_types":        []any{"codex"},
+			CapabilityBindings: map[string]any{
+				"external_capabilities": []any{"implementation"},
 			},
 			RuntimeNodeID:   runtimeNodeID,
 			ProviderType:    "codex",
@@ -208,9 +207,8 @@ func TestLoadProjectCoordinationSnapshotKeepsPlannableEmployeesWhenRuntimeNotRea
 			DigitalEmployeeID: employeeID,
 			EmployeeType:      "implementation",
 			EmployeeStatus:    "ready",
-			CapabilitySelection: map[string]any{
-				"enabled_external_capabilities": []any{"implementation"},
-				"enabled_provider_types":        []any{"codex"},
+			CapabilityBindings: map[string]any{
+				"external_capabilities": []any{"implementation"},
 			},
 			RuntimeNodeID:   runtimeNodeID,
 			ProviderType:    "codex",
@@ -267,11 +265,9 @@ func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 			employeeID: {
 				DigitalEmployeeID: employeeID,
 				EmployeeType:      "database_admin",
-				RoleProfile:       map[string]any{"primary_role": "data_analyst"},
-				CapabilitySelection: map[string]any{
-					"enabled_external_capabilities": []any{"database.read"},
-					"enabled_skills":                []any{"sql.analysis"},
-					"enabled_provider_types":        []any{"codex"},
+				CapabilityBindings: map[string]any{
+					"external_capabilities": []any{"database.read"},
+					"skills":                []any{"sql.analysis"},
 				},
 				ExecutionStatus: "ready",
 			},
@@ -289,8 +285,8 @@ func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
 	profile := snapshot.DigitalEmployeePool[0].PlanningProfile
 	require.NotNil(t, profile)
 	require.Equal(t, employeeID, profile.DigitalEmployeeID)
-	require.Equal(t, "data_analyst", profile.RoleProfile.PrimaryRole)
-	require.Equal(t, []PlanningCapability{{Key: "database.read", Level: "strong", Source: "capability_selection.enabled_external_capabilities", Confidence: 0.9}}, profile.Capabilities)
+	require.Equal(t, "database_admin", profile.RoleProfile.PrimaryRole)
+	require.Equal(t, []PlanningCapability{{Key: "database.read", Level: "strong", Source: "capability_bindings.external_capabilities", Confidence: 0.9}}, profile.Capabilities)
 }
 
 func TestProjectStoreSnapshotKeepsUnknownProfileWhenProfileSourceFails(t *testing.T) {

@@ -52,7 +52,7 @@ export function EmployeeDetailHeader({
             <StatusPill tone={statusTone[employee.status] ?? "mute"}>{employee.status}</StatusPill>
           </div>
           <p className="mt-1 truncate text-[13px] text-v3-ink-2">
-            Claude Code 会话身份 · 生效上下文与历史执行记录
+            数字员工身份 · Provider {providerDisplayName(employee.provider_type)} · 生效上下文与历史执行记录
           </p>
           <p className="mt-1 truncate text-xs text-v3-ink-3">
             角色 {employee.role}
@@ -96,4 +96,16 @@ export function EmployeeDetailHeader({
       </div>
     </div>
   );
+}
+
+function providerDisplayName(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  const labels: Record<string, string> = {
+    codex: "Codex",
+    opencode: "OpenCode",
+    "open-code": "OpenCode",
+    "claude-code": "Claude Code",
+    claude: "Claude Code",
+  };
+  return labels[normalized] ?? value;
 }

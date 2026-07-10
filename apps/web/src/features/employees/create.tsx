@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import {
   GlassCard,
   IconTile,
@@ -77,16 +78,18 @@ type CreationMode = "template" | "blank_custom";
 
 type WizardDraft = {
   creation_mode: CreationMode;
-  capability_selection: {
-    enabled_mcp_servers: string[];
-    enabled_skills: string[];
+  capability_bindings: Record<string, unknown>;
+  capability_binding_draft: {
+    mcp_servers: string[];
+    skills: string[];
   };
-  context_policy_override: Record<string, unknown>;
+  context_policy: Record<string, unknown>;
   daily_token_limit: string;
-  approval_policy_override: Record<string, unknown>;
+  approval_policy: Record<string, unknown>;
   employee_type: string;
   avatar_asset_id: string;
   name: string;
+  persona_memory_markdown: string;
   risk_level: string;
   role: string;
   runtime_binding: string;
@@ -116,17 +119,19 @@ type CreateEmployeeViewProps = {
 };
 
 const emptyDraft: WizardDraft = {
-  approval_policy_override: {},
+  approval_policy: {},
+  capability_bindings: {},
   creation_mode: "template",
-  capability_selection: {
-    enabled_mcp_servers: [],
-    enabled_skills: [],
+  capability_binding_draft: {
+    mcp_servers: [],
+    skills: [],
   },
-  context_policy_override: {},
+  context_policy: {},
   daily_token_limit: "",
   employee_type: "",
   avatar_asset_id: "",
   name: "",
+  persona_memory_markdown: "",
   provider_type: "",
   risk_level: "medium",
   role: "",
@@ -184,7 +189,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setDraft((current) => {
       if (current.creation_mode !== "template") return current;
       if (!current.employee_type || !employeeTypes.some((item) => item.type === current.employee_type)) {
-        return applyTypeDefaults(current, firstType);
+        return applyTypeDefaults(current, firstType, optionsData);
       }
       return current;
     });
@@ -196,7 +201,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     const requestedType = findTemplateByType(optionsData, requestedTemplate);
     setTemplateQueryHandled(requestedTemplate);
     if (!requestedType) return;
-    setDraft((current) => (current.creation_mode === "template" ? applyTypeDefaults(current, requestedType) : current));
+    setDraft((current) => (
+      current.creation_mode === "template" ? applyTypeDefaults(current, requestedType, optionsData) : current
+    ));
   }, [createOptions.data, requestedTemplate, templateQueryHandled]);
 
   useEffect(() => {
@@ -238,21 +245,14 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           name: draft.name.trim(),
           avatar_asset_id: draft.avatar_asset_id,
           role: draft.role.trim(),
-          risk_level: draft.risk_level,
-          role_profile: {
-            employee_type: draft.employee_type,
-            role: draft.role.trim(),
-            title: selectedType?.label ?? draft.employee_type,
-          },
           ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
-          capability_selection: employeeExtensionCapabilitySelection(draft.capability_selection, createOptions.data),
-          context_policy_override: draft.context_policy_override,
-          approval_policy_override: draft.approval_policy_override,
+          approval_policy: draft.approval_policy,
           budget_policy: budgetPolicyFromDraft(draft),
-          output_contract_addendum: {},
+          capability_bindings: capabilityBindingsFromDraft(draft, createOptions.data),
+          context_policy: draft.context_policy,
+          persona_memory_markdown: draft.persona_memory_markdown.trim(),
+          risk_level: draft.risk_level,
           provider_type: draft.provider_type,
-          session_policy: { mode: "reuse_latest" },
-          workspace_policy: {},
           environment_variables: draft.environment_variables
             .filter((row) => row.name.trim() && row.value)
             .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
@@ -292,7 +292,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       updateDraft({ employee_type: typeValue });
       return;
     }
-    setDraft((current) => applyTypeDefaults(current, nextType));
+    setDraft((current) => applyTypeDefaults(current, nextType, createOptions.data));
   }
 
   function selectProvider(providerType: string) {
@@ -1085,7 +1085,7 @@ function CreationPreflightPanel({
           <SummaryItem label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           <SummaryItem
             label="能力选择"
-            value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
+            value={`技能 ${draft.capability_binding_draft.skills.length} · MCP ${draft.capability_binding_draft.mcp_servers.length}`}
           />
           <SummaryItem
             label="Provider 类型"
@@ -1128,8 +1128,8 @@ function ConfirmCreationStep({
   onSubmit: () => void;
 }) {
   const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
-  const contextPolicySummary = formatJsonSummary(draft.context_policy_override);
-  const approvalPolicySummary = formatJsonSummary(draft.approval_policy_override);
+  const contextPolicySummary = formatJsonSummary(draft.context_policy);
+  const approvalPolicySummary = formatJsonSummary(draft.approval_policy);
 
   return (
     <GlassCard className="flex flex-col">
@@ -1166,7 +1166,7 @@ function ConfirmCreationStep({
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
-              value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length}`}
+              value={`技能 ${draft.capability_binding_draft.skills.length} · MCP ${draft.capability_binding_draft.mcp_servers.length}`}
             />
             <InlineSummary
               label="Provider 类型"
@@ -1346,20 +1346,23 @@ function CapabilityStep({
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const capabilityOptions = options?.capability_options;
-  const inheritedCapabilities = inheritedCapabilitySelection(options);
+  const inheritedCapabilities = inheritedCapabilityBindings(options);
+  const capabilityBindingsPreview = formatCapabilityBindingsPreview(
+    capabilityBindingsFromDraft(draft, options),
+  );
   const extensionCapabilityOptions = {
-    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.enabled_mcp_servers),
-    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.enabled_skills),
+    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
+    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
   };
 
-  function toggle(kind: keyof WizardDraft["capability_selection"], value: string) {
-    const currentValues = draft.capability_selection[kind];
+  function toggle(kind: keyof WizardDraft["capability_binding_draft"], value: string) {
+    const currentValues = draft.capability_binding_draft[kind];
     const nextValues = currentValues.includes(value)
       ? currentValues.filter((item) => item !== value)
       : [...currentValues, value];
     onUpdate({
-      capability_selection: {
-        ...draft.capability_selection,
+      capability_binding_draft: {
+        ...draft.capability_binding_draft,
         [kind]: nextValues,
       },
     });
@@ -1375,24 +1378,36 @@ function CapabilityStep({
         <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
-          <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.enabled_skills} />
-          <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.enabled_mcp_servers} />
+          <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.skills} />
+          <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.mcp_servers} />
         </div>
       </section>
       <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
         <div className="text-sm font-semibold text-v3-ink">员工扩展能力</div>
         <p className="mt-1 text-xs text-v3-ink-3">这里只提交员工个人扩展项。</p>
       </section>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Field label="人格记忆.md">
+          <Textarea
+            className="min-h-[220px] border-v3-line bg-v3-card font-mono text-xs text-v3-ink"
+            id="persona-memory-markdown"
+            onChange={(event) => onUpdate({ persona_memory_markdown: event.target.value })}
+            placeholder="# 人格画像"
+            value={draft.persona_memory_markdown}
+          />
+        </Field>
+        <JsonReadOnlyCard label="能力绑定" value={capabilityBindingsPreview} />
+      </div>
       <CapabilityGroup
-        checkedValues={draft.capability_selection.enabled_skills}
+        checkedValues={draft.capability_binding_draft.skills}
         label="技能"
-        onToggle={(value) => toggle("enabled_skills", value)}
+        onToggle={(value) => toggle("skills", value)}
         values={extensionCapabilityOptions.skills}
       />
       <CapabilityGroup
-        checkedValues={draft.capability_selection.enabled_mcp_servers}
+        checkedValues={draft.capability_binding_draft.mcp_servers}
         label="MCP Server"
-        onToggle={(value) => toggle("enabled_mcp_servers", value)}
+        onToggle={(value) => toggle("mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
       />
       <section className="grid gap-4 rounded-[14px] border border-v3-line bg-v3-card p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -1402,8 +1417,8 @@ function CapabilityStep({
             <p className="mt-1 text-xs text-v3-ink-3">模板默认的上下文与审批策略会随本次创建一起提交。</p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
-            <JsonReadOnlyCard label="上下文策略" value={formatJsonSummary(draft.context_policy_override)} />
-            <JsonReadOnlyCard label="审批策略" value={formatJsonSummary(draft.approval_policy_override)} />
+            <JsonReadOnlyCard label="上下文策略" value={formatJsonSummary(draft.context_policy)} />
+            <JsonReadOnlyCard label="审批策略" value={formatJsonSummary(draft.approval_policy)} />
           </div>
         </div>
         <Field error={errors.daily_token_limit} label="每日 Token 预算上限">
@@ -1681,6 +1696,8 @@ function Field({
 }
 
 const labelId: Record<string, string> = {
+  "人格记忆.md": "persona-memory-markdown",
+  能力绑定: "capability-bindings",
   名称: "employee-name",
   上下文策略: "context-policy",
   审批策略: "approval-policy",
@@ -1693,19 +1710,28 @@ const labelId: Record<string, string> = {
 const selectClassName =
   "h-10 w-full rounded-xl border border-v3-line bg-v3-card px-3 py-1 text-sm text-v3-ink shadow-sm outline-none transition-[color,box-shadow] focus-visible:border-v3-brand focus-visible:ring-2 focus-visible:ring-v3-brand/40 disabled:cursor-not-allowed disabled:opacity-50";
 
-function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
-  const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
+function applyTypeDefaults(
+  current: WizardDraft,
+  typeOption: DigitalEmployeeTypeOption,
+  options: DigitalEmployeeCreateOptions | undefined,
+): WizardDraft {
+  const policyDefaults = options?.policy_defaults;
+  const budgetPolicy = typeOption.budget_policy ?? {};
+  const dailyTokenLimit = budgetPolicyValue(budgetPolicy);
 
   return {
     ...current,
-    approval_policy_override: typeOption.default_approval_policy ?? {},
-    capability_selection: {
-      enabled_mcp_servers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
-      enabled_skills: stringList(defaultCapabilitySelection.enabled_skills),
+    approval_policy: policyDefaults?.approval_policy ?? {},
+    capability_bindings: capabilityBindingDefaults(typeOption.capability_bindings),
+    capability_binding_draft: {
+      mcp_servers: stringList(typeOption.capability_bindings?.mcp_servers),
+      skills: stringList(typeOption.capability_bindings?.skills),
     },
-    context_policy_override: typeOption.default_context_policy_override ?? {},
+    context_policy: {},
+    daily_token_limit: dailyTokenLimit,
     employee_type: typeOption.type,
-    risk_level: stringValue(typeOption.default_approval_policy?.min_risk_for_human) || "medium",
+    persona_memory_markdown: typeOption.persona_memory_markdown ?? "",
+    risk_level: stringValue(policyDefaults?.approval_policy?.min_risk_for_human) || "medium",
     role: typeOption.default_role || typeOption.type,
   };
 }
@@ -1714,37 +1740,83 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
   return {
     ...current,
     creation_mode: "blank_custom",
-    approval_policy_override: {},
-    capability_selection: {
-      enabled_mcp_servers: [],
-      enabled_skills: [],
+    approval_policy: {},
+    capability_bindings: {},
+    capability_binding_draft: {
+      mcp_servers: [],
+      skills: [],
     },
-    context_policy_override: {},
+    context_policy: {},
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
+    persona_memory_markdown: "",
     risk_level: "medium",
     role: "",
   };
 }
 
-function inheritedCapabilitySelection(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_selection"] {
+function inheritedCapabilityBindings(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_binding_draft"] {
   const teamConfig = options?.team_config as Record<string, unknown> | undefined;
 
   return {
-    enabled_mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
-    enabled_skills: uniqueStringList(teamConfig?.skills),
+    mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
+    skills: uniqueStringList(teamConfig?.skills),
   };
 }
 
-function employeeExtensionCapabilitySelection(
-  selection: WizardDraft["capability_selection"],
+function employeeExtensionCapabilityBindings(
+  selection: WizardDraft["capability_binding_draft"],
   options: DigitalEmployeeCreateOptions | undefined,
-): WizardDraft["capability_selection"] {
-  const inherited = inheritedCapabilitySelection(options);
+): WizardDraft["capability_binding_draft"] {
+  const inherited = inheritedCapabilityBindings(options);
 
   return {
-    enabled_mcp_servers: withoutValues(selection.enabled_mcp_servers, inherited.enabled_mcp_servers),
-    enabled_skills: withoutValues(selection.enabled_skills, inherited.enabled_skills),
+    mcp_servers: withoutValues(selection.mcp_servers, inherited.mcp_servers),
+    skills: withoutValues(selection.skills, inherited.skills),
   };
+}
+
+function capabilityBindingsFromDraft(
+  draft: WizardDraft,
+  options: DigitalEmployeeCreateOptions | undefined,
+): Record<string, unknown> {
+  const extension = employeeExtensionCapabilityBindings(draft.capability_binding_draft, options);
+  const bindings = capabilityBindingDefaults(draft.capability_bindings);
+
+  bindings.skills = uniqueStringList(extension.skills);
+  bindings.mcp_servers = uniqueStringList(extension.mcp_servers);
+
+  return bindings;
+}
+
+function capabilityBindingDefaults(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  const source = structuredCloneSafe(value ?? {});
+  const bindings: Record<string, unknown> = {};
+
+  for (const key of ["external_capabilities", "environment_variable_refs"]) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      bindings[key] = source[key];
+    }
+  }
+
+  return bindings;
+}
+
+function budgetPolicyValue(value: Record<string, unknown>) {
+  const rawValue = value.daily_token_limit;
+  if (typeof rawValue === "number" && Number.isInteger(rawValue) && rawValue > 0) {
+    return String(rawValue);
+  }
+  if (typeof rawValue === "string") {
+    const trimmed = rawValue.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function structuredCloneSafe<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value ?? {})) as T;
 }
 
 function uniqueStringList(value: unknown): string[] {
@@ -1769,6 +1841,15 @@ function parseDailyTokenLimit(rawValue: string) {
 
 function formatJsonSummary(value: Record<string, unknown>) {
   return JSON.stringify(value, null, 2);
+}
+
+function formatCapabilityBindingsPreview(value: Record<string, unknown>) {
+  return [
+    `技能：${stringList(value.skills).length}`,
+    `MCP Server：${stringList(value.mcp_servers).length}`,
+    `外部能力：${stringList(value.external_capabilities).length}`,
+    `环境变量引用：${stringList(value.environment_variable_refs).length}`,
+  ].join("\n");
 }
 
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {

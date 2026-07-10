@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::path::Path;
 
 use crate::controlplane::models::{RuntimeCommand, RuntimeCommandType};
 use crate::providers::catalog;
@@ -130,6 +131,10 @@ pub struct RuntimeProvisionInstanceCommandPayload {
     pub provider_type: String,
     pub agent_home_dir: String,
     #[serde(default)]
+    pub persona_memory_markdown: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub capability_bindings: serde_json::Value,
+    #[serde(default)]
     pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
     #[serde(default)]
     pub skills: Vec<RuntimeSkillPayload>,
@@ -181,6 +186,9 @@ impl RuntimeProvisionInstanceCommandPayload {
         for file in &self.workspace_files {
             require_uuid_like("workspace_files.file_id", &file.file_id)?;
             require_uuid_like("workspace_files.revision_id", &file.revision_id)?;
+            if is_instruction_workspace_file(&file.path) {
+                anyhow::bail!("instruction workspace file is not supported: {}", file.path);
+            }
             if file.storage_backend == "db" && file.content_text.is_none() {
                 anyhow::bail!("content_text is required for db-backed workspace files");
             }
@@ -188,6 +196,15 @@ impl RuntimeProvisionInstanceCommandPayload {
 
         Ok(())
     }
+}
+
+fn is_instruction_workspace_file(path: &str) -> bool {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("AGENTS.md") || name.eq_ignore_ascii_case("CLAUDE.md")
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -204,6 +221,10 @@ pub struct RuntimeSessionCommandPayload {
     pub provider_type: String,
     #[serde(default)]
     pub agent_home_dir: Option<String>,
+    #[serde(default)]
+    pub persona_memory_markdown: Option<String>,
+    #[serde(default = "default_json_object")]
+    pub capability_bindings: serde_json::Value,
     #[serde(default)]
     pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
     #[serde(default)]
@@ -547,6 +568,10 @@ fn default_metadata() -> serde_json::Value {
     serde_json::json!({})
 }
 
+fn default_json_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,6 +665,8 @@ mod tests {
             runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
@@ -695,6 +722,8 @@ mod tests {
                 runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
                 provider_type: "codex".to_string(),
                 agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+                persona_memory_markdown: None,
+                capability_bindings: serde_json::json!({}),
                 workspace_files: Vec::new(),
                 skills: Vec::new(),
                 mcp_servers: Vec::new(),
@@ -726,6 +755,8 @@ mod tests {
             runtime_node_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),

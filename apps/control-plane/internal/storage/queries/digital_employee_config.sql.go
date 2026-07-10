@@ -17,13 +17,9 @@ INSERT INTO digital_employee_config_revisions (
     tenant_id,
     digital_employee_id,
     revision_number,
-    role_profile,
-    constitution_addendum,
-    capability_selection,
-    context_policy_override,
-    approval_policy_override,
+    persona_memory_markdown,
+    capability_bindings,
     budget_policy,
-    output_contract_addendum,
     status,
     approved_by,
     approved_at
@@ -32,87 +28,83 @@ VALUES (
     $1::uuid,
     $2::uuid,
     $3::integer,
-    COALESCE($4::jsonb, '{}'::jsonb),
+    COALESCE($4::text, ''),
     COALESCE($5::jsonb, '{}'::jsonb),
     COALESCE($6::jsonb, '{}'::jsonb),
-    COALESCE($7::jsonb, '{}'::jsonb),
-    COALESCE($8::jsonb, '{}'::jsonb),
-    COALESCE($9::jsonb, '{}'::jsonb),
-    COALESCE($10::jsonb, '{}'::jsonb),
-    $11::varchar,
-    $12::uuid,
-    $13::timestamptz
+    $7::varchar,
+    $8::uuid,
+    $9::timestamptz
 )
 RETURNING id,
     tenant_id,
     digital_employee_id,
     revision_number,
-    role_profile,
-    constitution_addendum,
-    capability_selection,
-    context_policy_override,
-    approval_policy_override,
-    output_contract_addendum,
+    persona_memory_markdown,
+    capability_bindings,
+    budget_policy,
     status,
     approved_by,
     approved_at,
     archived_at,
     created_at,
-    updated_at,
-    budget_policy
+    updated_at
 `
 
 type CreateDigitalEmployeeConfigRevisionParams struct {
-	TenantID               uuid.UUID          `json:"tenant_id"`
-	DigitalEmployeeID      uuid.UUID          `json:"digital_employee_id"`
-	RevisionNumber         int32              `json:"revision_number"`
-	RoleProfile            []byte             `json:"role_profile"`
-	ConstitutionAddendum   []byte             `json:"constitution_addendum"`
-	CapabilitySelection    []byte             `json:"capability_selection"`
-	ContextPolicyOverride  []byte             `json:"context_policy_override"`
-	ApprovalPolicyOverride []byte             `json:"approval_policy_override"`
-	BudgetPolicy           []byte             `json:"budget_policy"`
-	OutputContractAddendum []byte             `json:"output_contract_addendum"`
-	Status                 string             `json:"status"`
-	ApprovedBy             uuid.NullUUID      `json:"approved_by"`
-	ApprovedAt             pgtype.Timestamptz `json:"approved_at"`
+	TenantID              uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID          `json:"digital_employee_id"`
+	RevisionNumber        int32              `json:"revision_number"`
+	PersonaMemoryMarkdown string             `json:"persona_memory_markdown"`
+	CapabilityBindings    []byte             `json:"capability_bindings"`
+	BudgetPolicy          []byte             `json:"budget_policy"`
+	Status                string             `json:"status"`
+	ApprovedBy            uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
 }
 
-func (q *Queries) CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error) {
+type CreateDigitalEmployeeConfigRevisionRow struct {
+	ID                    uuid.UUID          `json:"id"`
+	TenantID              uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID          `json:"digital_employee_id"`
+	RevisionNumber        int32              `json:"revision_number"`
+	PersonaMemoryMarkdown string             `json:"persona_memory_markdown"`
+	CapabilityBindings    []byte             `json:"capability_bindings"`
+	BudgetPolicy          []byte             `json:"budget_policy"`
+	Status                string             `json:"status"`
+	ApprovedBy            uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	ArchivedAt            pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error) {
 	row := q.db.QueryRow(ctx, CreateDigitalEmployeeConfigRevision,
 		arg.TenantID,
 		arg.DigitalEmployeeID,
 		arg.RevisionNumber,
-		arg.RoleProfile,
-		arg.ConstitutionAddendum,
-		arg.CapabilitySelection,
-		arg.ContextPolicyOverride,
-		arg.ApprovalPolicyOverride,
+		arg.PersonaMemoryMarkdown,
+		arg.CapabilityBindings,
 		arg.BudgetPolicy,
-		arg.OutputContractAddendum,
 		arg.Status,
 		arg.ApprovedBy,
 		arg.ApprovedAt,
 	)
-	var i DigitalEmployeeConfigRevision
+	var i CreateDigitalEmployeeConfigRevisionRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.DigitalEmployeeID,
 		&i.RevisionNumber,
-		&i.RoleProfile,
-		&i.ConstitutionAddendum,
-		&i.CapabilitySelection,
-		&i.ContextPolicyOverride,
-		&i.ApprovalPolicyOverride,
-		&i.OutputContractAddendum,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -122,19 +114,15 @@ SELECT id,
     tenant_id,
     digital_employee_id,
     revision_number,
-    role_profile,
-    constitution_addendum,
-    capability_selection,
-    context_policy_override,
-    approval_policy_override,
-    output_contract_addendum,
+    persona_memory_markdown,
+    capability_bindings,
+    budget_policy,
     status,
     approved_by,
     approved_at,
     archived_at,
     created_at,
-    updated_at,
-    budget_policy
+    updated_at
 FROM digital_employee_config_revisions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -149,27 +137,39 @@ type GetCurrentDigitalEmployeeConfigRevisionParams struct {
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 }
 
-func (q *Queries) GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error) {
+type GetCurrentDigitalEmployeeConfigRevisionRow struct {
+	ID                    uuid.UUID          `json:"id"`
+	TenantID              uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID          `json:"digital_employee_id"`
+	RevisionNumber        int32              `json:"revision_number"`
+	PersonaMemoryMarkdown string             `json:"persona_memory_markdown"`
+	CapabilityBindings    []byte             `json:"capability_bindings"`
+	BudgetPolicy          []byte             `json:"budget_policy"`
+	Status                string             `json:"status"`
+	ApprovedBy            uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	ArchivedAt            pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (GetCurrentDigitalEmployeeConfigRevisionRow, error) {
 	row := q.db.QueryRow(ctx, GetCurrentDigitalEmployeeConfigRevision, arg.TenantID, arg.DigitalEmployeeID)
-	var i DigitalEmployeeConfigRevision
+	var i GetCurrentDigitalEmployeeConfigRevisionRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.DigitalEmployeeID,
 		&i.RevisionNumber,
-		&i.RoleProfile,
-		&i.ConstitutionAddendum,
-		&i.CapabilitySelection,
-		&i.ContextPolicyOverride,
-		&i.ApprovalPolicyOverride,
-		&i.OutputContractAddendum,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -179,19 +179,15 @@ SELECT id,
     tenant_id,
     digital_employee_id,
     revision_number,
-    role_profile,
-    constitution_addendum,
-    capability_selection,
-    context_policy_override,
-    approval_policy_override,
-    output_contract_addendum,
+    persona_memory_markdown,
+    capability_bindings,
+    budget_policy,
     status,
     approved_by,
     approved_at,
     archived_at,
     created_at,
-    updated_at,
-    budget_policy
+    updated_at
 FROM digital_employee_config_revisions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -205,27 +201,39 @@ type GetDigitalEmployeeConfigRevisionParams struct {
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 }
 
-func (q *Queries) GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error) {
+type GetDigitalEmployeeConfigRevisionRow struct {
+	ID                    uuid.UUID          `json:"id"`
+	TenantID              uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID          `json:"digital_employee_id"`
+	RevisionNumber        int32              `json:"revision_number"`
+	PersonaMemoryMarkdown string             `json:"persona_memory_markdown"`
+	CapabilityBindings    []byte             `json:"capability_bindings"`
+	BudgetPolicy          []byte             `json:"budget_policy"`
+	Status                string             `json:"status"`
+	ApprovedBy            uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	ArchivedAt            pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (GetDigitalEmployeeConfigRevisionRow, error) {
 	row := q.db.QueryRow(ctx, GetDigitalEmployeeConfigRevision, arg.ID, arg.TenantID, arg.DigitalEmployeeID)
-	var i DigitalEmployeeConfigRevision
+	var i GetDigitalEmployeeConfigRevisionRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.DigitalEmployeeID,
 		&i.RevisionNumber,
-		&i.RoleProfile,
-		&i.ConstitutionAddendum,
-		&i.CapabilitySelection,
-		&i.ContextPolicyOverride,
-		&i.ApprovalPolicyOverride,
-		&i.OutputContractAddendum,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -235,19 +243,15 @@ SELECT id,
     tenant_id,
     digital_employee_id,
     revision_number,
-    role_profile,
-    constitution_addendum,
-    capability_selection,
-    context_policy_override,
-    approval_policy_override,
-    output_contract_addendum,
+    persona_memory_markdown,
+    capability_bindings,
+    budget_policy,
     status,
     approved_by,
     approved_at,
     archived_at,
     created_at,
-    updated_at,
-    budget_policy
+    updated_at
 FROM digital_employee_config_revisions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -260,27 +264,39 @@ type GetLatestDigitalEmployeeConfigRevisionParams struct {
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 }
 
-func (q *Queries) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error) {
+type GetLatestDigitalEmployeeConfigRevisionRow struct {
+	ID                    uuid.UUID          `json:"id"`
+	TenantID              uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID     uuid.UUID          `json:"digital_employee_id"`
+	RevisionNumber        int32              `json:"revision_number"`
+	PersonaMemoryMarkdown string             `json:"persona_memory_markdown"`
+	CapabilityBindings    []byte             `json:"capability_bindings"`
+	BudgetPolicy          []byte             `json:"budget_policy"`
+	Status                string             `json:"status"`
+	ApprovedBy            uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	ArchivedAt            pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (GetLatestDigitalEmployeeConfigRevisionRow, error) {
 	row := q.db.QueryRow(ctx, GetLatestDigitalEmployeeConfigRevision, arg.TenantID, arg.DigitalEmployeeID)
-	var i DigitalEmployeeConfigRevision
+	var i GetLatestDigitalEmployeeConfigRevisionRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.DigitalEmployeeID,
 		&i.RevisionNumber,
-		&i.RoleProfile,
-		&i.ConstitutionAddendum,
-		&i.CapabilitySelection,
-		&i.ContextPolicyOverride,
-		&i.ApprovalPolicyOverride,
-		&i.OutputContractAddendum,
+		&i.PersonaMemoryMarkdown,
+		&i.CapabilityBindings,
+		&i.BudgetPolicy,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BudgetPolicy,
 	)
 	return i, err
 }

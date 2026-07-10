@@ -3,10 +3,6 @@ use superteam_runtime_agent::workspace_files::{
     ProviderHomeKind, WorkspaceMaterializationPlan, materialize_workspace, validate_workspace_path,
 };
 
-fn agents_file(content: &str) -> RuntimeWorkspaceFilePayload {
-    workspace_file("AGENTS.md", content)
-}
-
 fn workspace_file(path: &str, content: &str) -> RuntimeWorkspaceFilePayload {
     RuntimeWorkspaceFilePayload {
         file_id: "55555555-5555-4555-8555-555555555555".to_string(),
@@ -31,8 +27,10 @@ fn rejects_reserved_and_unsafe_workspace_paths() {
         "/AGENTS.md",
         "../AGENTS.md",
         "notes/../AGENTS.md",
+        "AGENTS.md",
+        "docs/agents.md",
         "CLAUDE.md",
-        "CLAUDE.md/anything",
+        "docs/claude.md",
         ".claude/settings.json",
         ".opencode/config.json",
         ".codex/config.toml",
@@ -59,7 +57,7 @@ fn materialize_workspace_accepts_empty_skills_and_mcp_contract() {
     let result = materialize_workspace(WorkspaceMaterializationPlan {
         agent_home_dir: home.clone(),
         provider_home: ProviderHomeKind::OpenCode,
-        files: vec![agents_file("# Contract\n")],
+        files: vec![workspace_file("context.md", "# Contract\n")],
     })
     .unwrap();
 
@@ -76,17 +74,17 @@ fn materialize_workspace_creates_codex_provider_dir() {
     let result = materialize_workspace(WorkspaceMaterializationPlan {
         agent_home_dir: home.clone(),
         provider_home: ProviderHomeKind::Codex,
-        files: vec![agents_file("# Contract\n")],
+        files: vec![workspace_file("context.md", "# Contract\n")],
     })
     .unwrap();
 
     assert_eq!(result.synced_files.len(), 1);
     assert!(home.join(".codex").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
+    assert!(!home.join("CLAUDE.md").exists());
 }
 
 #[test]
-fn materialize_workspace_writes_agents_link_and_provider_dir() {
+fn materialize_workspace_writes_generic_files_without_instruction_compatibility() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("teams/team/employees/employee");
     std::fs::create_dir_all(&home).unwrap();
@@ -94,36 +92,24 @@ fn materialize_workspace_writes_agents_link_and_provider_dir() {
     let result = materialize_workspace(WorkspaceMaterializationPlan {
         agent_home_dir: home.clone(),
         provider_home: ProviderHomeKind::ClaudeCode,
-        files: vec![agents_file("# Contract\n")],
+        files: vec![workspace_file("docs/context.md", "# Contract\n")],
     })
     .unwrap();
 
     assert_eq!(result.synced_files.len(), 1);
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("docs/context.md")).unwrap(),
         "# Contract\n"
     );
     assert!(home.join(".claude").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
-    #[cfg(unix)]
-    {
-        let claude_metadata = std::fs::symlink_metadata(home.join("CLAUDE.md")).unwrap();
-        assert!(
-            claude_metadata.file_type().is_symlink(),
-            "CLAUDE.md should be a compatibility symlink to AGENTS.md"
-        );
-        assert_eq!(
-            std::fs::read_link(home.join("CLAUDE.md")).unwrap(),
-            std::path::PathBuf::from("AGENTS.md")
-        );
-    }
+    assert!(!home.join("AGENTS.md").exists());
+    assert!(!home.join("CLAUDE.md").exists());
     assert!(!home.join("state").exists());
     assert!(!home.join("runs").exists());
 }
 
-#[cfg(unix)]
 #[test]
-fn materialize_workspace_replaces_existing_claude_copy_with_symlink() {
+fn materialize_workspace_leaves_existing_claude_file_untouched() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("teams/team/employees/employee");
     std::fs::create_dir_all(&home).unwrap();
@@ -132,19 +118,13 @@ fn materialize_workspace_replaces_existing_claude_copy_with_symlink() {
     materialize_workspace(WorkspaceMaterializationPlan {
         agent_home_dir: home.clone(),
         provider_home: ProviderHomeKind::ClaudeCode,
-        files: vec![agents_file("# Updated\n")],
+        files: vec![workspace_file("context.md", "# Updated\n")],
     })
     .unwrap();
 
-    let claude_metadata = std::fs::symlink_metadata(home.join("CLAUDE.md")).unwrap();
-    assert!(claude_metadata.file_type().is_symlink());
-    assert_eq!(
-        std::fs::read_link(home.join("CLAUDE.md")).unwrap(),
-        std::path::PathBuf::from("AGENTS.md")
-    );
     assert_eq!(
         std::fs::read_to_string(home.join("CLAUDE.md")).unwrap(),
-        "# Updated\n"
+        "old copy\n"
     );
 }
 

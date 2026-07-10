@@ -1292,32 +1292,26 @@ func TestTeamConstitutionAndDigitalEmployeeConfigRevisionQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	employeeConfig, err := testQueries.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
-		TenantID:               tenantID,
-		DigitalEmployeeID:      employee.ID,
-		RevisionNumber:         1,
-		RoleProfile:            []byte(`{"specialty":"postgres"}`),
-		ConstitutionAddendum:   []byte(`{"required_output_rules":["输出慢查询证据"]}`),
-		CapabilitySelection:    []byte(`{"enabled_mcp_servers":["prometheus"],"enabled_skills":["incident-diagnosis"],"enabled_plugins":["log-viewer"]}`),
-		ContextPolicyOverride:  []byte(`{"sources":["monitoring"]}`),
-		ApprovalPolicyOverride: []byte(`{"min_risk_for_human":"high"}`),
-		OutputContractAddendum: []byte(`{"required":["SlowQueryFinding"]}`),
-		Status:                 "active",
-		ApprovedBy:             uuid.NullUUID{UUID: owner.ID, Valid: true},
-		ApprovedAt:             pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employee.ID,
+		RevisionNumber:        1,
+		PersonaMemoryMarkdown: "# Postgres operator\n输出慢查询证据",
+		CapabilityBindings:    []byte(`{"mcp_servers":["prometheus"],"skills":["incident-diagnosis"],"external_capabilities":["log-viewer"]}`),
+		BudgetPolicy:          []byte(`{"daily_token_limit":12000}`),
+		Status:                "active",
+		ApprovedBy:            uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:            pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	})
 	require.NoError(t, err)
 
 	draftEmployeeConfig, err := testQueries.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
-		TenantID:               tenantID,
-		DigitalEmployeeID:      employee.ID,
-		RevisionNumber:         2,
-		RoleProfile:            []byte(`{"specialty":"postgres","mode":"draft"}`),
-		ConstitutionAddendum:   []byte(`{"required_output_rules":["输出执行计划证据"]}`),
-		CapabilitySelection:    []byte(`{"enabled_mcp_servers":["prometheus"],"enabled_skills":["incident-diagnosis"]}`),
-		ContextPolicyOverride:  []byte(`{"sources":["monitoring","traces"]}`),
-		ApprovalPolicyOverride: []byte(`{"min_risk_for_human":"medium"}`),
-		OutputContractAddendum: []byte(`{"required":["ExecutionPlanFinding"]}`),
-		Status:                 "draft",
+		TenantID:              tenantID,
+		DigitalEmployeeID:     employee.ID,
+		RevisionNumber:        2,
+		PersonaMemoryMarkdown: "# Postgres operator draft\n输出执行计划证据",
+		CapabilityBindings:    []byte(`{"mcp_servers":["prometheus"],"skills":["incident-diagnosis"],"external_capabilities":[]}`),
+		BudgetPolicy:          []byte(`{"daily_token_limit":9000}`),
+		Status:                "draft",
 	})
 	require.NoError(t, err)
 

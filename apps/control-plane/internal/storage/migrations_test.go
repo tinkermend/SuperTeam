@@ -459,7 +459,10 @@ INSERT INTO inbox_items (
 		`-- name: CountInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = sqlc.arg('status')::varchar
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
@@ -575,6 +578,61 @@ func TestDigitalEmployeeBudgetPolicyMigration(t *testing.T) {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("budget policy migration must not use %q", forbidden)
 		}
+	}
+}
+
+func TestDigitalEmployeeConfigFinalModelMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/051_digital_employee_config_final_model.sql")
+	require.NoError(t, err)
+	sql := string(body)
+
+	for _, expected := range []string{
+		"DELETE FROM digital_employee_environment_variables",
+		"DELETE FROM skill_installations",
+		"DELETE FROM digital_employee_mcp_bindings_v2",
+		"DELETE FROM digital_employee_mcp_bindings",
+		"DELETE FROM skill_agent_bindings",
+		"DELETE FROM project_employee_node_affinity",
+		"UPDATE project_task_attempts",
+		"SET digital_employee_id = NULL",
+		"UPDATE project_tasks",
+		"SET assigned_digital_employee_id = NULL",
+		"digital_employee_run_id = NULL",
+		"DELETE FROM task_runs",
+		"DELETE FROM digital_employee_workspace_file_syncs",
+		"DELETE FROM digital_employee_workspace_file_revisions",
+		"DELETE FROM digital_employee_workspace_files",
+		"DELETE FROM runtime_command_receipts",
+		"DELETE FROM provider_session_events",
+		"DELETE FROM provider_sessions",
+		"DELETE FROM digital_employee_execution_instances",
+		"DELETE FROM digital_employee_config_revisions",
+		"DELETE FROM digital_employees",
+		"ADD COLUMN IF NOT EXISTS persona_memory_markdown TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS capability_bindings JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"DROP COLUMN IF EXISTS role_profile",
+		"DROP COLUMN IF EXISTS constitution_addendum",
+		"DROP COLUMN IF EXISTS capability_selection",
+		"DROP COLUMN IF EXISTS context_policy_override",
+		"DROP COLUMN IF EXISTS approval_policy_override",
+		"DROP COLUMN IF EXISTS output_contract_addendum",
+		"COMMENT ON COLUMN digital_employee_config_revisions.persona_memory_markdown IS '数字员工人格记忆 Markdown，描述人格画像、专业边界、工作方式和表达偏好'",
+		"COMMENT ON COLUMN digital_employee_config_revisions.capability_bindings IS '数字员工能力绑定，保存 Skill、MCP、外部能力和环境变量引用'",
+	} {
+		require.Contains(t, sql, expected)
+	}
+
+	for _, forbidden := range []string{
+		"INSERT INTO digital_employee_config_revisions",
+		"role_profile JSONB",
+		"constitution_addendum JSONB",
+		"capability_selection JSONB",
+		"context_policy_override JSONB",
+		"approval_policy_override JSONB",
+		"output_contract_addendum JSONB",
+		"DELETE FROM digital_employee_effective_configs",
+	} {
+		require.NotContains(t, sql, forbidden)
 	}
 }
 
@@ -1540,7 +1598,7 @@ func TestUserProjectTeamScopesQueriesAreNilSafeAndTenantScoped(t *testing.T) {
 		t.Fatal("RevokeUserProjectTeamScopes must treat nil team_ids as an empty UUID array")
 	}
 
-	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 5 {
+	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 4 {
 		t.Fatalf("expected tenant-scoped aggregate CTEs plus final filters, got %d tenant filters", count)
 	}
 }

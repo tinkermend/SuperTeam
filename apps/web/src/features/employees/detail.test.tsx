@@ -53,11 +53,22 @@ function createQueryClient() {
 
 const employee = {
   id: "11111111-1111-4111-8111-111111111111",
+  provider_type: "codex",
   name: "需求分析员工",
   role: "requirements_analyst",
   description: "负责需求拆解和交付风险识别",
   status: "active",
   risk_level: "medium",
+  persona_memory_markdown: "# 人格画像\n证据优先",
+  capability_bindings: {
+    skills: ["incident-diagnosis"],
+    mcp_servers: ["github"],
+    external_capabilities: [],
+    environment_variable_refs: ["SERVICE_TOKEN"],
+  },
+  budget_policy: {
+    daily_token_limit: 12000,
+  },
   metadata: {
     avatar: {
       id: "engineer-f-01",
@@ -390,6 +401,20 @@ describe("EmployeeDetailView", () => {
 
     await expect.element(screen.getByText("取消中")).toBeVisible();
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders final employee config sections without legacy config copy", async () => {
+    const screen = await renderEmployeeDetail();
+
+    await expect.element(screen.getByText("人格记忆.md")).toBeVisible();
+    await expect.element(screen.getByText("能力绑定")).toBeVisible();
+    await expect.element(screen.getByText("预算策略")).toBeVisible();
+    await expect.element(screen.getByText("运行与缓存状态")).toBeVisible();
+    await expect.element(screen.getByText("# 人格画像\n证据优先")).toBeVisible();
+    await expect.element(screen.getByText(/incident-diagnosis/)).toBeVisible();
+    await expect.element(screen.getByText(/daily_token_limit/)).toBeVisible();
+    expect(screen.getByText("角色配置").query()).toBeNull();
+    expect(screen.getByText("能力与策略").query()).toBeNull();
   });
 
   it("starts a task from the start-task drawer when there is no active run", async () => {

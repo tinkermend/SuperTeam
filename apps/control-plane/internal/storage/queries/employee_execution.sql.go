@@ -2174,12 +2174,14 @@ employee_config_states AS (
         decr.tenant_id,
         decr.digital_employee_id,
         decr.id AS effective_config_id,
+        decr.persona_memory_markdown,
+        decr.capability_bindings,
         decr.budget_policy,
         NULLIF(decr.budget_policy #>> '{daily_token_limit}', '') AS daily_token_limit_text,
         decr.revision_number AS employee_revision_number,
         CASE
-            WHEN jsonb_typeof(decr.capability_selection -> 'enabled_mcp_servers') = 'array'
-            THEN jsonb_array_length(decr.capability_selection -> 'enabled_mcp_servers')
+            WHEN jsonb_typeof(decr.capability_bindings -> 'mcp_servers') = 'array'
+            THEN jsonb_array_length(decr.capability_bindings -> 'mcp_servers')
             ELSE 0
         END::integer AS mcp_servers_count,
         CASE

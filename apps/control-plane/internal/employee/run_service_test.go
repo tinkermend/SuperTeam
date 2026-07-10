@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -195,7 +196,6 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 		"grace_sec",
 		"workspace_policy",
 		"session_policy",
-		"workspace_files",
 		"skills",
 		"mcp_servers",
 		"metadata",
@@ -703,25 +703,9 @@ func TestRunServiceStartSessionPayloadAndIdempotencyFingerprintIncludeWorkspaceM
 	}
 }
 
-func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFiles(t *testing.T) {
+func TestRunServiceCreateRunDispatchesStartSessionWithoutEmployeeWorkspaceFiles(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
-	repo.workspaceFilesForSync = []WorkspaceFileForSyncRecord{{
-		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
-		TenantID:          runServiceTenantID,
-		TeamID:            &repo.preflight.TeamID,
-		DigitalEmployeeID: runServiceEmployeeID,
-		Path:              "AGENTS.md",
-		FileRole:          "entrypoint",
-		MimeType:          "text/markdown",
-		SyncPolicy:        "auto",
-		RevisionID:        uuid.MustParse("66666666-6666-4666-8666-666666666666"),
-		RevisionNumber:    1,
-		ContentText:       "# Execution Contract\n",
-		ContentHash:       sha256Hex("# Execution Contract\n"),
-		SizeBytes:         int32(len([]byte("# Execution Contract\n"))),
-		StorageBackend:    "db",
-	}}
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
@@ -748,13 +732,8 @@ func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFi
 	if payload["agent_home_dir"] != repo.preflight.AgentHomeDir {
 		t.Fatalf("expected preflight employee home %q, got %#v", repo.preflight.AgentHomeDir, payload["agent_home_dir"])
 	}
-	files, ok := payload["workspace_files"].([]any)
-	if !ok || len(files) != 1 {
-		t.Fatalf("expected AGENTS.md workspace file in start payload, got %#v", payload["workspace_files"])
-	}
-	file, ok := files[0].(map[string]any)
-	if !ok || file["path"] != "AGENTS.md" {
-		t.Fatalf("expected AGENTS.md workspace file payload, got %#v", files[0])
+	if _, ok := payload["workspace_files"]; ok {
+		t.Fatalf("start payload must not include employee workspace files: %#v", payload["workspace_files"])
 	}
 	metadata := payload["metadata"].(map[string]any)
 	if metadata["project_id"] != "33333333-3333-4333-8333-333333333333" {
@@ -1379,7 +1358,14 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 		"Inspect repo",
 		RunPreflight{ProviderType: "codex"},
 		run,
-		nil,
+		EmployeeConfigInput{
+			PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+			CapabilityBindings: map[string]any{
+				"skills":                []any{"repo-inspection"},
+				"mcp_servers":           []any{"github"},
+				"external_capabilities": []any{},
+			},
+		},
 		nil,
 		nil,
 		[]RuntimeMCPServerPayload{{
@@ -1399,6 +1385,16 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 	if !ok || len(servers) != 1 {
 		t.Fatalf("expected one mcp server payload, got %#v", payload["mcp_servers"])
 	}
+	if payload["persona_memory_markdown"] != "# 人格画像\n证据优先" {
+		t.Fatalf("expected persona memory in payload, got %#v", payload["persona_memory_markdown"])
+	}
+	bindings, ok := payload["capability_bindings"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected capability_bindings object, got %#v", payload["capability_bindings"])
+	}
+	if got := bindings["mcp_servers"]; !reflect.DeepEqual(got, []any{"github"}) {
+		t.Fatalf("expected capability_bindings.mcp_servers [github], got %#v", got)
+	}
 	if servers[0]["server_key"] != "github" || servers[0]["credential_env_var"] != "GITHUB_TOKEN" {
 		t.Fatalf("unexpected mcp payload: %#v", servers[0])
 	}
@@ -1410,37 +1406,37 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 
 func validRunServicePreflight() RunPreflight {
 	return RunPreflight{
-		TenantID:                   runServiceTenantID,
-		TeamID:                     uuid.New(),
-		DigitalEmployeeID:          runServiceEmployeeID,
-		DigitalEmployeeStatus:      DigitalEmployeeStatusReady,
-		ExecutionInstanceID:        runServiceExecutionInstanceID,
-		ExecutionStatus:            ExecutionInstanceStatusReady,
-		RuntimeNodeID:              runServiceRuntimeNodeID,
-		NodeID:                     "runtime-authoritative",
-		ProviderType:               "codex",
-		AgentHomeDir:               "/var/lib/superteam/agents/employee",
-		RuntimeSelector:            map[string]any{"node_id": "runtime-authoritative"},
-		SessionPolicy:              map[string]any{"resume": true},
-		WorkspacePolicy:            map[string]any{"workspace": "isolated"},
-		ProviderHealthy:            true,
+		TenantID:              runServiceTenantID,
+		TeamID:                uuid.New(),
+		DigitalEmployeeID:     runServiceEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatusReady,
+		ExecutionInstanceID:   runServiceExecutionInstanceID,
+		ExecutionStatus:       ExecutionInstanceStatusReady,
+		RuntimeNodeID:         runServiceRuntimeNodeID,
+		NodeID:                "runtime-authoritative",
+		ProviderType:          "codex",
+		AgentHomeDir:          "/var/lib/superteam/agents/employee",
+		RuntimeSelector:       map[string]any{"node_id": "runtime-authoritative"},
+		SessionPolicy:         map[string]any{"resume": true},
+		WorkspacePolicy:       map[string]any{"workspace": "isolated"},
+		ProviderHealthy:       true,
 	}
 }
 
 func validProjectTaskRunServicePreflight() StartProjectTaskRunPreflight {
 	return StartProjectTaskRunPreflight{
-		TenantID:                   runServiceTenantID,
-		TeamID:                     uuid.New(),
-		DigitalEmployeeID:          runServiceEmployeeID,
-		DigitalEmployeeStatus:      DigitalEmployeeStatusReady,
-		RuntimeNodeID:              runServiceRuntimeNodeID,
-		NodeID:                     "runtime-project-placement",
-		ProviderType:               "codex",
-		WorkspaceBaseDir:           "/var/lib/superteam/workspaces",
-		BudgetPolicy:               map[string]any{"daily_token_limit": float64(100000)},
-		BusinessTimezone:           "Asia/Shanghai",
-		RuntimeSessionActive:       true,
-		ProviderHealthy:            true,
+		TenantID:              runServiceTenantID,
+		TeamID:                uuid.New(),
+		DigitalEmployeeID:     runServiceEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatusReady,
+		RuntimeNodeID:         runServiceRuntimeNodeID,
+		NodeID:                "runtime-project-placement",
+		ProviderType:          "codex",
+		WorkspaceBaseDir:      "/var/lib/superteam/workspaces",
+		BudgetPolicy:          map[string]any{"daily_token_limit": float64(100000)},
+		BusinessTimezone:      "Asia/Shanghai",
+		RuntimeSessionActive:  true,
+		ProviderHealthy:       true,
 	}
 }
 
@@ -1523,25 +1519,26 @@ type fakeRunServiceRepository struct {
 	projectTaskPreflightEmployeeID        uuid.UUID
 	projectTaskPreflightForNodeEmployeeID uuid.UUID
 	projectTaskPreflightForNodeNodeID     uuid.UUID
-	activeRun                      *DigitalEmployeeRun
-	run                            *DigitalEmployeeRun
-	runs                           []*DigitalEmployeeRun
-	createdRun                     *DigitalEmployeeRun
-	createdRunCount                int
-	createRunRequests              []CreateRunRecordRequest
-	statusUpdates                  []UpdateRunStatusRequest
-	events                         []CreateRunEventRecordRequest
-	runEvents                      []RuntimeCommandEventWriteback
-	workspaceFilesForSync          []WorkspaceFileForSyncRecord
-	listRunEventsTaskID            uuid.UUID
-	listRunEventsRunID             uuid.UUID
-	commandReceipt                 *RuntimeCommandReceipt
-	commandReceipts                []CreateRuntimeCommandReceiptRequest
-	receiptUpdates                 []UpdateRuntimeCommandReceiptRequest
-	runtimeSkills                  []skill.SkillRuntimeRecord
-	runtimeCapabilities            []cpruntime.RuntimeCapability
-	runtimeEnv                     []RuntimeEnvironmentVariablePayload
-	runStats                       DigitalEmployeeRunStats
+	activeRun                             *DigitalEmployeeRun
+	run                                   *DigitalEmployeeRun
+	runs                                  []*DigitalEmployeeRun
+	createdRun                            *DigitalEmployeeRun
+	createdRunCount                       int
+	createRunRequests                     []CreateRunRecordRequest
+	statusUpdates                         []UpdateRunStatusRequest
+	events                                []CreateRunEventRecordRequest
+	runEvents                             []RuntimeCommandEventWriteback
+	workspaceFilesForSync                 []WorkspaceFileForSyncRecord
+	listRunEventsTaskID                   uuid.UUID
+	listRunEventsRunID                    uuid.UUID
+	commandReceipt                        *RuntimeCommandReceipt
+	commandReceipts                       []CreateRuntimeCommandReceiptRequest
+	receiptUpdates                        []UpdateRuntimeCommandReceiptRequest
+	runtimeSkills                         []skill.SkillRuntimeRecord
+	runtimeCapabilities                   []cpruntime.RuntimeCapability
+	runtimeEnv                            []RuntimeEnvironmentVariablePayload
+	latestConfigInput                     EmployeeConfigInput
+	runStats                              DigitalEmployeeRunStats
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -1624,6 +1621,10 @@ func (f *fakeRunServiceRepository) ListWorkspaceFilesForSync(_ context.Context, 
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeRunServiceRepository) GetLatestDigitalEmployeeConfigRevision(context.Context, uuid.UUID, uuid.UUID) (EmployeeConfigInput, error) {
+	return f.latestConfigInput, nil
 }
 
 func (f *fakeRunServiceRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {

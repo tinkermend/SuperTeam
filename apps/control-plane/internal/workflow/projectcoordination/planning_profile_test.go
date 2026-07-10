@@ -66,11 +66,10 @@ func TestBuildDigitalEmployeePlanningProfileTreatsEmptySourceFactsAsMissing(t *t
 		DigitalEmployeeID: employeeID,
 		EmployeeStatus:    "   ",
 		ProviderType:      "   ",
-		CapabilitySelection: map[string]any{
-			"enabled_skills":                []any{"", "   "},
-			"enabled_mcp_servers":           []any{},
-			"enabled_external_capabilities": []any{123},
-			"enabled_provider_types":        []any{"   "},
+		CapabilityBindings: map[string]any{
+			"skills":                []any{"", "   "},
+			"mcp_servers":           []any{},
+			"external_capabilities": []any{123},
 		},
 	}, true)
 
@@ -91,24 +90,24 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 	}
 
 	profile := BuildDigitalEmployeePlanningProfile(member, DigitalEmployeePlanningProfileSourceRecord{
-		DigitalEmployeeID: employeeID,
-		EmployeeType:      "database_admin",
-		Role:              "数据库分析",
-		EmployeeStatus:    "active",
-		RoleProfile:       map[string]any{"primary_role": "data_analyst", "description": "数据库分析"},
-		CapabilitySelection: map[string]any{
-			"enabled_skills":                []any{"sql.analysis", "data.quality.check"},
-			"enabled_mcp_servers":           []any{"postgres.readonly"},
-			"enabled_external_capabilities": []any{"database.read"},
-			"enabled_provider_types":        []any{"codex"},
+		DigitalEmployeeID:     employeeID,
+		EmployeeType:          "database_admin",
+		Role:                  "数据库分析",
+		Description:           "数据库分析",
+		PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+		EmployeeStatus:        "active",
+		CapabilityBindings: map[string]any{
+			"skills":                []any{"sql.analysis", "data.quality.check"},
+			"mcp_servers":           []any{"postgres.readonly"},
+			"external_capabilities": []any{"database.read"},
 		},
 		PermissionPolicy: map[string]any{
 			"grants": []any{"database.read:dev_database"},
 		},
-		ContextPolicy:         map[string]any{"max_context_classification": "internal"},
-		RuntimeNodeID:         runtimeNodeID,
-		ProviderType:          "codex",
-		ExecutionStatus:       "ready",
+		ContextPolicy:   map[string]any{"max_context_classification": "internal"},
+		RuntimeNodeID:   runtimeNodeID,
+		ProviderType:    "codex",
+		ExecutionStatus: "ready",
 		LoadState: map[string]any{
 			"running_tasks":   2,
 			"available_slots": 3,
@@ -122,9 +121,11 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 		FetchedAt: now,
 	}, true)
 
-	require.Equal(t, "data_analyst", profile.RoleProfile.PrimaryRole)
-	require.Equal(t, []PlanningCapability{{Key: "database.read", Level: "strong", Source: "capability_selection.enabled_external_capabilities", Confidence: 0.9}}, profile.Capabilities)
-	require.Equal(t, []PlanningSkill{{Key: "sql.analysis", Source: "capability_selection.enabled_skills"}, {Key: "data.quality.check", Source: "capability_selection.enabled_skills"}}, profile.Skills)
+	require.Equal(t, "数据库分析", profile.RoleProfile.PrimaryRole)
+	require.Equal(t, "数据库分析", profile.RoleProfile.Description)
+	require.Equal(t, "# 人格画像", profile.RoleProfile.PersonaSummary)
+	require.Equal(t, []PlanningCapability{{Key: "database.read", Level: "strong", Source: "capability_bindings.external_capabilities", Confidence: 0.9}}, profile.Capabilities)
+	require.Equal(t, []PlanningSkill{{Key: "sql.analysis", Source: "capability_bindings.skills"}, {Key: "data.quality.check", Source: "capability_bindings.skills"}}, profile.Skills)
 	require.Equal(t, []PlanningToolBinding{{Type: "mcp", Key: "postgres.readonly", Status: "available"}}, profile.ToolBindings)
 	require.Equal(t, []string{"codex"}, profile.RuntimeRequirements.ProviderTypes)
 	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
@@ -150,7 +151,6 @@ func TestBuildDigitalEmployeePlanningProfileKeepsRuntimeStatusUnknownWithoutExec
 		DigitalEmployeeID: employeeID,
 		EmployeeType:      "database_admin",
 		EmployeeStatus:    "active",
-		RoleProfile:       map[string]any{"primary_role": "data_analyst"},
 	}, true)
 
 	require.Equal(t, "unknown", profile.RuntimeRequirements.ProviderStatus)
@@ -169,17 +169,36 @@ func TestBuildDigitalEmployeePlanningProfileMarksDispatchNotReadyWithoutHardFail
 		DigitalEmployeeID: employeeID,
 		EmployeeType:      "implementation",
 		EmployeeStatus:    "active",
-		CapabilitySelection: map[string]any{
-			"enabled_provider_types": []any{"codex"},
-		},
-		ProviderType:    "codex",
-		ExecutionStatus: "ready",
+		ProviderType:      "codex",
+		ExecutionStatus:   "ready",
 	}, false)
 
 	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
 	require.Equal(t, "not_ready", profile.RuntimeRequirements.DispatchReadinessStatus)
 	require.Equal(t, []string{"runtime_not_ready"}, profile.RuntimeRequirements.DispatchBlockingReasons)
 	require.Empty(t, profile.HardFailures)
+}
+
+func TestBuildDigitalEmployeePlanningProfileIgnoresProviderTypesInCapabilityBindings(t *testing.T) {
+	employeeID := uuid.New()
+	member := project.ProjectMember{
+		PrincipalID:         employeeID,
+		ProjectRole:         project.ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("执行员工"),
+	}
+
+	profile := BuildDigitalEmployeePlanningProfile(member, DigitalEmployeePlanningProfileSourceRecord{
+		DigitalEmployeeID: employeeID,
+		CapabilityBindings: map[string]any{
+			"provider_types": []any{"codex"},
+		},
+	}, true)
+
+	require.Empty(t, profile.RuntimeRequirements.ProviderTypes)
+	require.Equal(t, "unknown", profile.RuntimeRequirements.ProviderStatus)
+	require.Equal(t, "unknown", profile.ProfileFreshness.SourceState)
+	require.Contains(t, profile.SelectionWarnings, "profile_source_missing")
 }
 
 func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {

@@ -27,6 +27,7 @@ export type DigitalEmployee = {
   team_id?: string;
   owner_user_id: string;
   employee_type: string;
+  provider_type: string;
   name: string;
   role: string;
   description?: string;
@@ -34,6 +35,9 @@ export type DigitalEmployee = {
   permission_policy: Record<string, unknown>;
   context_policy: Record<string, unknown>;
   approval_policy: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
+  budget_policy?: BudgetPolicy;
   risk_level: string;
   metadata?: Record<string, unknown> & {
     avatar?: Record<string, unknown>;
@@ -76,9 +80,9 @@ export type DigitalEmployeeTypeOption = {
   recommended_skills?: string[];
   recommended_mcp_servers?: string[];
   recommended_provider_types?: string[];
-  default_capability_selection?: Record<string, unknown>;
-  default_context_policy_override?: Record<string, unknown>;
-  default_approval_policy?: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: Record<string, unknown>;
+  budget_policy?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 };
 
@@ -113,10 +117,7 @@ export type DigitalEmployeeCreateOptionCheck = {
 
 export type DigitalEmployeePolicyDefaults = {
   permission_policy: Record<string, unknown>;
-  context_policy_override: Record<string, unknown>;
   approval_policy: Record<string, unknown>;
-  capability_selection: Record<string, unknown>;
-  runtime_selector: Record<string, unknown>;
   workspace_policy: Record<string, unknown>;
   session_policy: Record<string, unknown>;
   metadata: Record<string, unknown>;
@@ -480,16 +481,9 @@ export type CreateDigitalEmployeeInput = {
   approval_policy?: Record<string, unknown>;
   risk_level?: string;
   metadata?: Record<string, unknown>;
-  role_profile?: Record<string, unknown>;
-  constitution_addendum?: Record<string, unknown>;
-  capability_selection?: Record<string, unknown>;
-  context_policy_override?: Record<string, unknown>;
-  approval_policy_override?: Record<string, unknown>;
-  output_contract_addendum?: Record<string, unknown>;
-  runtime_node_id?: string;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
   provider_type: string;
-  session_policy?: Record<string, unknown>;
-  workspace_policy?: Record<string, unknown>;
   budget_policy?: BudgetPolicy;
   environment_variables?: Array<{ name: string; value: string; sensitive: boolean }>;
 };
@@ -506,6 +500,14 @@ export type DigitalEmployeeEnvironmentVariableSummary = {
 export type UpsertDigitalEmployeeEnvironmentVariableInput = {
   value: string;
   sensitive?: boolean;
+};
+
+export type CapabilityBindings = {
+  skills?: string[];
+  mcp_servers?: string[];
+  external_capabilities?: string[];
+  environment_variable_refs?: string[];
+  [key: string]: unknown;
 };
 
 type LegacyDraftDigitalEmployeeInput = {
@@ -557,14 +559,10 @@ export type DigitalEmployeeConfigRevision = {
   tenant_id: string;
   digital_employee_id: string;
   revision_number: number;
-  role_profile: Record<string, unknown>;
-  constitution_addendum: Record<string, unknown>;
-  capability_selection: Record<string, unknown>;
-  context_policy_override: Record<string, unknown>;
-  approval_policy_override: Record<string, unknown>;
-  output_contract_addendum: Record<string, unknown>;
+  persona_memory_markdown: string;
+  capability_bindings: CapabilityBindings;
   budget_policy: BudgetPolicy;
-  status: "draft";
+  status: "draft" | "active" | "archived";
   approved_by?: string;
   approved_at?: string;
   archived_at?: string;
@@ -573,43 +571,10 @@ export type DigitalEmployeeConfigRevision = {
 };
 
 export type CreateDigitalEmployeeConfigRevisionInput = {
-  role_profile?: Record<string, unknown>;
-  constitution_addendum?: Record<string, unknown>;
-  capability_selection?: Record<string, unknown>;
-  context_policy_override?: Record<string, unknown>;
-  approval_policy_override?: Record<string, unknown>;
-  output_contract_addendum?: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
   budget_policy?: BudgetPolicy;
-  status?: "draft";
-};
-
-export type WorkspaceFile = {
-  id: string;
-  team_id: string;
-  path: string;
-  file_role: string;
-  mime_type: string;
-  sync_policy: string;
-  status: string;
-  current_revision_id: string;
-  revision_number: number;
-  content: string;
-  content_hash: string;
-  size_bytes: number;
-  storage_backend: string;
-  object_key?: string;
-  change_note?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type UpsertWorkspaceFileInput = {
-  path: string;
-  content: string;
-  file_role?: string;
-  mime_type?: string;
-  sync_policy?: string;
-  change_note?: string;
+  status?: "draft" | "active" | "archived";
 };
 
 function encodePathSegment(value: string) {
@@ -807,34 +772,6 @@ export function createDigitalEmployeeConfigRevision(
     `/api/v1/digital-employees/${encodedEmployeeId}/config-revisions`,
     input,
     "create digital employee config revision",
-  );
-}
-
-export function listWorkspaceFiles(
-  options: ApiClientOptions,
-  employeeId: string,
-): Promise<WorkspaceFile[]> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-
-  return getJson<WorkspaceFile[]>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
-    "employee workspace files",
-  );
-}
-
-export function upsertWorkspaceFile(
-  options: ApiClientOptions,
-  employeeId: string,
-  input: UpsertWorkspaceFileInput,
-): Promise<WorkspaceFile> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-
-  return putJson<WorkspaceFile>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
-    input,
-    "upsert employee workspace file",
   );
 }
 

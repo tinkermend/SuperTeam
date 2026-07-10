@@ -762,7 +762,6 @@ impl ControlPlaneClient {
             self.base_url, attempt_id
         )
     }
-
 }
 
 #[cfg(test)]

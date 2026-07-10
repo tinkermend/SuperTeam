@@ -16,7 +16,7 @@ type DigitalEmployeeRunRepository interface {
 	GetRunByCommandID(ctx context.Context, tenantID uuid.UUID, commandID string) (*DigitalEmployeeRun, error)
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
 	ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
-	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
+	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error)
 	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error)
 	CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error)
@@ -75,23 +75,23 @@ type ProjectTaskNodeResolver interface {
 }
 
 type RunPreflight struct {
-	TenantID                   uuid.UUID
-	TeamID                     uuid.UUID
-	DigitalEmployeeID          uuid.UUID
-	DigitalEmployeeStatus      DigitalEmployeeStatus
-	ExecutionInstanceID        uuid.UUID
-	ExecutionStatus            ExecutionInstanceStatus
-	RuntimeNodeID              uuid.UUID
-	NodeID                     string
-	ProviderType               string
-	AgentHomeDir               string
-	RuntimeSelector            map[string]any
-	SessionPolicy              map[string]any
-	WorkspacePolicy            map[string]any
-	BudgetPolicy               map[string]any
-	TodayTokenUsage            int32
-	BusinessTimezone           string
-	ProviderHealthy            bool
+	TenantID              uuid.UUID
+	TeamID                uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	DigitalEmployeeStatus DigitalEmployeeStatus
+	ExecutionInstanceID   uuid.UUID
+	ExecutionStatus       ExecutionInstanceStatus
+	RuntimeNodeID         uuid.UUID
+	NodeID                string
+	ProviderType          string
+	AgentHomeDir          string
+	RuntimeSelector       map[string]any
+	SessionPolicy         map[string]any
+	WorkspacePolicy       map[string]any
+	BudgetPolicy          map[string]any
+	TodayTokenUsage       int32
+	BusinessTimezone      string
+	ProviderHealthy       bool
 }
 
 type CreateRunRecordRequest struct {

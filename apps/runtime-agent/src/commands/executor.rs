@@ -28,7 +28,7 @@ use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, Pr
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 use crate::skills::materialize_skills;
 use crate::workspace_files::{
-    WorkspaceMaterializationPlan, materialize_workspace, provider_home_kind,
+    WorkspaceMaterializationPlan, atomic_write, materialize_workspace, provider_home_kind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -578,6 +578,16 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        if let Err(error) = materialize_persona_memory(
+            &result.agent_home_dir,
+            payload.persona_memory_markdown.as_deref(),
+        ) {
+            let error = self.recorded_error(&command.id, error);
+            let message = error.to_string();
+            self.write_provisioning_failure(&command.id, message)
+                .await?;
+            return Err(error);
+        }
 
         if !payload.skills.is_empty() {
             if let (Some(s3_client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
@@ -680,6 +690,16 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        if let Err(error) = materialize_persona_memory(
+            &result.agent_home_dir,
+            payload.persona_memory_markdown.as_deref(),
+        ) {
+            let error = self.recorded_error(&command.id, error);
+            let message = error.to_string();
+            self.write_workspace_sync_failure(&command.id, message)
+                .await?;
+            return Err(error);
+        }
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .complete_runtime_command(
@@ -1062,6 +1082,17 @@ impl RuntimeCommandExecutor {
     }
 }
 
+fn materialize_persona_memory(
+    agent_home_dir: &Path,
+    persona_memory: Option<&str>,
+) -> anyhow::Result<()> {
+    let Some(markdown) = persona_memory.filter(|value| !value.trim().is_empty()) else {
+        return Ok(());
+    };
+
+    atomic_write(&agent_home_dir.join("人格记忆.md"), markdown.as_bytes())
+}
+
 fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Option<String>) {
     match &config.s3 {
         Some(s3) => {
@@ -1264,10 +1295,7 @@ fn command_completed_terminal(
             "total_tokens".to_string(),
             serde_json::Value::Number(total_tokens.into()),
         );
-        result.insert(
-            "usage".to_string(),
-            serde_json::Value::Object(usage),
-        );
+        result.insert("usage".to_string(), serde_json::Value::Object(usage));
     }
 
     RuntimeCommandTerminalWriteback {
@@ -1335,7 +1363,9 @@ impl RuntimeCommandWritebackSink {
         record: &RunEventRecord,
         provider_session_id: Option<&str>,
     ) -> anyhow::Result<()> {
-        if let ProviderEvent::TurnCompleted { usage: Some(usage), .. } = &record.event
+        if let ProviderEvent::TurnCompleted {
+            usage: Some(usage), ..
+        } = &record.event
             && usage.total_tokens > 0
         {
             self.usage_tokens
@@ -1398,10 +1428,7 @@ impl RuntimeCommandWritebackSink {
         });
     }
 
-    async fn record_budget_heartbeat(
-        &self,
-        elapsed: Duration,
-    ) -> anyhow::Result<bool> {
+    async fn record_budget_heartbeat(&self, elapsed: Duration) -> anyhow::Result<bool> {
         let project_task = match &self.project_task {
             Some(project_task) => project_task,
             None => return Ok(false),
@@ -2432,7 +2459,13 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
             serde_json::Value::String(criterion),
         );
     }
-    for key in ["id", "criterion_id", "name", "summary", "human_accepted_reason"] {
+    for key in [
+        "id",
+        "criterion_id",
+        "name",
+        "summary",
+        "human_accepted_reason",
+    ] {
         if let Some(value) = object
             .get(key)
             .and_then(serde_json::Value::as_str)
@@ -2816,6 +2849,8 @@ mod tests {
             runtime_node_id: None,
             provider_type: "claude-code".to_string(),
             agent_home_dir: Some("/tmp/runtime-agent-test".to_string()),
+            persona_memory_markdown: None,
+            capability_bindings: serde_json::json!({}),
             workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
@@ -2930,7 +2965,10 @@ mod tests {
         assert!(
             state
                 .observe_event(
-                    &ProviderEvent::TurnCompleted { summary: None, usage: None },
+                    &ProviderEvent::TurnCompleted {
+                        summary: None,
+                        usage: None
+                    },
                     Some("provider-session-1")
                 )
                 .is_none()

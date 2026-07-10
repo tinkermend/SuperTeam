@@ -2,14 +2,10 @@ package employee
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,25 +14,12 @@ import (
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
-type SkillLister interface {
-	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]skill.SkillRuntimeRecord, error)
-}
-
 type Service struct {
-	repository               Repository
-	dispatcher               RuntimeCommandDispatcher
-	skillLister              SkillLister
-	envCodec                 *EnvironmentValueCodec
-	provisioningTimeout      time.Duration
-	provisioningPollInterval time.Duration
+	repository Repository
+	envCodec   *EnvironmentValueCodec
 }
 
-const (
-	defaultProvisioningTimeout      = 10 * time.Second
-	defaultProvisioningPollInterval = 250 * time.Millisecond
-	defaultProvisioningAbortTimeout = 5 * time.Second
-	maxWorkspaceFileInlineBytes     = 10 * 1024 * 1024
-)
+const defaultProvisioningPollInterval = 250 * time.Millisecond
 
 var supportedDigitalEmployeeProviderTypes = map[string]struct{}{
 	"claude-code": {},
@@ -45,20 +28,10 @@ var supportedDigitalEmployeeProviderTypes = map[string]struct{}{
 }
 
 func NewService(repository Repository) (*Service, error) {
-	return NewServiceWithProvisioning(repository, nil, nil)
-}
-
-func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommandDispatcher, skillLister SkillLister) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: repository is required", ErrInvalidInput)
 	}
-	return &Service{
-		repository:               repository,
-		dispatcher:               dispatcher,
-		skillLister:              skillLister,
-		provisioningTimeout:      defaultProvisioningTimeout,
-		provisioningPollInterval: defaultProvisioningPollInterval,
-	}, nil
+	return &Service{repository: repository}, nil
 }
 
 func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
@@ -94,113 +67,6 @@ func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOvervie
 	overview.Pagination.Limit = req.Limit
 	overview.Pagination.Offset = req.Offset
 	return overview, nil
-}
-
-func (s *Service) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
-	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if req.DigitalEmployeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
-	}
-	files, err := s.repository.ListWorkspaceFiles(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("list workspace files: %w", err)
-	}
-	return append([]WorkspaceFile(nil), files...), nil
-}
-
-func (s *Service) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error) {
-	if req.TenantID == uuid.Nil {
-		return WorkspaceFile{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if req.DigitalEmployeeID == uuid.Nil {
-		return WorkspaceFile{}, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
-	}
-	normalizedPath, err := normalizeWorkspaceFilePath(req.Path)
-	if err != nil {
-		return WorkspaceFile{}, err
-	}
-	fileRole, err := normalizeWorkspaceFileRole(req.FileRole, normalizedPath)
-	if err != nil {
-		return WorkspaceFile{}, err
-	}
-	syncPolicy, err := normalizeWorkspaceFileSyncPolicy(req.SyncPolicy)
-	if err != nil {
-		return WorkspaceFile{}, err
-	}
-	mimeType := strings.TrimSpace(req.MimeType)
-	if mimeType == "" {
-		mimeType = inferWorkspaceFileMimeType(normalizedPath)
-	}
-	if strings.ContainsAny(mimeType, "\r\n\t") {
-		return WorkspaceFile{}, fmt.Errorf("%w: invalid workspace file mime_type", ErrInvalidInput)
-	}
-	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return WorkspaceFile{}, fmt.Errorf("get digital employee: %w", err)
-	}
-	contentBytes := []byte(req.Content)
-	if len(contentBytes) > maxWorkspaceFileInlineBytes {
-		return WorkspaceFile{}, fmt.Errorf("%w: workspace file content is too large", ErrInvalidInput)
-	}
-	var file WorkspaceFile
-	if err := s.repository.WithTransaction(ctx, func(repository Repository) error {
-		var fileRecord WorkspaceFileRecord
-		fileRecord, err = repository.GetWorkspaceFileByPath(ctx, req.TenantID, req.DigitalEmployeeID, normalizedPath)
-		if err != nil {
-			if !errors.Is(err, ErrNotFound) {
-				return err
-			}
-			fileRecord, err = repository.CreateWorkspaceFile(ctx, CreateWorkspaceFileParams{
-				TenantID:          req.TenantID,
-				TeamID:            employee.TeamID,
-				DigitalEmployeeID: req.DigitalEmployeeID,
-				Path:              normalizedPath,
-				FileRole:          fileRole,
-				MimeType:          mimeType,
-				SyncPolicy:        syncPolicy,
-				Status:            "active",
-				Metadata: map[string]any{
-					"source": "console",
-				},
-				CreatedBy: req.UpdatedBy,
-			})
-			if err != nil {
-				return err
-			}
-		}
-		revisionNumber, err := repository.GetNextWorkspaceFileRevisionNumber(ctx, req.TenantID, fileRecord.ID)
-		if err != nil {
-			return err
-		}
-		revision, err := repository.CreateWorkspaceFileRevision(ctx, CreateWorkspaceFileRevisionParams{
-			TenantID:       req.TenantID,
-			FileID:         fileRecord.ID,
-			RevisionNumber: revisionNumber,
-			ContentText:    req.Content,
-			ContentHash:    sha256Hex(req.Content),
-			SizeBytes:      int32(len(contentBytes)),
-			StorageBackend: "db",
-			CreatedBy:      req.UpdatedBy,
-			ChangeNote:     req.ChangeNote,
-			Metadata: map[string]any{
-				"source": "console",
-			},
-		})
-		if err != nil {
-			return err
-		}
-		fileRecord, err = repository.ActivateWorkspaceFileRevision(ctx, req.TenantID, fileRecord.ID, revision.ID)
-		if err != nil {
-			return err
-		}
-		file = workspaceFileFromRecords(fileRecord, revision)
-		return nil
-	}); err != nil {
-		return WorkspaceFile{}, fmt.Errorf("upsert workspace file: %w", err)
-	}
-	return file, nil
 }
 
 func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error) {
@@ -408,25 +274,13 @@ func optionalStringListFromPolicy(policy map[string]any, keys ...string) []strin
 	return values
 }
 
-func firstNonEmptyStringList(candidates ...[]string) []string {
-	for _, candidate := range candidates {
-		if len(candidate) != 0 {
-			return cloneStringSlice(candidate)
-		}
-	}
-	return nil
-}
-
 func emptyPolicyDefaults() PolicyDefaults {
 	return PolicyDefaults{
-		PermissionPolicy:      map[string]any{},
-		ContextPolicyOverride: map[string]any{},
-		ApprovalPolicy:        map[string]any{},
-		CapabilitySelection:   map[string]any{},
-		RuntimeSelector:       map[string]any{},
-		WorkspacePolicy:       map[string]any{},
-		SessionPolicy:         map[string]any{},
-		Metadata:              map[string]any{},
+		PermissionPolicy: map[string]any{},
+		ApprovalPolicy:   map[string]any{},
+		WorkspacePolicy:  map[string]any{},
+		SessionPolicy:    map[string]any{},
+		Metadata:         map[string]any{},
 	}
 }
 
@@ -469,7 +323,11 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		return nil, err
 	}
 
-	return employeeFromRecord(record), nil
+	employee := employeeFromRecord(record)
+	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+		return nil, err
+	}
+	return employee, nil
 }
 
 func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantID, teamID uuid.UUID) error {
@@ -610,7 +468,7 @@ func platformSkillOptions(employeeTypes []EmployeeTypeDefinition) []string {
 			}
 			values[skill] = struct{}{}
 		}
-		for _, skill := range stringList(definition.DefaultCapabilitySelection["enabled_skills"]) {
+		for _, skill := range stringList(definition.CapabilityBindings["skills"]) {
 			if skill == "" {
 				continue
 			}
@@ -629,7 +487,7 @@ func platformMCPServerOptions(employeeTypes []EmployeeTypeDefinition) []string {
 			}
 			values[serverID] = struct{}{}
 		}
-		for _, serverID := range stringList(definition.DefaultCapabilitySelection["enabled_mcp_servers"]) {
+		for _, serverID := range stringList(definition.CapabilityBindings["mcp_servers"]) {
 			if serverID == "" {
 				continue
 			}
@@ -763,200 +621,34 @@ func (s *Service) createInitialActiveConfigRevision(ctx context.Context, reposit
 
 func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID, revisionNumber int32, approvedBy uuid.UUID, approvedAt time.Time) CreateConfigRevisionParams {
 	return CreateConfigRevisionParams{
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      employeeID,
-		RevisionNumber:         revisionNumber,
-		RoleProfile:            initialRoleProfile(req),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
-		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
-		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(req.BudgetPolicy),
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
-		Status:                 ConfigRevisionStatusActive,
-		ApprovedBy:             &approvedBy,
-		ApprovedAt:             &approvedAt,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     employeeID,
+		RevisionNumber:        revisionNumber,
+		PersonaMemoryMarkdown: strings.TrimSpace(req.PersonaMemoryMarkdown),
+		CapabilityBindings:    normalizeCapabilityBindings(initialCapabilitySelection(req, definition, teamConfig)),
+		BudgetPolicy:          cloneMap(req.BudgetPolicy),
+		Status:                ConfigRevisionStatusActive,
+		ApprovedBy:            &approvedBy,
+		ApprovedAt:            &approvedAt,
 	}
 }
 
 func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID, configID uuid.UUID, revisionNumber int32) EmployeeConfigInput {
 	return EmployeeConfigInput{
-		ID:                     configID,
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      employeeID,
-		RevisionNumber:         revisionNumber,
-		RoleProfile:            initialRoleProfile(req),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
-		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
-		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(req.BudgetPolicy),
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+		ID:                    configID,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     employeeID,
+		RevisionNumber:        revisionNumber,
+		PersonaMemoryMarkdown: strings.TrimSpace(req.PersonaMemoryMarkdown),
+		CapabilityBindings:    normalizeCapabilityBindings(initialCapabilitySelection(req, definition, teamConfig)),
+		BudgetPolicy:          cloneMap(req.BudgetPolicy),
 	}
-}
-
-// Legacy compatibility helper for explicit execution-instance provisioning.
-// CreateDigitalEmployee no longer calls this path; ProjectTask dispatch should
-// resolve Runtime through project placement instead of employee creation.
-func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, skillLister SkillLister, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
-	agentHomeDir := canonicalEmployeeHome(preflight.AgentHomeDir, preflight.TeamID, record.ID)
-	instance, err := repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
-		TenantID:          req.TenantID,
-		DigitalEmployeeID: record.ID,
-		RuntimeNodeID:     req.RuntimeNodeID,
-		ProviderType:      req.ProviderType,
-		AgentHomeDir:      agentHomeDir,
-		WorkspacePolicy:   cloneMap(req.WorkspacePolicy),
-		SessionPolicy:     cloneMap(req.SessionPolicy),
-		RuntimeSelector: map[string]any{
-			"runtime_node_id": preflight.RuntimeNodeID.String(),
-			"node_id":         preflight.NodeID,
-		},
-		Status: ExecutionInstanceStatusProvisioning,
-		Metadata: map[string]any{
-			"provisioned_by": "legacy_execution_instance_provisioning",
-		},
-	})
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee execution instance: %w", err)
-	}
-
-	workspaceFiles, err := createDefaultAgentsWorkspaceFile(ctx, repository, record, teamIDPtr(preflight.TeamID), configInput, preview)
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
-	}
-
-	var runtimeSkills []skill.SkillRuntimeRecord
-	if skillLister != nil {
-		runtimeSkills, err = skillLister.ListSkillsForRuntime(ctx, req.TenantID, record.ID)
-		if err != nil {
-			return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("list skills for runtime: %w", err)
-		}
-	}
-
-	commandID := newRuntimeCommandID()
-	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview, workspaceFiles, runtimeSkills)
-	if err := repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
-		TenantID:      req.TenantID,
-		CommandID:     commandID,
-		CommandType:   "provision_instance",
-		RuntimeNodeID: req.RuntimeNodeID,
-		NodeID:        preflight.NodeID,
-		ResourceType:  "digital_employee_execution_instance",
-		ResourceID:    instance.ID,
-		Status:        "pending",
-		Payload:       payload,
-	}); err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create provisioning command receipt: %w", err)
-	}
-	return instance, commandID, payload, nil
-}
-
-func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository, employee DigitalEmployeeRecord, teamID *uuid.UUID, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) ([]WorkspaceFileForSyncRecord, error) {
-	agentsPath, err := normalizeWorkspaceFilePath("AGENTS.md")
-	if err != nil {
-		return nil, err
-	}
-	agentsContent := buildDefaultAgentsContent(employee, configInput, preview)
-	agentsRevisionHash := sha256Hex(agentsContent)
-	agentsFile, err := repository.CreateWorkspaceFile(ctx, CreateWorkspaceFileParams{
-		TenantID:          employee.TenantID,
-		TeamID:            teamID,
-		DigitalEmployeeID: employee.ID,
-		Path:              agentsPath,
-		FileRole:          "entrypoint",
-		MimeType:          "text/markdown",
-		SyncPolicy:        "auto",
-		Status:            "active",
-		Metadata:          map[string]any{"created_by": "legacy_execution_instance_provisioning"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create default workspace file: %w", err)
-	}
-	agentsRevision, err := repository.CreateWorkspaceFileRevision(ctx, CreateWorkspaceFileRevisionParams{
-		TenantID:       employee.TenantID,
-		FileID:         agentsFile.ID,
-		RevisionNumber: 1,
-		ContentText:    agentsContent,
-		ContentHash:    agentsRevisionHash,
-		SizeBytes:      int32(len([]byte(agentsContent))),
-		StorageBackend: "db",
-		Metadata:       map[string]any{"source": "default_agents"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create default workspace file revision: %w", err)
-	}
-	agentsFile, err = repository.ActivateWorkspaceFileRevision(ctx, employee.TenantID, agentsFile.ID, agentsRevision.ID)
-	if err != nil {
-		return nil, fmt.Errorf("activate default workspace file revision: %w", err)
-	}
-	return []WorkspaceFileForSyncRecord{workspaceFileForSyncFromDefault(agentsFile, agentsRevision)}, nil
-}
-
-// Legacy compatibility helper; do not use for digital employee identity creation.
-func dispatchRuntimeProvisioningCommand(ctx context.Context, dispatcher RuntimeCommandDispatcher, nodeID, commandID string, payload map[string]any) error {
-	command, err := runtimeCommand(commandID, "provision_instance", payload)
-	if err != nil {
-		return err
-	}
-	if err := dispatcher.Dispatch(ctx, nodeID, command); err != nil {
-		return fmt.Errorf("%w: dispatch provision instance: %w", ErrRuntimeUnavailable, err)
-	}
-	return nil
-}
-
-// Legacy compatibility helper; do not use for digital employee identity creation.
-func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
-	waitCtx, cancel := context.WithTimeout(ctx, s.provisioningTimeout)
-	defer cancel()
-	return s.repository.WaitForRuntimeCommandCompletion(waitCtx, tenantID, commandID, s.provisioningPollInterval)
 }
 
 func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := cloneMap(definition.DefaultCapabilitySelection)
-	return mergePolicyMaps(defaults, req.CapabilitySelection)
+	defaults := cloneMap(definition.CapabilityBindings)
+	return mergePolicyMaps(defaults, req.CapabilityBindings)
 }
-
-func initialContextPolicyOverride(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
-	defaults := constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
-	return mergePolicyMaps(defaults, req.ContextPolicyOverride)
-}
-
-func constrainedDefaultContextPolicyOverride(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
-	override := cloneMap(defaults)
-	filterDefaultStringListByPolicy(override, "sources", teamConfig.ContextPolicy, "sources", "allowed_sources")
-	filterDefaultStringListByPolicy(override, "knowledge_bases", teamConfig.ContextPolicy, "knowledge_bases", "allowed_knowledge_bases")
-	filterDefaultStringListByPolicy(override, "documents", teamConfig.ContextPolicy, "documents", "allowed_documents")
-	filterDefaultStringListByPolicy(override, "repositories", teamConfig.ContextPolicy, "repositories", "allowed_repositories")
-	filterDefaultStringListByPolicy(override, "log_sources", teamConfig.ContextPolicy, "log_sources", "allowed_log_sources")
-	return override
-}
-
-func filterDefaultStringListByPolicy(values map[string]any, valueKey string, policy map[string]any, policyKeys ...string) {
-	current, currentIssues := stringListPolicyValue(values, valueKey, valueKey)
-	if len(currentIssues) != 0 || len(current) == 0 {
-		delete(values, valueKey)
-		return
-	}
-	allowed, present, allowedIssues := firstStringListPolicyValue(policy, policyKeys...)
-	if !present || len(allowedIssues) != 0 || len(allowed) == 0 {
-		delete(values, valueKey)
-		return
-	}
-	allowedSet := stringSet(allowed)
-	filtered := make([]string, 0, len(current))
-	for _, item := range current {
-		if allowedSet[item] {
-			filtered = append(filtered, item)
-		}
-	}
-	if len(filtered) == 0 {
-		delete(values, valueKey)
-		return
-	}
-	values[valueKey] = filtered
-}
-
 func mergePolicyMaps(base, override map[string]any) map[string]any {
 	merged := cloneMap(base)
 	for key, value := range override {
@@ -965,261 +657,17 @@ func mergePolicyMaps(base, override map[string]any) map[string]any {
 	return merged
 }
 
-func initialRoleProfile(req CreateDigitalEmployeeRequest) map[string]any {
-	profile := cloneMap(req.RoleProfile)
-	profile["employee_type"] = req.EmployeeType
-	profile["role"] = req.Role
-	return profile
-}
-
-func (s *Service) abortProvisioning(tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), defaultProvisioningAbortTimeout)
-	defer cancel()
-	return s.repository.AbortProvisionedDigitalEmployee(cleanupCtx, tenantID, employeeID, executionInstanceID, reason)
-}
-
-func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight) error {
-	if preflight.TenantID == uuid.Nil {
-		return fmt.Errorf("%w: provisioning tenant_id is required", ErrRuntimeUnavailable)
+func normalizeCapabilityBindings(input map[string]any) map[string]any {
+	bindings := cloneMap(input)
+	if bindings == nil {
+		bindings = map[string]any{}
 	}
-	if preflight.RuntimeNodeID == uuid.Nil || strings.TrimSpace(preflight.NodeID) == "" {
-		return fmt.Errorf("%w: runtime node is unavailable", ErrRuntimeUnavailable)
-	}
-	if !preflight.RuntimeOnline {
-		return fmt.Errorf("%w: runtime node is not online", ErrRuntimeUnavailable)
-	}
-	if !preflight.EnrollmentApproved {
-		return fmt.Errorf("%w: runtime enrollment is not approved", ErrRuntimeUnavailable)
-	}
-	if !preflight.RuntimeSessionActive {
-		return fmt.Errorf("%w: runtime session is not active", ErrRuntimeUnavailable)
-	}
-	if !preflight.ProviderAvailable {
-		return fmt.Errorf("%w: provider capability is unavailable", ErrProviderUnavailable)
-	}
-	if preflight.TeamID != uuid.Nil && !preflight.ProviderPolicyAllowed {
-		return fmt.Errorf("%w: provider type is outside team capability policy", ErrProviderUnavailable)
-	}
-	if preflight.TeamID != uuid.Nil && !preflight.RuntimePolicyAllowed {
-		return fmt.Errorf("%w: runtime node is outside team runtime policy", ErrRuntimeUnavailable)
-	}
-	if strings.TrimSpace(preflight.AgentHomeDir) == "" {
-		return fmt.Errorf("%w: runtime agent home dir is unavailable", ErrProviderUnavailable)
-	}
-	return nil
-}
-
-// Legacy compatibility payload for explicit execution-instance provisioning.
-func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord) map[string]any {
-	return redactRuntimeEventSecrets(map[string]any{
-		"command_id":                  commandID,
-		"digital_employee_id":         employee.ID.String(),
-		"execution_instance_id":       instance.ID.String(),
-		"tenant_id":                   employee.TenantID.String(),
-		"team_id":                     nullUUIDString(preflight.TeamID),
-		"owner_user_id":               employee.OwnerUserID.String(),
-		"employee_type":               employee.EmployeeType,
-		"role":                        employee.Role,
-		"risk_level":                  employee.RiskLevel,
-		"runtime_node_id":             preflight.RuntimeNodeID.String(),
-		"node_id":                     preflight.NodeID,
-		"provider_type":               providerType,
-		"provider_run_protocol":       providerRunProtocol,
-		"agent_home_dir":              instance.AgentHomeDir,
-		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
-		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
-		"session_policy":              cloneMap(req.SessionPolicy),
-		"workspace_policy":            cloneMap(req.WorkspacePolicy),
-		"permission_policy":           cloneMap(employee.PermissionPolicy),
-		"context_policy":              cloneMap(employee.ContextPolicy),
-		"approval_policy":             cloneMap(employee.ApprovalPolicy),
-		"role_profile":                cloneMap(configInput.RoleProfile),
-		"context_policy_override":     cloneMap(configInput.ContextPolicyOverride),
-		"approval_policy_override":    cloneMap(configInput.ApprovalPolicyOverride),
-		"capability_selection":        cloneMap(configInput.CapabilitySelection),
-		"budget_policy":               cloneMap(configInput.BudgetPolicy),
-		"output_contract_addendum":    cloneMap(configInput.OutputContractAddendum),
-		"employee_metadata":           cloneMap(employee.Metadata),
-		"execution_instance_ref":      instance.ID.String(),
-		"workspace_files":             runtimeWorkspaceFilesPayload(workspaceFiles),
-		"skills":                      runtimeSkillsPayload(runtimeSkills),
-		"mcp_servers":                 runtimeMCPServersPayload(configInput.CapabilitySelection),
-	})
-}
-
-func canonicalEmployeeHome(workspaceBaseDir string, teamID, digitalEmployeeID uuid.UUID) string {
-	base := strings.TrimRight(strings.TrimSpace(workspaceBaseDir), "/")
-	if teamID == uuid.Nil {
-		return base + "/employees/" + digitalEmployeeID.String()
-	}
-	return base + "/teams/" + teamID.String() + "/employees/" + digitalEmployeeID.String()
-}
-
-func normalizeWorkspaceFilePath(path string) (string, error) {
-	value := strings.TrimSpace(path)
-	if value == "" || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") {
-		return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
-	}
-	if strings.Contains(value, "\\") || strings.Contains(value, "\x00") {
-		return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
-	}
-	for _, segment := range strings.Split(value, "/") {
-		if segment == "" || segment == "." || segment == ".." {
-			return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
+	for _, key := range []string{"skills", "mcp_servers", "external_capabilities", "environment_variable_refs"} {
+		if _, ok := bindings[key]; !ok {
+			bindings[key] = []any{}
 		}
 	}
-	if value == "CLAUDE.md" || strings.HasPrefix(value, ".claude/") || strings.HasPrefix(value, ".opencode/") || strings.HasPrefix(value, ".git/") || strings.HasPrefix(value, ".superteam/") {
-		return "", fmt.Errorf("%w: workspace file path is reserved", ErrInvalidInput)
-	}
-	return value, nil
-}
-
-func normalizeWorkspaceFileRole(fileRole, filePath string) (string, error) {
-	value := strings.TrimSpace(fileRole)
-	if value == "" {
-		if filePath == "AGENTS.md" {
-			return "entrypoint", nil
-		}
-		return "supporting_doc", nil
-	}
-	switch value {
-	case "entrypoint":
-		if filePath != "AGENTS.md" {
-			return "", fmt.Errorf("%w: entrypoint workspace file must be AGENTS.md", ErrInvalidInput)
-		}
-		return value, nil
-	case "supporting_doc", "provider_config", "generated":
-		if filePath == "AGENTS.md" && value != "entrypoint" {
-			return "", fmt.Errorf("%w: AGENTS.md must be the entrypoint workspace file", ErrInvalidInput)
-		}
-		return value, nil
-	default:
-		return "", fmt.Errorf("%w: invalid workspace file role", ErrInvalidInput)
-	}
-}
-
-func normalizeWorkspaceFileSyncPolicy(syncPolicy string) (string, error) {
-	value := strings.TrimSpace(syncPolicy)
-	if value == "" {
-		return "auto", nil
-	}
-	switch value {
-	case "auto", "manual", "disabled":
-		return value, nil
-	default:
-		return "", fmt.Errorf("%w: invalid workspace file sync_policy", ErrInvalidInput)
-	}
-}
-
-func inferWorkspaceFileMimeType(filePath string) string {
-	switch strings.ToLower(path.Ext(filePath)) {
-	case ".md", ".markdown":
-		return "text/markdown"
-	case ".json":
-		return "application/json"
-	case ".yaml", ".yml":
-		return "application/yaml"
-	case ".txt":
-		return "text/plain"
-	default:
-		return "text/plain"
-	}
-}
-
-func sha256Hex(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:])
-}
-
-func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) string {
-	var builder strings.Builder
-	builder.WriteString("You are an agent at SuperTeam.\n\n")
-	builder.WriteString("# Execution Contract\n\n")
-	builder.WriteString("- Work as digital employee: ")
-	builder.WriteString(markdownInstructionDisplayValue(employee.Name))
-	builder.WriteString("\n- Role: ")
-	builder.WriteString(markdownInstructionDisplayValue(employee.Role))
-	builder.WriteString("\n- Keep outputs aligned with the approved team and employee configuration.\n")
-	builder.WriteString("- Ask for human approval before high-risk or ambiguous actions.\n")
-	builder.WriteString("- Persist durable results through platform artifacts, evidence, or structured writeback.\n")
-	if preview != nil {
-		builder.WriteString("\n# Active Configuration\n\n")
-		builder.WriteString("- Employee config revision: ")
-		builder.WriteString(preview.EmployeeConfigRevisionID.String())
-		builder.WriteString("\n")
-	}
-	if len(configInput.OutputContractAddendum) > 0 {
-		builder.WriteString("\n# Output Contract Addendum\n\n")
-		builder.WriteString("Additional output contract data is governed by the Control Plane effective configuration.\n")
-	}
-	return builder.String()
-}
-
-func markdownInstructionDisplayValue(value string) string {
-	collapsed := strings.Join(strings.Fields(value), " ")
-	return strconv.Quote(collapsed)
-}
-
-func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision WorkspaceFileRevisionRecord) WorkspaceFileForSyncRecord {
-	return WorkspaceFileForSyncRecord{
-		FileID:            file.ID,
-		TenantID:          file.TenantID,
-		TeamID:            file.TeamID,
-		DigitalEmployeeID: file.DigitalEmployeeID,
-		Path:              file.Path,
-		FileRole:          file.FileRole,
-		MimeType:          file.MimeType,
-		SyncPolicy:        file.SyncPolicy,
-		FileMetadata:      cloneMap(file.Metadata),
-		RevisionID:        revision.ID,
-		RevisionNumber:    revision.RevisionNumber,
-		ContentText:       revision.ContentText,
-		ContentHash:       revision.ContentHash,
-		SizeBytes:         revision.SizeBytes,
-		StorageBackend:    revision.StorageBackend,
-		ObjectKey:         cloneStringPtr(revision.ObjectKey),
-		RevisionMetadata:  cloneMap(revision.Metadata),
-	}
-}
-
-func workspaceFileFromRecords(file WorkspaceFileRecord, revision WorkspaceFileRevisionRecord) WorkspaceFile {
-	return WorkspaceFile{
-		ID:                file.ID,
-		TenantID:          file.TenantID,
-		TeamID:            file.TeamID,
-		DigitalEmployeeID: file.DigitalEmployeeID,
-		Path:              file.Path,
-		FileRole:          file.FileRole,
-		MimeType:          file.MimeType,
-		SyncPolicy:        file.SyncPolicy,
-		Status:            file.Status,
-		CurrentRevisionID: revision.ID,
-		RevisionNumber:    revision.RevisionNumber,
-		Content:           revision.ContentText,
-		ContentHash:       revision.ContentHash,
-		SizeBytes:         revision.SizeBytes,
-		StorageBackend:    revision.StorageBackend,
-		ObjectKey:         cloneStringPtr(revision.ObjectKey),
-		CreatedBy:         cloneUUIDPtr(file.CreatedBy),
-		ChangeNote:        cloneStringPtr(revision.ChangeNote),
-		CreatedAt:         file.CreatedAt,
-		UpdatedAt:         file.UpdatedAt,
-	}
-}
-
-type runtimeWorkspaceFilePayload struct {
-	FileID         string
-	RevisionID     string
-	Path           string
-	FileRole       string
-	MimeType       string
-	SyncPolicy     string
-	ContentHash    string
-	SizeBytes      int32
-	StorageBackend string
-	ContentText    string
-	ObjectKey      *string
-	Metadata       map[string]any
+	return bindings
 }
 
 type runtimeSkillPayload struct {
@@ -1230,57 +678,6 @@ type runtimeSkillPayload struct {
 	ArchiveChecksumSHA256 string `json:"archive_checksum_sha256"`
 	ArchiveSizeBytes      int64  `json:"archive_size_bytes"`
 	ArchiveFileCount      int    `json:"archive_file_count"`
-}
-
-type runtimeMCPServerPayload struct {
-	ServerID        string
-	ServerKey       string
-	Transport       string
-	ConfigRef       string
-	PermissionScope map[string]any
-}
-
-func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[string]any {
-	out := make([]map[string]any, 0, len(files))
-	for _, file := range files {
-		payload := runtimeWorkspaceFilePayload{
-			FileID:         file.FileID.String(),
-			RevisionID:     file.RevisionID.String(),
-			Path:           file.Path,
-			FileRole:       file.FileRole,
-			MimeType:       file.MimeType,
-			SyncPolicy:     file.SyncPolicy,
-			ContentHash:    file.ContentHash,
-			SizeBytes:      file.SizeBytes,
-			StorageBackend: file.StorageBackend,
-			ContentText:    file.ContentText,
-			ObjectKey:      cloneStringPtr(file.ObjectKey),
-			Metadata: map[string]any{
-				"file":     cloneMap(file.FileMetadata),
-				"revision": cloneMap(file.RevisionMetadata),
-			},
-		}
-		item := map[string]any{
-			"file_id":         payload.FileID,
-			"revision_id":     payload.RevisionID,
-			"path":            payload.Path,
-			"file_role":       payload.FileRole,
-			"mime_type":       payload.MimeType,
-			"sync_policy":     payload.SyncPolicy,
-			"content_hash":    payload.ContentHash,
-			"size_bytes":      payload.SizeBytes,
-			"storage_backend": payload.StorageBackend,
-			"metadata":        payload.Metadata,
-		}
-		if payload.StorageBackend == "db" {
-			item["content_text"] = payload.ContentText
-		}
-		if payload.ObjectKey != nil {
-			item["object_key"] = *payload.ObjectKey
-		}
-		out = append(out, item)
-	}
-	return out
 }
 
 func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
@@ -1306,36 +703,6 @@ func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
 		})
 	}
 	return out
-}
-
-func runtimeMCPServersPayload(capabilitySelection map[string]any) []map[string]any {
-	keys := stringList(capabilitySelection["enabled_mcp_servers"])
-	out := make([]map[string]any, 0, len(keys))
-	for _, key := range keys {
-		payload := runtimeMCPServerPayload{
-			ServerKey:       key,
-			PermissionScope: map[string]any{},
-		}
-		out = append(out, map[string]any{
-			"server_id":        payload.ServerID,
-			"server_key":       payload.ServerKey,
-			"transport":        payload.Transport,
-			"config_ref":       payload.ConfigRef,
-			"permission_scope": payload.PermissionScope,
-		})
-	}
-	return out
-}
-
-func emptyRuntimeSkillsPayload() []map[string]any {
-	return []map[string]any{}
-}
-
-func provisioningErrorWithAbort(cause error, abortErr error) error {
-	if abortErr != nil {
-		return fmt.Errorf("%w; abort provisioning: %v", cause, abortErr)
-	}
-	return cause
 }
 
 func (s *Service) ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error) {
@@ -1364,7 +731,11 @@ func (s *Service) ListDigitalEmployees(ctx context.Context, req ListDigitalEmplo
 	}
 	employees := make([]*DigitalEmployee, 0, len(records))
 	for _, record := range records {
-		employees = append(employees, employeeFromRecord(record))
+		employee := employeeFromRecord(record)
+		if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+			return nil, err
+		}
+		employees = append(employees, employee)
 	}
 	return employees, nil
 }
@@ -1380,7 +751,11 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	if err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
-	return employeeFromRecord(record), nil
+	employee := employeeFromRecord(record)
+	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+		return nil, err
+	}
+	return employee, nil
 }
 
 func (s *Service) DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error {
@@ -1491,21 +866,17 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	} else {
 		latestConfig = &latest
 	}
-	roleProfile := inheritedConfigMap(req.RoleProfile, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.RoleProfile
+	personaMemoryMarkdown := ""
+	if latestConfig != nil {
+		personaMemoryMarkdown = latestConfig.PersonaMemoryMarkdown
+	}
+	if req.PersonaMemoryMarkdown != nil {
+		personaMemoryMarkdown = strings.TrimSpace(*req.PersonaMemoryMarkdown)
+	}
+	capabilityBindings := inheritedConfigMap(req.CapabilityBindings, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.CapabilityBindings
 	})
-	constitutionAddendum := inheritedConfigMap(req.ConstitutionAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ConstitutionAddendum
-	})
-	capabilitySelection := inheritedConfigMap(req.CapabilitySelection, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.CapabilitySelection
-	})
-	contextPolicyOverride := inheritedConfigMap(req.ContextPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ContextPolicyOverride
-	})
-	approvalPolicyOverride := inheritedConfigMap(req.ApprovalPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.ApprovalPolicyOverride
-	})
+	capabilityBindings = normalizeCapabilityBindings(capabilityBindings)
 	budgetPolicySource := inheritedConfigMap(req.BudgetPolicy, latestConfig, func(config EmployeeConfigInput) map[string]any {
 		return config.BudgetPolicy
 	})
@@ -1513,25 +884,18 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if err != nil {
 		return nil, err
 	}
-	outputContractAddendum := inheritedConfigMap(req.OutputContractAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
-		return config.OutputContractAddendum
-	})
 	nextRevision, err := s.repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
 		return nil, fmt.Errorf("get next digital employee config revision number: %w", err)
 	}
 	record, err := s.repository.CreateDigitalEmployeeConfigRevision(ctx, CreateConfigRevisionParams{
-		TenantID:               req.TenantID,
-		DigitalEmployeeID:      req.DigitalEmployeeID,
-		RevisionNumber:         nextRevision,
-		RoleProfile:            roleProfile,
-		ConstitutionAddendum:   constitutionAddendum,
-		CapabilitySelection:    capabilitySelection,
-		ContextPolicyOverride:  contextPolicyOverride,
-		ApprovalPolicyOverride: approvalPolicyOverride,
-		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: outputContractAddendum,
-		Status:                 status,
+		TenantID:              req.TenantID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		RevisionNumber:        nextRevision,
+		PersonaMemoryMarkdown: personaMemoryMarkdown,
+		CapabilityBindings:    capabilityBindings,
+		BudgetPolicy:          budgetPolicy,
+		Status:                status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create digital employee config revision: %w", err)
@@ -1634,34 +998,15 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
-	teamLess := req.TeamConfig.ID == uuid.Nil
-
 	effectiveConfig := map[string]any{
 		"employee_config_revision_id": req.EmployeeConfig.ID.String(),
-		"constitution": map[string]any{
-			"team":     cloneMap(req.TeamConfig.Constitution),
-			"addendum": cloneMap(req.EmployeeConfig.ConstitutionAddendum),
-		},
-		"capability_policy":             cloneMap(req.TeamConfig.CapabilityPolicy),
-		"capability_selection":          cloneMap(req.EmployeeConfig.CapabilitySelection),
-		"context_policy":                cloneMap(req.TeamConfig.ContextPolicy),
-		"context_policy_override":       cloneMap(req.EmployeeConfig.ContextPolicyOverride),
-		"approval_policy":               cloneMap(req.TeamConfig.ApprovalPolicy),
-		"approval_policy_override":      cloneMap(req.EmployeeConfig.ApprovalPolicyOverride),
-		"budget_policy":                 cloneMap(req.EmployeeConfig.BudgetPolicy),
-		"artifact_contract":             cloneMap(req.TeamConfig.ArtifactContract),
-		"output_contract_addendum":      cloneMap(req.EmployeeConfig.OutputContractAddendum),
-		"internal_collaboration_policy": cloneMap(req.TeamConfig.InternalCollaborationPolicy),
-		"runtime_scope_policy":          cloneMap(req.TeamConfig.RuntimeScopePolicy),
+		"persona_memory_markdown":     req.EmployeeConfig.PersonaMemoryMarkdown,
+		"capability_bindings":         cloneMap(req.EmployeeConfig.CapabilityBindings),
+		"budget_policy":               cloneMap(req.EmployeeConfig.BudgetPolicy),
 	}
 	validation := EffectiveConfigValidation{
 		BlockingErrors: []ValidationIssue{},
 		Warnings:       []ValidationIssue{},
-	}
-	if !teamLess {
-		validation.BlockingErrors = append(validation.BlockingErrors, validateCapabilitySelection(req.EmployeeConfig.CapabilitySelection)...)
-		validation.BlockingErrors = append(validation.BlockingErrors, validateContextSubset(req.TeamConfig.ContextPolicy, req.EmployeeConfig.ContextPolicyOverride)...)
-		validation.BlockingErrors = append(validation.BlockingErrors, validateApprovalOverride(req.TeamConfig.ApprovalPolicy, req.EmployeeConfig.ApprovalPolicyOverride)...)
 	}
 
 	return &EffectiveConfigPreview{
@@ -1673,63 +1018,77 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 
 func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 	return &DigitalEmployee{
-		ID:               record.ID,
-		TenantID:         record.TenantID,
-		TeamID:           validUUIDPtr(record.TeamID),
-		OwnerUserID:      record.OwnerUserID,
-		EmployeeType:     record.EmployeeType,
-		ProviderType:     record.ProviderType,
-		Name:             record.Name,
-		Role:             record.Role,
-		Description:      trimOptionalString(record.Description),
-		Status:           record.Status,
-		PermissionPolicy: cloneMap(record.PermissionPolicy),
-		ContextPolicy:    cloneMap(record.ContextPolicy),
-		ApprovalPolicy:   cloneMap(record.ApprovalPolicy),
-		RiskLevel:        record.RiskLevel,
-		Metadata:         cloneMap(record.Metadata),
-		DisabledAt:       cloneTimePtr(record.DisabledAt),
-		ArchivedAt:       cloneTimePtr(record.ArchivedAt),
-		CreatedAt:        record.CreatedAt,
-		UpdatedAt:        record.UpdatedAt,
+		ID:                 record.ID,
+		TenantID:           record.TenantID,
+		TeamID:             validUUIDPtr(record.TeamID),
+		OwnerUserID:        record.OwnerUserID,
+		EmployeeType:       record.EmployeeType,
+		ProviderType:       record.ProviderType,
+		Name:               record.Name,
+		Role:               record.Role,
+		Description:        trimOptionalString(record.Description),
+		Status:             record.Status,
+		PermissionPolicy:   cloneMap(record.PermissionPolicy),
+		ContextPolicy:      cloneMap(record.ContextPolicy),
+		ApprovalPolicy:     cloneMap(record.ApprovalPolicy),
+		RiskLevel:          record.RiskLevel,
+		Metadata:           cloneMap(record.Metadata),
+		CapabilityBindings: map[string]any{},
+		BudgetPolicy:       map[string]any{},
+		DisabledAt:         cloneTimePtr(record.DisabledAt),
+		ArchivedAt:         cloneTimePtr(record.ArchivedAt),
+		CreatedAt:          record.CreatedAt,
+		UpdatedAt:          record.UpdatedAt,
 	}
+}
+
+func (s *Service) attachLatestConfigRevision(ctx context.Context, employee *DigitalEmployee) error {
+	if employee == nil {
+		return nil
+	}
+	config, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, employee.TenantID, employee.ID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			employee.PersonaMemoryMarkdown = ""
+			employee.CapabilityBindings = map[string]any{}
+			employee.BudgetPolicy = map[string]any{}
+			return nil
+		}
+		return fmt.Errorf("get latest digital employee config revision: %w", err)
+	}
+	employee.PersonaMemoryMarkdown = config.PersonaMemoryMarkdown
+	employee.CapabilityBindings = cloneMap(config.CapabilityBindings)
+	employee.BudgetPolicy = cloneMap(config.BudgetPolicy)
+	return nil
 }
 
 func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *DigitalEmployeeConfigRevision {
 	return &DigitalEmployeeConfigRevision{
-		ID:                     record.ID,
-		TenantID:               record.TenantID,
-		DigitalEmployeeID:      record.DigitalEmployeeID,
-		RevisionNumber:         record.RevisionNumber,
-		RoleProfile:            cloneMap(record.RoleProfile),
-		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(record.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(record.BudgetPolicy),
-		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
-		Status:                 record.Status,
-		ApprovedBy:             validUUIDPtr(record.ApprovedBy),
-		ApprovedAt:             cloneTimePtr(record.ApprovedAt),
-		ArchivedAt:             cloneTimePtr(record.ArchivedAt),
-		CreatedAt:              record.CreatedAt,
-		UpdatedAt:              record.UpdatedAt,
+		ID:                    record.ID,
+		TenantID:              record.TenantID,
+		DigitalEmployeeID:     record.DigitalEmployeeID,
+		RevisionNumber:        record.RevisionNumber,
+		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(record.CapabilityBindings),
+		BudgetPolicy:          cloneMap(record.BudgetPolicy),
+		Status:                record.Status,
+		ApprovedBy:            validUUIDPtr(record.ApprovedBy),
+		ApprovedAt:            cloneTimePtr(record.ApprovedAt),
+		ArchivedAt:            cloneTimePtr(record.ArchivedAt),
+		CreatedAt:             record.CreatedAt,
+		UpdatedAt:             record.UpdatedAt,
 	}
 }
 
 func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) EmployeeConfigInput {
 	return EmployeeConfigInput{
-		ID:                     record.ID,
-		TenantID:               record.TenantID,
-		DigitalEmployeeID:      record.DigitalEmployeeID,
-		RevisionNumber:         record.RevisionNumber,
-		RoleProfile:            cloneMap(record.RoleProfile),
-		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(record.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(record.BudgetPolicy),
-		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
+		ID:                    record.ID,
+		TenantID:              record.TenantID,
+		DigitalEmployeeID:     record.DigitalEmployeeID,
+		RevisionNumber:        record.RevisionNumber,
+		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
+		CapabilityBindings:    cloneMap(record.CapabilityBindings),
+		BudgetPolicy:          cloneMap(record.BudgetPolicy),
 	}
 }
 
@@ -1755,87 +1114,6 @@ func executionInstanceFromRecord(record DigitalEmployeeExecutionInstanceRecord) 
 		CreatedAt:            record.CreatedAt,
 		UpdatedAt:            record.UpdatedAt,
 	}
-}
-
-func validateContextSubset(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
-	keys := []struct {
-		overrideKey string
-		teamKeys    []string
-	}{
-		{overrideKey: "sources", teamKeys: []string{"sources", "allowed_sources"}},
-		{overrideKey: "knowledge_bases", teamKeys: []string{"knowledge_bases", "allowed_knowledge_bases"}},
-		{overrideKey: "documents", teamKeys: []string{"documents", "allowed_documents"}},
-		{overrideKey: "repositories", teamKeys: []string{"repositories", "allowed_repositories"}},
-		{overrideKey: "log_sources", teamKeys: []string{"log_sources", "allowed_log_sources"}},
-	}
-	issues := []ValidationIssue{}
-	for _, key := range keys {
-		allowed, _, allowedIssues := firstStringListPolicyValue(teamPolicy, key.teamKeys...)
-		requested, requestedIssues := stringListPolicyValue(employeeOverride, key.overrideKey, fmt.Sprintf("context_policy_override.%s", key.overrideKey))
-		issues = append(issues, allowedIssues...)
-		issues = append(issues, requestedIssues...)
-		if len(requested) == 0 {
-			continue
-		}
-		allowedSet := stringSet(allowed)
-		var outside []string
-		for _, item := range requested {
-			if !allowedSet[item] {
-				outside = append(outside, item)
-			}
-		}
-		if len(outside) == 0 {
-			continue
-		}
-		issues = append(issues, ValidationIssue{
-			Code:    "context_outside_team_scope",
-			Path:    fmt.Sprintf("context_policy_override.%s", key.overrideKey),
-			Message: fmt.Sprintf("context refs are outside team scope: %s", strings.Join(outside, ", ")),
-		})
-	}
-	return issues
-}
-
-func validateCapabilitySelection(employeeSelection map[string]any) []ValidationIssue {
-	keys := []string{
-		"enabled_mcp_servers",
-		"enabled_skills",
-		"enabled_plugins",
-		"enabled_provider_types",
-	}
-	issues := []ValidationIssue{}
-	for _, key := range keys {
-		_, valueIssues := stringListPolicyValue(employeeSelection, key, fmt.Sprintf("capability_selection.%s", key))
-		issues = append(issues, valueIssues...)
-	}
-	return issues
-}
-
-func validateApprovalOverride(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
-	issues := []ValidationIssue{}
-	teamRank, _, teamRiskIssues := riskPolicyValue(teamPolicy, "min_risk_for_human", "approval_policy.min_risk_for_human")
-	overrideRank, _, overrideRiskIssues := riskPolicyValue(employeeOverride, "min_risk_for_human", "approval_policy_override.min_risk_for_human")
-	issues = append(issues, teamRiskIssues...)
-	issues = append(issues, overrideRiskIssues...)
-	if teamRank > 0 && overrideRank > teamRank {
-		issues = append(issues, ValidationIssue{
-			Code:    "approval_policy_downgrade",
-			Path:    "approval_policy_override.min_risk_for_human",
-			Message: "approval override cannot lower team approval requirements",
-		})
-	}
-	teamWriteRequired, teamWriteSet, teamWriteIssues := boolPolicyValue(teamPolicy, "write_actions_require_human", "approval_policy.write_actions_require_human")
-	overrideWriteRequired, overrideWriteSet, overrideWriteIssues := boolPolicyValue(employeeOverride, "write_actions_require_human", "approval_policy_override.write_actions_require_human")
-	issues = append(issues, teamWriteIssues...)
-	issues = append(issues, overrideWriteIssues...)
-	if teamWriteSet && teamWriteRequired && overrideWriteSet && !overrideWriteRequired {
-		issues = append(issues, ValidationIssue{
-			Code:    "approval_policy_downgrade",
-			Path:    "approval_policy_override.write_actions_require_human",
-			Message: "approval override cannot remove human approval for write actions",
-		})
-	}
-	return issues
 }
 
 func stringListPolicyValue(values map[string]any, key, path string) ([]string, []ValidationIssue) {
@@ -1877,34 +1155,6 @@ func firstStringListPolicyValue(values map[string]any, keys ...string) ([]string
 		return values, true, issues
 	}
 	return nil, false, nil
-}
-
-func riskPolicyValue(values map[string]any, key, path string) (int, bool, []ValidationIssue) {
-	value, ok := values[key]
-	if !ok {
-		return 0, false, nil
-	}
-	text, ok := value.(string)
-	if !ok {
-		return 0, true, []ValidationIssue{invalidPolicyValueIssue(path, "risk value must be a string")}
-	}
-	rank := riskRank(text)
-	if rank == 0 {
-		return 0, true, []ValidationIssue{invalidPolicyValueIssue(path, "risk value must be one of low, medium, high, critical")}
-	}
-	return rank, true, nil
-}
-
-func boolPolicyValue(values map[string]any, key, path string) (bool, bool, []ValidationIssue) {
-	value, ok := values[key]
-	if !ok {
-		return false, false, nil
-	}
-	typed, ok := value.(bool)
-	if !ok {
-		return false, true, []ValidationIssue{invalidPolicyValueIssue(path, "policy value must be a boolean")}
-	}
-	return typed, true, nil
 }
 
 func invalidPolicyValueIssue(path, message string) ValidationIssue {
@@ -1976,33 +1226,11 @@ func stringList(value any) []string {
 	}
 }
 
-func validationResultMap(validation EffectiveConfigValidation) map[string]any {
-	return map[string]any{
-		"blocking_errors": validation.BlockingErrors,
-		"warnings":        validation.Warnings,
-	}
-}
-
 func validUUIDPtr(value *uuid.UUID) *uuid.UUID {
 	if value == nil || *value == uuid.Nil {
 		return nil
 	}
 	copied := *value
-	return &copied
-}
-
-func nullUUIDString(value uuid.UUID) string {
-	if value == uuid.Nil {
-		return ""
-	}
-	return value.String()
-}
-
-func teamIDPtr(value uuid.UUID) *uuid.UUID {
-	if value == uuid.Nil {
-		return nil
-	}
-	copied := value
 	return &copied
 }
 
@@ -2031,13 +1259,6 @@ func cloneUUIDPtr(value *uuid.UUID) *uuid.UUID {
 	}
 	copied := *value
 	return &copied
-}
-
-func stringPtrValue(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
 }
 
 func cloneMap(value map[string]any) map[string]any {

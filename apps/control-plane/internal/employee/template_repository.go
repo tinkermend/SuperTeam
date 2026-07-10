@@ -66,15 +66,11 @@ func (r *PgRepository) CreateEmployeeTemplate(ctx context.Context, params Create
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultCapabilitySelection, err := jsonbFromMap(params.DefaultCapabilitySelection, "default_capability_selection")
+	capabilityBindings, err := jsonbFromMap(params.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultContextPolicyOverride, err := jsonbFromMap(params.DefaultContextPolicyOverride, "default_context_policy_override")
-	if err != nil {
-		return EmployeeTemplateRecord{}, err
-	}
-	defaultApprovalPolicy, err := jsonbFromMap(params.DefaultApprovalPolicy, "default_approval_policy")
+	budgetPolicy, err := jsonbFromMap(params.BudgetPolicy, "budget_policy")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
@@ -92,9 +88,9 @@ func (r *PgRepository) CreateEmployeeTemplate(ctx context.Context, params Create
 		RecommendedSkills:            recommendedSkills,
 		RecommendedMcpServers:        recommendedMCPServers,
 		RecommendedProviderTypes:     recommendedProviderTypes,
-		DefaultCapabilitySelection:   defaultCapabilitySelection,
-		DefaultContextPolicyOverride: defaultContextPolicyOverride,
-		DefaultApprovalPolicy:        defaultApprovalPolicy,
+		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
+		CapabilityBindings:           capabilityBindings,
+		BudgetPolicy:                 budgetPolicy,
 		Metadata:                     metadata,
 	})
 	if err != nil {
@@ -116,15 +112,11 @@ func (r *PgRepository) UpdateEmployeeTemplate(ctx context.Context, params Update
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultCapabilitySelection, err := jsonbFromMap(params.DefaultCapabilitySelection, "default_capability_selection")
+	capabilityBindings, err := jsonbFromMap(params.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultContextPolicyOverride, err := jsonbFromMap(params.DefaultContextPolicyOverride, "default_context_policy_override")
-	if err != nil {
-		return EmployeeTemplateRecord{}, err
-	}
-	defaultApprovalPolicy, err := jsonbFromMap(params.DefaultApprovalPolicy, "default_approval_policy")
+	budgetPolicy, err := jsonbFromMap(params.BudgetPolicy, "budget_policy")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
@@ -142,9 +134,9 @@ func (r *PgRepository) UpdateEmployeeTemplate(ctx context.Context, params Update
 		RecommendedSkills:            recommendedSkills,
 		RecommendedMcpServers:        recommendedMCPServers,
 		RecommendedProviderTypes:     recommendedProviderTypes,
-		DefaultCapabilitySelection:   defaultCapabilitySelection,
-		DefaultContextPolicyOverride: defaultContextPolicyOverride,
-		DefaultApprovalPolicy:        defaultApprovalPolicy,
+		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
+		CapabilityBindings:           capabilityBindings,
+		BudgetPolicy:                 budgetPolicy,
 		Metadata:                     metadata,
 	})
 	if err != nil {
@@ -204,15 +196,11 @@ func employeeTemplateRecordFromRow(row queries.DigitalEmployeeTemplate) (Employe
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultCapabilitySelection, err := mapFromJSONB(row.DefaultCapabilitySelection, "default_capability_selection")
+	capabilityBindings, err := mapFromJSONB(row.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
-	defaultContextPolicyOverride, err := mapFromJSONB(row.DefaultContextPolicyOverride, "default_context_policy_override")
-	if err != nil {
-		return EmployeeTemplateRecord{}, err
-	}
-	defaultApprovalPolicy, err := mapFromJSONB(row.DefaultApprovalPolicy, "default_approval_policy")
+	budgetPolicy, err := mapFromJSONB(row.BudgetPolicy, "budget_policy")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
@@ -230,9 +218,9 @@ func employeeTemplateRecordFromRow(row queries.DigitalEmployeeTemplate) (Employe
 		RecommendedSkills:            recommendedSkills,
 		RecommendedMCPServers:        recommendedMCPServers,
 		RecommendedProviderTypes:     recommendedProviderTypes,
-		DefaultCapabilitySelection:   defaultCapabilitySelection,
-		DefaultContextPolicyOverride: defaultContextPolicyOverride,
-		DefaultApprovalPolicy:        defaultApprovalPolicy,
+		PersonaMemoryMarkdown:        row.PersonaMemoryMarkdown,
+		CapabilityBindings:           capabilityBindings,
+		BudgetPolicy:                 budgetPolicy,
 		Metadata:                     metadata,
 		Status:                       row.Status,
 		IsSystem:                     row.IsSystem,

@@ -241,8 +241,6 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
 				r.Delete("/digital-employees/{employeeId}", s.employeeHandler.DeleteDigitalEmployee)
 				r.Get("/digital-employees/{employeeId}/scheduling-readiness", s.employeeHandler.GetSchedulingReadiness)
-				r.Get("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.ListWorkspaceFiles)
-				r.Put("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.UpsertWorkspaceFile)
 				r.Get("/digital-employees/{employeeId}/environment-variables", s.employeeHandler.ListEnvironmentVariables)
 				r.Put("/digital-employees/{employeeId}/environment-variables/{envName}", s.employeeHandler.UpsertEnvironmentVariable)
 				r.Delete("/digital-employees/{employeeId}/environment-variables/{envName}", s.employeeHandler.DeleteEnvironmentVariable)

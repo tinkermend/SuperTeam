@@ -1,4 +1,5 @@
 import type { ApiClientOptions } from "./client";
+import type { BudgetPolicy, CapabilityBindings } from "./employees";
 import { deleteJson, getJson, patchJson, postJson } from "./client";
 
 export type EmployeeTemplateStatus = "active" | "disabled";
@@ -13,9 +14,9 @@ export type EmployeeTemplate = {
   recommended_skills: string[];
   recommended_mcp_servers: string[];
   recommended_provider_types: string[];
-  default_capability_selection: Record<string, unknown>;
-  default_context_policy_override: Record<string, unknown>;
-  default_approval_policy: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
+  budget_policy?: BudgetPolicy;
   metadata: Record<string, unknown>;
   status: EmployeeTemplateStatus;
   is_system: boolean;
@@ -31,9 +32,9 @@ export type CreateEmployeeTemplateInput = {
   recommended_skills?: string[];
   recommended_mcp_servers?: string[];
   recommended_provider_types?: string[];
-  default_capability_selection?: Record<string, unknown>;
-  default_context_policy_override?: Record<string, unknown>;
-  default_approval_policy?: Record<string, unknown>;
+  persona_memory_markdown?: string;
+  capability_bindings?: CapabilityBindings;
+  budget_policy?: BudgetPolicy;
   metadata?: Record<string, unknown>;
 };
 

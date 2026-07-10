@@ -1,6 +1,8 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::controlplane::{ControlPlaneClient, RuntimeCapabilityInput};
+use superteam_runtime_agent::controlplane::{
+    ControlPlaneClient, HeartbeatRequest, NodeStatus, RuntimeCapabilityInput,
+};
 use superteam_runtime_agent::daemon::{RuntimeDaemon, connect_runtime_session};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -475,16 +477,16 @@ async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
     let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(6);
 
     tokio::spawn(async move {
-        let (mut first_claim_socket, _) = listener.accept().await.unwrap();
-        let first_claim = read_http_request(&mut first_claim_socket).await;
-        request_tx.send(first_claim).await.unwrap();
+        let (mut first_heartbeat_socket, _) = listener.accept().await.unwrap();
+        let first_heartbeat = read_http_request(&mut first_heartbeat_socket).await;
+        request_tx.send(first_heartbeat).await.unwrap();
         write_status_response(
-            &mut first_claim_socket,
+            &mut first_heartbeat_socket,
             "401 Unauthorized",
             serde_json::json!("invalid runtime authentication"),
         )
         .await;
-        drop(first_claim_socket);
+        drop(first_heartbeat_socket);
 
         let (mut hello_socket, _) = listener.accept().await.unwrap();
         let hello = read_http_request(&mut hello_socket).await;
@@ -523,13 +525,26 @@ async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
         request_tx.send(caps).await.unwrap();
         write_json_response(&mut caps_socket, serde_json::json!([])).await;
 
-        let (mut second_claim_socket, _) = listener.accept().await.unwrap();
-        let second_claim = read_http_request(&mut second_claim_socket).await;
-        request_tx.send(second_claim).await.unwrap();
-        second_claim_socket
-            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-            .await
-            .unwrap();
+        let (mut second_heartbeat_socket, _) = listener.accept().await.unwrap();
+        let second_heartbeat = read_http_request(&mut second_heartbeat_socket).await;
+        request_tx.send(second_heartbeat).await.unwrap();
+        write_json_response(
+            &mut second_heartbeat_socket,
+            serde_json::json!({
+                "node_id": "node-1",
+                "name": "runtime-node-1",
+                "supported_providers": [],
+                "required_tools": [],
+                "max_slots": 1,
+                "current_load": 0,
+                "status": "online",
+                "metadata": null,
+                "last_heartbeat_at": "2026-06-02T00:00:00Z",
+                "created_at": "2026-06-02T00:00:00Z",
+                "updated_at": "2026-06-02T00:00:00Z"
+            }),
+        )
+        .await;
     });
 
     let mut config = RuntimeConfig::new("node-1").expect("config");
@@ -544,24 +559,35 @@ async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
         config.runtime.control_plane_url.clone(),
         auth.clone(),
     );
-    let first_result = client.claim_task(1).await;
+    let first_result = client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await;
     assert!(first_result.is_err());
     superteam_runtime_agent::daemon::reenroll_runtime_session(&config, auth.clone(), vec![])
         .await
         .expect("re-enroll");
-    client.claim_task(1).await.expect("second claim");
+    client
+        .heartbeat(HeartbeatRequest {
+            current_load: 0,
+            status: NodeStatus::Online,
+        })
+        .await
+        .expect("second heartbeat");
 
-    let first_claim = request_rx.recv().await.expect("first claim");
+    let first_heartbeat = request_rx.recv().await.expect("first heartbeat");
     let hello = request_rx.recv().await.expect("hello");
     let caps = request_rx.recv().await.expect("capabilities");
-    let second_claim = request_rx.recv().await.expect("second claim");
-    assert!(first_claim.contains("authorization: Bearer old-token"));
+    let second_heartbeat = request_rx.recv().await.expect("second heartbeat");
+    assert!(first_heartbeat.contains("authorization: Bearer old-token"));
     assert_eq!(
         hello.lines().next().unwrap(),
         "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
     );
     assert!(caps.contains("authorization: Bearer fresh-token"));
-    assert!(second_claim.contains("authorization: Bearer fresh-token"));
+    assert!(second_heartbeat.contains("authorization: Bearer fresh-token"));
 }
 
 #[tokio::test]

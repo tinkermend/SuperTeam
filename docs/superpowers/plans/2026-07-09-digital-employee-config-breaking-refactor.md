@@ -288,6 +288,11 @@ git commit -m "feat(control-plane): reshape digital employee config schema"
 - Produces `EmployeeConfigInput`/record mappings with only `PersonaMemoryMarkdown string`, `CapabilityBindings map[string]any`, and `BudgetPolicy map[string]any`.
 - Produces sqlc rows with JSONB `capability_bindings` and text `persona_memory_markdown`.
 
+**Execution Boundary:**
+- Task 2 and Task 3 are one Go package compile unit. The `apps/control-plane/internal/employee` package cannot stay green after Task 2 alone because generated sqlc/repository types are consumed by service and handler files in the same package.
+- Execute Task 2 immediately followed by Task 3 before requiring the package-level Go tests to pass or creating the final Control Plane commit. Task 2 still owns query/repository mapping and TDD red evidence; Task 3 owns service/handler/domain alignment and the green package verification.
+- Do not leave the branch at a committed state where Task 2 has changed generated repository types but Task 3 consumers still reference removed old fields.
+
 - [ ] **Step 1: Write repository mapping tests**
 
 Add to `apps/control-plane/internal/employee/pg_repository_test.go`:
@@ -478,9 +483,9 @@ Run:
 go test ./apps/control-plane/internal/employee -run 'TestDigitalEmployeeConfigRevisionQueryMappingUsesFinalFields|TestDigitalEmployeeConfigRevisionQueryMappingKeepsBudgetPolicy' -count=1
 ```
 
-Expected: final-fields test passes. Remove or rewrite `TestDigitalEmployeeConfigRevisionQueryMappingKeepsBudgetPolicy` if it still asserts old fields.
+Expected: final-fields test may still be blocked by service/handler compile references until Task 3 is implemented in the same package. If compile errors reference removed fields in `service.go`, `handler.go`, `service_test.go`, `handler_test.go`, or route tests, continue directly into Task 3 and do not commit Task 2 separately. After Task 3, this command must pass or be replaced by the nearest focused final-field repository test if the generated sqlc row type name changed.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit or continue into Task 3**
 
 ```bash
 git add apps/control-plane/internal/storage/queries/digital_employee_config.sql \
@@ -493,6 +498,8 @@ git add apps/control-plane/internal/storage/queries/digital_employee_config.sql 
   apps/control-plane/internal/employee/pg_repository_test.go
 git commit -m "feat(control-plane): map final employee config fields"
 ```
+
+Only create this commit if the `employee` package compiles at the end of Task 2. If it does not compile because Task 3 consumers still reference old config fields, keep the Task 2 changes uncommitted, implement Task 3 immediately, then create one combined Control Plane commit after the Task 3 green verification.
 
 ---
 
@@ -515,6 +522,10 @@ git commit -m "feat(control-plane): map final employee config fields"
   - `CreateDigitalEmployeeConfigRevisionRequest.CapabilityBindings map[string]any`
   - `BudgetPolicy map[string]any`
 - Produces HTTP JSON fields: `persona_memory_markdown`, `capability_bindings`, `budget_policy`.
+
+**Execution Boundary:**
+- If Task 2 left sqlc/repository changes uncommitted because `apps/control-plane/internal/employee` could not compile independently, complete Task 3 in the same working tree and create one combined commit after the focused Go tests pass.
+- The combined commit message should be `feat(control-plane): use final employee config fields` when it includes both Task 2 repository mapping and Task 3 domain/service/handler alignment.
 
 - [ ] **Step 1: Write service tests for final create/config behavior**
 
@@ -965,6 +976,8 @@ git commit -m "feat(contracts): expose final employee config fields"
 ### Task 5: Templates And Create Options Use Persona/Bindings/Budget
 
 **Files:**
+- Modify: `contracts/control-plane/openapi.yaml`
+- Generated: `apps/control-plane/internal/api/gen/control_plane.gen.go`
 - Modify: `apps/control-plane/internal/employee/template_types.go`
 - Modify: `apps/control-plane/internal/employee/template_repository.go`
 - Modify: `apps/control-plane/internal/employee/template_service.go`
@@ -979,6 +992,11 @@ git commit -m "feat(contracts): expose final employee config fields"
 **Interfaces:**
 - Produces template fields `persona_memory_markdown`, `capability_bindings`, `budget_policy`.
 - Removes template fields `default_capability_selection`, `default_context_policy_override`, and `default_approval_policy`.
+
+**Execution Boundary:**
+- Task 4 updates create employee and config revision contract/type surfaces. Task 5 owns the remaining template contract/backend/UI surface and must remove template OpenAPI fields `default_capability_selection`, `default_context_policy_override`, and `default_approval_policy` from create/update/response schemas.
+- The generated Control Plane API file in the current repo is `apps/control-plane/internal/api/gen/control_plane.gen.go`.
+- Run `corepack pnpm generate:control-plane` and `corepack pnpm verify:contracts` after changing template OpenAPI schemas.
 
 - [ ] **Step 1: Write failing backend template test**
 
@@ -1083,6 +1101,36 @@ Reject old fields in template create/update handlers using the same raw-map chec
 []string{"default_capability_selection", "default_context_policy_override", "default_approval_policy"}
 ```
 
+Update `contracts/control-plane/openapi.yaml` template create/update/response schemas:
+
+- Remove:
+
+```yaml
+default_capability_selection
+default_context_policy_override
+default_approval_policy
+```
+
+- Add:
+
+```yaml
+persona_memory_markdown:
+  type: string
+capability_bindings:
+  type: object
+  additionalProperties: true
+budget_policy:
+  type: object
+  additionalProperties: true
+```
+
+Then regenerate:
+
+```bash
+corepack pnpm generate:control-plane
+corepack pnpm verify:contracts
+```
+
 - [ ] **Step 6: Update Web template UI**
 
 In `apps/web/src/features/employees/templates.tsx`, replace the JSON editors for old defaults with:
@@ -1119,6 +1167,8 @@ git add apps/control-plane/internal/storage/migrations/052_digital_employee_temp
   apps/control-plane/internal/storage/migrations/atlas.sum \
   apps/control-plane/internal/storage/queries/digital_employee_templates.sql \
   apps/control-plane/internal/storage/queries/digital_employee_templates.sql.go \
+  contracts/control-plane/openapi.yaml \
+  apps/control-plane/internal/api/gen/control_plane.gen.go \
   apps/control-plane/internal/employee/template_types.go \
   apps/control-plane/internal/employee/template_repository.go \
   apps/control-plane/internal/employee/template_service.go \
