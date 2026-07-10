@@ -96,7 +96,7 @@ type TaskResultRevisionRequest struct {
 ### 1.5 死字段与重复逻辑
 
 - `PreDispatchCapabilitySnapshot.Unknown`：`workflow/.../predispatch_gate.go:759` 从 `inputRequirements["unknown_capabilities"]` 赋值，而**全仓无任何代码写入该键**，恒为空。
-- `projects.coordination_policy`：`project/handler.go:266,1439` 存进去、透传出来，**无任何行为读它**。
+- ~~`projects.coordination_policy` 无任何行为读它~~ —— **勘误（2026-07-10）**：它是活的。`project_store.go:351` 把它装配进 `CoordinationSnapshot`，`requiredHumanReviewPolicyEnabled`（`openai_compatible_planner.go:651`）读其 `require_human_review_for_new_demands` 键。它只是**键很少**，不是无人读。§4.8 的 `max_plan_iterations` 与 §4.2 的 `selection_confidence_threshold` 应作为新键加入，而非「复活死字段」。
 - `ProjectEventTaskRevisionRequested` / `RevisionCreated` / `ReplanRequested` / `TaskResultRejected`：`project/types.go` 中定义，**零处生产者**。
 - 两个能力快照构造器（`app/planning_profile_adapter.go:314` 与 `workflow/.../predispatch_gate.go:736`）逻辑重复且都从 LLM 输出取值。
 
