@@ -1,6 +1,6 @@
 # Provider Contract
 
-Provider contracts describe the boundary between `apps/runtime-agent` and concrete executors such as Claude Code, OpenCode, Codex, and Pi.
+Provider contracts describe the boundary between `apps/runtime-agent` and concrete executors such as Claude Code, OpenCode, and Codex.
 
 The Control Plane must not depend on provider-specific request shapes. Runtime adapters translate this neutral contract into CLI, PTY, HTTP, or SDK calls.
 
