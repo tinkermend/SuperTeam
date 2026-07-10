@@ -270,9 +270,9 @@ func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 		PermissionRequirements: []string{"database.write:dev_database"},
 	})
 
-	require.Contains(t, result.HardFailures, "permission_or_tool_requirement_unsatisfied")
-	require.Contains(t, result.HardFailures, "unsatisfied_permission:database.write:dev_database")
-	require.Equal(t, 0, result.Score)
+	require.Empty(t, result.HardFailures, "unmatched permission_requirements must not hard-fail; permission_policy has no consumer")
+	require.Equal(t, []string{"database.write:dev_database"}, result.MissingPermissions)
+	require.Greater(t, result.Score, 0)
 
 	result = ScorePlanningProfile(profile, PlanningTaskRequirements{
 		TaskType:         "database_analysis",
@@ -385,4 +385,82 @@ func TestPlanningProfileSnapshotHashIsStable(t *testing.T) {
 
 	require.Len(t, first, 64)
 	require.Equal(t, first, second)
+}
+
+func TestScorePlanningProfileDoesNotHardFailOnMissingPermission(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID:   uuid.New(),
+		RuntimeRequirements: PlanningRuntimeRequirements{ProviderStatus: "ready"},
+		// Nothing in the repository ever grants a permission: 0 of 13 employees
+		// carry one, and permission_policy has no consumer at all.
+		Permissions: nil,
+	}
+
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		// Names the planner invents. It was never given a vocabulary.
+		PermissionRequirements: []string{"file_read", "code_execution"},
+	})
+
+	require.Empty(t, score.HardFailures, "an unmatched permission name is not a hard failure")
+	require.Greater(t, score.Score, 0, "score must survive an unmatched permission")
+	require.Equal(t, []string{"file_read", "code_execution"}, score.MissingPermissions,
+		"the diff is still reported for display")
+}
+
+func TestScoreRuntimeDoesNotHardFailOnUnrecognizedRequirementKind(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: uuid.New(),
+		RuntimeRequirements: PlanningRuntimeRequirements{
+			ProviderTypes:  []string{"codex"},
+			ProviderStatus: "ready",
+		},
+	}
+
+	// The planner named the right thing in the wrong syntax: it should have
+	// written provider:codex. The employee IS codex.
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		RuntimeRequirements: []string{"codex"},
+	})
+
+	require.Empty(t, score.HardFailures, "a malformed requirement is a syntax error, not an unsatisfied fact")
+	require.Greater(t, score.Score, 0)
+	require.Equal(t, []string{"codex"}, score.UnrecognizedRuntimeRequirements)
+	require.Empty(t, score.MissingRuntimeRequirements)
+}
+
+func TestScoreRuntimeStillHardFailsOnWellFormedProviderMismatch(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: uuid.New(),
+		RuntimeRequirements: PlanningRuntimeRequirements{
+			ProviderTypes:  []string{"claude"},
+			ProviderStatus: "ready",
+		},
+	}
+
+	// Dispatching a codex task to a claude employee is a real mismatch against a
+	// real fact. This must keep blocking.
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		RuntimeRequirements: []string{"provider:codex"},
+	})
+
+	require.Contains(t, score.HardFailures, "runtime_requirement_unsatisfied")
+	require.Equal(t, 0, score.Score)
+	require.Equal(t, []string{"provider:codex"}, score.MissingRuntimeRequirements)
+}
+
+func TestScoreRuntimeStillHardFailsOnUnreadyProvider(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: uuid.New(),
+		RuntimeRequirements: PlanningRuntimeRequirements{
+			ProviderTypes:  []string{"codex"},
+			ProviderStatus: "unknown",
+		},
+	}
+
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		RuntimeRequirements: []string{"provider:codex"},
+	})
+
+	require.Contains(t, score.HardFailures, "unsatisfied_runtime:provider_status")
+	require.Equal(t, 0, score.Score)
 }

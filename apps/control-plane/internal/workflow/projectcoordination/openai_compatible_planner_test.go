@@ -827,7 +827,7 @@ func TestDecodePlannerSelectionConfidenceRejectsMissing(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestOpenAICompatiblePlannerMarksProfileGapsForHumanReview(t *testing.T) {
+func TestOpenAICompatiblePlannerDoesNotForceReviewOnInventedVocabulary(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{
 		content: fmt.Sprintf(`{
@@ -876,8 +876,12 @@ func TestOpenAICompatiblePlannerMarksProfileGapsForHumanReview(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.True(t, plan.RequiresHumanReview)
-	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	// The employee's profile is sound: provider ready, codex matched, permission
+	// granted. Its only "gaps" are the invented required_capabilities and
+	// permission_requirements. Those are advisory now, so nothing forces review.
+	require.False(t, plan.RequiresHumanReview)
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
+	// The diff is still recorded for a human reviewer to read.
 	require.Equal(t, []string{"database.write"}, plan.Tasks[0].MissingCapabilities)
 	require.NotEmpty(t, plan.Tasks[0].PlanningProfileSnapshotHash)
 }
