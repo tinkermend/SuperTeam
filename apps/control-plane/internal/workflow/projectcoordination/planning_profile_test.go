@@ -268,11 +268,20 @@ func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 	result = ScorePlanningProfile(profile, PlanningTaskRequirements{
 		TaskType:               "database_analysis",
 		PermissionRequirements: []string{"database.write:dev_database"},
-		ToolRequirements:       []string{"mcp:postgres.admin"},
 	})
 
 	require.Contains(t, result.HardFailures, "permission_or_tool_requirement_unsatisfied")
+	require.Contains(t, result.HardFailures, "unsatisfied_permission:database.write:dev_database")
 	require.Equal(t, 0, result.Score)
+
+	result = ScorePlanningProfile(profile, PlanningTaskRequirements{
+		TaskType:         "database_analysis",
+		ToolRequirements: []string{"mcp:postgres.admin", "shell"},
+	})
+
+	require.Equal(t, []string{"mcp:postgres.admin", "shell"}, result.MissingTools)
+	require.Empty(t, result.HardFailures, "unmatched tool_requirements must not hard-fail; MCP is workspace mcp.json, not a plan-time vocabulary")
+	require.Greater(t, result.Score, 0)
 
 	hardFailedProfile := profile
 	hardFailedProfile.HardFailures = []string{"runtime_contract_missing"}
@@ -315,6 +324,46 @@ func TestScorePlanningProfileScoreIsIndependentOfCapabilities(t *testing.T) {
 	})
 
 	require.Equal(t, withNone.Score, withInvented.Score)
+}
+
+func TestScorePlanningProfileDoesNotHardFailOnMissingTool(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: uuid.New(),
+		ToolBindings:      []PlanningToolBinding{{Type: "mcp", Key: "postgres.readonly", Status: "available"}},
+	}
+
+	score := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		ToolRequirements: []string{"shell", "mcp:postgres.admin"},
+	})
+
+	require.Empty(t, score.HardFailures)
+	require.Equal(t, []string{"shell", "mcp:postgres.admin"}, score.MissingTools)
+	require.Greater(t, score.Score, 0)
+}
+
+func TestApplyPlanningProfileScoresDoesNotForceApprovalOnMissingTool(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+			},
+		}},
+	}
+	plan := RouteDecisionPlan{Tasks: []PlannedTask{{
+		Key:                "t1",
+		SelectedEmployeeID: employeeID,
+		ToolRequirements:   []string{"shell"},
+	}}}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.False(t, plan.RequiresHumanReview)
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
+	require.Greater(t, plan.Tasks[0].SelectionScore, 0)
 }
 
 func TestPlanningProfileSnapshotHashIsStable(t *testing.T) {

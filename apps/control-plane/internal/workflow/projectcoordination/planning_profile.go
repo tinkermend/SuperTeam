@@ -475,6 +475,12 @@ func scorePermissionsAndTools(profile DigitalEmployeePlanningProfile, req Planni
 		result.HardFailures = appendUniqueString(result.HardFailures, "permission_or_tool_requirement_unsatisfied")
 		result.HardFailures = append(result.HardFailures, "unsatisfied_permission:"+normalized)
 	}
+	// tool_requirements are advisory only. Digital employees run Claude Code /
+	// Codex / OpenCode; MCP is materialized into the project workspace as
+	// mcp.json by the Runtime, not selected by matching planner-invented names
+	// against capability_bindings.mcp_servers. Recording the diff for display
+	// is fine; turning a miss into a HardFailure zeroed SelectionScore and
+	// forced human approval for vocabulary that never reaches the Provider.
 	for _, requirement := range req.ToolRequirements {
 		normalized := normalizeRequirement(requirement)
 		if normalized == "" {
@@ -487,8 +493,6 @@ func scorePermissionsAndTools(profile DigitalEmployeePlanningProfile, req Planni
 			continue
 		}
 		result.MissingTools = append(result.MissingTools, normalized)
-		result.HardFailures = appendUniqueString(result.HardFailures, "permission_or_tool_requirement_unsatisfied")
-		result.HardFailures = append(result.HardFailures, "unsatisfied_tool:"+normalized)
 	}
 	if total == 0 {
 		return 10
