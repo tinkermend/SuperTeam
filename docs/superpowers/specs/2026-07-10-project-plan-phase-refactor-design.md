@@ -57,7 +57,9 @@ if len(snapshot.Capabilities.HardMissing) > 0 {
 
 Runtime 侧从不读它：`apps/runtime-agent/src/` 中 `capability_bindings` 唯一的出现是 `executor.rs` 里的 `serde_json::json!({})`。它不影响 provider 启动、不影响工具可用性、不影响任何执行行为。
 
-对照之下 `skills` 与 `mcp_servers` 有真实注册表，且 runtime 会真的 `materialize_skills`、真的生成 `mcp_config_path`。`tool_requirements` 的闸门（`planning_profile_adapter.go:334`）也确实去查 `ListEffectiveMCPServers` 拿真实状态比对——**那是一个有事实源的闸门，能力那段本该照它写。**
+对照之下 `skills` 与 `mcp_servers` 有真实注册表，且 runtime 会真的 `materialize_skills`、真的生成 `mcp_config_path`。
+
+> **勘误（2026-07-10，编写 Plan 3 时）**：本节初稿说 `tool_requirements` 的闸门「去查 `ListEffectiveMCPServers` 拿真实状态比对，是一个有事实源的闸门，能力那段本该照它写」。**代码是对的，接线是断的。** 详见 §1.7。
 
 ### 1.3 返工只会派回同一个人
 
@@ -128,6 +130,27 @@ type TaskResultRevisionRequest struct {
 2. **`selection_score` 恒为 0。** §4.2 的 `selection_confidence`（阈值 0.7）**绝不能复用 `ScorePlanningProfile`**，否则上线即全线判为 `no_suitable_employee`。
 
 `graph_validation.go:53` 与 `:55` 那两条拒绝规则是**死代码**：`ValidateRouteDecisionPlan` 的唯一调用点（`openai_compatible_planner.go:133,142`）永远在 `ApplyPlanningProfileScores` 之后，而后者已经把 `reviewRequired` 置真。
+
+### 1.7 工具闸门读的键，服务端从未写过
+
+`planning_profile_adapter.go:324`：
+
+```go
+requiredTools := gateStringList(task.InputRequirements["tool_requirements"])
+if len(requiredTools) == 0 {
+    return capabilitySnapshot, toolSnapshot, nil   // early return
+}
+```
+
+planner 确实产出 `tool_requirements`，但它是 `PlannedTask` 上的**类型化字段**。`project_store.go:516` 落库时只把 `plannedTask.InputRequirements`（LLM 的自由 map）拷进 `project_tasks.input_requirements`，类型化的 `ToolRequirements` **既不进这张表的任何列，也不进 `planner_metadata`**。
+
+库中实证：`input_requirements` 出现过的全部键是 `demand_content`、`items`、`repository`、`scope`、`value`；**63 个任务里有 `tool_requirements` 的：0 个**。
+
+所以 `requiredTools` 恒为空，闸门 early return。`tool.binding` / `tool.authorization` / `tool.available` 三个检查**结构上不可能失败**。同理 `workflow/.../predispatch_gate.go:761-767` 读的 `missing_tool_bindings`、`expired_tool_authorizations`、`retryable_unavailable_tools`、`missing_context_refs` 也无人写入。
+
+**不要顺手接通它。** `planning_profile_adapter.go:344-351` 对任何非 `mcp:<name>` 形状的字符串一律塞进 `RetryableUnavailable`，而 `predispatch_gate.go:329-330` 见此即判 `tool.available` failed。planner 的 `tool_requirements` 同样是无词表的自由文本（提示词未给候选集）——直接接通，等于把 capability 那个 bug 原样复刻到工具上。
+
+正确的修法需要三件事同时到位：planner 拿到真实的 MCP 词表（`PlanningToolBinding` 已在 planning profile 里）、类型化字段落到类型化的位置、闸门从那里读。**这是一个独立的计划（Plan 7），不在本 spec 已排的六个计划内。**
 
 ## 2. 目标与非目标
 
@@ -209,7 +232,8 @@ tasks[]:
   selection_confidence: 0.0..1.0                        新增（取代 selection_score）
   blocked_by_keys                                       已有（顺序，DAG）
   input_requirements: { required_inputs: [key] }        改造（见下）
-  expected_outputs: [key]                               已有
+  produces: [key]                                       新增（见下）
+  expected_outputs: [prose]                             已有，保持自然语言，不参与判定
   acceptance_criteria: [...]                            已有，且已强制非空
 
 plan_acceptance_criteria[]:                             新增
@@ -223,13 +247,23 @@ plan_acceptance_criteria[]:                             新增
 
 **它必须由 planner 直接输出，不得由 `ScorePlanningProfile` 派生。** 该打分器一遇 `HardFailure` 就把 `Score` 归零（`planning_profile.go:178`），而每一个对不上的虚构能力名都会产生一条 `HardFailure`（`:409`）。复用它等于让阈值恒不满足——见 §1.6 的实测 `selection_score: 0`。`selection_score` 字段随 `ScorePlanningProfile` 的能力打分一并退役。
 
-**`input_requirements` 的改造**。今天它是 LLM 自由填充的杂物袋（实测键为 `items` / `repository` / `scope` / `value`），且被两个闸门构造器当作能力数组的来源（§1.1）。改造为结构化：
+**`input_requirements` 的改造**。今天它是 LLM 自由填充的杂物袋（实测键为 `demand_content` / `items` / `repository` / `scope` / `value`），且被两个闸门构造器当作能力数组的来源（§1.1）与工具需求的来源（§1.7）。改造为结构化：
 
 ```json
 { "required_inputs": ["load_test_report", "baseline_metrics"] }
 ```
 
 其余自由字段移入 `planner_metadata.planner_notes`，不参与任何判定。
+
+**新增 `produces`，不要复用 `expected_outputs`。**
+
+> **勘误（2026-07-10，编写 Plan 3 时）**：本节初稿写「`required_inputs[k]` 能在某个上游任务的 `expected_outputs` 中找到」。**做不到。** 库中 `expected_outputs` 的实际取值是自然语言句子——`"网络连通性检查报告，包含接口状态、连通性结果和数据包分析"`、`"Exit code from git status"`。拿一个 key 去匹配一句散文，永远匹配不上。而 §4.6(a) 的「平台查计划求归属」正建立在这句话上。
+
+因此引入 `produces: [key]`——一组**计划内作用域**的稳定输出键。`expected_outputs` 保持自然语言，只给人看，不参与任何判定；`validateCompletedTaskResult` 认得的三个保留名（`evidence_refs`、`artifact_refs`、`verification`）继续留在 `expected_outputs` 中，行为不变。
+
+**为什么 `produces` 不是第二个 capability 词表。** capability 的病根是：**生产者与消费者不在同一份文档里**——员工的 `external_capabilities` 由人在别处填写，任务的 `required_capabilities` 由模型在此处合成，两个无注册表的词表跨文档做集合运算。
+
+`produces` / `required_inputs` 则**同属一份计划、由同一次 LLM 调用产出、被同一个人类批准**。校验的是这份计划的**内部引用完整性**，与 `blocked_by_keys` 必须指向真实 task_key、以及 `hasCycle` 是同一类检查。它不与任何外部词表比对，因此不需要注册表。
 
 **删除** `required_capabilities` / `matched_capabilities` / `missing_capabilities` 三个数组的判决作用。`employee_selection_reason` 保留，作为给人看的解释。
 
@@ -240,7 +274,8 @@ plan_acceptance_criteria[]:                             新增
 | `hasCycle(plan.Tasks)` 拒绝环 | 已有（`graph_validation.go:146`） |
 | 每个任务 `acceptance_criteria` 非空 | 已有（`plan_revision_payload.go:182`） |
 | 每条 `plan_acceptance_criteria.satisfied_by` 指向存在的 `task_key` | **新增** |
-| 每个 `input_requirements.required_inputs[k]` 能在某个**上游**任务的 `expected_outputs` 中找到 | **新增** |
+| 每个 `input_requirements.required_inputs[k]` 能在某个**祖先**任务的 `produces` 中找到 | **新增** |
+| `produces` 内的 key 在同一计划中唯一（无两个任务承诺同一输出） | **新增** |
 
 最后一条在计划阶段就堵死「计划有洞」，而不是等到运行时 C 卡住才发现。「上游」的定义是 DAG 可达性：k 的生产者必须是 C 的祖先。
 
@@ -305,7 +340,7 @@ C 卡住时只能申报：
 ```
 
 - `missing_inputs[k]` **必须**出现在 C 自己的 `input_requirements.required_inputs` 中。否则视为契约违规 → 转人类。这堵死「C 凭空索要」。
-- 平台（不是 C）查计划求归属：`owner = 计划中 expected_outputs 含 k 的那个任务`。由 §4.2 的落库校验保证 owner 必然存在且是 C 的祖先。
+- 平台（不是 C）查计划求归属：`owner = 计划中 produces 含 k 的那个任务`。由 §4.2 的落库校验保证 owner 必然存在、唯一、且是 C 的祖先。
 - 追加 `owner'` + `owner` 在 DAG 上的**全部下游**。
 
 `TaskResultBlocker.RequiredBy`（自由文本）由 `missing_inputs`（结构化 key 列表）取代。
