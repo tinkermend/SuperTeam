@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-10 23:09：计划期能力控制流退役并引入 selection_confidence：scoreCapabilities 不再因虚构能力名 HardFail/归零；ApplyPlanningProfileScores 不再因 MissingCapabilities 强制审批；ValidateRouteDecisionPlan 删除空 required_capabilities 与能力拒计划规则；planner 输出 selection_confidence，低于 coordination_policy 阈值返回 no_suitable_employee；另退役计划期 tool_requirements HardFail（MCP 由 Runtime 物化为项目 mcp.json，不经计划词表选人）。验证：corepack pnpm verify:control-plane；真实 E2E 证据 .scratch/smoke/plan2-retire-capability-toolfix-20260710T150607Z-2072afb0/evidence.json （missing_capabilities 非空、selection_score=80、low risk 且 requires_human_approval=false）。
+
 - 2026-07-10 17:48：拆除派发假闸门与散文熔断指纹：EvaluatePreDispatchGate 不再产出 capability.match / capability.hard_missing；能力快照构造器停止从 planner 输出取能力；PreDispatchCapabilitySnapshot 收缩为 Required/Matched；revisionFailureFingerprint 只取 status + 排序后的 RequestedChanges；planner 提示词不再把 missing_capabilities 绑到人类审批。验证：corepack pnpm verify:control-plane 通过；真实链路用本 worktree Control Plane(:8081) + 既有 Runtime/Web，创建空 external_capabilities 员工并批准计划后，任务 d97bd715-91f1-4732-a576-636ced5a7cf4 闸门 passed 且 checks 不含 capability.match，missing_capabilities 非空，任务越过能力闸门完成执行后进入 waiting_human(acceptance_required)；证据 .scratch/smoke/task6-remove-fictional-gate-20260710T094031Z/evidence-final.json。
 
 - 2026-07-10 02:08 完成数字员工配置破坏性重构：删除旧个人治理配置字段，改为人格记忆、能力绑定和预算策略，并通过真实创建与 Runtime 投影链路验证。
