@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-11 00:54：计划级验收判据：PlanRevisionPayload/RouteDecisionPlan 新增 plan_acceptance_criteria（id/statement/satisfied_by→task_key）；落库校验拒绝空/未知 satisfier（acceptance_criterion_has_no_satisfier / satisfied_by_task_not_found）；planner 提示词产出判据；评审上下文透传；计划确认面板展示「调度顺序」与「验收判据」。验证：corepack pnpm verify:control-plane；focused web test project-operational-detail.test.tsx；真实链路证据 .scratch/smoke/plan4-acceptance-criteria-retry-20260711-005223-10714/evidence.json（判据 satisfied_by ⊆ 真实 task keys）。浏览器 UI 已在本 worktree Web+CP（captchaEnabled=false + VITE_CONTROL_PLANE_URL=:8081）验证「调度顺序」「验收判据」可见；证据 .scratch/smoke/plan4-ui-browser-20260711-010058/meta.json。
+
 - 2026-07-11 00:12：计划内部引用完整性：任务新增 produces 与 input_requirements.required_inputs；落库前校验祖先可达与 produces 键唯一；自由字段迁入 planner_metadata.planner_notes。验证：corepack pnpm verify:control-plane；拒绝路径 go test -run TestValidateRouteDecisionPlanRejects；真实 E2E 证据 .scratch/smoke/plan3-referential-integrity-20260710T161026Z/evidence.json （上游 produces=[cpu_memory_metrics]，下游 required_inputs 引用之，input_requirements 仅含 required_inputs）。
 
 - 2026-07-10 23:09：计划期能力控制流退役并引入 selection_confidence：scoreCapabilities 不再因虚构能力名 HardFail/归零；ApplyPlanningProfileScores 不再因 MissingCapabilities 强制审批；ValidateRouteDecisionPlan 删除空 required_capabilities 与能力拒计划规则；planner 输出 selection_confidence，低于 coordination_policy 阈值返回 no_suitable_employee；另退役计划期 tool_requirements HardFail（MCP 由 Runtime 物化为项目 mcp.json，不经计划词表选人）。验证：corepack pnpm verify:control-plane；真实 E2E 证据 .scratch/smoke/plan2-retire-capability-toolfix-20260710T150607Z-2072afb0/evidence.json （missing_capabilities 非空、selection_score=80、low risk 且 requires_human_approval=false）。

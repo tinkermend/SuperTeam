@@ -440,35 +440,78 @@ export function ProjectOperationalDetail({
                     value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
                   />
                 </div>
-                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                  {planRevisionTasks(latestPlanRevision)
-                    .slice(0, 4)
-                    .map((task, index) => (
-                      <div
-                        className="grid gap-2 p-3"
-                        key={`${planRevisionTaskKey(task)}-${index}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="min-w-0 line-clamp-2 text-sm font-medium">
-                            {planRevisionTaskTitle(task)}
-                          </p>
-                          <StatusPill tone={planRevisionTaskRiskTone(task)}>
-                            {planRevisionTaskRisk(task)}
-                          </StatusPill>
-                        </div>
-                        <RuntimeMeta
-                          label="能力"
-                          value={formatShortList(planRevisionTaskCapabilities(task))}
-                        />
-                        <RuntimeMeta
-                          label="输出"
-                          value={formatShortList(planRevisionTaskOutputs(task))}
-                        />
-                      </div>
-                    ))}
-                  {planRevisionTasks(latestPlanRevision).length === 0 ? (
-                    <EmptyLine label="计划版本尚未包含可展示任务" />
-                  ) : null}
+                <div className="grid gap-3">
+                  <div className="grid gap-2" data-testid="plan-dispatch-order">
+                    <div className="flex items-center gap-2 px-1">
+                      <ClipboardList className="size-4 text-v3-ink-2" />
+                      <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
+                    </div>
+                    <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                      {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
+                        (task, index) => (
+                          <div
+                            className="grid gap-2 p-3"
+                            key={`${planRevisionTaskKey(task)}-${index}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="min-w-0 text-sm font-medium text-v3-ink">
+                                {planRevisionTaskTitle(task)}
+                              </p>
+                              <StatusPill tone="info">第 {index + 1} 步</StatusPill>
+                            </div>
+                            <RuntimeMeta
+                              label="执行员工"
+                              value={planRevisionTaskEmployee(task, servicePool)}
+                            />
+                            <RuntimeMeta
+                              label="选择原因"
+                              value={
+                                stringField(task, "employee_selection_reason") ||
+                                "未说明选择原因"
+                              }
+                            />
+                          </div>
+                        ),
+                      )}
+                      {planRevisionTasks(latestPlanRevision).length === 0 ? (
+                        <EmptyLine label="计划版本尚未包含可展示任务" />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2" data-testid="plan-acceptance-criteria">
+                    <div className="flex items-center gap-2 px-1">
+                      <FileCheck2 className="size-4 text-v3-ink-2" />
+                      <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
+                    </div>
+                    <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                      {planRevisionAcceptanceCriteria(latestPlanRevision).map(
+                        (criterion, index) => (
+                          <div
+                            className="grid gap-2 p-3"
+                            key={`${stringField(criterion, "id")}-${index}`}
+                          >
+                            <PlanAcceptanceCriterionStatement
+                              criterionId={
+                                stringField(criterion, "id") || `criterion-${index}`
+                              }
+                              statement={stringField(criterion, "statement")}
+                            />
+                            <RuntimeMeta
+                              label="满足任务"
+                              value={planRevisionCriterionTaskTitles(
+                                criterion,
+                                latestPlanRevision,
+                              ).join("、")}
+                            />
+                          </div>
+                        ),
+                      )}
+                      {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
+                        <EmptyLine label="本计划未声明验收判据" />
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -1394,6 +1437,48 @@ function EmptyLine({ label }: { label: string }) {
   );
 }
 
+const PLAN_ACCEPTANCE_STATEMENT_EXPAND_THRESHOLD = 80;
+
+function PlanAcceptanceCriterionStatement({
+  criterionId,
+  statement,
+}: {
+  criterionId: string;
+  statement: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const text = statement.trim() || "未声明验收说明";
+  const isExpandable = text.length > PLAN_ACCEPTANCE_STATEMENT_EXPAND_THRESHOLD;
+
+  return (
+    <div className="grid gap-1">
+      <p
+        className={cn(
+          "break-words text-sm leading-6 text-v3-ink",
+          isExpandable && !expanded && "line-clamp-3",
+        )}
+        data-testid={`plan-acceptance-criterion-statement-${criterionId}`}
+      >
+        {text}
+      </p>
+      {isExpandable ? (
+        <V3Button
+          aria-label={
+            expanded ? `收起验收判据 ${criterionId}` : `展开验收判据 ${criterionId}`
+          }
+          className="h-auto self-start px-0 py-0"
+          size="sm"
+          type="button"
+          variant="ghost"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : "展开"}
+        </V3Button>
+      ) : null}
+    </div>
+  );
+}
+
 function RuntimeMeta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
@@ -1690,6 +1775,53 @@ function planRevisionTasks(revision: ProjectPlanRevision) {
   return Array.isArray(tasks) ? tasks.filter(isRecord) : [];
 }
 
+function planRevisionTasksInDispatchOrder(revision: ProjectPlanRevision) {
+  const tasks = planRevisionTasks(revision);
+  const taskKeys = new Set(tasks.map(planRevisionTaskKey));
+  const pending = [...tasks];
+  const completed = new Set<string>();
+  const ordered: Record<string, unknown>[] = [];
+
+  while (pending.length > 0) {
+    const nextTaskIndex = pending.findIndex((task) =>
+      planRevisionTaskDependencies(task).every(
+        (dependency) => !taskKeys.has(dependency) || completed.has(dependency),
+      ),
+    );
+
+    if (nextTaskIndex === -1) {
+      return [...ordered, ...pending];
+    }
+
+    const [nextTask] = pending.splice(nextTaskIndex, 1);
+    ordered.push(nextTask);
+    completed.add(planRevisionTaskKey(nextTask));
+  }
+
+  return ordered;
+}
+
+function planRevisionAcceptanceCriteria(revision: ProjectPlanRevision) {
+  const criteria = revision.payload.plan_acceptance_criteria;
+  return Array.isArray(criteria) ? criteria.filter(isRecord) : [];
+}
+
+function planRevisionCriterionTaskTitles(
+  criterion: Record<string, unknown>,
+  revision: ProjectPlanRevision,
+) {
+  const taskTitlesByKey = new Map(
+    planRevisionTasks(revision).map((task) => [
+      planRevisionTaskKey(task),
+      planRevisionTaskTitle(task),
+    ]),
+  );
+
+  return stringArrayField(criterion, "satisfied_by").map(
+    (taskKey) => taskTitlesByKey.get(taskKey) ?? taskKey,
+  );
+}
+
 function planRevisionCapabilityLabels(revision: ProjectPlanRevision) {
   return uniqueStrings(
     planRevisionTasks(revision).flatMap((task) => [
@@ -1713,6 +1845,14 @@ function planRevisionRiskLabels(revision: ProjectPlanRevision) {
   return uniqueStrings([highest, ...taskRisks].filter(Boolean)).slice(0, 3);
 }
 
+function planRevisionTaskDependencies(task: Record<string, unknown>) {
+  const dependsOn = stringArrayField(task, "depends_on");
+  if (dependsOn.length > 0) {
+    return dependsOn;
+  }
+  return stringArrayField(task, "blocked_by_keys");
+}
+
 function planRevisionTaskKey(task: Record<string, unknown>) {
   return stringField(task, "planned_task_key") || stringField(task, "title") || "task";
 }
@@ -1721,30 +1861,15 @@ function planRevisionTaskTitle(task: Record<string, unknown>) {
   return stringField(task, "title") || stringField(task, "objective") || "未命名任务";
 }
 
-function planRevisionTaskCapabilities(task: Record<string, unknown>) {
-  return uniqueStrings([
-    ...stringArrayField(task, "required_capabilities"),
-    ...stringArrayField(task, "matched_capabilities"),
-  ]).slice(0, 4);
-}
-
-function planRevisionTaskOutputs(task: Record<string, unknown>) {
-  return stringArrayField(task, "expected_outputs").slice(0, 3);
-}
-
-function planRevisionTaskRisk(task: Record<string, unknown>) {
-  return stringField(task, "risk_level") || "normal";
-}
-
-function planRevisionTaskRiskTone(task: Record<string, unknown>): V3Tone {
-  const risk = planRevisionTaskRisk(task);
-  if (risk === "critical" || risk === "high") {
-    return "danger";
-  }
-  if (risk === "medium") {
-    return "warn";
-  }
-  return "mute";
+function planRevisionTaskEmployee(
+  task: Record<string, unknown>,
+  members: ProjectMember[],
+) {
+  const employeeID = stringField(task, "selected_employee_id");
+  const employeeName = members.find(
+    (member) => member.principal_id === employeeID,
+  )?.display_name_snapshot;
+  return employeeName || employeeID || "未指定";
 }
 
 function planRevisionTone(status: string): V3Tone {

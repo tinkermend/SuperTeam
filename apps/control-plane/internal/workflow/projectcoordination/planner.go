@@ -40,12 +40,13 @@ type RoutePlanner interface {
 }
 
 type RouteDecisionPlan struct {
-	Reason              string
-	RequiresHumanReview bool
-	BudgetEstimate      map[string]any
-	TemplateKey         string
-	PlannerMetadata     map[string]any
-	Tasks               []PlannedTask
+	Reason                 string
+	RequiresHumanReview    bool
+	BudgetEstimate         map[string]any
+	TemplateKey            string
+	PlannerMetadata        map[string]any
+	PlanAcceptanceCriteria []PlanAcceptanceCriterion
+	Tasks                  []PlannedTask
 }
 
 type PlannedTask struct {

@@ -280,6 +280,7 @@ func buildPlannerSystemPrompt() string {
 		"tool_requirements are advisory annotations only. Prefer an empty array. Do not invent tool names such as shell or bash: MCP is materialized into the project workspace as mcp.json by the Runtime for Claude Code / Codex / OpenCode, and tool_requirements never gate selection or approval.",
 		"permission_requirements are advisory annotations only. Prefer an empty array. A digital employee's boundary is enforced by the provider sandbox and by action-level human approval, not by matching permission names at planning time.",
 		"runtime_requirements entries must use the form kind:value. Only two kinds are evaluated: provider:<provider_type> such as provider:codex, and runtime_node:<uuid>. A bare token such as codex is not evaluated and is recorded as unrecognized. Prefer an empty array unless the task genuinely requires a specific provider.",
+		"plan_acceptance_criteria is a list of plan-level acceptance standards, each with id (short snake_case), statement (one sentence a human can judge), and satisfied_by (the task keys whose work feeds this criterion). Every criterion must be satisfied_by at least one task that exists in the plan. These are what the human owner reviews and approves before execution begins; state them as outcomes, not as steps.",
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
 		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key another task lists in input_requirements.required_inputs must appear in the produces of one of its ancestors.",
@@ -318,12 +319,13 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 		return RouteDecisionPlan{}, err
 	}
 	plan := RouteDecisionPlan{
-		Reason:              decoded.Reason,
-		RequiresHumanReview: decoded.RequiresHumanReview,
-		BudgetEstimate:      nonNilMap(decoded.BudgetEstimate),
-		TemplateKey:         decoded.TemplateKey,
-		PlannerMetadata:     sanitizePlannerMetadata(decoded.PlannerMetadata),
-		Tasks:               make([]PlannedTask, 0, len(decoded.Tasks)),
+		Reason:                 decoded.Reason,
+		RequiresHumanReview:    decoded.RequiresHumanReview,
+		BudgetEstimate:         nonNilMap(decoded.BudgetEstimate),
+		TemplateKey:            decoded.TemplateKey,
+		PlannerMetadata:        sanitizePlannerMetadata(decoded.PlannerMetadata),
+		PlanAcceptanceCriteria: decodePlanAcceptanceCriteria(decoded.PlanAcceptanceCriteria),
+		Tasks:                  make([]PlannedTask, 0, len(decoded.Tasks)),
 	}
 	for _, task := range decoded.Tasks {
 		plan.Tasks = append(plan.Tasks, PlannedTask{
@@ -356,12 +358,13 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 }
 
 type plannerJSON struct {
-	Reason              string         `json:"reason"`
-	RequiresHumanReview bool           `json:"requires_human_review"`
-	BudgetEstimate      map[string]any `json:"budget_estimate"`
-	TemplateKey         string         `json:"template_key"`
-	PlannerMetadata     map[string]any `json:"planner_metadata"`
-	Tasks               []plannerTask  `json:"tasks"`
+	Reason                 string          `json:"reason"`
+	RequiresHumanReview    bool            `json:"requires_human_review"`
+	BudgetEstimate         map[string]any  `json:"budget_estimate"`
+	TemplateKey            string          `json:"template_key"`
+	PlannerMetadata        map[string]any  `json:"planner_metadata"`
+	PlanAcceptanceCriteria json.RawMessage `json:"plan_acceptance_criteria"`
+	Tasks                  []plannerTask   `json:"tasks"`
 }
 
 type plannerTask struct {
@@ -535,6 +538,34 @@ func decodePlannerStringArray(raw json.RawMessage) []string {
 		return nil
 	}
 	return nil
+}
+
+// decodePlanAcceptanceCriteria parses plan-level acceptance criteria from the
+// planner output. Entries with no statement are dropped; satisfied_by is trimmed.
+func decodePlanAcceptanceCriteria(raw json.RawMessage) []PlanAcceptanceCriterion {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return nil
+	}
+	var decoded []struct {
+		ID          string          `json:"id"`
+		Statement   string          `json:"statement"`
+		SatisfiedBy json.RawMessage `json:"satisfied_by"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil
+	}
+	out := make([]PlanAcceptanceCriterion, 0, len(decoded))
+	for _, entry := range decoded {
+		if strings.TrimSpace(entry.Statement) == "" {
+			continue
+		}
+		out = append(out, PlanAcceptanceCriterion{
+			ID:          strings.TrimSpace(entry.ID),
+			Statement:   strings.TrimSpace(entry.Statement),
+			SatisfiedBy: nonNilStrings(decodePlannerStringArray(entry.SatisfiedBy)),
+		})
+	}
+	return out
 }
 
 // decodeRequiredPlannerObject coerces a planner task field into map[string]any.

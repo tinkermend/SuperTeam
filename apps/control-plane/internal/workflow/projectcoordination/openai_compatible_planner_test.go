@@ -830,6 +830,30 @@ func TestDecodePlannerSelectionConfidenceRejectsMissing(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDecodePlanAcceptanceCriteriaParsesCriteria(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"id":"ac1","statement":"主机健康指标已采集并报告","satisfied_by":["collect_metrics"]},
+		{"id":"ac2","statement":"健康评估基于采集数据给出结论","satisfied_by":["collect_metrics","assess_health"]}
+	]`)
+
+	got := decodePlanAcceptanceCriteria(raw)
+	require.Len(t, got, 2)
+	require.Equal(t, "ac1", got[0].ID)
+	require.Equal(t, "主机健康指标已采集并报告", got[0].Statement)
+	require.Equal(t, []string{"collect_metrics", "assess_health"}, got[1].SatisfiedBy)
+}
+
+func TestDecodePlanAcceptanceCriteriaToleratesAbsentAndMalformed(t *testing.T) {
+	require.Empty(t, decodePlanAcceptanceCriteria(nil))
+	require.Empty(t, decodePlanAcceptanceCriteria(json.RawMessage(`null`)))
+	// An entry missing satisfied_by is still a criterion; the validator (Task 2)
+	// will reject it if needed. Here we only check it does not panic and drops
+	// entries with no statement.
+	got := decodePlanAcceptanceCriteria(json.RawMessage(`[{"id":"x","statement":"x","satisfied_by":["a"]},{"satisfied_by":["b"]}]`))
+	require.Len(t, got, 1)
+	require.Equal(t, "x", got[0].ID)
+}
+
 func TestPlannerRequiredInputsReadsOnlyTheDefinedKey(t *testing.T) {
 	raw := map[string]any{
 		"required_inputs": []any{"load_test_report", "baseline_metrics"},

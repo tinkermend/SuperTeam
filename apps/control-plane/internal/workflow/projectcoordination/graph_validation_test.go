@@ -235,6 +235,61 @@ func TestValidateRouteDecisionPlanRejectsRequiredInputFromNonAncestor(t *testing
 	require.Contains(t, err.Error(), "load_test_report")
 }
 
+func TestValidateRouteDecisionPlanRejectsCriterionWithUnknownSatisfier(t *testing.T) {
+	employeeID := uuid.New()
+	plan := RouteDecisionPlan{
+		Reason: "criterion with unknown satisfier",
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "done", SatisfiedBy: []string{"no_such_task"}},
+		},
+		Tasks: []PlannedTask{
+			{Key: "real_task", Title: "real_task", Summary: "real_task", SelectedEmployeeID: employeeID, EmployeeSelectionReason: "only one", SelectionConfidence: 0.9, ExpectedOutputs: []string{"execution_summary"}, InputRequirements: map[string]any{}, HandoffContract: map[string]any{}},
+		},
+	}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "satisfied_by_task_not_found")
+	require.Contains(t, err.Error(), "no_such_task")
+}
+
+func TestValidateRouteDecisionPlanRejectsCriterionWithNoSatisfier(t *testing.T) {
+	employeeID := uuid.New()
+	plan := RouteDecisionPlan{
+		Reason: "criterion with no satisfier",
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "done", SatisfiedBy: nil},
+		},
+		Tasks: []PlannedTask{
+			{Key: "a", Title: "a", Summary: "a", SelectedEmployeeID: employeeID, EmployeeSelectionReason: "only one", SelectionConfidence: 0.9, ExpectedOutputs: []string{"execution_summary"}, InputRequirements: map[string]any{}, HandoffContract: map[string]any{}},
+		},
+	}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "acceptance_criterion_has_no_satisfier")
+}
+
+func TestValidateRouteDecisionPlanAcceptsCriterionWithRealSatisfier(t *testing.T) {
+	employeeID := uuid.New()
+	plan := RouteDecisionPlan{
+		Reason: "criterion with real satisfier",
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "done", SatisfiedBy: []string{"a"}},
+		},
+		Tasks: []PlannedTask{
+			{Key: "a", Title: "a", Summary: "a", SelectedEmployeeID: employeeID, EmployeeSelectionReason: "only one", SelectionConfidence: 0.9, ExpectedOutputs: []string{"execution_summary"}, InputRequirements: map[string]any{}, HandoffContract: map[string]any{}},
+		},
+	}
+	snapshot := snapshotForPlan(plan)
+
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
 func TestAncestorKeysWalksTransitively(t *testing.T) {
 	tasks := []PlannedTask{
 		{Key: "a"},
