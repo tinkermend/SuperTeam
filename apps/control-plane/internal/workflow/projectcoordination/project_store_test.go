@@ -1203,6 +1203,7 @@ func TestCreateUpstreamSupplementTasksDispatchesToOwner(t *testing.T) {
 	require.Equal(t, &ownerEmployeeID, supplement.AssignedDigitalEmployeeID)
 	require.NotEqual(t, &sourceEmployeeID, supplement.AssignedDigitalEmployeeID)
 	require.Equal(t, &ownerTaskID, supplement.RevisionOfTaskID)
+	require.Equal(t, &acceptedPlanRevisionID, supplement.AcceptedPlanRevisionID)
 	require.Equal(t, sourceTaskID.String(), supplement.PlannerMetadata["supplement_for"])
 	require.Equal(t, []string{"load_test_report"}, supplement.PlannerMetadata["missing_inputs"])
 }
