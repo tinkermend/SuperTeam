@@ -194,20 +194,17 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 		}
 	}
 	// Plan-level acceptance criteria: each satisfied_by must name a real task key.
-	// produces-key uniqueness is already enforced, so a satisfier resolves to one
-	// task — but satisfied_by references the task key directly, not a produces key,
-	// so we check membership in the task set.
 	taskKeys := map[string]struct{}{}
 	for _, task := range plan.Tasks {
 		taskKeys[task.Key] = struct{}{}
 	}
 	for _, criterion := range plan.PlanAcceptanceCriteria {
 		if len(criterion.SatisfiedBy) == 0 {
-			return invalidRouteDecision("plan acceptance criterion %q has no satisfied_by task; a criterion must be backed by at least one task", criterion.ID)
+			return invalidRouteDecision("acceptance_criterion_has_no_satisfier: plan acceptance criterion %q has no satisfied_by task; a criterion must be backed by at least one task", criterion.ID)
 		}
 		for _, satisfier := range criterion.SatisfiedBy {
 			if _, ok := taskKeys[satisfier]; !ok {
-				return invalidRouteDecision("plan acceptance criterion %q satisfied_by %q is not a task in this plan", criterion.ID, satisfier)
+				return invalidRouteDecision("satisfied_by_task_not_found: plan acceptance criterion %q satisfied_by %q is not a task in this plan", criterion.ID, satisfier)
 			}
 		}
 	}

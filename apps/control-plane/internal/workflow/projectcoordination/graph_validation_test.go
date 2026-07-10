@@ -251,6 +251,7 @@ func TestValidateRouteDecisionPlanRejectsCriterionWithUnknownSatisfier(t *testin
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
 
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "satisfied_by_task_not_found")
 	require.Contains(t, err.Error(), "no_such_task")
 }
 
@@ -270,6 +271,7 @@ func TestValidateRouteDecisionPlanRejectsCriterionWithNoSatisfier(t *testing.T) 
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
 
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "acceptance_criterion_has_no_satisfier")
 }
 
 func TestValidateRouteDecisionPlanAcceptsCriterionWithRealSatisfier(t *testing.T) {
