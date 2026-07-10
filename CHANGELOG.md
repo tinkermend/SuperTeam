@@ -7,54 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- 2026-07-10 17:48：拆除派发假闸门与散文熔断指纹： 不再产出 /；能力快照构造器停止从 planner 输出取能力； 收缩为 /； 只取 status + 排序后的 ；planner 提示词不再把  绑到人类审批。验证：
-> superteam@ verify:control-plane /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
-> corepack pnpm verify:contracts && corepack pnpm test:go
-
-
-> superteam@ verify:contracts /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
-> node scripts/verify-foundation-contracts.mjs
-
-foundation contract guard passed
-
-> superteam@ test:go /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
-> go test ./apps/control-plane/...
-
-?   	github.com/superteam/control-plane	[no test files]
-?   	github.com/superteam/control-plane/cmd/control-plane	[no test files]
-?   	github.com/superteam/control-plane/cmd/openfga-backfill	[no test files]
-?   	github.com/superteam/control-plane/cmd/server	[no test files]
-ok  	github.com/superteam/control-plane/internal/api	5.512s
-?   	github.com/superteam/control-plane/internal/api/gen	[no test files]
-ok  	github.com/superteam/control-plane/internal/api/handlers	(cached)
-ok  	github.com/superteam/control-plane/internal/api/middleware	(cached)
-ok  	github.com/superteam/control-plane/internal/app	(cached)
-ok  	github.com/superteam/control-plane/internal/approval	(cached)
-ok  	github.com/superteam/control-plane/internal/artifact	(cached)
-ok  	github.com/superteam/control-plane/internal/audit	(cached)
-ok  	github.com/superteam/control-plane/internal/auth	(cached)
-ok  	github.com/superteam/control-plane/internal/authz	0.627s
-ok  	github.com/superteam/control-plane/internal/authzcenter	(cached)
-ok  	github.com/superteam/control-plane/internal/avatar	(cached)
-ok  	github.com/superteam/control-plane/internal/capability	(cached)
-ok  	github.com/superteam/control-plane/internal/config	(cached)
-?   	github.com/superteam/control-plane/internal/cost	[no test files]
-ok  	github.com/superteam/control-plane/internal/employee	(cached)
-ok  	github.com/superteam/control-plane/internal/inbox	(cached)
-?   	github.com/superteam/control-plane/internal/platform	[no test files]
-ok  	github.com/superteam/control-plane/internal/project	(cached)
-ok  	github.com/superteam/control-plane/internal/prompttemplate	(cached)
-ok  	github.com/superteam/control-plane/internal/runtime	(cached)
-ok  	github.com/superteam/control-plane/internal/runtimecommand	(cached)
-ok  	github.com/superteam/control-plane/internal/skill	(cached)
-ok  	github.com/superteam/control-plane/internal/storage	(cached)
-ok  	github.com/superteam/control-plane/internal/storage/queries	0.631s
-ok  	github.com/superteam/control-plane/internal/storage/testenv	(cached)
-ok  	github.com/superteam/control-plane/internal/task	(cached)
-ok  	github.com/superteam/control-plane/internal/teamlending	(cached)
-ok  	github.com/superteam/control-plane/internal/tenant	(cached)
-ok  	github.com/superteam/control-plane/internal/workflow	(cached)
-ok  	github.com/superteam/control-plane/internal/workflow/projectcoordination	0.543s 通过；真实链路用本 worktree Control Plane(:8081) + 既有 Runtime/Web，创建空  员工并批准计划后，任务  闸门  且 checks 不含 ， 非空，任务越过能力闸门完成执行后进入 ；证据 。
+- 2026-07-10 17:48：拆除派发假闸门与散文熔断指纹：EvaluatePreDispatchGate 不再产出 capability.match / capability.hard_missing；能力快照构造器停止从 planner 输出取能力；PreDispatchCapabilitySnapshot 收缩为 Required/Matched；revisionFailureFingerprint 只取 status + 排序后的 RequestedChanges；planner 提示词不再把 missing_capabilities 绑到人类审批。验证：corepack pnpm verify:control-plane 通过；真实链路用本 worktree Control Plane(:8081) + 既有 Runtime/Web，创建空 external_capabilities 员工并批准计划后，任务 d97bd715-91f1-4732-a576-636ced5a7cf4 闸门 passed 且 checks 不含 capability.match，missing_capabilities 非空，任务越过能力闸门完成执行后进入 waiting_human(acceptance_required)；证据 .scratch/smoke/task6-remove-fictional-gate-20260710T094031Z/evidence-final.json。
 
 - 2026-07-10 02:08 完成数字员工配置破坏性重构：删除旧个人治理配置字段，改为人格记忆、能力绑定和预算策略，并通过真实创建与 Runtime 投影链路验证。
 
