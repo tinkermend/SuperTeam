@@ -14,6 +14,9 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 		Reason:              "Plan the demand with a canonical task graph.",
 		RequiresHumanReview: true,
 		PlannerMetadata:     map[string]any{"request_id": uuid.NewString()},
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "Tests cover canonical payload behavior", SatisfiedBy: []string{"write_tests"}},
+		},
 		Tasks: []PlannedTask{
 			{
 				Key:                         "write_tests",
@@ -70,6 +73,9 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 	require.Len(t, fingerprint, 64)
 	require.Equal(t, fingerprint, reorderedFingerprint)
 	require.Equal(t, plan.Reason, payload.Summary)
+	require.Equal(t, []PlanAcceptanceCriterion{
+		{ID: "ac1", Statement: "Tests cover canonical payload behavior", SatisfiedBy: []string{"write_tests"}},
+	}, payload.PlanAcceptanceCriteria)
 	require.Equal(t, []string{"conclusion", "evidence", "risks", "next_steps"}, payload.FinalSummaryContract.RequiredSections)
 	require.Equal(t, "write_tests", payload.Tasks[0].PlannedTaskKey)
 	require.Equal(t, "Cover the canonical payload behavior.", payload.Tasks[0].Objective)

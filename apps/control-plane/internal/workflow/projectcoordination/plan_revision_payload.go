@@ -17,6 +17,7 @@ type PlanRevisionPayload struct {
 	RiskAssessment       PlanRevisionRiskAssessment       `json:"risk_assessment"`
 	HumanReview          PlanRevisionHumanReview          `json:"human_review"`
 	Tasks                []PlanRevisionTask               `json:"tasks"`
+	PlanAcceptanceCriteria []PlanAcceptanceCriterion      `json:"plan_acceptance_criteria,omitempty"`
 	FinalSummaryContract PlanRevisionFinalSummaryContract `json:"final_summary_contract"`
 }
 
@@ -32,6 +33,18 @@ type PlanRevisionHumanReview struct {
 
 type PlanRevisionFinalSummaryContract struct {
 	RequiredSections []string `json:"required_sections"`
+}
+
+// PlanAcceptanceCriterion is a plan-level acceptance standard the human reviews and
+// approves. SatisfiedBy names the task keys whose produces feed this criterion.
+// It is checked for plan-internal integrity the same way blocked_by_keys and
+// required_inputs are — see the 2026-07-10 plan-phase refactor spec §4.2/§4.3.
+// It is NOT a second capability vocabulary: the keys it references are produced by
+// the same planner call, in the same plan, approved by the same human.
+type PlanAcceptanceCriterion struct {
+	ID          string   `json:"id"`
+	Statement   string   `json:"statement"`
+	SatisfiedBy []string `json:"satisfied_by"`
 }
 
 type PlanRevisionTask struct {
@@ -124,6 +137,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 		RiskAssessment: riskAssessment,
 		HumanReview:    humanReview,
 		Tasks:          tasks,
+		PlanAcceptanceCriteria: plan.PlanAcceptanceCriteria,
 		FinalSummaryContract: PlanRevisionFinalSummaryContract{
 			RequiredSections: clonePlanRevisionStringSlice(defaultFinalSummaryRequiredSections),
 		},

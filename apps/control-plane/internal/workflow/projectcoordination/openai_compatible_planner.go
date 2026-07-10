@@ -318,12 +318,13 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 		return RouteDecisionPlan{}, err
 	}
 	plan := RouteDecisionPlan{
-		Reason:              decoded.Reason,
-		RequiresHumanReview: decoded.RequiresHumanReview,
-		BudgetEstimate:      nonNilMap(decoded.BudgetEstimate),
-		TemplateKey:         decoded.TemplateKey,
-		PlannerMetadata:     sanitizePlannerMetadata(decoded.PlannerMetadata),
-		Tasks:               make([]PlannedTask, 0, len(decoded.Tasks)),
+		Reason:                  decoded.Reason,
+		RequiresHumanReview:     decoded.RequiresHumanReview,
+		BudgetEstimate:          nonNilMap(decoded.BudgetEstimate),
+		TemplateKey:             decoded.TemplateKey,
+		PlannerMetadata:         sanitizePlannerMetadata(decoded.PlannerMetadata),
+		PlanAcceptanceCriteria:  decodePlanAcceptanceCriteria(decoded.PlanAcceptanceCriteria),
+		Tasks:                   make([]PlannedTask, 0, len(decoded.Tasks)),
 	}
 	for _, task := range decoded.Tasks {
 		plan.Tasks = append(plan.Tasks, PlannedTask{
@@ -361,6 +362,7 @@ type plannerJSON struct {
 	BudgetEstimate      map[string]any `json:"budget_estimate"`
 	TemplateKey         string         `json:"template_key"`
 	PlannerMetadata     map[string]any `json:"planner_metadata"`
+	PlanAcceptanceCriteria json.RawMessage `json:"plan_acceptance_criteria"`
 	Tasks               []plannerTask  `json:"tasks"`
 }
 
@@ -535,6 +537,34 @@ func decodePlannerStringArray(raw json.RawMessage) []string {
 		return nil
 	}
 	return nil
+}
+
+// decodePlanAcceptanceCriteria parses plan-level acceptance criteria from the
+// planner output. Entries with no statement are dropped; satisfied_by is trimmed.
+func decodePlanAcceptanceCriteria(raw json.RawMessage) []PlanAcceptanceCriterion {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return nil
+	}
+	var decoded []struct {
+		ID          string          `json:"id"`
+		Statement   string          `json:"statement"`
+		SatisfiedBy json.RawMessage `json:"satisfied_by"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil
+	}
+	out := make([]PlanAcceptanceCriterion, 0, len(decoded))
+	for _, entry := range decoded {
+		if strings.TrimSpace(entry.Statement) == "" {
+			continue
+		}
+		out = append(out, PlanAcceptanceCriterion{
+			ID:          strings.TrimSpace(entry.ID),
+			Statement:   strings.TrimSpace(entry.Statement),
+			SatisfiedBy: nonNilStrings(decodePlannerStringArray(entry.SatisfiedBy)),
+		})
+	}
+	return out
 }
 
 // decodeRequiredPlannerObject coerces a planner task field into map[string]any.

@@ -45,6 +45,7 @@ type RouteDecisionPlan struct {
 	BudgetEstimate      map[string]any
 	TemplateKey         string
 	PlannerMetadata     map[string]any
+	PlanAcceptanceCriteria []PlanAcceptanceCriterion
 	Tasks               []PlannedTask
 }
 
