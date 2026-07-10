@@ -1202,6 +1202,58 @@ func TestApplyTaskResultRevisionStopsOnRepeatedFailureFingerprint(t *testing.T) 
 	require.Len(t, repo.tasks, 3)
 }
 
+func TestRevisionFailureFingerprintIgnoresModelProse(t *testing.T) {
+	changes := []string{"add load test report", "attach baseline metrics"}
+
+	first := revisionFailureFingerprint(project.TaskResultContract{
+		Status:  project.TaskResultStatusRevisionNeeded,
+		Summary: "I could not finish because the report was missing.",
+		RevisionRequest: &project.TaskResultRevisionRequest{
+			Reason:           "missing report",
+			RequestedChanges: changes,
+		},
+	})
+
+	// Same structural failure, different prose. The circuit breaker must not be
+	// defeated by rewording.
+	second := revisionFailureFingerprint(project.TaskResultContract{
+		Status:  project.TaskResultStatusRevisionNeeded,
+		Summary: "Unfortunately I was unable to complete this task at all.",
+		RevisionRequest: &project.TaskResultRevisionRequest{
+			Reason:           "the report is nowhere to be found",
+			RequestedChanges: changes,
+		},
+	})
+
+	require.Equal(t, first, second)
+}
+
+func TestRevisionFailureFingerprintSeparatesDifferentRequestedChanges(t *testing.T) {
+	base := project.TaskResultContract{
+		Status:          project.TaskResultStatusRevisionNeeded,
+		RevisionRequest: &project.TaskResultRevisionRequest{RequestedChanges: []string{"add load test report"}},
+	}
+	other := project.TaskResultContract{
+		Status:          project.TaskResultStatusRevisionNeeded,
+		RevisionRequest: &project.TaskResultRevisionRequest{RequestedChanges: []string{"add baseline metrics"}},
+	}
+
+	require.NotEqual(t, revisionFailureFingerprint(base), revisionFailureFingerprint(other))
+}
+
+func TestRevisionFailureFingerprintIsOrderInsensitive(t *testing.T) {
+	a := project.TaskResultContract{
+		Status:          project.TaskResultStatusRevisionNeeded,
+		RevisionRequest: &project.TaskResultRevisionRequest{RequestedChanges: []string{"b", "a"}},
+	}
+	b := project.TaskResultContract{
+		Status:          project.TaskResultStatusRevisionNeeded,
+		RevisionRequest: &project.TaskResultRevisionRequest{RequestedChanges: []string{"a", "b"}},
+	}
+
+	require.Equal(t, revisionFailureFingerprint(a), revisionFailureFingerprint(b))
+}
+
 func TestApplyTaskResultRevisionStopsWhenMaxAttemptsExhausted(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

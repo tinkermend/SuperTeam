@@ -3040,11 +3040,18 @@ func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectT
 	return metadata
 }
 
+// revisionFailureFingerprint identifies a failure by its structured shape only.
+//
+// It deliberately excludes contract.Summary and RevisionRequest.Reason: both are
+// free text written by the model. Feeding them in let a reworded failure present
+// as a fresh one, silently defeating repeatedRevisionFailure. See the 2026-07-10
+// plan-phase refactor spec, constraint 1.
 func revisionFailureFingerprint(contract project.TaskResultContract) string {
-	parts := []string{string(contract.Status), strings.TrimSpace(contract.Summary)}
+	parts := []string{string(contract.Status)}
 	if contract.RevisionRequest != nil {
-		parts = append(parts, strings.TrimSpace(contract.RevisionRequest.Reason))
-		parts = append(parts, contract.RevisionRequest.RequestedChanges...)
+		changes := append([]string(nil), contract.RevisionRequest.RequestedChanges...)
+		sort.Strings(changes)
+		parts = append(parts, changes...)
 	}
 	return strings.Join(parts, "\n")
 }
