@@ -308,14 +308,6 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		addCheck("employee.dispatchable", "passed", map[string]any{"profile_snapshot_hash": snapshot.Employee.ProfileSnapshotHash})
 	}
 
-	if len(snapshot.Capabilities.HardMissing) > 0 {
-		addCheck("capability.match", "failed", map[string]any{"hard_missing": append([]string(nil), snapshot.Capabilities.HardMissing...)})
-		addBlocker("capability.hard_missing", PreDispatchGateStatusReplanRequired, "hard", false, map[string]any{"hard_missing": append([]string(nil), snapshot.Capabilities.HardMissing...)})
-		setStatus(PreDispatchGateStatusReplanRequired)
-	} else {
-		addCheck("capability.match", "passed", map[string]any{"required": append([]string(nil), snapshot.Capabilities.Required...), "matched": append([]string(nil), snapshot.Capabilities.Matched...)})
-	}
-
 	if len(snapshot.Tools.ExpiredAuthorizations) > 0 {
 		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionToolAuthorization, HumanWaitReasonPermissionRequired, "project_task_permission", "工具授权已失效", "需要人类重新授权后才能分派任务", "medium")
 		addCheck("tool.authorization", "failed", map[string]any{"expired": append([]string(nil), snapshot.Tools.ExpiredAuthorizations...)})
