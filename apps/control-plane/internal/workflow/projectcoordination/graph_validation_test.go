@@ -199,6 +199,28 @@ func TestValidateRouteDecisionPlanRejectsRequiredInputWithNoProducer(t *testing.
 	require.Contains(t, err.Error(), "load_test_report")
 }
 
+func TestValidateRouteDecisionPlanRejectsDuplicateProducesKey(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "duplicate produces key", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"report"}, nil),
+		planTaskWithIO("b", nil, []string{"report"}, nil),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "report")
+}
+
+func TestValidateRouteDecisionPlanRejectsBlankProducesKey(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "blank produces key", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"  "}, nil),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	require.Error(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
 func TestValidateRouteDecisionPlanRejectsRequiredInputFromNonAncestor(t *testing.T) {
 	plan := RouteDecisionPlan{Reason: "required input from non ancestor", Tasks: []PlannedTask{
 		planTaskWithIO("a", nil, nil, nil),

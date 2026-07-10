@@ -171,7 +171,14 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 	producers := map[string]string{}
 	for _, task := range plan.Tasks {
 		for _, key := range task.Produces {
-			producers[key] = task.Key
+			trimmed := strings.TrimSpace(key)
+			if trimmed == "" {
+				return invalidRouteDecision("task %q: produces contains an empty key", task.Key)
+			}
+			if owner, exists := producers[trimmed]; exists {
+				return invalidRouteDecision("produces key %q is claimed by both task %q and task %q; a key must have exactly one producer", trimmed, owner, task.Key)
+			}
+			producers[trimmed] = task.Key
 		}
 	}
 	for _, task := range plan.Tasks {
