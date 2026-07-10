@@ -2874,45 +2874,6 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/digital-employees/{employeeId}/workspace-files:
-    get:
-      operationId: listEmployeeWorkspaceFiles
-      summary: List employee workspace files
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      responses:
-        "200":
-          description: Employee workspace file list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/WorkspaceFile"
-        "403":
-          $ref: "#/components/responses/Error"
-    put:
-      operationId: upsertEmployeeWorkspaceFile
-      summary: Upsert an employee workspace file
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpsertWorkspaceFileRequest"
-      responses:
-        "200":
-          description: Employee workspace file saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkspaceFile"
-        "400":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/environment-variables:
     get:
       operationId: listEmployeeEnvironmentVariables
@@ -9008,83 +8969,6 @@ components:
           type: string
         status:
           type: string
-    WorkspaceFile:
-      type: object
-      required:
-        - id
-        - team_id
-        - path
-        - file_role
-        - mime_type
-        - sync_policy
-        - status
-        - current_revision_id
-        - revision_number
-        - content
-        - content_hash
-        - size_bytes
-        - storage_backend
-      properties:
-        id:
-          type: string
-          format: uuid
-        team_id:
-          type: string
-          format: uuid
-        path:
-          type: string
-        file_role:
-          type: string
-        mime_type:
-          type: string
-        sync_policy:
-          type: string
-        status:
-          type: string
-        current_revision_id:
-          type: string
-          format: uuid
-        revision_number:
-          type: integer
-          format: int32
-        content:
-          type: string
-        content_hash:
-          type: string
-        size_bytes:
-          type: integer
-          format: int32
-        storage_backend:
-          type: string
-        object_key:
-          type: string
-        change_note:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    UpsertWorkspaceFileRequest:
-      type: object
-      required:
-        - path
-        - content
-      properties:
-        path:
-          type: string
-          minLength: 1
-        content:
-          type: string
-        file_role:
-          type: string
-        mime_type:
-          type: string
-        sync_policy:
-          type: string
-        change_note:
-          type: string
     UploadSkillRequest:
       type: object
       required:
@@ -9865,17 +9749,8 @@ components:
         budget_policy:
           type: object
           additionalProperties: true
-        runtime_node_id:
-          type: string
-          format: uuid
         provider_type:
           type: string
-        session_policy:
-          type: object
-          additionalProperties: true
-        workspace_policy:
-          type: object
-          additionalProperties: true
         environment_variables:
           type: array
           items:

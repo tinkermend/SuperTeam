@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::path::Path;
 
 use crate::controlplane::models::{RuntimeCommand, RuntimeCommandType};
 use crate::providers::catalog;
@@ -185,6 +186,9 @@ impl RuntimeProvisionInstanceCommandPayload {
         for file in &self.workspace_files {
             require_uuid_like("workspace_files.file_id", &file.file_id)?;
             require_uuid_like("workspace_files.revision_id", &file.revision_id)?;
+            if is_instruction_workspace_file(&file.path) {
+                anyhow::bail!("instruction workspace file is not supported: {}", file.path);
+            }
             if file.storage_backend == "db" && file.content_text.is_none() {
                 anyhow::bail!("content_text is required for db-backed workspace files");
             }
@@ -192,6 +196,15 @@ impl RuntimeProvisionInstanceCommandPayload {
 
         Ok(())
     }
+}
+
+fn is_instruction_workspace_file(path: &str) -> bool {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("AGENTS.md") || name.eq_ignore_ascii_case("CLAUDE.md")
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

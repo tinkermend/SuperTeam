@@ -173,10 +173,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		"persona_memory_markdown":"# Database administrator",
 		"capability_bindings":{"skills":["incident-diagnosis"],"mcp_servers":["postgres-readonly"]},
 		"budget_policy":{"daily_token_limit":12000},
-		"runtime_node_id":"` + runtimeNodeID.String() + `",
-		"provider_type":"codex",
-		"session_policy":{"mode":"reuse_latest"},
-		"workspace_policy":{"labels":{"tier":"standard"}}
+		"provider_type":"codex"
 	}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -201,21 +198,14 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.createReq.AvatarAssetID != "engineer-m-01" {
 		t.Fatalf("expected avatar asset id from create body, got %q", service.createReq.AvatarAssetID)
 	}
-	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
-		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
+	if service.createReq.ProviderType != "codex" {
+		t.Fatalf("expected create provider codex, got %q", service.createReq.ProviderType)
 	}
 	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.PersonaMemoryMarkdown != "# Database administrator" || service.createReq.CapabilityBindings["skills"] == nil {
 		t.Fatalf("expected policy/config fields from create body, got %#v", service.createReq)
 	}
 	if service.createReq.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy from create body, got %#v", service.createReq.BudgetPolicy)
-	}
-	if service.createReq.SessionPolicy["mode"] != "reuse_latest" {
-		t.Fatalf("expected session policy from create body, got %#v", service.createReq.SessionPolicy)
-	}
-	workspaceLabels, ok := service.createReq.WorkspacePolicy["labels"].(map[string]any)
-	if !ok || workspaceLabels["tier"] != "standard" {
-		t.Fatalf("expected workspace policy from create body, got %#v", service.createReq.WorkspacePolicy)
 	}
 	var created struct {
 		ID               string         `json:"id"`
@@ -242,6 +232,15 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
 		t.Fatalf("expected policy objects in response, got %#v", created)
+	}
+
+	removedCreateFieldReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(`{"employee_type":"database_admin","name":"Legacy runtime placement","avatar_asset_id":"engineer-m-01","provider_type":"codex","runtime_node_id":"`+runtimeNodeID.String()+`"}`))
+	removedCreateFieldReq.Header.Set("Content-Type", "application/json")
+	removedCreateFieldReq.AddCookie(cookie)
+	removedCreateFieldResp := httptest.NewRecorder()
+	server.ServeHTTP(removedCreateFieldResp, removedCreateFieldReq)
+	if removedCreateFieldResp.Code != http.StatusBadRequest || !strings.Contains(removedCreateFieldResp.Body.String(), "runtime_node_id is no longer supported") {
+		t.Fatalf("expected employee-owned runtime placement to be rejected, got %d: %s", removedCreateFieldResp.Code, removedCreateFieldResp.Body.String())
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees", nil)
@@ -440,9 +439,6 @@ func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
 
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("expected create digital employee without runtime to succeed, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if service.createReq.RuntimeNodeID != uuid.Nil {
-		t.Fatalf("expected missing runtime_node_id to stay nil, got %s", service.createReq.RuntimeNodeID)
 	}
 	if service.createReq.ProviderType != "codex" {
 		t.Fatalf("expected provider_type codex, got %q", service.createReq.ProviderType)
@@ -763,94 +759,6 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	lastCheck := authorizer.checks[len(authorizer.checks)-1]
 	if lastCheck.Action != authz.ActionEmployeeRead || lastCheck.Resource.Type != authz.ResourceTenant || lastCheck.TenantID != tenantID {
 		t.Fatalf("unexpected overview authz check: %#v", lastCheck)
-	}
-}
-
-func TestEmployeeRoutesWorkspaceFilesUseConsoleTenantAndActions(t *testing.T) {
-	authService, err := auth.NewService(newRouteAuthRepo())
-	if err != nil {
-		t.Fatalf("new auth service: %v", err)
-	}
-	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
-	tenantID := platform.DefaultTenantID
-	employeeID := uuid.New()
-	authorizer := newRecordingAuthorizer()
-	service := &routeEmployeeService{}
-	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
-	server.SetEmployeeHandler(employee.NewHandler(service))
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/workspace-files", nil)
-	withConsoleSessionCookie(listReq, user.SessionToken)
-	listResp := httptest.NewRecorder()
-	server.ServeHTTP(listResp, listReq)
-	if listResp.Code != http.StatusOK {
-		t.Fatalf("expected list workspace files to succeed, got %d: %s", listResp.Code, listResp.Body.String())
-	}
-	if service.listWorkspaceFilesReq.TenantID != tenantID || service.listWorkspaceFilesReq.DigitalEmployeeID != employeeID {
-		t.Fatalf("unexpected list workspace files request: %#v", service.listWorkspaceFilesReq)
-	}
-	var listed []struct {
-		ID                string `json:"id"`
-		TeamID            string `json:"team_id"`
-		Path              string `json:"path"`
-		FileRole          string `json:"file_role"`
-		Content           string `json:"content"`
-		ContentHash       string `json:"content_hash"`
-		CurrentRevisionID string `json:"current_revision_id"`
-		RevisionNumber    int32  `json:"revision_number"`
-		SizeBytes         int32  `json:"size_bytes"`
-		UpdatedAt         string `json:"updated_at"`
-	}
-	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
-		t.Fatalf("decode list workspace files: %v", err)
-	}
-	if len(listed) != 1 || listed[0].Path != "AGENTS.md" || listed[0].FileRole != "entrypoint" || listed[0].Content != "# 工作原则" || listed[0].SizeBytes == 0 || listed[0].ContentHash == "" || listed[0].CurrentRevisionID == "" || listed[0].RevisionNumber != 1 || listed[0].UpdatedAt == "" {
-		t.Fatalf("unexpected list workspace files response: %#v", listed)
-	}
-	if listed[0].TeamID != "" || strings.Contains(listResp.Body.String(), `"team_id"`) {
-		t.Fatalf("team-less workspace files must omit team_id, got %s", listResp.Body.String())
-	}
-
-	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/workspace-files", strings.NewReader(`{"path":"AGENTS.md","content":"# 新规则","change_note":"update rules"}`))
-	upsertReq.Header.Set("Content-Type", "application/json")
-	withConsoleSessionCookie(upsertReq, user.SessionToken)
-	upsertResp := httptest.NewRecorder()
-	server.ServeHTTP(upsertResp, upsertReq)
-	if upsertResp.Code != http.StatusOK {
-		t.Fatalf("expected upsert workspace file to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
-	}
-	if service.upsertWorkspaceFileReq.TenantID != tenantID || service.upsertWorkspaceFileReq.DigitalEmployeeID != employeeID {
-		t.Fatalf("unexpected upsert workspace file identity: %#v", service.upsertWorkspaceFileReq)
-	}
-	if service.upsertWorkspaceFileReq.Path != "AGENTS.md" || service.upsertWorkspaceFileReq.Content != "# 新规则" || service.upsertWorkspaceFileReq.ChangeNote == nil || *service.upsertWorkspaceFileReq.ChangeNote != "update rules" {
-		t.Fatalf("unexpected upsert workspace file body: %#v", service.upsertWorkspaceFileReq)
-	}
-	var upserted struct {
-		Path        string `json:"path"`
-		Content     string `json:"content"`
-		ContentHash string `json:"content_hash"`
-	}
-	if err := json.NewDecoder(upsertResp.Body).Decode(&upserted); err != nil {
-		t.Fatalf("decode upsert workspace file: %v", err)
-	}
-	if upserted.Path != "AGENTS.md" || upserted.Content != "# 新规则" || upserted.ContentHash == "" {
-		t.Fatalf("expected normalized upsert response, got %#v", upserted)
-	}
-
-	expectedChecks := []struct {
-		action string
-	}{
-		{action: authz.ActionEmployeeRead},
-		{action: authz.ActionEmployeeConfigCreate},
-	}
-	if len(authorizer.checks) != len(expectedChecks) {
-		t.Fatalf("expected %d authorization checks, got %#v", len(expectedChecks), authorizer.checks)
-	}
-	for idx, expected := range expectedChecks {
-		check := authorizer.checks[idx]
-		if check.Action != expected.action || check.Resource.Type != authz.ResourceEmployee || check.Resource.ID != employeeID.String() || check.TenantID != tenantID {
-			t.Fatalf("unexpected workspace file authz check at %d: %#v", idx, check)
-		}
 	}
 }
 
@@ -1486,8 +1394,6 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "create options", method: http.MethodGet, path: "/api/v1/digital-employees/create-options?team_id=" + uuid.New().String(), action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "delete", method: http.MethodDelete, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeDelete, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "list workspace files", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "upsert workspace file", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", body: `{"path":"AGENTS.md","content":"# rules"}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`, action: authz.ActionEmployeeExecutionBind, resourceType: authz.ResourceEmployee, resourceID: employeeID},
@@ -1787,8 +1693,6 @@ type routeEmployeeService struct {
 	createReq                        employee.CreateDigitalEmployeeRequest
 	listReq                          employee.ListDigitalEmployeesRequest
 	overviewReq                      employee.GetDigitalEmployeeOverviewRequest
-	listWorkspaceFilesReq            employee.ListWorkspaceFilesRequest
-	upsertWorkspaceFileReq           employee.UpsertWorkspaceFileRequest
 	listEnvReq                       employee.ListEnvironmentVariablesRequest
 	upsertEnvReq                     employee.UpsertEnvironmentVariableRequest
 	deleteEnvReq                     employee.DeleteEnvironmentVariableRequest
@@ -1800,8 +1704,6 @@ type routeEmployeeService struct {
 	getInstanceTenantID              uuid.UUID
 	createCalled                     bool
 	listCalled                       bool
-	listWorkspaceFilesCalled         bool
-	upsertWorkspaceFileCalled        bool
 	getCalled                        bool
 	updateCalled                     bool
 	getInstanceCalled                bool
@@ -1961,56 +1863,6 @@ func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID,
 		Metadata:         map[string]any{},
 		CreatedAt:        now,
 		UpdatedAt:        now,
-	}, nil
-}
-
-func (s *routeEmployeeService) ListWorkspaceFiles(ctx context.Context, req employee.ListWorkspaceFilesRequest) ([]employee.WorkspaceFile, error) {
-	s.listWorkspaceFilesCalled = true
-	s.listWorkspaceFilesReq = req
-	now := time.Now().UTC()
-	revisionID := uuid.New()
-	return []employee.WorkspaceFile{{
-		ID:                uuid.New(),
-		TenantID:          req.TenantID,
-		DigitalEmployeeID: req.DigitalEmployeeID,
-		Path:              "AGENTS.md",
-		FileRole:          "entrypoint",
-		MimeType:          "text/markdown",
-		SyncPolicy:        "auto",
-		Status:            "active",
-		CurrentRevisionID: revisionID,
-		RevisionNumber:    1,
-		Content:           "# 工作原则",
-		SizeBytes:         int32(len([]byte("# 工作原则"))),
-		ContentHash:       "36e7ed868287830a2d6f4651737b36a7e0f9febadb211397b2a9c6b324bf9269",
-		StorageBackend:    "db",
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}}, nil
-}
-
-func (s *routeEmployeeService) UpsertWorkspaceFile(ctx context.Context, req employee.UpsertWorkspaceFileRequest) (employee.WorkspaceFile, error) {
-	s.upsertWorkspaceFileCalled = true
-	s.upsertWorkspaceFileReq = req
-	now := time.Now().UTC()
-	return employee.WorkspaceFile{
-		ID:                uuid.New(),
-		TenantID:          req.TenantID,
-		TeamID:            uuidPtrFromNilable(uuid.New()),
-		DigitalEmployeeID: req.DigitalEmployeeID,
-		Path:              "AGENTS.md",
-		FileRole:          "entrypoint",
-		MimeType:          "text/markdown",
-		SyncPolicy:        "auto",
-		Status:            "active",
-		CurrentRevisionID: uuid.New(),
-		RevisionNumber:    2,
-		Content:           req.Content,
-		SizeBytes:         int32(len([]byte(req.Content))),
-		ContentHash:       "a7e47bdb6011e3ef9c2938480113c243d4136b4a73ba82e2f19e5f30d76c981c",
-		StorageBackend:    "db",
-		CreatedAt:         now,
-		UpdatedAt:         now,
 	}, nil
 }
 
@@ -2182,8 +2034,6 @@ func (s *routeEmployeeService) DeleteEmployeeTemplate(ctx context.Context, tenan
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
-		s.listWorkspaceFilesCalled ||
-		s.upsertWorkspaceFileCalled ||
 		s.getCalled ||
 		s.updateCalled ||
 		s.getInstanceCalled ||

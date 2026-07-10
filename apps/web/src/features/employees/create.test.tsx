@@ -720,8 +720,6 @@ describe("CreateEmployeeView", () => {
       context_policy: {},
       approval_policy: { required: true },
       provider_type: "codex",
-      session_policy: { mode: "reuse_latest" },
-      workspace_policy: {},
       environment_variables: [],
     });
     expect(body).not.toHaveProperty("role_profile");
@@ -730,6 +728,9 @@ describe("CreateEmployeeView", () => {
     expect(body).not.toHaveProperty("context_policy_override");
     expect(body).not.toHaveProperty("approval_policy_override");
     expect(body).not.toHaveProperty("output_contract_addendum");
+    expect(body).not.toHaveProperty("runtime_node_id");
+    expect(body).not.toHaveProperty("session_policy");
+    expect(body).not.toHaveProperty("workspace_policy");
 
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -884,8 +885,6 @@ describe("CreateEmployeeView", () => {
       context_policy: {},
       approval_policy: {},
       provider_type: "codex",
-      session_policy: { mode: "reuse_latest" },
-      workspace_policy: {},
       environment_variables: [],
       metadata: { creation_mode: "blank_custom" },
     });

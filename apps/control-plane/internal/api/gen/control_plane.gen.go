@@ -2066,12 +2066,9 @@ type CreateDigitalEmployeeRequest struct {
 	ProviderType          string                  `json:"provider_type"`
 	RiskLevel             *string                 `json:"risk_level,omitempty"`
 	Role                  *string                 `json:"role,omitempty"`
-	RuntimeNodeId         *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
-	SessionPolicy         *map[string]interface{} `json:"session_policy,omitempty"`
 
 	// TeamId Team ID; omit or null for team-less (tenant-level) digital employees.
-	TeamId          *openapi_types.UUID     `json:"team_id,omitempty"`
-	WorkspacePolicy *map[string]interface{} `json:"workspace_policy,omitempty"`
+	TeamId *openapi_types.UUID `json:"team_id,omitempty"`
 }
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
@@ -4851,16 +4848,6 @@ type UpsertTeamLendingPolicy struct {
 	ProjectMatch      *map[string]interface{} `json:"project_match,omitempty"`
 }
 
-// UpsertWorkspaceFileRequest defines model for UpsertWorkspaceFileRequest.
-type UpsertWorkspaceFileRequest struct {
-	ChangeNote *string `json:"change_note,omitempty"`
-	Content    string  `json:"content"`
-	FileRole   *string `json:"file_role,omitempty"`
-	MimeType   *string `json:"mime_type,omitempty"`
-	Path       string  `json:"path"`
-	SyncPolicy *string `json:"sync_policy,omitempty"`
-}
-
 // UserCredential defines model for UserCredential.
 type UserCredential struct {
 	CreatedAt      *time.Time         `json:"created_at,omitempty"`
@@ -4964,27 +4951,6 @@ type WorkflowInstanceSummary struct {
 	SubmittedByUserId         openapi_types.UUID              `json:"submitted_by_user_id"`
 	Title                     string                          `json:"title"`
 	UpdatedAt                 time.Time                       `json:"updated_at"`
-}
-
-// WorkspaceFile defines model for WorkspaceFile.
-type WorkspaceFile struct {
-	ChangeNote        *string            `json:"change_note,omitempty"`
-	Content           string             `json:"content"`
-	ContentHash       string             `json:"content_hash"`
-	CreatedAt         *time.Time         `json:"created_at,omitempty"`
-	CurrentRevisionId openapi_types.UUID `json:"current_revision_id"`
-	FileRole          string             `json:"file_role"`
-	Id                openapi_types.UUID `json:"id"`
-	MimeType          string             `json:"mime_type"`
-	ObjectKey         *string            `json:"object_key,omitempty"`
-	Path              string             `json:"path"`
-	RevisionNumber    int32              `json:"revision_number"`
-	SizeBytes         int32              `json:"size_bytes"`
-	Status            string             `json:"status"`
-	StorageBackend    string             `json:"storage_backend"`
-	SyncPolicy        string             `json:"sync_policy"`
-	TeamId            openapi_types.UUID `json:"team_id"`
-	UpdatedAt         *time.Time         `json:"updated_at,omitempty"`
 }
 
 // BindingId defines model for BindingId.
@@ -5484,9 +5450,6 @@ type BindEmployeeSkillJSONRequestBody BindEmployeeSkillJSONBody
 
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
-
-// UpsertEmployeeWorkspaceFileJSONRequestBody defines body for UpsertEmployeeWorkspaceFile for application/json ContentType.
-type UpsertEmployeeWorkspaceFileJSONRequestBody = UpsertWorkspaceFileRequest
 
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
@@ -6240,12 +6203,6 @@ type ServerInterface interface {
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// List employee workspace files
-	// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
-	ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Upsert an employee workspace file
-	// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
-	UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get actionable inbox badge counts
 	// (GET /api/v1/inbox/badge)
 	GetInboxBadge(w http.ResponseWriter, r *http.Request)
@@ -6921,18 +6878,6 @@ func (_ Unimplemented) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Reques
 // Update a digital employee status
 // (PUT /api/v1/digital-employees/{employeeId}/status)
 func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List employee workspace files
-// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
-func (_ Unimplemented) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Upsert an employee workspace file
-// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
-func (_ Unimplemented) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9253,58 +9198,6 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListEmployeeWorkspaceFiles operation middleware
-func (siw *ServerInterfaceWrapper) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListEmployeeWorkspaceFiles(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpsertEmployeeWorkspaceFile operation middleware
-func (siw *ServerInterfaceWrapper) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpsertEmployeeWorkspaceFile(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14812,12 +14705,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.ListEmployeeWorkspaceFiles)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.UpsertEmployeeWorkspaceFile)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)

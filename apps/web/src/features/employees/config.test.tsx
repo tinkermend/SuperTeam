@@ -4,8 +4,6 @@ import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { EmployeeConfigView } from "./config";
-import type { WorkspaceFile } from "@/lib/api/employees";
-import type { EffectiveEmployeeSkill, Skill } from "@/lib/api/skills";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -29,16 +27,6 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-vi.mock("@monaco-editor/react", () => ({
-  default: ({ value, onChange }: { value?: string; onChange?: (value?: string) => void }) => (
-    <textarea
-      aria-label="Workspace file editor"
-      value={value ?? ""}
-      onChange={(event) => onChange?.(event.currentTarget.value)}
-    />
-  ),
-}));
-
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -58,6 +46,7 @@ const employee = {
   team_id: "33333333-3333-4333-8333-333333333333",
   owner_user_id: "44444444-4444-4444-8444-444444444444",
   employee_type: "requirements_analyst",
+  provider_type: "codex",
   name: "需求分析员工",
   role: "requirements_analyst",
   description: "负责需求拆解和交付风险识别",
@@ -137,31 +126,6 @@ function hasRequest(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, pat
   });
 }
 
-function skillFixture(id: string, name: string): Skill {
-  return {
-    id,
-    tenant_id: "tenant-1",
-    slug: name,
-    name,
-    description: `${name} 技能`,
-    version: "v1.0.0",
-    source: "upload",
-    risk_level: "low",
-    icon_key: "boxes",
-    color_token: "cyan",
-    tags: ["自动化"],
-    archive_object_ref: `s3://bucket/skills/${name}.zip`,
-    archive_filename: `${name}.zip`,
-    archive_size_bytes: 1024,
-    archive_checksum_sha256: "abc123def456",
-    archive_file_count: 1,
-    created_by: "user-1",
-    created_by_name: "开发管理员",
-    team_bindings: [],
-    agent_bindings: [],
-  };
-}
-
 describe("EmployeeConfigView", () => {
   it("renders employee name and config form", async () => {
     const queryClient = createQueryClient();
@@ -179,7 +143,7 @@ describe("EmployeeConfigView", () => {
 
     await expect.element(screen.getByText(employee.name)).toBeVisible();
     await expect.element(screen.getByText("配置员工人格记忆、能力绑定和预算策略")).toBeVisible();
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
+    expect(screen.getByRole("tab", { name: "高级配置" }).query()).toBeNull();
     expect(screen.getByText("角色配置").query()).toBeNull();
     expect(screen.getByText("能力与策略").query()).toBeNull();
     await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
@@ -200,7 +164,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
     await userEvent.fill(screen.getByLabelText("人格记忆.md"), "# 人格画像\n需求拆解优先");
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
@@ -227,7 +190,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "15000");
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
@@ -253,7 +215,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeDisabled();
     await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
     expect(
@@ -275,7 +236,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     const budgetInput = screen.getByRole("spinbutton", { name: "每日 Token 预算上限" });
     await userEvent.type(budgetInput, "15000");
     await userEvent.clear(budgetInput);
@@ -302,7 +262,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
@@ -328,7 +287,6 @@ describe("EmployeeConfigView", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await userEvent.fill(screen.getByLabelText("能力绑定"), '{"skills":');
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
 
@@ -339,306 +297,4 @@ describe("EmployeeConfigView", () => {
     expect(postCall).toBeUndefined();
   });
 
-  it("edits workspace files and manages personal capabilities with inherited preview", async () => {
-    const workspaceFile = {
-      id: "workspace-file-1",
-      team_id: employee.team_id,
-      path: "AGENTS.md",
-      file_role: "entrypoint",
-      mime_type: "text/markdown",
-      sync_policy: "auto",
-      status: "active",
-      current_revision_id: "revision-1",
-      revision_number: 1,
-      content: "# 原则",
-      content_hash: "sha-old",
-      size_bytes: 8,
-      storage_backend: "db",
-      updated_at: "2026-06-10T00:00:00Z",
-    } satisfies WorkspaceFile;
-    const diagnose = skillFixture("skill-diagnose", "diagnose");
-    const personal = skillFixture("skill-personal", "context-pack");
-    const sqlReview = skillFixture("skill-extra", "sql-review");
-    const effectiveSkills = [
-      { skill: diagnose, read_only: true, inherited: true, source_scope: "team" },
-      { skill: personal, read_only: false, inherited: false, source_scope: "employee" },
-    ] satisfies EffectiveEmployeeSkill[];
-    const fetcher = createEmployeeConfigFetcher({
-      extraRoutes: {
-        [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: [workspaceFile],
-        [`PUT /api/v1/digital-employees/${employee.id}/workspace-files`]: {
-          ...workspaceFile,
-          content: "# 新原则",
-          content_hash: "sha-new",
-          current_revision_id: "revision-2",
-          revision_number: 2,
-        },
-        [`GET /api/v1/digital-employees/${employee.id}/skills`]: effectiveSkills,
-        "GET /api/v1/skills": [sqlReview],
-        "GET /api/v1/mcp-servers": [
-          {
-            id: "mcp-github",
-            tenant_id: "tenant-1",
-            name: "GitHub MCP",
-            server_key: "github",
-            description: "",
-            transport: "streamable_http",
-            url: "https://api.githubcopilot.com/mcp/",
-            auth_strategy: "bearer_env",
-            required_env_vars: ["GITHUB_TOKEN"],
-            optional_env_vars: [],
-            tool_allowlist: [],
-            risk_level: "medium",
-            status: "active",
-          },
-        ],
-        [`GET /api/v1/digital-employees/${employee.id}/environment-variables`]: [
-          {
-            id: "env-github",
-            tenant_id: "tenant-1",
-            team_id: employee.team_id,
-            digital_employee_id: employee.id,
-            name: "GITHUB_TOKEN",
-            value: "ghp_secret",
-            sensitive: true,
-            status: "active",
-          },
-        ],
-        [`GET /api/v1/digital-employees/${employee.id}/mcp-bindings-v2`]: [],
-        [`GET /api/v1/digital-employees/${employee.id}/effective-mcp-config`]: [
-          {
-            server_id: "mcp-github",
-            server_key: "github",
-            name: "GitHub MCP",
-            transport: "streamable_http",
-            url: "https://api.githubcopilot.com/mcp/",
-            auth_strategy: "bearer_env",
-            credential_env_var: "GITHUB_TOKEN",
-            required_env_vars: ["GITHUB_TOKEN"],
-            missing_env_vars: [],
-            source_scope: "team",
-            status: "active",
-          },
-        ],
-        [`POST /api/v1/digital-employees/${employee.id}/skills`]: sqlReview,
-        [`POST /api/v1/digital-employees/${employee.id}/mcp-bindings-v2`]: {
-          id: "binding-personal",
-          tenant_id: "tenant-1",
-          digital_employee_id: employee.id,
-          mcp_server_id: "mcp-github",
-          server_key: "github",
-          server_name: "GitHub MCP",
-          credential_env_var: "GITHUB_TOKEN",
-          required_env_vars: ["GITHUB_TOKEN"],
-          missing_env_vars: [],
-          source_scope: "employee",
-          status: "active",
-        },
-      },
-    });
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "宪法/人格" }));
-    await expect.element(screen.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("Workspace file editor"), "# 新原则");
-    await userEvent.click(screen.getByRole("button", { name: "保存文件" }));
-    await expect
-      .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/workspace-files`, "PUT"))
-      .toEqual({ path: "AGENTS.md", content: "# 新原则" });
-
-    await userEvent.click(screen.getByRole("tab", { name: "能力设置" }));
-    await expect.element(screen.getByRole("button", { name: "移除 diagnose" })).toBeVisible();
-    await expect.element(screen.getByText("团队继承").first()).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "移除 diagnose" })).toBeDisabled();
-
-    await userEvent.click(screen.getByRole("button", { name: "安装 sql-review" }));
-    await expect
-      .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/skills`, "POST"))
-      .toEqual({ skill_id: "skill-extra" });
-
-    // Bind a registered MCP by mcp_server_id + credential_env_var; preflight passes because
-    // the employee has GITHUB_TOKEN configured.
-    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
-    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "凭据环境变量（可选）" }),
-      "GITHUB_TOKEN",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "绑定个人 MCP" }));
-    await expect
-      .poll(() => requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/mcp-bindings-v2`, "POST"))
-      .toEqual({
-        mcp_server_id: "mcp-github",
-        credential_env_var: "GITHUB_TOKEN",
-      });
-  });
-
-  it("preserves unsaved workspace file drafts when switching files and creating a local file", async () => {
-    const workspaceFiles = [
-      {
-        id: "workspace-agents",
-        team_id: employee.team_id,
-        path: "AGENTS.md",
-        file_role: "entrypoint",
-        mime_type: "text/markdown",
-        sync_policy: "auto",
-        status: "active",
-        current_revision_id: "revision-agents",
-        revision_number: 1,
-        content: "# 原则",
-        content_hash: "sha-agents",
-        size_bytes: 8,
-        storage_backend: "db",
-      },
-      {
-        id: "workspace-notes",
-        team_id: employee.team_id,
-        path: "NOTES.md",
-        file_role: "supporting_doc",
-        mime_type: "text/markdown",
-        sync_policy: "auto",
-        status: "active",
-        current_revision_id: "revision-notes",
-        revision_number: 1,
-        content: "# 备注",
-        content_hash: "sha-notes",
-        size_bytes: 8,
-        storage_backend: "db",
-      },
-    ] satisfies WorkspaceFile[];
-    const fetcher = createEmployeeConfigFetcher({
-      extraRoutes: {
-        [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: workspaceFiles,
-      },
-    });
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "宪法/人格" }));
-    await expect.element(screen.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("Workspace file editor"), "# AGENTS 草稿");
-
-    await userEvent.click(screen.getByRole("button", { name: "NOTES.md" }));
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 备注");
-    await userEvent.fill(screen.getByLabelText("Workspace file editor"), "# NOTES 草稿");
-
-    await userEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# AGENTS 草稿");
-
-    await userEvent.fill(screen.getByRole("textbox", { name: "新文件路径" }), "LOCAL.md");
-    await userEvent.click(screen.getByRole("button", { name: "新建文件" }));
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("");
-    await expect.element(screen.getByText("未保存")).toBeVisible();
-
-    await userEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# AGENTS 草稿");
-  });
-
-  it("refreshes clean workspace file draft from server data without enabling save", async () => {
-    const queryClient = createQueryClient();
-    const workspaceFiles = [
-      {
-        id: "workspace-agents",
-        team_id: employee.team_id,
-        path: "AGENTS.md",
-        file_role: "entrypoint",
-        mime_type: "text/markdown",
-        sync_policy: "auto",
-        status: "active",
-        current_revision_id: "revision-agents",
-        revision_number: 1,
-        content: "# 旧原则",
-        content_hash: "sha-old",
-        size_bytes: 12,
-        storage_backend: "db",
-      },
-    ] satisfies WorkspaceFile[];
-    const fetcher = createEmployeeConfigFetcher({
-      extraRoutes: {
-        [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: workspaceFiles,
-      },
-    });
-
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "宪法/人格" }));
-    await expect.element(screen.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 旧原则");
-    await expect.element(screen.getByRole("button", { name: "保存文件" })).toBeDisabled();
-
-    workspaceFiles[0] = {
-      ...workspaceFiles[0],
-      content: "# 新原则",
-      content_hash: "sha-new",
-      current_revision_id: "revision-agents-2",
-      revision_number: 2,
-      size_bytes: 12,
-    };
-    await queryClient.invalidateQueries({ queryKey: ["employee-workspace-files", employee.id] });
-
-    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 新原则");
-    await expect.element(screen.getByRole("button", { name: "保存文件" })).toBeDisabled();
-  });
-
-  it("removing a personal duplicate skill keeps inherited team capability visible", async () => {
-    const diagnose = skillFixture("skill-diagnose", "diagnose");
-    const effectiveSkills = [
-      { skill: diagnose, read_only: true, inherited: true, source_scope: "team" },
-      { skill: diagnose, read_only: false, inherited: false, source_scope: "employee" },
-    ] satisfies EffectiveEmployeeSkill[];
-    const fetcher = createEmployeeConfigFetcher({
-      extraRoutes: {
-        [`GET /api/v1/digital-employees/${employee.id}/skills`]: effectiveSkills,
-        "GET /api/v1/skills": [],
-        "GET /api/v1/user-credentials?credential_type=mcp_token": [],
-        [`GET /api/v1/digital-employees/${employee.id}/mcp-bindings`]: [],
-        [`GET /api/v1/digital-employees/${employee.id}/effective-mcp-servers`]: [],
-        [`DELETE /api/v1/digital-employees/${employee.id}/skills/skill-diagnose`]: {},
-      },
-    });
-
-    const screen = await render(
-      <QueryClientProvider client={createQueryClient()}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await userEvent.click(screen.getByRole("tab", { name: "能力设置" }));
-    await expect.element(screen.getByRole("button", { name: "移除 diagnose" }).first()).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "移除 diagnose" }).last());
-    await expect
-      .poll(() => hasRequest(fetcher, `/api/v1/digital-employees/${employee.id}/skills/skill-diagnose`, "DELETE"))
-      .toBe(true);
-    await expect.element(screen.getByRole("button", { name: "移除 diagnose" }).first()).toBeDisabled();
-    await expect.element(screen.getByText("团队继承")).toBeVisible();
-  });
 });

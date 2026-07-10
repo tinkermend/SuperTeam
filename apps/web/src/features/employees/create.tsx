@@ -253,8 +253,6 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           persona_memory_markdown: draft.persona_memory_markdown.trim(),
           risk_level: draft.risk_level,
           provider_type: draft.provider_type,
-          session_policy: { mode: "reuse_latest" },
-          workspace_policy: {},
           environment_variables: draft.environment_variables
             .filter((row) => row.name.trim() && row.value)
             .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),

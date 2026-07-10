@@ -65,7 +65,13 @@ fn parses_opencode_session_text_and_completion_events() {
             text: "hello".to_string()
         }
     );
-    assert_eq!(completed, ProviderEvent::TurnCompleted { summary: None, usage: None });
+    assert_eq!(
+        completed,
+        ProviderEvent::TurnCompleted {
+            summary: None,
+            usage: None
+        }
+    );
 }
 
 #[test]
@@ -142,7 +148,10 @@ fn parses_codex_realistic_thread_item_and_turn_events() {
             ProviderEvent::TextDelta {
                 text: "OK".to_string()
             },
-            ProviderEvent::TurnCompleted { summary: None, usage: None },
+            ProviderEvent::TurnCompleted {
+                summary: None,
+                usage: None
+            },
         ]
     );
 }
@@ -206,11 +215,10 @@ fn parses_codex_turn_completed_with_usage() {
 
 #[test]
 fn parses_opencode_turn_completed_with_usage() {
-    let completed = parse_opencode_event(
-        r#"{"type":"turn.completed","usage":{"total_tokens":77}}"#,
-    )
-    .expect("valid json")
-    .expect("event");
+    let completed =
+        parse_opencode_event(r#"{"type":"turn.completed","usage":{"total_tokens":77}}"#)
+            .expect("valid json")
+            .expect("event");
 
     assert_eq!(
         completed,

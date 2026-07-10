@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createDigitalEmployeeConfigRevision,
@@ -18,8 +17,6 @@ import {
   type CreateDigitalEmployeeConfigRevisionInput,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
-import { InstructionFilesPanel } from "./components/instruction-files-panel";
 
 export function EmployeeConfigPage({ employeeId }: { employeeId: string }) {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -109,7 +106,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     createRevision.mutate(input);
   };
 
-  const advancedConfigForm = (
+  const configForm = (
     <form className="space-y-4" noValidate onSubmit={handleSubmit}>
       <Card>
         <CardHeader>
@@ -215,40 +212,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 
-        {employee.data ? (
-          <Tabs defaultValue="instructions" className="gap-4">
-            <TabsList
-              aria-label="数字员工配置视图"
-              className="h-auto max-w-3xl flex-wrap justify-start gap-1 rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3"
-            >
-              <TabsTrigger
-                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-                value="instructions"
-              >
-                宪法/人格
-              </TabsTrigger>
-              <TabsTrigger
-                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-                value="capabilities"
-              >
-                能力设置
-              </TabsTrigger>
-              <TabsTrigger
-                className="rounded-[10px] px-4 py-2 text-[13px] font-semibold data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-                value="advanced"
-              >
-                高级配置
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="instructions">
-              <InstructionFilesPanel apiOptions={apiOptions} employeeId={employeeId} />
-            </TabsContent>
-            <TabsContent value="capabilities">
-              <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
-            </TabsContent>
-            <TabsContent value="advanced">{advancedConfigForm}</TabsContent>
-          </Tabs>
-        ) : null}
+        {employee.data ? configForm : null}
       </Main>
     </>
   );

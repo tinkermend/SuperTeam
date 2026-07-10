@@ -196,7 +196,6 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 		"grace_sec",
 		"workspace_policy",
 		"session_policy",
-		"workspace_files",
 		"skills",
 		"mcp_servers",
 		"metadata",
@@ -704,25 +703,9 @@ func TestRunServiceStartSessionPayloadAndIdempotencyFingerprintIncludeWorkspaceM
 	}
 }
 
-func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFiles(t *testing.T) {
+func TestRunServiceCreateRunDispatchesStartSessionWithoutEmployeeWorkspaceFiles(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
-	repo.workspaceFilesForSync = []WorkspaceFileForSyncRecord{{
-		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
-		TenantID:          runServiceTenantID,
-		TeamID:            &repo.preflight.TeamID,
-		DigitalEmployeeID: runServiceEmployeeID,
-		Path:              "AGENTS.md",
-		FileRole:          "entrypoint",
-		MimeType:          "text/markdown",
-		SyncPolicy:        "auto",
-		RevisionID:        uuid.MustParse("66666666-6666-4666-8666-666666666666"),
-		RevisionNumber:    1,
-		ContentText:       "# Execution Contract\n",
-		ContentHash:       sha256Hex("# Execution Contract\n"),
-		SizeBytes:         int32(len([]byte("# Execution Contract\n"))),
-		StorageBackend:    "db",
-	}}
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
@@ -749,13 +732,8 @@ func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFi
 	if payload["agent_home_dir"] != repo.preflight.AgentHomeDir {
 		t.Fatalf("expected preflight employee home %q, got %#v", repo.preflight.AgentHomeDir, payload["agent_home_dir"])
 	}
-	files, ok := payload["workspace_files"].([]any)
-	if !ok || len(files) != 1 {
-		t.Fatalf("expected AGENTS.md workspace file in start payload, got %#v", payload["workspace_files"])
-	}
-	file, ok := files[0].(map[string]any)
-	if !ok || file["path"] != "AGENTS.md" {
-		t.Fatalf("expected AGENTS.md workspace file payload, got %#v", files[0])
+	if _, ok := payload["workspace_files"]; ok {
+		t.Fatalf("start payload must not include employee workspace files: %#v", payload["workspace_files"])
 	}
 	metadata := payload["metadata"].(map[string]any)
 	if metadata["project_id"] != "33333333-3333-4333-8333-333333333333" {
@@ -1388,7 +1366,6 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 				"external_capabilities": []any{},
 			},
 		},
-		nil,
 		nil,
 		nil,
 		[]RuntimeMCPServerPayload{{

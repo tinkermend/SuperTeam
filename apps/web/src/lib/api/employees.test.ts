@@ -9,17 +9,14 @@ import {
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeRun,
-  listWorkspaceFiles,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
   stopDigitalEmployeeRun,
-  upsertWorkspaceFile,
   type DigitalEmployee,
   type DigitalEmployeeConfigRevision,
   type DigitalEmployeeCreateOptions,
   type DigitalEmployeeOverview,
-  type WorkspaceFile,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -419,10 +416,7 @@ describe("digital employee API", () => {
             external_capabilities: [],
             environment_variable_refs: ["PG_DSN"],
           },
-          runtime_node_id: "33333333-3333-4333-8333-333333333333",
           provider_type: "codex",
-          session_policy: { reuse: false },
-          workspace_policy: { mode: "ephemeral" },
           budget_policy: { daily_token_limit: 12000 },
         },
       ),
@@ -450,10 +444,7 @@ describe("digital employee API", () => {
             external_capabilities: [],
             environment_variable_refs: ["PG_DSN"],
           },
-          runtime_node_id: "33333333-3333-4333-8333-333333333333",
           provider_type: "codex",
-          session_policy: { reuse: false },
-          workspace_policy: { mode: "ephemeral" },
           budget_policy: { daily_token_limit: 12000 },
         }),
         credentials: "include",
@@ -955,91 +946,4 @@ describe("digital employee API", () => {
     );
   });
 
-  it("lists workspace files with encoded employee id", async () => {
-    const files = [
-      {
-        id: "workspace-file-1",
-        team_id: "team-1",
-        path: "AGENTS.md",
-        file_role: "entrypoint",
-        mime_type: "text/markdown",
-        sync_policy: "auto",
-        status: "active",
-        current_revision_id: "revision-1",
-        revision_number: 1,
-        content: "# 规则",
-        content_hash: "abc123",
-        size_bytes: 8,
-        storage_backend: "db",
-        updated_at: "2026-06-10T10:00:00Z",
-      },
-    ] satisfies WorkspaceFile[];
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(files), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      listWorkspaceFiles(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "employee 1/primary",
-      ),
-    ).resolves.toEqual(files);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-  });
-
-  it("upserts a workspace file with encoded employee id and JSON body", async () => {
-    const file = {
-      id: "workspace-file-1",
-      team_id: "team-1",
-      path: "docs/AGENTS.md",
-      file_role: "supporting_doc",
-      mime_type: "text/markdown",
-      sync_policy: "auto",
-      status: "active",
-      current_revision_id: "revision-2",
-      revision_number: 2,
-      content: "# 新规则",
-      content_hash: "def456",
-      size_bytes: 12,
-      storage_backend: "db",
-      updated_at: "2026-06-10T10:05:00Z",
-    } satisfies WorkspaceFile;
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(file), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      upsertWorkspaceFile(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "employee 1/primary",
-        { path: "docs/AGENTS.md", content: "# 新规则" },
-      ),
-    ).resolves.toEqual(file);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
-      {
-        body: JSON.stringify({ path: "docs/AGENTS.md", content: "# 新规则" }),
-        credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        method: "PUT",
-      },
-    );
-  });
 });

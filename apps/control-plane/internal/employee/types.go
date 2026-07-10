@@ -556,10 +556,7 @@ type CreateDigitalEmployeeRequest struct {
 	PersonaMemoryMarkdown string
 	CapabilityBindings    map[string]any
 	BudgetPolicy          map[string]any
-	RuntimeNodeID         uuid.UUID
 	ProviderType          string
-	SessionPolicy         map[string]any
-	WorkspacePolicy       map[string]any
 	EnvironmentVariables  []InitialEnvironmentVariable
 }
 

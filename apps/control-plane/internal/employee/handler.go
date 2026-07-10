@@ -20,8 +20,6 @@ type HandlerService interface {
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
-	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
-	UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error)
 	ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error)
 	UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableRequest) (EnvironmentVariableSummary, error)
 	DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error
@@ -197,10 +195,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		PersonaMemoryMarkdown string         `json:"persona_memory_markdown"`
 		CapabilityBindings    map[string]any `json:"capability_bindings"`
 		BudgetPolicy          map[string]any `json:"budget_policy"`
-		RuntimeNodeID         uuid.UUID      `json:"runtime_node_id"`
 		ProviderType          string         `json:"provider_type"`
-		SessionPolicy         map[string]any `json:"session_policy"`
-		WorkspacePolicy       map[string]any `json:"workspace_policy"`
 		EnvironmentVariables  []struct {
 			Name      string `json:"name"`
 			Value     string `json:"value"`
@@ -241,10 +236,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
 		CapabilityBindings:    req.CapabilityBindings,
 		BudgetPolicy:          req.BudgetPolicy,
-		RuntimeNodeID:         req.RuntimeNodeID,
 		ProviderType:          req.ProviderType,
-		SessionPolicy:         req.SessionPolicy,
-		WorkspacePolicy:       req.WorkspacePolicy,
 		EnvironmentVariables:  environmentVariables,
 	})
 	if err != nil {
@@ -321,74 +313,6 @@ func (h *HTTPHandler) GetSchedulingReadiness(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, schedulingReadinessResponseFromDomain(readiness))
-}
-
-func (h *HTTPHandler) ListWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee workspace files read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	files, err := service.ListWorkspaceFiles(r.Context(), ListWorkspaceFilesRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, workspaceFileResponses(files))
-}
-
-func (h *HTTPHandler) UpsertWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee workspace file upsert")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var req struct {
-		Path       string  `json:"path"`
-		Content    string  `json:"content"`
-		FileRole   string  `json:"file_role"`
-		MimeType   string  `json:"mime_type"`
-		SyncPolicy string  `json:"sync_policy"`
-		ChangeNote *string `json:"change_note"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	updatedBy := middleware.GetUserID(r.Context())
-	file, err := service.UpsertWorkspaceFile(r.Context(), UpsertWorkspaceFileRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Path:              req.Path,
-		Content:           req.Content,
-		FileRole:          req.FileRole,
-		MimeType:          req.MimeType,
-		SyncPolicy:        req.SyncPolicy,
-		ChangeNote:        req.ChangeNote,
-		UpdatedBy:         &updatedBy,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, workspaceFileResponseFromDomain(file))
 }
 
 func (h *HTTPHandler) ListEnvironmentVariables(w http.ResponseWriter, r *http.Request) {
@@ -640,6 +564,9 @@ func firstLegacyEmployeeConfigField(raw map[string]json.RawMessage) (string, boo
 		"context_policy_override",
 		"approval_policy_override",
 		"output_contract_addendum",
+		"runtime_node_id",
+		"session_policy",
+		"workspace_policy",
 	} {
 		if _, exists := raw[field]; exists {
 			return field, true
@@ -958,26 +885,6 @@ type overviewPaginationResponse struct {
 	TotalCount int32 `json:"total_count"`
 }
 
-type workspaceFileResponse struct {
-	ID                string  `json:"id"`
-	TeamID            *string `json:"team_id,omitempty"`
-	Path              string  `json:"path"`
-	FileRole          string  `json:"file_role"`
-	MimeType          string  `json:"mime_type"`
-	SyncPolicy        string  `json:"sync_policy"`
-	Status            string  `json:"status"`
-	CurrentRevisionID string  `json:"current_revision_id"`
-	RevisionNumber    int32   `json:"revision_number"`
-	Content           string  `json:"content"`
-	ContentHash       string  `json:"content_hash"`
-	SizeBytes         int32   `json:"size_bytes"`
-	StorageBackend    string  `json:"storage_backend"`
-	ObjectKey         *string `json:"object_key,omitempty"`
-	ChangeNote        *string `json:"change_note,omitempty"`
-	CreatedAt         string  `json:"created_at,omitempty"`
-	UpdatedAt         string  `json:"updated_at,omitempty"`
-}
-
 type environmentVariableSummaryResponse struct {
 	ID                string                    `json:"id,omitempty"`
 	TenantID          string                    `json:"tenant_id,omitempty"`
@@ -1294,36 +1201,6 @@ func schedulingReadinessResponseFromDomain(readiness *DigitalEmployeeSchedulingR
 				MissingNames:    stringSliceForJSON(readiness.Capabilities.EnvironmentVariables.MissingNames),
 			},
 		},
-	}
-}
-
-func workspaceFileResponses(files []WorkspaceFile) []workspaceFileResponse {
-	responses := make([]workspaceFileResponse, 0, len(files))
-	for _, file := range files {
-		responses = append(responses, workspaceFileResponseFromDomain(file))
-	}
-	return responses
-}
-
-func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
-	return workspaceFileResponse{
-		ID:                file.ID.String(),
-		TeamID:            uuidStringPtr(file.TeamID),
-		Path:              file.Path,
-		FileRole:          file.FileRole,
-		MimeType:          file.MimeType,
-		SyncPolicy:        file.SyncPolicy,
-		Status:            file.Status,
-		CurrentRevisionID: file.CurrentRevisionID.String(),
-		RevisionNumber:    file.RevisionNumber,
-		Content:           file.Content,
-		ContentHash:       file.ContentHash,
-		SizeBytes:         file.SizeBytes,
-		StorageBackend:    file.StorageBackend,
-		ObjectKey:         file.ObjectKey,
-		ChangeNote:        file.ChangeNote,
-		CreatedAt:         timeString(file.CreatedAt),
-		UpdatedAt:         timeString(file.UpdatedAt),
 	}
 }
 

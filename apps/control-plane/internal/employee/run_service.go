@@ -316,11 +316,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 		return run, nil
 	}
 
-	workspaceFiles, err := s.repository.ListWorkspaceFilesForSync(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("list workspace files for start session: %w", err)
-	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, deps.configInput, workspaceFiles, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
+	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -1052,7 +1048,7 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
@@ -1090,7 +1086,6 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"workspace_policy":        cloneMap(preflight.WorkspacePolicy),
 		"session_policy":          runtimeSessionPolicyPayload(preflight.SessionPolicy),
 		"runtime_selector":        cloneMap(preflight.RuntimeSelector),
-		"workspace_files":         runtimeWorkspaceFilesPayload(workspaceFiles),
 		"skills":                  runtimeSkillsPayload(runtimeSkills),
 		"environment":             runtimeEnvironmentPayload(runtimeEnv),
 		"mcp_servers":             startSessionMCPServersPayload(runtimeMCPServers),

@@ -813,7 +813,7 @@ func TestCompleteWorkspaceSyncCommandUpdatesFileSyncProjection(t *testing.T) {
 			"synced_files": []any{map[string]any{
 				"file_id":      "55555555-5555-4555-8555-555555555555",
 				"revision_id":  "66666666-6666-4666-8666-666666666666",
-				"path":         "AGENTS.md",
+				"path":         "context.md",
 				"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			}},
 		},
@@ -887,7 +887,7 @@ func TestCompleteWorkspaceSyncRejectsMismatchedFileRevisionPair(t *testing.T) {
 			"synced_files": []any{map[string]any{
 				"file_id":      "77777777-7777-4777-8777-777777777777",
 				"revision_id":  "66666666-6666-4666-8666-666666666666",
-				"path":         "AGENTS.md",
+				"path":         "context.md",
 				"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			}},
 		},
@@ -1001,7 +1001,7 @@ func validWorkspaceSyncReceipt(commandID string) *RuntimeCommandReceipt {
 			"workspace_files": []any{map[string]any{
 				"file_id":     "55555555-5555-4555-8555-555555555555",
 				"revision_id": "66666666-6666-4666-8666-666666666666",
-				"path":        "AGENTS.md",
+				"path":        "context.md",
 			}},
 		},
 		Result:    map[string]any{},

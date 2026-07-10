@@ -306,7 +306,7 @@ fn resume_session_requires_explicit_provider_session_id_even_when_mode_is_new() 
 }
 
 #[test]
-fn parses_valid_provision_payload_with_workspace_file() {
+fn parses_valid_provision_payload_with_generic_workspace_file() {
     let command = RuntimeCommand {
         id: "cmd-provision".to_string(),
         command_type: RuntimeCommandType::ProvisionInstance,
@@ -322,7 +322,7 @@ fn parses_valid_provision_payload_with_workspace_file() {
             "workspace_files": [{
                 "file_id": "55555555-5555-4555-8555-555555555555",
                 "revision_id": "66666666-6666-4666-8666-666666666666",
-                "path": "AGENTS.md",
+                "path": "context.md",
                 "file_role": "entrypoint",
                 "mime_type": "text/markdown",
                 "sync_policy": "auto",
@@ -341,9 +341,36 @@ fn parses_valid_provision_payload_with_workspace_file() {
         parsed.team_id.as_deref(),
         Some("11111111-1111-4111-8111-111111111111")
     );
-    assert_eq!(parsed.workspace_files[0].path, "AGENTS.md");
+    assert_eq!(parsed.workspace_files[0].path, "context.md");
     assert!(parsed.skills.is_empty());
     assert!(parsed.mcp_servers.is_empty());
+}
+
+#[test]
+fn rejects_instruction_workspace_files_in_provision_payload() {
+    let mut payload = valid_provision_payload("cmd-instruction-workspace-file");
+    payload["workspace_files"] = serde_json::json!([{
+        "file_id": "55555555-5555-4555-8555-555555555555",
+        "revision_id": "66666666-6666-4666-8666-666666666666",
+        "path": "docs/AGENTS.md",
+        "file_role": "entrypoint",
+        "mime_type": "text/markdown",
+        "sync_policy": "auto",
+        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649afbf4c8996fb92427ae",
+        "size_bytes": 0,
+        "storage_backend": "db",
+        "content_text": ""
+    }]);
+
+    let command = RuntimeCommand {
+        id: "cmd-instruction-workspace-file".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload,
+    };
+    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect_err("instruction workspace files must be rejected");
+
+    assert!(error.to_string().contains("instruction workspace file"));
 }
 
 #[test]

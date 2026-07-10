@@ -202,8 +202,8 @@ fn workspace_file(content: &str) -> serde_json::Value {
     serde_json::json!({
         "file_id": "55555555-5555-4555-8555-555555555555",
         "revision_id": "66666666-6666-4666-8666-666666666666",
-        "path": "AGENTS.md",
-        "file_role": "entrypoint",
+        "path": "context.md",
+        "file_role": "supporting_doc",
         "mime_type": "text/markdown",
         "sync_policy": "auto",
         "content_hash": superteam_runtime_agent::workspace_files::sha256_hex(content.as_bytes()),
@@ -1728,11 +1728,10 @@ async fn provision_instance_materializes_team_employee_home() {
         .expect("provision accepted");
 
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert!(home.join(".claude").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
     assert!(!home.join("state").exists());
 }
 
@@ -2149,10 +2148,10 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         std::fs::canonicalize(&expected_workspace).unwrap()
     );
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
-    assert!(!run.workspace_path.join("AGENTS.md").exists());
+    assert!(!run.workspace_path.join("context.md").exists());
 }
 
 #[tokio::test]
@@ -2213,7 +2212,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     assert_eq!(run.agent_home_dir.as_deref(), Some(home.as_path()));
     assert!(home.is_dir(), "derived agent home should be created");
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert_eq!(
@@ -2484,11 +2483,10 @@ async fn sync_workspace_files_materializes_team_employee_home() {
 
     assert!(outcome.accepted);
     assert_eq!(
-        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        std::fs::read_to_string(home.join("context.md")).unwrap(),
         content
     );
     assert!(home.join(".claude").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
 }
 
 #[tokio::test]

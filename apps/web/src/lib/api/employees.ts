@@ -483,10 +483,7 @@ export type CreateDigitalEmployeeInput = {
   metadata?: Record<string, unknown>;
   persona_memory_markdown?: string;
   capability_bindings?: CapabilityBindings;
-  runtime_node_id?: string;
   provider_type: string;
-  session_policy?: Record<string, unknown>;
-  workspace_policy?: Record<string, unknown>;
   budget_policy?: BudgetPolicy;
   environment_variables?: Array<{ name: string; value: string; sensitive: boolean }>;
 };
@@ -578,35 +575,6 @@ export type CreateDigitalEmployeeConfigRevisionInput = {
   capability_bindings?: CapabilityBindings;
   budget_policy?: BudgetPolicy;
   status?: "draft" | "active" | "archived";
-};
-
-export type WorkspaceFile = {
-  id: string;
-  team_id: string;
-  path: string;
-  file_role: string;
-  mime_type: string;
-  sync_policy: string;
-  status: string;
-  current_revision_id: string;
-  revision_number: number;
-  content: string;
-  content_hash: string;
-  size_bytes: number;
-  storage_backend: string;
-  object_key?: string;
-  change_note?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type UpsertWorkspaceFileInput = {
-  path: string;
-  content: string;
-  file_role?: string;
-  mime_type?: string;
-  sync_policy?: string;
-  change_note?: string;
 };
 
 function encodePathSegment(value: string) {
@@ -804,34 +772,6 @@ export function createDigitalEmployeeConfigRevision(
     `/api/v1/digital-employees/${encodedEmployeeId}/config-revisions`,
     input,
     "create digital employee config revision",
-  );
-}
-
-export function listWorkspaceFiles(
-  options: ApiClientOptions,
-  employeeId: string,
-): Promise<WorkspaceFile[]> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-
-  return getJson<WorkspaceFile[]>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
-    "employee workspace files",
-  );
-}
-
-export function upsertWorkspaceFile(
-  options: ApiClientOptions,
-  employeeId: string,
-  input: UpsertWorkspaceFileInput,
-): Promise<WorkspaceFile> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-
-  return putJson<WorkspaceFile>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
-    input,
-    "upsert employee workspace file",
   );
 }
 

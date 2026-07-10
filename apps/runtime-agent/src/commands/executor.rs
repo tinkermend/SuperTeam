@@ -1295,10 +1295,7 @@ fn command_completed_terminal(
             "total_tokens".to_string(),
             serde_json::Value::Number(total_tokens.into()),
         );
-        result.insert(
-            "usage".to_string(),
-            serde_json::Value::Object(usage),
-        );
+        result.insert("usage".to_string(), serde_json::Value::Object(usage));
     }
 
     RuntimeCommandTerminalWriteback {
@@ -1366,7 +1363,9 @@ impl RuntimeCommandWritebackSink {
         record: &RunEventRecord,
         provider_session_id: Option<&str>,
     ) -> anyhow::Result<()> {
-        if let ProviderEvent::TurnCompleted { usage: Some(usage), .. } = &record.event
+        if let ProviderEvent::TurnCompleted {
+            usage: Some(usage), ..
+        } = &record.event
             && usage.total_tokens > 0
         {
             self.usage_tokens
@@ -1429,10 +1428,7 @@ impl RuntimeCommandWritebackSink {
         });
     }
 
-    async fn record_budget_heartbeat(
-        &self,
-        elapsed: Duration,
-    ) -> anyhow::Result<bool> {
+    async fn record_budget_heartbeat(&self, elapsed: Duration) -> anyhow::Result<bool> {
         let project_task = match &self.project_task {
             Some(project_task) => project_task,
             None => return Ok(false),
@@ -2459,7 +2455,13 @@ fn normalized_acceptance_result(value: &serde_json::Value) -> serde_json::Value 
             serde_json::Value::String(criterion),
         );
     }
-    for key in ["id", "criterion_id", "name", "summary", "human_accepted_reason"] {
+    for key in [
+        "id",
+        "criterion_id",
+        "name",
+        "summary",
+        "human_accepted_reason",
+    ] {
         if let Some(value) = object
             .get(key)
             .and_then(serde_json::Value::as_str)
@@ -2959,7 +2961,10 @@ mod tests {
         assert!(
             state
                 .observe_event(
-                    &ProviderEvent::TurnCompleted { summary: None, usage: None },
+                    &ProviderEvent::TurnCompleted {
+                        summary: None,
+                        usage: None
+                    },
                     Some("provider-session-1")
                 )
                 .is_none()

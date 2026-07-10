@@ -60,14 +60,6 @@ func (s *fakeTemplateHandlerService) GetOverview(ctx context.Context, req GetDig
 	return nil, nil
 }
 
-func (s *fakeTemplateHandlerService) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
-	return nil, nil
-}
-
-func (s *fakeTemplateHandlerService) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error) {
-	return WorkspaceFile{}, nil
-}
-
 func (s *fakeTemplateHandlerService) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error) {
 	return nil, nil
 }
