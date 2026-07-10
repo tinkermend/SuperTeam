@@ -131,6 +131,9 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		ApplyPlanningProfileScores(snapshot, &plan)
 		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
+			if errors.Is(err, ErrNoSuitableEmployee) {
+				return RouteDecisionPlan{}, err
+			}
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
@@ -668,6 +671,7 @@ func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUI
 			TaskKind:              "execution",
 			StageIndex:            &stageIndex,
 			RiskLevel:             "normal",
+			SelectionConfidence:   selectionConfidenceThreshold(snapshot.CoordinationPolicy),
 			RequiresHumanApproval: true,
 			ExpectedOutputs:       expectedOutputs,
 			InputRequirements: map[string]any{

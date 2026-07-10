@@ -157,6 +157,37 @@ func TestOpenAICompatibleRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHuma
 	require.Equal(t, int32(1), client.calls.Load())
 }
 
+func TestOpenAICompatibleRoutePlannerDoesNotRepairLowConfidenceSelection(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{content: fmt.Sprintf(`{
+		"reason":"weak executor match",
+		"requires_human_review":true,
+		"tasks":[
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"closest match, but weak","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.4,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+		],
+		"budget_estimate":{"mode":"planner"},
+		"template_key":"default",
+		"planner_metadata":{"provider":"openai-compatible"}
+	}`, employeeID.String())}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestExecutorMember(employeeID),
+		},
+		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
+	})
+
+	require.ErrorIs(t, err, ErrNoSuitableEmployee)
+	require.Equal(t, int32(1), client.calls.Load())
+}
+
 func TestOpenAICompatibleRoutePlannerRejectsRequiredReviewRepairWithoutValidPlanningProfile(t *testing.T) {
 	employeeID := uuid.New()
 

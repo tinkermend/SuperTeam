@@ -1,6 +1,8 @@
 package projectcoordination
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,11 +13,39 @@ type GraphValidationPolicy struct {
 	MaxTasks int
 }
 
+// defaultSelectionConfidenceThreshold is the fallback floor. The real knob is
+// projects.coordination_policy.selection_confidence_threshold, not an ops
+// constant.
+const defaultSelectionConfidenceThreshold = 0.7
+
+// ErrNoSuitableEmployee means the planner could not find an employee it believed
+// fit the task. The demand goes back to the human with the planner's reasons; it
+// is not a plan defect to be repaired.
+var ErrNoSuitableEmployee = errors.New("no suitable employee")
+
 // invalidRouteDecision wraps the ErrInvalidRouteDecision sentinel with a
 // field-level reason so a rejected planner output can be diagnosed from logs,
 // while errors.Is(err, ErrInvalidRouteDecision) still holds for callers.
 func invalidRouteDecision(format string, args ...any) error {
 	return fmt.Errorf("invalid route decision: "+fmt.Sprintf(format, args...)+": %w", ErrInvalidRouteDecision)
+}
+
+func selectionConfidenceThreshold(policy map[string]any) float64 {
+	raw, ok := policy["selection_confidence_threshold"]
+	if !ok {
+		return defaultSelectionConfidenceThreshold
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value > 0 && value <= 1 {
+			return value
+		}
+	case json.Number:
+		if parsed, err := value.Float64(); err == nil && parsed > 0 && parsed <= 1 {
+			return parsed
+		}
+	}
+	return defaultSelectionConfidenceThreshold
 }
 
 func ValidateRouteDecision(decision RouteDecisionPlan, poolIDs []uuid.UUID) error {
@@ -30,6 +60,9 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 	for _, task := range plan.Tasks {
 		if strings.TrimSpace(task.EmployeeSelectionReason) == "" {
 			return invalidRouteDecision("task %q: employee_selection_reason is empty", task.Key)
+		}
+		if task.SelectionConfidence < selectionConfidenceThreshold(snapshot.CoordinationPolicy) {
+			return fmt.Errorf("%w: task %q: employee %s scored %.2f", ErrNoSuitableEmployee, task.Key, task.SelectedEmployeeID, task.SelectionConfidence)
 		}
 		if hasInvalidRequirementString(task.RequiredCapabilities) ||
 			hasInvalidRequirementString(task.MatchedCapabilities) ||
