@@ -2921,12 +2921,12 @@ func uuidStrings(values []uuid.UUID) []any {
 
 func planRevisionReviewContext(input RequestPlanRevisionReviewInput) map[string]any {
 	return map[string]any{
-		"project_id":          input.ProjectID.String(),
-		"demand_id":           input.DemandID.String(),
-		"coordination_job_id": input.CoordinationJobID.String(),
-		"plan_revision_id":    input.PlanRevisionID.String(),
-		"plan_fingerprint":    input.PlanFingerprint,
-		"created_event_id":    input.CreatedEventID.String(),
+		"project_id":               input.ProjectID.String(),
+		"demand_id":                input.DemandID.String(),
+		"coordination_job_id":      input.CoordinationJobID.String(),
+		"plan_revision_id":         input.PlanRevisionID.String(),
+		"plan_fingerprint":         input.PlanFingerprint,
+		"created_event_id":         input.CreatedEventID.String(),
 		"tasks":                    input.Payload.Tasks,
 		"plan_acceptance_criteria": input.Payload.PlanAcceptanceCriteria,
 		"risk_assessment":          input.Payload.RiskAssessment,

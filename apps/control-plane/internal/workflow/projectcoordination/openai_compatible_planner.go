@@ -319,13 +319,13 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 		return RouteDecisionPlan{}, err
 	}
 	plan := RouteDecisionPlan{
-		Reason:                  decoded.Reason,
-		RequiresHumanReview:     decoded.RequiresHumanReview,
-		BudgetEstimate:          nonNilMap(decoded.BudgetEstimate),
-		TemplateKey:             decoded.TemplateKey,
-		PlannerMetadata:         sanitizePlannerMetadata(decoded.PlannerMetadata),
-		PlanAcceptanceCriteria:  decodePlanAcceptanceCriteria(decoded.PlanAcceptanceCriteria),
-		Tasks:                   make([]PlannedTask, 0, len(decoded.Tasks)),
+		Reason:                 decoded.Reason,
+		RequiresHumanReview:    decoded.RequiresHumanReview,
+		BudgetEstimate:         nonNilMap(decoded.BudgetEstimate),
+		TemplateKey:            decoded.TemplateKey,
+		PlannerMetadata:        sanitizePlannerMetadata(decoded.PlannerMetadata),
+		PlanAcceptanceCriteria: decodePlanAcceptanceCriteria(decoded.PlanAcceptanceCriteria),
+		Tasks:                  make([]PlannedTask, 0, len(decoded.Tasks)),
 	}
 	for _, task := range decoded.Tasks {
 		plan.Tasks = append(plan.Tasks, PlannedTask{
@@ -358,13 +358,13 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 }
 
 type plannerJSON struct {
-	Reason              string         `json:"reason"`
-	RequiresHumanReview bool           `json:"requires_human_review"`
-	BudgetEstimate      map[string]any `json:"budget_estimate"`
-	TemplateKey         string         `json:"template_key"`
-	PlannerMetadata     map[string]any `json:"planner_metadata"`
+	Reason                 string          `json:"reason"`
+	RequiresHumanReview    bool            `json:"requires_human_review"`
+	BudgetEstimate         map[string]any  `json:"budget_estimate"`
+	TemplateKey            string          `json:"template_key"`
+	PlannerMetadata        map[string]any  `json:"planner_metadata"`
 	PlanAcceptanceCriteria json.RawMessage `json:"plan_acceptance_criteria"`
-	Tasks               []plannerTask  `json:"tasks"`
+	Tasks                  []plannerTask   `json:"tasks"`
 }
 
 type plannerTask struct {

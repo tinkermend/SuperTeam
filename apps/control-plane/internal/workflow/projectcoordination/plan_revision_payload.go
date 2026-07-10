@@ -12,13 +12,13 @@ import (
 var defaultFinalSummaryRequiredSections = []string{"conclusion", "evidence", "risks", "next_steps"}
 
 type PlanRevisionPayload struct {
-	Summary              string                           `json:"summary"`
-	Assumptions          []string                         `json:"assumptions"`
-	RiskAssessment       PlanRevisionRiskAssessment       `json:"risk_assessment"`
-	HumanReview          PlanRevisionHumanReview          `json:"human_review"`
-	Tasks                []PlanRevisionTask               `json:"tasks"`
-	PlanAcceptanceCriteria []PlanAcceptanceCriterion      `json:"plan_acceptance_criteria,omitempty"`
-	FinalSummaryContract PlanRevisionFinalSummaryContract `json:"final_summary_contract"`
+	Summary                string                           `json:"summary"`
+	Assumptions            []string                         `json:"assumptions"`
+	RiskAssessment         PlanRevisionRiskAssessment       `json:"risk_assessment"`
+	HumanReview            PlanRevisionHumanReview          `json:"human_review"`
+	Tasks                  []PlanRevisionTask               `json:"tasks"`
+	PlanAcceptanceCriteria []PlanAcceptanceCriterion        `json:"plan_acceptance_criteria,omitempty"`
+	FinalSummaryContract   PlanRevisionFinalSummaryContract `json:"final_summary_contract"`
 }
 
 type PlanRevisionRiskAssessment struct {
@@ -132,11 +132,11 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 		})
 	}
 	return PlanRevisionPayload{
-		Summary:        plan.Reason,
-		Assumptions:    []string{},
-		RiskAssessment: riskAssessment,
-		HumanReview:    humanReview,
-		Tasks:          tasks,
+		Summary:                plan.Reason,
+		Assumptions:            []string{},
+		RiskAssessment:         riskAssessment,
+		HumanReview:            humanReview,
+		Tasks:                  tasks,
 		PlanAcceptanceCriteria: plan.PlanAcceptanceCriteria,
 		FinalSummaryContract: PlanRevisionFinalSummaryContract{
 			RequiredSections: clonePlanRevisionStringSlice(defaultFinalSummaryRequiredSections),
