@@ -1784,7 +1784,7 @@ function planRevisionTasksInDispatchOrder(revision: ProjectPlanRevision) {
 
   while (pending.length > 0) {
     const nextTaskIndex = pending.findIndex((task) =>
-      stringArrayField(task, "depends_on").every(
+      planRevisionTaskDependencies(task).every(
         (dependency) => !taskKeys.has(dependency) || completed.has(dependency),
       ),
     );
@@ -1843,6 +1843,14 @@ function planRevisionRiskLabels(revision: ProjectPlanRevision) {
       .filter(Boolean),
   );
   return uniqueStrings([highest, ...taskRisks].filter(Boolean)).slice(0, 3);
+}
+
+function planRevisionTaskDependencies(task: Record<string, unknown>) {
+  const dependsOn = stringArrayField(task, "depends_on");
+  if (dependsOn.length > 0) {
+    return dependsOn;
+  }
+  return stringArrayField(task, "blocked_by_keys");
 }
 
 function planRevisionTaskKey(task: Record<string, unknown>) {

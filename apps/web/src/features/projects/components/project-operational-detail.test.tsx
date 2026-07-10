@@ -316,4 +316,34 @@ describe("ProjectOperationalDetail", () => {
       .element(acceptanceCriteria.getByText("复核接入证据"))
       .toBeVisible();
   });
+
+  it("orders tasks using blocked_by_keys when depends_on is absent", async () => {
+    const blockedByKeysRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        tasks: [
+          {
+            employee_selection_reason: "负责收集客户接入材料。",
+            planned_task_key: "collect-evidence",
+            selected_employee_id: "employee-collector",
+            title: "收集接入证据",
+          },
+          {
+            blocked_by_keys: ["collect-evidence"],
+            employee_selection_reason: "负责复核证据并形成结论。",
+            planned_task_key: "review-evidence",
+            selected_employee_id: "employee-reviewer",
+            title: "复核接入证据",
+          },
+        ],
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [blockedByKeysRevision] });
+    const dispatchOrderText =
+      screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
+    expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(
+      dispatchOrderText.indexOf("复核接入证据"),
+    );
+  });
 });
