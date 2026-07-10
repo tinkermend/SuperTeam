@@ -31,9 +31,6 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		if strings.TrimSpace(task.EmployeeSelectionReason) == "" {
 			return invalidRouteDecision("task %q: employee_selection_reason is empty", task.Key)
 		}
-		if !plan.RequiresHumanReview && !task.RequiresHumanApproval && len(task.RequiredCapabilities) == 0 {
-			return invalidRouteDecision("task %q: required_capabilities is empty and the task is not flagged for human review", task.Key)
-		}
 		if hasInvalidRequirementString(task.RequiredCapabilities) ||
 			hasInvalidRequirementString(task.MatchedCapabilities) ||
 			hasInvalidRequirementString(task.MissingCapabilities) ||
@@ -46,14 +43,6 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		profile, ok := profiles[task.SelectedEmployeeID]
 		if !ok || profile.DigitalEmployeeID == uuid.Nil || profile.DigitalEmployeeID != task.SelectedEmployeeID {
 			return invalidRouteDecision("task %q: selected_employee_id %s has no planning profile in the executor pool", task.Key, task.SelectedEmployeeID)
-		}
-		score := ScorePlanningProfile(profile, planningTaskRequirements(task))
-		reviewRequired := plan.RequiresHumanReview || task.RequiresHumanApproval
-		if len(score.HardFailures) > 0 && !reviewRequired {
-			return invalidRouteDecision("task %q: selected employee %s has %d capability hard-failure(s) but the task is not flagged for human review", task.Key, task.SelectedEmployeeID, len(score.HardFailures))
-		}
-		if len(score.MissingCapabilities) > 0 && !reviewRequired {
-			return invalidRouteDecision("task %q: selected employee %s is missing %d required capability/-ies (%s) but the task is not flagged for human review", task.Key, task.SelectedEmployeeID, len(score.MissingCapabilities), strings.Join(score.MissingCapabilities, ", "))
 		}
 	}
 	return nil

@@ -188,19 +188,14 @@ func TestValidateRouteDecisionPlanRejectsMissingSelectionReason(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
-func TestValidateRouteDecisionPlanRejectsHardMissingCapabilityWithoutReview(t *testing.T) {
-	t.Skip("removed in Task 3")
+func TestValidateRouteDecisionPlanAcceptsEmptyRequiredCapabilities(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validGraphPlan(employeeID)
-	plan.Tasks[0].TaskKind = "database_analysis"
-	plan.Tasks[0].EmployeeSelectionReason = "选择员工"
-	plan.Tasks[0].RequiredCapabilities = []string{"database.write"}
-	plan.Tasks[0].MissingCapabilities = []string{"database.write"}
+	plan.Tasks[0].EmployeeSelectionReason = "only executor in pool"
+	plan.Tasks[0].RequiredCapabilities = nil
 
-	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
-
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
 }
 
 func TestValidateRouteDecisionPlanAllowsMissingCapabilityWithHumanReview(t *testing.T) {
@@ -290,7 +285,7 @@ func TestValidateRouteDecisionPlanAllowsModelSelectionEvidenceDrift(t *testing.T
 	}
 }
 
-func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithoutReview(t *testing.T) {
+func TestValidateRouteDecisionPlanAcceptsAuthoritativeMissingCapabilitiesWithoutReview(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validEvidenceGraphPlan(employeeID)
@@ -298,7 +293,7 @@ func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithout
 
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
 
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.NoError(t, err)
 }
 
 func TestApplyPlanningProfileScoresDoesNotForceApprovalOnMissingCapability(t *testing.T) {

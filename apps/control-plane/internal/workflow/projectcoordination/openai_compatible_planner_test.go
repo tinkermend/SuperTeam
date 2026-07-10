@@ -1285,9 +1285,9 @@ func TestOpenAICompatiblePlannerDatabaseAnalysisRejectsUnderCapableEmployee(t *t
 	// Scoring detected the gaps against the under-capable employee.
 	require.Contains(t, task.MissingCapabilities, "database.read")
 	require.Contains(t, task.MissingCapabilities, "sql.analysis")
-	// The plan must route to human review rather than silently auto-dispatching.
-	require.True(t, plan.RequiresHumanReview, "under-capable selection must require human review")
-	require.True(t, task.RequiresHumanApproval, "under-capable task must require human approval")
+	// Capability vocabulary gaps are recorded for display, not treated as blockers.
+	require.False(t, plan.RequiresHumanReview, "under-capable selection must not force human review")
+	require.False(t, task.RequiresHumanApproval, "under-capable task must not force human approval")
 	require.NotEmpty(t, task.PlanningProfileSnapshotHash)
 }
 
