@@ -143,6 +143,9 @@ const decisionRequests: ProjectDecisionRequest[] = [
   },
 ];
 
+const longAcceptanceStatement =
+  "客户接入证据齐全并可审计，包含合同签署记录、系统对接日志、权限开通确认、双方签字盖章的验收材料副本，以及上线前安全检查与回滚预案确认记录，需经负责人逐项核对后方可进入验收结论阶段。";
+
 const planRevisions: ProjectPlanRevision[] = [
   {
     created_task_ids: [],
@@ -153,7 +156,7 @@ const planRevisions: ProjectPlanRevision[] = [
         {
           id: "evidence_complete",
           satisfied_by: ["collect-evidence"],
-          statement: "客户接入证据齐全并可审计。",
+          statement: longAcceptanceStatement,
         },
         {
           id: "review_complete",
@@ -281,10 +284,21 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(dispatchOrder.getByText("收集接入证据")).toBeVisible();
     await expect.element(dispatchOrder.getByText("复核接入证据")).toBeVisible();
     await expect
-      .element(acceptanceCriteria.getByText("客户接入证据齐全并可审计。"))
+      .element(acceptanceCriteria.getByText(longAcceptanceStatement))
       .toBeVisible();
     await expect
       .element(acceptanceCriteria.getByText("验收结论已由负责人复核。"))
+      .toBeVisible();
+    const longStatementElement = screen.container.querySelector(
+      "[data-testid='plan-acceptance-criterion-statement-evidence_complete']",
+    );
+    expect(longStatementElement?.className).toContain("line-clamp-3");
+    await userEvent.click(
+      screen.getByRole("button", { name: "展开验收判据 evidence_complete" }),
+    );
+    expect(longStatementElement?.className).not.toContain("line-clamp");
+    await expect
+      .element(screen.getByRole("button", { name: "收起验收判据 evidence_complete" }))
       .toBeVisible();
     await expect.element(dispatchOrder.getByText("employee-collector")).toBeVisible();
     await expect

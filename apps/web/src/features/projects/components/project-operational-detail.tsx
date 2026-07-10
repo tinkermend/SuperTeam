@@ -491,9 +491,12 @@ export function ProjectOperationalDetail({
                             className="grid gap-2 p-3"
                             key={`${stringField(criterion, "id")}-${index}`}
                           >
-                            <p className="break-words text-sm leading-6 text-v3-ink">
-                              {stringField(criterion, "statement") || "未声明验收说明"}
-                            </p>
+                            <PlanAcceptanceCriterionStatement
+                              criterionId={
+                                stringField(criterion, "id") || `criterion-${index}`
+                              }
+                              statement={stringField(criterion, "statement")}
+                            />
                             <RuntimeMeta
                               label="满足任务"
                               value={planRevisionCriterionTaskTitles(
@@ -1430,6 +1433,48 @@ function EmptyLine({ label }: { label: string }) {
   return (
     <div className="flex min-h-24 items-center justify-center p-4 text-sm text-v3-ink-2">
       {label}
+    </div>
+  );
+}
+
+const PLAN_ACCEPTANCE_STATEMENT_EXPAND_THRESHOLD = 80;
+
+function PlanAcceptanceCriterionStatement({
+  criterionId,
+  statement,
+}: {
+  criterionId: string;
+  statement: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const text = statement.trim() || "未声明验收说明";
+  const isExpandable = text.length > PLAN_ACCEPTANCE_STATEMENT_EXPAND_THRESHOLD;
+
+  return (
+    <div className="grid gap-1">
+      <p
+        className={cn(
+          "break-words text-sm leading-6 text-v3-ink",
+          isExpandable && !expanded && "line-clamp-3",
+        )}
+        data-testid={`plan-acceptance-criterion-statement-${criterionId}`}
+      >
+        {text}
+      </p>
+      {isExpandable ? (
+        <V3Button
+          aria-label={
+            expanded ? `收起验收判据 ${criterionId}` : `展开验收判据 ${criterionId}`
+          }
+          className="h-auto self-start px-0 py-0"
+          size="sm"
+          type="button"
+          variant="ghost"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : "展开"}
+        </V3Button>
+      ) : null}
     </div>
   );
 }
