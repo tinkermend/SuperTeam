@@ -15,6 +15,23 @@ import (
 	"github.com/superteam/control-plane/internal/project"
 )
 
+func TestPlannedTaskInputRequirementsKeepOnlyRequiredInputs(t *testing.T) {
+	planned := PlannedTask{
+		Key:      "b",
+		Produces: []string{"summary"},
+		InputRequirements: map[string]any{
+			"required_inputs": []any{"load_test_report"},
+			"repository":      "superteam",
+			"scope":           "one host",
+		},
+	}
+
+	stored, notes := plannedTaskInputRequirements(planned)
+
+	require.Equal(t, map[string]any{"required_inputs": []any{"load_test_report"}}, stored)
+	require.Equal(t, map[string]any{"repository": "superteam", "scope": "one host"}, notes)
+}
+
 func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -752,7 +769,14 @@ func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 					SelectedEmployeeID:      employeeID.String(),
 					EmployeeSelectionReason: "具备分析能力",
 					ExpectedOutputs:         []string{"结论"},
-					AcceptanceCriteria:      []string{"结论可复核"},
+					Produces:                []string{"inspection_summary"},
+					InputContextRefs:        []string{"project_context"},
+					InputRequirements: map[string]any{
+						"required_inputs": []any{"load_test_report"},
+						"repository":      "superteam",
+						"scope":           "one host",
+					},
+					AcceptanceCriteria: []string{"结论可复核"},
 				},
 			},
 			FinalSummaryContract: PlanRevisionFinalSummaryContract{RequiredSections: []string{"conclusion", "evidence", "risks", "next_steps"}},
@@ -762,8 +786,16 @@ func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 1)
-	require.Equal(t, revisionID, repo.decomposeAcceptedPlanRevisionRequests[0].AcceptedPlanRevisionID)
-	require.Equal(t, "fingerprint", repo.decomposeAcceptedPlanRevisionRequests[0].PlanFingerprint)
+	req := repo.decomposeAcceptedPlanRevisionRequests[0]
+	require.Equal(t, revisionID, req.AcceptedPlanRevisionID)
+	require.Equal(t, "fingerprint", req.PlanFingerprint)
+	require.Len(t, req.Tasks, 1)
+	require.Equal(t, map[string]any{
+		"required_inputs":    []any{"load_test_report"},
+		"input_context_refs": []string{"project_context"},
+	}, req.Tasks[0].InputRequirements)
+	require.Equal(t, []any{"inspection_summary"}, req.Tasks[0].PlannerMetadata["produces"])
+	require.Equal(t, map[string]any{"repository": "superteam", "scope": "one host"}, req.Tasks[0].PlannerMetadata["planner_notes"])
 }
 
 func TestProjectStoreRequestPlanRevisionReviewStoresPlanRevisionID(t *testing.T) {

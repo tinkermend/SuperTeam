@@ -34,6 +34,7 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 				RiskLevel:                   "medium",
 				RequiresHumanApproval:       true,
 				ExpectedOutputs:             []string{"test_report"},
+				Produces:                    []string{"test_report"},
 				InputRequirements:           map[string]any{"context_refs": []any{"demand", "repo"}},
 				HandoffContract:             map[string]any{"acceptance_criteria": []any{"tests fail first", "tests pass after implementation"}},
 			},
@@ -45,6 +46,7 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 				EmployeeSelectionReason: "Owns Go implementation.",
 				RequiredCapabilities:    []string{"planning", "go.code"},
 				ExpectedOutputs:         []string{"patch"},
+				Produces:                []string{"patch"},
 				InputRequirements:       map[string]any{"required_context": []string{"tests"}, "scope": "payload"},
 				HandoffContract:         map[string]any{"acceptance_criteria": "string criterion from contract"},
 				BlockedByKeys:           []string{"write_tests"},
@@ -75,8 +77,10 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 	require.Equal(t, []string{"tests fail first", "tests pass after implementation"}, payload.Tasks[0].AcceptanceCriteria)
 	require.Equal(t, []string{"string criterion from contract"}, payload.Tasks[1].AcceptanceCriteria)
 	require.Equal(t, []string{"demand", "repo"}, payload.Tasks[0].InputContextRefs)
+	require.Equal(t, []string{"test_report"}, payload.Tasks[0].Produces)
 	require.Equal(t, map[string]any{"required_context": []string{"tests"}, "scope": "payload"}, payload.Tasks[1].InputRequirements)
 	roundTripped := PlanRevisionPayloadToPlannedTasks(payload)
+	require.Equal(t, []string{"patch"}, roundTripped[1].Produces)
 	require.Equal(t, map[string]any{"required_context": []string{"tests"}, "scope": "payload"}, roundTripped[1].InputRequirements)
 	require.True(t, payload.HumanReview.Required)
 	require.Contains(t, payload.HumanReview.Reasons, "plan_requires_human_review")

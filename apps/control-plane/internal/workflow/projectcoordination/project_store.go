@@ -513,8 +513,11 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 		if len(plannedTask.DependsOn) > 0 {
 			status = "blocked"
 		}
-		inputRequirements := cloneAnyMap(plannedTask.InputRequirements)
-		if len(inputRequirements) == 0 && len(plannedTask.InputContextRefs) > 0 {
+		inputRequirements, plannerNotes := plannedTaskInputRequirements(PlannedTask{
+			InputRequirements: plannedTask.InputRequirements,
+			Produces:          plannedTask.Produces,
+		})
+		if len(plannedTask.InputContextRefs) > 0 {
 			inputRequirements["input_context_refs"] = append([]string(nil), plannedTask.InputContextRefs...)
 		}
 		handoffContract := cloneAnyMap(plannedTask.HandoffContract)
@@ -536,6 +539,8 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 				"planning_profile_snapshot_hash": plannedTask.PlanningProfileSnapshotHash,
 			},
 			"acceptance_criteria": plannedTask.AcceptanceCriteria,
+			"produces":            stringsToAny(plannedTask.Produces),
+			"planner_notes":       plannerNotes,
 		}
 		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
 			Key:                       plannedTask.PlannedTaskKey,
@@ -572,6 +577,21 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 		results = append(results, ProjectTaskResult{ID: task.ID})
 	}
 	return results, nil
+}
+
+// plannedTaskInputRequirements keeps only schema'd dependency declarations in
+// input_requirements and moves planner prose into metadata.
+func plannedTaskInputRequirements(task PlannedTask) (stored map[string]any, notes map[string]any) {
+	stored = map[string]any{}
+	notes = map[string]any{}
+	for key, value := range task.InputRequirements {
+		if key == "required_inputs" {
+			stored[key] = value
+			continue
+		}
+		notes[key] = value
+	}
+	return stored, notes
 }
 
 func (s *ProjectStore) ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error) {

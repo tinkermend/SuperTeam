@@ -49,6 +49,7 @@ type PlanRevisionTask struct {
 	RuntimeRequirements         []string       `json:"runtime_requirements"`
 	InputContextRefs            []string       `json:"input_context_refs"`
 	InputRequirements           map[string]any `json:"input_requirements,omitempty"`
+	Produces                    []string       `json:"produces,omitempty"`
 	ExpectedOutputs             []string       `json:"expected_outputs"`
 	AcceptanceCriteria          []string       `json:"acceptance_criteria"`
 	VerificationRequirements    []string       `json:"verification_requirements"`
@@ -104,6 +105,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 			RuntimeRequirements:         clonePlanRevisionStringSlice(task.RuntimeRequirements),
 			InputContextRefs:            inputContextRefsFromRequirements(task.InputRequirements),
 			InputRequirements:           clonePlanRevisionAnyMap(task.InputRequirements),
+			Produces:                    clonePlanRevisionStringSlice(task.Produces),
 			ExpectedOutputs:             clonePlanRevisionStringSlice(task.ExpectedOutputs),
 			AcceptanceCriteria:          acceptanceCriteriaFromHandoffContract(task.HandoffContract, task.ExpectedOutputs),
 			VerificationRequirements:    clonePlanRevisionStringSlice(task.VerificationRequirements),
@@ -255,6 +257,7 @@ func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTas
 			RiskLevel:                   task.RiskLevel,
 			RequiresHumanApproval:       task.HumanReviewRequired,
 			ExpectedOutputs:             clonePlanRevisionStringSlice(task.ExpectedOutputs),
+			Produces:                    clonePlanRevisionStringSlice(task.Produces),
 			InputRequirements:           inputRequirements,
 			HandoffContract:             handoffContract,
 			BlockedByKeys:               clonePlanRevisionStringSlice(task.DependsOn),
@@ -303,6 +306,7 @@ func canonicalPlanRevisionTask(task PlanRevisionTask) PlanRevisionTask {
 		RuntimeRequirements:         sortedPlanRevisionStrings(task.RuntimeRequirements),
 		InputContextRefs:            sortedPlanRevisionStrings(task.InputContextRefs),
 		InputRequirements:           canonicalPlanRevisionMapPreserveArrays(task.InputRequirements),
+		Produces:                    sortedPlanRevisionStrings(task.Produces),
 		ExpectedOutputs:             sortedPlanRevisionStrings(task.ExpectedOutputs),
 		AcceptanceCriteria:          sortedPlanRevisionStrings(task.AcceptanceCriteria),
 		VerificationRequirements:    sortedPlanRevisionStrings(task.VerificationRequirements),
