@@ -385,10 +385,16 @@ func buildPlanningSourceVersions(source DigitalEmployeePlanningProfileSourceReco
 	return nil
 }
 
+// scoreCapabilities records the capability diff for display but contributes a
+// constant to the score.
+//
+// Both sides of the diff are free text with no registry: required_capabilities is
+// synthesised by the planner because the prompt offers no vocabulary, and the
+// employee's Capabilities come from external_capabilities, which nothing
+// validates and the runtime never reads. Letting that diff zero the score (via
+// HardFailures) meant an invented name could disqualify a perfectly capable
+// employee. See the 2026-07-10 plan-phase refactor spec §1.6.
 func scoreCapabilities(profile DigitalEmployeePlanningProfile, req PlanningTaskRequirements, result *PlanningProfileScore) int {
-	if len(req.RequiredCapabilities) == 0 {
-		return 40
-	}
 	available := map[string]struct{}{}
 	for _, capability := range profile.Capabilities {
 		key := normalizePlanningString(capability.Key)
@@ -406,12 +412,8 @@ func scoreCapabilities(profile DigitalEmployeePlanningProfile, req PlanningTaskR
 			continue
 		}
 		result.MissingCapabilities = append(result.MissingCapabilities, key)
-		result.HardFailures = append(result.HardFailures, "missing_capability:"+key)
 	}
-	if len(req.RequiredCapabilities) == 0 {
-		return 40
-	}
-	return proportionalScore(40, len(result.MatchedCapabilities), len(result.MatchedCapabilities)+len(result.MissingCapabilities))
+	return 40
 }
 
 func scoreRole(profile DigitalEmployeePlanningProfile, req PlanningTaskRequirements) int {
@@ -473,6 +475,12 @@ func scorePermissionsAndTools(profile DigitalEmployeePlanningProfile, req Planni
 		result.HardFailures = appendUniqueString(result.HardFailures, "permission_or_tool_requirement_unsatisfied")
 		result.HardFailures = append(result.HardFailures, "unsatisfied_permission:"+normalized)
 	}
+	// tool_requirements are advisory only. Digital employees run Claude Code /
+	// Codex / OpenCode; MCP is materialized into the project workspace as
+	// mcp.json by the Runtime, not selected by matching planner-invented names
+	// against capability_bindings.mcp_servers. Recording the diff for display
+	// is fine; turning a miss into a HardFailure zeroed SelectionScore and
+	// forced human approval for vocabulary that never reaches the Provider.
 	for _, requirement := range req.ToolRequirements {
 		normalized := normalizeRequirement(requirement)
 		if normalized == "" {
@@ -485,8 +493,6 @@ func scorePermissionsAndTools(profile DigitalEmployeePlanningProfile, req Planni
 			continue
 		}
 		result.MissingTools = append(result.MissingTools, normalized)
-		result.HardFailures = appendUniqueString(result.HardFailures, "permission_or_tool_requirement_unsatisfied")
-		result.HardFailures = append(result.HardFailures, "unsatisfied_tool:"+normalized)
 	}
 	if total == 0 {
 		return 10

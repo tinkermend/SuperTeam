@@ -336,9 +336,8 @@ func TestPreDispatchGateAdapterReportsMissingMCPBinding(t *testing.T) {
 	capabilitySnapshot, toolSnapshot, err := adapter.GetEmployeeCapabilitySnapshot(context.Background(), tenantID, employeeID, task)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"database.read"}, capabilitySnapshot.Required)
+	require.Empty(t, capabilitySnapshot.Required)
 	require.Empty(t, capabilitySnapshot.Matched)
-	require.Empty(t, capabilitySnapshot.HardMissing)
 	require.Equal(t, []string{"mcp:postgres.readonly"}, toolSnapshot.MissingBindings)
 	require.Equal(t, []string{"external:deploy", "malformed"}, toolSnapshot.RetryableUnavailable)
 }
@@ -412,6 +411,27 @@ func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T
 	require.False(t, runtimeSnapshot.NodeOnline)
 	require.True(t, runtimeSnapshot.SlotAvailable)
 	require.True(t, runtimeSnapshot.ContractVersionAccepted)
+}
+
+func TestPreDispatchGateAdapterDoesNotDeriveCapabilitiesFromPlannerOutput(t *testing.T) {
+	adapter := preDispatchGateAdapter{}
+	task := project.ProjectTask{
+		// The planner is free to write anything into this map; none of it may
+		// reach the gate.
+		InputRequirements: map[string]any{
+			"required_capabilities": []any{"database.write"},
+			"missing_capabilities":  []any{"codebase.analysis"},
+			"matched_capabilities":  []any{"bash_execution"},
+		},
+	}
+
+	capabilitySnapshot, _, err := adapter.GetEmployeeCapabilitySnapshot(
+		context.Background(), uuid.New(), uuid.New(), task,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, capabilitySnapshot.Required)
+	require.Empty(t, capabilitySnapshot.Matched)
 }
 
 type fakePlanningProfileEmployeeReader struct {

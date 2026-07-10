@@ -1,6 +1,7 @@
 package projectcoordination
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -188,18 +189,47 @@ func TestValidateRouteDecisionPlanRejectsMissingSelectionReason(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
-func TestValidateRouteDecisionPlanRejectsHardMissingCapabilityWithoutReview(t *testing.T) {
+func TestValidateRouteDecisionPlanAcceptsEmptyRequiredCapabilities(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validGraphPlan(employeeID)
-	plan.Tasks[0].TaskKind = "database_analysis"
-	plan.Tasks[0].EmployeeSelectionReason = "选择员工"
-	plan.Tasks[0].RequiredCapabilities = []string{"database.write"}
-	plan.Tasks[0].MissingCapabilities = []string{"database.write"}
+	plan.Tasks[0].EmployeeSelectionReason = "only executor in pool"
+	plan.Tasks[0].RequiredCapabilities = nil
 
-	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
 
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+func TestValidateRouteDecisionPlanRejectsLowConfidence(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	plan := validEvidenceGraphPlan(employeeID)
+	plan.Tasks[0].EmployeeSelectionReason = "closest match, but weak"
+	plan.Tasks[0].SelectionConfidence = 0.4
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.ErrorIs(t, err, ErrNoSuitableEmployee)
+}
+
+func TestValidateRouteDecisionPlanAcceptsConfidenceAtThreshold(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	plan := validEvidenceGraphPlan(employeeID)
+	plan.Tasks[0].EmployeeSelectionReason = "exact match"
+	plan.Tasks[0].SelectionConfidence = 0.7
+
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
+func TestSelectionConfidenceThresholdPrefersProjectPolicy(t *testing.T) {
+	require.InDelta(t, 0.9,
+		selectionConfidenceThreshold(map[string]any{"selection_confidence_threshold": 0.9}), 1e-9)
+	require.InDelta(t, 0.8,
+		selectionConfidenceThreshold(map[string]any{"selection_confidence_threshold": json.Number("0.8")}), 1e-9)
+	require.InDelta(t, defaultSelectionConfidenceThreshold,
+		selectionConfidenceThreshold(nil), 1e-9)
+	require.InDelta(t, defaultSelectionConfidenceThreshold,
+		selectionConfidenceThreshold(map[string]any{"selection_confidence_threshold": "not a number"}), 1e-9)
 }
 
 func TestValidateRouteDecisionPlanAllowsMissingCapabilityWithHumanReview(t *testing.T) {
@@ -289,7 +319,7 @@ func TestValidateRouteDecisionPlanAllowsModelSelectionEvidenceDrift(t *testing.T
 	}
 }
 
-func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithoutReview(t *testing.T) {
+func TestValidateRouteDecisionPlanAcceptsAuthoritativeMissingCapabilitiesWithoutReview(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validEvidenceGraphPlan(employeeID)
@@ -297,10 +327,59 @@ func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithout
 
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
 
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.NoError(t, err)
 }
 
-func TestApplyPlanningProfileScoresMarksMissingCapabilitiesForHumanReview(t *testing.T) {
+func TestApplyPlanningProfileScoresDoesNotForceApprovalOnMissingCapability(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+				Capabilities:      []PlanningCapability{{Key: "bash_execution"}},
+			},
+		}},
+	}
+	plan := RouteDecisionPlan{Tasks: []PlannedTask{{
+		Key:                  "t1",
+		SelectedEmployeeID:   employeeID,
+		RequiredCapabilities: []string{"invented.capability"},
+	}}}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.False(t, plan.RequiresHumanReview, "a fictional vocabulary must not trigger human review")
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
+	require.Equal(t, []string{"invented.capability"}, plan.Tasks[0].MissingCapabilities,
+		"still recorded for display")
+}
+
+func TestApplyPlanningProfileScoresStillForcesApprovalOnProfileHardFailure(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+				// A real, server-derived fact — not a capability name.
+				HardFailures: []string{"employee_not_dispatchable"},
+			},
+		}},
+	}
+	plan := RouteDecisionPlan{Tasks: []PlannedTask{{Key: "t1", SelectedEmployeeID: employeeID}}}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.True(t, plan.RequiresHumanReview)
+	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+}
+
+func TestApplyPlanningProfileScoresRecordsMissingCapabilitiesWithoutForcingReview(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validEvidenceGraphPlan(employeeID)
@@ -308,10 +387,9 @@ func TestApplyPlanningProfileScoresMarksMissingCapabilitiesForHumanReview(t *tes
 
 	ApplyPlanningProfileScores(snapshot, &plan)
 
-	require.True(t, plan.RequiresHumanReview)
-	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.False(t, plan.RequiresHumanReview)
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
 	require.Equal(t, []string{"database.write"}, plan.Tasks[0].MissingCapabilities)
-	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10}))
 }
 
 func TestApplyPlanningProfileScoresSkipsProfileIdentityMismatch(t *testing.T) {
@@ -331,13 +409,14 @@ func validGraphPlan(employeeID uuid.UUID) RouteDecisionPlan {
 	return RouteDecisionPlan{
 		Reason: "valid",
 		Tasks: []PlannedTask{{
-			Key:                "root",
-			Title:              "Root",
-			Summary:            "Root task",
-			SelectedEmployeeID: employeeID,
-			ExpectedOutputs:    []string{"execution_summary"},
-			InputRequirements:  map[string]any{},
-			HandoffContract:    map[string]any{},
+			Key:                 "root",
+			Title:               "Root",
+			Summary:             "Root task",
+			SelectedEmployeeID:  employeeID,
+			SelectionConfidence: 0.9,
+			ExpectedOutputs:     []string{"execution_summary"},
+			InputRequirements:   map[string]any{},
+			HandoffContract:     map[string]any{},
 		}},
 	}
 }
@@ -385,23 +464,25 @@ func validBlockedGraphPlan(employeeID uuid.UUID) RouteDecisionPlan {
 		Reason: "valid blocked graph",
 		Tasks: []PlannedTask{
 			{
-				Key:                "root",
-				Title:              "Root",
-				Summary:            "Root task",
-				SelectedEmployeeID: employeeID,
-				ExpectedOutputs:    []string{"execution_summary"},
-				InputRequirements:  map[string]any{},
-				HandoffContract:    map[string]any{},
+				Key:                 "root",
+				Title:               "Root",
+				Summary:             "Root task",
+				SelectedEmployeeID:  employeeID,
+				SelectionConfidence: 0.9,
+				ExpectedOutputs:     []string{"execution_summary"},
+				InputRequirements:   map[string]any{},
+				HandoffContract:     map[string]any{},
 			},
 			{
-				Key:                "child",
-				Title:              "Child",
-				Summary:            "Child task",
-				SelectedEmployeeID: employeeID,
-				ExpectedOutputs:    []string{"execution_summary"},
-				InputRequirements:  map[string]any{},
-				HandoffContract:    map[string]any{},
-				BlockedByKeys:      []string{"root"},
+				Key:                 "child",
+				Title:               "Child",
+				Summary:             "Child task",
+				SelectedEmployeeID:  employeeID,
+				SelectionConfidence: 0.9,
+				ExpectedOutputs:     []string{"execution_summary"},
+				InputRequirements:   map[string]any{},
+				HandoffContract:     map[string]any{},
+				BlockedByKeys:       []string{"root"},
 			},
 		},
 	}

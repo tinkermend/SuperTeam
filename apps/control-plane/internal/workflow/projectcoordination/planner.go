@@ -62,6 +62,7 @@ type PlannedTask struct {
 	RuntimeRequirements         []string
 	VerificationRequirements    []string
 	SelectionScore              int
+	SelectionConfidence         float64
 	PlanningProfileSnapshotHash string
 	TaskKind                    string
 	StageIndex                  *int32

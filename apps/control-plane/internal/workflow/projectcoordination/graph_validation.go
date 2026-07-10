@@ -1,6 +1,8 @@
 package projectcoordination
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,11 +13,39 @@ type GraphValidationPolicy struct {
 	MaxTasks int
 }
 
+// defaultSelectionConfidenceThreshold is the fallback floor. The real knob is
+// projects.coordination_policy.selection_confidence_threshold, not an ops
+// constant.
+const defaultSelectionConfidenceThreshold = 0.7
+
+// ErrNoSuitableEmployee means the planner could not find an employee it believed
+// fit the task. The demand goes back to the human with the planner's reasons; it
+// is not a plan defect to be repaired.
+var ErrNoSuitableEmployee = errors.New("no suitable employee")
+
 // invalidRouteDecision wraps the ErrInvalidRouteDecision sentinel with a
 // field-level reason so a rejected planner output can be diagnosed from logs,
 // while errors.Is(err, ErrInvalidRouteDecision) still holds for callers.
 func invalidRouteDecision(format string, args ...any) error {
 	return fmt.Errorf("invalid route decision: "+fmt.Sprintf(format, args...)+": %w", ErrInvalidRouteDecision)
+}
+
+func selectionConfidenceThreshold(policy map[string]any) float64 {
+	raw, ok := policy["selection_confidence_threshold"]
+	if !ok {
+		return defaultSelectionConfidenceThreshold
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value > 0 && value <= 1 {
+			return value
+		}
+	case json.Number:
+		if parsed, err := value.Float64(); err == nil && parsed > 0 && parsed <= 1 {
+			return parsed
+		}
+	}
+	return defaultSelectionConfidenceThreshold
 }
 
 func ValidateRouteDecision(decision RouteDecisionPlan, poolIDs []uuid.UUID) error {
@@ -31,8 +61,8 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		if strings.TrimSpace(task.EmployeeSelectionReason) == "" {
 			return invalidRouteDecision("task %q: employee_selection_reason is empty", task.Key)
 		}
-		if !plan.RequiresHumanReview && !task.RequiresHumanApproval && len(task.RequiredCapabilities) == 0 {
-			return invalidRouteDecision("task %q: required_capabilities is empty and the task is not flagged for human review", task.Key)
+		if task.SelectionConfidence < selectionConfidenceThreshold(snapshot.CoordinationPolicy) {
+			return fmt.Errorf("%w: task %q: employee %s scored %.2f", ErrNoSuitableEmployee, task.Key, task.SelectedEmployeeID, task.SelectionConfidence)
 		}
 		if hasInvalidRequirementString(task.RequiredCapabilities) ||
 			hasInvalidRequirementString(task.MatchedCapabilities) ||
@@ -46,14 +76,6 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		profile, ok := profiles[task.SelectedEmployeeID]
 		if !ok || profile.DigitalEmployeeID == uuid.Nil || profile.DigitalEmployeeID != task.SelectedEmployeeID {
 			return invalidRouteDecision("task %q: selected_employee_id %s has no planning profile in the executor pool", task.Key, task.SelectedEmployeeID)
-		}
-		score := ScorePlanningProfile(profile, planningTaskRequirements(task))
-		reviewRequired := plan.RequiresHumanReview || task.RequiresHumanApproval
-		if len(score.HardFailures) > 0 && !reviewRequired {
-			return invalidRouteDecision("task %q: selected employee %s has %d capability hard-failure(s) but the task is not flagged for human review", task.Key, task.SelectedEmployeeID, len(score.HardFailures))
-		}
-		if len(score.MissingCapabilities) > 0 && !reviewRequired {
-			return invalidRouteDecision("task %q: selected employee %s is missing %d required capability/-ies (%s) but the task is not flagged for human review", task.Key, task.SelectedEmployeeID, len(score.MissingCapabilities), strings.Join(score.MissingCapabilities, ", "))
 		}
 	}
 	return nil
@@ -75,7 +97,7 @@ func ApplyPlanningProfileScores(snapshot CoordinationSnapshot, plan *RouteDecisi
 		task.MatchedCapabilities = append([]string(nil), score.MatchedCapabilities...)
 		task.MissingCapabilities = append([]string(nil), score.MissingCapabilities...)
 		task.PlanningProfileSnapshotHash = PlanningProfileSnapshotHash(profile)
-		if len(score.HardFailures) > 0 || len(score.MissingCapabilities) > 0 {
+		if len(score.HardFailures) > 0 {
 			task.RequiresHumanApproval = true
 			plan.RequiresHumanReview = true
 		}

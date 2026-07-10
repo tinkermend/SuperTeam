@@ -83,11 +83,13 @@ type PreDispatchEmployeeSnapshot struct {
 	ProfileSnapshotHash string
 }
 
+// PreDispatchCapabilitySnapshot carries the planner's capability reasoning for
+// display and audit only. It is never a gate input: the keys are free text with
+// no registry, no server-side validation, and no runtime effect, so a model can
+// name anything here. See the 2026-07-10 plan-phase refactor spec, constraint 1.
 type PreDispatchCapabilitySnapshot struct {
-	Required    []string
-	Matched     []string
-	HardMissing []string
-	Unknown     []string
+	Required []string
+	Matched  []string
 }
 
 type PreDispatchToolSnapshot struct {
@@ -306,14 +308,6 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		setStatus(PreDispatchGateStatusRetryLater)
 	} else {
 		addCheck("employee.dispatchable", "passed", map[string]any{"profile_snapshot_hash": snapshot.Employee.ProfileSnapshotHash})
-	}
-
-	if len(snapshot.Capabilities.HardMissing) > 0 {
-		addCheck("capability.match", "failed", map[string]any{"hard_missing": append([]string(nil), snapshot.Capabilities.HardMissing...)})
-		addBlocker("capability.hard_missing", PreDispatchGateStatusReplanRequired, "hard", false, map[string]any{"hard_missing": append([]string(nil), snapshot.Capabilities.HardMissing...)})
-		setStatus(PreDispatchGateStatusReplanRequired)
-	} else {
-		addCheck("capability.match", "passed", map[string]any{"required": append([]string(nil), snapshot.Capabilities.Required...), "matched": append([]string(nil), snapshot.Capabilities.Matched...)})
 	}
 
 	if len(snapshot.Tools.ExpiredAuthorizations) > 0 {

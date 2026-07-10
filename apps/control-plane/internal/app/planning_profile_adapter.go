@@ -312,14 +312,10 @@ func (a preDispatchGateAdapter) runtimeSnapshotFromProjectTaskPreflight(ctx cont
 }
 
 func (a preDispatchGateAdapter) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error) {
-	requiredCapabilities := gateStringList(task.InputRequirements["required_capabilities"])
-	hardMissing := gateStringList(task.InputRequirements["missing_capabilities"])
-	matched := gateStringList(task.InputRequirements["matched_capabilities"])
-	capabilitySnapshot := project.PreDispatchCapabilitySnapshot{
-		Required:    requiredCapabilities,
-		Matched:     matched,
-		HardMissing: hardMissing,
-	}
+	// Capability keys are free text with no registry and no runtime effect, and
+	// the only place they exist is the planner's own output. Deriving a gate
+	// input from them would be the model grading itself.
+	capabilitySnapshot := project.PreDispatchCapabilitySnapshot{}
 
 	requiredTools := gateStringList(task.InputRequirements["tool_requirements"])
 	toolSnapshot := project.PreDispatchToolSnapshot{}

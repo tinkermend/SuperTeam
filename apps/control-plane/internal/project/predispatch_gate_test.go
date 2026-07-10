@@ -210,15 +210,16 @@ func TestEvaluatePreDispatchGateReturnsRetryLaterForRuntimeSlot(t *testing.T) {
 	require.Equal(t, "runtime.slot_unavailable", result.Blockers[0].Key)
 }
 
-func TestEvaluatePreDispatchGateRequiresReplanForHardMissingCapability(t *testing.T) {
+func TestEvaluatePreDispatchGateIgnoresPlannerCapabilityClaims(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 34, 0, 0, time.UTC)
 	projectID := uuid.New()
 	taskID := uuid.New()
 	employeeID := uuid.New()
 	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	// The planner used to be able to kill a task by naming a capability it
+	// invented. Capability state is no longer a gate input at all.
 	snapshot.Capabilities = PreDispatchCapabilitySnapshot{
-		Required:    []string{"database.write"},
-		HardMissing: []string{"database.write"},
+		Required: []string{"database.write"},
 	}
 
 	result := EvaluatePreDispatchGate(PreDispatchGateInput{
@@ -229,8 +230,11 @@ func TestEvaluatePreDispatchGateRequiresReplanForHardMissingCapability(t *testin
 		DispatchReason:     DispatchReasonRootReady,
 	}, snapshot, now)
 
-	require.Equal(t, PreDispatchGateStatusReplanRequired, result.Status)
-	require.Equal(t, "capability.hard_missing", result.Blockers[0].Key)
+	require.Equal(t, PreDispatchGateStatusPassed, result.Status)
+	require.Empty(t, result.Blockers)
+	for _, check := range result.Checks {
+		require.NotEqual(t, "capability.match", check.Key)
+	}
 }
 
 func TestEvaluatePreDispatchGateBlocksDependencyNotReady(t *testing.T) {
