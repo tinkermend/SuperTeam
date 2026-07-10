@@ -2927,9 +2927,10 @@ func planRevisionReviewContext(input RequestPlanRevisionReviewInput) map[string]
 		"plan_revision_id":    input.PlanRevisionID.String(),
 		"plan_fingerprint":    input.PlanFingerprint,
 		"created_event_id":    input.CreatedEventID.String(),
-		"tasks":               input.Payload.Tasks,
-		"risk_assessment":     input.Payload.RiskAssessment,
-		"human_review":        input.Payload.HumanReview,
+		"tasks":                    input.Payload.Tasks,
+		"plan_acceptance_criteria": input.Payload.PlanAcceptanceCriteria,
+		"risk_assessment":          input.Payload.RiskAssessment,
+		"human_review":             input.Payload.HumanReview,
 	}
 }
 
