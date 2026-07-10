@@ -1351,6 +1351,25 @@ func TestRevisionFailureFingerprintIsOrderInsensitive(t *testing.T) {
 	require.Equal(t, revisionFailureFingerprint(a), revisionFailureFingerprint(b))
 }
 
+func TestRevisionFailureFingerprintCoversMissingInputs(t *testing.T) {
+	a := project.TaskResultContract{
+		Status:  project.TaskResultStatusBlocked,
+		Blocker: &project.TaskResultBlocker{MissingInputs: []string{"x", "y"}},
+	}
+	b := project.TaskResultContract{
+		Status:  project.TaskResultStatusBlocked,
+		Blocker: &project.TaskResultBlocker{MissingInputs: []string{"y", "x"}},
+	}
+	require.Equal(t, revisionFailureFingerprint(a), revisionFailureFingerprint(b))
+
+	// Different inputs -> different fingerprint.
+	c := project.TaskResultContract{
+		Status:  project.TaskResultStatusBlocked,
+		Blocker: &project.TaskResultBlocker{MissingInputs: []string{"z"}},
+	}
+	require.NotEqual(t, revisionFailureFingerprint(a), revisionFailureFingerprint(c))
+}
+
 func TestApplyTaskResultRevisionStopsWhenMaxAttemptsExhausted(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

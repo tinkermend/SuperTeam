@@ -3174,6 +3174,11 @@ func revisionFailureFingerprint(contract project.TaskResultContract) string {
 		sort.Strings(changes)
 		parts = append(parts, changes...)
 	}
+	if contract.Blocker != nil {
+		inputs := append([]string(nil), contract.Blocker.MissingInputs...)
+		sort.Strings(inputs)
+		parts = append(parts, inputs...)
+	}
 	return strings.Join(parts, "\n")
 }
 
