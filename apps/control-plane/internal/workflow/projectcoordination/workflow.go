@@ -533,6 +533,17 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 			ProjectID:         input.ProjectID,
 		}}, nil
 	}
+	if decision.Decision == string(project.TaskResultDecisionBlockedResolvableUpstream) &&
+		workflow.GetVersion(ctx, "upstream-supplement-task", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		if decision.Blocker == nil {
+			return taskCompletionPending{}, project.ErrInvalidProject
+		}
+		supplement, err := createUpstreamSupplementTasks(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.Blocker.MissingInputs)
+		if err != nil {
+			return taskCompletionPending{}, err
+		}
+		return taskCompletionPending{}, dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, supplement.TaskIDs, project.DispatchReasonRetry)
+	}
 	if decision.Decision != "" && decision.Decision != string(project.TaskResultDecisionCompleteAccepted) {
 		return taskCompletionPending{}, nil
 	}
@@ -607,6 +618,10 @@ type revisionTaskCreator interface {
 	CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error)
 }
 
+type upstreamSupplementTaskCreator interface {
+	CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error)
+}
+
 func (a *Activities) InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error) {
 	store, ok := a.store.(taskResultDecisionInspector)
 	if a.store == nil || !ok {
@@ -621,6 +636,14 @@ func (a *Activities) CreateRevisionTaskForResult(ctx context.Context, input Crea
 		return CreateRevisionTaskForResultResult{}, ErrActivityStoreRequired
 	}
 	return store.CreateRevisionTaskForResult(ctx, input)
+}
+
+func (a *Activities) CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error) {
+	store, ok := a.store.(upstreamSupplementTaskCreator)
+	if a.store == nil || !ok {
+		return CreateUpstreamSupplementResult{}, ErrActivityStoreRequired
+	}
+	return store.CreateUpstreamSupplementTasks(ctx, input)
 }
 
 func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskFailed) (*pendingTaskFailureRecovery, error) {
@@ -707,6 +730,19 @@ func createRevisionTaskForResult(ctx workflow.Context, tenantID, projectID, sour
 		ResultID:     resultID,
 	}).Get(ctx, &result); err != nil {
 		return CreateRevisionTaskForResultResult{}, err
+	}
+	return result, nil
+}
+
+func createUpstreamSupplementTasks(ctx workflow.Context, tenantID, projectID, sourceTaskID uuid.UUID, missingInputs []string) (CreateUpstreamSupplementResult, error) {
+	var result CreateUpstreamSupplementResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateUpstreamSupplementTasks, CreateUpstreamSupplementInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		SourceTaskID:  sourceTaskID,
+		MissingInputs: missingInputs,
+	}).Get(ctx, &result); err != nil {
+		return CreateUpstreamSupplementResult{}, err
 	}
 	return result, nil
 }

@@ -1143,6 +1143,70 @@ func TestApplyTaskResultRevisionCreatesBoundedRevisionTask(t *testing.T) {
 	require.Equal(t, &employeeID, revision.AssignedDigitalEmployeeID)
 }
 
+func TestCreateUpstreamSupplementTasksDispatchesToOwner(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	routeDecisionID := uuid.New()
+	acceptedPlanRevisionID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	ownerEmployeeID := uuid.New()
+	sourceEmployeeID := uuid.New()
+	ownerTaskKey := "load-test"
+	sourceTaskKey := "publish"
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			{
+				ID:                        ownerTaskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				DemandID:                  &demandID,
+				CoordinationJobID:         &coordinationJobID,
+				RouteDecisionID:           &routeDecisionID,
+				AcceptedPlanRevisionID:    &acceptedPlanRevisionID,
+				Title:                     "Run load test",
+				Status:                    project.ProjectTaskStatusCompleted,
+				AssignedDigitalEmployeeID: &ownerEmployeeID,
+				PlannedTaskKey:            &ownerTaskKey,
+				PlannerMetadata:           map[string]any{"produces": []any{"load_test_report"}},
+			},
+			{
+				ID:                        sourceTaskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				DemandID:                  &demandID,
+				CoordinationJobID:         &coordinationJobID,
+				RouteDecisionID:           &routeDecisionID,
+				AcceptedPlanRevisionID:    &acceptedPlanRevisionID,
+				Title:                     "Publish capacity conclusion",
+				Status:                    project.ProjectTaskStatusCompleted,
+				AssignedDigitalEmployeeID: &sourceEmployeeID,
+				PlannedTaskKey:            &sourceTaskKey,
+				InputRequirements:         map[string]any{"required_inputs": []any{"load_test_report"}},
+			},
+		},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateUpstreamSupplementTasks(context.Background(), CreateUpstreamSupplementInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		SourceTaskID:  sourceTaskID,
+		MissingInputs: []string{"load_test_report"},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, created.TaskIDs, 1)
+	supplement := repo.mustTask(created.TaskIDs[0])
+	require.Equal(t, &ownerEmployeeID, supplement.AssignedDigitalEmployeeID)
+	require.NotEqual(t, &sourceEmployeeID, supplement.AssignedDigitalEmployeeID)
+	require.Equal(t, &ownerTaskID, supplement.RevisionOfTaskID)
+	require.Equal(t, sourceTaskID.String(), supplement.PlannerMetadata["supplement_for"])
+	require.Equal(t, []string{"load_test_report"}, supplement.PlannerMetadata["missing_inputs"])
+}
+
 func TestApplyTaskResultRevisionStopsOnRepeatedFailureFingerprint(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

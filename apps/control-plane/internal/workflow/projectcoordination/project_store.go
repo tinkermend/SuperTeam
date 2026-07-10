@@ -695,6 +695,7 @@ func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input Insp
 		ResultID:  result.ID,
 		Decision:  string(result.Decision),
 		Exhausted: s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, task),
+		Blocker:   result.Contract.Blocker,
 	}, nil
 }
 
@@ -751,6 +752,75 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 		return CreateRevisionTaskForResultResult{}, err
 	}
 	return CreateRevisionTaskForResultResult{TaskID: revision.ID}, nil
+}
+
+// CreateUpstreamSupplementTasks appends a task for the owner of each missing
+// input. The blocked source is downstream of that owner and is re-run when the
+// supplement completes.
+func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error) {
+	if s.repository == nil {
+		return CreateUpstreamSupplementResult{}, ErrActivityStoreRequired
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, input.SourceTaskID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	if source.ProjectID != input.ProjectID {
+		return CreateUpstreamSupplementResult{}, project.ErrProjectNotFound
+	}
+	if source.CoordinationJobID == nil || *source.CoordinationJobID == uuid.Nil {
+		return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
+	}
+	siblings, err := s.repository.ListProjectTasksByCoordinationJob(ctx, input.TenantID, input.ProjectID, *source.CoordinationJobID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	owners := make(map[string]project.ProjectTask)
+	for _, task := range siblings {
+		for _, produced := range plannerProducesFromMetadata(task.PlannerMetadata) {
+			owners[produced] = task
+		}
+	}
+
+	seen := make(map[uuid.UUID]struct{})
+	result := CreateUpstreamSupplementResult{}
+	for _, missing := range input.MissingInputs {
+		owner, ok := owners[missing]
+		if !ok {
+			return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
+		}
+		if _, duplicate := seen[owner.ID]; duplicate {
+			continue
+		}
+		seen[owner.ID] = struct{}{}
+		supplement, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
+			TenantID:                  input.TenantID,
+			ProjectID:                 input.ProjectID,
+			DemandID:                  source.DemandID,
+			Title:                     owner.Title,
+			Summary:                   "上游补做：" + strings.Join(input.MissingInputs, ", "),
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: owner.AssignedDigitalEmployeeID,
+			RiskLevel:                 stringPtrValue(owner.RiskLevel),
+			RequiresHumanApproval:     owner.RequiresHumanApproval,
+			CoordinationJobID:         source.CoordinationJobID,
+			RouteDecisionID:           source.RouteDecisionID,
+			PlannedTaskKey:            owner.PlannedTaskKey,
+			TaskKind:                  owner.TaskKind,
+			StageIndex:                owner.StageIndex,
+			RevisionOfTaskID:          &owner.ID,
+			AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
+			ExpectedOutputs:           append([]any(nil), owner.ExpectedOutputs...),
+			InputRequirements:         cloneAnyMap(owner.InputRequirements),
+			HandoffContract:           cloneAnyMap(owner.HandoffContract),
+			PlannerMetadata:           revisionPlannerMetadataForSupplement(owner, input.SourceTaskID, input.MissingInputs),
+		})
+		if err != nil {
+			return CreateUpstreamSupplementResult{}, err
+		}
+		result.TaskIDs = append(result.TaskIDs, supplement.ID)
+	}
+	return result, nil
 }
 
 func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
@@ -3059,6 +3129,36 @@ func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectT
 	metadata["source_result_id"] = result.ID.String()
 	metadata["revision_failure_fingerprint"] = revisionFailureFingerprint(result.Contract)
 	return metadata
+}
+
+func revisionPlannerMetadataForSupplement(owner project.ProjectTask, sourceTaskID uuid.UUID, missingInputs []string) map[string]any {
+	metadata := cloneAnyMap(owner.PlannerMetadata)
+	metadata["supplement_for"] = sourceTaskID.String()
+	metadata["missing_inputs"] = append([]string(nil), missingInputs...)
+	return metadata
+}
+
+func plannerProducesFromMetadata(metadata map[string]any) []string {
+	switch values := metadata["produces"].(type) {
+	case []any:
+		produces := make([]string, 0, len(values))
+		for _, value := range values {
+			if produced, ok := value.(string); ok && strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	case []string:
+		produces := make([]string, 0, len(values))
+		for _, produced := range values {
+			if strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	default:
+		return nil
+	}
 }
 
 // revisionFailureFingerprint identifies a failure by its structured shape only.
