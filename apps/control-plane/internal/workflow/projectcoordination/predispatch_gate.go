@@ -604,10 +604,8 @@ func mergePreDispatchEmployeeSnapshot(base, update project.PreDispatchEmployeeSn
 
 func mergePreDispatchCapabilitySnapshot(base, update project.PreDispatchCapabilitySnapshot) project.PreDispatchCapabilitySnapshot {
 	return project.PreDispatchCapabilitySnapshot{
-		Required:    unionStrings(base.Required, update.Required),
-		Matched:     unionStrings(base.Matched, update.Matched),
-		HardMissing: unionStrings(base.HardMissing, update.HardMissing),
-		Unknown:     unionStrings(base.Unknown, update.Unknown),
+		Required: unionStrings(base.Required, update.Required),
+		Matched:  unionStrings(base.Matched, update.Matched),
 	}
 }
 
@@ -742,21 +740,6 @@ func applyGateTaskMetadata(snapshot *project.PreDispatchGateSnapshot, task proje
 		stringFromAny(employeeSelection["planning_profile_snapshot_hash"]),
 		stringFromAny(metadata["planning_profile_snapshot_hash"]),
 	)
-	snapshot.Capabilities.Required = firstNonEmptyStrings(
-		stringsFromAny(inputRequirements["required_capabilities"]),
-		stringsFromAny(inputRequirements["capabilities"]),
-		stringsFromAny(employeeSelection["required_capabilities"]),
-	)
-	snapshot.Capabilities.Matched = firstNonEmptyStrings(
-		stringsFromAny(employeeSelection["matched_capabilities"]),
-		stringsFromAny(metadata["matched_capabilities"]),
-	)
-	snapshot.Capabilities.HardMissing = firstNonEmptyStrings(
-		stringsFromAny(inputRequirements["hard_missing_capabilities"]),
-		stringsFromAny(inputRequirements["missing_capabilities"]),
-		stringsFromAny(employeeSelection["missing_capabilities"]),
-	)
-	snapshot.Capabilities.Unknown = stringsFromAny(inputRequirements["unknown_capabilities"])
 	snapshot.Tools.MissingBindings = firstNonEmptyStrings(
 		stringsFromAny(inputRequirements["missing_tool_bindings"]),
 		stringsFromAny(inputRequirements["required_tool_bindings_missing"]),

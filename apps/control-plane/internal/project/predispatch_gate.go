@@ -83,11 +83,13 @@ type PreDispatchEmployeeSnapshot struct {
 	ProfileSnapshotHash string
 }
 
+// PreDispatchCapabilitySnapshot carries the planner's capability reasoning for
+// display and audit only. It is never a gate input: the keys are free text with
+// no registry, no server-side validation, and no runtime effect, so a model can
+// name anything here. See the 2026-07-10 plan-phase refactor spec, constraint 1.
 type PreDispatchCapabilitySnapshot struct {
-	Required    []string
-	Matched     []string
-	HardMissing []string
-	Unknown     []string
+	Required []string
+	Matched  []string
 }
 
 type PreDispatchToolSnapshot struct {

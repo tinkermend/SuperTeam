@@ -338,7 +338,6 @@ func TestPreDispatchGateAdapterReportsMissingMCPBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, capabilitySnapshot.Required)
 	require.Empty(t, capabilitySnapshot.Matched)
-	require.Empty(t, capabilitySnapshot.HardMissing)
 	require.Equal(t, []string{"mcp:postgres.readonly"}, toolSnapshot.MissingBindings)
 	require.Equal(t, []string{"external:deploy", "malformed"}, toolSnapshot.RetryableUnavailable)
 }

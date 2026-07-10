@@ -971,7 +971,7 @@ func TestProjectStoreRunPreDispatchGateReaderMergeKeepsProjectExecutorStatus(t *
 	require.True(t, decision.AllowRunStart)
 }
 
-func TestProjectStoreRunPreDispatchGateCapabilityReaderPreservesPlannerHardMissing(t *testing.T) {
+func TestProjectStoreRunPreDispatchGateCapabilityReaderDoesNotCreatePlannerHardMissingBlocker(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	taskID := uuid.New()
@@ -1021,11 +1021,10 @@ func TestProjectStoreRunPreDispatchGateCapabilityReaderPreservesPlannerHardMissi
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, project.PreDispatchGateStatusReplanRequired, decision.Gate.Status)
-	require.True(t, decision.Terminal)
-	require.Len(t, decision.Gate.Blockers, 1)
-	require.Equal(t, "capability.hard_missing", decision.Gate.Blockers[0].Key)
-	require.Equal(t, []string{"database.write"}, decision.Gate.Blockers[0].Details["hard_missing"])
+	require.Equal(t, project.PreDispatchGateStatusPassed, decision.Gate.Status)
+	require.True(t, decision.AllowRunStart)
+	require.False(t, decision.Terminal)
+	require.Empty(t, decision.Gate.Blockers)
 }
 
 func TestProjectStoreRunPreDispatchGateDoesNotCreateRunOnRetryLater(t *testing.T) {
