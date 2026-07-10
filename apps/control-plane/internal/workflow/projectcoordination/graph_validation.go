@@ -168,6 +168,31 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 	if hasCycle(plan.Tasks) {
 		return invalidRouteDecision("plan dependency graph contains a cycle")
 	}
+	producers := map[string]string{}
+	for _, task := range plan.Tasks {
+		for _, key := range task.Produces {
+			trimmed := strings.TrimSpace(key)
+			if trimmed == "" {
+				return invalidRouteDecision("task %q: produces contains an empty key", task.Key)
+			}
+			if owner, exists := producers[trimmed]; exists {
+				return invalidRouteDecision("produces key %q is claimed by both task %q and task %q; a key must have exactly one producer", trimmed, owner, task.Key)
+			}
+			producers[trimmed] = task.Key
+		}
+	}
+	for _, task := range plan.Tasks {
+		ancestors := ancestorKeys(plan.Tasks, task.Key)
+		for _, required := range plannerRequiredInputs(task.InputRequirements) {
+			producer, ok := producers[required]
+			if !ok {
+				return invalidRouteDecision("task %q: required input %q is produced by no task in this plan", task.Key, required)
+			}
+			if _, reachable := ancestors[producer]; !reachable {
+				return invalidRouteDecision("task %q: required input %q is produced by task %q, which is not an ancestor", task.Key, required, producer)
+			}
+		}
+	}
 	return nil
 }
 
@@ -264,6 +289,29 @@ func hasCycle(tasks []PlannedTask) bool {
 		}
 	}
 	return false
+}
+
+// ancestorKeys returns every task key reachable by walking BlockedByKeys upward
+// from key, excluding key itself.
+func ancestorKeys(tasks []PlannedTask, key string) map[string]struct{} {
+	dependencies := make(map[string][]string, len(tasks))
+	for _, task := range tasks {
+		dependencies[task.Key] = task.BlockedByKeys
+	}
+	ancestors := map[string]struct{}{}
+	var visit func(string)
+	visit = func(current string) {
+		for _, blocker := range dependencies[current] {
+			if _, seen := ancestors[blocker]; seen {
+				continue
+			}
+			ancestors[blocker] = struct{}{}
+			visit(blocker)
+		}
+	}
+	visit(key)
+	delete(ancestors, key)
+	return ancestors
 }
 
 func uuidSet(ids []uuid.UUID) map[uuid.UUID]struct{} {

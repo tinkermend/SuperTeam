@@ -28,7 +28,7 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 		"reason":"split demand",
 		"requires_human_review":false,
 		"tasks":[
-			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"stage_index":0,"expected_outputs":["execution_summary"],"produces":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
 		],
 		"budget_estimate":{"mode":"planner"},
 		"template_key":"default",
@@ -46,6 +46,7 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 	require.Len(t, plan.Tasks, 1)
 	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
 	require.Equal(t, int32(0), *plan.Tasks[0].StageIndex)
+	require.Equal(t, []string{"execution_summary"}, plan.Tasks[0].Produces)
 }
 
 func TestOpenAICompatibleRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
@@ -524,6 +525,8 @@ func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, strings.ToLower(client.req.System), "json")
 	require.Contains(t, strings.ToLower(client.req.User), "json")
+	require.Contains(t, client.req.System, "produces is a list of short, stable, snake_case keys")
+	require.Contains(t, client.req.System, "input_requirements.required_inputs lists the produces keys")
 }
 
 func TestOpenAICompatiblePlannerPromptIncludesPlanningProfiles(t *testing.T) {
@@ -825,6 +828,27 @@ func TestDecodePlannerSelectionConfidenceRejectsMissing(t *testing.T) {
 
 	_, err = decodePlannerSelectionConfidence(json.RawMessage(`null`))
 	require.Error(t, err)
+}
+
+func TestPlannerRequiredInputsReadsOnlyTheDefinedKey(t *testing.T) {
+	raw := map[string]any{
+		"required_inputs": []any{"load_test_report", "baseline_metrics"},
+		// Free-form noise the planner has always emitted. It must not leak into
+		// anything that decides.
+		"repository": "superteam",
+		"scope":      "one host",
+	}
+
+	require.Equal(t, []string{"load_test_report", "baseline_metrics"}, plannerRequiredInputs(raw))
+}
+
+func TestPlannerRequiredInputsHandlesAbsentAndMalformed(t *testing.T) {
+	require.Empty(t, plannerRequiredInputs(nil))
+	require.Empty(t, plannerRequiredInputs(map[string]any{}))
+	require.Empty(t, plannerRequiredInputs(map[string]any{"required_inputs": "not an array"}))
+	require.Equal(t, []string{"a"}, plannerRequiredInputs(map[string]any{
+		"required_inputs": []any{"a", "", "   "},
+	}), "blank entries are dropped, not preserved")
 }
 
 func TestOpenAICompatiblePlannerDoesNotForceReviewOnInventedVocabulary(t *testing.T) {

@@ -176,6 +176,79 @@ func TestValidateTaskGraphRejectsTaskCountOverLimit(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
+func TestValidateRouteDecisionPlanAcceptsRequiredInputFromAncestor(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "required input from ancestor", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"load_test_report"}, nil),
+		planTaskWithIO("b", []string{"a"}, nil, []string{"load_test_report"}),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
+func TestValidateRouteDecisionPlanRejectsRequiredInputWithNoProducer(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "required input without producer", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"something_else"}, nil),
+		planTaskWithIO("b", []string{"a"}, nil, []string{"load_test_report"}),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "load_test_report")
+}
+
+func TestValidateRouteDecisionPlanRejectsDuplicateProducesKey(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "duplicate produces key", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"report"}, nil),
+		planTaskWithIO("b", nil, []string{"report"}, nil),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "report")
+}
+
+func TestValidateRouteDecisionPlanRejectsBlankProducesKey(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "blank produces key", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"  "}, nil),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	require.Error(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
+func TestValidateRouteDecisionPlanRejectsRequiredInputFromNonAncestor(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "required input from non ancestor", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, nil, nil),
+		planTaskWithIO("b", []string{"a"}, nil, []string{"load_test_report"}),
+		planTaskWithIO("c", []string{"a"}, []string{"load_test_report"}, nil),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "load_test_report")
+}
+
+func TestAncestorKeysWalksTransitively(t *testing.T) {
+	tasks := []PlannedTask{
+		{Key: "a"},
+		{Key: "b", BlockedByKeys: []string{"a"}},
+		{Key: "c", BlockedByKeys: []string{"b"}},
+	}
+
+	ancestors := ancestorKeys(tasks, "c")
+
+	require.Contains(t, ancestors, "a")
+	require.Contains(t, ancestors, "b")
+	require.NotContains(t, ancestors, "c")
+}
+
 func TestValidateRouteDecisionPlanRejectsMissingSelectionReason(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
@@ -427,6 +500,37 @@ func validEvidenceGraphPlan(employeeID uuid.UUID) RouteDecisionPlan {
 	plan.Tasks[0].EmployeeSelectionReason = "具备 database.read 能力"
 	plan.Tasks[0].RequiredCapabilities = []string{"database.read"}
 	return plan
+}
+
+func planTaskWithIO(key string, blockedBy []string, produces []string, requires []string) PlannedTask {
+	return PlannedTask{
+		Key:                     key,
+		Title:                   key,
+		Summary:                 key,
+		SelectedEmployeeID:      uuid.New(),
+		EmployeeSelectionReason: "test",
+		SelectionConfidence:     0.9,
+		ExpectedOutputs:         []string{"execution_summary"},
+		Produces:                produces,
+		InputRequirements:       map[string]any{"required_inputs": stringsToAny(requires)},
+		HandoffContract:         map[string]any{},
+		BlockedByKeys:           blockedBy,
+	}
+}
+
+func snapshotForPlan(plan RouteDecisionPlan) CoordinationSnapshot {
+	pool := make([]ProjectMemberSnapshot, 0, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		pool = append(pool, ProjectMemberSnapshot{
+			PrincipalID: task.SelectedEmployeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: task.SelectedEmployeeID,
+			},
+		})
+	}
+	return CoordinationSnapshot{DigitalEmployeePool: pool}
 }
 
 func validationSnapshotWithProfile(employeeID uuid.UUID) CoordinationSnapshot {
