@@ -32,6 +32,11 @@ type clockFunc func() time.Time
 
 const defaultRevisionMaxAttempts int32 = 3
 
+// defaultMaxPlanIterations bounds graph extension rounds (upstream supplement
+// tasks appended to resolve a blocked task's missing inputs) when
+// projects.coordination_policy.max_plan_iterations is absent or invalid.
+const defaultMaxPlanIterations = 3
+
 func (s *ProjectStore) WithClock(clock clockFunc) *ProjectStore {
 	s.clock = clock
 	return s
@@ -775,6 +780,15 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 	if err != nil {
 		return CreateUpstreamSupplementResult{}, err
 	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	planIteration := currentPlanIteration(siblings)
+	if planIteration >= int32(maxPlanIterations(projectRecord.CoordinationPolicy)) {
+		return CreateUpstreamSupplementResult{Exhausted: true}, nil
+	}
+	planIteration++
 	owners := make(map[string]project.ProjectTask)
 	for _, task := range siblings {
 		for _, produced := range plannerProducesFromMetadata(task.PlannerMetadata) {
@@ -814,6 +828,7 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			InputRequirements:         cloneAnyMap(owner.InputRequirements),
 			HandoffContract:           cloneAnyMap(owner.HandoffContract),
 			PlannerMetadata:           revisionPlannerMetadataForSupplement(owner, input.SourceTaskID, input.MissingInputs),
+			PlanIteration:             planIteration,
 		})
 		if err != nil {
 			return CreateUpstreamSupplementResult{}, err
@@ -3218,6 +3233,29 @@ func revisionTaskKey(source project.ProjectTask, result project.ProjectTaskResul
 
 func revisionBudgetExhausted(task project.ProjectTask) bool {
 	return revisionAttemptCount(task) >= revisionMaxAttempts(task)
+}
+
+// maxPlanIterations reads projects.coordination_policy.max_plan_iterations,
+// falling back to defaultMaxPlanIterations when absent or not a positive
+// number. int32FromAny covers both decoded-JSON numeric shapes (float64,
+// json.Number) and plain Go numeric literals used in tests.
+func maxPlanIterations(policy map[string]any) int {
+	if value, ok := int32FromAny(policy["max_plan_iterations"]); ok && value > 0 {
+		return int(value)
+	}
+	return defaultMaxPlanIterations
+}
+
+// currentPlanIteration is the highest graph extension round observed among
+// siblings created by the same coordination job (0 for the original plan).
+func currentPlanIteration(siblings []project.ProjectTask) int32 {
+	var max int32
+	for _, task := range siblings {
+		if task.PlanIteration > max {
+			max = task.PlanIteration
+		}
+	}
+	return max
 }
 
 func revisionRootTaskID(task project.ProjectTask) string {

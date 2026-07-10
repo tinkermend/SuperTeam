@@ -287,6 +287,7 @@ type CreateProjectTaskRequest struct {
 	HandoffContract           map[string]any
 	PlannerMetadata           map[string]any
 	BlockedByTaskIDs          []uuid.UUID
+	PlanIteration             int32
 }
 
 type RecordProjectTaskResultRequest struct {

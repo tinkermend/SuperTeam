@@ -1804,6 +1804,7 @@ func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *quer
 		InputRequirements:         inputRequirements,
 		HandoffContract:           handoffContract,
 		PlannerMetadata:           plannerMetadata,
+		PlanIteration:             int4Ptr(&req.PlanIteration),
 	})
 	if err != nil {
 		return ProjectTask{}, err
@@ -5474,6 +5475,7 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		RevisionOfTaskID:           ptrUUID(row.RevisionOfTaskID),
 		AcceptedPlanRevisionID:     ptrUUID(row.AcceptedPlanRevisionID),
 		DecompositionClaimKey:      ptrText(row.DecompositionClaimKey),
+		PlanIteration:              row.PlanIteration,
 		AttemptCount:               row.AttemptCount,
 		MaxAttempts:                int32PtrFromSQL(row.MaxAttempts),
 		RetryNotBefore:             ptrTime(row.RetryNotBefore),

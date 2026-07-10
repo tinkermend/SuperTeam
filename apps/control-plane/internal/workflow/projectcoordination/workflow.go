@@ -542,6 +542,16 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 		if err != nil {
 			return taskCompletionPending{}, err
 		}
+		if supplement.Exhausted {
+			exhaustedDecision, err := requestProjectTaskIterationExhaustedReview(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID)
+			if err != nil || exhaustedDecision.ID == uuid.Nil {
+				return taskCompletionPending{}, err
+			}
+			return taskCompletionPending{FailureRecovery: &pendingTaskFailureRecovery{
+				DecisionRequestID: exhaustedDecision.ID,
+				ProjectID:         input.ProjectID,
+			}}, nil
+		}
 		return taskCompletionPending{}, dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, supplement.TaskIDs, project.DispatchReasonRetry)
 	}
 	if decision.Decision != "" && decision.Decision != string(project.TaskResultDecisionCompleteAccepted) {

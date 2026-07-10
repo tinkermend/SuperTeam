@@ -233,9 +233,11 @@ type CreateUpstreamSupplementInput struct {
 }
 
 // CreateUpstreamSupplementResult reports the owner tasks appended to supply the
-// blocked task's missing inputs.
+// blocked task's missing inputs. Exhausted is true when the graph has already
+// extended max_plan_iterations rounds and no further supplement was created.
 type CreateUpstreamSupplementResult struct {
-	TaskIDs []uuid.UUID
+	TaskIDs   []uuid.UUID
+	Exhausted bool
 }
 
 type IsProjectAcceptanceReadyInput struct {

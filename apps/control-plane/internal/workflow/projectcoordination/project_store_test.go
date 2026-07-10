@@ -1157,6 +1157,7 @@ func TestCreateUpstreamSupplementTasksDispatchesToOwner(t *testing.T) {
 	ownerTaskKey := "load-test"
 	sourceTaskKey := "publish"
 	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
 		tasks: []project.ProjectTask{
 			{
 				ID:                        ownerTaskID,
@@ -1206,6 +1207,144 @@ func TestCreateUpstreamSupplementTasksDispatchesToOwner(t *testing.T) {
 	require.Equal(t, &acceptedPlanRevisionID, supplement.AcceptedPlanRevisionID)
 	require.Equal(t, sourceTaskID.String(), supplement.PlannerMetadata["supplement_for"])
 	require.Equal(t, []string{"load_test_report"}, supplement.PlannerMetadata["missing_inputs"])
+	require.Equal(t, int32(1), supplement.PlanIteration)
+}
+
+func TestCreateUpstreamSupplementTasksIncrementsPlanIteration(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	priorSupplementID := uuid.New()
+	ownerTaskKey := "load-test"
+	sourceTaskKey := "publish"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		tasks: []project.ProjectTask{
+			{
+				ID:                ownerTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Run load test",
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannedTaskKey:    &ownerTaskKey,
+				PlannerMetadata:   map[string]any{"produces": []any{"load_test_report"}},
+			},
+			{
+				ID:                sourceTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Publish capacity conclusion",
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannedTaskKey:    &sourceTaskKey,
+				InputRequirements: map[string]any{"required_inputs": []any{"load_test_report"}},
+			},
+			{
+				ID:                priorSupplementID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Run load test",
+				Status:            project.ProjectTaskStatusCompleted,
+				RevisionOfTaskID:  &ownerTaskID,
+				PlanIteration:     1,
+			},
+		},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateUpstreamSupplementTasks(context.Background(), CreateUpstreamSupplementInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		SourceTaskID:  sourceTaskID,
+		MissingInputs: []string{"load_test_report"},
+	})
+
+	require.NoError(t, err)
+	require.False(t, created.Exhausted)
+	require.Len(t, created.TaskIDs, 1)
+	supplement := repo.mustTask(created.TaskIDs[0])
+	require.Equal(t, int32(2), supplement.PlanIteration)
+}
+
+func TestCreateUpstreamSupplementTasksExhaustedAtMaxPlanIterations(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	coordinationJobID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	priorSupplementID := uuid.New()
+	ownerTaskKey := "load-test"
+	sourceTaskKey := "publish"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:                 projectID,
+			TenantID:           tenantID,
+			CoordinationPolicy: map[string]any{"max_plan_iterations": float64(1)},
+		},
+		tasks: []project.ProjectTask{
+			{
+				ID:                ownerTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Run load test",
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannedTaskKey:    &ownerTaskKey,
+				PlannerMetadata:   map[string]any{"produces": []any{"load_test_report"}},
+			},
+			{
+				ID:                sourceTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Publish capacity conclusion",
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannedTaskKey:    &sourceTaskKey,
+				InputRequirements: map[string]any{"required_inputs": []any{"load_test_report"}},
+			},
+			{
+				ID:                priorSupplementID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &coordinationJobID,
+				Title:             "Run load test",
+				Status:            project.ProjectTaskStatusCompleted,
+				RevisionOfTaskID:  &ownerTaskID,
+				PlanIteration:     1,
+			},
+		},
+	}
+	store := NewProjectStore(repo)
+
+	created, err := store.CreateUpstreamSupplementTasks(context.Background(), CreateUpstreamSupplementInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		SourceTaskID:  sourceTaskID,
+		MissingInputs: []string{"load_test_report"},
+	})
+
+	require.NoError(t, err)
+	require.True(t, created.Exhausted)
+	require.Empty(t, created.TaskIDs)
+	require.Len(t, repo.tasks, 3)
+}
+
+func TestMaxPlanIterationsFallsBackToDefault(t *testing.T) {
+	require.Equal(t, defaultMaxPlanIterations, maxPlanIterations(nil))
+	require.Equal(t, 5, maxPlanIterations(map[string]any{"max_plan_iterations": 5}))
+	require.Equal(t, defaultMaxPlanIterations, maxPlanIterations(map[string]any{"max_plan_iterations": "bad"}))
 }
 
 func TestApplyTaskResultRevisionStopsOnRepeatedFailureFingerprint(t *testing.T) {
@@ -4881,6 +5020,7 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 		HandoffContract:           req.HandoffContract,
 		PlannerMetadata:           req.PlannerMetadata,
 		BlockedByTaskIDs:          req.BlockedByTaskIDs,
+		PlanIteration:             req.PlanIteration,
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}

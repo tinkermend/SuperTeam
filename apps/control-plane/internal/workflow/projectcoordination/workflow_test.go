@@ -822,6 +822,57 @@ func TestProjectCoordinatorSupplementsUpstreamOwnerForResolvableBlockedResult(t 
 	require.Empty(t, store.resolveReadyInputs)
 }
 
+func TestProjectCoordinatorRequestsHumanDecisionWhenUpstreamSupplementExhausted(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{ProjectID: projectID},
+		resultDecision: InspectTaskResultDecisionResult{
+			ResultID: resultID,
+			Decision: string(project.TaskResultDecisionBlockedResolvableUpstream),
+			Blocker:  &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+		},
+		upstreamSupplementResult:     CreateUpstreamSupplementResult{Exhausted: true},
+		iterationExhaustedDecisionID: decisionRequestID,
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"CreateUpstreamSupplementTasks",
+		"RequestProjectTaskIterationExhaustedReview",
+	}, store.calls)
+	require.Len(t, store.iterationExhaustedInputs, 1)
+	require.Equal(t, sourceTaskID, store.iterationExhaustedInputs[0].ProjectTaskID)
+	require.Equal(t, resultID, store.iterationExhaustedInputs[0].ResultID)
+	require.Equal(t, "iteration_exhausted", store.iterationExhaustedInputs[0].Reason)
+	require.Empty(t, store.dispatchInputs)
+}
+
 func TestProjectCoordinatorRequestsHumanDecisionWhenRevisionIterationExhausted(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
