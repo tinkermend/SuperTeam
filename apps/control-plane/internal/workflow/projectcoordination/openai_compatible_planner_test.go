@@ -28,7 +28,7 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 		"reason":"split demand",
 		"requires_human_review":false,
 		"tasks":[
-			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
 		],
 		"budget_estimate":{"mode":"planner"},
 		"template_key":"default",
@@ -267,7 +267,7 @@ func TestOpenAICompatibleRoutePlannerNormalizesNonObjectRequirementMaps(t *testi
 	client := &countingChatCompletionClient{content: fmt.Sprintf(`{
 		"reason":"split demand",
 		"requires_human_review":false,
-		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
+		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
 	}`, employeeID.String())}
 	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
@@ -473,7 +473,7 @@ func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 		"reason":"split demand",
 		"requires_human_review":false,
 		"tasks":[
-			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
 		]
 	}`, employeeID.String())}
 	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
@@ -515,6 +515,7 @@ func TestOpenAICompatiblePlannerPromptIncludesPlanningProfiles(t *testing.T) {
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功"],
 				"selection_score":100,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary"],
 				"input_requirements":{},
 				"handoff_contract":{},
@@ -621,6 +622,7 @@ func TestOpenAICompatiblePlannerAppliesProfileScoresToAcceptedPlan(t *testing.T)
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功"],
 				"selection_score":0,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary"],
 				"input_requirements":{},
 				"handoff_contract":{},
@@ -681,6 +683,7 @@ func TestOpenAICompatiblePlannerDatabaseAnalysisRequiresDatabaseProfile(t *testi
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功","结果包含证据引用"],
 				"selection_score":100,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary","evidence_refs"],
 				"input_requirements":{"scope":"database_analysis"},
 				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
@@ -737,6 +740,7 @@ func TestOpenAICompatiblePlannerAcceptsNormalizedSelectionScore(t *testing.T) {
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功","结果包含证据引用"],
 				"selection_score":0.95,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary","evidence_refs"],
 				"input_requirements":{"scope":"database_analysis"},
 				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
@@ -770,6 +774,28 @@ func TestOpenAICompatiblePlannerAcceptsNormalizedSelectionScore(t *testing.T) {
 	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 }
 
+func TestDecodePlannerSelectionConfidenceAcceptsFractions(t *testing.T) {
+	value, err := decodePlannerSelectionConfidence(json.RawMessage(`0.85`))
+	require.NoError(t, err)
+	require.InDelta(t, 0.85, value, 1e-9)
+}
+
+func TestDecodePlannerSelectionConfidenceRejectsOutOfRange(t *testing.T) {
+	_, err := decodePlannerSelectionConfidence(json.RawMessage(`1.5`))
+	require.Error(t, err)
+
+	_, err = decodePlannerSelectionConfidence(json.RawMessage(`-0.1`))
+	require.Error(t, err)
+}
+
+func TestDecodePlannerSelectionConfidenceRejectsMissing(t *testing.T) {
+	_, err := decodePlannerSelectionConfidence(json.RawMessage(``))
+	require.Error(t, err)
+
+	_, err = decodePlannerSelectionConfidence(json.RawMessage(`null`))
+	require.Error(t, err)
+}
+
 func TestOpenAICompatiblePlannerMarksProfileGapsForHumanReview(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{
@@ -790,6 +816,7 @@ func TestOpenAICompatiblePlannerMarksProfileGapsForHumanReview(t *testing.T) {
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["人工确认写入风险"],
 				"selection_score":0.7,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary","risk_summary"],
 				"input_requirements":{"scope":"database_write"},
 				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
@@ -844,6 +871,7 @@ func TestOpenAICompatiblePlannerOverwritesDriftedSelectionEvidence(t *testing.T)
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功"],
 				"selection_score":100,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary"],
 				"input_requirements":{},
 				"handoff_contract":{},
@@ -898,6 +926,7 @@ func TestOpenAICompatiblePlannerOverwritesPolicyReviewSelectionEvidence(t *testi
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":["只读查询成功"],
 				"selection_score":100,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary"],
 				"input_requirements":{},
 				"handoff_contract":{},
@@ -953,6 +982,7 @@ func TestOpenAICompatiblePlannerDecodesSelectionEvidence(t *testing.T) {
 			"runtime_requirements":["provider:codex"],
 			"verification_requirements":["只读查询成功"],
 			"selection_score":100,
+			"selection_confidence":0.9,
 			"expected_outputs":["execution_summary"],
 			"input_requirements":{},
 			"handoff_contract":{},
@@ -978,6 +1008,7 @@ func TestOpenAICompatiblePlannerDecodesSelectionEvidence(t *testing.T) {
 	require.Equal(t, []string{"provider:codex"}, task.RuntimeRequirements)
 	require.Equal(t, []string{"只读查询成功"}, task.VerificationRequirements)
 	require.Equal(t, 100, task.SelectionScore)
+	require.InDelta(t, 0.9, task.SelectionConfidence, 1e-9)
 }
 
 func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
@@ -1248,6 +1279,7 @@ func TestOpenAICompatiblePlannerDatabaseAnalysisRejectsUnderCapableEmployee(t *t
 				"runtime_requirements":["provider:codex"],
 				"verification_requirements":[],
 				"selection_score":80,
+				"selection_confidence":0.9,
 				"expected_outputs":["execution_summary"],
 				"input_requirements":{"scope":"database_analysis"},
 				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},

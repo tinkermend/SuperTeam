@@ -56,6 +56,7 @@ type PlanRevisionTask struct {
 	RiskLevel                   string         `json:"risk_level"`
 	HumanReviewRequired         bool           `json:"human_review_required"`
 	SelectionScore              int            `json:"selection_score,omitempty"`
+	SelectionConfidence         float64        `json:"selection_confidence,omitempty"`
 	PlanningProfileSnapshotHash string         `json:"planning_profile_snapshot_hash,omitempty"`
 	HandoffContract             map[string]any `json:"handoff_contract,omitempty"`
 }
@@ -110,6 +111,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 			RiskLevel:                   task.RiskLevel,
 			HumanReviewRequired:         task.RequiresHumanApproval,
 			SelectionScore:              task.SelectionScore,
+			SelectionConfidence:         task.SelectionConfidence,
 			PlanningProfileSnapshotHash: task.PlanningProfileSnapshotHash,
 			HandoffContract:             clonePlanRevisionAnyMap(task.HandoffContract),
 		})
@@ -247,6 +249,7 @@ func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTas
 			RuntimeRequirements:         clonePlanRevisionStringSlice(task.RuntimeRequirements),
 			VerificationRequirements:    clonePlanRevisionStringSlice(task.VerificationRequirements),
 			SelectionScore:              task.SelectionScore,
+			SelectionConfidence:         task.SelectionConfidence,
 			PlanningProfileSnapshotHash: task.PlanningProfileSnapshotHash,
 			TaskKind:                    task.TaskType,
 			RiskLevel:                   task.RiskLevel,
@@ -307,6 +310,7 @@ func canonicalPlanRevisionTask(task PlanRevisionTask) PlanRevisionTask {
 		RiskLevel:                   task.RiskLevel,
 		HumanReviewRequired:         task.HumanReviewRequired,
 		SelectionScore:              task.SelectionScore,
+		SelectionConfidence:         task.SelectionConfidence,
 		PlanningProfileSnapshotHash: task.PlanningProfileSnapshotHash,
 		HandoffContract:             canonicalPlanRevisionMapPreserveArrays(task.HandoffContract),
 	}
