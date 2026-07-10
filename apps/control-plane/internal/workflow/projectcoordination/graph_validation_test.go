@@ -301,7 +301,56 @@ func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithout
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
-func TestApplyPlanningProfileScoresMarksMissingCapabilitiesForHumanReview(t *testing.T) {
+func TestApplyPlanningProfileScoresDoesNotForceApprovalOnMissingCapability(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+				Capabilities:      []PlanningCapability{{Key: "bash_execution"}},
+			},
+		}},
+	}
+	plan := RouteDecisionPlan{Tasks: []PlannedTask{{
+		Key:                  "t1",
+		SelectedEmployeeID:   employeeID,
+		RequiredCapabilities: []string{"invented.capability"},
+	}}}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.False(t, plan.RequiresHumanReview, "a fictional vocabulary must not trigger human review")
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
+	require.Equal(t, []string{"invented.capability"}, plan.Tasks[0].MissingCapabilities,
+		"still recorded for display")
+}
+
+func TestApplyPlanningProfileScoresStillForcesApprovalOnProfileHardFailure(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+				// A real, server-derived fact — not a capability name.
+				HardFailures: []string{"employee_not_dispatchable"},
+			},
+		}},
+	}
+	plan := RouteDecisionPlan{Tasks: []PlannedTask{{Key: "t1", SelectedEmployeeID: employeeID}}}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.True(t, plan.RequiresHumanReview)
+	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+}
+
+func TestApplyPlanningProfileScoresRecordsMissingCapabilitiesWithoutForcingReview(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validEvidenceGraphPlan(employeeID)
@@ -309,10 +358,9 @@ func TestApplyPlanningProfileScoresMarksMissingCapabilitiesForHumanReview(t *tes
 
 	ApplyPlanningProfileScores(snapshot, &plan)
 
-	require.True(t, plan.RequiresHumanReview)
-	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.False(t, plan.RequiresHumanReview)
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
 	require.Equal(t, []string{"database.write"}, plan.Tasks[0].MissingCapabilities)
-	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10}))
 }
 
 func TestApplyPlanningProfileScoresSkipsProfileIdentityMismatch(t *testing.T) {
