@@ -13,7 +13,9 @@
 
 以下每一条都来自当前 `main`（`8cd076c4`）的代码与真实数据，不是推测。
 
-### 1.1 派发闸门读的是 LLM 的自述
+### 1.1 派发闸门在人类批准之后二次否决
+
+> **勘误（2026-07-10，实施 Plan 1 后的代码审查）**：本节初稿断言闸门「照抄 LLM 自述的 `missing_capabilities`」。**这是错的。** 该数组由服务端重算并覆盖。真实缺陷不是抄袭，是双重审判 + 无意义的词表。以下为更正后的诊断。
 
 `predispatch_gate.go:311`（`internal/project/`）：
 
@@ -23,23 +25,25 @@ if len(snapshot.Capabilities.HardMissing) > 0 {
     addBlocker("capability.hard_missing", PreDispatchGateStatusReplanRequired, "hard", false, ...)
 ```
 
-`HardMissing` 的来源有两条路径，**都指向 LLM 自己写的 JSON**：
+`HardMissing` 的值取自 `planner_metadata.employee_selection.missing_capabilities`。而该字段是**服务端算的**，不是 LLM 写的：
 
-- `internal/app/planning_profile_adapter.go:316`：`hardMissing := gateStringList(task.InputRequirements["missing_capabilities"])`。该函数签名收 `employeeID`，但在能力这一段**从未使用**——它不查员工。
-- `internal/workflow/projectcoordination/predispatch_gate.go:745-757`：`firstNonEmptyStrings(inputRequirements[...], employeeSelection["required_capabilities"])`，回退读 `planner_metadata.employee_selection`。
+- `openai_compatible_planner.go:132` 在 LLM 返回后立刻调用 `ApplyPlanningProfileScores`。
+- `graph_validation.go:75-76` 用 `ScorePlanningProfile` 的结果**覆盖** `task.MatchedCapabilities` 与 `task.MissingCapabilities`。
+- `planning_profile.go:399-409` 的 `scoreCapabilities` 做的是真集合差：`missing = task.required_capabilities \ profile.Capabilities`。
 
-库中实证：`project_tasks.input_requirements` 的实际键是 `items` / `repository` / `scope` / `value`——LLM 自造的自由文本，**不含任何 capability 键**。而 `planner_metadata.employee_selection.missing_capabilities` 里是：
+所以模型即便写 `missing_capabilities: []` 也不会被采信——它会被覆盖。
 
-```json
-["text_generation", "codebase.analysis", "implementation", "testing.verification", "artifact.reporting"]
-```
+**真实的缺陷是两条：**
 
-这是第二条路径取到的值。所以名为 `capability.match` 的检查**不做任何比对**，它把 LLM 的自证抄成判决：
+**（a）差集的两端都是无注册表的自由文本。** `required_capabilities` 由 LLM 凭空合成（提示词未给任何候选集）；`profile.Capabilities` 来自 `capability_bindings.external_capabilities`，无词表、无服务端校验、runtime 从不兑现（§1.2）。确定性地算出一个毫无意义的差。
 
-- 模型写 `missing_capabilities: []` → 闸门放行，哪怕员工什么能力都没有。**这道闸门可被一句模型输出绕过。**
-- 模型写 `missing_capabilities: [...]` → `replan_required`。而 `workflow/projectcoordination/predispatch_gate.go:78` 的 `preDispatchGateDecisionTerminal` 判定 `replan_required` 为 **terminal**，任务死在 `waiting_human`，不会自动重规划。
+**（b）同一个结论被审判两次，第二次在人类批准之后。**
 
-更糟的是时序：人类**已经在计划评审环节批准过**这个计划。批准之后，平台又用同一份 LLM 自述把任务拦死，且不提供任何可执行选项。
+`ApplyPlanningProfileScores`（`graph_validation.go:78-81`）在**计划阶段**因 missing 非空而置 `RequiresHumanApproval = true` 与 `plan.RequiresHumanReview = true`。**这是对的**——它发生在人类批准之前，把疑点交给人。
+
+而派发闸门在**人类批准之后**把同一个结论再读一遍，升级为 terminal 的 `replan_required`（`workflow/.../predispatch_gate.go:78` 的 `preDispatchGateDecisionTerminal`）。任务死在 `waiting_human`，且不提供任何可执行选项。
+
+人类的批准被一个虚构词表推翻。**闸门要删的是第二次审判，不是第一次。**
 
 ### 1.2 能力键没有事实源
 
@@ -95,6 +99,35 @@ type TaskResultRevisionRequest struct {
 - `projects.coordination_policy`：`project/handler.go:266,1439` 存进去、透传出来，**无任何行为读它**。
 - `ProjectEventTaskRevisionRequested` / `RevisionCreated` / `ReplanRequested` / `TaskResultRejected`：`project/types.go` 中定义，**零处生产者**。
 - 两个能力快照构造器（`app/planning_profile_adapter.go:314` 与 `workflow/.../predispatch_gate.go:736`）逻辑重复且都从 LLM 输出取值。
+
+### 1.6 虚构词表仍在驱动控制流（Plan 1 未覆盖）
+
+拆掉派发闸门之后，同一个病根仍在计划阶段起作用，且**无路可逃**：
+
+| 模型的选择 | 后果 |
+|---|---|
+| 编造若干 `required_capabilities` | 员工的 `external_capabilities` 实质恒空 → `missing` 必非空 → `scoreCapabilities:409` 把每条 missing 变成一条 `HardFailure` → `ScorePlanningProfile:178` 把 `Score` **直接归零** → `ApplyPlanningProfileScores:78` **强制人工审批** |
+| 不写 `required_capabilities` | `graph_validation.go:34`：`required_capabilities` 为空且未标人工复核 → **整个计划被拒** |
+
+也就是说，**系统强迫模型发明一套它根本没有词表的能力名，然后因为这些名字对不上而惩罚它。**
+
+实证（Plan 1 的 E2E，`project_tasks.id = d97bd715`）：
+
+```json
+"selection_score": 0,
+"matched_capabilities": [],
+"missing_capabilities": ["quantum-ledger.reconcile_verification", "codebase.analysis", ...]
+```
+`requires_human_approval = true`
+
+那个 `quantum-ledger.reconcile_verification` 是烟测里故意编的名字。它让 `selection_score` 归零，并触发了一次人工审批——而这次审批与风险无关，纯由虚构词表触发。
+
+**两个后果**：
+
+1. **每个任务都被强制人工审批。** 人类审批的触发条件不是风险，是词表对不上。这稀释了 `risk.approval` 的意义（约束四要求两层审批各司其职）。
+2. **`selection_score` 恒为 0。** §4.2 的 `selection_confidence`（阈值 0.7）**绝不能复用 `ScorePlanningProfile`**，否则上线即全线判为 `no_suitable_employee`。
+
+`graph_validation.go:53` 与 `:55` 那两条拒绝规则是**死代码**：`ValidateRouteDecisionPlan` 的唯一调用点（`openai_compatible_planner.go:133,142`）永远在 `ApplyPlanningProfileScores` 之后，而后者已经把 `reviewRequired` 置真。
 
 ## 2. 目标与非目标
 
@@ -187,6 +220,8 @@ plan_acceptance_criteria[]:                             新增
 ```
 
 **`selection_confidence`**：planner 对每个候选员工给出匹配置信度。若某任务的最佳候选低于阈值（默认 0.7，配置见 §4.8），planner 返回 `no_suitable_employee`，整个计划不落库，直接回到人类。这是一次真实的 LLM 判断，不是集合运算。
+
+**它必须由 planner 直接输出，不得由 `ScorePlanningProfile` 派生。** 该打分器一遇 `HardFailure` 就把 `Score` 归零（`planning_profile.go:178`），而每一个对不上的虚构能力名都会产生一条 `HardFailure`（`:409`）。复用它等于让阈值恒不满足——见 §1.6 的实测 `selection_score: 0`。`selection_score` 字段随 `ScorePlanningProfile` 的能力打分一并退役。
 
 **`input_requirements` 的改造**。今天它是 LLM 自由填充的杂物袋（实测键为 `items` / `repository` / `scope` / `value`），且被两个闸门构造器当作能力数组的来源（§1.1）。改造为结构化：
 
@@ -411,16 +446,24 @@ B' 续接 B **那个任务**的会话——继续干活，上下文完整，不�
 | 目标 | 位置 |
 |---|---|
 | `capability.match` check 与 `capability.hard_missing` blocker | `internal/project/predispatch_gate.go:311-317` |
-| `GetEmployeeCapabilitySnapshot` 中读 LLM 自述的三行 | `internal/app/planning_profile_adapter.go:315-317` |
-| `applyGateTaskMetadata` 中的 capability 段 | `internal/workflow/projectcoordination/predispatch_gate.go:744-759` |
+| `GetEmployeeCapabilitySnapshot` 中重读计划期能力结论的三行 | `internal/app/planning_profile_adapter.go:315-317` |
+| `applyGateTaskMetadata` 中的 capability 段（第二个快照构造器） | `internal/workflow/projectcoordination/predispatch_gate.go:744-759` |
 | `PreDispatchCapabilitySnapshot.HardMissing` / `.Unknown` | `internal/project/predispatch_gate.go:86-91` |
 | plannerTask 的 `RequiredCapabilities` / `MatchedCapabilities` / `MissingCapabilities` 的**判决作用** | `openai_compatible_planner.go:363-365`（字段保留于 `planner_metadata`，仅供展示） |
 | 提示词中 "copy the required, matched, and missing capability arrays" | `openai_compatible_planner.go:276` |
 | 提示词中 "A task with missing_capabilities must set requires_human_approval..." | `openai_compatible_planner.go:279` |
+| `scoreCapabilities` 把 missing 升级为 `HardFailure`（进而归零 `Score`） | `planning_profile.go:409` |
+| `ApplyPlanningProfileScores` 因 missing 强制 `RequiresHumanApproval` / `RequiresHumanReview` | `graph_validation.go:78-81` |
+| `required_capabilities` 为空即拒绝整个计划 | `graph_validation.go:34-35` |
+| 因 `HardFailures` / `MissingCapabilities` 拒绝计划的两条死规则 | `graph_validation.go:53-57` |
 
 闸门保留且只保留有事实源的：`runtime.placement_missing`、`runtime.pinned_node_offline`、槽位、`budget.ready`、`context.ready`、`risk.approval`、skill 可安装、MCP 可达且凭证未过期、`task.accepted_plan_revision_changed`（§4.8 放行延展）。
 
 `external_capabilities` 字段本身**不删**，降级为「给 planner 与人类阅读的能力描述」，从 `capability_bindings` 移入 employee 的描述性字段族。它不再进入任何判定。
+
+`ScorePlanningProfile` 的其余维度（`scoreRole`、`scoreRuntime`、`scorePermissionsAndTools`、`scoreLoad`、`scoreReliability`）保留——它们打的是有事实源的分。只有 `scoreCapabilities` 及其 `HardFailure` 升级被移除。
+
+**Plan 1 只删掉了派发时的第二次审判（§1.1(b)）。上表后四行属于计划阶段，由 Plan 2 处理。**
 
 ## 6. 错误处理
 
