@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-11 00:35：计划确认面板新增「调度顺序」和「验收判据」：任务按 depends_on 拓扑排序，展示执行员工与选择原因；计划级判据展示对应说明及满足任务标题，未声明判据时给出明确空状态。验证：`corepack pnpm --filter @superteam/web test src/features/projects/components/project-operational-detail.test.tsx`（3/3）通过。真实浏览器链路未验证：当前 Web/Control Plane 为 external 进程，未加载本 worktree 代码。
+
 - 2026-07-11 00:12：计划内部引用完整性：任务新增 produces 与 input_requirements.required_inputs；落库前校验祖先可达与 produces 键唯一；自由字段迁入 planner_metadata.planner_notes。验证：corepack pnpm verify:control-plane；拒绝路径 go test -run TestValidateRouteDecisionPlanRejects；真实 E2E 证据 .scratch/smoke/plan3-referential-integrity-20260710T161026Z/evidence.json （上游 produces=[cpu_memory_metrics]，下游 required_inputs 引用之，input_requirements 仅含 required_inputs）。
 
 - 2026-07-10 23:09：计划期能力控制流退役并引入 selection_confidence：scoreCapabilities 不再因虚构能力名 HardFail/归零；ApplyPlanningProfileScores 不再因 MissingCapabilities 强制审批；ValidateRouteDecisionPlan 删除空 required_capabilities 与能力拒计划规则；planner 输出 selection_confidence，低于 coordination_policy 阈值返回 no_suitable_employee；另退役计划期 tool_requirements HardFail（MCP 由 Runtime 物化为项目 mcp.json，不经计划词表选人）。验证：corepack pnpm verify:control-plane；真实 E2E 证据 .scratch/smoke/plan2-retire-capability-toolfix-20260710T150607Z-2072afb0/evidence.json （missing_capabilities 非空、selection_score=80、low risk 且 requires_human_approval=false）。

@@ -9,6 +9,7 @@ import type {
   ProjectDemand,
   ProjectMember,
   ProjectOverview,
+  ProjectPlanRevision,
   ProjectTask,
 } from "@/lib/api/projects";
 
@@ -142,6 +143,52 @@ const decisionRequests: ProjectDecisionRequest[] = [
   },
 ];
 
+const planRevisions: ProjectPlanRevision[] = [
+  {
+    created_task_ids: [],
+    demand_id: "demand-1",
+    id: "plan-revision-1",
+    payload: {
+      plan_acceptance_criteria: [
+        {
+          id: "evidence_complete",
+          satisfied_by: ["collect-evidence"],
+          statement: "客户接入证据齐全并可审计。",
+        },
+        {
+          id: "review_complete",
+          satisfied_by: ["review-evidence"],
+          statement: "验收结论已由负责人复核。",
+        },
+      ],
+      summary: "生成客户接入验收计划。",
+      tasks: [
+        {
+          employee_selection_reason: "负责收集客户接入材料。",
+          planned_task_key: "collect-evidence",
+          selected_employee_id: "employee-collector",
+          title: "收集接入证据",
+        },
+        {
+          depends_on: ["collect-evidence"],
+          employee_selection_reason: "负责复核证据并形成结论。",
+          planned_task_key: "review-evidence",
+          selected_employee_id: "employee-reviewer",
+          title: "复核接入证据",
+        },
+      ],
+    },
+    plan_fingerprint: "fingerprint",
+    project_id: "project-1",
+    review_required: true,
+    revision_number: 1,
+    status: "pending_review",
+    tenant_id: "tenant-1",
+    validation_errors: [],
+    validation_warnings: [],
+  },
+];
+
 function renderDetail(
   props: Partial<React.ComponentProps<typeof ProjectOperationalDetail>> = {},
 ) {
@@ -222,5 +269,37 @@ describe("ProjectOperationalDetail", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "批准 确认上线风险" }));
     expect(onResolveDecision).toHaveBeenCalledWith("decision-1", "approved");
+  });
+
+  it("shows dispatch order and acceptance criteria from the latest plan revision", async () => {
+    const screen = await renderDetail({ planRevisions });
+    const dispatchOrder = screen.getByTestId("plan-dispatch-order");
+    const acceptanceCriteria = screen.getByTestId("plan-acceptance-criteria");
+
+    await expect.element(screen.getByText("调度顺序")).toBeVisible();
+    await expect.element(screen.getByText("验收判据")).toBeVisible();
+    await expect.element(dispatchOrder.getByText("收集接入证据")).toBeVisible();
+    await expect.element(dispatchOrder.getByText("复核接入证据")).toBeVisible();
+    await expect
+      .element(acceptanceCriteria.getByText("客户接入证据齐全并可审计。"))
+      .toBeVisible();
+    await expect
+      .element(acceptanceCriteria.getByText("验收结论已由负责人复核。"))
+      .toBeVisible();
+    await expect.element(dispatchOrder.getByText("employee-collector")).toBeVisible();
+    await expect
+      .element(dispatchOrder.getByText("负责收集客户接入材料。"))
+      .toBeVisible();
+    const dispatchOrderText =
+      screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
+    expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(
+      dispatchOrderText.indexOf("复核接入证据"),
+    );
+    await expect
+      .element(acceptanceCriteria.getByText("收集接入证据"))
+      .toBeVisible();
+    await expect
+      .element(acceptanceCriteria.getByText("复核接入证据"))
+      .toBeVisible();
   });
 });
