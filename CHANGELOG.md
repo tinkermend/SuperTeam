@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-10 17:48：拆除派发假闸门与散文熔断指纹： 不再产出 /；能力快照构造器停止从 planner 输出取能力； 收缩为 /； 只取 status + 排序后的 ；planner 提示词不再把  绑到人类审批。验证：
+> superteam@ verify:control-plane /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
+> corepack pnpm verify:contracts && corepack pnpm test:go
+
+
+> superteam@ verify:contracts /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
+> node scripts/verify-foundation-contracts.mjs
+
+foundation contract guard passed
+
+> superteam@ test:go /Users/tinker/src/singe/SuperTeam/.worktrees/plan-phase-01-remove-fictional-gate
+> go test ./apps/control-plane/...
+
+?   	github.com/superteam/control-plane	[no test files]
+?   	github.com/superteam/control-plane/cmd/control-plane	[no test files]
+?   	github.com/superteam/control-plane/cmd/openfga-backfill	[no test files]
+?   	github.com/superteam/control-plane/cmd/server	[no test files]
+ok  	github.com/superteam/control-plane/internal/api	5.512s
+?   	github.com/superteam/control-plane/internal/api/gen	[no test files]
+ok  	github.com/superteam/control-plane/internal/api/handlers	(cached)
+ok  	github.com/superteam/control-plane/internal/api/middleware	(cached)
+ok  	github.com/superteam/control-plane/internal/app	(cached)
+ok  	github.com/superteam/control-plane/internal/approval	(cached)
+ok  	github.com/superteam/control-plane/internal/artifact	(cached)
+ok  	github.com/superteam/control-plane/internal/audit	(cached)
+ok  	github.com/superteam/control-plane/internal/auth	(cached)
+ok  	github.com/superteam/control-plane/internal/authz	0.627s
+ok  	github.com/superteam/control-plane/internal/authzcenter	(cached)
+ok  	github.com/superteam/control-plane/internal/avatar	(cached)
+ok  	github.com/superteam/control-plane/internal/capability	(cached)
+ok  	github.com/superteam/control-plane/internal/config	(cached)
+?   	github.com/superteam/control-plane/internal/cost	[no test files]
+ok  	github.com/superteam/control-plane/internal/employee	(cached)
+ok  	github.com/superteam/control-plane/internal/inbox	(cached)
+?   	github.com/superteam/control-plane/internal/platform	[no test files]
+ok  	github.com/superteam/control-plane/internal/project	(cached)
+ok  	github.com/superteam/control-plane/internal/prompttemplate	(cached)
+ok  	github.com/superteam/control-plane/internal/runtime	(cached)
+ok  	github.com/superteam/control-plane/internal/runtimecommand	(cached)
+ok  	github.com/superteam/control-plane/internal/skill	(cached)
+ok  	github.com/superteam/control-plane/internal/storage	(cached)
+ok  	github.com/superteam/control-plane/internal/storage/queries	0.631s
+ok  	github.com/superteam/control-plane/internal/storage/testenv	(cached)
+ok  	github.com/superteam/control-plane/internal/task	(cached)
+ok  	github.com/superteam/control-plane/internal/teamlending	(cached)
+ok  	github.com/superteam/control-plane/internal/tenant	(cached)
+ok  	github.com/superteam/control-plane/internal/workflow	(cached)
+ok  	github.com/superteam/control-plane/internal/workflow/projectcoordination	0.543s 通过；真实链路用本 worktree Control Plane(:8081) + 既有 Runtime/Web，创建空  员工并批准计划后，任务  闸门  且 checks 不含 ， 非空，任务越过能力闸门完成执行后进入 ；证据 。
+
 - 2026-07-10 02:08 完成数字员工配置破坏性重构：删除旧个人治理配置字段，改为人格记忆、能力绑定和预算策略，并通过真实创建与 Runtime 投影链路验证。
 
 - 2026-07-09 04:11：新增数字员工可审计删除：Control Plane 提供 `DELETE /api/v1/digital-employees/{employeeId}`，删除前阻断 `queued/dispatching/running/cancelling` 运行与 `queued/running/in_progress` 项目任务；成功路径软删除员工、当前执行实例、环境变量、MCP/技能/配置/工作目录投影并清理项目员工节点亲和，保留历史运行/项目任务/工件/审计，同时写入 `digital_employee.delete` 审计和清理候选。Web 员工详情页按 `allowed_actions` 展示危险删除按钮，要求输入员工名称确认，409 时展示阻断项。验证：`go test ./apps/control-plane/internal/authz -run 'TestDBAuthorizerEmployee(ActionsUseBusinessActionSurface|OwnerCanUsePersonalEmployeeActions)' -count=1`、`go test ./apps/control-plane/internal/employee -run 'TestServiceDeleteDigitalEmployee' -count=1`、`go test ./apps/control-plane/internal/api -run 'Test(DeleteDigitalEmployeeRoute|GetDigitalEmployeeIncludesAllowedDeleteAction|EmployeeRoutesUseAuthzActions)' -count=1`、`go test ./apps/control-plane/internal/employee ./apps/control-plane/internal/api ./apps/control-plane/internal/authz -count=1`、`corepack pnpm generate:control-plane`、`corepack pnpm verify:contracts`、`corepack pnpm --filter ./apps/web run test -- src/lib/api/client.test.ts src/lib/api/employees.test.ts src/features/employees/components/employee-detail-header.test.tsx src/features/employees/detail.test.tsx`、`make -C apps/control-plane generate-sqlc`、`git diff --check` 通过；真实链路重启 Control Plane(:8081)+Web(:3000) 后，`admin/admin` 登录真实接口，插入临时数字员工后 `GET` 返回 200、`DELETE` 返回 204、删除后 `GET` 返回 404，DB 确认 `status=disabled`、`deleted_at` 非空且 `audit_events.action=digital_employee.delete` 含 `cleanup_candidates`，Chrome 打开临时员工详情页确认真实页面显示“删除员工”按钮和二次确认弹窗且确认按钮默认禁用。已知：`corepack pnpm --filter ./apps/web run typecheck` 当前被既有无关错误阻断（`team-constitution-tab.tsx` 的 unknown hard_rules、`workflows/index.test.tsx` fixture 缺 `execution_summaries`），本次未将 typecheck 作为通过项。
