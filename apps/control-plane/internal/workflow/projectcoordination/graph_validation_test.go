@@ -189,6 +189,7 @@ func TestValidateRouteDecisionPlanRejectsMissingSelectionReason(t *testing.T) {
 }
 
 func TestValidateRouteDecisionPlanRejectsHardMissingCapabilityWithoutReview(t *testing.T) {
+	t.Skip("removed in Task 3")
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validGraphPlan(employeeID)

@@ -235,8 +235,8 @@ func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 	})
 
 	require.Equal(t, []string{"database.write"}, result.MissingCapabilities)
-	require.Contains(t, result.HardFailures, "missing_capability:database.write")
-	require.Equal(t, 0, result.Score)
+	require.Empty(t, result.HardFailures, "missing capability is no longer a hard failure")
+	require.Greater(t, result.Score, 0, "score survives a missing capability")
 
 	runtimeMismatchProfile := profile
 	runtimeMismatchProfile.RuntimeRequirements.ProviderTypes = []string{"claude"}
@@ -286,6 +286,35 @@ func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 
 	require.Equal(t, 0, result.Score)
 	require.Contains(t, result.HardFailures, "runtime_contract_missing")
+}
+
+func TestScorePlanningProfileDoesNotHardFailOnMissingCapability(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: uuid.New(),
+		Capabilities:      []PlanningCapability{{Key: "bash_execution"}},
+	}
+	req := PlanningTaskRequirements{
+		// A name the planner invented. There is no registry it could have drawn from.
+		RequiredCapabilities: []string{"quantum-ledger.reconcile_verification"},
+	}
+
+	score := ScorePlanningProfile(profile, req)
+
+	require.Empty(t, score.HardFailures, "an unmatched capability name is not a hard failure")
+	require.Greater(t, score.Score, 0, "score must survive an unmatched capability")
+	require.Equal(t, []string{"quantum-ledger.reconcile_verification"}, score.MissingCapabilities,
+		"the diff is still reported for display")
+}
+
+func TestScorePlanningProfileScoreIsIndependentOfCapabilities(t *testing.T) {
+	profile := DigitalEmployeePlanningProfile{DigitalEmployeeID: uuid.New()}
+
+	withNone := ScorePlanningProfile(profile, PlanningTaskRequirements{})
+	withInvented := ScorePlanningProfile(profile, PlanningTaskRequirements{
+		RequiredCapabilities: []string{"a", "b", "c"},
+	})
+
+	require.Equal(t, withNone.Score, withInvented.Score)
 }
 
 func TestPlanningProfileSnapshotHashIsStable(t *testing.T) {
