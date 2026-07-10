@@ -128,11 +128,16 @@ type PlanningProfileScore struct {
 	MissingCapabilities        []string `json:"missing_capabilities,omitempty"`
 	MatchedRuntimeRequirements []string `json:"matched_runtime_requirements,omitempty"`
 	MissingRuntimeRequirements []string `json:"missing_runtime_requirements,omitempty"`
-	MatchedPermissions         []string `json:"matched_permissions,omitempty"`
-	MissingPermissions         []string `json:"missing_permissions,omitempty"`
-	MatchedTools               []string `json:"matched_tools,omitempty"`
-	MissingTools               []string `json:"missing_tools,omitempty"`
-	HardFailures               []string `json:"hard_failures,omitempty"`
+	// UnrecognizedRuntimeRequirements are requirement strings whose kind the
+	// platform does not know how to evaluate. They are a planner syntax problem,
+	// not a fact about the employee, so they never hard-fail and never dilute the
+	// score. Display only.
+	UnrecognizedRuntimeRequirements []string `json:"unrecognized_runtime_requirements,omitempty"`
+	MatchedPermissions              []string `json:"matched_permissions,omitempty"`
+	MissingPermissions              []string `json:"missing_permissions,omitempty"`
+	MatchedTools                    []string `json:"matched_tools,omitempty"`
+	MissingTools                    []string `json:"missing_tools,omitempty"`
+	HardFailures                    []string `json:"hard_failures,omitempty"`
 }
 
 func BuildDigitalEmployeePlanningProfile(member project.ProjectMember, source DigitalEmployeePlanningProfileSourceRecord, runtimeReady bool) DigitalEmployeePlanningProfile {
@@ -439,6 +444,13 @@ func scoreRuntime(profile DigitalEmployeePlanningProfile, req PlanningTaskRequir
 	for _, requirement := range req.RuntimeRequirements {
 		kind, value := splitRequirement(requirement)
 		if kind == "" {
+			continue
+		}
+		if !knownRuntimeRequirementKind(kind) {
+			// splitRequirement("codex") yields kind="codex", value="". The planner
+			// named the right thing in the wrong syntax; that is not evidence the
+			// employee lacks anything.
+			result.UnrecognizedRuntimeRequirements = append(result.UnrecognizedRuntimeRequirements, normalizeRequirement(requirement))
 			continue
 		}
 		if runtimeRequirementSatisfied(profile.RuntimeRequirements, kind, value) {
@@ -758,6 +770,17 @@ func tokenSet(value string) map[string]struct{} {
 		}
 	}
 	return tokens
+}
+
+// knownRuntimeRequirementKind reports whether the platform can evaluate this
+// requirement kind at all. It must stay in sync with runtimeRequirementSatisfied.
+func knownRuntimeRequirementKind(kind string) bool {
+	switch kind {
+	case "provider", "runtime_node":
+		return true
+	default:
+		return false
+	}
 }
 
 func runtimeRequirementSatisfied(runtime PlanningRuntimeRequirements, kind string, value string) bool {
