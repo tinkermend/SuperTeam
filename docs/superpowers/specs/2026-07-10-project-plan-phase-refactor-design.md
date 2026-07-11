@@ -391,7 +391,7 @@ C 卡住时只能申报：
 
 **为什么允许自述「我卡住了」而不允许自述「我完成了」**
 
-「说自己卡住」没有收益，最坏是浪费一轮预算，而 `plan_iteration` 计数与指纹熔断会兜住（§4.8）。「说自己完成」能直接下班。
+「说自己卡住」没有收益，最坏是浪费一轮预算，而 `plan_iteration` / `revisionMaxAttempts` 计数上限会兜住（§4.8；指纹熔断已删，见该节勘误）。「说自己完成」能直接下班。
 
 设计必须让**说谎无利可图的方向敞开，有利可图的方向关死**。这条不对称是整个方案能自洽的根。
 
@@ -460,7 +460,9 @@ ALTER TABLE project_tasks ADD COLUMN plan_iteration INTEGER NOT NULL DEFAULT 0;
 
 **都不放 runtime 的 `config.yaml`**：按架构分层，Runtime 不承载业务策略。
 
-**熔断**：复用 `repeatedRevisionFailure`（`project_store.go:3141`）的骨架，但**必须先修掉它的指纹**。
+> **勘误（2026-07-11）：指纹熔断已删除，终止只靠计数上限。** 下面整段「指纹重定义」的设计**不再采用**，`revisionFailureFingerprint` 与 `repeatedRevisionFailure` 已从代码移除。理由：指纹能被任意内容扰动击穿，天然不能承担终止性（liveness）保证；它只在**封闭词表**字段（`missing_inputs`）上可靠，而那里计数上限本就必然触发，指纹只省一两轮；在**模型自由列表**字段（`requested_changes`）上换措辞即失效。真正保证不进死循环的是与内容无关的计数：返工路径 `revisionMaxAttempts`（§4.8 兜底三级/四级），延展路径 `max_plan_iterations`。指纹是伪保证，保留只会让人误以为它是安全阀，故删。本节以下（`熔断` 骨架、指纹重定义表、`任何模型自由文本都不进指纹`）仅存档，不代表现行规范；`熔断之后平台不猜` 一段仍然成立，只是触发条件从「两次相同指纹」改为「计数上限耗尽」。
+
+**熔断（存档，已废弃）**：~~复用 `repeatedRevisionFailure`（`project_store.go:3141`）的骨架，但**必须先修掉它的指纹**。~~
 
 现状 `revisionFailureFingerprint`（`project_store.go:3043`）把 `contract.Summary` 揉进指纹：
 
@@ -538,7 +540,7 @@ B' 续接 B **那个任务**的会话——继续干活，上下文完整，不�
 | `required_inputs[k]` 无上游生产者 | 拒绝落库（计划有洞） |
 | C 申报 `missing_inputs` 含清单外的 key | 契约违规 → 转人类 |
 | 取证提取不到 | 标 `unknown`，绝不标 `passed`；该判据必须由人类裁决 |
-| 同一血缘根下连续两次相同结构化失败指纹 | 熔断 → 转人类 |
+| 同一血缘根返工/延展达计数上限（`revisionMaxAttempts` / `max_plan_iterations`） | 转人类（指纹熔断已删，见 §4.8 勘误） |
 | `max_plan_iterations` 耗尽 | 停止延展 → 转人类 |
 | 延展的重跑集合超出预算 | 调用预算闸门（`autonomous-outer-loop` spec），可拒绝延展 → 转人类 |
 
@@ -562,7 +564,7 @@ B' 续接 B **那个任务**的会话——继续干活，上下文完整，不�
 3. 构造 B 的 `expected_outputs` 缺失 → C 申报 `blocked{missing_inputs:[k]}` → 库中出现 `RevisionOfTaskID` 指向 B 的新任务，且**受派人是 B 而非 C**（这是 §1.3 的核心判据）。
 4. B' 的 provider session 与 B 同一条（`provider_sessions` 中 `project_task_id` 相同），与该员工其他任务的 session 不同。
 5. C' 被重跑（下游重跑）。
-6. 人为让判据不达标并连续两次相同失败 → 熔断 → 任务转 `waiting_human`。
+6. 人为让判据反复不达标直到返工/延展达计数上限 → 任务转 `waiting_human`（指纹熔断已删，见 §4.8 勘误）。
 7. 一个 `missing_capabilities` 非空的计划**能够正常派发**（证明假闸门已拆除）。
 
 第 3 条与第 7 条是本 spec 的核心判据。
