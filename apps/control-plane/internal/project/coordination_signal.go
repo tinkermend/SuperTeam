@@ -15,6 +15,7 @@ type CoordinatorSignalClient interface {
 	SignalEmployeeTaskFailed(ctx context.Context, signal EmployeeTaskFailedSignal) error
 	SignalEmployeeTransferRequested(ctx context.Context, signal EmployeeTransferRequestedSignal) error
 	SignalHumanDecisionSubmitted(ctx context.Context, signal HumanDecisionSubmittedSignal) error
+	TerminateProjectCoordinator(ctx context.Context, signal TerminateProjectCoordinatorSignal) error
 }
 
 type NoopCoordinatorSignalClient struct{}
@@ -48,6 +49,10 @@ func (NoopCoordinatorSignalClient) SignalEmployeeTransferRequested(context.Conte
 }
 
 func (NoopCoordinatorSignalClient) SignalHumanDecisionSubmitted(context.Context, HumanDecisionSubmittedSignal) error {
+	return nil
+}
+
+func (NoopCoordinatorSignalClient) TerminateProjectCoordinator(context.Context, TerminateProjectCoordinatorSignal) error {
 	return nil
 }
 
@@ -118,4 +123,11 @@ type HumanDecisionSubmittedSignal struct {
 	Payload           map[string]any
 	ResolvedEventID   uuid.UUID
 	WorkflowID        string
+}
+
+type TerminateProjectCoordinatorSignal struct {
+	TenantID   uuid.UUID
+	ProjectID  uuid.UUID
+	WorkflowID string
+	Reason     string
 }

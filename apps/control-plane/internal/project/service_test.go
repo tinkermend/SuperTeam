@@ -11545,12 +11545,15 @@ type fakeCoordinatorSignalClient struct {
 	failedSignals      int
 	transferSignals    int
 	decisionSignals    int
+	terminateSignals   int
 	lastDemand         DemandSubmittedSignal
 	lastCompleted      EmployeeTaskCompletedSignal
 	lastDecision       HumanDecisionSubmittedSignal
+	lastTerminate      TerminateProjectCoordinatorSignal
 	demandSignalErr    error
 	policySignalErr    error
 	completedSignalErr error
+	terminateSignalErr error
 }
 
 func (f *fakeCoordinatorSignalClient) EnsureProjectCoordinator(ctx context.Context, signal ProjectCoordinatorSignal) error {
@@ -11594,6 +11597,12 @@ func (f *fakeCoordinatorSignalClient) SignalHumanDecisionSubmitted(ctx context.C
 	f.decisionSignals++
 	f.lastDecision = signal
 	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) TerminateProjectCoordinator(ctx context.Context, signal TerminateProjectCoordinatorSignal) error {
+	f.terminateSignals++
+	f.lastTerminate = signal
+	return f.terminateSignalErr
 }
 
 type fakeApprovalResolver struct {

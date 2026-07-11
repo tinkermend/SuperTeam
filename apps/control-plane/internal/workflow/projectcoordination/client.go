@@ -2,11 +2,13 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/project"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 )
@@ -95,6 +97,18 @@ func (c *SignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal 
 	})
 }
 
+func (c *SignalClient) TerminateProjectCoordinator(ctx context.Context, signal project.TerminateProjectCoordinatorSignal) error {
+	wfID := workflowID(signal.WorkflowID, signal.ProjectID.String())
+	err := c.client.TerminateWorkflow(ctx, wfID, "", signal.Reason)
+	if err == nil {
+		return nil
+	}
+	if isWorkflowMissingOrCompleted(err) {
+		return nil
+	}
+	return err
+}
+
 // signal delivers a signal via SignalWithStartWorkflow so a coordinator that has closed
 // (e.g. it failed on an earlier activity, or hit its continue-as-new gap) is transparently
 // restarted and the signal is not lost. A restarted run rebuilds its pending decision state
@@ -119,4 +133,13 @@ func workflowID(configuredWorkflowID, projectID string) string {
 		return configuredWorkflowID
 	}
 	return fmt.Sprintf("project-coordinator:%s", projectID)
+}
+
+func isWorkflowMissingOrCompleted(err error) bool {
+	var notFound *serviceerror.NotFound
+	if errors.As(err, &notFound) {
+		return true
+	}
+	var failedPrecondition *serviceerror.FailedPrecondition
+	return errors.As(err, &failedPrecondition)
 }
