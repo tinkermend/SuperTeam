@@ -130,7 +130,8 @@ func defaultConfig() Config {
 			MaxAttempts: 2,
 		},
 		Auth: AuthConfig{
-			CaptchaEnabled: true,
+			// 默认关闭；仅当配置或 AUTH_CAPTCHA_ENABLED=true 时开启。
+			CaptchaEnabled: false,
 		},
 		Authz: AuthzConfig{
 			Engine: "db",

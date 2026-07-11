@@ -581,11 +581,14 @@ func newCaptchaLoginHandler(t *testing.T) (*mockRepo, *Service, *HTTPHandler) {
 	t.Helper()
 	repo := newMockRepo()
 	now := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
-	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
-		Secret: "test-captcha-secret",
-		TTL:    5 * time.Minute,
-		Now:    func() time.Time { return now },
-	}))
+	svc, err := NewService(repo,
+		WithCaptchaOptions(CaptchaOptions{
+			Secret: "test-captcha-secret",
+			TTL:    5 * time.Minute,
+			Now:    func() time.Time { return now },
+		}),
+		WithCaptchaEnabled(true),
+	)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

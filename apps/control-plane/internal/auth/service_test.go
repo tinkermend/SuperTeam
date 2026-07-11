@@ -462,7 +462,7 @@ func (m *mockRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uui
 	return nil
 }
 
-func TestCaptchaEnabledDefaultsToTrue(t *testing.T) {
+func TestCaptchaEnabledDefaultsToFalse(t *testing.T) {
 	repo := newMockRepo()
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
@@ -471,8 +471,8 @@ func TestCaptchaEnabledDefaultsToTrue(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 
-	if !svc.IsCaptchaEnabled() {
-		t.Fatal("expected captcha to be enabled by default")
+	if svc.IsCaptchaEnabled() {
+		t.Fatal("expected captcha to be disabled by default")
 	}
 }
 
@@ -917,7 +917,7 @@ func TestCreateCaptchaChallengeReturnsImageAndPersistsHash(t *testing.T) {
 		Secret: "test-captcha-secret",
 		TTL:    5 * time.Minute,
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -955,7 +955,7 @@ func TestCreateCaptchaContinuesWhenExpiredCleanupFails(t *testing.T) {
 		Secret: "test-captcha-secret",
 		TTL:    5 * time.Minute,
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -996,7 +996,7 @@ func TestValidateAndConsumeCaptchaIsCaseInsensitiveAndOneTime(t *testing.T) {
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1028,7 +1028,7 @@ func TestValidateAndConsumeCaptchaConsumesExpiredAndWrongAnswers(t *testing.T) {
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1073,7 +1073,7 @@ func TestValidateAndConsumeCaptchaPropagatesInfrastructureErrors(t *testing.T) {
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1108,7 +1108,7 @@ func TestValidateAndConsumeCaptchaRejectsNilIDBeforeLookup(t *testing.T) {
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1129,7 +1129,7 @@ func TestValidateAndConsumeCaptchaLogsUsedFailureAfterTransaction(t *testing.T) 
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1158,7 +1158,7 @@ func TestValidateAndConsumeCaptchaRejectsInvalidAnswerLengthBeforeLookup(t *test
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
 		Secret: "test-captcha-secret",
 		Now:    func() time.Time { return now },
-	}))
+	}), WithCaptchaEnabled(true))
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

@@ -66,7 +66,26 @@ func TestLoadFromEnvAuthzDefaultsToDBEngine(t *testing.T) {
 	require.Empty(t, cfg.Authz.OpenFGA.ModelID)
 }
 
+func TestLoadFromEnvAuthCaptchaDefaultsToDisabled(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.False(t, cfg.Auth.CaptchaEnabled)
+}
+
 func TestLoadFromEnvAuthCaptchaEnabledOverride(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("AUTH_CAPTCHA_ENABLED", "true")
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.True(t, cfg.Auth.CaptchaEnabled)
+}
+
+func TestLoadFromEnvAuthCaptchaDisabledOverride(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("AUTH_CAPTCHA_ENABLED", "false")
 
@@ -166,6 +185,58 @@ auth:
 	}
 	require.Equal(t, "v1:file-key", cfg.EmployeeEnv.Keys)
 	require.Equal(t, "v1", cfg.EmployeeEnv.ActiveKeyID)
+	require.False(t, cfg.Auth.CaptchaEnabled)
+}
+
+func TestLoadFromFileCaptchaEnabledTrue(t *testing.T) {
+	path := writeConfigFile(t, `
+http:
+  addr: ":9090"
+postgres:
+  url: "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable"
+redis:
+  url: "redis://:secret@127.0.0.1:6379/0"
+objectStore:
+  endpoint: "http://127.0.0.1:9000"
+  region: "us-east-1"
+  bucket: "superteam-artifacts"
+  accessKeyId: "minio"
+  secretAccessKey: "minio-secret"
+  forcePathStyle: true
+employeeEnv:
+  keys: "v1:file-key"
+  activeKeyId: "v1"
+auth:
+  captchaEnabled: true
+`)
+
+	cfg, err := LoadFromFile(path)
+	require.NoError(t, err)
+	require.True(t, cfg.Auth.CaptchaEnabled)
+}
+
+func TestLoadFromFileCaptchaDefaultsDisabledWhenOmitted(t *testing.T) {
+	path := writeConfigFile(t, `
+http:
+  addr: ":9090"
+postgres:
+  url: "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable"
+redis:
+  url: "redis://:secret@127.0.0.1:6379/0"
+objectStore:
+  endpoint: "http://127.0.0.1:9000"
+  region: "us-east-1"
+  bucket: "superteam-artifacts"
+  accessKeyId: "minio"
+  secretAccessKey: "minio-secret"
+  forcePathStyle: true
+employeeEnv:
+  keys: "v1:file-key"
+  activeKeyId: "v1"
+`)
+
+	cfg, err := LoadFromFile(path)
+	require.NoError(t, err)
 	require.False(t, cfg.Auth.CaptchaEnabled)
 }
 

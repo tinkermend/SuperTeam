@@ -116,7 +116,7 @@ func NewService(repo Repository, options ...ServiceOption) (*Service, error) {
 	}
 	svc := &Service{
 		repo:           repo,
-		captchaEnabled: true,
+		captchaEnabled: false,
 		captchaTTL:     5 * time.Minute,
 		now:            func() time.Time { return time.Now().UTC() },
 	}
