@@ -761,9 +761,17 @@ export function ProjectsView({
     overviewQuery.data?.project.id === effectiveProjectId
       ? overviewQuery.data
       : undefined;
-  const displayedProject =
-    overview?.project ??
-    (selectedProject?.id === effectiveProjectId ? selectedProject : undefined);
+  const selectedProjectDetail =
+    selectedProject?.id === effectiveProjectId ? selectedProject : undefined;
+  // Prefer overview.project for live status fields, but keep allowed_actions from
+  // getProject — overview payloads do not include action gates.
+  const displayedProject = overview?.project
+    ? {
+        ...overview.project,
+        allowed_actions:
+          selectedProjectDetail?.allowed_actions ?? overview.project.allowed_actions,
+      }
+    : selectedProjectDetail;
   const isArchived = displayedProject?.status === "archived";
   const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
     (decision) => decision.project_id === effectiveProjectId,
