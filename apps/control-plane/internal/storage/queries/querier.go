@@ -152,6 +152,7 @@ type Querier interface {
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)

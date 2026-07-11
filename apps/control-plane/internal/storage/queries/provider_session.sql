@@ -183,6 +183,16 @@ FROM provider_session_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND provider_session_id = sqlc.arg('provider_session_id')::uuid;
 
+-- name: FindProviderSessionForTaskRoot :one
+SELECT provider_session_id
+FROM provider_sessions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND project_task_root_id = sqlc.arg('project_task_root_id')::uuid
+  AND status = 'active'
+ORDER BY last_active_at DESC
+LIMIT 1;
+
 -- name: UpsertProviderSessionByExternalID :one
 INSERT INTO provider_sessions (
     tenant_id,

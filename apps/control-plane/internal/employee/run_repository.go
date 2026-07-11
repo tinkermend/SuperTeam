@@ -25,6 +25,10 @@ type DigitalEmployeeRunRepository interface {
 	CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) (bool, error)
 	UpsertProviderSession(ctx context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error)
+	// FindProviderSessionForTaskRoot looks up the active provider session
+	// scoped to (employee, task lineage root). It returns an empty string
+	// when no active session matches — this is a lookup, not an error path.
+	FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error)
 	CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)

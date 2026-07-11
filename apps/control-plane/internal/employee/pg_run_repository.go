@@ -504,6 +504,21 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 	return session.ID, nil
 }
 
+func (r *PgRunRepository) FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error) {
+	providerSessionID, err := r.q.FindProviderSessionForTaskRoot(ctx, queries.FindProviderSessionForTaskRootParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ProjectTaskRootID: taskRootID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return providerSessionID, nil
+}
+
 func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	payload, err := jsonBytesFromMap(redactRuntimeEventPayloadForPersistence(req.Payload), "payload")
 	if err != nil {

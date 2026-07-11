@@ -973,3 +973,76 @@ func TestPgRepositoryListRunsDetailedFiltersByStatusAndProject(t *testing.T) {
 	require.Equal(t, int64(1), recent.TotalCount)
 	require.Equal(t, inProgressRunID, recent.Items[0].Run.ID)
 }
+
+// TestPgRunRepositoryFindProviderSessionForTaskRoot exercises the task-lineage
+// scoped session lookup added for session resumption across task revisions:
+// a session hits when (employee, task lineage root) matches an active row,
+// but a different root — even for the same employee — must miss.
+func TestPgRunRepositoryFindProviderSessionForTaskRoot(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "provider_session_task_root_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	root := uuid.New()
+	otherRoot := uuid.New()
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	insertSession := func(providerSessionID string, forEmployee, taskRoot uuid.UUID, status string, lastActiveAt time.Time) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO provider_sessions (
+				tenant_id, provider_session_id, digital_employee_id,
+				execution_instance_id, runtime_node_id, provider_type,
+				status, last_active_at, project_task_root_id
+			) VALUES ($1, $2, $3, $4, $5, 'codex', $6, $7, $8)
+		`, tenantID, providerSessionID, forEmployee, uuid.New(), uuid.New(), status, lastActiveAt, taskRoot)
+		require.NoError(t, err)
+	}
+
+	now := time.Now().UTC()
+	insertSession("sess-root-active", employeeID, root, "active", now.Add(-5*time.Minute))
+	// A stale/closed session sharing the same root must not shadow the active one.
+	insertSession("sess-root-completed", employeeID, root, "completed", now)
+	insertSession("sess-other-root-active", employeeID, otherRoot, "active", now.Add(-1*time.Minute))
+
+	repo := NewPgRunRepository(queries.New(conn))
+
+	t.Run("same employee and root hits the active session", func(t *testing.T) {
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, root)
+		require.NoError(t, err)
+		require.Equal(t, "sess-root-active", found)
+	})
+
+	t.Run("different root for the same employee misses", func(t *testing.T) {
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, uuid.New())
+		require.NoError(t, err)
+		require.Empty(t, found)
+	})
+
+	t.Run("unknown employee misses even for a known root", func(t *testing.T) {
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, uuid.New(), root)
+		require.NoError(t, err)
+		require.Empty(t, found)
+	})
+}

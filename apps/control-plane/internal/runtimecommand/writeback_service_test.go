@@ -215,6 +215,10 @@ func (f fakeRunRepository) UpsertProviderSession(context.Context, employee.Upser
 	return uuid.Nil, employee.ErrInvalidInput
 }
 
+func (f fakeRunRepository) FindProviderSessionForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
+	return "", employee.ErrInvalidInput
+}
+
 func (f fakeRunRepository) CreateProviderSessionEventIfAbsent(context.Context, employee.CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	return uuid.Nil, employee.ErrInvalidInput
 }

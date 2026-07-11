@@ -1702,6 +1702,10 @@ func (f *fakeRunServiceRepository) UpsertProviderSession(context.Context, Upsert
 	return uuid.New(), nil
 }
 
+func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
+	return "", nil
+}
+
 func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	return uuid.MustParse("00000000-0000-0000-0000-000000000701"), nil
 }

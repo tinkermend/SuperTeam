@@ -1734,6 +1734,8 @@ type ProviderSession struct {
 	LastErrorFamily pgtype.Text `json:"last_error_family"`
 	// Runtime最后回写会话时间
 	LastRuntimeSeenAt pgtype.Timestamptz `json:"last_runtime_seen_at"`
+	// Task lineage root this session is scoped to; null for pre-refactor employee-level sessions.
+	ProjectTaskRootID uuid.NullUUID `json:"project_task_root_id"`
 }
 
 // Provider 会话事件流表

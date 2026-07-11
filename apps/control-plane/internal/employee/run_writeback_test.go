@@ -1235,6 +1235,10 @@ func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, re
 	return id, nil
 }
 
+func (f *fakeRunWritebackRepository) FindProviderSessionForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
+	return "", nil
+}
+
 func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	commandID := ""
 	if req.CommandID != nil {

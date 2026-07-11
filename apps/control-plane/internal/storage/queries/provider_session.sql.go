@@ -70,7 +70,7 @@ WHERE dei.id = $6::uuid
         AND rs.expires_at > NOW()
         AND rs.revoked_at IS NULL
   )
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 `
 
 type CreateProviderSessionParams struct {
@@ -124,6 +124,7 @@ func (q *Queries) CreateProviderSession(ctx context.Context, arg CreateProviderS
 		&i.LastRunID,
 		&i.LastErrorFamily,
 		&i.LastRuntimeSeenAt,
+		&i.ProjectTaskRootID,
 	)
 	return i, err
 }
@@ -382,6 +383,30 @@ func (q *Queries) CreateProviderSessionEventIfAbsent(ctx context.Context, arg Cr
 	return i, err
 }
 
+const FindProviderSessionForTaskRoot = `-- name: FindProviderSessionForTaskRoot :one
+SELECT provider_session_id
+FROM provider_sessions
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND project_task_root_id = $3::uuid
+  AND status = 'active'
+ORDER BY last_active_at DESC
+LIMIT 1
+`
+
+type FindProviderSessionForTaskRootParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ProjectTaskRootID uuid.UUID `json:"project_task_root_id"`
+}
+
+func (q *Queries) FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error) {
+	row := q.db.QueryRow(ctx, FindProviderSessionForTaskRoot, arg.TenantID, arg.DigitalEmployeeID, arg.ProjectTaskRootID)
+	var provider_session_id string
+	err := row.Scan(&provider_session_id)
+	return provider_session_id, err
+}
+
 const GetLatestProviderSessionEventSequence = `-- name: GetLatestProviderSessionEventSequence :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_sequence
 FROM provider_session_events
@@ -402,7 +427,7 @@ func (q *Queries) GetLatestProviderSessionEventSequence(ctx context.Context, arg
 }
 
 const GetProviderSession = `-- name: GetProviderSession :one
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 FROM provider_sessions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -440,12 +465,13 @@ func (q *Queries) GetProviderSession(ctx context.Context, arg GetProviderSession
 		&i.LastRunID,
 		&i.LastErrorFamily,
 		&i.LastRuntimeSeenAt,
+		&i.ProjectTaskRootID,
 	)
 	return i, err
 }
 
 const GetProviderSessionByExternalID = `-- name: GetProviderSessionByExternalID :one
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 FROM provider_sessions
 WHERE tenant_id = $1::uuid
   AND provider_type = $2::varchar
@@ -485,6 +511,7 @@ func (q *Queries) GetProviderSessionByExternalID(ctx context.Context, arg GetPro
 		&i.LastRunID,
 		&i.LastErrorFamily,
 		&i.LastRuntimeSeenAt,
+		&i.ProjectTaskRootID,
 	)
 	return i, err
 }
@@ -541,7 +568,7 @@ func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProvide
 }
 
 const ListProviderSessionsForDigitalEmployee = `-- name: ListProviderSessionsForDigitalEmployee :many
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 FROM provider_sessions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -597,6 +624,7 @@ func (q *Queries) ListProviderSessionsForDigitalEmployee(ctx context.Context, ar
 			&i.LastRunID,
 			&i.LastErrorFamily,
 			&i.LastRuntimeSeenAt,
+			&i.ProjectTaskRootID,
 		); err != nil {
 			return nil, err
 		}
@@ -624,7 +652,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 `
 
 type UpdateProviderSessionStatusParams struct {
@@ -666,6 +694,7 @@ func (q *Queries) UpdateProviderSessionStatus(ctx context.Context, arg UpdatePro
 		&i.LastRunID,
 		&i.LastErrorFamily,
 		&i.LastRuntimeSeenAt,
+		&i.ProjectTaskRootID,
 	)
 	return i, err
 }
@@ -756,7 +785,7 @@ ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()
         ELSE provider_sessions.updated_at
     END
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 `
 
 type UpsertProviderSessionByExternalIDParams struct {
@@ -822,6 +851,7 @@ func (q *Queries) UpsertProviderSessionByExternalID(ctx context.Context, arg Ups
 		&i.LastRunID,
 		&i.LastErrorFamily,
 		&i.LastRuntimeSeenAt,
+		&i.ProjectTaskRootID,
 	)
 	return i, err
 }
