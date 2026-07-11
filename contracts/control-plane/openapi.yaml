@@ -5309,6 +5309,8 @@ components:
         - title
         - status
         - requires_human_approval
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -5360,6 +5362,12 @@ components:
         planner_metadata:
           type: object
           additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     ProjectTaskGraph:
       type: object
       required:
@@ -5553,6 +5561,9 @@ components:
           type: string
         status_reason:
           type: string
+        created_at:
+          type: string
+          format: date-time
         updated_at:
           type: string
           format: date-time

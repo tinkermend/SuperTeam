@@ -2039,6 +2039,8 @@ type projectTaskResponse struct {
 	InputRequirements         map[string]any `json:"input_requirements"`
 	HandoffContract           map[string]any `json:"handoff_contract"`
 	PlannerMetadata           map[string]any `json:"planner_metadata"`
+	CreatedAt                 string         `json:"created_at"`
+	UpdatedAt                 string         `json:"updated_at"`
 }
 
 type projectTaskGraphResponse struct {
@@ -2097,6 +2099,7 @@ type projectTaskGraphNodeResponse struct {
 	HandoffContract           map[string]any                          `json:"handoff_contract"`
 	PlannerMetadata           map[string]any                          `json:"planner_metadata"`
 	StatusReason              string                                  `json:"status_reason,omitempty"`
+	CreatedAt                 string                                  `json:"created_at,omitempty"`
 	UpdatedAt                 string                                  `json:"updated_at,omitempty"`
 	StartedAt                 string                                  `json:"started_at,omitempty"`
 	FinishedAt                string                                  `json:"finished_at,omitempty"`
@@ -2819,6 +2822,8 @@ func taskResponseFromDomain(task ProjectTask) projectTaskResponse {
 		InputRequirements:         mapOrEmpty(task.InputRequirements),
 		HandoffContract:           mapOrEmpty(task.HandoffContract),
 		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
+		CreatedAt:                 timeValue(task.CreatedAt),
+		UpdatedAt:                 timeValue(task.UpdatedAt),
 	}
 }
 
@@ -2896,6 +2901,10 @@ func taskGraphNodeResponses(nodes []ProjectTaskGraphNode) []projectTaskGraphNode
 
 func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraphNodeResponse {
 	task := node.Task
+	createdAt := ""
+	if !task.CreatedAt.IsZero() {
+		createdAt = task.CreatedAt.Format(time.RFC3339)
+	}
 	updatedAt := ""
 	if node.UpdatedAt != nil {
 		updatedAt = node.UpdatedAt.Format(time.RFC3339)
@@ -2931,6 +2940,7 @@ func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraph
 		HandoffContract:           mapOrEmpty(task.HandoffContract),
 		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
 		StatusReason:              node.StatusReason,
+		CreatedAt:                 createdAt,
 		UpdatedAt:                 updatedAt,
 		StartedAt:                 startedAt,
 		FinishedAt:                finishedAt,

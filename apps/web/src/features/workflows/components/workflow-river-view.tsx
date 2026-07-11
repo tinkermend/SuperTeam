@@ -12,6 +12,7 @@ import {
   WorkSurface,
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
+import { compareIsoDesc, formatDateTime, formatRelativeTime as formatSharedRelativeTime } from "@/lib/format-time";
 import type { WorkflowInstanceSummary } from "@/lib/api/projects";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
 
@@ -392,6 +393,13 @@ function RiverLane({
         <span className="text-[10.5px] text-v3-ink-3">
           提交 <span className="font-semibold text-v3-ink-2">{instance.submitted_by_display_name || "—"}</span>
         </span>
+        <time
+          className="tabular-nums text-[10.5px] text-v3-ink-3"
+          dateTime={instance.created_at}
+          title={formatDateTime(instance.created_at)}
+        >
+          创建 {formatSharedRelativeTime(instance.created_at)}
+        </time>
       </div>
 
       {/* 河道主体 */}
@@ -402,7 +410,13 @@ function RiverLane({
             {isClosed ? `运行 ${formatDuration(duration)} · 已结束` : `已持续 ${formatDuration(duration)}`}
           </span>
           <span className="text-v3-ink-4">·</span>
-          <span>创建 {formatTime(instance.created_at)}</span>
+          <time
+            className="tabular-nums text-v3-ink-2"
+            dateTime={instance.created_at}
+            title={formatDateTime(instance.created_at)}
+          >
+            创建 {formatSharedRelativeTime(instance.created_at)} · {formatTime(instance.created_at)}
+          </time>
           {sla ? (
             <span
               className={cn(
@@ -633,7 +647,7 @@ function sortRiverInstances(instances: WorkflowInstanceSummary[]) {
     const aAtt = riverCategory(a) === "attention" ? 0 : 1;
     const bAtt = riverCategory(b) === "attention" ? 0 : 1;
     if (aAtt !== bAtt) return aAtt - bAtt;
-    return instanceDurationMs(b) - instanceDurationMs(a);
+    return compareIsoDesc(a.created_at, b.created_at);
   });
 }
 
