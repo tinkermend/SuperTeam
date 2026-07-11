@@ -8157,6 +8157,158 @@ func TestListPaginationIsNormalized(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectBlockedByActiveTask(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "阻断项目",
+		Goal:                   "不可删除",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.deleteBlockers = []ProjectDeleteBlocker{{
+		Type:   "project_task",
+		ID:     uuid.New().String(),
+		Status: "running",
+		Title:  "执行中的任务",
+	}}
+
+	err = service.DeleteProject(context.Background(), DeleteProjectRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorUserID: actorID,
+	})
+	require.ErrorIs(t, err, ErrProjectDeleteBlocked)
+	var blocked *ProjectDeleteBlockedError
+	require.ErrorAs(t, err, &blocked)
+	require.Len(t, blocked.Blockers, 1)
+	require.Equal(t, 0, coordinator.terminateSignals)
+	require.Nil(t, repo.projects[projectID].DeletedAt)
+	require.Len(t, repo.deleteAuditEvents, 0)
+}
+
+func TestDeleteProjectTerminatesThenCascades(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	workflowID := "project-coordinator:" + projectID.String()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "可删除项目",
+		Goal:                   "清理",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: workflowID,
+	}
+	repo.deleteCascadeResult = ProjectDeleteCascadeResult{
+		MemberCount: 2, TaskCount: 3, DecisionCount: 1, ApprovalCount: 1,
+		InboxCount: 1, RuntimeNodeCount: 1, AffinityCount: 1, PlacementCount: 1,
+	}
+
+	err = service.DeleteProject(context.Background(), DeleteProjectRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorUserID: actorID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, coordinator.terminateSignals)
+	require.Equal(t, tenantID, coordinator.lastTerminate.TenantID)
+	require.Equal(t, projectID, coordinator.lastTerminate.ProjectID)
+	require.Equal(t, workflowID, coordinator.lastTerminate.WorkflowID)
+	require.Equal(t, "project deleted", coordinator.lastTerminate.Reason)
+	require.NotNil(t, repo.projects[projectID].DeletedAt)
+	require.Equal(t, "terminated", repo.projects[projectID].CoordinationStatus)
+	require.Len(t, repo.deleteAuditEvents, 1)
+	require.Equal(t, actorID, repo.deleteAuditEvents[0].ActorUserID)
+	require.Equal(t, projectID, repo.deleteAuditEvents[0].Project.ID)
+	require.Equal(t, 2, repo.deleteAuditEvents[0].CascadeResult.MemberCount)
+}
+
+func TestDeleteProjectAbortsWhenTerminateFails(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{terminateSignalErr: errors.New("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "终止失败项目",
+		Goal:                   "不可级联",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+
+	err = service.DeleteProject(context.Background(), DeleteProjectRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorUserID: actorID,
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, coordinator.terminateSignals)
+	require.Nil(t, repo.projects[projectID].DeletedAt)
+	require.Len(t, repo.deleteAuditEvents, 0)
+}
+
+func TestGetProjectDeletePreviewIncludesWarnings(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "预览项目",
+		Goal:             "查看警告",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: uuid.New(),
+	}
+	repo.deletePreviewCounts = ProjectDeleteWarnings{
+		PendingDecisionCount:       2,
+		WaitingHumanTaskCount:      1,
+		OpenInboxCount:             3,
+		ActiveMemberCount:          5,
+		DigitalEmployeeMemberCount: 2,
+		RuntimeNodeBindingCount:    1,
+		AffinityCount:              2,
+	}
+
+	preview, err := service.GetProjectDeletePreview(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, projectID, preview.ProjectID)
+	require.Equal(t, "预览项目", preview.ProjectName)
+	require.True(t, preview.CanDelete)
+	require.Empty(t, preview.Blockers)
+	require.Equal(t, int32(2), preview.Warnings.PendingDecisionCount)
+	require.Equal(t, int32(1), preview.Warnings.WaitingHumanTaskCount)
+	require.Equal(t, int32(3), preview.Warnings.OpenInboxCount)
+	require.Equal(t, "删除将取消待审批并解除成员与 Runtime 绑定。", preview.Message)
+
+	repo.deleteBlockers = []ProjectDeleteBlocker{{
+		Type: "project_task", ID: uuid.New().String(), Status: "running", Title: "活跃任务",
+	}}
+	preview, err = service.GetProjectDeletePreview(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.False(t, preview.CanDelete)
+	require.Len(t, preview.Blockers, 1)
+	require.Contains(t, preview.Message, "存在活跃执行时不可删除")
+}
+
 type memoryRepository struct {
 	projects                         map[uuid.UUID]Project
 	members                          map[uuid.UUID][]ProjectMember

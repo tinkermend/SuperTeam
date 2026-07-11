@@ -1068,6 +1068,87 @@ func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actor
 	return &project, nil
 }
 
+func (s *Service) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	project, err := s.repository.GetProjectForDelete(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	blockers, err := s.repository.ListProjectDeleteBlockers(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	warnings, err := s.repository.GetProjectDeletePreviewCounts(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	canDelete := len(blockers) == 0
+	return &ProjectDeletePreview{
+		ProjectID:   projectID,
+		ProjectName: project.Name,
+		CanDelete:   canDelete,
+		Blockers:    append([]ProjectDeleteBlocker(nil), blockers...),
+		Warnings:    warnings,
+		Message:     projectDeletePreviewMessage(canDelete),
+	}, nil
+}
+
+func (s *Service) DeleteProject(ctx context.Context, req DeleteProjectRequest) error {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return ErrInvalidProject
+	}
+	project, err := s.repository.GetProjectForDelete(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	blockers, err := s.repository.ListProjectDeleteBlockers(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	if len(blockers) > 0 {
+		return &ProjectDeleteBlockedError{Blockers: append([]ProjectDeleteBlocker(nil), blockers...)}
+	}
+	if err := s.coordinator.TerminateProjectCoordinator(ctx, TerminateProjectCoordinatorSignal{
+		TenantID:   req.TenantID,
+		ProjectID:  req.ProjectID,
+		WorkflowID: project.CoordinationWorkflowID,
+		Reason:     "project deleted",
+	}); err != nil {
+		return err
+	}
+	deletedAt := time.Now().UTC()
+	cascade, err := s.repository.SoftDeleteProjectCascade(ctx, SoftDeleteProjectCascadeParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+		DeletedAt: deletedAt,
+	})
+	if err != nil {
+		return err
+	}
+	// Cascade commits in its own transaction; audit failure after a successful
+	// soft-delete leaves deleted state without audit — surface the error to the caller.
+	if err := s.repository.CreateProjectDeleteAuditEvent(ctx, ProjectDeleteAuditEventParams{
+		TenantID:      req.TenantID,
+		ActorUserID:   req.ActorUserID,
+		Project:       project,
+		CascadeResult: cascade,
+		DeletedAt:     deletedAt,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func projectDeletePreviewMessage(canDelete bool) string {
+	message := "删除将取消待审批并解除成员与 Runtime 绑定。"
+	if !canDelete {
+		message += "存在活跃执行时不可删除。"
+	}
+	return message
+}
+
 func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil || actorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
