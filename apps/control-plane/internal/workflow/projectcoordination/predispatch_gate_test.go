@@ -1520,11 +1520,10 @@ func (r *preDispatchGateEmployeeRuntimeReader) GetEmployeeRuntimeSnapshot(ctx co
 
 type preDispatchGateCapabilityReader struct {
 	capabilities project.PreDispatchCapabilitySnapshot
-	tools        project.PreDispatchToolSnapshot
 }
 
-func (r preDispatchGateCapabilityReader) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error) {
-	return r.capabilities, r.tools, nil
+func (r preDispatchGateCapabilityReader) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, error) {
+	return r.capabilities, nil
 }
 
 func countProjectEvents(events []project.ProjectEvent, eventType project.ProjectEventType) int {

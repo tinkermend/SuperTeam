@@ -54,7 +54,6 @@ type PreDispatchGateSnapshot struct {
 	Dependencies  []PreDispatchDependencySnapshot
 	Employee      PreDispatchEmployeeSnapshot
 	Capabilities  PreDispatchCapabilitySnapshot
-	Tools         PreDispatchToolSnapshot
 	Runtime       PreDispatchRuntimeSnapshot
 	Budget        PreDispatchBudgetSnapshot
 	Risk          PreDispatchRiskSnapshot
@@ -90,12 +89,6 @@ type PreDispatchEmployeeSnapshot struct {
 type PreDispatchCapabilitySnapshot struct {
 	Required []string
 	Matched  []string
-}
-
-type PreDispatchToolSnapshot struct {
-	MissingBindings       []string
-	ExpiredAuthorizations []string
-	RetryableUnavailable  []string
 }
 
 type PreDispatchRuntimeSnapshot struct {
@@ -308,24 +301,6 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		setStatus(PreDispatchGateStatusRetryLater)
 	} else {
 		addCheck("employee.dispatchable", "passed", map[string]any{"profile_snapshot_hash": snapshot.Employee.ProfileSnapshotHash})
-	}
-
-	if len(snapshot.Tools.ExpiredAuthorizations) > 0 {
-		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionToolAuthorization, HumanWaitReasonPermissionRequired, "project_task_permission", "工具授权已失效", "需要人类重新授权后才能分派任务", "medium")
-		addCheck("tool.authorization", "failed", map[string]any{"expired": append([]string(nil), snapshot.Tools.ExpiredAuthorizations...)})
-		addBlocker("tool.authorization_expired", PreDispatchGateStatusWaitingHuman, "human", false, nil)
-		setStatus(PreDispatchGateStatusWaitingHuman)
-	} else if len(snapshot.Tools.MissingBindings) > 0 {
-		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionToolAuthorization, HumanWaitReasonPermissionRequired, "project_task_permission", "任务缺少工具绑定", "需要补齐 MCP 或外部能力绑定后才能分派任务", "medium")
-		addCheck("tool.binding", "failed", map[string]any{"missing": append([]string(nil), snapshot.Tools.MissingBindings...)})
-		addBlocker("tool.binding_missing", PreDispatchGateStatusWaitingHuman, "human", false, nil)
-		setStatus(PreDispatchGateStatusWaitingHuman)
-	} else if len(snapshot.Tools.RetryableUnavailable) > 0 {
-		addCheck("tool.available", "failed", map[string]any{"retryable_unavailable": append([]string(nil), snapshot.Tools.RetryableUnavailable...)})
-		addBlocker("tool.retryable_unavailable", PreDispatchGateStatusRetryLater, "transient", true, nil)
-		setStatus(PreDispatchGateStatusRetryLater)
-	} else {
-		addCheck("tool.available", "passed", nil)
 	}
 
 	if !snapshot.Runtime.PlacementPresent {

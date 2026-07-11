@@ -232,12 +232,11 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Runtime.NodeOnline = resolution.NodeID != uuid.Nil
 	}
 	if s.capabilityReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
-		capabilities, tools, err := s.capabilityReader.GetEmployeeCapabilitySnapshot(ctx, input.TenantID, *task.AssignedDigitalEmployeeID, task)
+		capabilities, err := s.capabilityReader.GetEmployeeCapabilitySnapshot(ctx, input.TenantID, *task.AssignedDigitalEmployeeID, task)
 		if err != nil {
 			return project.PreDispatchGateSnapshot{}, err
 		}
 		snapshot.Capabilities = mergePreDispatchCapabilitySnapshot(snapshot.Capabilities, capabilities)
-		snapshot.Tools = mergePreDispatchToolSnapshot(snapshot.Tools, tools)
 	}
 	return snapshot, nil
 }
@@ -609,14 +608,6 @@ func mergePreDispatchCapabilitySnapshot(base, update project.PreDispatchCapabili
 	}
 }
 
-func mergePreDispatchToolSnapshot(base, update project.PreDispatchToolSnapshot) project.PreDispatchToolSnapshot {
-	return project.PreDispatchToolSnapshot{
-		MissingBindings:       unionStrings(base.MissingBindings, update.MissingBindings),
-		ExpiredAuthorizations: unionStrings(base.ExpiredAuthorizations, update.ExpiredAuthorizations),
-		RetryableUnavailable:  unionStrings(base.RetryableUnavailable, update.RetryableUnavailable),
-	}
-}
-
 func unionStrings(groups ...[]string) []string {
 	result := make([]string, 0)
 	seen := map[string]struct{}{}
@@ -740,12 +731,6 @@ func applyGateTaskMetadata(snapshot *project.PreDispatchGateSnapshot, task proje
 		stringFromAny(employeeSelection["planning_profile_snapshot_hash"]),
 		stringFromAny(metadata["planning_profile_snapshot_hash"]),
 	)
-	snapshot.Tools.MissingBindings = firstNonEmptyStrings(
-		stringsFromAny(inputRequirements["missing_tool_bindings"]),
-		stringsFromAny(inputRequirements["required_tool_bindings_missing"]),
-	)
-	snapshot.Tools.ExpiredAuthorizations = stringsFromAny(inputRequirements["expired_tool_authorizations"])
-	snapshot.Tools.RetryableUnavailable = stringsFromAny(inputRequirements["retryable_unavailable_tools"])
 	missingRefs := firstNonEmptyStrings(
 		stringsFromAny(inputRequirements["missing_context_refs"]),
 		stringsFromAny(handoff["missing_context_refs"]),

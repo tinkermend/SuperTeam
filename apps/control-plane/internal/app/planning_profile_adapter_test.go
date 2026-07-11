@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
-	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
@@ -316,52 +314,6 @@ func TestPreDispatchGateAdapterMapsRuntimeFactsWithoutRuntimeSelector(t *testing
 	require.Zero(t, runtimeReader.getNodeCalls)
 }
 
-func TestPreDispatchGateAdapterReportsMissingMCPBinding(t *testing.T) {
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	adapter := preDispatchGateAdapter{
-		capabilities: fakeGateCapabilityReader{
-			servers: []capability.MCPServer{
-				{Name: "postgres.reporting", Status: "active"},
-			},
-		},
-	}
-	task := project.ProjectTask{
-		InputRequirements: map[string]any{
-			"required_capabilities": []any{"database.read"},
-			"tool_requirements":     []any{"mcp:postgres.readonly", "mcp:postgres.reporting", "external:deploy", "malformed"},
-		},
-	}
-
-	capabilitySnapshot, toolSnapshot, err := adapter.GetEmployeeCapabilitySnapshot(context.Background(), tenantID, employeeID, task)
-
-	require.NoError(t, err)
-	require.Empty(t, capabilitySnapshot.Required)
-	require.Empty(t, capabilitySnapshot.Matched)
-	require.Equal(t, []string{"mcp:postgres.readonly"}, toolSnapshot.MissingBindings)
-	require.Equal(t, []string{"external:deploy", "malformed"}, toolSnapshot.RetryableUnavailable)
-}
-
-func TestPreDispatchGateAdapterMarksRequiredToolsRetryableOnCapabilityError(t *testing.T) {
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	adapter := preDispatchGateAdapter{
-		capabilities: fakeGateCapabilityReader{err: errors.New("capability store unavailable")},
-	}
-	task := project.ProjectTask{
-		InputRequirements: map[string]any{
-			"tool_requirements": []any{"mcp:postgres.readonly", "external:deploy"},
-		},
-	}
-
-	capabilitySnapshot, toolSnapshot, err := adapter.GetEmployeeCapabilitySnapshot(context.Background(), tenantID, employeeID, task)
-
-	require.NoError(t, err)
-	require.Empty(t, capabilitySnapshot.Required)
-	require.Equal(t, []string{"mcp:postgres.readonly", "external:deploy"}, toolSnapshot.RetryableUnavailable)
-	require.Empty(t, toolSnapshot.MissingBindings)
-}
-
 func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -425,7 +377,7 @@ func TestPreDispatchGateAdapterDoesNotDeriveCapabilitiesFromPlannerOutput(t *tes
 		},
 	}
 
-	capabilitySnapshot, _, err := adapter.GetEmployeeCapabilitySnapshot(
+	capabilitySnapshot, err := adapter.GetEmployeeCapabilitySnapshot(
 		context.Background(), uuid.New(), uuid.New(), task,
 	)
 
@@ -499,21 +451,6 @@ func (r *fakeGateRuntimeNodeReader) GetNodeByID(_ context.Context, id uuid.UUID)
 		return runtimepkg.NodeRecord{}, pgx.ErrNoRows
 	}
 	return node, nil
-}
-
-type fakeGateCapabilityReader struct {
-	servers []capability.MCPServer
-	err     error
-}
-
-func (r fakeGateCapabilityReader) ListEffectiveMCPServers(_ context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
-	if req.TenantID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
-		return nil, errors.New("invalid request")
-	}
-	return append([]capability.MCPServer(nil), r.servers...), nil
 }
 
 type fakeProjectTaskRunPreflightReader struct {

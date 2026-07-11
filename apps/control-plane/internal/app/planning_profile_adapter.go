@@ -37,10 +37,6 @@ type gateProjectTaskRunPreflightReader interface {
 	GetProjectTaskRunPreflight(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (employee.StartProjectTaskRunPreflight, error)
 }
 
-type gateCapabilityReader interface {
-	ListEffectiveMCPServers(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error)
-}
-
 type digitalEmployeePlanningProfileAdapter struct {
 	reader          digitalEmployeePlanningProfileReader
 	projectTaskRuns gateProjectTaskRunPreflightReader
@@ -50,7 +46,6 @@ type preDispatchGateAdapter struct {
 	employees       digitalEmployeePlanningProfileReader
 	projectTaskRuns gateProjectTaskRunPreflightReader
 	runtimeNodes    gateRuntimeNodeReader
-	capabilities    gateCapabilityReader
 	now             func() time.Time
 }
 
@@ -311,45 +306,10 @@ func (a preDispatchGateAdapter) runtimeSnapshotFromProjectTaskPreflight(ctx cont
 	return employeeSnapshot, runtimeSnapshot, nil
 }
 
-func (a preDispatchGateAdapter) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error) {
-	// Capability keys are free text with no registry and no runtime effect, and
-	// the only place they exist is the planner's own output. Deriving a gate
-	// input from them would be the model grading itself.
-	capabilitySnapshot := project.PreDispatchCapabilitySnapshot{}
-
-	requiredTools := gateStringList(task.InputRequirements["tool_requirements"])
-	toolSnapshot := project.PreDispatchToolSnapshot{}
-	if len(requiredTools) == 0 {
-		return capabilitySnapshot, toolSnapshot, nil
-	}
-	if a.capabilities == nil {
-		toolSnapshot.RetryableUnavailable = append([]string(nil), requiredTools...)
-		return capabilitySnapshot, toolSnapshot, nil
-	}
-	servers, err := a.capabilities.ListEffectiveMCPServers(ctx, capability.EmployeeScopedRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	if err != nil {
-		toolSnapshot.RetryableUnavailable = append([]string(nil), requiredTools...)
-		return capabilitySnapshot, toolSnapshot, nil
-	}
-	availableMCP := effectiveMCPServerNames(servers)
-	for _, requirement := range requiredTools {
-		toolType, toolKey, ok := strings.Cut(requirement, ":")
-		if !ok || strings.TrimSpace(toolType) == "" || strings.TrimSpace(toolKey) == "" {
-			toolSnapshot.RetryableUnavailable = append(toolSnapshot.RetryableUnavailable, requirement)
-			continue
-		}
-		if strings.TrimSpace(toolType) != "mcp" {
-			toolSnapshot.RetryableUnavailable = append(toolSnapshot.RetryableUnavailable, requirement)
-			continue
-		}
-		if !availableMCP[strings.TrimSpace(toolKey)] {
-			toolSnapshot.MissingBindings = append(toolSnapshot.MissingBindings, requirement)
-		}
-	}
-	return capabilitySnapshot, toolSnapshot, nil
+func (a preDispatchGateAdapter) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, error) {
+	// Tool/MCP availability is the provider concern (§1.7); capability keys are
+	// advisory (§1.6). Only the capability diff is returned, for display.
+	return project.PreDispatchCapabilitySnapshot{}, nil
 }
 
 func unavailableRuntimeSnapshot(retryAfter time.Time) project.PreDispatchRuntimeSnapshot {
@@ -489,25 +449,6 @@ func stringFromAny(value any) string {
 		return text
 	}
 	return ""
-}
-
-func effectiveMCPServerNames(servers []capability.MCPServer) map[string]bool {
-	names := make(map[string]bool, len(servers))
-	for _, server := range servers {
-		if !server.DisabledAt.IsZero() || !server.DeletedAt.IsZero() {
-			continue
-		}
-		if server.Status != "" && server.Status != "active" {
-			continue
-		}
-		name := strings.TrimSpace(server.Name)
-		if name == "" {
-			continue
-		}
-		names[name] = true
-		names["mcp:"+name] = true
-	}
-	return names
 }
 
 // planningLoadStateMap translates raw operational counts into the map shape expected by

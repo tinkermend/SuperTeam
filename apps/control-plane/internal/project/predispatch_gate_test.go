@@ -389,13 +389,31 @@ func TestEvaluatePreDispatchGateRequiresReplanForPlannedTaskKeyDrift(t *testing.
 	require.False(t, result.CreateRun)
 }
 
+func TestEvaluatePreDispatchGateHasNoToolChecks(t *testing.T) {
+	now := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID: projectID, ProjectTaskID: taskID, SelectedEmployeeID: employeeID,
+		AttemptNo: 1, DispatchReason: DispatchReasonRootReady,
+	}, snapshot, now)
+
+	for _, check := range result.Checks {
+		require.NotContains(t, []string{"tool.binding", "tool.authorization", "tool.available"}, check.Key)
+	}
+	require.Empty(t, result.Blockers)
+}
+
 func TestEvaluatePreDispatchGateNormalizesReplanOverWaitingHuman(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 40, 0, 0, time.UTC)
 	projectID := uuid.New()
 	taskID := uuid.New()
 	employeeID := uuid.New()
 	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
-	snapshot.Tools.MissingBindings = []string{"jira"}
+	snapshot.Risk = PreDispatchRiskSnapshot{HumanApprovalRequired: true, HumanApprovalGranted: false, Reason: "database.write"}
 	snapshot.Runtime.ContractVersionAccepted = false
 
 	result := EvaluatePreDispatchGate(PreDispatchGateInput{

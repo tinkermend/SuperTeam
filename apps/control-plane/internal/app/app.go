@@ -509,7 +509,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			employees:       employeeRepository,
 			projectTaskRuns: projectTaskPreflights,
 			runtimeNodes:    runtimeRepository,
-			capabilities:    capabilityRepository,
 		}
 		coordinationStore = projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
 			projectRepository,
