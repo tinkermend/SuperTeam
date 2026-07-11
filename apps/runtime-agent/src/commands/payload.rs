@@ -502,7 +502,7 @@ fn trimmed_text(value: &Option<String>) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn metadata_string(metadata: &serde_json::Value, key: &str) -> Option<String> {
+pub(crate) fn metadata_string(metadata: &serde_json::Value, key: &str) -> Option<String> {
     metadata
         .get(key)
         .and_then(|value| value.as_str())

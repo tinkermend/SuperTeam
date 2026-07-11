@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::commands::install_skills::{InstallSkillsCommandPayload, install_skill_targets};
 use crate::commands::payload::{
     RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload,
-    RuntimeStopSessionCommandPayload, SessionPolicyMode,
+    RuntimeStopSessionCommandPayload, SessionPolicyMode, metadata_string,
 };
 use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, RuntimeRunBinding};
 use crate::config::RuntimeConfig;
@@ -2929,13 +2929,15 @@ async fn run_is_cancelled(runs: &RuntimeRunStore, run_id: &str) -> bool {
 }
 
 fn non_empty_session_id(payload: &RuntimeSessionCommandPayload) -> Option<String> {
-    payload
-        .session_policy
-        .provider_session_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
+    metadata_string(&payload.metadata, "provider_session_id").or_else(|| {
+        payload
+            .session_policy
+            .provider_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+    })
 }
 
 fn reusable_provider_session(payload: &RuntimeSessionCommandPayload) -> bool {
@@ -3034,6 +3036,52 @@ mod tests {
             "handoff_contract": {"completion_path": "manual_review"}
         });
         assert!(project_task_writeback_context(&other).is_none());
+    }
+
+    #[test]
+    fn non_empty_session_id_uses_metadata_provider_session_id() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata["provider_session_id"] = json!("metadata-session-1");
+
+        assert_eq!(
+            non_empty_session_id(&payload).as_deref(),
+            Some("metadata-session-1")
+        );
+    }
+
+    #[test]
+    fn non_empty_session_id_falls_back_to_session_policy_when_metadata_absent() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.session_policy.provider_session_id = Some("policy-session-1".to_string());
+
+        assert_eq!(
+            non_empty_session_id(&payload).as_deref(),
+            Some("policy-session-1")
+        );
+    }
+
+    #[test]
+    fn non_empty_session_id_prefers_metadata_over_session_policy() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata["provider_session_id"] = json!("metadata-session-1");
+        payload.session_policy.provider_session_id = Some("policy-session-1".to_string());
+
+        assert_eq!(
+            non_empty_session_id(&payload).as_deref(),
+            Some("metadata-session-1")
+        );
+    }
+
+    #[test]
+    fn non_empty_session_id_ignores_blank_metadata_value() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata["provider_session_id"] = json!("   ");
+        payload.session_policy.provider_session_id = Some("policy-session-1".to_string());
+
+        assert_eq!(
+            non_empty_session_id(&payload).as_deref(),
+            Some("policy-session-1")
+        );
     }
 
     #[test]
