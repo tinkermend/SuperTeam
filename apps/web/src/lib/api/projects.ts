@@ -781,7 +781,7 @@ export type ProjectArchivePreview = {
 };
 
 export type ProjectDeleteBlocker = {
-  type: "project_task";
+  type: "run" | "project_task";
   id: string;
   status: string;
   title: string;

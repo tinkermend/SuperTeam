@@ -873,6 +873,12 @@ describe("project API", () => {
           status: "running",
           title: "接入验收",
         },
+        {
+          type: "run",
+          id: "99999999-9999-4999-8999-999999999999",
+          status: "running",
+          title: "接入验收执行",
+        },
       ],
       warnings: {
         pending_decision_count: 1,
