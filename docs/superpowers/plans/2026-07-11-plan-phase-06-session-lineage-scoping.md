@@ -10,6 +10,8 @@
 
 ## Global Constraints
 
+> **勘误（2026-07-11）：迁移号 055 已被占用，本 plan 改用 056。** 本文档原写作时假设的下一个迁移号是 055，但 Plan 5 收尾时已把 `055_project_task_results_upstream_supplement_decision.sql` 合入 main。执行本 plan 时：迁移文件名用 `056_provider_session_task_scope.sql`，并相应更新 `atlas.sum`。另：`project_store.go` 等文件内的行号引用可能因近期改动（含指纹熔断删除）而偏移，一律以 grep 实际结果为准，不要照搬文档里的 `:NNNN` 偏移。
+
 取自 spec `docs/superpowers/specs/2026-07-10-project-plan-phase-refactor-design.md`（§4.9）:
 
 - **约束三:续接会话用于干活；裁决一律新开干净上下文。** B' 续接 B 的会话是为了继承上下文继续干活。
@@ -42,7 +44,7 @@
 
 | 文件 | 职责 | 动作 |
 |---|---|---|
-| `apps/control-plane/internal/storage/migrations/055_provider_session_task_scope.sql` | 迁移 | Task 1:加 `project_task_root_id` |
+| `apps/control-plane/internal/storage/migrations/056_provider_session_task_scope.sql` | 迁移 | Task 1:加 `project_task_root_id` |
 | `apps/control-plane/internal/storage/queries/provider_session*.sql` | 会话查询 | Task 2:按血缘根查会话 |
 | `apps/control-plane/internal/employee/run_service.go` | 派发时注入 session id | Task 3:血缘根解析 + 注入 metadata |
 | `apps/runtime-agent/src/commands/payload.rs` / `executor.rs` | runtime 会话复用 | Task 4:保留布尔语义,身份由 metadata |
@@ -52,7 +54,7 @@
 ### Task 1: `provider_sessions` 加血缘根维度
 
 **Files:**
-- Create: `apps/control-plane/internal/storage/migrations/055_provider_session_task_scope.sql`
+- Create: `apps/control-plane/internal/storage/migrations/056_provider_session_task_scope.sql`
 - Modify: `apps/control-plane/internal/storage/migrations/atlas.sum`
 
 **Interfaces:**
