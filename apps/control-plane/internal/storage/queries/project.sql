@@ -768,6 +768,15 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetProjectTaskSessionLineage :one
+-- Minimal projection for resolving a task's session-lineage root (see
+-- employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
+-- fields that participate in root resolution, not the full row.
+SELECT revision_of_task_id, planner_metadata
+FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: GetProjectTaskRunRuntimeNodeID :one
 SELECT tr.runtime_node_id
 FROM project_tasks pt

@@ -112,6 +112,37 @@ func (r *PgRunRepository) GetProjectTaskRunPreflightForNode(ctx context.Context,
 	return projectTaskRunPreflightForNodeFromQuery(preflight)
 }
 
+// ResolveProjectTaskLineageRoot mirrors projectcoordination's
+// revisionRootTaskID (see project_store.go) without importing that package:
+// planner_metadata["revision_root_task_id"] wins if set, else
+// revision_of_task_id (one hop), else the task's own id.
+func (r *PgRunRepository) ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error) {
+	row, err := r.q.GetProjectTaskSessionLineage(ctx, queries.GetProjectTaskSessionLineageParams{
+		TenantID: tenantID,
+		ID:       projectTaskID,
+	})
+	if err != nil {
+		return uuid.Nil, mapNoRows(err)
+	}
+	plannerMetadata, err := mapFromJSONB(row.PlannerMetadata, "planner_metadata")
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if value, ok := plannerMetadata["revision_root_task_id"].(string); ok {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			rootID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return uuid.Nil, fmt.Errorf("parse planner_metadata revision_root_task_id: %w", err)
+			}
+			return rootID, nil
+		}
+	}
+	if row.RevisionOfTaskID.Valid && row.RevisionOfTaskID.UUID != uuid.Nil {
+		return row.RevisionOfTaskID.UUID, nil
+	}
+	return projectTaskID, nil
+}
+
 func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
@@ -497,11 +528,43 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 		LastRunID:           nullUUIDFromPtr(req.LastRunID),
 		LastErrorFamily:     textFromPtr(req.LastErrorFamily),
 		Metadata:            metadata,
+		ProjectTaskRootID:   nullUUIDFromPtr(req.ProjectTaskRootID),
 	})
 	if err != nil {
 		return uuid.Nil, err
 	}
 	return session.ID, nil
+}
+
+func (r *PgRunRepository) FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error) {
+	providerSessionID, err := r.q.FindProviderSessionForTaskRoot(ctx, queries.FindProviderSessionForTaskRootParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ProjectTaskRootID: taskRootID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return providerSessionID, nil
+}
+
+func (r *PgRunRepository) GetRunTaskMetadata(ctx context.Context, tenantID, taskID uuid.UUID) (map[string]any, error) {
+	task, err := r.q.GetTask(ctx, queries.GetTaskParams{
+		ID:       taskID,
+		TenantID: uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	params, err := mapFromJSONB(task.Params, "params")
+	if err != nil {
+		return nil, err
+	}
+	metadata, _ := params["metadata"].(map[string]any)
+	return metadata, nil
 }
 
 func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {

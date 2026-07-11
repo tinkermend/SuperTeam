@@ -614,6 +614,102 @@ func TestRunWritebackRecordsRuntimeTerminalEventIgnoresRecorderFailure(t *testin
 	}
 }
 
+// TestWritebackEventFillsProjectTaskRootIDFromTaskMetadata exercises the
+// gap Task 4 closes: when the runtime event doesn't itself echo back
+// revision_root_task_id, the writeback must fall back to the metadata the
+// control plane stamped on the task at dispatch time and fill it into the
+// provider session upsert.
+func TestWritebackEventFillsProjectTaskRootIDFromTaskMetadata(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-root-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	rootTaskID := uuid.New()
+	repo.taskMetadata[run.TaskID] = map[string]any{"revision_root_task_id": rootTaskID.String()}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, &fakeRuntimeEventRecorder{})
+
+	providerSessionExternalID := "provider-session-root"
+	event := RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            1,
+		Payload:                   map[string]any{"text": "hello"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-root-1", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+
+	if len(repo.providerSessionUpserts) != 1 {
+		t.Fatalf("expected exactly one provider session upsert, got %d", len(repo.providerSessionUpserts))
+	}
+	upsert := repo.providerSessionUpserts[0]
+	if upsert.ProjectTaskRootID == nil || *upsert.ProjectTaskRootID != rootTaskID {
+		t.Fatalf("expected provider session upsert to carry project_task_root_id %s, got %#v", rootTaskID, upsert.ProjectTaskRootID)
+	}
+}
+
+// TestWritebackEventPrefersEventMetadataRootOverTaskMetadata verifies the
+// lookup order: the runtime event's own metadata wins over the task's
+// dispatch-time metadata when both happen to carry a root.
+func TestWritebackEventPrefersEventMetadataRootOverTaskMetadata(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-root-2")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	taskRootID := uuid.New()
+	eventRootID := uuid.New()
+	repo.taskMetadata[run.TaskID] = map[string]any{"revision_root_task_id": taskRootID.String()}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, &fakeRuntimeEventRecorder{})
+
+	providerSessionExternalID := "provider-session-root-2"
+	event := RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            1,
+		Payload:                   map[string]any{"text": "hello"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+		Metadata:                  map[string]any{"revision_root_task_id": eventRootID.String()},
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-root-2", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+
+	upsert := repo.providerSessionUpserts[0]
+	if upsert.ProjectTaskRootID == nil || *upsert.ProjectTaskRootID != eventRootID {
+		t.Fatalf("expected provider session upsert to prefer event metadata root %s, got %#v", eventRootID, upsert.ProjectTaskRootID)
+	}
+}
+
+// TestWritebackEventLeavesProjectTaskRootIDNilWithoutMetadata exercises the
+// compatibility path: runs with no lineage metadata anywhere (e.g. ad hoc,
+// non-project-task runs) must upsert with a nil project_task_root_id rather
+// than erroring.
+func TestWritebackEventLeavesProjectTaskRootIDNilWithoutMetadata(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-root-3")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, &fakeRuntimeEventRecorder{})
+
+	providerSessionExternalID := "provider-session-no-root"
+	event := RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            1,
+		Payload:                   map[string]any{"text": "hello"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-root-3", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+
+	upsert := repo.providerSessionUpserts[0]
+	if upsert.ProjectTaskRootID != nil {
+		t.Fatalf("expected nil project_task_root_id, got %#v", *upsert.ProjectTaskRootID)
+	}
+}
+
 func TestWritebackEventWithoutProviderSessionStillWritesTaskEvent(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
@@ -1041,6 +1137,7 @@ type fakeRunWritebackRepository struct {
 	providerSessionEventKeys        map[string]struct{}
 	providerSessionEventIDs         map[string]uuid.UUID
 	providerSessionIDs              map[string]uuid.UUID
+	taskMetadata                    map[uuid.UUID]map[string]any
 	taskEvents                      []CreateRunEventRecordRequest
 	providerSessionEvents           []CreateProviderSessionEventRecordRequest
 	providerSessionUpserts          []UpsertProviderSessionRequest
@@ -1081,6 +1178,7 @@ func newFakeRunWritebackRepository() *fakeRunWritebackRepository {
 		providerSessionEventKeys: map[string]struct{}{},
 		providerSessionEventIDs:  map[string]uuid.UUID{},
 		providerSessionIDs:       map[string]uuid.UUID{},
+		taskMetadata:             map[uuid.UUID]map[string]any{},
 	}
 }
 
@@ -1233,6 +1331,14 @@ func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, re
 		f.providerSessionIDs[key] = id
 	}
 	return id, nil
+}
+
+func (f *fakeRunWritebackRepository) FindProviderSessionForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
+	return "", nil
+}
+
+func (f *fakeRunWritebackRepository) GetRunTaskMetadata(_ context.Context, _, taskID uuid.UUID) (map[string]any, error) {
+	return f.taskMetadata[taskID], nil
 }
 
 func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {

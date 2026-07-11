@@ -3435,6 +3435,33 @@ func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetPro
 	return runtime_node_id, err
 }
 
+const GetProjectTaskSessionLineage = `-- name: GetProjectTaskSessionLineage :one
+SELECT revision_of_task_id, planner_metadata
+FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+`
+
+type GetProjectTaskSessionLineageParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+type GetProjectTaskSessionLineageRow struct {
+	RevisionOfTaskID uuid.NullUUID `json:"revision_of_task_id"`
+	PlannerMetadata  []byte        `json:"planner_metadata"`
+}
+
+// Minimal projection for resolving a task's session-lineage root (see
+// employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
+// fields that participate in root resolution, not the full row.
+func (q *Queries) GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error) {
+	row := q.db.QueryRow(ctx, GetProjectTaskSessionLineage, arg.TenantID, arg.ID)
+	var i GetProjectTaskSessionLineageRow
+	err := row.Scan(&i.RevisionOfTaskID, &i.PlannerMetadata)
+	return i, err
+}
+
 const LinkDecisionRequestProjectTaskResult = `-- name: LinkDecisionRequestProjectTaskResult :one
 UPDATE project_decision_requests
 SET project_task_result_id = $1::uuid,

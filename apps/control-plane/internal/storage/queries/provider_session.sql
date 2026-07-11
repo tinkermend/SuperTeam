@@ -183,6 +183,21 @@ FROM provider_session_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND provider_session_id = sqlc.arg('provider_session_id')::uuid;
 
+-- name: FindProviderSessionForTaskRoot :one
+-- Resume the latest recoverable session for this lineage root, including
+-- completed ones. Upstream work often finishes (status=completed) before a
+-- revision/supplement under the same root is dispatched; requiring 'active'
+-- made Plan 6's resume path a no-op in the real upstream-supplement flow.
+SELECT provider_session_id
+FROM provider_sessions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND project_task_root_id = sqlc.arg('project_task_root_id')::uuid
+  AND recoverable = true
+  AND status IN ('active', 'idle', 'completed')
+ORDER BY last_active_at DESC
+LIMIT 1;
+
 -- name: UpsertProviderSessionByExternalID :one
 INSERT INTO provider_sessions (
     tenant_id,
@@ -202,7 +217,8 @@ INSERT INTO provider_sessions (
     last_run_id,
     last_error_family,
     last_runtime_seen_at,
-    metadata
+    metadata,
+    project_task_root_id
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('provider_session_id')::varchar,
@@ -221,7 +237,8 @@ INSERT INTO provider_sessions (
     sqlc.narg('last_run_id')::uuid,
     sqlc.narg('last_error_family')::varchar,
     NOW(),
-    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.narg('project_task_root_id')::uuid
 )
 ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     status = CASE
@@ -264,6 +281,10 @@ ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     metadata = CASE
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(provider_sessions.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb)
         ELSE provider_sessions.metadata
+    END,
+    project_task_root_id = CASE
+        WHEN EXCLUDED.project_task_root_id IS NOT NULL THEN EXCLUDED.project_task_root_id
+        ELSE provider_sessions.project_task_root_id
     END,
     updated_at = CASE
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()

@@ -152,6 +152,11 @@ type Querier interface {
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	// Resume the latest recoverable session for this lineage root, including
+	// completed ones. Upstream work often finishes (status=completed) before a
+	// revision/supplement under the same root is dispatched; requiring 'active'
+	// made Plan 6's resume path a no-op in the real upstream-supplement flow.
+	FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
@@ -239,6 +244,10 @@ type Querier interface {
 	// pgx.ErrNoRows like any other preflight-absent case.
 	GetProjectTaskRunPreflightForNode(ctx context.Context, arg GetProjectTaskRunPreflightForNodeParams) (GetProjectTaskRunPreflightForNodeRow, error)
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error)
+	// Minimal projection for resolving a task's session-lineage root (see
+	// employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
+	// fields that participate in root resolution, not the full row.
+	GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error)
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
 	GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error)

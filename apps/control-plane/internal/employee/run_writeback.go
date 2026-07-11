@@ -634,11 +634,48 @@ func (s *DigitalEmployeeRunWritebackService) upsertProviderSession(ctx context.C
 		LastRunID:           &runID,
 		LastErrorFamily:     errorFamily,
 		Metadata:            redactRuntimeEventPayloadForPersistence(metadata),
+		ProjectTaskRootID:   s.resolveProjectTaskRootID(ctx, run, metadata),
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("upsert provider session: %w", err)
 	}
 	return providerSessionUUID, nil
+}
+
+// resolveProjectTaskRootID recovers the session-lineage root task id for a
+// run's provider session so it can be persisted onto provider_sessions.
+// project_task_root_id. It first checks the runtime event's own metadata
+// (in case a future writeback path starts echoing it back directly), then
+// falls back to the metadata the control plane stamped on the task at
+// dispatch time (see DigitalEmployeeRunService.StartProjectTaskRun, which
+// always sets metadata["revision_root_task_id"]). A missing or unparsable
+// value is treated as "not applicable" (e.g. non-project-task runs), not
+// an error — the column stays null, matching pre-refactor behavior.
+func (s *DigitalEmployeeRunWritebackService) resolveProjectTaskRootID(ctx context.Context, run *DigitalEmployeeRun, eventMetadata map[string]any) *uuid.UUID {
+	if rootID := projectTaskRootIDFromMetadata(eventMetadata); rootID != nil {
+		return rootID
+	}
+	taskMetadata, err := s.repository.GetRunTaskMetadata(ctx, run.TenantID, run.TaskID)
+	if err != nil {
+		return nil
+	}
+	return projectTaskRootIDFromMetadata(taskMetadata)
+}
+
+func projectTaskRootIDFromMetadata(metadata map[string]any) *uuid.UUID {
+	value, ok := metadata["revision_root_task_id"].(string)
+	if !ok {
+		return nil
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	rootID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil
+	}
+	return &rootID
 }
 
 func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx context.Context, run *DigitalEmployeeRun, providerSessionUUID uuid.UUID, commandID, eventType string, sequenceNumber int32, payload map[string]any, rawEventRef, logRef *string, sessionStatePatch map[string]any, metadata map[string]any) (uuid.UUID, error) {
