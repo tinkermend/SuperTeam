@@ -150,15 +150,18 @@ EOF
 
 - [ ] **Step 1: 改 `GetEmployeeCapabilitySnapshot` 签名与实现**
 
-`planning_profile_adapter.go:314` 起整段替换:
+`planning_profile_adapter.go:314` 起替换——只去掉 tool 返回值,保留 capability 快照(workflow 侧仍用它做 Required/Matched 展示):
 
 ```go
 func (a preDispatchGateAdapter) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, error) {
-	// Capability and tool state are advisory only (see §1.6/§1.7). The gate no
-	// longer has a tool snapshot, and MCP availability is the provider's concern.
+	// Tool/MCP availability is the provider concern (§1.7); capability keys are
+	// advisory (§1.6). Only the capability diff is returned, for display.
 	return project.PreDispatchCapabilitySnapshot{}, nil
 }
 ```
+
+签名原本是 (capability, toolSnapshot, error),改为 (capability, error) 后所有调用方同步: project_store.go:56 的 GateCapabilityReader 接口、workflow predispatch_gate.go:235 的 capabilities/tools/err 改为 capabilities/err(并删 :240 的 snapshot.Tools 合并行, Task 3)。
+两处 capabilityReader 不可混淆: adapter 私有的 gateCapabilityReader(仅 tool 段用, 删) ≠ project_store.go:56 的 GateCapabilityReader(workflow 用, 还产 capability 快照, 保留)。
 
 - [ ] **Step 2: 删 `effectiveMCPServerNames`（`:494`）、`capabilities` 字段（`:53`）、`gateCapabilityReader` 接口**
 
@@ -217,7 +220,9 @@ EOF
 
 - [ ] **Step 1: 删读取与合并函数**
 
-`:743-748` 的 `snapshot.Tools.*` 赋值删除。`:240` 的 `snapshot.Tools = mergePreDispatchToolSnapshot(...)` 删除。`:612` 的 `mergePreDispatchToolSnapshot` 函数整体删除。
+`:235 的 capabilities,tools,err 改为 capabilities,err(签名变更)。:240 的 snapshot.Tools = mergePreDispatchToolSnapshot(...) 删除。:743-748 的 snapshot.Tools.* 赋值删除。:612 的 mergePreDispatchToolSnapshot 函数整体删除。
+
+s.capabilityReader(:27)、GateCapabilityReader(:56)、mergePreDispatchCapabilitySnapshot 保留——它们还产 capability 快照(Required/Matched, 展示用)。只删 tool 那一路。
 
 ```bash
 grep -n "snapshot.Tools\|mergePreDispatchToolSnapshot" apps/control-plane/internal/workflow/projectcoordination/predispatch_gate.go
