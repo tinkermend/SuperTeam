@@ -725,9 +725,6 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 	if s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, source) {
 		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
 	}
-	if s.repeatedRevisionFailure(ctx, input.TenantID, input.ProjectID, source, result) {
-		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
-	}
 	revision, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
 		TenantID:                  input.TenantID,
 		ProjectID:                 input.ProjectID,
@@ -3142,7 +3139,6 @@ func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectT
 	metadata["revision_max_attempts"] = revisionMaxAttempts(source)
 	metadata["source_task_id"] = source.ID.String()
 	metadata["source_result_id"] = result.ID.String()
-	metadata["revision_failure_fingerprint"] = revisionFailureFingerprint(result.Contract)
 	return metadata
 }
 
@@ -3174,27 +3170,6 @@ func plannerProducesFromMetadata(metadata map[string]any) []string {
 	default:
 		return nil
 	}
-}
-
-// revisionFailureFingerprint identifies a failure by its structured shape only.
-//
-// It deliberately excludes contract.Summary and RevisionRequest.Reason: both are
-// free text written by the model. Feeding them in let a reworded failure present
-// as a fresh one, silently defeating repeatedRevisionFailure. See the 2026-07-10
-// plan-phase refactor spec, constraint 1.
-func revisionFailureFingerprint(contract project.TaskResultContract) string {
-	parts := []string{string(contract.Status)}
-	if contract.RevisionRequest != nil {
-		changes := append([]string(nil), contract.RevisionRequest.RequestedChanges...)
-		sort.Strings(changes)
-		parts = append(parts, changes...)
-	}
-	if contract.Blocker != nil {
-		inputs := append([]string(nil), contract.Blocker.MissingInputs...)
-		sort.Strings(inputs)
-		parts = append(parts, inputs...)
-	}
-	return strings.Join(parts, "\n")
 }
 
 func revisionTaskTitle(source project.ProjectTask, result project.ProjectTaskResult) string {
@@ -3324,24 +3299,6 @@ func int32FromAny(value any) (int32, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func (s *ProjectStore) repeatedRevisionFailure(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, result project.ProjectTaskResult) bool {
-	iterationKey, _ := source.PlannerMetadata["iteration_key"].(string)
-	fingerprint := revisionFailureFingerprint(result.Contract)
-	revisions := s.priorRevisionTasks(ctx, tenantID, projectID, source, iterationKey)
-	sort.SliceStable(revisions, func(i, j int) bool {
-		return revisions[i].CreatedAt.After(revisions[j].CreatedAt)
-	})
-	if len(revisions) < 2 {
-		return false
-	}
-	for _, task := range revisions[:2] {
-		if task.PlannerMetadata["revision_failure_fingerprint"] != fingerprint {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *ProjectStore) revisionBudgetExhausted(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask) bool {
