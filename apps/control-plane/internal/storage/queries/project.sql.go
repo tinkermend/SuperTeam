@@ -81,7 +81,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at
 `
 
 type ArchiveProjectParams struct {
@@ -116,6 +116,7 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.RepoGitCredentialRef,
 		&i.RepoScope,
 		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -625,7 +626,7 @@ INSERT INTO projects (
     $18::varchar,
     COALESCE($19::jsonb, '[]'::jsonb),
     COALESCE($20::varchar, 'unbound')
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at
 `
 
 type CreateProjectParams struct {
@@ -699,6 +700,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.RepoGitCredentialRef,
 		&i.RepoScope,
 		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -2570,9 +2572,10 @@ func (q *Queries) GetLatestProjectEventSequence(ctx context.Context, arg GetLate
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
+  AND deleted_at IS NULL
 `
 
 type GetProjectParams struct {
@@ -2607,6 +2610,7 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.RepoGitCredentialRef,
 		&i.RepoScope,
 		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -5617,8 +5621,9 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at FROM projects
 WHERE tenant_id = $1::uuid
+  AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
   AND (
     $3::text IS NULL
@@ -5676,6 +5681,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.RepoGitCredentialRef,
 			&i.RepoScope,
 			&i.RepoBindingStatus,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -5872,6 +5878,7 @@ WITH visible_demands AS (
     FROM project_demands d
     JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
     WHERE d.tenant_id = $3::uuid
+      AND p.deleted_at IS NULL
       AND ($4::uuid IS NULL OR d.project_id = $4::uuid)
       AND (
         $5::text IS NULL
@@ -7832,7 +7839,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at
 `
 
 type TransitionProjectStatusParams struct {
@@ -7877,6 +7884,7 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.RepoGitCredentialRef,
 		&i.RepoScope,
 		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7919,7 +7927,7 @@ SET
 WHERE tenant_id = $16::uuid
   AND id = $17::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at
 `
 
 type UpdateProjectParams struct {
@@ -7987,6 +7995,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.RepoGitCredentialRef,
 		&i.RepoScope,
 		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }

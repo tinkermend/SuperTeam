@@ -46,11 +46,13 @@ INSERT INTO projects (
 -- name: GetProject :one
 SELECT * FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND id = sqlc.arg('id')::uuid;
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL;
 
 -- name: ListProjects :many
 SELECT * FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
   AND (
     sqlc.narg('q')::text IS NULL
@@ -79,6 +81,7 @@ WITH visible_demands AS (
     FROM project_demands d
     JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
     WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND p.deleted_at IS NULL
       AND (sqlc.narg('project_id')::uuid IS NULL OR d.project_id = sqlc.narg('project_id')::uuid)
       AND (
         sqlc.narg('q')::text IS NULL

@@ -9,7 +9,8 @@ SELECT
     repo_binding_status
 FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND id = sqlc.arg('project_id')::uuid;
+  AND id = sqlc.arg('project_id')::uuid
+  AND deleted_at IS NULL;
 
 -- name: UpsertProjectPlacement :one
 INSERT INTO project_placements (

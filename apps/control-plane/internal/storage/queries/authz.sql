@@ -94,4 +94,5 @@ SELECT
   p.team_id
 FROM projects p
 WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND p.id = sqlc.arg('project_id')::uuid;
+  AND p.id = sqlc.arg('project_id')::uuid
+  AND p.deleted_at IS NULL;

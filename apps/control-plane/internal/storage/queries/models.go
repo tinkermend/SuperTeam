@@ -747,6 +747,8 @@ type Project struct {
 	// 仓库 sparse checkout scope，必须由业务侧保证包含传递依赖闭包。
 	RepoScope         []byte `json:"repo_scope"`
 	RepoBindingStatus string `json:"repo_binding_status"`
+	// 软删除时间；非空表示项目已从当前管理面移除
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险
