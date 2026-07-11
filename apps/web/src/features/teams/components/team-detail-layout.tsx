@@ -16,16 +16,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
+import { teamStatusLabel } from "@/lib/status-labels";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamConstitutionTab } from "./team-constitution-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 function TeamStatusPill({ status }: { status: TeamStatus }) {
-  const label: Record<TeamStatus, string> = {
-    active: "活跃",
-    archived: "已归档",
-    disabled: "已禁用",
-  };
   const tone: Record<TeamStatus, "ok" | "mute" | "warn"> = {
     active: "ok",
     archived: "mute",
@@ -34,7 +30,7 @@ function TeamStatusPill({ status }: { status: TeamStatus }) {
 
   return (
     <StatusPill tone={tone[status]}>
-      {label[status]}
+      {teamStatusLabel(status)}
     </StatusPill>
   );
 }

@@ -34,6 +34,7 @@ import {
   listTeamMcpBindings,
 } from "@/lib/api/capabilities";
 import type { McpBinding } from "@/lib/api/capabilities";
+import { statusLabel } from "@/lib/status-labels";
 import { bindTeamSkill, listSkills, listTeamSkills, unbindTeamSkill } from "@/lib/api/skills";
 import type { Skill } from "@/lib/api/skills";
 
@@ -316,7 +317,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                       </V3Td>
                       <V3Td>
                         <StatusPill tone={binding.status === "active" ? "ok" : "warn"}>
-                          {binding.status}
+                          {statusLabel(binding.status)}
                         </StatusPill>
                       </V3Td>
                       <V3Td className="text-right">

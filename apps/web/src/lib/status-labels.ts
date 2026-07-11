@@ -5,13 +5,16 @@ import type {
 } from "@/lib/api/projects";
 
 const STATUS_LABELS: Record<string, string> = {
+  acceptance: "验收中",
   accepted: "已接受",
   active: "启用中",
+  archived: "已归档",
   assigned: "已分派",
   blocked: "已阻塞",
   cancelled: "已取消",
   cancelling: "取消中",
   completed: "已完成",
+  configuring: "配置中",
   decomposed: "已分解",
   decomposing: "分解中",
   disabled: "已禁用",
@@ -19,12 +22,14 @@ const STATUS_LABELS: Record<string, string> = {
   dispatching: "分派中",
   done: "已完成",
   draft: "草稿",
+  error: "异常",
   failed: "失败",
   in_progress: "进行中",
   linked: "已关联",
   needs_more_evidence: "需要补充证据",
   open: "待处理",
   partially_accepted: "部分接受",
+  paused: "已暂停",
   passed: "已通过",
   pending: "待处理",
   pending_review: "待复核",
@@ -82,5 +87,44 @@ export function evidenceStatusLabel(status: ProjectEvidenceVerificationStatus): 
 }
 
 export function acceptanceStatusLabel(status: ProjectAcceptanceStatus): string {
+  return statusLabel(status);
+}
+
+function labelWithOverrides(
+  status: string | undefined,
+  overrides: Record<string, string>,
+): string {
+  if (!status) {
+    return "未知";
+  }
+  const normalized = status.trim().toLowerCase();
+  return overrides[normalized] ?? statusLabel(normalized);
+}
+
+export function teamStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    active: "活跃",
+    archived: "已归档",
+    disabled: "已禁用",
+  });
+}
+
+export function governanceStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    active: "已生效",
+    draft_pending: "草案待批准",
+    needs_update: "需更新",
+    not_configured: "未配置",
+  });
+}
+
+export function employeeStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    active: "运行中",
+    error: "异常",
+  });
+}
+
+export function projectStatusLabel(status: string | undefined): string {
   return statusLabel(status);
 }

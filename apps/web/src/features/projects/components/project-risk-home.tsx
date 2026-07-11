@@ -33,6 +33,7 @@ import type {
   ProjectStatus,
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
+import { projectStatusLabel } from "@/lib/status-labels";
 import {
   buildRiskCounts,
   emptyProjectRiskSummary,
@@ -609,26 +610,13 @@ const PROJECT_STATUS_FILTER_OPTIONS: Array<{
   value: "all" | ProjectStatus;
 }> = [
   { label: "全部状态", value: "all" },
-  { label: "运行中", value: "running" },
-  { label: "配置中", value: "configuring" },
-  { label: "草稿", value: "draft" },
-  { label: "已暂停", value: "paused" },
-  { label: "验收中", value: "acceptance" },
-  { label: "已归档", value: "archived" },
+  { label: projectStatusLabel("running"), value: "running" },
+  { label: projectStatusLabel("configuring"), value: "configuring" },
+  { label: projectStatusLabel("draft"), value: "draft" },
+  { label: projectStatusLabel("paused"), value: "paused" },
+  { label: projectStatusLabel("acceptance"), value: "acceptance" },
+  { label: projectStatusLabel("archived"), value: "archived" },
 ];
-
-function projectStatusLabel(status: ProjectStatus | string) {
-  const labels: Record<string, string> = {
-    acceptance: "验收中",
-    all: "全部状态",
-    archived: "已归档",
-    configuring: "配置中",
-    draft: "草稿",
-    paused: "已暂停",
-    running: "运行中",
-  };
-  return labels[status] ?? status;
-}
 
 function projectStatusTone(status: ProjectStatus | string): V3Tone {
   if (status === "running") return "ok";

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
+import { employeeStatusLabel } from "@/lib/status-labels";
 import type { CreateTeamDraft } from "./create-team-draft";
 
 type CreateTeamDigitalEmployeesStepProps = {
@@ -104,7 +105,7 @@ export function CreateTeamDigitalEmployeesStep({
                     {employee.name}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    状态: {employee.status}
+                    状态: {employeeStatusLabel(employee.status)}
                   </div>
                 </div>
               </Button>

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-11 16:01：Console 状态文案通用化：扩展 `apps/web/src/lib/status-labels.ts` 共享码表与域包装（`teamStatusLabel`/`governanceStatusLabel`/`employeeStatusLabel`/`projectStatusLabel`）；团队管理去掉裸英文 status 与本地中文 map；项目生命周期三处本地表收敛到共享导出。验证：定向 Vitest status-labels+teams 30/30、touched project components 4/4；worktree Web(:3000)+CP(:8081, captchaEnabled=false) 浏览器确认团队「活跃/就绪/已禁用」、项目「运行中/验收中」中文展示。
+
 - 2026-07-11 15:10：工作对象列表时间字段与排序：`DESIGN.md` 新增「时间可见 / 默认新近优先」规则；OpenAPI 与 Control Plane 暴露 `ProjectTask.created_at/updated_at`；项目任务/审批与流程河道组内按时间倒序并展示相对时间。验证：`verify:contracts`、`go test ./internal/project`、定向 Vitest 29 通过；重启 CP(:8081)+Web(:3000) 后 cookie 登录 API 确认 tasks 含时间且 `updated_at` 倒序、decisions 含 `created_at/resolved_at`；浏览器确认任务 Tab「更新」列、审批「决议 …前」、流程编排「创建 …前」与组内新近优先。
 
 - 2026-07-11 12:32：Plan 6 会话血缘续接修复：FindProviderSessionForTaskRoot 放宽为可续接 recoverable 的 active/idle/completed 会话（上游完成后补做/返工派发仍能命中同一 provider_session_id）。验证：定向 go test TestPgRunRepositoryFindProviderSessionForTaskRoot 通过；真实 E2E 证据 .scratch/smoke/plan6-t5-resume-fix-20260711-121427/evidence.json（supplement 派发 metadata.provider_session_id == owner 已完成会话）。

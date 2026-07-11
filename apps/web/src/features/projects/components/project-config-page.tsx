@@ -47,7 +47,7 @@ import {
   type ProjectTask,
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
-import { statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import { projectStatusLabel, statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
@@ -80,18 +80,6 @@ type RevisionSelection = {
   projectId: string;
   revisionId?: string;
 };
-
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    acceptance: "验收中",
-    archived: "已归档",
-    configuring: "配置中",
-    draft: "草稿",
-    paused: "已暂停",
-    running: "运行中",
-  };
-  return labels[status] ?? status;
-}
 
 function statusTone(status: string): V3Tone {
   if (status === "running") return "ok";
@@ -343,7 +331,7 @@ export function ProjectConfigView({
                       {config.project.name}
                     </h2>
                     <StatusPill tone={statusTone(config.project.status)}>
-                      {statusLabel(config.project.status)}
+                      {projectStatusLabel(config.project.status)}
                     </StatusPill>
                   </div>
                   <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
