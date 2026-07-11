@@ -4,6 +4,7 @@ import {
   Activity,
   Archive,
   Bot,
+  Trash2,
   ChevronDown,
   CircleDot,
   ClipboardList,
@@ -98,6 +99,7 @@ type ProjectOperationalDetailProps = {
   initialTab?: ProjectOperationalTab;
   isArchived?: boolean;
   onArchiveProject: () => void;
+  onDeleteProject?: () => void;
   onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
@@ -154,6 +156,7 @@ export function ProjectOperationalDetail({
   initialTab = "overview",
   isArchived,
   onArchiveProject,
+  onDeleteProject,
   onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -211,6 +214,13 @@ export function ProjectOperationalDetail({
         !latestPlanRevision.coordination_job_id ||
         decision.coordination_job_id === latestPlanRevision.coordination_job_id),
   );
+  const canArchive =
+    !isArchived &&
+    (project.allowed_actions === undefined
+      ? true
+      : project.allowed_actions.includes("project.archive"));
+  const canDelete =
+    Boolean(onDeleteProject) && project.allowed_actions?.includes("project.delete");
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -258,6 +268,18 @@ export function ProjectOperationalDetail({
                 配置项目
               </Link>
             </V3Button>
+            {canArchive ? (
+              <V3Button type="button" variant="outline" onClick={onArchiveProject}>
+                <Archive data-icon="inline-start" />
+                归档项目
+              </V3Button>
+            ) : null}
+            {canDelete ? (
+              <V3Button type="button" variant="danger" onClick={onDeleteProject}>
+                <Trash2 data-icon="inline-start" />
+                删除项目
+              </V3Button>
+            ) : null}
           </div>
         </div>
 
@@ -740,15 +762,6 @@ export function ProjectOperationalDetail({
                 <AdvancedTransferRequests transferRequests={transferRequests} />
                 <AdvancedWorkflow project={project} overview={overview} />
                 <AdvancedDemands demands={demands} />
-                <V3Button
-                  disabled={isArchived}
-                  type="button"
-                  variant="outline"
-                  onClick={onArchiveProject}
-                >
-                  <Archive data-icon="inline-start" />
-                  归档项目
-                </V3Button>
               </aside>
             </div>
           </CollapsibleContent>
