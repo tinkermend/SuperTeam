@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-11 16:09：项目管理新增项目软删除（`GET .../delete-preview` + `DELETE .../projects/{id}`、活跃执行硬阻断、待审批警告后清理、先终止 Temporal coordinator 再同事务级联软删与审计、详情头归档+删除）。验证：迁移 057 已 apply；真实 API smoke（项目 0febfc92-1c6b-4588-96f9-299a69151017）——allowed_actions 含 project.archive/project.delete、preview can_delete=true、DELETE 204、GET 404、列表不可见；Temporal `WORKFLOW_EXECUTION_STATUS_TERMINATED`；`audit_events.action=project.delete`。证据 `.scratch/smoke/project-delete-summary.txt` / `.scratch/smoke/project-delete-preview.json`。
+
 - 2026-07-11 12:32：Plan 6 会话血缘续接修复：FindProviderSessionForTaskRoot 放宽为可续接 recoverable 的 active/idle/completed 会话（上游完成后补做/返工派发仍能命中同一 provider_session_id）。验证：定向 go test TestPgRunRepositoryFindProviderSessionForTaskRoot 通过；真实 E2E 证据 .scratch/smoke/plan6-t5-resume-fix-20260711-121427/evidence.json（supplement 派发 metadata.provider_session_id == owner 已完成会话）。
 
 - 2026-07-11 12:02：Plan 8 删除派发闸门中结构上不可能失败的 `tool.binding` / `tool.authorization` / `tool.available` 检查及整条死代码链（`PreDispatchToolSnapshot`、adapter `requiredTools`/`effectiveMCPServerNames`/`gateCapabilityReader`、workflow `mergePreDispatchToolSnapshot` 与 metadata 读取）；`capability.Service.ListEffectiveMCPServers` 与 `/effective-mcp-servers` 保留。验证：`corepack pnpm verify:control-plane` 通过；本 worktree 启停 Control Plane(:8081) 后对真实任务 `da4afe31-…` 跑 `RunPreDispatchGate` 落库，最新 `project_task_dispatch_gate_results.checks` 不含任何 `tool.*` key（证据 `.scratch/smoke/plan8-gate/evidence.json`）。

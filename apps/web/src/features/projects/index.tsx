@@ -347,17 +347,18 @@ export function ProjectsView({
     : undefined;
 
   const selectedProjectQuery = useQuery({
-    enabled: Boolean(effectiveProjectId) && !selectedProjectFromList,
+    // Always fetch detail on the project route so allowed_actions (archive/delete)
+    // are present; list items do not include them.
+    enabled: Boolean(effectiveProjectId),
     queryKey: ["project", effectiveProjectId],
     queryFn: () => getProject(apiOptions, effectiveProjectId as string),
     placeholderData: keepPreviousData,
   });
 
   const selectedProject =
-    selectedProjectFromList ??
-    (selectedProjectQuery.data?.id === effectiveProjectId
+    selectedProjectQuery.data?.id === effectiveProjectId
       ? selectedProjectQuery.data
-      : undefined);
+      : selectedProjectFromList;
 
   const overviewQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
