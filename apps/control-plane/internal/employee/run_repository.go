@@ -25,9 +25,10 @@ type DigitalEmployeeRunRepository interface {
 	CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) (bool, error)
 	UpsertProviderSession(ctx context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error)
-	// FindProviderSessionForTaskRoot looks up the active provider session
-	// scoped to (employee, task lineage root). It returns an empty string
-	// when no active session matches — this is a lookup, not an error path.
+	// FindProviderSessionForTaskRoot looks up the latest recoverable
+	// provider session (active, idle, or completed) scoped to (employee,
+	// task lineage root). It returns an empty string when no eligible
+	// session matches — this is a lookup, not an error path.
 	FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error)
 	// GetRunTaskMetadata returns the metadata map persisted on the task
 	// backing a run (tasks.params["metadata"]), so writeback can recover

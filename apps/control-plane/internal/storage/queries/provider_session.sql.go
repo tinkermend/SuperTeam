@@ -389,7 +389,8 @@ FROM provider_sessions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
   AND project_task_root_id = $3::uuid
-  AND status = 'active'
+  AND recoverable = true
+  AND status IN ('active', 'idle', 'completed')
 ORDER BY last_active_at DESC
 LIMIT 1
 `
@@ -400,6 +401,10 @@ type FindProviderSessionForTaskRootParams struct {
 	ProjectTaskRootID uuid.UUID `json:"project_task_root_id"`
 }
 
+// Resume the latest recoverable session for this lineage root, including
+// completed ones. Upstream work often finishes (status=completed) before a
+// revision/supplement under the same root is dispatched; requiring 'active'
+// made Plan 6's resume path a no-op in the real upstream-supplement flow.
 func (q *Queries) FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error) {
 	row := q.db.QueryRow(ctx, FindProviderSessionForTaskRoot, arg.TenantID, arg.DigitalEmployeeID, arg.ProjectTaskRootID)
 	var provider_session_id string

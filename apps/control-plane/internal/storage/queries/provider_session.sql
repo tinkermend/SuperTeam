@@ -184,12 +184,17 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND provider_session_id = sqlc.arg('provider_session_id')::uuid;
 
 -- name: FindProviderSessionForTaskRoot :one
+-- Resume the latest recoverable session for this lineage root, including
+-- completed ones. Upstream work often finishes (status=completed) before a
+-- revision/supplement under the same root is dispatched; requiring 'active'
+-- made Plan 6's resume path a no-op in the real upstream-supplement flow.
 SELECT provider_session_id
 FROM provider_sessions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND project_task_root_id = sqlc.arg('project_task_root_id')::uuid
-  AND status = 'active'
+  AND recoverable = true
+  AND status IN ('active', 'idle', 'completed')
 ORDER BY last_active_at DESC
 LIMIT 1;
 

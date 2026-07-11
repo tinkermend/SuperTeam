@@ -976,8 +976,11 @@ func TestPgRepositoryListRunsDetailedFiltersByStatusAndProject(t *testing.T) {
 
 // TestPgRunRepositoryFindProviderSessionForTaskRoot exercises the task-lineage
 // scoped session lookup added for session resumption across task revisions:
-// a session hits when (employee, task lineage root) matches an active row,
-// but a different root — even for the same employee — must miss.
+// a session hits when (employee, task lineage root) matches a recoverable
+// active/idle/completed row, but a different root — even for the same
+// employee — must miss. Completed sessions must be resumable because the
+// real upstream-supplement flow dispatches the revision/supplement task
+// after the upstream task (and its session) has already completed.
 func TestPgRunRepositoryFindProviderSessionForTaskRoot(t *testing.T) {
 	ctx := context.Background()
 	cfg, ok := employeeRunRepositoryTestConfig()
@@ -1009,29 +1012,66 @@ func TestPgRunRepositoryFindProviderSessionForTaskRoot(t *testing.T) {
 	`, tenantID)
 	require.NoError(t, err)
 
-	insertSession := func(providerSessionID string, forEmployee, taskRoot uuid.UUID, status string, lastActiveAt time.Time) {
+	insertSession := func(providerSessionID string, forEmployee, taskRoot uuid.UUID, status string, recoverable bool, lastActiveAt time.Time) {
 		_, err := conn.Exec(ctx, `
 			INSERT INTO provider_sessions (
 				tenant_id, provider_session_id, digital_employee_id,
 				execution_instance_id, runtime_node_id, provider_type,
-				status, last_active_at, project_task_root_id
-			) VALUES ($1, $2, $3, $4, $5, 'codex', $6, $7, $8)
-		`, tenantID, providerSessionID, forEmployee, uuid.New(), uuid.New(), status, lastActiveAt, taskRoot)
+				status, recoverable, last_active_at, project_task_root_id
+			) VALUES ($1, $2, $3, $4, $5, 'codex', $6, $7, $8, $9)
+		`, tenantID, providerSessionID, forEmployee, uuid.New(), uuid.New(), status, recoverable, lastActiveAt, taskRoot)
 		require.NoError(t, err)
 	}
 
 	now := time.Now().UTC()
-	insertSession("sess-root-active", employeeID, root, "active", now.Add(-5*time.Minute))
-	// A stale/closed session sharing the same root must not shadow the active one.
-	insertSession("sess-root-completed", employeeID, root, "completed", now)
-	insertSession("sess-other-root-active", employeeID, otherRoot, "active", now.Add(-1*time.Minute))
+	insertSession("sess-root-active", employeeID, root, "active", true, now.Add(-5*time.Minute))
+	// The latest recoverable row for the root — completed but more recent
+	// than the active row — must win the "latest by last_active_at" ordering.
+	insertSession("sess-root-completed", employeeID, root, "completed", true, now)
+	insertSession("sess-other-root-active", employeeID, otherRoot, "active", true, now.Add(-1*time.Minute))
 
 	repo := NewPgRunRepository(queries.New(conn))
 
-	t.Run("same employee and root hits the active session", func(t *testing.T) {
+	t.Run("same employee and root prefers the latest recoverable session, including completed", func(t *testing.T) {
 		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, root)
 		require.NoError(t, err)
-		require.Equal(t, "sess-root-active", found)
+		require.Equal(t, "sess-root-completed", found)
+	})
+
+	t.Run("a completed session alone for a root must be returned", func(t *testing.T) {
+		completedOnlyRoot := uuid.New()
+		insertSession("sess-completed-only", employeeID, completedOnlyRoot, "completed", true, now)
+
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, completedOnlyRoot)
+		require.NoError(t, err)
+		require.Equal(t, "sess-completed-only", found)
+	})
+
+	t.Run("failed session for a root misses", func(t *testing.T) {
+		failedRoot := uuid.New()
+		insertSession("sess-failed-only", employeeID, failedRoot, "failed", true, now)
+
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, failedRoot)
+		require.NoError(t, err)
+		require.Empty(t, found)
+	})
+
+	t.Run("stopped session for a root misses", func(t *testing.T) {
+		stoppedRoot := uuid.New()
+		insertSession("sess-stopped-only", employeeID, stoppedRoot, "stopped", true, now)
+
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, stoppedRoot)
+		require.NoError(t, err)
+		require.Empty(t, found)
+	})
+
+	t.Run("non-recoverable completed session for a root misses", func(t *testing.T) {
+		nonRecoverableRoot := uuid.New()
+		insertSession("sess-non-recoverable", employeeID, nonRecoverableRoot, "completed", false, now)
+
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, nonRecoverableRoot)
+		require.NoError(t, err)
+		require.Empty(t, found)
 	})
 
 	t.Run("different root for the same employee misses", func(t *testing.T) {

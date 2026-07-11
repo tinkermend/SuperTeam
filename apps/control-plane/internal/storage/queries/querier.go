@@ -152,6 +152,10 @@ type Querier interface {
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	// Resume the latest recoverable session for this lineage root, including
+	// completed ones. Upstream work often finishes (status=completed) before a
+	// revision/supplement under the same root is dispatched; requiring 'active'
+	// made Plan 6's resume path a no-op in the real upstream-supplement flow.
 	FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
