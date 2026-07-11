@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
@@ -1077,6 +1079,237 @@ func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectRouteReturnsNoContent(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeProjectService{projectID: uuid.New()}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+service.projectID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete project to return 204, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.deleteReq.ProjectID != service.projectID {
+		t.Fatalf("expected delete project id %s, got %#v", service.projectID, service.deleteReq)
+	}
+	if service.deleteReq.TenantID != platform.DefaultTenantID {
+		t.Fatalf("expected default tenant %s, got %#v", platform.DefaultTenantID, service.deleteReq)
+	}
+	if service.deleteReq.ActorUserID != user.ID {
+		t.Fatalf("expected delete actor user id %s, got %#v", user.ID, service.deleteReq)
+	}
+}
+
+func TestDeleteProjectRouteReturnsBlockers(t *testing.T) {
+	blockerID := uuid.New()
+	blockedErr := &project.ProjectDeleteBlockedError{Blockers: []project.ProjectDeleteBlocker{{
+		Type:   "project_task",
+		ID:     blockerID.String(),
+		Status: "running",
+		Title:  "项目任务 A",
+	}}}
+	service := &routeProjectService{projectID: uuid.New(), deleteErr: blockedErr}
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+service.projectID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected delete blockers to return 409, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Code     string                         `json:"code"`
+		Message  string                         `json:"message"`
+		Blockers []project.ProjectDeleteBlocker `json:"blockers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode delete blocker response: %v", err)
+	}
+	if body.Code != project.ProjectDeleteBlockedCode {
+		t.Fatalf("expected blocked code, got %#v", body)
+	}
+	if !strings.Contains(body.Message, "仍有排队或执行中的任务") {
+		t.Fatalf("expected Chinese blocker message, got %#v", body.Message)
+	}
+	if len(body.Blockers) != 1 || body.Blockers[0].Type != "project_task" || body.Blockers[0].Title != "项目任务 A" {
+		t.Fatalf("unexpected blockers: %#v", body.Blockers)
+	}
+}
+
+func TestDeleteProjectRouteReturnsTerminateFailure(t *testing.T) {
+	service := &routeProjectService{projectID: uuid.New(), deleteErr: errors.New("temporal unavailable")}
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+service.projectID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected terminate failure to return 503, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode terminate failure response: %v", err)
+	}
+	if body.Code != "project_delete_terminate_failed" {
+		t.Fatalf("expected terminate failure code, got %#v", body)
+	}
+	if !strings.Contains(body.Message, "协调流程终止失败") {
+		t.Fatalf("expected Chinese retry message, got %#v", body.Message)
+	}
+}
+
+func TestGetProjectDeletePreviewRouteReturnsPreview(t *testing.T) {
+	projectID := uuid.New()
+	service := &routeProjectService{
+		projectID: projectID,
+		deletePreview: &project.ProjectDeletePreview{
+			ProjectID:   projectID,
+			ProjectName: "待删项目",
+			CanDelete:   false,
+			Blockers: []project.ProjectDeleteBlocker{{
+				Type:   "project_task",
+				ID:     uuid.New().String(),
+				Status: "queued",
+				Title:  "排队任务",
+			}},
+			Warnings: project.ProjectDeleteWarnings{PendingDecisionCount: 2},
+			Message:  "删除将取消待审批并解除成员与 Runtime 绑定。存在活跃执行时不可删除。",
+		},
+	}
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/delete-preview", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected delete preview to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		ProjectID   string                         `json:"project_id"`
+		ProjectName string                         `json:"project_name"`
+		CanDelete   bool                           `json:"can_delete"`
+		Blockers    []project.ProjectDeleteBlocker `json:"blockers"`
+		Message     string                         `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode delete preview response: %v", err)
+	}
+	if body.ProjectID != projectID.String() || body.ProjectName != "待删项目" || body.CanDelete {
+		t.Fatalf("unexpected preview payload: %#v", body)
+	}
+	if len(body.Blockers) != 1 || body.Blockers[0].Title != "排队任务" {
+		t.Fatalf("unexpected preview blockers: %#v", body.Blockers)
+	}
+}
+
+func TestGetProjectIncludesAllowedDeleteAction(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeProjectService{projectID: uuid.New()}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected get project to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		AllowedActions []string `json:"allowed_actions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode get project response: %v", err)
+	}
+	if !containsString(body.AllowedActions, authz.ActionProjectDelete) {
+		t.Fatalf("expected allowed delete action, got %#v", body.AllowedActions)
+	}
+	if !containsString(body.AllowedActions, authz.ActionProjectArchive) {
+		t.Fatalf("expected allowed archive action, got %#v", body.AllowedActions)
+	}
+}
+
 type routeProjectService struct {
 	projectID                         uuid.UUID
 	createReq                         project.CreateProjectRequest
@@ -1128,6 +1361,10 @@ type routeProjectService struct {
 	taskLivenessProjectID             uuid.UUID
 	executionTraceReq                 project.GetExecutionTraceRequest
 	archiveErr                        error
+	deleteReq                         project.DeleteProjectRequest
+	deleteErr                         error
+	deletePreview                     *project.ProjectDeletePreview
+	deletePreviewErr                  error
 }
 
 func (s *routeProjectService) ensureProjectID() uuid.UUID {
@@ -1216,6 +1453,28 @@ func (s *routeProjectService) ArchiveProject(ctx context.Context, tenantID, proj
 	projectValue := routeProject(tenantID, projectID, actorUserID)
 	projectValue.Status = project.ProjectStatusArchived
 	return &projectValue, nil
+}
+
+func (s *routeProjectService) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectDeletePreview, error) {
+	if s.deletePreviewErr != nil {
+		return nil, s.deletePreviewErr
+	}
+	if s.deletePreview != nil {
+		return s.deletePreview, nil
+	}
+	return &project.ProjectDeletePreview{
+		ProjectID:   projectID,
+		ProjectName: "预览项目",
+		CanDelete:   true,
+		Blockers:    []project.ProjectDeleteBlocker{},
+		Warnings:    project.ProjectDeleteWarnings{},
+		Message:     "删除将取消待审批并解除成员与 Runtime 绑定。",
+	}, nil
+}
+
+func (s *routeProjectService) DeleteProject(ctx context.Context, req project.DeleteProjectRequest) error {
+	s.deleteReq = req
+	return s.deleteErr
 }
 
 func (s *routeProjectService) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []project.ProjectMemberInput) ([]project.ProjectMember, error) {

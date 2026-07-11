@@ -2042,6 +2042,14 @@ func (s *handlerTestService) ArchiveProject(ctx context.Context, tenantID, proje
 	return &project, nil
 }
 
+func (s *handlerTestService) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error) {
+	return &ProjectDeletePreview{ProjectID: projectID, ProjectName: "预览", CanDelete: true}, nil
+}
+
+func (s *handlerTestService) DeleteProject(ctx context.Context, req DeleteProjectRequest) error {
+	return nil
+}
+
 func (s *handlerTestService) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	return nil, nil
 }

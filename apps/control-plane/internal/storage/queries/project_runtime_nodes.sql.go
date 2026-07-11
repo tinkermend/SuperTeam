@@ -11,6 +11,70 @@ import (
 	"github.com/google/uuid"
 )
 
+const DeleteProjectEmployeeNodeAffinitiesForDelete = `-- name: DeleteProjectEmployeeNodeAffinitiesForDelete :many
+DELETE FROM project_employee_node_affinity
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+RETURNING id
+`
+
+type DeleteProjectEmployeeNodeAffinitiesForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeleteProjectEmployeeNodeAffinitiesForDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, DeleteProjectEmployeeNodeAffinitiesForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const DeleteProjectRuntimeNodesForDelete = `-- name: DeleteProjectRuntimeNodesForDelete :many
+DELETE FROM project_runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+RETURNING id
+`
+
+type DeleteProjectRuntimeNodesForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeleteProjectRuntimeNodesForDelete(ctx context.Context, arg DeleteProjectRuntimeNodesForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, DeleteProjectRuntimeNodesForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const GetProjectEmployeeNodeAffinity = `-- name: GetProjectEmployeeNodeAffinity :one
 SELECT id, tenant_id, project_id, digital_employee_id, runtime_node_id, last_run_at, created_at, updated_at FROM project_employee_node_affinity
 WHERE tenant_id = $1::uuid AND project_id = $2::uuid

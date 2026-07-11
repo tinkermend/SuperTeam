@@ -33,7 +33,81 @@ var (
 	// must wait for that specific node to recover rather than being
 	// re-selected onto a different one.
 	ErrProjectTaskPinnedNodeOffline = errors.New("project task's pinned runtime node is offline")
+	ErrProjectDeleteBlocked         = errors.New("project delete blocked")
 )
+
+const ProjectDeleteBlockedCode = "project_delete_blocked"
+
+type ProjectDeleteBlocker struct {
+	Type   string `json:"type"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Title  string `json:"title"`
+}
+
+type ProjectDeleteBlockedError struct {
+	Blockers []ProjectDeleteBlocker
+}
+
+func (e *ProjectDeleteBlockedError) Error() string {
+	return ErrProjectDeleteBlocked.Error()
+}
+
+func (e *ProjectDeleteBlockedError) Unwrap() error {
+	return ErrProjectDeleteBlocked
+}
+
+type ProjectDeletePreview struct {
+	ProjectID   uuid.UUID
+	ProjectName string
+	CanDelete   bool
+	Blockers    []ProjectDeleteBlocker
+	Warnings    ProjectDeleteWarnings
+	Message     string
+}
+
+type ProjectDeleteWarnings struct {
+	PendingDecisionCount       int32 `json:"pending_decision_count"`
+	WaitingHumanTaskCount      int32 `json:"waiting_human_task_count"`
+	OpenInboxCount             int32 `json:"open_inbox_count"`
+	ActiveMemberCount          int32 `json:"active_member_count"`
+	DigitalEmployeeMemberCount int32 `json:"digital_employee_member_count"`
+	RuntimeNodeBindingCount    int32 `json:"runtime_node_binding_count"`
+	AffinityCount              int32 `json:"affinity_count"`
+}
+
+type ProjectDeleteCascadeResult struct {
+	MemberCount      int
+	TaskCount        int
+	DecisionCount    int
+	ApprovalCount    int
+	InboxCount       int
+	RuntimeNodeCount int
+	AffinityCount    int
+	PlacementCount   int
+}
+
+type DeleteProjectRequest struct {
+	TenantID    uuid.UUID
+	ProjectID   uuid.UUID
+	ActorUserID uuid.UUID
+}
+
+type SoftDeleteProjectCascadeParams struct {
+	TenantID    uuid.UUID
+	ProjectID   uuid.UUID
+	DeletedAt   time.Time
+	ActorUserID uuid.UUID
+	Project     Project
+}
+
+type ProjectDeleteAuditEventParams struct {
+	TenantID      uuid.UUID
+	ActorUserID   uuid.UUID
+	Project       Project
+	CascadeResult ProjectDeleteCascadeResult
+	DeletedAt     time.Time
+}
 
 type ProjectStatus string
 
@@ -299,6 +373,7 @@ type Project struct {
 	EvidencePolicy         map[string]any
 	RepoBinding            ProjectRepoBinding
 	ArchivedAt             *time.Time
+	DeletedAt              *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }

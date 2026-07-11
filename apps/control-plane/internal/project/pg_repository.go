@@ -306,6 +306,178 @@ func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries
 	return projectFromRecord(row)
 }
 
+func (r *PgRepository) GetProjectForDelete(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	row, err := r.q.GetProjectForDelete(ctx, queries.GetProjectForDeleteParams{TenantID: tenantID, ID: projectID})
+	if err != nil {
+		return Project{}, projectRepositoryError(err)
+	}
+	return projectFromRecord(row)
+}
+
+func (r *PgRepository) ListProjectDeleteBlockers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectDeleteBlocker, error) {
+	taskRows, err := r.q.ListProjectDeleteTaskBlockers(ctx, queries.ListProjectDeleteTaskBlockersParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	runRows, err := r.q.ListProjectDeleteRunBlockers(ctx, queries.ListProjectDeleteRunBlockersParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	blockers := make([]ProjectDeleteBlocker, 0, len(taskRows)+len(runRows))
+	for _, row := range taskRows {
+		blockers = append(blockers, projectDeleteBlockerFromTaskRow(row))
+	}
+	for _, row := range runRows {
+		blockers = append(blockers, projectDeleteBlockerFromRunRow(row))
+	}
+	return blockers, nil
+}
+
+func (r *PgRepository) GetProjectDeletePreviewCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectDeleteWarnings, error) {
+	row, err := r.q.GetProjectDeletePreviewCounts(ctx, queries.GetProjectDeletePreviewCountsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return ProjectDeleteWarnings{}, err
+	}
+	return projectDeleteWarningsFromCounts(row), nil
+}
+
+func (r *PgRepository) SoftDeleteProjectCascade(ctx context.Context, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error) {
+	return withProjectQueries(ctx, r, "project delete cascade", func(q *queries.Queries) (ProjectDeleteCascadeResult, error) {
+		return r.softDeleteProjectCascadeWithQueries(ctx, q, params)
+	})
+}
+
+func (r *PgRepository) softDeleteProjectCascadeWithQueries(ctx context.Context, q *queries.Queries, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error) {
+	cascade := ProjectDeleteCascadeResult{}
+	deletedAt := pgtype.Timestamptz{Time: params.DeletedAt.UTC(), Valid: true}
+	queryParams := queries.GetProjectForDeleteParams{TenantID: params.TenantID, ID: params.ProjectID}
+
+	if _, err := q.GetProjectForDelete(ctx, queryParams); err != nil {
+		return cascade, projectRepositoryError(err)
+	}
+
+	if _, err := q.SoftDeleteProject(ctx, queries.SoftDeleteProjectParams{
+		DeletedAt: deletedAt,
+		TenantID:  params.TenantID,
+		ID:        params.ProjectID,
+	}); err != nil {
+		return cascade, projectRepositoryError(err)
+	}
+
+	memberRows, err := q.DeactivateProjectMembersForDelete(ctx, queries.DeactivateProjectMembersForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.MemberCount = len(memberRows)
+
+	taskRows, err := q.CancelProjectTasksForDelete(ctx, queries.CancelProjectTasksForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.TaskCount = len(taskRows)
+
+	decisionRows, err := q.CancelProjectDecisionRequestsForDelete(ctx, queries.CancelProjectDecisionRequestsForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.DecisionCount = len(decisionRows)
+
+	approvalRows, err := q.CancelApprovalRequestsForProjectDelete(ctx, queries.CancelApprovalRequestsForProjectDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.ApprovalCount = len(approvalRows)
+
+	inboxRows, err := q.CancelInboxItemsForProjectDelete(ctx, queries.CancelInboxItemsForProjectDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.InboxCount = len(inboxRows)
+
+	runtimeNodeRows, err := q.DeleteProjectRuntimeNodesForDelete(ctx, queries.DeleteProjectRuntimeNodesForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.RuntimeNodeCount = len(runtimeNodeRows)
+
+	affinityRows, err := q.DeleteProjectEmployeeNodeAffinitiesForDelete(ctx, queries.DeleteProjectEmployeeNodeAffinitiesForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.AffinityCount = len(affinityRows)
+
+	placementRows, err := q.ReleaseProjectPlacementsForDelete(ctx, queries.ReleaseProjectPlacementsForDeleteParams{
+		TenantID:  params.TenantID,
+		ProjectID: params.ProjectID,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.PlacementCount = len(placementRows)
+
+	if params.ActorUserID != uuid.Nil {
+		if err := createProjectDeleteAuditEventWithQueries(ctx, q, ProjectDeleteAuditEventParams{
+			TenantID:      params.TenantID,
+			ActorUserID:   params.ActorUserID,
+			Project:       params.Project,
+			CascadeResult: cascade,
+			DeletedAt:     params.DeletedAt,
+		}); err != nil {
+			return cascade, err
+		}
+	}
+
+	return cascade, nil
+}
+
+func createProjectDeleteAuditEventWithQueries(ctx context.Context, q *queries.Queries, params ProjectDeleteAuditEventParams) error {
+	details, err := json.Marshal(projectDeleteAuditDetails(params))
+	if err != nil {
+		return err
+	}
+	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "project_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "project", Valid: true},
+		ResourceID:   pgtype.Text{String: params.Project.ID.String(), Valid: true},
+		Action:       "project.delete",
+		Details:      details,
+	})
+	return err
+}
+
 func (r *PgRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error) {
 	row, err := r.q.GetActiveProjectPlacement(ctx, queries.GetActiveProjectPlacementParams{
 		TenantID:  tenantID,
@@ -5248,9 +5420,59 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		EvidencePolicy:         evidencePolicy,
 		RepoBinding:            repoBinding,
 		ArchivedAt:             ptrTime(row.ArchivedAt),
+		DeletedAt:              ptrTime(row.DeletedAt),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil
+}
+
+func projectDeleteBlockerFromTaskRow(row queries.ListProjectDeleteTaskBlockersRow) ProjectDeleteBlocker {
+	return ProjectDeleteBlocker{
+		Type:   row.BlockerType,
+		ID:     row.ID.String(),
+		Status: row.Status,
+		Title:  row.Title,
+	}
+}
+
+func projectDeleteBlockerFromRunRow(row queries.ListProjectDeleteRunBlockersRow) ProjectDeleteBlocker {
+	return ProjectDeleteBlocker{
+		Type:   row.BlockerType,
+		ID:     row.ID.String(),
+		Status: row.Status,
+		Title:  row.Title,
+	}
+}
+
+func projectDeleteWarningsFromCounts(row queries.GetProjectDeletePreviewCountsRow) ProjectDeleteWarnings {
+	return ProjectDeleteWarnings{
+		PendingDecisionCount:       row.PendingDecisionCount,
+		WaitingHumanTaskCount:      row.WaitingHumanTaskCount,
+		OpenInboxCount:             row.OpenInboxCount,
+		ActiveMemberCount:          row.ActiveMemberCount,
+		DigitalEmployeeMemberCount: row.DigitalEmployeeMemberCount,
+		RuntimeNodeBindingCount:    row.RuntimeNodeBindingCount,
+		AffinityCount:              row.AffinityCount,
+	}
+}
+
+func projectDeleteAuditDetails(params ProjectDeleteAuditEventParams) map[string]any {
+	workflowID := strings.TrimSpace(params.Project.CoordinationWorkflowID)
+	return map[string]any{
+		"project_id":   params.Project.ID.String(),
+		"project_name": params.Project.Name,
+		"workflow_id":  workflowID,
+		"cascade": map[string]any{
+			"members":       params.CascadeResult.MemberCount,
+			"tasks":         params.CascadeResult.TaskCount,
+			"decisions":     params.CascadeResult.DecisionCount,
+			"approvals":     params.CascadeResult.ApprovalCount,
+			"inbox":         params.CascadeResult.InboxCount,
+			"runtime_nodes": params.CascadeResult.RuntimeNodeCount,
+			"affinities":    params.CascadeResult.AffinityCount,
+			"placements":    params.CascadeResult.PlacementCount,
+		},
+	}
 }
 
 func projectRepoBindingFromRecord(row queries.Project) (ProjectRepoBinding, error) {

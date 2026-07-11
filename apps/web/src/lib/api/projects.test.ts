@@ -3,10 +3,12 @@ import {
   archiveProject,
   createProject,
   createProjectEvidence,
+  deleteProject,
   getProjectArchivePreview,
   getProjectBudgetSummary,
   getProjectConfig,
   getProjectConfigRevision,
+  getProjectDeletePreview,
   getProjectDemandLaunchDetail,
   getProjectOverview,
   getProjectPlanRevision,
@@ -802,6 +804,114 @@ describe("project API", () => {
         credentials: "include",
         headers: { accept: "application/json" },
         method: "POST",
+      },
+    );
+  });
+
+  it("deletes a project with encoded project id", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+
+    await expect(
+      deleteProject(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("surfaces project delete blockers from the API payload", async () => {
+    const payload = {
+      code: "project_delete_blocked",
+      message: "该项目仍有进行中的任务，完成或取消后再删除。",
+      blockers: [
+        {
+          type: "project_task",
+          id: "task-1",
+          status: "running",
+          title: "接入验收",
+        },
+      ],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(payload), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    await expect(
+      deleteProject(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project-1",
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "project_delete_blocked",
+      payload,
+    });
+  });
+
+  it("gets project delete preview with encoded project id", async () => {
+    const deletePreview = {
+      project_id: "11111111-1111-4111-8111-111111111111",
+      project_name: "客户接入",
+      can_delete: false,
+      blockers: [
+        {
+          type: "project_task",
+          id: "task-1",
+          status: "running",
+          title: "接入验收",
+        },
+        {
+          type: "run",
+          id: "99999999-9999-4999-8999-999999999999",
+          status: "running",
+          title: "接入验收执行",
+        },
+      ],
+      warnings: {
+        pending_decision_count: 1,
+        waiting_human_task_count: 2,
+        open_inbox_count: 0,
+        active_member_count: 3,
+        digital_employee_member_count: 1,
+        runtime_node_binding_count: 1,
+        affinity_count: 0,
+      },
+      message: "该项目仍有进行中的任务，完成或取消后再删除。",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(deletePreview), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getProjectDeletePreview(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(deletePreview);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/delete-preview",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
       },
     );
   });

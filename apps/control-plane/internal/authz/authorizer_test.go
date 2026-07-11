@@ -1661,3 +1661,95 @@ func TestDBAuthorizerReturnsRepositoryErrors(t *testing.T) {
 		t.Fatalf("expected repository error, got %v", err)
 	}
 }
+
+func TestDBAuthorizerProjectDelete(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+
+	tests := []struct {
+		name         string
+		action       string
+		resource     ResourceRef
+		tenantRole   string
+		asHumanOwner bool
+		asMember     bool
+		allowed      bool
+		matchedRule  string
+		denyReason   string
+	}{
+		{
+			name:        "admin deletes project",
+			action:      ActionProjectDelete,
+			resource:    ResourceRef{Type: ResourceProject, ID: projectID.String()},
+			tenantRole:  RoleAdmin,
+			allowed:     true,
+			matchedRule: "tenant.admin",
+		},
+		{
+			name:        "owner tenant deletes project",
+			action:      ActionProjectDelete,
+			resource:    ResourceRef{Type: ResourceProject, ID: projectID.String()},
+			tenantRole:  RoleOwner,
+			allowed:     true,
+			matchedRule: "tenant.owner",
+		},
+		{
+			name:         "human_owner deletes project",
+			action:       ActionProjectDelete,
+			resource:     ResourceRef{Type: ResourceProject, ID: projectID.String()},
+			asHumanOwner: true,
+			tenantRole:   RoleMember,
+			allowed:      true,
+			matchedRule:  "project.owner",
+		},
+		{
+			name:       "member cannot delete project",
+			action:     ActionProjectDelete,
+			resource:   ResourceRef{Type: ResourceProject, ID: projectID.String()},
+			asMember:   true,
+			tenantRole: RoleMember,
+			denyReason: ReasonNoMembership,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			repo := &memoryRepository{
+				tenantRoles:  map[string]string{},
+				projectFacts: map[uuid.UUID]ProjectAuthzFacts{},
+			}
+			if tt.tenantRole != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.tenantRole
+			}
+			if tt.asHumanOwner || tt.asMember {
+				facts := ProjectAuthzFacts{IsMember: tt.asMember}
+				if tt.asHumanOwner {
+					facts.HumanOwnerUserID = userID
+				}
+				repo.projectFacts[projectID] = facts
+			}
+			authorizer := NewDBAuthorizer(repo)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("expected allowed=%v, got %#v", tt.allowed, decision)
+			}
+			if tt.matchedRule != "" && decision.MatchedRule != tt.matchedRule {
+				t.Fatalf("expected matched rule %q, got %q", tt.matchedRule, decision.MatchedRule)
+			}
+			if tt.denyReason != "" && decision.Reason != tt.denyReason {
+				t.Fatalf("expected deny reason %q, got %q", tt.denyReason, decision.Reason)
+			}
+		})
+	}
+}

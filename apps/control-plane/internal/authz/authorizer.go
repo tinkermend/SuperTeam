@@ -497,7 +497,7 @@ func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckReque
 
 func isProjectAction(action string) bool {
 	switch action {
-	case ActionProjectCreate, ActionProjectRead, ActionProjectUpdate, ActionProjectArchive,
+	case ActionProjectCreate, ActionProjectRead, ActionProjectUpdate, ActionProjectArchive, ActionProjectDelete,
 		ActionProjectMemberRead, ActionProjectMemberManage,
 		ActionProjectDemandRead, ActionProjectDemandSubmit,
 		ActionProjectTaskRead, ActionProjectEventRead,

@@ -2156,3 +2156,44 @@ func TestMigration049BackfillProjectRuntimeNodesFromPlacements(t *testing.T) {
 		assertMigrationContains(t, sql, expected)
 	}
 }
+
+func TestProjectSoftDeleteMigration(t *testing.T) {
+	sql := readMigration(t, "057_project_soft_delete.sql")
+
+	for _, expected := range []string{
+		"ALTER TABLE projects",
+		"ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
+		"COMMENT ON COLUMN projects.deleted_at IS '软删除时间；非空表示项目已从当前管理面移除'",
+		"CREATE INDEX IF NOT EXISTS idx_projects_tenant_deleted_created",
+		"ON projects (tenant_id, created_at DESC)",
+		"WHERE deleted_at IS NULL",
+	} {
+		assertMigrationContains(t, sql, expected)
+	}
+}
+
+func TestProjectSoftDeleteQueriesFilterCurrentSurface(t *testing.T) {
+	projectSQL, err := os.ReadFile("queries/project.sql")
+	require.NoError(t, err)
+	authzSQL, err := os.ReadFile("queries/authz.sql")
+	require.NoError(t, err)
+	affinitySQL, err := os.ReadFile("queries/project_runtime_affinity.sql")
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		`-- name: GetProject :one
+SELECT * FROM projects
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL;`,
+		`WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)`,
+		"JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id",
+		"AND p.deleted_at IS NULL",
+	} {
+		require.Contains(t, string(projectSQL), expected)
+	}
+	require.Contains(t, string(authzSQL), "AND p.deleted_at IS NULL")
+	require.Contains(t, string(affinitySQL), "AND deleted_at IS NULL")
+}

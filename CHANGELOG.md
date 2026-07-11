@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-11 16:09：项目管理新增项目软删除（`GET .../delete-preview` + `DELETE .../projects/{id}`、活跃执行硬阻断、待审批警告后清理、先终止 Temporal coordinator 再同事务级联软删与审计、详情头归档+删除）。验证：迁移 057 已 apply；真实 API smoke（项目 0febfc92-1c6b-4588-96f9-299a69151017）——allowed_actions 含 project.archive/project.delete、preview can_delete=true、DELETE 204、GET 404、列表不可见；Temporal `WORKFLOW_EXECUTION_STATUS_TERMINATED`；`audit_events.action=project.delete`。证据 `.scratch/smoke/project-delete-summary.txt` / `.scratch/smoke/project-delete-preview.json`；浏览器详情头可见「归档项目」「删除项目」，删除确认框含名称确认与 preview 提示；并修复 overview 覆盖导致 allowed_actions 丢失。
+
 - 2026-07-11 16:01：Console 状态文案通用化：扩展 `apps/web/src/lib/status-labels.ts` 共享码表与域包装（`teamStatusLabel`/`governanceStatusLabel`/`employeeStatusLabel`/`projectStatusLabel`）；团队管理去掉裸英文 status 与本地中文 map；项目生命周期三处本地表收敛到共享导出。验证：定向 Vitest status-labels+teams 30/30、touched project components 4/4；worktree Web(:3000)+CP(:8081, captchaEnabled=false) 浏览器确认团队「活跃/就绪/已禁用」、项目「运行中/验收中」中文展示。
 
 - 2026-07-11 15:56：登录图形验证码默认改为关闭：`auth.captchaEnabled` 与 `auth.Service` 默认 `false`，仅当配置或 `AUTH_CAPTCHA_ENABLED=true` 时开启；避免各分支未携带本地 `config.yaml` 时端到端登录被验证码阻断。验证：`go test ./apps/control-plane/internal/auth ./apps/control-plane/internal/config`；重启 Control Plane(:8081) 后 `GET /api/auth/captcha` 返回 `{"enabled":false}`，`POST /api/auth/login` 不带验证码以 `admin/admin` 返回 200 且 `/api/auth/me` 有效。

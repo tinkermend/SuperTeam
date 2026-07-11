@@ -157,6 +157,7 @@ SELECT
 FROM projects p
 WHERE p.tenant_id = $3::uuid
   AND p.id = $4::uuid
+  AND p.deleted_at IS NULL
 `
 
 type GetProjectAuthzFactsParams struct {

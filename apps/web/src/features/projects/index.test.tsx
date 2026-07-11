@@ -323,10 +323,17 @@ function createProjectFetcher(
     riskSignalFailureProjectId?: string;
     slowFilteredList?: boolean;
     runtimeReadinessStatus?: "missing" | "ready";
+    projectAllowedActions?: string[];
+    deletePreviewCanDelete?: boolean;
+    deleteStatus?: number;
+    deletePayload?: unknown;
   } = {},
 ) {
   const projects = [
-    makeProject("project-1", "客户接入验收"),
+    {
+      ...makeProject("project-1", "客户接入验收"),
+      allowed_actions: options.projectAllowedActions ?? ["project.archive", "project.delete"],
+    },
     makeProject("project-2", "生产巡检整改"),
   ];
 
@@ -1304,6 +1311,57 @@ function createProjectFetcher(
     }
     if (url.pathname === "/api/v1/projects/project-2/archive" && method === "POST") {
       return jsonResponse({ ...projects[1], status: "archived" });
+    }
+    if (url.pathname === "/api/v1/projects/project-1/delete-preview" && method === "GET") {
+      const canDelete = options.deletePreviewCanDelete ?? true;
+      return jsonResponse({
+        blockers: canDelete
+          ? []
+          : [
+              {
+                id: "task-1",
+                status: "running",
+                title: "运行中的接入任务",
+                type: "project_task",
+              },
+            ],
+        can_delete: canDelete,
+        message: canDelete
+          ? "确认后将终止协调线程并软删除项目。"
+          : "该项目仍有进行中的任务，完成或取消后再删除。",
+        project_id: "project-1",
+        project_name: "客户接入验收",
+        warnings: {
+          active_member_count: 2,
+          digital_employee_member_count: 1,
+          pending_decision_count: 1,
+          waiting_human_task_count: 1,
+        },
+      });
+    }
+    if (url.pathname === "/api/v1/projects/project-1" && method === "DELETE") {
+      if (options.deleteStatus === 409) {
+        return jsonResponse(
+          options.deletePayload ?? {
+            blockers: [
+              {
+                id: "task-1",
+                status: "running",
+                title: "运行中的接入任务",
+                type: "project_task",
+              },
+            ],
+            code: "project_delete_blocked",
+            message: "该项目仍有进行中的任务，完成或取消后再删除。",
+          },
+          409,
+        );
+      }
+      projects.splice(
+        projects.findIndex((project) => project.id === "project-1"),
+        1,
+      );
+      return new Response(null, { status: 204 });
     }
 
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
@@ -2455,11 +2513,71 @@ describe("ProjectsView", () => {
       .toBeVisible();
     await expect.element(screen.getByText("整理接入证据")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "提交需求" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "归档项目" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
     await expect.element(screen.getByText("路由决策")).toBeVisible();
     await expect.element(screen.getByText("协调任务")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "归档项目" })).toBeVisible();
     expect(screen.container.querySelector('[aria-label="选中项目上下文"]')).toBeNull();
+  });
+
+  it("requires the project name before deleting and redirects after success", async () => {
+    const fetcher = createProjectFetcher({
+      projectAllowedActions: ["project.archive", "project.delete"],
+    });
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await expect.element(screen.getByRole("heading", { name: "删除项目" })).toBeVisible();
+    await expect.element(screen.getByText("仍有 1 项待处理决策")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+
+    await userEvent.fill(screen.getByLabelText("输入项目名称确认删除"), "客户");
+    await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+
+    await userEvent.fill(screen.getByLabelText("输入项目名称确认删除"), "客户接入验收");
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(([url, init]) => {
+          const target = new URL(String(url));
+          return target.pathname === "/api/v1/projects/project-1" && init?.method === "DELETE";
+        }),
+      )
+      .toBe(true);
+    expect(routerMock.navigate).toHaveBeenCalledWith({ to: "/projects" });
+  });
+
+  it("disables delete confirmation when preview reports blockers", async () => {
+    const fetcher = createProjectFetcher({
+      deletePreviewCanDelete: false,
+      projectAllowedActions: ["project.archive", "project.delete"],
+    });
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await expect.element(screen.getByText("删除被阻断")).toBeVisible();
+    await expect.element(screen.getByText("运行中的接入任务")).toBeVisible();
+
+    await userEvent.fill(screen.getByLabelText("输入项目名称确认删除"), "客户接入验收");
+    await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
+  });
+
+  it("keeps the dialog open and renders delete blockers on 409", async () => {
+    const fetcher = createProjectFetcher({
+      deleteStatus: 409,
+      projectAllowedActions: ["project.archive", "project.delete"],
+    });
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await userEvent.fill(screen.getByLabelText("输入项目名称确认删除"), "客户接入验收");
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await expect.element(screen.getByText("该项目仍有进行中的任务，完成或取消后再删除。")).toBeVisible();
+    await expect.element(screen.getByText("运行中的接入任务")).toBeVisible();
+    await expect.element(screen.getByText("project_task · running")).toBeVisible();
+    expect(routerMock.navigate).not.toHaveBeenCalled();
   });
 
   it("keeps the base project list usable when one project's risk enrichment fails", async () => {

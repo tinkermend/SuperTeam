@@ -196,3 +196,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
   );
+
+-- name: CancelInboxItemsForProjectDelete :many
+UPDATE inbox_items
+SET status = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND source_project_id = sqlc.arg('project_id')::uuid
+  AND status = 'open'
+RETURNING id;

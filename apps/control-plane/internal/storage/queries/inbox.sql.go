@@ -12,6 +12,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CancelInboxItemsForProjectDelete = `-- name: CancelInboxItemsForProjectDelete :many
+UPDATE inbox_items
+SET status = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND source_project_id = $2::uuid
+  AND status = 'open'
+RETURNING id
+`
+
+type CancelInboxItemsForProjectDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, CancelInboxItemsForProjectDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const CountHighRiskInboxItems = `-- name: CountHighRiskInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = $1::uuid

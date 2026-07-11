@@ -46,11 +46,13 @@ INSERT INTO projects (
 -- name: GetProject :one
 SELECT * FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND id = sqlc.arg('id')::uuid;
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL;
 
 -- name: ListProjects :many
 SELECT * FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
   AND (
     sqlc.narg('q')::text IS NULL
@@ -79,6 +81,7 @@ WITH visible_demands AS (
     FROM project_demands d
     JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
     WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND p.deleted_at IS NULL
       AND (sqlc.narg('project_id')::uuid IS NULL OR d.project_id = sqlc.narg('project_id')::uuid)
       AND (
         sqlc.narg('q')::text IS NULL
@@ -2039,3 +2042,113 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid)
 RETURNING *;
+
+-- name: GetProjectForDelete :one
+SELECT * FROM projects
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL
+FOR UPDATE;
+
+-- name: SoftDeleteProject :one
+UPDATE projects
+SET deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+    updated_at = sqlc.arg('deleted_at')::timestamptz,
+    coordination_status = 'terminated'
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: ListProjectDeleteTaskBlockers :many
+SELECT
+    'project_task'::text AS blocker_type,
+    pt.id,
+    pt.status,
+    (COALESCE(NULLIF(pt.title, ''), pt.id::text))::text AS title
+FROM project_tasks pt
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.project_id = sqlc.arg('project_id')::uuid
+  AND pt.status IN ('queued', 'running', 'in_progress')
+ORDER BY pt.updated_at DESC
+LIMIT 20;
+
+-- name: ListProjectDeleteRunBlockers :many
+SELECT
+    'run'::text AS blocker_type,
+    tr.id,
+    tr.status,
+    COALESCE(t.title, tr.task_id::text) AS title
+FROM task_runs tr
+INNER JOIN project_tasks pt
+  ON pt.tenant_id = tr.tenant_id
+ AND pt.digital_employee_run_id = tr.id
+LEFT JOIN tasks t
+  ON t.tenant_id = tr.tenant_id
+ AND t.id = tr.task_id
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.project_id = sqlc.arg('project_id')::uuid
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+ORDER BY tr.updated_at DESC
+LIMIT 20;
+
+-- name: GetProjectDeletePreviewCounts :one
+SELECT
+  (SELECT COUNT(*)::int FROM project_decision_requests
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
+      AND status_snapshot IN ('pending', 'requested')) AS pending_decision_count,
+  (SELECT COUNT(*)::int FROM project_tasks
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
+      AND status IN ('waiting_human', 'pending_review')) AS waiting_human_task_count,
+  (SELECT COUNT(*)::int FROM inbox_items
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND source_project_id = sqlc.arg('project_id')::uuid
+      AND status = 'open') AS open_inbox_count,
+  (SELECT COUNT(*)::int FROM project_members
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
+      AND status = 'active') AS active_member_count,
+  (SELECT COUNT(*)::int FROM project_members
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
+      AND status = 'active' AND principal_type = 'digital_employee') AS digital_employee_member_count,
+  (SELECT COUNT(*)::int FROM project_runtime_nodes
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS runtime_node_binding_count,
+  (SELECT COUNT(*)::int FROM project_employee_node_affinity
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS affinity_count;
+
+-- name: DeactivateProjectMembersForDelete :many
+UPDATE project_members
+SET status = 'removed', updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND status = 'active'
+RETURNING id;
+
+-- name: CancelProjectTasksForDelete :many
+UPDATE project_tasks
+SET status = 'cancelled', updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND status NOT IN ('completed', 'failed', 'cancelled', 'done', 'success')
+RETURNING id;
+
+-- name: CancelProjectDecisionRequestsForDelete :many
+UPDATE project_decision_requests
+SET status_snapshot = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND status_snapshot IN ('pending', 'requested')
+RETURNING id;
+
+-- name: CancelApprovalRequestsForProjectDelete :many
+UPDATE approval_requests ar
+SET status = 'cancelled',
+    resolved_at = COALESCE(ar.resolved_at, NOW()),
+    updated_at = NOW()
+FROM project_decision_requests pdr
+WHERE ar.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND ar.id = pdr.approval_request_id
+  AND pdr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pdr.project_id = sqlc.arg('project_id')::uuid
+  AND ar.status = 'pending'
+RETURNING ar.id;

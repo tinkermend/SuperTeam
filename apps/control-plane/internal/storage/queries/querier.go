@@ -30,6 +30,10 @@ type Querier interface {
 	BindProjectTaskAttemptRun(ctx context.Context, arg BindProjectTaskAttemptRunParams) (ProjectTaskAttempt, error)
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedProjectTaskRunParams) (ProjectTask, error)
+	CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error)
+	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
+	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
+	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
@@ -131,6 +135,7 @@ type Querier interface {
 	CreateUserCredential(ctx context.Context, arg CreateUserCredentialParams) (UserCredential, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
+	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
 	DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
@@ -140,7 +145,9 @@ type Querier interface {
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
+	DeleteProjectEmployeeNodeAffinitiesForDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForDeleteParams) ([]uuid.UUID, error)
 	DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams) ([]uuid.UUID, error)
+	DeleteProjectRuntimeNodesForDelete(ctx context.Context, arg DeleteProjectRuntimeNodesForDeleteParams) ([]uuid.UUID, error)
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
@@ -208,10 +215,12 @@ type Querier interface {
 	GetProjectDecisionRequest(ctx context.Context, arg GetProjectDecisionRequestParams) (ProjectDecisionRequest, error)
 	GetProjectDecisionRequestByApprovalAndTask(ctx context.Context, arg GetProjectDecisionRequestByApprovalAndTaskParams) (ProjectDecisionRequest, error)
 	GetProjectDecisionRequestByPlanRevision(ctx context.Context, arg GetProjectDecisionRequestByPlanRevisionParams) (ProjectDecisionRequest, error)
+	GetProjectDeletePreviewCounts(ctx context.Context, arg GetProjectDeletePreviewCountsParams) (GetProjectDeletePreviewCountsRow, error)
 	GetProjectDemand(ctx context.Context, arg GetProjectDemandParams) (ProjectDemand, error)
 	GetProjectEmployeeNodeAffinity(ctx context.Context, arg GetProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
 	GetProjectEvent(ctx context.Context, arg GetProjectEventParams) (ProjectEvent, error)
 	GetProjectEventByTypeAndActor(ctx context.Context, arg GetProjectEventByTypeAndActorParams) (ProjectEvent, error)
+	GetProjectForDelete(ctx context.Context, arg GetProjectForDeleteParams) (Project, error)
 	GetProjectPlanRevision(ctx context.Context, arg GetProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	GetProjectPlanRevisionByFingerprint(ctx context.Context, arg GetProjectPlanRevisionByFingerprintParams) (ProjectPlanRevision, error)
 	GetProjectRepoBinding(ctx context.Context, arg GetProjectRepoBindingParams) (GetProjectRepoBindingRow, error)
@@ -339,6 +348,8 @@ type Querier interface {
 	ListProjectConfigRevisions(ctx context.Context, arg ListProjectConfigRevisionsParams) ([]ProjectConfigRevision, error)
 	ListProjectCoordinationJobs(ctx context.Context, arg ListProjectCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListProjectDecisionRequests(ctx context.Context, arg ListProjectDecisionRequestsParams) ([]ProjectDecisionRequest, error)
+	ListProjectDeleteRunBlockers(ctx context.Context, arg ListProjectDeleteRunBlockersParams) ([]ListProjectDeleteRunBlockersRow, error)
+	ListProjectDeleteTaskBlockers(ctx context.Context, arg ListProjectDeleteTaskBlockersParams) ([]ListProjectDeleteTaskBlockersRow, error)
 	ListProjectDemands(ctx context.Context, arg ListProjectDemandsParams) ([]ProjectDemand, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ProjectEvent, error)
 	ListProjectEvidenceRefs(ctx context.Context, arg ListProjectEvidenceRefsParams) ([]ProjectEvidenceRef, error)
@@ -423,6 +434,7 @@ type Querier interface {
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
 	ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjectPlacementParams) (ProjectPlacement, error)
+	ReleaseProjectPlacementsForDelete(ctx context.Context, arg ReleaseProjectPlacementsForDeleteParams) ([]uuid.UUID, error)
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
@@ -450,6 +462,7 @@ type Querier interface {
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
+	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error

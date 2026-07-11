@@ -7,9 +7,22 @@ import {
 } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   FolderKanban,
   Plus,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  StatusPill,
+  V3Button,
+  V3EmptyState,
+  V3ErrorState,
+  V3LoadingState,
+  WorkSurface,
+} from "@/components/superteam";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   getCurrentUser,
@@ -22,10 +35,12 @@ import {
   createProjectAcceptance,
   createProjectArchiveSnapshot,
   createProjectEvidence,
+  deleteProject,
   getProject,
   getProjectAcceptance,
   getProjectArchivePreview,
   getProjectBudgetSummary,
+  getProjectDeletePreview,
   getProjectExecutionTrace,
   getProjectOverview,
   getProjectRuntimeReadiness,
@@ -57,6 +72,9 @@ import {
   type CreateProjectEvidenceInput,
   type CreateProjectInput,
   type ListProjectsFilters,
+  type ProjectDeleteBlockedErrorResponse,
+  type ProjectDeleteBlocker,
+  type ProjectDeletePreview,
   type ProjectEvidenceVerificationStatus,
   type ProjectExecutionTrace,
   type ProjectTask,
@@ -70,13 +88,6 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import {
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  WorkSurface,
-} from "@/components/superteam";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
 import { ProjectRuntimePlacementPanel } from "./components/project-runtime-placement-panel";
 import { CreateProjectShell } from "./components/create-project";
@@ -235,6 +246,7 @@ export function ProjectsView({
   routeProjectId,
 }: ProjectsViewProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { focus?: string; tab?: string };
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -248,6 +260,10 @@ export function ProjectsView({
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteBlocked, setDeleteBlocked] =
+    useState<ProjectDeleteBlockedErrorResponse | undefined>(undefined);
   const [projectListPage, setProjectListPage] = useState(1);
   const [projectListPageSize, setProjectListPageSize] = useState(5);
 
@@ -331,17 +347,18 @@ export function ProjectsView({
     : undefined;
 
   const selectedProjectQuery = useQuery({
-    enabled: Boolean(effectiveProjectId) && !selectedProjectFromList,
+    // Always fetch detail on the project route so allowed_actions (archive/delete)
+    // are present; list items do not include them.
+    enabled: Boolean(effectiveProjectId),
     queryKey: ["project", effectiveProjectId],
     queryFn: () => getProject(apiOptions, effectiveProjectId as string),
     placeholderData: keepPreviousData,
   });
 
   const selectedProject =
-    selectedProjectFromList ??
-    (selectedProjectQuery.data?.id === effectiveProjectId
+    selectedProjectQuery.data?.id === effectiveProjectId
       ? selectedProjectQuery.data
-      : undefined);
+      : selectedProjectFromList;
 
   const overviewQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -560,6 +577,12 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const deletePreviewQuery = useQuery({
+    enabled: deleteDialogOpen && Boolean(effectiveProjectId),
+    queryKey: ["project-delete-preview", effectiveProjectId],
+    queryFn: () => getProjectDeletePreview(apiOptions, effectiveProjectId as string),
+  });
+
   const invalidateRuntimePlacementSurfaces = async (projectId?: string) => {
     if (!projectId) {
       return;
@@ -709,14 +732,46 @@ export function ProjectsView({
     },
   });
 
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) => deleteProject(apiOptions, projectId),
+    onMutate: () => {
+      setDeleteBlocked(undefined);
+    },
+    onSuccess: async () => {
+      const projectId = effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["workflow-instances"] }),
+        ...(projectId
+          ? [queryClient.invalidateQueries({ queryKey: ["project", projectId] })]
+          : []),
+      ]);
+      handleDeleteDialogOpenChange(false);
+      await navigate({ to: "/projects" });
+    },
+    onError: (error) => {
+      if (isProjectDeleteBlockedError(error)) {
+        setDeleteBlocked(error.payload);
+      }
+    },
+  });
+
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
   const overview =
     overviewQuery.data?.project.id === effectiveProjectId
       ? overviewQuery.data
       : undefined;
-  const displayedProject =
-    overview?.project ??
-    (selectedProject?.id === effectiveProjectId ? selectedProject : undefined);
+  const selectedProjectDetail =
+    selectedProject?.id === effectiveProjectId ? selectedProject : undefined;
+  // Prefer overview.project for live status fields, but keep allowed_actions from
+  // getProject — overview payloads do not include action gates.
+  const displayedProject = overview?.project
+    ? {
+        ...overview.project,
+        allowed_actions:
+          selectedProjectDetail?.allowed_actions ?? overview.project.allowed_actions,
+      }
+    : selectedProjectDetail;
   const isArchived = displayedProject?.status === "archived";
   const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
     (decision) => decision.project_id === effectiveProjectId,
@@ -810,6 +865,23 @@ export function ProjectsView({
       </Link>
     </V3Button>
   );
+  const projectName = displayedProject?.name ?? "";
+  const deletePreview = deletePreviewQuery.data;
+  const deletePreviewBlocked = deletePreview?.can_delete === false;
+  const deleteConfirmReady = deleteConfirmation === projectName;
+  const genericDeleteError =
+    deleteProjectMutation.isError && !deleteBlocked
+      ? getProjectDeleteErrorMessage(deleteProjectMutation.error)
+      : undefined;
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    setDeleteDialogOpen(open);
+    if (!open) {
+      setDeleteConfirmation("");
+      setDeleteBlocked(undefined);
+      deleteProjectMutation.reset();
+    }
+  };
 
   return (
     <>
@@ -935,6 +1007,7 @@ export function ProjectsView({
                         archiveMutation.mutate(effectiveProjectId);
                       }
                     }}
+                    onDeleteProject={() => setDeleteDialogOpen(true)}
                     onCreateAcceptance={(input) => {
                       if (effectiveProjectId) {
                         createAcceptanceMutation.mutate(input);
@@ -1008,6 +1081,68 @@ export function ProjectsView({
         onOpenChange={setDemandOpen}
         onSubmit={(input) => submitDemandMutation.mutate(input)}
       />
+      {displayedProject ? (
+        <ConfirmDialog
+          cancelBtnText="取消"
+          className="sm:max-w-xl"
+          confirmText="确认删除"
+          desc={
+            <ProjectDeleteDialogDescription
+              isLoading={deletePreviewQuery.isLoading}
+              preview={deletePreview}
+            />
+          }
+          destructive
+          disabled={
+            !deleteConfirmReady ||
+            deleteProjectMutation.isPending ||
+            deletePreviewQuery.isLoading ||
+            deletePreviewBlocked
+          }
+          form="delete-project-form"
+          isLoading={deleteProjectMutation.isPending}
+          onOpenChange={handleDeleteDialogOpenChange}
+          open={deleteDialogOpen}
+          title="删除项目"
+        >
+          <form
+            className="space-y-4"
+            id="delete-project-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (deleteConfirmReady && effectiveProjectId && !deletePreviewBlocked) {
+                deleteProjectMutation.mutate(effectiveProjectId);
+              }
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="delete-project-confirmation">输入项目名称确认删除</Label>
+              <Input
+                autoComplete="off"
+                id="delete-project-confirmation"
+                onChange={(event) => {
+                  setDeleteConfirmation(event.currentTarget.value);
+                  if (deleteBlocked) setDeleteBlocked(undefined);
+                }}
+                value={deleteConfirmation}
+              />
+            </div>
+            {deleteBlocked ? <ProjectDeleteBlockedAlert blocked={deleteBlocked} /> : null}
+            {deletePreviewBlocked && deletePreview ? (
+              <ProjectDeleteBlockedAlert
+                blocked={{
+                  blockers: deletePreview.blockers,
+                  code: "project_delete_blocked",
+                  message: deletePreview.message,
+                }}
+              />
+            ) : null}
+            {genericDeleteError ? (
+              <p className="text-sm text-v3-danger">{genericDeleteError}</p>
+            ) : null}
+          </form>
+        </ConfirmDialog>
+      ) : null}
         </div>
       </Main>
     </>
@@ -1060,5 +1195,124 @@ function selectDispatchGateTask({
 function dispatchGateCandidateStatus(status: string) {
   return !["accepted", "approved", "cancelled", "completed", "done", "success"].includes(
     status,
+  );
+}
+
+function isProjectDeleteBlockedError(
+  error: unknown,
+): error is ApiRequestError & { payload: ProjectDeleteBlockedErrorResponse } {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 409 &&
+    error.code === "project_delete_blocked" &&
+    isProjectDeleteBlockedPayload(error.payload)
+  );
+}
+
+function isProjectDeleteBlockedPayload(
+  payload: unknown,
+): payload is ProjectDeleteBlockedErrorResponse {
+  if (!payload || typeof payload !== "object") return false;
+  const value = payload as Partial<ProjectDeleteBlockedErrorResponse>;
+  return (
+    value.code === "project_delete_blocked" &&
+    typeof value.message === "string" &&
+    Array.isArray(value.blockers)
+  );
+}
+
+function getProjectDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.detail) return error.detail;
+  if (error instanceof Error) return error.message;
+  return "删除失败，请稍后重试。";
+}
+
+function ProjectDeleteDialogDescription({
+  isLoading,
+  preview,
+}: {
+  isLoading: boolean;
+  preview?: ProjectDeletePreview;
+}) {
+  if (isLoading) {
+    return <p>正在加载删除影响预览…</p>;
+  }
+
+  const warnings = preview ? formatProjectDeleteWarnings(preview) : [];
+
+  return (
+    <div className="space-y-2">
+      <p>
+        删除后项目会从项目列表中隐藏；历史任务、工件、证据和审计记录会按策略保留，协调线程会终止。
+      </p>
+      {warnings.length > 0 ? (
+        <ul className="list-disc space-y-1 pl-5">
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+      {preview?.message && preview.can_delete !== false ? <p>{preview.message}</p> : null}
+    </div>
+  );
+}
+
+function formatProjectDeleteWarnings(preview: ProjectDeletePreview) {
+  const warnings = preview.warnings;
+  const items: string[] = [];
+  if (warnings.pending_decision_count) {
+    items.push(`仍有 ${warnings.pending_decision_count} 项待处理决策`);
+  }
+  if (warnings.waiting_human_task_count) {
+    items.push(`仍有 ${warnings.waiting_human_task_count} 个等待人工处理的任务`);
+  }
+  if (warnings.open_inbox_count) {
+    items.push(`仍有 ${warnings.open_inbox_count} 条未处理收件箱事项`);
+  }
+  if (warnings.active_member_count) {
+    items.push(`仍有 ${warnings.active_member_count} 位活跃项目成员`);
+  }
+  if (warnings.digital_employee_member_count) {
+    items.push(`仍有 ${warnings.digital_employee_member_count} 位数字员工在项目服务池中`);
+  }
+  if (warnings.runtime_node_binding_count) {
+    items.push(`仍绑定 ${warnings.runtime_node_binding_count} 个运行节点`);
+  }
+  if (warnings.affinity_count) {
+    items.push(`仍有 ${warnings.affinity_count} 条员工亲和绑定`);
+  }
+  return items;
+}
+
+function ProjectDeleteBlockedAlert({
+  blocked,
+}: {
+  blocked: ProjectDeleteBlockedErrorResponse;
+}) {
+  return (
+    <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
+      <AlertTriangle className="size-4" />
+      <AlertTitle>删除被阻断</AlertTitle>
+      <AlertDescription>
+        <p>{blocked.message}</p>
+        <ul className="mt-3 space-y-2">
+          {blocked.blockers.map((blocker) => (
+            <ProjectDeleteBlockerItem blocker={blocker} key={`${blocker.type}:${blocker.id}`} />
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function ProjectDeleteBlockerItem({ blocker }: { blocker: ProjectDeleteBlocker }) {
+  return (
+    <li className="rounded-v3-inner border border-v3-danger/25 bg-v3-card px-3 py-2 text-v3-ink">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold">{blocker.title}</span>
+        <StatusPill tone="danger">{`${blocker.type} · ${blocker.status}`}</StatusPill>
+      </div>
+      <p className="mt-1 break-all font-mono text-[11px] text-v3-ink-3">id {blocker.id}</p>
+    </li>
   );
 }

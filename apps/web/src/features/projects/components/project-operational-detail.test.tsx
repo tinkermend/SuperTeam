@@ -210,6 +210,7 @@ function renderDetail(
       events={[]}
       executionSummaries={[]}
       onArchiveProject={vi.fn()}
+      onDeleteProject={vi.fn()}
       onCreateAcceptance={vi.fn()}
       onCreateArchiveSnapshot={vi.fn()}
       onCreateEvidence={vi.fn()}
@@ -345,5 +346,41 @@ describe("ProjectOperationalDetail", () => {
     expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(
       dispatchOrderText.indexOf("复核接入证据"),
     );
+  });
+
+  it("shows archive and delete actions in the detail header when allowed", async () => {
+    const onArchiveProject = vi.fn();
+    const onDeleteProject = vi.fn();
+    const screen = await renderDetail({
+      onArchiveProject,
+      onDeleteProject,
+      project: {
+        ...project,
+        allowed_actions: ["project.archive", "project.delete"],
+      },
+    });
+
+    const archiveButton = screen.getByRole("button", { name: "归档项目" });
+    const deleteButton = screen.getByRole("button", { name: "删除项目" });
+    await expect.element(archiveButton).toHaveAttribute("data-variant", "outline");
+    await expect.element(deleteButton).toHaveAttribute("data-variant", "danger");
+
+    await archiveButton.click();
+    await deleteButton.click();
+    expect(onArchiveProject).toHaveBeenCalledTimes(1);
+    expect(onDeleteProject).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides archive and delete when allowed_actions omit them", async () => {
+    const screen = await renderDetail({
+      onDeleteProject: vi.fn(),
+      project: {
+        ...project,
+        allowed_actions: ["project.demand.submit"],
+      },
+    });
+
+    await expect.element(screen.getByRole("button", { name: "归档项目" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "删除项目" })).not.toBeInTheDocument();
   });
 });

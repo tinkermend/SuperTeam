@@ -127,6 +127,10 @@ type Repository interface {
 	ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error)
 	GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID, runtimeNodeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
+	GetProjectForDelete(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
+	ListProjectDeleteBlockers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectDeleteBlocker, error)
+	GetProjectDeletePreviewCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectDeleteWarnings, error)
+	SoftDeleteProjectCascade(ctx context.Context, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error)
 }
 
 type ProjectTaskRuntimeBindingRepository interface {
