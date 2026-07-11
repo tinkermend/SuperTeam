@@ -112,6 +112,37 @@ func (r *PgRunRepository) GetProjectTaskRunPreflightForNode(ctx context.Context,
 	return projectTaskRunPreflightForNodeFromQuery(preflight)
 }
 
+// ResolveProjectTaskLineageRoot mirrors projectcoordination's
+// revisionRootTaskID (see project_store.go) without importing that package:
+// planner_metadata["revision_root_task_id"] wins if set, else
+// revision_of_task_id (one hop), else the task's own id.
+func (r *PgRunRepository) ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error) {
+	row, err := r.q.GetProjectTaskSessionLineage(ctx, queries.GetProjectTaskSessionLineageParams{
+		TenantID: tenantID,
+		ID:       projectTaskID,
+	})
+	if err != nil {
+		return uuid.Nil, mapNoRows(err)
+	}
+	plannerMetadata, err := mapFromJSONB(row.PlannerMetadata, "planner_metadata")
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if value, ok := plannerMetadata["revision_root_task_id"].(string); ok {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			rootID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return uuid.Nil, fmt.Errorf("parse planner_metadata revision_root_task_id: %w", err)
+			}
+			return rootID, nil
+		}
+	}
+	if row.RevisionOfTaskID.Valid && row.RevisionOfTaskID.UUID != uuid.Nil {
+		return row.RevisionOfTaskID.UUID, nil
+	}
+	return projectTaskID, nil
+}
+
 func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {

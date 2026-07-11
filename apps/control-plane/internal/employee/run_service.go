@@ -199,9 +199,32 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
+	rootTaskID, err := preflightRepo.ResolveProjectTaskLineageRoot(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return StartProjectTaskRunResult{}, fmt.Errorf("resolve project task lineage root: %w", err)
+	}
+
 	compatExecutionInstanceID := projectTaskCompatibilityExecutionInstanceID(req)
 	agentHomeDir := projectTaskAgentHomeDir(projectPreflight.WorkspaceBaseDir, req.ProjectID, req.ProjectTaskID, req.ProjectTaskAttemptID, req.DigitalEmployeeID)
 	preflight := projectTaskRunPreflightToRunPreflight(projectPreflight, compatExecutionInstanceID, agentHomeDir)
+
+	metadata := projectTaskRunMetadata(req, projectPreflight)
+	metadata["revision_root_task_id"] = rootTaskID.String()
+
+	// Session identity is decided here; runtime only consumes it. The
+	// session key is the lineage root, never the current project_task_id —
+	// this is what lets a revision task resume its predecessor's session.
+	sessionPolicy := runtimeSessionPolicyPayload(preflight.SessionPolicy)
+	if shouldAttemptSessionResume(sessionPolicy) {
+		sessionID, err := s.repository.FindProviderSessionForTaskRoot(ctx, req.TenantID, req.DigitalEmployeeID, rootTaskID)
+		if err != nil {
+			return StartProjectTaskRunResult{}, fmt.Errorf("find provider session for task root: %w", err)
+		}
+		if sessionID != "" {
+			metadata["provider_session_id"] = sessionID
+		}
+	}
+
 	createReq := CreateDigitalEmployeeRunRequest{
 		TenantID:          req.TenantID,
 		UserID:            req.DispatchUserID,
@@ -211,7 +234,7 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		IdempotencyKey:    trimmedOptionalValue(&req.IdempotencyKey),
 		TimeoutSec:        req.TimeoutSec,
 		GraceSec:          req.GraceSec,
-		Metadata:          projectTaskRunMetadata(req, projectPreflight),
+		Metadata:          metadata,
 	}
 
 	run, err := s.createAndDispatchRun(ctx, createReq, objective, prompt, preflight)
@@ -1156,6 +1179,18 @@ func runtimeSessionPolicyPayload(policy map[string]any) map[string]any {
 		normalized["recoverable"] = true
 	}
 	return normalized
+}
+
+// shouldAttemptSessionResume decides whether dispatch should look up (and
+// potentially inject) a prior provider session id, given the *normalized*
+// session_policy that will actually be sent to the runtime (i.e. already
+// passed through runtimeSessionPolicyPayload, so "mode"/"recoverable" carry
+// their defaults). The default is to attempt resume; only an explicit
+// ephemeral mode or recoverable=false skips it.
+func shouldAttemptSessionResume(normalizedSessionPolicy map[string]any) bool {
+	recoverable, _ := normalizedSessionPolicy["recoverable"].(bool)
+	mode, _ := normalizedSessionPolicy["mode"].(string)
+	return recoverable && !strings.EqualFold(mode, "ephemeral")
 }
 
 func buildStopSessionPayload(run *DigitalEmployeeRun, commandID, reason string) map[string]any {

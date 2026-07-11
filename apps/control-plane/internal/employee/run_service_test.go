@@ -358,6 +358,151 @@ func TestStartProjectTaskRunResolvesNodeThenUsesPreflightForNode(t *testing.T) {
 	}
 }
 
+// TestStartProjectTaskRunInjectsLineageRootSessionID exercises the dispatch
+// path for a revision task: FindProviderSessionForTaskRoot is called with
+// the resolved lineage root (not project_task_id), and a hit is surfaced as
+// metadata.provider_session_id alongside metadata.revision_root_task_id.
+func TestStartProjectTaskRunInjectsLineageRootSessionID(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	projectTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000903")
+	rootTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000900")
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	repo.lineageRoot = rootTaskID
+	repo.providerSessionForRoot = map[uuid.UUID]string{rootTaskID: "provider-session-existing"}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
+
+	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            uuid.New(),
+		DemandID:             uuid.New(),
+		ProjectTaskID:        projectTaskID,
+		ProjectTaskAttemptID: uuid.New(),
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       uuid.New(),
+		Objective:            "修订上一次的任务",
+	})
+	if err != nil {
+		t.Fatalf("start project task run: %v", err)
+	}
+
+	if len(repo.lineageRootCalls) != 1 || repo.lineageRootCalls[0].ProjectTaskID != projectTaskID || repo.lineageRootCalls[0].TenantID != runServiceTenantID {
+		t.Fatalf("expected lineage root resolution for the dispatched task, got %#v", repo.lineageRootCalls)
+	}
+	if len(repo.providerSessionForRootCalls) != 1 {
+		t.Fatalf("expected exactly one session lookup, got %#v", repo.providerSessionForRootCalls)
+	}
+	lookup := repo.providerSessionForRootCalls[0]
+	if lookup.TaskRootID != rootTaskID || lookup.EmployeeID != runServiceEmployeeID || lookup.TenantID != runServiceTenantID {
+		t.Fatalf("expected session lookup keyed by lineage root/employee/tenant, got %#v", lookup)
+	}
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["revision_root_task_id"] != rootTaskID.String() {
+		t.Fatalf("expected metadata revision_root_task_id %q, got %#v", rootTaskID.String(), metadata["revision_root_task_id"])
+	}
+	if metadata["provider_session_id"] != "provider-session-existing" {
+		t.Fatalf("expected metadata provider_session_id from lineage-root session hit, got %#v", metadata["provider_session_id"])
+	}
+}
+
+// TestStartProjectTaskRunOmitsSessionIDWhenRootHasNoSession covers a fresh
+// (non-revision) task dispatch for the same employee: the lineage root is
+// the task's own id, no session exists yet for that root, and metadata must
+// carry the root without a provider_session_id.
+func TestStartProjectTaskRunOmitsSessionIDWhenRootHasNoSession(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	projectTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000904")
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	// No repo.lineageRoot override: resolver echoes back projectTaskID
+	// (root = self), matching a task with no revision lineage.
+	// No repo.providerSessionForRoot entry: no session exists for this root.
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
+
+	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            uuid.New(),
+		DemandID:             uuid.New(),
+		ProjectTaskID:        projectTaskID,
+		ProjectTaskAttemptID: uuid.New(),
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       uuid.New(),
+		Objective:            "全新任务",
+	})
+	if err != nil {
+		t.Fatalf("start project task run: %v", err)
+	}
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["revision_root_task_id"] != projectTaskID.String() {
+		t.Fatalf("expected metadata revision_root_task_id to fall back to the task's own id %q, got %#v", projectTaskID.String(), metadata["revision_root_task_id"])
+	}
+	if _, ok := metadata["provider_session_id"]; ok {
+		t.Fatalf("expected no provider_session_id when no session exists for the lineage root, got %#v", metadata["provider_session_id"])
+	}
+}
+
+// TestShouldAttemptSessionResume covers the decision StartProjectTaskRun
+// uses to gate the FindProviderSessionForTaskRoot lookup. Project task
+// dispatch currently always normalizes session_policy to
+// {"mode":"new","recoverable":true} (projectTaskRunPreflightToRunPreflight),
+// so this exercises the decision directly rather than requiring an
+// unreachable ephemeral preflight through the full dispatch path.
+func TestShouldAttemptSessionResume(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy map[string]any
+		want   bool
+	}{
+		{
+			name:   "default normalized policy attempts resume",
+			policy: runtimeSessionPolicyPayload(map[string]any{"resume": true}),
+			want:   true,
+		},
+		{
+			name:   "explicit ephemeral mode skips resume",
+			policy: runtimeSessionPolicyPayload(map[string]any{"mode": "ephemeral"}),
+			want:   false,
+		},
+		{
+			name:   "ephemeral mode is case-insensitive",
+			policy: runtimeSessionPolicyPayload(map[string]any{"mode": "Ephemeral"}),
+			want:   false,
+		},
+		{
+			name:   "explicit recoverable=false skips resume",
+			policy: runtimeSessionPolicyPayload(map[string]any{"recoverable": false}),
+			want:   false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldAttemptSessionResume(tc.policy); got != tc.want {
+				t.Fatalf("shouldAttemptSessionResume(%#v) = %v, want %v", tc.policy, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStartProjectTaskRunPropagatesNodeResolverError(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
@@ -1539,6 +1684,31 @@ type fakeRunServiceRepository struct {
 	runtimeEnv                            []RuntimeEnvironmentVariablePayload
 	latestConfigInput                     EmployeeConfigInput
 	runStats                              DigitalEmployeeRunStats
+
+	// lineageRoot is the value ResolveProjectTaskLineageRoot returns; when
+	// left uuid.Nil it echoes back the requested project task id (root =
+	// self), matching the production default when no revision lineage
+	// exists.
+	lineageRoot      uuid.UUID
+	lineageRootErr   error
+	lineageRootCalls []resolveLineageRootCall
+
+	// providerSessionForRoot maps a task-lineage root id to the session id
+	// FindProviderSessionForTaskRoot should return for it (empty string /
+	// absent means "no active session for this root").
+	providerSessionForRoot      map[uuid.UUID]string
+	providerSessionForRootCalls []findProviderSessionForRootCall
+}
+
+type resolveLineageRootCall struct {
+	TenantID      uuid.UUID
+	ProjectTaskID uuid.UUID
+}
+
+type findProviderSessionForRootCall struct {
+	TenantID   uuid.UUID
+	EmployeeID uuid.UUID
+	TaskRootID uuid.UUID
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -1559,6 +1729,17 @@ func (f *fakeRunServiceRepository) GetProjectTaskRunPreflightForNode(_ context.C
 	f.projectTaskPreflightForNodeEmployeeID = employeeID
 	f.projectTaskPreflightForNodeNodeID = resolvedNodeID
 	return f.projectTaskPreflight, nil
+}
+
+func (f *fakeRunServiceRepository) ResolveProjectTaskLineageRoot(_ context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error) {
+	f.lineageRootCalls = append(f.lineageRootCalls, resolveLineageRootCall{TenantID: tenantID, ProjectTaskID: projectTaskID})
+	if f.lineageRootErr != nil {
+		return uuid.Nil, f.lineageRootErr
+	}
+	if f.lineageRoot != uuid.Nil {
+		return f.lineageRoot, nil
+	}
+	return projectTaskID, nil
 }
 
 func (f *fakeRunServiceRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
@@ -1702,8 +1883,13 @@ func (f *fakeRunServiceRepository) UpsertProviderSession(context.Context, Upsert
 	return uuid.New(), nil
 }
 
-func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
-	return "", nil
+func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(_ context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error) {
+	f.providerSessionForRootCalls = append(f.providerSessionForRootCalls, findProviderSessionForRootCall{
+		TenantID:   tenantID,
+		EmployeeID: employeeID,
+		TaskRootID: taskRootID,
+	})
+	return f.providerSessionForRoot[taskRootID], nil
 }
 
 func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {

@@ -240,6 +240,10 @@ type Querier interface {
 	// pgx.ErrNoRows like any other preflight-absent case.
 	GetProjectTaskRunPreflightForNode(ctx context.Context, arg GetProjectTaskRunPreflightForNodeParams) (GetProjectTaskRunPreflightForNodeRow, error)
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error)
+	// Minimal projection for resolving a task's session-lineage root (see
+	// employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
+	// fields that participate in root resolution, not the full row.
+	GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error)
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
 	GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error)

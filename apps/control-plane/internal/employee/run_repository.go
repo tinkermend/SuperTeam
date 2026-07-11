@@ -48,6 +48,13 @@ type ProjectTaskRunPreflightRepository interface {
 	// a node already chosen by ProjectTaskNodeResolver and confirms it is still
 	// dispatchable.
 	GetProjectTaskRunPreflightForNode(ctx context.Context, tenantID, employeeID, resolvedNodeID uuid.UUID) (StartProjectTaskRunPreflight, error)
+	// ResolveProjectTaskLineageRoot resolves the session-lineage root task id
+	// for projectTaskID: planner_metadata["revision_root_task_id"] if set,
+	// else revision_of_task_id (one hop), else the task's own id. This
+	// mirrors projectcoordination's revisionRootTaskID without importing that
+	// package. Provider session identity is scoped to this root, not to the
+	// current project_task_id.
+	ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error)
 }
 
 // ResolveProjectTaskNodeRequest carries the identifiers the runtime node

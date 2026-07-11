@@ -1046,3 +1046,90 @@ func TestPgRunRepositoryFindProviderSessionForTaskRoot(t *testing.T) {
 		require.Empty(t, found)
 	})
 }
+
+// TestPgRunRepositoryResolveProjectTaskLineageRoot exercises the
+// planner_metadata > revision_of_task_id > self precedence that mirrors
+// projectcoordination's revisionRootTaskID (project_store.go) without this
+// package importing that one.
+func TestPgRunRepositoryResolveProjectTaskLineageRoot(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "project_task_lineage_root_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	projectID := uuid.New()
+
+	insertTask := func(id uuid.UUID, revisionOfTaskID *uuid.UUID, plannerMetadata string) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO project_tasks (
+				id, tenant_id, project_id, title, status, revision_of_task_id, planner_metadata
+			) VALUES ($1, $2, $3, 'task', 'pending', $4, $5::jsonb)
+		`, id, tenantID, projectID, revisionOfTaskID, plannerMetadata)
+		require.NoError(t, err)
+	}
+
+	rootTaskID := uuid.New()
+	insertTask(rootTaskID, nil, `{}`)
+
+	// One-hop revision: no planner_metadata root override, falls back to
+	// revision_of_task_id.
+	revisionTaskID := uuid.New()
+	insertTask(revisionTaskID, &rootTaskID, `{}`)
+
+	// planner_metadata root override wins even when revision_of_task_id is
+	// also set (keeps multi-hop revisions pointing at the original root).
+	overriddenTaskID := uuid.New()
+	overrideRoot := uuid.New()
+	insertTask(overriddenTaskID, &revisionTaskID, fmt.Sprintf(`{"revision_root_task_id": %q}`, overrideRoot.String()))
+
+	// No revision lineage at all: root is the task's own id.
+	freshTaskID := uuid.New()
+	insertTask(freshTaskID, nil, `{}`)
+
+	repo, ok := NewPgRunRepository(queries.New(conn)).(ProjectTaskRunPreflightRepository)
+	require.True(t, ok, "PgRunRepository must implement ProjectTaskRunPreflightRepository")
+
+	t.Run("task with no lineage resolves to itself", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, freshTaskID)
+		require.NoError(t, err)
+		require.Equal(t, freshTaskID, got)
+	})
+
+	t.Run("one-hop revision falls back to revision_of_task_id", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, revisionTaskID)
+		require.NoError(t, err)
+		require.Equal(t, rootTaskID, got)
+	})
+
+	t.Run("planner_metadata root override takes precedence", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, overriddenTaskID)
+		require.NoError(t, err)
+		require.Equal(t, overrideRoot, got)
+	})
+
+	t.Run("unknown task id is reported as not found", func(t *testing.T) {
+		_, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.New())
+		require.ErrorIs(t, err, ErrNotFound)
+	})
+}
