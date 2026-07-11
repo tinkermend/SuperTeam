@@ -27,6 +27,8 @@ type HandlerService interface {
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
+	GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error)
+	DeleteProject(ctx context.Context, req DeleteProjectRequest) error
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
@@ -303,7 +305,9 @@ func (h *HTTPHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
+	response := projectResponseFromDomain(*project)
+	response.AllowedActions = h.allowedProjectActions(r.Context(), tenantID, projectID)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *HTTPHandler) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
@@ -406,6 +410,67 @@ func (h *HTTPHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
+}
+
+func (h *HTTPHandler) GetProjectDeletePreview(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectDelete)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	preview, err := service.GetProjectDeletePreview(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectDeletePreviewResponseFromDomain(*preview))
+}
+
+func (h *HTTPHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectDelete)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteProject(r.Context(), DeleteProjectRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: actorID,
+	}); err != nil {
+		writeDeleteProjectError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) allowedProjectActions(ctx context.Context, tenantID, projectID uuid.UUID) []string {
+	if h == nil || h.authorizer == nil {
+		return nil
+	}
+	userID := middleware.GetUserID(ctx)
+	if userID == uuid.Nil {
+		return nil
+	}
+	actions := []string{authz.ActionProjectArchive, authz.ActionProjectDelete}
+	allowed := make([]string, 0, len(actions))
+	for _, action := range actions {
+		decision, err := h.authorizer.Check(ctx, authz.CheckRequest{
+			Actor:    authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
+			Action:   action,
+			Resource: authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()},
+			TenantID: tenantID,
+		})
+		if err == nil && decision.Allowed {
+			allowed = append(allowed, action)
+		}
+	}
+	return allowed
 }
 
 func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
@@ -1636,6 +1701,40 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	}
 }
 
+func writeDeleteProjectError(w http.ResponseWriter, err error) {
+	var blocked *ProjectDeleteBlockedError
+	if errors.As(err, &blocked) {
+		writeJSON(w, http.StatusConflict, projectDeleteBlockedResponse{
+			Code:     ProjectDeleteBlockedCode,
+			Message:  "该项目仍有排队或执行中的任务，停止或完成后再删除。",
+			Blockers: blocked.Blockers,
+		})
+		return
+	}
+	switch {
+	case errors.Is(err, ErrInvalidProject):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrProjectNotFound):
+		http.Error(w, "not found", http.StatusNotFound)
+	default:
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"code":    "project_delete_terminate_failed",
+			"message": "协调流程终止失败，请稍后重试。",
+		})
+	}
+}
+
+func projectDeletePreviewResponseFromDomain(preview ProjectDeletePreview) projectDeletePreviewResponse {
+	return projectDeletePreviewResponse{
+		ProjectID:   preview.ProjectID.String(),
+		ProjectName: preview.ProjectName,
+		CanDelete:   preview.CanDelete,
+		Blockers:    append([]ProjectDeleteBlocker(nil), preview.Blockers...),
+		Warnings:    preview.Warnings,
+		Message:     preview.Message,
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1927,8 +2026,24 @@ type projectResponse struct {
 	EvidencePolicy         map[string]any             `json:"evidence_policy"`
 	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
+	AllowedActions         []string                   `json:"allowed_actions,omitempty"`
 	CreatedAt              string                     `json:"created_at,omitempty"`
 	UpdatedAt              string                     `json:"updated_at,omitempty"`
+}
+
+type projectDeletePreviewResponse struct {
+	ProjectID   string                `json:"project_id"`
+	ProjectName string                `json:"project_name"`
+	CanDelete   bool                  `json:"can_delete"`
+	Blockers    []ProjectDeleteBlocker `json:"blockers"`
+	Warnings    ProjectDeleteWarnings `json:"warnings"`
+	Message     string                `json:"message"`
+}
+
+type projectDeleteBlockedResponse struct {
+	Code     string                 `json:"code"`
+	Message  string                 `json:"message"`
+	Blockers []ProjectDeleteBlocker `json:"blockers"`
 }
 
 type projectRepoBindingResponse struct {

@@ -879,6 +879,55 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteProject
+      summary: Delete a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "204":
+          description: Project deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: Project not found
+        "409":
+          description: Project has active work and cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeleteBlockedError"
+        "503":
+          description: Project coordinator terminate failed; retry later
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+  /api/v1/projects/{projectId}/delete-preview:
+    get:
+      operationId: getProjectDeletePreview
+      summary: Preview project delete readiness
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project delete preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletePreview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/runtime-placement:
     get:
       operationId: getProjectRuntimePlacement
@@ -5070,12 +5119,94 @@ components:
         archived_at:
           type: string
           format: date-time
+        allowed_actions:
+          type: array
+          items:
+            type: string
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    ProjectDeletePreview:
+      type: object
+      required:
+        - project_id
+        - project_name
+        - can_delete
+        - blockers
+        - warnings
+        - message
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+        can_delete:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectDeleteBlocker"
+        warnings:
+          $ref: "#/components/schemas/ProjectDeleteWarnings"
+        message:
+          type: string
+    ProjectDeleteWarnings:
+      type: object
+      properties:
+        pending_decision_count:
+          type: integer
+        waiting_human_task_count:
+          type: integer
+        open_inbox_count:
+          type: integer
+        active_member_count:
+          type: integer
+        digital_employee_member_count:
+          type: integer
+        runtime_node_binding_count:
+          type: integer
+        affinity_count:
+          type: integer
+    ProjectDeleteBlockedError:
+      type: object
+      required:
+        - code
+        - message
+        - blockers
+      properties:
+        code:
+          type: string
+          enum:
+            - project_delete_blocked
+        message:
+          type: string
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectDeleteBlocker"
+    ProjectDeleteBlocker:
+      type: object
+      required:
+        - type
+        - id
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          enum:
+            - project_task
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        title:
+          type: string
     ProjectRepoBinding:
       type: object
       properties:

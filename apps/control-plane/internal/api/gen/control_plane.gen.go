@@ -837,6 +837,36 @@ func (e ProjectAcceptanceRecordStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectDeleteBlockedErrorCode.
+const (
+	ProjectDeleteBlocked ProjectDeleteBlockedErrorCode = "project_delete_blocked"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDeleteBlockedErrorCode enum.
+func (e ProjectDeleteBlockedErrorCode) Valid() bool {
+	switch e {
+	case ProjectDeleteBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDeleteBlockerType.
+const (
+	ProjectDeleteBlockerTypeProjectTask ProjectDeleteBlockerType = "project_task"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDeleteBlockerType enum.
+func (e ProjectDeleteBlockerType) Valid() bool {
+	switch e {
+	case ProjectDeleteBlockerTypeProjectTask:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectDemandSourceType.
 const (
 	ProjectDemandSourceTypeDocument ProjectDemandSourceType = "document"
@@ -3222,6 +3252,7 @@ type PatchProjectEvidenceRequest struct {
 // Project defines model for Project.
 type Project struct {
 	AcceptanceUserId       *openapi_types.UUID    `json:"acceptance_user_id,omitempty"`
+	AllowedActions         *[]string              `json:"allowed_actions,omitempty"`
 	ApprovalPolicy         map[string]interface{} `json:"approval_policy"`
 	ArchivedAt             *time.Time             `json:"archived_at,omitempty"`
 	CoordinationPolicy     map[string]interface{} `json:"coordination_policy"`
@@ -3408,6 +3439,48 @@ type ProjectDecisionRequest struct {
 	TenantId          openapi_types.UUID  `json:"tenant_id"`
 	TitleSnapshot     string              `json:"title_snapshot"`
 	UpdatedAt         *time.Time          `json:"updated_at,omitempty"`
+}
+
+// ProjectDeleteBlockedError defines model for ProjectDeleteBlockedError.
+type ProjectDeleteBlockedError struct {
+	Blockers []ProjectDeleteBlocker        `json:"blockers"`
+	Code     ProjectDeleteBlockedErrorCode `json:"code"`
+	Message  string                        `json:"message"`
+}
+
+// ProjectDeleteBlockedErrorCode defines model for ProjectDeleteBlockedError.Code.
+type ProjectDeleteBlockedErrorCode string
+
+// ProjectDeleteBlocker defines model for ProjectDeleteBlocker.
+type ProjectDeleteBlocker struct {
+	Id     openapi_types.UUID       `json:"id"`
+	Status string                   `json:"status"`
+	Title  string                   `json:"title"`
+	Type   ProjectDeleteBlockerType `json:"type"`
+}
+
+// ProjectDeleteBlockerType defines model for ProjectDeleteBlocker.Type.
+type ProjectDeleteBlockerType string
+
+// ProjectDeletePreview defines model for ProjectDeletePreview.
+type ProjectDeletePreview struct {
+	Blockers    []ProjectDeleteBlocker `json:"blockers"`
+	CanDelete   bool                   `json:"can_delete"`
+	Message     string                 `json:"message"`
+	ProjectId   openapi_types.UUID     `json:"project_id"`
+	ProjectName string                 `json:"project_name"`
+	Warnings    ProjectDeleteWarnings  `json:"warnings"`
+}
+
+// ProjectDeleteWarnings defines model for ProjectDeleteWarnings.
+type ProjectDeleteWarnings struct {
+	ActiveMemberCount          *int `json:"active_member_count,omitempty"`
+	AffinityCount              *int `json:"affinity_count,omitempty"`
+	DigitalEmployeeMemberCount *int `json:"digital_employee_member_count,omitempty"`
+	OpenInboxCount             *int `json:"open_inbox_count,omitempty"`
+	PendingDecisionCount       *int `json:"pending_decision_count,omitempty"`
+	RuntimeNodeBindingCount    *int `json:"runtime_node_binding_count,omitempty"`
+	WaitingHumanTaskCount      *int `json:"waiting_human_task_count,omitempty"`
 }
 
 // ProjectDemand defines model for ProjectDemand.
@@ -6280,6 +6353,9 @@ type ServerInterface interface {
 	// Create a project
 	// (POST /api/v1/projects)
 	CreateProject(w http.ResponseWriter, r *http.Request)
+	// Delete a project
+	// (DELETE /api/v1/projects/{projectId})
+	DeleteProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Get a project
 	// (GET /api/v1/projects/{projectId})
 	GetProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -6334,6 +6410,9 @@ type ServerInterface interface {
 	// Resolve a project human decision request
 	// (POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve)
 	ResolveProjectDecision(w http.ResponseWriter, r *http.Request, projectId ProjectId, decisionId DecisionId)
+	// Preview project delete readiness
+	// (GET /api/v1/projects/{projectId}/delete-preview)
+	GetProjectDeletePreview(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project demands
 	// (GET /api/v1/projects/{projectId}/demands)
 	ListProjectDemands(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectDemandsParams)
@@ -6985,6 +7064,12 @@ func (_ Unimplemented) CreateProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Delete a project
+// (DELETE /api/v1/projects/{projectId})
+func (_ Unimplemented) DeleteProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get a project
 // (GET /api/v1/projects/{projectId})
 func (_ Unimplemented) GetProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -7090,6 +7175,12 @@ func (_ Unimplemented) ListProjectDecisionRequests(w http.ResponseWriter, r *htt
 // Resolve a project human decision request
 // (POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve)
 func (_ Unimplemented) ResolveProjectDecision(w http.ResponseWriter, r *http.Request, projectId ProjectId, decisionId DecisionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Preview project delete readiness
+// (GET /api/v1/projects/{projectId}/delete-preview)
+func (_ Unimplemented) GetProjectDeletePreview(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9587,6 +9678,32 @@ func (siw *ServerInterfaceWrapper) CreateProject(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteProject operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteProject(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetProject operation middleware
 func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Request) {
 
@@ -10238,6 +10355,32 @@ func (siw *ServerInterfaceWrapper) ResolveProjectDecision(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ResolveProjectDecision(w, r, projectId, decisionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectDeletePreview operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectDeletePreview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectDeletePreview(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14784,6 +14927,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.DeleteProject)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.GetProject)
 	})
 	r.Group(func(r chi.Router) {
@@ -14836,6 +14982,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/decisions/{decisionId}/resolve", wrapper.ResolveProjectDecision)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/delete-preview", wrapper.GetProjectDeletePreview)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/demands", wrapper.ListProjectDemands)

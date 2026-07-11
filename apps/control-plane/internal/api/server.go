@@ -272,6 +272,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}", s.projectHandler.GetProject)
 				r.Patch("/projects/{projectId}", s.projectHandler.UpdateProject)
 				r.Post("/projects/{projectId}/archive", s.projectHandler.ArchiveProject)
+				r.Get("/projects/{projectId}/delete-preview", s.projectHandler.GetProjectDeletePreview)
+				r.Delete("/projects/{projectId}", s.projectHandler.DeleteProject)
 				r.Get("/projects/{projectId}/overview", s.projectHandler.GetOverview)
 				r.Get("/projects/{projectId}/runtime-placement", s.projectHandler.GetProjectRuntimePlacement)
 				r.Put("/projects/{projectId}/runtime-placement", s.projectHandler.PutProjectRuntimePlacement)
