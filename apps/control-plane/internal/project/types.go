@@ -94,9 +94,11 @@ type DeleteProjectRequest struct {
 }
 
 type SoftDeleteProjectCascadeParams struct {
-	TenantID  uuid.UUID
-	ProjectID uuid.UUID
-	DeletedAt time.Time
+	TenantID    uuid.UUID
+	ProjectID   uuid.UUID
+	DeletedAt   time.Time
+	ActorUserID uuid.UUID
+	Project     Project
 }
 
 type ProjectDeleteAuditEventParams struct {

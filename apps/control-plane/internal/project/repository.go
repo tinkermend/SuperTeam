@@ -131,7 +131,6 @@ type Repository interface {
 	ListProjectDeleteBlockers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectDeleteBlocker, error)
 	GetProjectDeletePreviewCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectDeleteWarnings, error)
 	SoftDeleteProjectCascade(ctx context.Context, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error)
-	CreateProjectDeleteAuditEvent(ctx context.Context, params ProjectDeleteAuditEventParams) error
 }
 
 type ProjectTaskRuntimeBindingRepository interface {

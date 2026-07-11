@@ -445,15 +445,27 @@ func (r *PgRepository) softDeleteProjectCascadeWithQueries(ctx context.Context, 
 	}
 	cascade.PlacementCount = len(placementRows)
 
+	if params.ActorUserID != uuid.Nil {
+		if err := createProjectDeleteAuditEventWithQueries(ctx, q, ProjectDeleteAuditEventParams{
+			TenantID:      params.TenantID,
+			ActorUserID:   params.ActorUserID,
+			Project:       params.Project,
+			CascadeResult: cascade,
+			DeletedAt:     params.DeletedAt,
+		}); err != nil {
+			return cascade, err
+		}
+	}
+
 	return cascade, nil
 }
 
-func (r *PgRepository) CreateProjectDeleteAuditEvent(ctx context.Context, params ProjectDeleteAuditEventParams) error {
+func createProjectDeleteAuditEventWithQueries(ctx context.Context, q *queries.Queries, params ProjectDeleteAuditEventParams) error {
 	details, err := json.Marshal(projectDeleteAuditDetails(params))
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "project_management",
 		ActorType:    "user",

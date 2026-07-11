@@ -1119,26 +1119,14 @@ func (s *Service) DeleteProject(ctx context.Context, req DeleteProjectRequest) e
 		return err
 	}
 	deletedAt := time.Now().UTC()
-	cascade, err := s.repository.SoftDeleteProjectCascade(ctx, SoftDeleteProjectCascadeParams{
-		TenantID:  req.TenantID,
-		ProjectID: req.ProjectID,
-		DeletedAt: deletedAt,
+	_, err = s.repository.SoftDeleteProjectCascade(ctx, SoftDeleteProjectCascadeParams{
+		TenantID:    req.TenantID,
+		ProjectID:   req.ProjectID,
+		DeletedAt:   deletedAt,
+		ActorUserID: req.ActorUserID,
+		Project:     project,
 	})
-	if err != nil {
-		return err
-	}
-	// Cascade commits in its own transaction; audit failure after a successful
-	// soft-delete leaves deleted state without audit — surface the error to the caller.
-	if err := s.repository.CreateProjectDeleteAuditEvent(ctx, ProjectDeleteAuditEventParams{
-		TenantID:      req.TenantID,
-		ActorUserID:   req.ActorUserID,
-		Project:       project,
-		CascadeResult: cascade,
-		DeletedAt:     deletedAt,
-	}); err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func projectDeletePreviewMessage(canDelete bool) string {

@@ -8263,6 +8263,35 @@ func TestDeleteProjectAbortsWhenTerminateFails(t *testing.T) {
 	require.Len(t, repo.deleteAuditEvents, 0)
 }
 
+func TestDeleteProjectAbortsWhenAuditFails(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "审计失败项目",
+		Goal:                   "不可级联",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.deleteAuditEventErr = errors.New("audit insert failed")
+
+	err = service.DeleteProject(context.Background(), DeleteProjectRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorUserID: actorID,
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, coordinator.terminateSignals)
+	require.Nil(t, repo.projects[projectID].DeletedAt)
+	require.Len(t, repo.deleteAuditEvents, 0)
+}
+
 func TestGetProjectDeletePreviewIncludesWarnings(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -8361,6 +8390,7 @@ type memoryRepository struct {
 	deletePreviewCounts           ProjectDeleteWarnings
 	deleteCascadeResult           ProjectDeleteCascadeResult
 	deleteAuditEvents             []ProjectDeleteAuditEventParams
+	deleteAuditEventErr           error
 }
 
 func (r *memoryRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
@@ -8710,16 +8740,26 @@ func (r *memoryRepository) SoftDeleteProjectCascade(_ context.Context, params So
 	if !ok || project.TenantID != params.TenantID || project.DeletedAt != nil {
 		return ProjectDeleteCascadeResult{}, ErrProjectNotFound
 	}
+	if params.ActorUserID != uuid.Nil {
+		if err := r.deleteAuditEventErr; err != nil {
+			return ProjectDeleteCascadeResult{}, err
+		}
+	}
 	deletedAt := params.DeletedAt.UTC()
 	project.DeletedAt = &deletedAt
 	project.CoordinationStatus = "terminated"
 	r.projects[params.ProjectID] = project
-	return r.deleteCascadeResult, nil
-}
-
-func (r *memoryRepository) CreateProjectDeleteAuditEvent(_ context.Context, params ProjectDeleteAuditEventParams) error {
-	r.deleteAuditEvents = append(r.deleteAuditEvents, params)
-	return nil
+	cascade := r.deleteCascadeResult
+	if params.ActorUserID != uuid.Nil {
+		r.deleteAuditEvents = append(r.deleteAuditEvents, ProjectDeleteAuditEventParams{
+			TenantID:      params.TenantID,
+			ActorUserID:   params.ActorUserID,
+			Project:       params.Project,
+			CascadeResult: cascade,
+			DeletedAt:     params.DeletedAt,
+		})
+	}
+	return cascade, nil
 }
 
 func (r *memoryRepository) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
