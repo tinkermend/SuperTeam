@@ -1133,3 +1133,174 @@ func TestPgRunRepositoryResolveProjectTaskLineageRoot(t *testing.T) {
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 }
+
+// TestPgRunRepositoryUpsertProviderSessionByExternalIDPersistsProjectTaskRootID
+// exercises the writeback-side counterpart to task-lineage session scoping:
+// a fresh session upsert must persist project_task_root_id when supplied, a
+// session upsert without a root must leave the column null (pre-refactor
+// compatibility), and FindProviderSessionForTaskRoot must hit the
+// just-written-back root.
+func TestPgRunRepositoryUpsertProviderSessionByExternalIDPersistsProjectTaskRootID(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "provider_session_upsert_root_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	repo := NewPgRunRepository(queries.New(conn))
+	employeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	runtimeNodeID := uuid.New()
+	rootTaskID := uuid.New()
+
+	baseReq := func(providerSessionID string, sequenceNumber int32, rootID *uuid.UUID) UpsertProviderSessionRequest {
+		return UpsertProviderSessionRequest{
+			TenantID:            tenantID,
+			ProviderSessionID:   providerSessionID,
+			DigitalEmployeeID:   employeeID,
+			ExecutionInstanceID: executionInstanceID,
+			RuntimeNodeID:       runtimeNodeID,
+			ProviderType:        "codex",
+			Status:              "active",
+			Recoverable:         true,
+			LastSequenceNumber:  sequenceNumber,
+			ProjectTaskRootID:   rootID,
+		}
+	}
+
+	t.Run("upsert with a root persists it and FindProviderSessionForTaskRoot hits it", func(t *testing.T) {
+		_, err := repo.UpsertProviderSession(ctx, baseReq("sess-with-root", 1, &rootTaskID))
+		require.NoError(t, err)
+
+		found, err := repo.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, rootTaskID)
+		require.NoError(t, err)
+		require.Equal(t, "sess-with-root", found)
+	})
+
+	t.Run("upsert without a root leaves project_task_root_id null", func(t *testing.T) {
+		_, err := repo.UpsertProviderSession(ctx, baseReq("sess-without-root", 1, nil))
+		require.NoError(t, err)
+
+		var rootID *uuid.UUID
+		err = conn.QueryRow(ctx, `
+			SELECT project_task_root_id FROM provider_sessions
+			WHERE tenant_id = $1 AND provider_type = 'codex' AND provider_session_id = 'sess-without-root'
+		`, tenantID).Scan(&rootID)
+		require.NoError(t, err)
+		require.Nil(t, rootID)
+
+		// A later event for the same session still without a root must not
+		// error and must keep the column null.
+		_, err = repo.UpsertProviderSession(ctx, baseReq("sess-without-root", 2, nil))
+		require.NoError(t, err)
+		err = conn.QueryRow(ctx, `
+			SELECT project_task_root_id FROM provider_sessions
+			WHERE tenant_id = $1 AND provider_type = 'codex' AND provider_session_id = 'sess-without-root'
+		`, tenantID).Scan(&rootID)
+		require.NoError(t, err)
+		require.Nil(t, rootID)
+	})
+
+	t.Run("a later event with a root backfills a previously-null root", func(t *testing.T) {
+		_, err := repo.UpsertProviderSession(ctx, baseReq("sess-backfill-root", 1, nil))
+		require.NoError(t, err)
+
+		_, err = repo.UpsertProviderSession(ctx, baseReq("sess-backfill-root", 2, &rootTaskID))
+		require.NoError(t, err)
+
+		var rootID uuid.UUID
+		err = conn.QueryRow(ctx, `
+			SELECT project_task_root_id FROM provider_sessions
+			WHERE tenant_id = $1 AND provider_type = 'codex' AND provider_session_id = 'sess-backfill-root'
+		`, tenantID).Scan(&rootID)
+		require.NoError(t, err)
+		require.Equal(t, rootTaskID, rootID)
+	})
+}
+
+// TestPgRunRepositoryGetRunTaskMetadata exercises the fallback metadata
+// lookup writeback uses when the runtime event itself doesn't carry
+// revision_root_task_id: the metadata the control plane stamped on the task
+// at dispatch time (tasks.params["metadata"]) must be readable back by task
+// id, and a task with no metadata must report an empty map, not an error.
+func TestPgRunRepositoryGetRunTaskMetadata(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "run_task_metadata_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	rootTaskID := uuid.New()
+	taskWithMetadataID := uuid.New()
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, status, provider_type, params)
+		VALUES ($1, $2, 'task', 'queued', 'codex', $3::jsonb)
+	`, taskWithMetadataID, tenantID, fmt.Sprintf(`{"metadata": {"revision_root_task_id": %q}}`, rootTaskID.String()))
+	require.NoError(t, err)
+
+	taskWithoutMetadataID := uuid.New()
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, status, provider_type, params)
+		VALUES ($1, $2, 'task', 'queued', 'codex', '{}'::jsonb)
+	`, taskWithoutMetadataID, tenantID)
+	require.NoError(t, err)
+
+	repo := NewPgRunRepository(queries.New(conn))
+
+	t.Run("returns the persisted metadata map", func(t *testing.T) {
+		metadata, err := repo.GetRunTaskMetadata(ctx, tenantID, taskWithMetadataID)
+		require.NoError(t, err)
+		require.Equal(t, rootTaskID.String(), metadata["revision_root_task_id"])
+	})
+
+	t.Run("a task with no metadata reports an empty map, not an error", func(t *testing.T) {
+		metadata, err := repo.GetRunTaskMetadata(ctx, tenantID, taskWithoutMetadataID)
+		require.NoError(t, err)
+		require.Empty(t, metadata)
+	})
+
+	t.Run("unknown task id is reported as not found", func(t *testing.T) {
+		_, err := repo.GetRunTaskMetadata(ctx, tenantID, uuid.New())
+		require.ErrorIs(t, err, ErrNotFound)
+	})
+}

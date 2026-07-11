@@ -219,6 +219,10 @@ func (f fakeRunRepository) FindProviderSessionForTaskRoot(context.Context, uuid.
 	return "", employee.ErrInvalidInput
 }
 
+func (f fakeRunRepository) GetRunTaskMetadata(context.Context, uuid.UUID, uuid.UUID) (map[string]any, error) {
+	return nil, employee.ErrInvalidInput
+}
+
 func (f fakeRunRepository) CreateProviderSessionEventIfAbsent(context.Context, employee.CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	return uuid.Nil, employee.ErrInvalidInput
 }

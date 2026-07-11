@@ -528,6 +528,7 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 		LastRunID:           nullUUIDFromPtr(req.LastRunID),
 		LastErrorFamily:     textFromPtr(req.LastErrorFamily),
 		Metadata:            metadata,
+		ProjectTaskRootID:   nullUUIDFromPtr(req.ProjectTaskRootID),
 	})
 	if err != nil {
 		return uuid.Nil, err
@@ -548,6 +549,22 @@ func (r *PgRunRepository) FindProviderSessionForTaskRoot(ctx context.Context, te
 		return "", err
 	}
 	return providerSessionID, nil
+}
+
+func (r *PgRunRepository) GetRunTaskMetadata(ctx context.Context, tenantID, taskID uuid.UUID) (map[string]any, error) {
+	task, err := r.q.GetTask(ctx, queries.GetTaskParams{
+		ID:       taskID,
+		TenantID: uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	params, err := mapFromJSONB(task.Params, "params")
+	if err != nil {
+		return nil, err
+	}
+	metadata, _ := params["metadata"].(map[string]any)
+	return metadata, nil
 }
 
 func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {

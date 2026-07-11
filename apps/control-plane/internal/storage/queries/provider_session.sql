@@ -212,7 +212,8 @@ INSERT INTO provider_sessions (
     last_run_id,
     last_error_family,
     last_runtime_seen_at,
-    metadata
+    metadata,
+    project_task_root_id
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('provider_session_id')::varchar,
@@ -231,7 +232,8 @@ INSERT INTO provider_sessions (
     sqlc.narg('last_run_id')::uuid,
     sqlc.narg('last_error_family')::varchar,
     NOW(),
-    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.narg('project_task_root_id')::uuid
 )
 ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     status = CASE
@@ -274,6 +276,10 @@ ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     metadata = CASE
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(provider_sessions.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb)
         ELSE provider_sessions.metadata
+    END,
+    project_task_root_id = CASE
+        WHEN EXCLUDED.project_task_root_id IS NOT NULL THEN EXCLUDED.project_task_root_id
+        ELSE provider_sessions.project_task_root_id
     END,
     updated_at = CASE
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()

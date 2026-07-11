@@ -718,7 +718,8 @@ INSERT INTO provider_sessions (
     last_run_id,
     last_error_family,
     last_runtime_seen_at,
-    metadata
+    metadata,
+    project_task_root_id
 ) VALUES (
     $1::uuid,
     $2::varchar,
@@ -737,7 +738,8 @@ INSERT INTO provider_sessions (
     $14::uuid,
     $15::varchar,
     NOW(),
-    COALESCE($16::jsonb, '{}'::jsonb)
+    COALESCE($16::jsonb, '{}'::jsonb),
+    $17::uuid
 )
 ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     status = CASE
@@ -781,6 +783,10 @@ ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(provider_sessions.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb)
         ELSE provider_sessions.metadata
     END,
+    project_task_root_id = CASE
+        WHEN EXCLUDED.project_task_root_id IS NOT NULL THEN EXCLUDED.project_task_root_id
+        ELSE provider_sessions.project_task_root_id
+    END,
     updated_at = CASE
         WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()
         ELSE provider_sessions.updated_at
@@ -805,6 +811,7 @@ type UpsertProviderSessionByExternalIDParams struct {
 	LastRunID           uuid.NullUUID `json:"last_run_id"`
 	LastErrorFamily     pgtype.Text   `json:"last_error_family"`
 	Metadata            []byte        `json:"metadata"`
+	ProjectTaskRootID   uuid.NullUUID `json:"project_task_root_id"`
 }
 
 func (q *Queries) UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error) {
@@ -825,6 +832,7 @@ func (q *Queries) UpsertProviderSessionByExternalID(ctx context.Context, arg Ups
 		arg.LastRunID,
 		arg.LastErrorFamily,
 		arg.Metadata,
+		arg.ProjectTaskRootID,
 	)
 	var i ProviderSession
 	err := row.Scan(

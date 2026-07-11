@@ -29,6 +29,12 @@ type DigitalEmployeeRunRepository interface {
 	// scoped to (employee, task lineage root). It returns an empty string
 	// when no active session matches — this is a lookup, not an error path.
 	FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error)
+	// GetRunTaskMetadata returns the metadata map persisted on the task
+	// backing a run (tasks.params["metadata"]), so writeback can recover
+	// dispatch-time context — e.g. revision_root_task_id — that isn't
+	// otherwise echoed back on the runtime event. Returns an empty map,
+	// not an error, when the task carries no metadata.
+	GetRunTaskMetadata(ctx context.Context, tenantID, taskID uuid.UUID) (map[string]any, error)
 	CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
@@ -179,6 +185,7 @@ type UpsertProviderSessionRequest struct {
 	LastRunID           *uuid.UUID
 	LastErrorFamily     *string
 	Metadata            map[string]any
+	ProjectTaskRootID   *uuid.UUID
 }
 
 type CreateProviderSessionEventRecordRequest struct {

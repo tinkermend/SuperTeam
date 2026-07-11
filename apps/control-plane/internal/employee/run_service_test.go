@@ -1892,6 +1892,10 @@ func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(_ context.Cont
 	return f.providerSessionForRoot[taskRootID], nil
 }
 
+func (f *fakeRunServiceRepository) GetRunTaskMetadata(context.Context, uuid.UUID, uuid.UUID) (map[string]any, error) {
+	return nil, nil
+}
+
 func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	return uuid.MustParse("00000000-0000-0000-0000-000000000701"), nil
 }
