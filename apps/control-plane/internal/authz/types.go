@@ -91,6 +91,7 @@ const (
 	ActionProjectRead             = "project.read"
 	ActionProjectUpdate           = "project.update"
 	ActionProjectArchive          = "project.archive"
+	ActionProjectDelete           = "project.delete"
 	ActionProjectMemberRead       = "project.member.read"
 	ActionProjectMemberManage     = "project.member.manage"
 	ActionProjectDemandRead       = "project.demand.read"
