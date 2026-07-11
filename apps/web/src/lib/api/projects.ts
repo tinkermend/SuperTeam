@@ -1,5 +1,6 @@
 import type { ApiClientOptions } from "./client";
 import {
+  deleteJson,
   deleteJsonWithResponse,
   getJson,
   patchJson,
@@ -165,6 +166,7 @@ export type Project = {
   approval_policy: Record<string, unknown>;
   evidence_policy: Record<string, unknown>;
   archived_at?: string;
+  allowed_actions?: string[];
   created_at?: string;
   updated_at?: string;
 };
@@ -778,6 +780,38 @@ export type ProjectArchivePreview = {
   estimated_object_refs: unknown[];
 };
 
+export type ProjectDeleteBlocker = {
+  type: "project_task";
+  id: string;
+  status: string;
+  title: string;
+};
+
+export type ProjectDeleteWarnings = {
+  pending_decision_count?: number;
+  waiting_human_task_count?: number;
+  open_inbox_count?: number;
+  active_member_count?: number;
+  digital_employee_member_count?: number;
+  runtime_node_binding_count?: number;
+  affinity_count?: number;
+};
+
+export type ProjectDeletePreview = {
+  project_id: string;
+  project_name: string;
+  can_delete: boolean;
+  blockers: ProjectDeleteBlocker[];
+  warnings: ProjectDeleteWarnings;
+  message: string;
+};
+
+export type ProjectDeleteBlockedErrorResponse = {
+  code: "project_delete_blocked";
+  message: string;
+  blockers: ProjectDeleteBlocker[];
+};
+
 export type ProjectArchiveSnapshot = {
   id: string;
   tenant_id: string;
@@ -1094,6 +1128,13 @@ export function archiveProject(
     projectPath(projectId, "/archive"),
     "archive project",
   );
+}
+
+export function deleteProject(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<void> {
+  return deleteJson(options, projectPath(projectId), "delete project");
 }
 
 export function getProjectOverview(
@@ -1516,6 +1557,17 @@ export function getProjectArchivePreview(
     options,
     projectPath(projectId, "/archive-preview"),
     "project archive preview",
+  );
+}
+
+export function getProjectDeletePreview(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectDeletePreview> {
+  return getJson<ProjectDeletePreview>(
+    options,
+    projectPath(projectId, "/delete-preview"),
+    "project delete preview",
   );
 }
 
