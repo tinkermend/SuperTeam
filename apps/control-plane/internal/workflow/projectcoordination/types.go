@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/project"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -208,6 +209,7 @@ type InspectTaskResultDecisionResult struct {
 	ResultID  uuid.UUID
 	Decision  string
 	Exhausted bool
+	Blocker   *project.TaskResultBlocker
 }
 
 type CreateRevisionTaskForResultInput struct {
@@ -219,6 +221,22 @@ type CreateRevisionTaskForResultInput struct {
 
 type CreateRevisionTaskForResultResult struct {
 	TaskID    uuid.UUID
+	Exhausted bool
+}
+
+// CreateUpstreamSupplementInput describes a blocked task and the inputs it lacks.
+type CreateUpstreamSupplementInput struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	SourceTaskID  uuid.UUID
+	MissingInputs []string
+}
+
+// CreateUpstreamSupplementResult reports the owner tasks appended to supply the
+// blocked task's missing inputs. Exhausted is true when the graph has already
+// extended max_plan_iterations rounds and no further supplement was created.
+type CreateUpstreamSupplementResult struct {
+	TaskIDs   []uuid.UUID
 	Exhausted bool
 }
 

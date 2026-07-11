@@ -1428,6 +1428,8 @@ type ProjectTask struct {
 	RevisionOfTaskID uuid.NullUUID `json:"revision_of_task_id"`
 	// 该任务最新结构化结果记录ID。
 	LatestTaskResultID uuid.NullUUID `json:"latest_task_result_id"`
+	// Graph extension round: 0 for the original plan, N for tasks appended in the Nth round.
+	PlanIteration int32 `json:"plan_iteration"`
 }
 
 // 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。

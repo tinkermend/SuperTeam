@@ -53,6 +53,10 @@ const (
 	TaskResultDecisionRevisionAttempt     TaskResultDecision = "revision_attempt"
 	TaskResultDecisionRevisionTask        TaskResultDecision = "revision_task"
 	TaskResultDecisionBlockedWaitingHuman TaskResultDecision = "blocked_waiting_human"
+	// BlockedResolvableUpstream means the employee is starved by an upstream task's
+	// output. The platform appends the owner (plus downstream) rather than waiting
+	// on a human or bouncing back to the same employee.
+	TaskResultDecisionBlockedResolvableUpstream TaskResultDecision = "blocked_resolvable_upstream"
 	TaskResultDecisionFailedRetryable     TaskResultDecision = "failed_retryable"
 	TaskResultDecisionFailedRecovery      TaskResultDecision = "failed_recovery"
 	TaskResultDecisionCancelledTerminal   TaskResultDecision = "cancelled_terminal"
@@ -199,6 +203,11 @@ type TaskResultBlocker struct {
 	Reason           string          `json:"reason,omitempty"`
 	ResolutionPrompt string          `json:"resolution_prompt,omitempty"`
 	RequiredBy       string          `json:"required_by,omitempty"`
+	// MissingInputs are produces-keys the employee declares it needs but did not
+	// receive. Each must appear in this task's input_requirements.required_inputs
+	// (Plan 3); the platform resolves the owner by lookup, never by asking a model
+	// who is at fault. See the 2026-07-10 plan-phase refactor spec §4.6(a).
+	MissingInputs    []string        `json:"missing_inputs,omitempty"`
 	ContextRefs      []TaskResultRef `json:"context_refs,omitempty"`
 }
 
@@ -561,6 +570,27 @@ func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResu
 		}
 		return TaskResultDecisionRevisionAttempt
 	case TaskResultStatusBlocked:
+		// Every missing input must be one this task declared in required_inputs.
+		// An undeclared name is a contract violation -> human.
+		if result.Blocker != nil && len(result.Blocker.MissingInputs) > 0 {
+			var requiredInputs []any
+			if raw, ok := task.InputRequirements["required_inputs"]; ok {
+				if slice, ok := raw.([]any); ok {
+					requiredInputs = slice
+				}
+			}
+			declared := stringSetFromAny(requiredInputs)
+			allDeclared := true
+			for _, missing := range result.Blocker.MissingInputs {
+				if !declared[missing] {
+					allDeclared = false
+					break
+				}
+			}
+			if allDeclared {
+				return TaskResultDecisionBlockedResolvableUpstream
+			}
+		}
 		return TaskResultDecisionBlockedWaitingHuman
 	case TaskResultStatusFailed:
 		if result.ReplanRequest != nil {

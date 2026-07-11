@@ -311,6 +311,36 @@ func TestEvaluatePreDispatchGateRequiresReplanForEmployeeSnapshotMismatch(t *tes
 	require.False(t, result.CreateRun)
 }
 
+func TestEvaluatePreDispatchGatePassesUpstreamSupplementWithMatchingPlanRevision(t *testing.T) {
+	now := time.Date(2026, 7, 11, 1, 0, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	ownerTaskID := uuid.New()
+	employeeID := uuid.New()
+	revisionID := uuid.New()
+	ownerTaskKey := "load-test"
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	snapshot.Task.RevisionOfTaskID = &ownerTaskID
+	snapshot.Task.AcceptedPlanRevisionID = &revisionID
+	snapshot.Task.PlannedTaskKey = &ownerTaskKey
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID:              projectID,
+		ProjectTaskID:          taskID,
+		AcceptedPlanRevisionID: &revisionID,
+		PlannedTaskKey:         &ownerTaskKey,
+		SelectedEmployeeID:     employeeID,
+		AttemptNo:              1,
+		DispatchReason:         DispatchReasonDependencyUnlocked,
+	}, snapshot, now)
+
+	require.Equal(t, PreDispatchGateStatusPassed, result.Status)
+	for _, blocker := range result.Blockers {
+		require.NotEqual(t, "task.accepted_plan_revision_changed", blocker.Key)
+		require.NotEqual(t, "task.planned_task_key_changed", blocker.Key)
+	}
+}
+
 func TestEvaluatePreDispatchGateRequiresReplanForAcceptedPlanRevisionDrift(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 38, 0, 0, time.UTC)
 	projectID := uuid.New()

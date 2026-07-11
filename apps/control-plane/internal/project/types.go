@@ -531,6 +531,7 @@ type ProjectTask struct {
 	RevisionOfTaskID           *uuid.UUID
 	AcceptedPlanRevisionID     *uuid.UUID
 	DecompositionClaimKey      *string
+	PlanIteration              int32
 	AttemptCount               int32
 	MaxAttempts                *int32
 	RetryNotBefore             *time.Time

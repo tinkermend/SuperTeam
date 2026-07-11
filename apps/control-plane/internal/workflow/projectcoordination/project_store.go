@@ -32,6 +32,11 @@ type clockFunc func() time.Time
 
 const defaultRevisionMaxAttempts int32 = 3
 
+// defaultMaxPlanIterations bounds graph extension rounds (upstream supplement
+// tasks appended to resolve a blocked task's missing inputs) when
+// projects.coordination_policy.max_plan_iterations is absent or invalid.
+const defaultMaxPlanIterations = 3
+
 func (s *ProjectStore) WithClock(clock clockFunc) *ProjectStore {
 	s.clock = clock
 	return s
@@ -695,6 +700,7 @@ func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input Insp
 		ResultID:  result.ID,
 		Decision:  string(result.Decision),
 		Exhausted: s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, task),
+		Blocker:   result.Contract.Blocker,
 	}, nil
 }
 
@@ -751,6 +757,85 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 		return CreateRevisionTaskForResultResult{}, err
 	}
 	return CreateRevisionTaskForResultResult{TaskID: revision.ID}, nil
+}
+
+// CreateUpstreamSupplementTasks appends a task for the owner of each missing
+// input. The blocked source is downstream of that owner and is re-run when the
+// supplement completes.
+func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error) {
+	if s.repository == nil {
+		return CreateUpstreamSupplementResult{}, ErrActivityStoreRequired
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, input.SourceTaskID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	if source.ProjectID != input.ProjectID {
+		return CreateUpstreamSupplementResult{}, project.ErrProjectNotFound
+	}
+	if source.CoordinationJobID == nil || *source.CoordinationJobID == uuid.Nil {
+		return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
+	}
+	siblings, err := s.repository.ListProjectTasksByCoordinationJob(ctx, input.TenantID, input.ProjectID, *source.CoordinationJobID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return CreateUpstreamSupplementResult{}, err
+	}
+	planIteration := currentPlanIteration(siblings)
+	if planIteration >= int32(maxPlanIterations(projectRecord.CoordinationPolicy)) {
+		return CreateUpstreamSupplementResult{Exhausted: true}, nil
+	}
+	planIteration++
+	owners := make(map[string]project.ProjectTask)
+	for _, task := range siblings {
+		for _, produced := range plannerProducesFromMetadata(task.PlannerMetadata) {
+			owners[produced] = task
+		}
+	}
+
+	seen := make(map[uuid.UUID]struct{})
+	result := CreateUpstreamSupplementResult{}
+	for _, missing := range input.MissingInputs {
+		owner, ok := owners[missing]
+		if !ok {
+			return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
+		}
+		if _, duplicate := seen[owner.ID]; duplicate {
+			continue
+		}
+		seen[owner.ID] = struct{}{}
+		supplement, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
+			TenantID:                  input.TenantID,
+			ProjectID:                 input.ProjectID,
+			DemandID:                  source.DemandID,
+			Title:                     owner.Title,
+			Summary:                   "上游补做：" + strings.Join(input.MissingInputs, ", "),
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: owner.AssignedDigitalEmployeeID,
+			RiskLevel:                 stringPtrValue(owner.RiskLevel),
+			RequiresHumanApproval:     owner.RequiresHumanApproval,
+			CoordinationJobID:         source.CoordinationJobID,
+			RouteDecisionID:           source.RouteDecisionID,
+			PlannedTaskKey:            upstreamSupplementTaskKey(owner, planIteration),
+			TaskKind:                  owner.TaskKind,
+			StageIndex:                owner.StageIndex,
+			RevisionOfTaskID:          &owner.ID,
+			AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
+			ExpectedOutputs:           append([]any(nil), owner.ExpectedOutputs...),
+			InputRequirements:         cloneAnyMap(owner.InputRequirements),
+			HandoffContract:           cloneAnyMap(owner.HandoffContract),
+			PlannerMetadata:           revisionPlannerMetadataForSupplement(owner, input.SourceTaskID, input.MissingInputs),
+			PlanIteration:             planIteration,
+		})
+		if err != nil {
+			return CreateUpstreamSupplementResult{}, err
+		}
+		result.TaskIDs = append(result.TaskIDs, supplement.ID)
+	}
+	return result, nil
 }
 
 func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
@@ -3061,6 +3146,36 @@ func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectT
 	return metadata
 }
 
+func revisionPlannerMetadataForSupplement(owner project.ProjectTask, sourceTaskID uuid.UUID, missingInputs []string) map[string]any {
+	metadata := cloneAnyMap(owner.PlannerMetadata)
+	metadata["supplement_for"] = sourceTaskID.String()
+	metadata["missing_inputs"] = append([]string(nil), missingInputs...)
+	return metadata
+}
+
+func plannerProducesFromMetadata(metadata map[string]any) []string {
+	switch values := metadata["produces"].(type) {
+	case []any:
+		produces := make([]string, 0, len(values))
+		for _, value := range values {
+			if produced, ok := value.(string); ok && strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	case []string:
+		produces := make([]string, 0, len(values))
+		for _, produced := range values {
+			if strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	default:
+		return nil
+	}
+}
+
 // revisionFailureFingerprint identifies a failure by its structured shape only.
 //
 // It deliberately excludes contract.Summary and RevisionRequest.Reason: both are
@@ -3073,6 +3188,11 @@ func revisionFailureFingerprint(contract project.TaskResultContract) string {
 		changes := append([]string(nil), contract.RevisionRequest.RequestedChanges...)
 		sort.Strings(changes)
 		parts = append(parts, changes...)
+	}
+	if contract.Blocker != nil {
+		inputs := append([]string(nil), contract.Blocker.MissingInputs...)
+		sort.Strings(inputs)
+		parts = append(parts, inputs...)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -3111,8 +3231,48 @@ func revisionTaskKey(source project.ProjectTask, result project.ProjectTaskResul
 	return &key
 }
 
+// upstreamSupplementTaskKey derives a planned_task_key for a supplement task
+// that is distinct from the owner's own key. The owner keeps its original key
+// within the same coordination job, so copying it verbatim collides with
+// uq_project_tasks_coordination_planned_key; each graph-extension round gets
+// its own suffix instead.
+func upstreamSupplementTaskKey(owner project.ProjectTask, planIteration int32) *string {
+	base := owner.ID.String()
+	if owner.PlannedTaskKey != nil && strings.TrimSpace(*owner.PlannedTaskKey) != "" {
+		base = strings.TrimSpace(*owner.PlannedTaskKey)
+	}
+	key := base + "#upstream-supplement-" + strconv.Itoa(int(planIteration))
+	if len(key) > 100 {
+		key = owner.ID.String()[:8] + "#upstream-supplement-" + strconv.Itoa(int(planIteration))
+	}
+	return &key
+}
+
 func revisionBudgetExhausted(task project.ProjectTask) bool {
 	return revisionAttemptCount(task) >= revisionMaxAttempts(task)
+}
+
+// maxPlanIterations reads projects.coordination_policy.max_plan_iterations,
+// falling back to defaultMaxPlanIterations when absent or not a positive
+// number. int32FromAny covers both decoded-JSON numeric shapes (float64,
+// json.Number) and plain Go numeric literals used in tests.
+func maxPlanIterations(policy map[string]any) int {
+	if value, ok := int32FromAny(policy["max_plan_iterations"]); ok && value > 0 {
+		return int(value)
+	}
+	return defaultMaxPlanIterations
+}
+
+// currentPlanIteration is the highest graph extension round observed among
+// siblings created by the same coordination job (0 for the original plan).
+func currentPlanIteration(siblings []project.ProjectTask) int32 {
+	var max int32
+	for _, task := range siblings {
+		if task.PlanIteration > max {
+			max = task.PlanIteration
+		}
+	}
+	return max
 }
 
 func revisionRootTaskID(task project.ProjectTask) string {

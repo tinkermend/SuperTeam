@@ -548,6 +548,40 @@ func taskResultContractTask() ProjectTask {
 	}
 }
 
+func TestMapTaskResultDecisionBlockedResolvableWhenMissingInputsKnown(t *testing.T) {
+	task := ProjectTask{
+		InputRequirements: map[string]any{"required_inputs": []any{"load_test_report"}},
+	}
+	result := TaskResultContract{
+		Status:  TaskResultStatusBlocked,
+		Summary: "no load test report",
+		Blocker: &TaskResultBlocker{
+			Reason:        "no load test report",
+			MissingInputs: []string{"load_test_report"},
+		},
+	}
+
+	decision := mapTaskResultDecision(task, result)
+	require.Equal(t, TaskResultDecisionBlockedResolvableUpstream, decision)
+}
+
+func TestMapTaskResultDecisionBlockedFallsBackToHumanWhenInputNotDeclared(t *testing.T) {
+	task := ProjectTask{
+		InputRequirements: map[string]any{"required_inputs": []any{"load_test_report"}},
+	}
+	result := TaskResultContract{
+		Status:  TaskResultStatusBlocked,
+		Summary: "need something else",
+		Blocker: &TaskResultBlocker{
+			Reason:        "need something else",
+			MissingInputs: []string{"undisclosed_thing"},
+		},
+	}
+
+	decision := mapTaskResultDecision(task, result)
+	require.Equal(t, TaskResultDecisionBlockedWaitingHuman, decision)
+}
+
 func completeTaskResultContract() TaskResultContract {
 	return TaskResultContract{
 		Status:  TaskResultStatusCompleted,
