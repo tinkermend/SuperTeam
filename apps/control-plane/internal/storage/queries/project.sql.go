@@ -455,6 +455,115 @@ func (q *Queries) BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedPr
 	return i, err
 }
 
+const CancelApprovalRequestsForProjectDelete = `-- name: CancelApprovalRequestsForProjectDelete :many
+UPDATE approval_requests ar
+SET status = 'cancelled',
+    resolved_at = COALESCE(ar.resolved_at, NOW()),
+    updated_at = NOW()
+FROM project_decision_requests pdr
+WHERE ar.tenant_id = $1::uuid
+  AND ar.id = pdr.approval_request_id
+  AND pdr.tenant_id = $1::uuid
+  AND pdr.project_id = $2::uuid
+  AND ar.status = 'pending'
+RETURNING ar.id
+`
+
+type CancelApprovalRequestsForProjectDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, CancelApprovalRequestsForProjectDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const CancelProjectDecisionRequestsForDelete = `-- name: CancelProjectDecisionRequestsForDelete :many
+UPDATE project_decision_requests
+SET status_snapshot = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND status_snapshot IN ('pending', 'requested')
+RETURNING id
+`
+
+type CancelProjectDecisionRequestsForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, CancelProjectDecisionRequestsForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const CancelProjectTasksForDelete = `-- name: CancelProjectTasksForDelete :many
+UPDATE project_tasks
+SET status = 'cancelled', updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND status NOT IN ('completed', 'failed', 'cancelled', 'done', 'success')
+RETURNING id
+`
+
+type CancelProjectTasksForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, CancelProjectTasksForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const CompleteProjectPlanDecompositionClaim = `-- name: CompleteProjectPlanDecompositionClaim :one
 UPDATE project_plan_decomposition_claims
 SET status = 'completed',
@@ -2216,6 +2325,40 @@ func (q *Queries) CreateProjectTransferRequest(ctx context.Context, arg CreatePr
 	return i, err
 }
 
+const DeactivateProjectMembersForDelete = `-- name: DeactivateProjectMembersForDelete :many
+UPDATE project_members
+SET status = 'removed', updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND status = 'active'
+RETURNING id
+`
+
+type DeactivateProjectMembersForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, DeactivateProjectMembersForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const FailProjectPlanDecompositionClaim = `-- name: FailProjectPlanDecompositionClaim :one
 UPDATE project_plan_decomposition_claims
 SET status = 'failed',
@@ -2790,6 +2933,59 @@ func (q *Queries) GetProjectDecisionRequestByPlanRevision(ctx context.Context, a
 	return i, err
 }
 
+const GetProjectDeletePreviewCounts = `-- name: GetProjectDeletePreviewCounts :one
+SELECT
+  (SELECT COUNT(*)::int FROM project_decision_requests
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid
+      AND status_snapshot IN ('pending', 'requested')) AS pending_decision_count,
+  (SELECT COUNT(*)::int FROM project_tasks
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid
+      AND status IN ('waiting_human', 'pending_review')) AS waiting_human_task_count,
+  (SELECT COUNT(*)::int FROM inbox_items
+    WHERE tenant_id = $1::uuid AND source_project_id = $2::uuid
+      AND status = 'open') AS open_inbox_count,
+  (SELECT COUNT(*)::int FROM project_members
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid
+      AND status = 'active') AS active_member_count,
+  (SELECT COUNT(*)::int FROM project_members
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid
+      AND status = 'active' AND principal_type = 'digital_employee') AS digital_employee_member_count,
+  (SELECT COUNT(*)::int FROM project_runtime_nodes
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS runtime_node_binding_count,
+  (SELECT COUNT(*)::int FROM project_employee_node_affinity
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS affinity_count
+`
+
+type GetProjectDeletePreviewCountsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type GetProjectDeletePreviewCountsRow struct {
+	PendingDecisionCount       int32 `json:"pending_decision_count"`
+	WaitingHumanTaskCount      int32 `json:"waiting_human_task_count"`
+	OpenInboxCount             int32 `json:"open_inbox_count"`
+	ActiveMemberCount          int32 `json:"active_member_count"`
+	DigitalEmployeeMemberCount int32 `json:"digital_employee_member_count"`
+	RuntimeNodeBindingCount    int32 `json:"runtime_node_binding_count"`
+	AffinityCount              int32 `json:"affinity_count"`
+}
+
+func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProjectDeletePreviewCountsParams) (GetProjectDeletePreviewCountsRow, error) {
+	row := q.db.QueryRow(ctx, GetProjectDeletePreviewCounts, arg.TenantID, arg.ProjectID)
+	var i GetProjectDeletePreviewCountsRow
+	err := row.Scan(
+		&i.PendingDecisionCount,
+		&i.WaitingHumanTaskCount,
+		&i.OpenInboxCount,
+		&i.ActiveMemberCount,
+		&i.DigitalEmployeeMemberCount,
+		&i.RuntimeNodeBindingCount,
+		&i.AffinityCount,
+	)
+	return i, err
+}
+
 const GetProjectDemand = `-- name: GetProjectDemand :one
 SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at FROM project_demands
 WHERE tenant_id = $1::uuid
@@ -2895,6 +3091,51 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 		&i.Summary,
 		&i.Payload,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetProjectForDelete = `-- name: GetProjectForDelete :one
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at FROM projects
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND deleted_at IS NULL
+FOR UPDATE
+`
+
+type GetProjectForDeleteParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDeleteParams) (Project, error) {
+	row := q.db.QueryRow(ctx, GetProjectForDelete, arg.TenantID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.LeaderUserID,
+		&i.AcceptanceUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ApprovalPolicy,
+		&i.EvidencePolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -4373,6 +4614,114 @@ func (q *Queries) ListProjectDecisionRequests(ctx context.Context, arg ListProje
 			&i.DispatchGateResultID,
 			&i.ProjectTaskResultID,
 			&i.PlanRevisionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectDeleteRunBlockers = `-- name: ListProjectDeleteRunBlockers :many
+SELECT
+    'run'::text AS blocker_type,
+    tr.id,
+    tr.status,
+    COALESCE(t.title, tr.task_id::text) AS title
+FROM task_runs tr
+INNER JOIN project_tasks pt
+  ON pt.tenant_id = tr.tenant_id
+ AND pt.digital_employee_run_id = tr.id
+LEFT JOIN tasks t
+  ON t.tenant_id = tr.tenant_id
+ AND t.id = tr.task_id
+WHERE pt.tenant_id = $1::uuid
+  AND pt.project_id = $2::uuid
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+ORDER BY tr.updated_at DESC
+LIMIT 20
+`
+
+type ListProjectDeleteRunBlockersParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type ListProjectDeleteRunBlockersRow struct {
+	BlockerType string    `json:"blocker_type"`
+	ID          uuid.UUID `json:"id"`
+	Status      string    `json:"status"`
+	Title       string    `json:"title"`
+}
+
+func (q *Queries) ListProjectDeleteRunBlockers(ctx context.Context, arg ListProjectDeleteRunBlockersParams) ([]ListProjectDeleteRunBlockersRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectDeleteRunBlockers, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectDeleteRunBlockersRow{}
+	for rows.Next() {
+		var i ListProjectDeleteRunBlockersRow
+		if err := rows.Scan(
+			&i.BlockerType,
+			&i.ID,
+			&i.Status,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectDeleteTaskBlockers = `-- name: ListProjectDeleteTaskBlockers :many
+SELECT
+    'project_task'::text AS blocker_type,
+    pt.id,
+    pt.status,
+    (COALESCE(NULLIF(pt.title, ''), pt.id::text))::text AS title
+FROM project_tasks pt
+WHERE pt.tenant_id = $1::uuid
+  AND pt.project_id = $2::uuid
+  AND pt.status IN ('queued', 'running', 'in_progress')
+ORDER BY pt.updated_at DESC
+LIMIT 20
+`
+
+type ListProjectDeleteTaskBlockersParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type ListProjectDeleteTaskBlockersRow struct {
+	BlockerType string    `json:"blocker_type"`
+	ID          uuid.UUID `json:"id"`
+	Status      string    `json:"status"`
+	Title       string    `json:"title"`
+}
+
+func (q *Queries) ListProjectDeleteTaskBlockers(ctx context.Context, arg ListProjectDeleteTaskBlockersParams) ([]ListProjectDeleteTaskBlockersRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectDeleteTaskBlockers, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectDeleteTaskBlockersRow{}
+	for rows.Next() {
+		var i ListProjectDeleteTaskBlockersRow
+		if err := rows.Scan(
+			&i.BlockerType,
+			&i.ID,
+			&i.Status,
+			&i.Title,
 		); err != nil {
 			return nil, err
 		}
@@ -7719,6 +8068,55 @@ func (q *Queries) SetProjectTaskAttemptDispatchGate(ctx context.Context, arg Set
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+	)
+	return i, err
+}
+
+const SoftDeleteProject = `-- name: SoftDeleteProject :one
+UPDATE projects
+SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
+    updated_at = $1::timestamptz,
+    coordination_status = 'terminated'
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at
+`
+
+type SoftDeleteProjectParams struct {
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	TenantID  uuid.UUID          `json:"tenant_id"`
+	ID        uuid.UUID          `json:"id"`
+}
+
+func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, SoftDeleteProject, arg.DeletedAt, arg.TenantID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.LeaderUserID,
+		&i.AcceptanceUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ApprovalPolicy,
+		&i.EvidencePolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
+		&i.DeletedAt,
 	)
 	return i, err
 }

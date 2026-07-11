@@ -438,6 +438,42 @@ func (q *Queries) ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjec
 	return i, err
 }
 
+const ReleaseProjectPlacementsForDelete = `-- name: ReleaseProjectPlacementsForDelete :many
+UPDATE project_placements
+SET placement_status = 'released',
+    released_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND placement_status = 'active'
+RETURNING id
+`
+
+type ReleaseProjectPlacementsForDeleteParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) ReleaseProjectPlacementsForDelete(ctx context.Context, arg ReleaseProjectPlacementsForDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, ReleaseProjectPlacementsForDelete, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttemptBudgetHeartbeat :one
 UPDATE project_task_attempts
 SET

@@ -21,3 +21,15 @@ RETURNING *;
 SELECT * FROM project_employee_node_affinity
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid;
+
+-- name: DeleteProjectRuntimeNodesForDelete :many
+DELETE FROM project_runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+RETURNING id;
+
+-- name: DeleteProjectEmployeeNodeAffinitiesForDelete :many
+DELETE FROM project_employee_node_affinity
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+RETURNING id;

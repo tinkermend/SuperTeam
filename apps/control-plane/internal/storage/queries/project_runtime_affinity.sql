@@ -52,6 +52,16 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND placement_status = 'active'
 RETURNING *;
 
+-- name: ReleaseProjectPlacementsForDelete :many
+UPDATE project_placements
+SET placement_status = 'released',
+    released_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND placement_status = 'active'
+RETURNING id;
+
 -- name: CreateProjectTaskAttestation :one
 WITH input AS (
     SELECT
