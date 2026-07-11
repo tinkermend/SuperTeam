@@ -8205,6 +8205,10 @@ type memoryRepository struct {
 	projectTaskRunWorkProducts    map[uuid.UUID][]any
 	projectRuntimeNodes           map[uuid.UUID][]ProjectRuntimeNode
 	projectEmployeeNodeAffinity   map[uuid.UUID]map[uuid.UUID]ProjectEmployeeNodeAffinity
+	deleteBlockers                []ProjectDeleteBlocker
+	deletePreviewCounts           ProjectDeleteWarnings
+	deleteCascadeResult           ProjectDeleteCascadeResult
+	deleteAuditEvents             []ProjectDeleteAuditEventParams
 }
 
 func (r *memoryRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
@@ -8531,6 +8535,39 @@ func (r *memoryRepository) GetProject(ctx context.Context, tenantID, projectID u
 		return Project{}, ErrProjectNotFound
 	}
 	return project, nil
+}
+
+func (r *memoryRepository) GetProjectForDelete(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	project, ok := r.projects[projectID]
+	if !ok || project.TenantID != tenantID || project.DeletedAt != nil {
+		return Project{}, ErrProjectNotFound
+	}
+	return project, nil
+}
+
+func (r *memoryRepository) ListProjectDeleteBlockers(_ context.Context, _, _ uuid.UUID) ([]ProjectDeleteBlocker, error) {
+	return append([]ProjectDeleteBlocker(nil), r.deleteBlockers...), nil
+}
+
+func (r *memoryRepository) GetProjectDeletePreviewCounts(_ context.Context, _, _ uuid.UUID) (ProjectDeleteWarnings, error) {
+	return r.deletePreviewCounts, nil
+}
+
+func (r *memoryRepository) SoftDeleteProjectCascade(_ context.Context, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error) {
+	project, ok := r.projects[params.ProjectID]
+	if !ok || project.TenantID != params.TenantID || project.DeletedAt != nil {
+		return ProjectDeleteCascadeResult{}, ErrProjectNotFound
+	}
+	deletedAt := params.DeletedAt.UTC()
+	project.DeletedAt = &deletedAt
+	project.CoordinationStatus = "terminated"
+	r.projects[params.ProjectID] = project
+	return r.deleteCascadeResult, nil
+}
+
+func (r *memoryRepository) CreateProjectDeleteAuditEvent(_ context.Context, params ProjectDeleteAuditEventParams) error {
+	r.deleteAuditEvents = append(r.deleteAuditEvents, params)
+	return nil
 }
 
 func (r *memoryRepository) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
