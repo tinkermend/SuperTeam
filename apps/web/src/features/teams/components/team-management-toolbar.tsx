@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { GovernanceSummaryStatus, TeamStatus } from "@/lib/api/teams";
+import { governanceStatusLabel, teamStatusLabel } from "@/lib/status-labels";
 
 export type TeamListFilters = {
   governance_status?: GovernanceSummaryStatus;
@@ -57,9 +58,9 @@ export function TeamManagementToolbar({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="active">活跃</SelectItem>
-            <SelectItem value="disabled">已禁用</SelectItem>
-            <SelectItem value="archived">已归档</SelectItem>
+            <SelectItem value="active">{teamStatusLabel("active")}</SelectItem>
+            <SelectItem value="disabled">{teamStatusLabel("disabled")}</SelectItem>
+            <SelectItem value="archived">{teamStatusLabel("archived")}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -78,10 +79,10 @@ export function TeamManagementToolbar({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部治理</SelectItem>
-            <SelectItem value="not_configured">未配置</SelectItem>
-            <SelectItem value="draft_pending">草案待批准</SelectItem>
-            <SelectItem value="active">已生效</SelectItem>
-            <SelectItem value="needs_update">需更新</SelectItem>
+            <SelectItem value="not_configured">{governanceStatusLabel("not_configured")}</SelectItem>
+            <SelectItem value="draft_pending">{governanceStatusLabel("draft_pending")}</SelectItem>
+            <SelectItem value="active">{governanceStatusLabel("active")}</SelectItem>
+            <SelectItem value="needs_update">{governanceStatusLabel("needs_update")}</SelectItem>
           </SelectContent>
         </Select>
 

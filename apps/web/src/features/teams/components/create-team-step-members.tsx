@@ -13,14 +13,15 @@ import {
 } from "@/lib/api/employees";
 import type { UserSummary } from "@/lib/api/auth";
 import { TeamIconTile } from "@/components/superteam/team-icon-tile";
+import { employeeStatusLabel } from "@/lib/status-labels";
 import type { CreateTeamDraft } from "./create-team-draft";
 
-const EMPLOYEE_STATUS_PRESENTATION: Record<DigitalEmployeeStatus, { label: string; tone: V3Tone }> = {
-  draft: { label: "草稿", tone: "mute" },
-  ready: { label: "就绪", tone: "ok" },
-  active: { label: "运行中", tone: "info" },
-  disabled: { label: "已禁用", tone: "mute" },
-  error: { label: "异常", tone: "danger" },
+const EMPLOYEE_STATUS_TONE: Record<DigitalEmployeeStatus, V3Tone> = {
+  draft: "mute",
+  ready: "ok",
+  active: "info",
+  disabled: "mute",
+  error: "danger",
 };
 
 export function CreateTeamStepMembers({
@@ -159,10 +160,7 @@ export function CreateTeamStepMembers({
                   </p>
                 ) : (
                   candidateEmployees.map((employee) => {
-                    const presentation = EMPLOYEE_STATUS_PRESENTATION[employee.status] ?? {
-                      label: employee.status,
-                      tone: "mute" as V3Tone,
-                    };
+                    const tone = EMPLOYEE_STATUS_TONE[employee.status] ?? "mute";
                     return (
                       <div
                         className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 hover:bg-muted/30"
@@ -175,8 +173,8 @@ export function CreateTeamStepMembers({
                           <div className="truncate text-sm font-medium">{employee.name}</div>
                           <div className="truncate text-xs text-muted-foreground">{employee.role}</div>
                         </div>
-                        <StatusPill className="shrink-0" tone={presentation.tone}>
-                          {presentation.label}
+                        <StatusPill className="shrink-0" tone={tone}>
+                          {employeeStatusLabel(employee.status)}
                         </StatusPill>
                         <Button
                           className="shrink-0"

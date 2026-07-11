@@ -34,6 +34,7 @@ import type { DigitalEmployee } from "@/lib/api/employees";
 import { listDigitalEmployees } from "@/lib/api/employees";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
+import { employeeStatusLabel } from "@/lib/status-labels";
 
 type TeamOverviewTabProps = {
   allowedActions: AllowedTeamAction[];
@@ -196,7 +197,7 @@ function DigitalEmployeesSection({
                   </V3Td>
                   <V3Td>
                     <StatusPill tone={employee.status === "active" ? "ok" : "warn"}>
-                      {employee.status}
+                      {employeeStatusLabel(employee.status)}
                     </StatusPill>
                   </V3Td>
                   <V3Td className="text-right">

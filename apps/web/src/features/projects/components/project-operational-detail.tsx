@@ -68,6 +68,7 @@ import type {
 import {
   decisionStatusLabel,
   dispatchGateStatusLabel,
+  projectStatusLabel,
   statusLabel,
   taskStatusLabel,
 } from "@/lib/status-labels";
@@ -1776,18 +1777,6 @@ function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
       tenant_id: "",
     },
   ];
-}
-
-function projectStatusLabel(status: ProjectStatus | string) {
-  const labels: Record<string, string> = {
-    acceptance: "验收中",
-    archived: "已归档",
-    configuring: "配置中",
-    draft: "草稿",
-    paused: "已暂停",
-    running: "运行中",
-  };
-  return labels[status] ?? status;
 }
 
 function projectPhaseLabel(phase: string) {
