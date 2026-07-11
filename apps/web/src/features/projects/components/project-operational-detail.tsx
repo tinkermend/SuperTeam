@@ -71,6 +71,7 @@ import {
   statusLabel,
   taskStatusLabel,
 } from "@/lib/status-labels";
+import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { PlanGraphCanvas } from "./plan-graph-canvas";
@@ -530,7 +531,15 @@ export function ProjectOperationalDetail({
                 {activeTasks.length === 0 ? (
                   <EmptyLine label="当前没有正在执行的数字员工任务" />
                 ) : (
-                  activeTasks.slice(0, 6).map((task) => (
+                  [...activeTasks]
+                    .sort((left, right) =>
+                      compareIsoDesc(
+                        left.updated_at ?? left.created_at,
+                        right.updated_at ?? right.created_at,
+                      ),
+                    )
+                    .slice(0, 6)
+                    .map((task) => (
                     <div className="grid gap-1 p-4" key={task.id}>
                       <div className="flex items-center justify-between gap-3">
                         <ProjectTaskLink task={task} />
@@ -539,6 +548,14 @@ export function ProjectOperationalDetail({
                       <p className="line-clamp-2 text-xs text-v3-ink-2">
                         {task.summary || "等待系统分派数字员工执行。"}
                       </p>
+                      {task.updated_at || task.created_at ? (
+                        <p
+                          className="tabular-nums text-[11px] text-v3-ink-3"
+                          title={formatAbsoluteDateTime(task.updated_at ?? task.created_at ?? "")}
+                        >
+                          更新 {formatRelativeTime(task.updated_at ?? task.created_at ?? "")}
+                        </p>
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -1279,12 +1296,22 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
     () => Array.from(new Set(tasks.map((task) => task.status))).filter(Boolean),
     [tasks],
   );
-  const filteredTasks = tasks.filter((task) => {
-    return (
-      (statusFilter === "all" || task.status === statusFilter) &&
-      (employeeFilter === "all" || task.assigned_digital_employee_id === employeeFilter)
-    );
-  });
+  const filteredTasks = useMemo(
+    () =>
+      tasks
+        .filter(
+          (task) =>
+            (statusFilter === "all" || task.status === statusFilter) &&
+            (employeeFilter === "all" || task.assigned_digital_employee_id === employeeFilter),
+        )
+        .sort((left, right) =>
+          compareIsoDesc(
+            left.updated_at ?? left.created_at,
+            right.updated_at ?? right.created_at,
+          ),
+        ),
+    [employeeFilter, statusFilter, tasks],
+  );
 
   return (
     <WorkSurface className="min-w-0">
@@ -1330,18 +1357,21 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
             <V3Th className="min-w-[220px]">任务</V3Th>
             <V3Th>状态</V3Th>
             <V3Th>员工</V3Th>
+            <V3Th>更新</V3Th>
             <V3Th>项目上下文</V3Th>
           </tr>
         </thead>
         <tbody>
           {filteredTasks.length === 0 ? (
             <V3Tr>
-              <V3Td colSpan={4}>
+              <V3Td colSpan={5}>
                 <EmptyLine label="当前筛选下没有项目任务" />
               </V3Td>
             </V3Tr>
           ) : (
-            filteredTasks.map((task) => (
+            filteredTasks.map((task) => {
+              const activityAt = task.updated_at ?? task.created_at;
+              return (
               <V3Tr key={task.id}>
                 <V3Td className="min-w-[220px]">
                   <ProjectTaskLink task={task} />
@@ -1365,9 +1395,19 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
                     "未分派"
                   )}
                 </V3Td>
+                <V3Td className="whitespace-nowrap tabular-nums text-xs text-v3-ink-2">
+                  {activityAt ? (
+                    <time dateTime={activityAt} title={formatAbsoluteDateTime(activityAt)}>
+                      {formatRelativeTime(activityAt)}
+                    </time>
+                  ) : (
+                    "—"
+                  )}
+                </V3Td>
                 <V3Td className="font-mono text-xs text-v3-ink-2">{task.project_id}</V3Td>
               </V3Tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </V3Table>
@@ -1384,6 +1424,14 @@ function ProjectApprovalPanel({
   focusDecisionId?: string;
   onResolveDecision: (decisionId: string, decision: string) => void;
 }) {
+  const orderedDecisions = useMemo(
+    () =>
+      [...decisionRequests].sort((left, right) =>
+        compareIsoDesc(left.created_at, right.created_at),
+      ),
+    [decisionRequests],
+  );
+
   return (
     <WorkSurface className="min-w-0">
       <div className="border-b border-v3-line p-4">
@@ -1393,10 +1441,20 @@ function ProjectApprovalPanel({
         </p>
       </div>
       <div className="divide-y divide-v3-line">
-        {decisionRequests.length === 0 ? (
+        {orderedDecisions.length === 0 ? (
           <EmptyLine label="当前项目没有审批或决策事项" />
         ) : (
-          decisionRequests.map((decision) => (
+          orderedDecisions.map((decision) => {
+            const isResolved =
+              decision.status_snapshot === "approved" ||
+              decision.status_snapshot === "rejected" ||
+              decision.status_snapshot === "needs_more_evidence" ||
+              Boolean(decision.resolved_at);
+            const timeLabel = isResolved && decision.resolved_at ? "决议" : "创建";
+            const timeValue = isResolved && decision.resolved_at
+              ? decision.resolved_at
+              : decision.created_at;
+            return (
             <div
               className={cn(
                 "grid gap-3 p-4",
@@ -1414,7 +1472,18 @@ function ProjectApprovalPanel({
                       ? decision.summary_snapshot
                       : "等待负责人处理"}
                   </p>
-                  <p className="mt-1 font-mono text-[11px] text-v3-ink-3">{decision.id}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-v3-ink-3">
+                    {timeValue ? (
+                      <time
+                        className="tabular-nums"
+                        dateTime={timeValue}
+                        title={formatAbsoluteDateTime(timeValue)}
+                      >
+                        {timeLabel} {formatRelativeTime(timeValue)}
+                      </time>
+                    ) : null}
+                    <span className="font-mono">{decision.id}</span>
+                  </div>
                 </div>
                 <StatusPill tone={decisionTone(decision.status_snapshot)}>
                   {decisionStatusLabel(decision.status_snapshot)}
@@ -1422,7 +1491,8 @@ function ProjectApprovalPanel({
               </div>
               <DecisionRequestActions decision={decision} onResolveDecision={onResolveDecision} />
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </WorkSurface>

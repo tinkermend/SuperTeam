@@ -3745,6 +3745,7 @@ type ProjectStatusSummary struct {
 type ProjectTask struct {
 	AssignedDigitalEmployeeId *openapi_types.UUID     `json:"assigned_digital_employee_id,omitempty"`
 	CoordinationJobId         *openapi_types.UUID     `json:"coordination_job_id,omitempty"`
+	CreatedAt                 time.Time               `json:"created_at"`
 	DemandId                  *openapi_types.UUID     `json:"demand_id,omitempty"`
 	ExpectedOutputs           *[]interface{}          `json:"expected_outputs,omitempty"`
 	HandoffContract           *map[string]interface{} `json:"handoff_contract,omitempty"`
@@ -3762,6 +3763,7 @@ type ProjectTask struct {
 	TaskKind                  *string                 `json:"task_kind,omitempty"`
 	TenantId                  openapi_types.UUID      `json:"tenant_id"`
 	Title                     string                  `json:"title"`
+	UpdatedAt                 time.Time               `json:"updated_at"`
 }
 
 // ProjectTaskAttemptBudgetHeartbeatResponse defines model for ProjectTaskAttemptBudgetHeartbeatResponse.
@@ -3887,6 +3889,7 @@ type ProjectTaskGraphEmployeeAvatarAsset struct {
 type ProjectTaskGraphNode struct {
 	AssignedDigitalEmployeeId *openapi_types.UUID             `json:"assigned_digital_employee_id,omitempty"`
 	CoordinationJobId         *openapi_types.UUID             `json:"coordination_job_id,omitempty"`
+	CreatedAt                 *time.Time                      `json:"created_at,omitempty"`
 	CurrentBlocker            *WorkflowInstanceCurrentBlocker `json:"current_blocker,omitempty"`
 	DemandId                  *openapi_types.UUID             `json:"demand_id,omitempty"`
 	ExpectedOutputs           []interface{}                   `json:"expected_outputs"`

@@ -217,6 +217,8 @@ export type ProjectTask = {
   input_requirements?: Record<string, unknown>;
   handoff_contract?: Record<string, unknown>;
   planner_metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type ProjectTaskGraphNode = ProjectTask & {
@@ -225,7 +227,6 @@ export type ProjectTaskGraphNode = ProjectTask & {
   handoff_contract: Record<string, unknown>;
   planner_metadata: Record<string, unknown>;
   status_reason?: string;
-  updated_at?: string;
   started_at?: string;
   finished_at?: string;
   current_blocker?: WorkflowInstanceCurrentBlocker;

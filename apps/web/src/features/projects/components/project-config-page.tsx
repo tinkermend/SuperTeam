@@ -48,6 +48,7 @@ import {
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
 import { statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import { compareIsoDesc, formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
@@ -858,6 +859,10 @@ function MembersPanel({
 }
 
 function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
+  const orderedTasks = [...tasks].sort((left, right) =>
+    compareIsoDesc(left.updated_at ?? left.created_at, right.updated_at ?? right.created_at),
+  );
+
   return (
     <WorkSurface>
       <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
@@ -872,18 +877,21 @@ function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
           <tr>
             <V3Th>任务</V3Th>
             <V3Th>状态</V3Th>
+            <V3Th>更新</V3Th>
             <V3Th>摘要</V3Th>
           </tr>
         </thead>
         <tbody>
-          {tasks.length === 0 ? (
+          {orderedTasks.length === 0 ? (
             <tr>
-              <V3Td colSpan={3}>
+              <V3Td colSpan={4}>
                 <V3EmptyState title="暂无任务历史" />
               </V3Td>
             </tr>
           ) : (
-            tasks.map((task) => (
+            orderedTasks.map((task) => {
+              const activityAt = task.updated_at ?? task.created_at;
+              return (
               <V3Tr key={task.id}>
                 <V3Td className="min-w-[220px]">
                   <p className="truncate font-bold text-v3-ink">{task.title}</p>
@@ -894,11 +902,21 @@ function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
                 <V3Td>
                   <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
                 </V3Td>
+                <V3Td className="whitespace-nowrap tabular-nums text-xs text-v3-ink-2">
+                  {activityAt ? (
+                    <time dateTime={activityAt} title={formatDateTime(activityAt)}>
+                      {formatRelativeTime(activityAt)}
+                    </time>
+                  ) : (
+                    "—"
+                  )}
+                </V3Td>
                 <V3Td className="min-w-[320px] whitespace-normal text-v3-ink-2">
                   <p className="line-clamp-2">{task.summary || "暂无摘要"}</p>
                 </V3Td>
               </V3Tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </V3Table>
