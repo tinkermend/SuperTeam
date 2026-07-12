@@ -309,9 +309,12 @@ fn encode_line(stream: RawStream, line: &str) -> Vec<u8> {
 }
 
 async fn append_local(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    // Raw transcripts hold unredacted provider output; keep them owner-only.
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
         .open(path)
         .await
         .with_context(|| format!("failed to open raw log {path:?}"))?;
@@ -453,6 +456,24 @@ mod tests {
         // The bytes survive locally, so the evidence is delayed, not lost.
         let local = std::fs::read_to_string(dir.path().join("raw.jsonl")).unwrap();
         assert_eq!(local, "line\n");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn local_raw_log_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let uploader = Arc::new(RecordingUploader::default());
+        let s = sink(uploader, dir.path(), 1 << 20);
+
+        s.write_line(RawStream::Stdout, "line");
+        s.finalize().await.unwrap();
+
+        let mode = std::fs::metadata(dir.path().join("raw.jsonl"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 
     #[tokio::test]

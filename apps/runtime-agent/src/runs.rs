@@ -278,11 +278,11 @@ impl RuntimeRunStore {
     async fn append_event(&self, record: &RunEventRecord) -> anyhow::Result<()> {
         fs::create_dir_all(self.run_dir(&record.run_id)).await?;
         let path = self.run_dir(&record.run_id).join("events.jsonl");
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .await?;
+        let mut options = OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(path).await?;
         let line = serde_json::to_string(record)?;
         file.write_all(line.as_bytes()).await?;
         file.write_all(b"\n").await?;
@@ -324,4 +324,43 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn local_events_log_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let store = RuntimeRunStore::new(dir.path());
+        let spec = RunSpec {
+            provider_kind: "claude".to_string(),
+            workspace_path: dir.path().to_path_buf(),
+            agent_home_dir: None,
+            employee_capability_dir: None,
+            capability_manifest_version: None,
+            provider_auth_mode: "host".to_string(),
+            mcp_config_path: None,
+            prompt: "test".to_string(),
+            session_id: None,
+            continue_session: false,
+            model: None,
+            environment: std::collections::BTreeMap::new(),
+            command_context: None,
+        };
+        let snapshot = store.start_run(spec, None).await.unwrap();
+        store
+            .record_event(&snapshot.id, ProviderEvent::TurnStarted)
+            .await
+            .unwrap();
+
+        let mode = std::fs::metadata(dir.path().join(&snapshot.id).join("events.jsonl"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
 }
