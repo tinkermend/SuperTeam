@@ -1,6 +1,7 @@
 # Provider Transcript 与 Tool 事件捕获
 
-- 状态：待实现（设计决策已对齐；§3.4/§3.5 安全评审已完成，2026-07-09）
+- 状态：已落地（主体 commit `8cd076c4` 2026-07-10；收尾 env 脱敏接线 / 本地 0600 / 30s 时间封段于 2026-07-13 补齐；§6 items 1–6 已于 2026-07-13 真实 E2E 验证，见文末「落地记录」）
+- 遗留：§6 item 7（控制平面读 raw 时重算 sha256）依赖证据地基 spec 的读路径，转为该 spec 的首要验收项；TOS Object Lock/版本控制经核实**支持**但 bucket 未开启（§3.5.3，运维拍板后开启）
 - 日期：2026-07-09
 - 范围：让数字员工的**执行过程**（工具调用与工具结果）离开执行机，进入控制平面与 Web；并把 provider 原始输出流上传对象存储，作为证据链的原材料。
 - 依赖方：`docs/superpowers/specs/2026-07-09-evidence-grounding-artifact-collection-design.md`（证据地基）依赖本 spec 产出的 raw 对象。本 spec 必须先行落地。
@@ -471,3 +472,30 @@ ALTER TABLE project_task_attempts
 - **证据地基**（`2026-07-09-evidence-grounding-artifact-collection-design.md`）：接上 evidence 读模型，使 raw 分段可按 `log_ref` 取回。
 - **意图与验收判据**（`2026-06-30-intent-acceptance-criteria-design.md`）：`automated` 类 verification 的证据指针指向 raw 中某条 `tool_result` 事件——本 spec 是其前提。
 - **借鉴 paperclip 的 `sourceTrust`**（`shared/src/trust-policy.ts`）：`disposition: "quarantined" | "promoted"`，agent 原始输出默认隔离、须显式提升。比「打 `unverified` 标签」更硬。评估是否引入，属验收判据 spec 范围。
+
+## 8. 落地记录（2026-07-13）
+
+主体实现见 commit `8cd076c4`（2026-07-10，Phase 1 当日已真实 E2E）。本次收尾（分支 `feat/transcript-capture-completion`）补齐三处缺口并完成 Phase 2 真实 E2E：
+
+**收尾代码：**
+- env 值脱敏接线：`redact_with_environment` 原为死代码，`runtime_event_writeback` 两处 excerpt 现携带 provider 进程环境快照脱敏（§4.5）。
+- 本地 `raw.jsonl` / `events.jsonl` 创建时 mode 0600（§4.5）。
+- 30s 时间封段：`SegmentedRawLogSink` 原只按 8MB 大小轮转，安静小流量 run 崩溃即丢全部 raw；现非空分段至少每 30s 上传一次（§4.4）。
+- 顺手修复：`tests/provider_exit_test.rs` 在 `8cd076c4` 后未随 `run` 签名更新，main 上 cargo test 编译失败。
+
+**§6 真实 E2E 证据（项目 `febd08af-7c66-4340-bc77-cdc4bfbb0ce0`「Transcript-E2E 20260713」，员工 `507f0b51` 压测员小李，节点 `runtime-local-dev-node`，真实 claude-code + 真实 TOS bucket `superteam`）：**
+
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | ledger 出现 tool 事件 | attempt `318cd21e`：tool_started×3 + tool_completed×3（另 text_delta/session_started/turn_completed/run_completed） |
+| 2 | is_error 来自字节 | attempt `25d17c60`：单独执行 `cat /nonexistent-file-…-round3` → ledger `tool_completed.metadata->>'is_error'='true'`，output_excerpt=真实 bat/cat 错误输出。旁证：attempt `318cd21e` 中模型把 `false` 包装成 `false; echo "exit=$?"`，复合命令退出 0，平台如实记 `is_error=false` 而模型文本自称"退出码 1"——is_error 与模型自述彻底解耦 |
+| 3 | TOS raw 分段+manifest | `runs/{tenant}/318cd21e…/`：raw.part-0001(27052B)+raw.part-0002(19606B)+manifest.json；91 行全部可 JSON 解析；3 个 tool_result block；逐分段 sha256 与 manifest 一致；总量 46KB 分两段 = 30s 时间封段在真实链路生效 |
+| 4 | attempt 回写 | `log_store=object_store`，`log_ref=…/manifest.json`，`log_bytes=46658`、`log_sha256=61d787b1…` 与 TOS 实测拼接哈希一致（三方一致：分段实算 = manifest = DB） |
+| 5 | Web 面板 | 项目详情「高级项目事实→执行证据链」时间线渲染 工具调用（名字+input 摘要）/ 工具结果（成功/失败徽标）；round3 失败节点带「失败」标记与真实错误输出 |
+| 6 | 脱敏分叉 | 同一 `echo sk-test20260713…`：ledger excerpt 与 Web 面板均为 `[REDACTED:anthropic_key]`；TOS raw 中原样出现 9 处（§3.5 决策验收） |
+
+**E2E 中发现的缺陷（本 spec 范围外，待立项）：**
+1. **派发冲突导致 provider 事件静默不入 ledger**：attempt `53809434` 派发时 `DispatchProjectTask` 报 `project conflict`（不可重试）但命令已送达 runtime 并执行成功；该 attempt 的 `digital_employee_run_id` 为 NULL，`CreateProviderSessionEventLedgerEvent` 按 run_id 关联 + `match_count=1` 过滤 → 7 条 provider 事件（含 tool_result）只落 `provider_session_events`，永远不进 ledger，且无任何告警。执行追踪在 UI 上呈现为"该 attempt 无过程"。修复方向：派发冲突路径补 run 绑定或事后 reconcile；投影 match_count≠1 时至少记 audit。
+2. **模型 prose 不脱敏**：§4.5 只脱敏 excerpt，`text_delta`/`summary`/`output_summary` 原样进 ledger 与 Web——模型复述的 `sk-test…` 在「最新结果」卡片明文可见。是否将 pattern 脱敏扩展到 prose 路径，待定（涉及"模型旁白也是自述证据"的权衡）。
+
+**TOS Object Lock / 版本控制核实（§3.5.3）：** 官方 API 概览列出 `PutBucketObjectLockConfiguration` / `GetBucketObjectLockConfiguration` / `PutObjectRetention` / `GetObjectRetention` 与 `PutBucketVersioning` / `GetBucketVersioning`（docs.volcengine.com/docs/6349/74837）——**支持**。实测 bucket `superteam`：versioning `Status=''`（从未开启）、Object Lock `ObjectLockConfigurationNotFoundError`（未配置）。开启涉及 raw 与 skills 共用同一 bucket 的写入方，属运维决策；开启前 §4.6 的 sha256 事后比对是唯一完整性防线。
