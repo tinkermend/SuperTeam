@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -1419,6 +1419,7 @@ impl RuntimeCommandWritebackSink {
         &self,
         record: &RunEventRecord,
         provider_session_id: Option<&str>,
+        environment: &BTreeMap<String, String>,
     ) -> anyhow::Result<()> {
         if let ProviderEvent::TurnCompleted {
             usage: Some(usage), ..
@@ -1431,7 +1432,7 @@ impl RuntimeCommandWritebackSink {
         self.client
             .record_runtime_command_event(
                 &self.command_id,
-                &runtime_event_writeback(record, provider_session_id),
+                &runtime_event_writeback(record, provider_session_id, environment),
             )
             .await
     }
@@ -1583,6 +1584,7 @@ impl RuntimeCommandWritebackSink {
 fn runtime_event_writeback(
     record: &RunEventRecord,
     provider_session_id: Option<&str>,
+    environment: &BTreeMap<String, String>,
 ) -> RuntimeCommandEventWriteback {
     let mut provider_session_external_id = provider_session_id.map(ToString::to_string);
     let mut session_state_patch = provider_session_state_patch(provider_session_id);
@@ -1617,7 +1619,10 @@ fn runtime_event_writeback(
             payload.insert("name".to_string(), serde_json::Value::String(name.clone()));
             payload.insert(
                 "input_excerpt".to_string(),
-                serde_json::Value::String(crate::redaction::redact(input_excerpt)),
+                serde_json::Value::String(crate::redaction::redact_with_environment(
+                    input_excerpt,
+                    environment,
+                )),
             );
             payload.insert(
                 "input_truncated".to_string(),
@@ -1639,7 +1644,10 @@ fn runtime_event_writeback(
             payload.insert("is_error".to_string(), serde_json::Value::Bool(*is_error));
             payload.insert(
                 "output_excerpt".to_string(),
-                serde_json::Value::String(crate::redaction::redact(output_excerpt)),
+                serde_json::Value::String(crate::redaction::redact_with_environment(
+                    output_excerpt,
+                    environment,
+                )),
             );
             payload.insert(
                 "output_truncated".to_string(),
@@ -2822,7 +2830,11 @@ async fn drain_provider_events(
         }
         if let Some(writeback) = &writeback {
             writeback
-                .record_event(&record, latest_provider_session_id.as_deref())
+                .record_event(
+                    &record,
+                    latest_provider_session_id.as_deref(),
+                    &spec.environment,
+                )
                 .await?;
             if let Some(action) = writeback_action {
                 match action {
@@ -3690,6 +3702,48 @@ mod tests {
             state.finish_successful_stream().is_none(),
             "a failed stream must not emit a deferred completion"
         );
+    }
+
+    #[test]
+    fn runtime_event_writeback_redacts_environment_values_in_excerpts() {
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            "MY_API_TOKEN".to_string(),
+            "supersecretvalue123".to_string(),
+        );
+        let record = crate::runs::RunEventRecord {
+            sequence: 1,
+            run_id: "run-1".to_string(),
+            event: ProviderEvent::ToolCompleted {
+                tool_id: "tu-1".to_string(),
+                is_error: false,
+                output_excerpt: "echo supersecretvalue123".to_string(),
+                output_truncated: false,
+            },
+            recorded_at_ms: 0,
+        };
+        let writeback = runtime_event_writeback(&record, None, &environment);
+        assert_eq!(
+            writeback.payload["output_excerpt"],
+            serde_json::Value::String("echo [REDACTED:env:MY_API_TOKEN]".to_string())
+        );
+
+        let record = crate::runs::RunEventRecord {
+            sequence: 2,
+            run_id: "run-1".to_string(),
+            event: ProviderEvent::ToolStarted {
+                tool_id: "tu-2".to_string(),
+                name: "Bash".to_string(),
+                input_excerpt: "{\"command\":\"curl -H 'X-Key: supersecretvalue123'\"}"
+                    .to_string(),
+                input_truncated: false,
+            },
+            recorded_at_ms: 0,
+        };
+        let writeback = runtime_event_writeback(&record, None, &environment);
+        let input = writeback.payload["input_excerpt"].as_str().unwrap();
+        assert!(input.contains("[REDACTED:env:MY_API_TOKEN]"));
+        assert!(!input.contains("supersecretvalue123"));
     }
 
     #[test]
