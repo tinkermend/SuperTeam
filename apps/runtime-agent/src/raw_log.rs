@@ -25,6 +25,11 @@ use tokio::task::JoinHandle;
 /// Rotate a segment once it reaches this many bytes.
 const DEFAULT_SEGMENT_BYTES: usize = 8 * 1024 * 1024;
 
+/// Rotate a non-empty segment at least this often. A quiet run below the size
+/// threshold would otherwise reach object storage only at finalize — and a
+/// killed process or powered-off node is exactly the case segments exist for.
+const DEFAULT_SEGMENT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawStream {
     Stdout,
@@ -130,7 +135,14 @@ impl SegmentedRawLogSink {
         key_prefix: String,
         attempt_id: String,
     ) -> Self {
-        Self::with_segment_bytes(uploader, local_dir, key_prefix, attempt_id, DEFAULT_SEGMENT_BYTES)
+        Self::with_options(
+            uploader,
+            local_dir,
+            key_prefix,
+            attempt_id,
+            DEFAULT_SEGMENT_BYTES,
+            DEFAULT_SEGMENT_INTERVAL,
+        )
     }
 
     pub fn with_segment_bytes(
@@ -140,6 +152,24 @@ impl SegmentedRawLogSink {
         attempt_id: String,
         segment_bytes: usize,
     ) -> Self {
+        Self::with_options(
+            uploader,
+            local_dir,
+            key_prefix,
+            attempt_id,
+            segment_bytes,
+            DEFAULT_SEGMENT_INTERVAL,
+        )
+    }
+
+    pub fn with_options(
+        uploader: Arc<dyn RawLogUploader>,
+        local_dir: PathBuf,
+        key_prefix: String,
+        attempt_id: String,
+        segment_bytes: usize,
+        segment_interval: std::time::Duration,
+    ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let writer = Writer {
             uploader,
@@ -147,6 +177,7 @@ impl SegmentedRawLogSink {
             key_prefix,
             attempt_id,
             segment_bytes,
+            segment_interval,
         };
         let task = tokio::spawn(writer.run(rx));
         Self {
@@ -196,6 +227,7 @@ struct Writer {
     key_prefix: String,
     attempt_id: String,
     segment_bytes: usize,
+    segment_interval: std::time::Duration,
 }
 
 impl Writer {
@@ -211,26 +243,40 @@ impl Writer {
         let mut total_bytes: i64 = 0;
         let mut complete = true;
 
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                Msg::Line { stream, line } => {
-                    let encoded = encode_line(stream, &line);
-                    // Local write failure means evidence cannot be recorded at
-                    // all; the run must not continue pretending otherwise.
-                    append_local(&local_path, &encoded).await?;
-                    total.update(&encoded);
-                    total_bytes += encoded.len() as i64;
-                    segment.extend_from_slice(&encoded);
-                    if segment.len() >= self.segment_bytes {
-                        let part = self.upload_segment(parts.len() + 1, &segment).await;
-                        match part {
+        let mut ticker = tokio::time::interval(self.segment_interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await; // the first tick is immediate; consume it
+
+        loop {
+            tokio::select! {
+                msg = rx.recv() => match msg {
+                    Some(Msg::Line { stream, line }) => {
+                        let encoded = encode_line(stream, &line);
+                        // Local write failure means evidence cannot be recorded at
+                        // all; the run must not continue pretending otherwise.
+                        append_local(&local_path, &encoded).await?;
+                        total.update(&encoded);
+                        total_bytes += encoded.len() as i64;
+                        segment.extend_from_slice(&encoded);
+                        if segment.len() >= self.segment_bytes {
+                            match self.upload_segment(parts.len() + 1, &segment).await {
+                                Ok(part) => parts.push(part),
+                                Err(_) => complete = false,
+                            }
+                            segment.clear();
+                        }
+                    }
+                    Some(Msg::Finish) | None => break,
+                },
+                _ = ticker.tick() => {
+                    if !segment.is_empty() {
+                        match self.upload_segment(parts.len() + 1, &segment).await {
                             Ok(part) => parts.push(part),
                             Err(_) => complete = false,
                         }
                         segment.clear();
                     }
                 }
-                Msg::Finish => break,
             }
         }
 
@@ -456,6 +502,35 @@ mod tests {
         // The bytes survive locally, so the evidence is delayed, not lost.
         let local = std::fs::read_to_string(dir.path().join("raw.jsonl")).unwrap();
         assert_eq!(local, "line\n");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rotates_segments_by_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploader = Arc::new(RecordingUploader::default());
+        let s = SegmentedRawLogSink::with_options(
+            uploader.clone(),
+            dir.path().to_path_buf(),
+            "runs/t1/a1/".to_string(),
+            "a1".to_string(),
+            1 << 20, // size threshold is never reached
+            std::time::Duration::from_secs(30),
+        );
+
+        s.write_line(RawStream::Stdout, "tiny");
+        // Let the writer task consume the line, then cross the interval.
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        tokio::time::advance(std::time::Duration::from_secs(31)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+
+        {
+            let objects = uploader.objects.lock().unwrap();
+            assert!(
+                objects.iter().any(|(k, _)| k.contains("raw.part-0001")),
+                "a small quiet run must still reach object storage within the interval"
+            );
+        }
+        s.finalize().await.unwrap();
     }
 
     #[tokio::test]
