@@ -2,9 +2,12 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
+use std::sync::Arc;
+
 use futures::StreamExt;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
+use superteam_runtime_agent::raw_log::NoopRawSink;
 use tempfile::TempDir;
 
 fn make_script(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
@@ -46,7 +49,7 @@ exit 7
     let provider = ClaudeProvider::new(script);
 
     let mut stream = provider
-        .run(request(temp.path()))
+        .run(request(temp.path()), Arc::new(NoopRawSink))
         .await
         .expect("spawn fake claude");
     let error = stream
