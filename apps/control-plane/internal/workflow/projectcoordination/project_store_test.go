@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sort"
@@ -6310,7 +6311,20 @@ func (c *projectStoreApprovalCreator) GetRequestByResource(ctx context.Context, 
 
 func (c *projectStoreApprovalCreator) GetRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*approval.ApprovalRequest, error) {
 	if c.record != nil && c.record.TenantID == tenantID && c.record.ID == requestID {
-		return c.record, nil
+		// Round-trip ContextPayload through JSON to match production JSONB behavior
+		record := *c.record // shallow copy
+		if record.ContextPayload != nil {
+			jsonBytes, err := json.Marshal(record.ContextPayload)
+			if err != nil {
+				return nil, err
+			}
+			var roundTripped map[string]any
+			if err := json.Unmarshal(jsonBytes, &roundTripped); err != nil {
+				return nil, err
+			}
+			record.ContextPayload = roundTripped
+		}
+		return &record, nil
 	}
 	return nil, approval.ErrApprovalNotFound
 }
