@@ -182,3 +182,19 @@ feasibility = f(
 4. **默认判据经 prompt 指令并入 plan_acceptance_criteria**（文本级）；criterion 对象化（verification_method 路由、人类确认生效）属 intent spec。
 5. **管理端点未做**（P3）；authz 常量 `scenario_template.manage` 已立未接线。`template_key` 落地路径 = PlanRevisionPayload（jsonb，omitempty 保历史指纹稳定），未给 `project_route_decisions` 加列。
 6. Console P1 三触点已落：目录只读页（/scenario-templates，流程能力组）、项目创建下拉、计划确认卡「场景模板」行。
+
+## 11. P1 落地记录（2026-07-13）
+
+分支 `feat/scenario-template-p1`。真实 E2E（真实 deepseek 规划 + claude-code 执行 + local-dev-node）：
+
+| 判据 | 结果 |
+|---|---|
+| 注册表（§6-1 前半） | `GET /api/v1/scenario-templates` 返回 5 种子；`/scenario-templates` 页面真实渲染（指标带 5/5、五行、展开可见角色约束「审查须独立于 developer」/骨架链「develop → review → test」/默认判据） |
+| 模板驱动规划（§6-1） | 项目 `365a5844` 绑 `ops_analysis` 提磁盘分析需求 → 计划恰 2 任务，`produces=["raw_metrics"]`/`["analysis_conclusion"]`、`required_inputs=["raw_metrics"]`、`depends_on=["collect_disk_usage"]` **逐字来自骨架**；模板默认判据进 plan_acceptance_criteria；payload `template_key='ops_analysis'` 落库；计划确认卡显示「场景模板 ops_analysis」 |
+| 与交接闭环合流 | collect 交付**真实 `df -h` 输出**（raw_metrics deliverable），analyze 派工单 upstream_results 携带之，结论逐数字基于采集数据（Data 卷 34%、Cursor Installer 74%）；`handoff.verified`×2 |
+| 未绑定回归（§6-4） | 未绑项目规划+执行正常完成，template_key 为 planner 自选（`simple_command_report`），行为与模板机制存在前一致 |
+| 创建表单 | 浏览器下拉真实列出 5 模板 + 「不绑定（通用）」 |
+
+**首轮真实规划暴露并当场修复：** planner 按骨架建任务时丢弃平台必填字段（expected_outputs 等）→ system prompt 加固「骨架任务仍是完整任务对象」；模板角色能力与现有员工画像不匹配时 LLM 自评置信度 0.3-0.6 低于默认阈值 0.7 → E2E 用项目级 `coordination_policy.selection_confidence_threshold` 旋钮通过（P2 事实性 feasibility 将取代 LLM 自评裁决，正是此问题的正解）。
+
+**E2E 附带发现的平台缺口（预存在家族，待立项）：** CP 重启导致 runtime 命令通道瞬断时，`DispatchProjectTask` 重试两次仍 EOF → StartToClose 超时 → 协调线程放弃，留下无 run 绑定的 queued 孤儿 attempt（项目 `12579692`）；`workflow.signal_failed` 事件 payload 为空、不可经 retry-workflow-signal 恢复。与"recovery 批准后重试撞同一冲突"（handoff spec §9）同族：瞬时故障后的调度韧性缺失。
