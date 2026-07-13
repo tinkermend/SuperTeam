@@ -341,9 +341,15 @@ describe("ChatPanel", () => {
     // 5. convert first (completed) answer to a task draft
     await clickButton("转为任务");
     expect(onConvertToTask).toHaveBeenCalledTimes(1);
-    const draft = onConvertToTask.mock.calls[0][0] as string;
-    expect(draft).toContain("第一个问题");
-    expect(draft).toContain("这是第一轮的回答内容");
+    const payload = onConvertToTask.mock.calls[0][0] as {
+      draft: string;
+      chatRunId: string;
+      digitalEmployeeId: string;
+    };
+    expect(payload.draft).toContain("第一个问题");
+    expect(payload.draft).toContain("这是第一轮的回答内容");
+    expect(payload.chatRunId).toBe("run-1");
+    expect(payload.digitalEmployeeId).toBe("emp-1");
 
     // 6. second run fails -> error card + retry; retry resends without resume_of_run_id
     await act(async () => {

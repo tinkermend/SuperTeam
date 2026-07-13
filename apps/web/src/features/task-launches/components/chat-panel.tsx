@@ -41,9 +41,15 @@ export type ChatEntry = {
   error?: string;
 };
 
+export type ConvertToTaskPayload = {
+  draft: string;
+  chatRunId: string;
+  digitalEmployeeId: string;
+};
+
 export type ChatPanelProps = {
   apiOptions: ApiClientOptions;
-  onConvertToTask: (draft: string) => void;
+  onConvertToTask: (payload: ConvertToTaskPayload) => void;
 };
 
 function isActiveEntryStatus(status: DigitalEmployeeRunStatus | "sending"): boolean {
@@ -183,7 +189,11 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
   }
 
   function handleConvert(entry: ChatEntry) {
-    onConvertToTask(buildTaskDraft(entry, selectedEmployee?.name ?? ""));
+    onConvertToTask({
+      chatRunId: entry.runId,
+      digitalEmployeeId: employeeId,
+      draft: buildTaskDraft(entry, selectedEmployee?.name ?? ""),
+    });
   }
 
   const canSend =
