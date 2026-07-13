@@ -500,6 +500,14 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	if input.Decision.RequiresHumanReview {
 		reviewReasons = appendUniqueString(reviewReasons, "plan_requires_human_review")
 	}
+	// Freeze the demand's coordination_mode onto the plan revision at persist time (spec
+	// §8.1). If the demand cannot be read (legacy/missing), leave it nil rather than failing
+	// the persist; interpreting a nil mode as "loop" happens downstream, not here.
+	var coordinationMode *string
+	if demand, demandErr := s.repository.GetProjectDemand(ctx, input.TenantID, input.DemandID); demandErr == nil {
+		mode := demand.CoordinationMode
+		coordinationMode = &mode
+	}
 	revision, err := s.repository.CreatePlanRevision(ctx, project.CreatePlanRevisionRequest{
 		TenantID:               input.TenantID,
 		TeamID:                 projectRecord.TeamID,
@@ -517,6 +525,7 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		SupersedeOpenRevisions: input.SupersedeOpen,
 		SupersedeReason:        input.SupersedeReason,
 		CreatedEventID:         &event.ID,
+		CoordinationMode:       coordinationMode,
 	})
 	if err != nil {
 		return PlanRevisionResult{}, err

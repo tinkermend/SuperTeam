@@ -241,6 +241,9 @@ type CreatePlanRevisionRequest struct {
 	SupersedeOpenRevisions bool
 	SupersedeReason        *string
 	CreatedEventID         *uuid.UUID
+	// CoordinationMode freezes the source demand's coordination_mode onto this revision.
+	// Nil when the demand could not be read (legacy/missing); not interpreted here.
+	CoordinationMode *string
 }
 
 type ListPlanRevisionsRequest struct {

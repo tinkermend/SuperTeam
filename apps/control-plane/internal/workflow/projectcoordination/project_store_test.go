@@ -730,6 +730,105 @@ func TestProjectStorePersistsPendingPlanRevisionWithoutCreatingTasks(t *testing.
 	require.Len(t, repo.planRevisions, 1)
 }
 
+func TestPersistPlanRevisionFreezesCoordinationMode(t *testing.T) {
+	for _, mode := range []string{project.CoordinationModeLoop, project.CoordinationModePlan} {
+		t.Run(mode, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			demandID := uuid.New()
+			jobID := uuid.New()
+			routeID := uuid.New()
+			employeeID := uuid.New()
+			ownerID := uuid.New()
+			repo := &projectStoreMemoryRepository{}
+			repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+			repo.demand = project.ProjectDemand{
+				ID:               demandID,
+				TenantID:         tenantID,
+				ProjectID:        projectID,
+				CoordinationMode: mode,
+			}
+			store := NewProjectStore(repo)
+
+			result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          demandID,
+				CoordinationJobID: jobID,
+				RouteDecisionID:   routeID,
+				Decision: RouteDecisionPlan{
+					Reason: "冻结协调模式",
+					Tasks: []PlannedTask{
+						{
+							Key:                     "inspect",
+							Title:                   "检查",
+							Summary:                 "检查输入",
+							TaskKind:                "analysis",
+							SelectedEmployeeID:      employeeID,
+							EmployeeSelectionReason: "具备分析能力",
+							RequiredCapabilities:    []string{"codebase.analysis"},
+							MatchedCapabilities:     []string{"codebase.analysis"},
+							ExpectedOutputs:         []string{"结论"},
+							HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+						},
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.Len(t, repo.planRevisions, 1)
+			require.NotNil(t, repo.planRevisions[0].CoordinationMode)
+			require.Equal(t, mode, *repo.planRevisions[0].CoordinationMode)
+			_ = result
+		})
+	}
+}
+
+func TestPersistPlanRevisionCoordinationModeNilWhenDemandUnreadable(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	// Intentionally leave repo.demand unset so GetProjectDemand returns ErrProjectNotFound,
+	// simulating a legacy/missing demand row.
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Decision: RouteDecisionPlan{
+			Reason: "存量兼容",
+			Tasks: []PlannedTask{
+				{
+					Key:                     "inspect",
+					Title:                   "检查",
+					Summary:                 "检查输入",
+					TaskKind:                "analysis",
+					SelectedEmployeeID:      employeeID,
+					EmployeeSelectionReason: "具备分析能力",
+					RequiredCapabilities:    []string{"codebase.analysis"},
+					MatchedCapabilities:     []string{"codebase.analysis"},
+					ExpectedOutputs:         []string{"结论"},
+					HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.planRevisions, 1)
+	require.Nil(t, repo.planRevisions[0].CoordinationMode)
+	_ = result
+}
+
 func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4736,6 +4835,7 @@ func (r *projectStoreMemoryRepository) CreatePlanRevision(ctx context.Context, r
 		ReviewRequired:     req.ReviewRequired,
 		ReviewReason:       req.ReviewReason,
 		CreatedEventID:     req.CreatedEventID,
+		CoordinationMode:   req.CoordinationMode,
 		CreatedAt:          time.Now().UTC(),
 		UpdatedAt:          time.Now().UTC(),
 	}

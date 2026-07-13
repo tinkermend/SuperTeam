@@ -1071,7 +1071,7 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 			ReviewRequired:     req.ReviewRequired,
 			ReviewReason:       textPtr(req.ReviewReason),
 			CreatedEventID:     nullUUID(req.CreatedEventID),
-			CoordinationMode:   pgtype.Text{},
+			CoordinationMode:   textPtr(req.CoordinationMode),
 		})
 		if err != nil {
 			if isPGUniqueConstraint(err, "uq_project_plan_revisions_fingerprint") {
@@ -6148,6 +6148,7 @@ func planRevisionFromRecord(row queries.ProjectPlanRevision) (PlanRevision, erro
 		DecompositionClaimID:   ptrUUID(row.DecompositionClaimID),
 		CreatedTaskIDs:         append([]uuid.UUID(nil), row.CreatedTaskIds...),
 		CreatedEventID:         ptrUUID(row.CreatedEventID),
+		CoordinationMode:       ptrText(row.CoordinationMode),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil

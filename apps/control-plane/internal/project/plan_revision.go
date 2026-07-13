@@ -63,6 +63,11 @@ type PlanRevision struct {
 	CreatedTaskIDs         []uuid.UUID
 	CreatedEventID         *uuid.UUID
 
+	// CoordinationMode is the demand's coordination_mode ("plan"/"loop") frozen onto this
+	// revision at persist time. NULL means the source demand could not be read (legacy/missing)
+	// and is interpreted as "loop" downstream.
+	CoordinationMode *string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
