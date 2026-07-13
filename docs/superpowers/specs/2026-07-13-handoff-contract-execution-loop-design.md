@@ -156,3 +156,17 @@ A→B→C→D 链上，C 的派工单只注入 B 的 result；D 只注入 C 的�
 1. **不新增 `handoff_contract.required_outputs` 字段。** 需求侧复用既有 `input_requirements.required_inputs`（planner 已输出、图校验已消费、员工自报 blocked 的 `missing_inputs` 已按它判定 `blocked_resolvable_upstream`）；供给侧复用既有 `produces`（PlannedTask 字段，持久化于 ProjectTask.PlannerMetadata）。§4.1 的 typed schema 落在 **result_contract.deliverables**（`{name, kind, value|ref, summary}`，Go+Rust 双侧），name 是与 produces/required_inputs 的连接键；kind 为自由字符串，注册表待有消费方再立（YAGNI）。
 2. **§4.2 图校验落地为"直接 blocker"收紧**：原实现校验 required_inputs ⊆ 祖先 produces（传递可达），P1 收紧为必须由**直接 blocker** 生产（一条边=一份交接，§3.1），拒绝理由提示补依赖边。
 3. **§4.4 缺项处理的 P1 语义 = 校验失败 → 既有 rejected+waitHuman 路径**（任务不判 completed，人类看到 `handoff_deliverable_missing:<name>` 精确清单），而非原文的"接补做循环"。理由：补做机制的触发语义是"下游被上游产出饿住"（消费侧自报），生产者自身未履约属返工家族；且宪法要求此类业务判断暂停等人。自动返工接线（unfulfilled → revision_attempt 或 supplement）列为 P2。配套可观测性：通过时平台向 contract.Verification 追加 `handoff_fulfillment` 条目并写 `handoff.verified` ledger 事件；拒绝时写 `handoff.unfulfilled`。
+
+## 9. P1 落地记录（2026-07-13）
+
+分支 `feat/handoff-loop-p1`。§6 真实 E2E（项目 `46e7206f`，真实 claude-code + local-dev-node）：
+
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | 链式注入 | A 交付 `secret_code=1783911737`；B 的 execution_context_packet 含 upstream_results（A 的 deliverables/evidence/summary）；B 结论「壹柒捌叁玖壹壹柒叁柒」并自述未重跑命令——值逐字来自上游 |
+| 2 | 缺项拒绝 | 员工按测试指令交错名 deliverable → `validation_errors=["handoff_deliverable_missing:handoff_test_result"]`、decision=validation_failed、任务 waiting_human 未判 completed、`handoff.unfulfilled` 事件、`project_task_clarification` 决策生成 |
+| 3 | fan-in | 汇总任务 packet `upstream_results` 恰 2 条（kernel_name + work_dir），结论合并两值；两个并行任务分派两名员工真实并发 |
+| 4 | 图校验拒绝 | 单测覆盖（直接 blocker 收紧 + fan-in 通过 + 跨级拒绝）；真实 planner 有修复循环会掩蔽拒绝，不做 E2E 强求 |
+| 5 | verifications 非空 | `handoff_fulfillment` 平台核对条目入库，`handoff.verified` 事件 6 条 |
+
+**E2E 附带观察（预存在缺陷，待立项）**：并行任务分派同一员工撞"单员工单活跃 run"限制 → 派发失败进 `project_task_recovery`；人批准恢复后重试仍撞同一冲突，任务滞留 waiting_human（实例 task `4dee7323`）。属调度并发约束与恢复重试策略问题，早于本 spec 存在。
