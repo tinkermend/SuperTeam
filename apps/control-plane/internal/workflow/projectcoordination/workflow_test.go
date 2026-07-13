@@ -775,8 +775,9 @@ func TestProjectCoordinatorSupplementsUpstreamOwnerForResolvableBlockedResult(t 
 	store := &recordingActivityStore{
 		snapshot: CoordinationSnapshot{ProjectID: projectID},
 		resultDecision: InspectTaskResultDecisionResult{
-			Decision: string(project.TaskResultDecisionBlockedResolvableUpstream),
-			Blocker:  &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+			Decision:         string(project.TaskResultDecisionBlockedResolvableUpstream),
+			CoordinationMode: project.CoordinationModeLoop,
+			Blocker:          &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
 		},
 		upstreamSupplementResult: CreateUpstreamSupplementResult{TaskIDs: []uuid.UUID{ownerSupplementTaskID}},
 	}
@@ -832,9 +833,10 @@ func TestProjectCoordinatorRequestsHumanDecisionWhenUpstreamSupplementExhausted(
 	store := &recordingActivityStore{
 		snapshot: CoordinationSnapshot{ProjectID: projectID},
 		resultDecision: InspectTaskResultDecisionResult{
-			ResultID: resultID,
-			Decision: string(project.TaskResultDecisionBlockedResolvableUpstream),
-			Blocker:  &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+			ResultID:         resultID,
+			Decision:         string(project.TaskResultDecisionBlockedResolvableUpstream),
+			CoordinationMode: project.CoordinationModeLoop,
+			Blocker:          &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
 		},
 		upstreamSupplementResult:     CreateUpstreamSupplementResult{Exhausted: true},
 		iterationExhaustedDecisionID: decisionRequestID,
@@ -871,6 +873,191 @@ func TestProjectCoordinatorRequestsHumanDecisionWhenUpstreamSupplementExhausted(
 	require.Equal(t, resultID, store.iterationExhaustedInputs[0].ResultID)
 	require.Equal(t, "iteration_exhausted", store.iterationExhaustedInputs[0].Reason)
 	require.Empty(t, store.dispatchInputs)
+}
+
+func TestProjectCoordinatorRequestsSupplementReviewInPlanMode(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	reviewDecisionID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{ProjectID: projectID},
+		resultDecision: InspectTaskResultDecisionResult{
+			ResultID:         resultID,
+			Decision:         string(project.TaskResultDecisionBlockedResolvableUpstream),
+			CoordinationMode: project.CoordinationModePlan,
+			Blocker:          &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+		},
+		upstreamSupplementReviewDecisionID: reviewDecisionID,
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"RequestUpstreamSupplementReview",
+	}, store.calls)
+	require.Len(t, store.upstreamSupplementReviewInputs, 1)
+	require.Equal(t, sourceTaskID, store.upstreamSupplementReviewInputs[0].ProjectTaskID)
+	require.Equal(t, resultID, store.upstreamSupplementReviewInputs[0].ResultID)
+	require.Equal(t, []string{"load_test_report"}, store.upstreamSupplementReviewInputs[0].MissingInputs)
+	require.Empty(t, store.upstreamSupplementInputs)
+	require.Empty(t, store.dispatchInputs)
+}
+
+func TestProjectCoordinatorAutoSupplementsInLoopMode(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	ownerSupplementTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{ProjectID: projectID},
+		resultDecision: InspectTaskResultDecisionResult{
+			Decision:         string(project.TaskResultDecisionBlockedResolvableUpstream),
+			CoordinationMode: project.CoordinationModeLoop,
+			Blocker:          &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+		},
+		upstreamSupplementResult: CreateUpstreamSupplementResult{TaskIDs: []uuid.UUID{ownerSupplementTaskID}},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"CreateUpstreamSupplementTasks",
+		"DispatchProjectTask",
+	}, store.calls)
+	require.Equal(t, []CreateUpstreamSupplementInput{{
+		TenantID:      store.upstreamSupplementInputs[0].TenantID,
+		ProjectID:     projectID,
+		SourceTaskID:  sourceTaskID,
+		MissingInputs: []string{"load_test_report"},
+	}}, store.upstreamSupplementInputs)
+	require.Equal(t, []DispatchProjectTaskInput{{
+		TenantID:       store.dispatchInputs[0].TenantID,
+		ProjectID:      projectID,
+		TaskID:         ownerSupplementTaskID,
+		DispatchReason: project.DispatchReasonRetry,
+	}}, store.dispatchInputs)
+	require.Empty(t, store.upstreamSupplementReviewInputs)
+}
+
+func TestProjectCoordinatorDispatchesSupplementAfterApproval(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	reviewDecisionID := uuid.New()
+	replacementTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{ProjectID: projectID},
+		resultDecision: InspectTaskResultDecisionResult{
+			ResultID:         resultID,
+			Decision:         string(project.TaskResultDecisionBlockedResolvableUpstream),
+			CoordinationMode: project.CoordinationModePlan,
+			Blocker:          &project.TaskResultBlocker{MissingInputs: []string{"load_test_report"}},
+		},
+		upstreamSupplementReviewDecisionID: reviewDecisionID,
+		failureRecoveryResult:              ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{replacementTaskID}},
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		reviewDecisionID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             reviewDecisionID,
+				ProjectID:      projectID,
+				DecisionType:   "task_failure_recovery",
+				StatusSnapshot: "resolved",
+				ProjectTaskID:  sourceTaskID,
+			},
+		},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      sourceTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: reviewDecisionID,
+			Decision:          "approved",
+			Payload:           map[string]any{"review_note": "supplement approved"},
+			ResolvedEventID:   uuid.New(),
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	tenantID := uuid.New()
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"InspectTaskResultDecision",
+		"RequestUpstreamSupplementReview",
+		"LoadHumanDecisionRoute",
+		"ApplyFailureRecoveryDecision",
+		"DispatchProjectTask",
+	}, store.calls)
+	require.Equal(t, []DispatchProjectTaskInput{{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         replacementTaskID,
+		DispatchReason: project.DispatchReasonRetry,
+	}}, store.dispatchInputs)
 }
 
 func TestProjectCoordinatorRequestsHumanDecisionWhenRevisionIterationExhausted(t *testing.T) {
