@@ -176,8 +176,8 @@ func TestValidateTaskGraphRejectsTaskCountOverLimit(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
-func TestValidateRouteDecisionPlanAcceptsRequiredInputFromAncestor(t *testing.T) {
-	plan := RouteDecisionPlan{Reason: "required input from ancestor", Tasks: []PlannedTask{
+func TestValidateRouteDecisionPlanAcceptsRequiredInputFromDirectBlocker(t *testing.T) {
+	plan := RouteDecisionPlan{Reason: "required input from direct blocker", Tasks: []PlannedTask{
 		planTaskWithIO("a", nil, []string{"load_test_report"}, nil),
 		planTaskWithIO("b", []string{"a"}, nil, []string{"load_test_report"}),
 	}}
@@ -235,6 +235,36 @@ func TestValidateRouteDecisionPlanRejectsRequiredInputFromNonAncestor(t *testing
 	require.Contains(t, err.Error(), "load_test_report")
 }
 
+func TestValidateRouteDecisionPlanRejectsRequiredInputFromTransitiveAncestor(t *testing.T) {
+	// A -> B -> C; C requires A's output. One edge = one handoff: the input
+	// must come from a direct blocker, so C needs its own edge to A.
+	plan := RouteDecisionPlan{Reason: "required input from transitive ancestor", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"fact"}, nil),
+		planTaskWithIO("b", []string{"a"}, []string{"mid"}, []string{"fact"}),
+		planTaskWithIO("c", []string{"b"}, nil, []string{"fact"}),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "direct blocker")
+}
+
+func TestValidateRouteDecisionPlanAcceptsFanInRequiredInputs(t *testing.T) {
+	// A summary task depending on two parallel producers gets both inputs
+	// through its own direct edges.
+	plan := RouteDecisionPlan{Reason: "fan-in", Tasks: []PlannedTask{
+		planTaskWithIO("a", nil, []string{"fact_a"}, nil),
+		planTaskWithIO("b", nil, []string{"fact_b"}, nil),
+		planTaskWithIO("sum", []string{"a", "b"}, nil, []string{"fact_a", "fact_b"}),
+	}}
+	snapshot := snapshotForPlan(plan)
+
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
+}
+
 func TestValidateRouteDecisionPlanRejectsCriterionWithUnknownSatisfier(t *testing.T) {
 	employeeID := uuid.New()
 	plan := RouteDecisionPlan{
@@ -288,20 +318,6 @@ func TestValidateRouteDecisionPlanAcceptsCriterionWithRealSatisfier(t *testing.T
 	snapshot := snapshotForPlan(plan)
 
 	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
-}
-
-func TestAncestorKeysWalksTransitively(t *testing.T) {
-	tasks := []PlannedTask{
-		{Key: "a"},
-		{Key: "b", BlockedByKeys: []string{"a"}},
-		{Key: "c", BlockedByKeys: []string{"b"}},
-	}
-
-	ancestors := ancestorKeys(tasks, "c")
-
-	require.Contains(t, ancestors, "a")
-	require.Contains(t, ancestors, "b")
-	require.NotContains(t, ancestors, "c")
 }
 
 func TestValidateRouteDecisionPlanRejectsMissingSelectionReason(t *testing.T) {
