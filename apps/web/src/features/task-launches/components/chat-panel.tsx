@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, MessageCircle, SendHorizontal, UserRound } from "lucide-react";
 import {
@@ -93,6 +93,13 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
     }
   }, [employees, employeeId]);
 
+  // Synchronous in-flight guard: React (re)renders — and therefore refreshes the
+  // `sendMutation.isPending` closures captured by button handlers — only after the
+  // current discrete event finishes. A genuine fast double-click can fire both
+  // click handlers before that happens, so `isPending` alone cannot be trusted to
+  // block the second call. This ref updates immediately, with no render involved.
+  const sendInFlightRef = useRef(false);
+
   const lastCompleted = [...thread].reverse().find((entry) => entry.status === "completed");
   const activeEntry = thread.find((entry) => isActiveEntryStatus(entry.status));
   const runQueryEnabled = Boolean(activeEntry && employeeId && activeEntry.status !== "sending");
@@ -144,6 +151,9 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
         { question: variables.objective, runId: run.id, status: run.status },
       ]);
     },
+    onSettled: () => {
+      sendInFlightRef.current = false;
+    },
   });
 
   function handleEmployeeChange(nextEmployeeId: string) {
@@ -154,17 +164,21 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
 
   function handleSend() {
     const trimmed = question.trim();
-    if (!trimmed || !employeeId || activeEntry) {
+    if (!trimmed || !employeeId || activeEntry || sendInFlightRef.current) {
       return;
     }
-    sendMutation.mutate({ objective: trimmed, resumeOf: lastCompleted?.runId });
-    setQuestion("");
+    sendInFlightRef.current = true;
+    sendMutation.mutate(
+      { objective: trimmed, resumeOf: lastCompleted?.runId },
+      { onSuccess: () => setQuestion("") },
+    );
   }
 
   function handleRetry(entry: ChatEntry) {
-    if (activeEntry) {
+    if (activeEntry || sendInFlightRef.current) {
       return;
     }
+    sendInFlightRef.current = true;
     sendMutation.mutate({ objective: entry.question });
   }
 
@@ -236,7 +250,7 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
               entry.status === "timed_out" ? (
               <V3ErrorState
                 description={entry.error}
-                onRetry={() => handleRetry(entry)}
+                onRetry={sendMutation.isPending ? undefined : () => handleRetry(entry)}
                 title="对话失败"
               />
             ) : (

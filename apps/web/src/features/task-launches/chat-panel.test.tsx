@@ -180,6 +180,90 @@ function createChatFetcher() {
   };
 }
 
+function createFailingSendFetcher() {
+  const employees = [makeEmployee()];
+
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employees);
+    }
+
+    const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "POST") {
+      return jsonResponse({ message: "员工繁忙，暂时无法接单" }, 409);
+    }
+
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  });
+
+  return { fetcher };
+}
+
+function createRetryDeferredFetcher() {
+  const employees = [makeEmployee()];
+  let createCallCount = 0;
+  let resolveRetry: ((response: Response) => void) | null = null;
+  const retryResponse = new Promise<Response>((resolve) => {
+    resolveRetry = resolve;
+  });
+
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employees);
+    }
+
+    const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "POST") {
+      createCallCount += 1;
+      const runId = `run-${createCallCount}`;
+      const employeeId = createMatch[1];
+      if (createCallCount === 1) {
+        return jsonResponse(
+          {
+            ...baseRunFields(runId, employeeId),
+            status: "failed",
+            error_message: "第一次失败",
+          },
+          201,
+        );
+      }
+      // Second (and any further) create call is the retry: keep it pending until
+      // the test explicitly resolves it, so it can assert only one retry POST fired.
+      return retryResponse;
+    }
+
+    const getMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs\/([^/]+)$/);
+    if (getMatch && method === "GET") {
+      const employeeId = getMatch[1];
+      const runId = getMatch[2];
+      return jsonResponse({
+        ...baseRunFields(runId, employeeId),
+        status: "failed",
+        error_message: "第一次失败",
+      });
+    }
+
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  });
+
+  return {
+    fetcher,
+    getCreateCallCount: () => createCallCount,
+    resolveRetry: () =>
+      resolveRetry?.(
+        jsonResponse({ ...baseRunFields("run-2", "emp-1"), status: "queued" }, 201),
+      ),
+  };
+}
+
 async function renderWithQueryClient(children: ReactNode) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -274,6 +358,74 @@ describe("ChatPanel", () => {
       expect(bodies).toHaveLength(3);
       expect(bodies[2]).toEqual({ objective: "第二个问题", run_kind: "chat" });
     });
+  });
+
+  it("keeps the typed question in the textarea and re-enables send after a failed create-run request", async () => {
+    const { fetcher } = createFailingSendFetcher();
+    const onConvertToTask = vi.fn();
+    await renderWithQueryClient(
+      <ChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "会失败的问题");
+    await clickButton("发送");
+
+    // the failing POST fires and rejects
+    await waitFor(() => {
+      expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")).toHaveLength(1);
+    });
+
+    // the typed question is preserved rather than cleared on error
+    await waitFor(() => {
+      const textarea = getByLabelText("对话问题") as HTMLTextAreaElement;
+      expect(textarea.value).toBe("会失败的问题");
+    });
+
+    // send becomes enabled again once the mutation settles (not pending)
+    await waitFor(() => expect(getButton("发送").disabled).toBe(false));
+  });
+
+  it("guards against a fast double-click on retry: only one retry POST is issued while pending", async () => {
+    const { fetcher, getCreateCallCount, resolveRetry } = createRetryDeferredFetcher();
+    const onConvertToTask = vi.fn();
+    await renderWithQueryClient(
+      <ChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "第一次问题");
+    await clickButton("发送");
+
+    await waitFor(() => expect(chatThread().textContent).toContain("对话失败"));
+    expect(getCreateCallCount()).toBe(1);
+
+    // fast double-click the retry button before the (deliberately delayed) retry
+    // POST resolves; the in-flight guard must prevent a second POST. Grab a single
+    // element reference so a second click is issued even if the retry affordance
+    // gets hidden/removed once the mutation is pending.
+    const retryButton = getButton("重试");
+    await act(async () => {
+      retryButton.click();
+      retryButton.click();
+    });
+
+    expect(getCreateCallCount()).toBe(2);
+
+    await act(async () => {
+      resolveRetry();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getCreateCallCount()).toBe(2));
   });
 });
 
