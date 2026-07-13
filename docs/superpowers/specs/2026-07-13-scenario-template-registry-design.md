@@ -173,3 +173,12 @@ feasibility = f(
 | **P3** | 目录页升级为管理页（增删改、feasibility 阈值调整、从跑通项目蒸馏导出模板） |
 
 前端改动前读 `DESIGN.md`；新页面用 v3 组件（V3Table/StatusPill/WorkSurface），实体目录默认紧凑列表形态。
+
+## 10. P1 落地修订（2026-07-13）
+
+1. **"未绑定 → 不注入、不校验 key"实现 generic 语义**：快照的 `ScenarioTemplate` 为 nil 时 planner 行为与模板机制存在前逐字节一致；`generic` 种子行保留，供显式选择与 P2 可行性判定消费。
+2. **模板解析失败回落 = warn 日志**（§5 原文"回落 generic + warn + 事件"中的项目事件留 P2）：规划不因 stale 绑定阻塞。
+3. **种子骨架不带 task_kind**：planner prompt 的 canonical task_kind 枚举（database_analysis/incident_triage/feature_development）仍由 planner 自选；骨架由 `step`/`role`/`produces_defaults`/`required_inputs_defaults` 驱动，避免与既有 task-type 语义相撞。task_kind 与模板骨架的融合评审留 P2。
+4. **默认判据经 prompt 指令并入 plan_acceptance_criteria**（文本级）；criterion 对象化（verification_method 路由、人类确认生效）属 intent spec。
+5. **管理端点未做**（P3）；authz 常量 `scenario_template.manage` 已立未接线。`template_key` 落地路径 = PlanRevisionPayload（jsonb，omitempty 保历史指纹稳定），未给 `project_route_decisions` 加列。
+6. Console P1 三触点已落：目录只读页（/scenario-templates，流程能力组）、项目创建下拉、计划确认卡「场景模板」行。
