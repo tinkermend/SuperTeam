@@ -47,11 +47,6 @@ const runStatusTone: Record<DigitalEmployeeRunStatus, V3Tone> = {
   timed_out: "danger",
 };
 
-const runKindTone: Record<DigitalEmployeeRunKind, V3Tone> = {
-  task: "mute",
-  chat: "info",
-};
-
 const runKindLabel: Record<DigitalEmployeeRunKind, string> = {
   task: "任务",
   chat: "对话",
@@ -141,7 +136,7 @@ export function EmployeeRunHistoryTable({
                 </V3Td>
                 <V3Td className="font-mono text-xs text-v3-ink-2">{shortId(item.id)}</V3Td>
                 <V3Td>
-                  <StatusPill showDot={false} tone={runKindTone[item.run_kind]}>
+                  <StatusPill showDot={false} tone="mute">
                     {runKindLabel[item.run_kind]}
                   </StatusPill>
                 </V3Td>
