@@ -219,6 +219,8 @@ pub struct TaskResultContract {
     #[serde(default)]
     pub changes_made: Vec<serde_json::Value>,
     #[serde(default)]
+    pub deliverables: Vec<serde_json::Value>,
+    #[serde(default)]
     pub verification: Vec<serde_json::Value>,
     #[serde(default)]
     pub risks: Vec<serde_json::Value>,

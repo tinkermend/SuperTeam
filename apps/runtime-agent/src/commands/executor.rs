@@ -2243,6 +2243,11 @@ fn parsed_result_contract(
                 .and_then(serde_json::Value::as_array)
                 .cloned()
                 .unwrap_or_default(),
+            deliverables: contract
+                .get("deliverables")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
             verification: normalized_verifications(
                 contract.get("verification"),
                 runtime_attestation_ref,
@@ -2318,6 +2323,7 @@ fn synthesized_result_contract(
         evidence_refs: normalized_evidence_refs,
         artifact_refs: normalized_artifact_refs,
         changes_made: Vec::new(),
+        deliverables: Vec::new(),
         verification,
         risks: Vec::new(),
         follow_up_requests: Vec::new(),
@@ -3184,6 +3190,25 @@ mod tests {
             contract.acceptance_results[0]["evidence_refs"],
             json!(["final_answer.raw_json_object", "evidence-2"])
         );
+    }
+
+    #[test]
+    fn parsed_result_contract_preserves_deliverables() {
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "deliverables": [
+                    {"name": "head_commit", "kind": "git_commit", "value": "abc123"}
+                ]
+            }
+        });
+
+        let contract = parsed_result_contract(Some(&parsed), "done", &[], &[], None)
+            .expect("contract should parse");
+
+        assert_eq!(contract.deliverables.len(), 1);
+        assert_eq!(contract.deliverables[0]["name"], json!("head_commit"));
     }
 
     #[test]
