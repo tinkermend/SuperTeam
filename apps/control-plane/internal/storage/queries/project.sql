@@ -19,7 +19,8 @@ INSERT INTO projects (
     repo_default_branch,
     repo_git_credential_ref,
     repo_scope,
-    repo_binding_status
+    repo_binding_status,
+    scenario_template_key
 ) VALUES (
     sqlc.arg('id')::uuid,
     sqlc.arg('tenant_id')::uuid,
@@ -40,7 +41,8 @@ INSERT INTO projects (
     sqlc.narg('repo_default_branch')::varchar,
     sqlc.narg('repo_git_credential_ref')::varchar,
     COALESCE(sqlc.narg('repo_scope')::jsonb, '[]'::jsonb),
-    COALESCE(sqlc.narg('repo_binding_status')::varchar, 'unbound')
+    COALESCE(sqlc.narg('repo_binding_status')::varchar, 'unbound'),
+    sqlc.narg('scenario_template_key')::text
 ) RETURNING *;
 
 -- name: GetProject :one

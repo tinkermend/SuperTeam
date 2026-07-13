@@ -271,6 +271,7 @@ type Querier interface {
 	GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, arg GetRuntimeProvisioningPreflightTeamLessParams) (GetRuntimeProvisioningPreflightTeamLessRow, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
+	GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioTemplateByKeyParams) (ScenarioTemplate, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
 	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)
@@ -393,6 +394,7 @@ type Querier interface {
 	// Team-less variant: no team governance, all providers/runtime nodes allowed.
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
+	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)

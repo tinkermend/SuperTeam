@@ -749,6 +749,8 @@ type Project struct {
 	RepoBindingStatus string `json:"repo_binding_status"`
 	// 软删除时间；非空表示项目已从当前管理面移除
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 项目绑定的场景模板 key，可空 = generic 兜底（行为同无模板）
+	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险
@@ -2047,6 +2049,32 @@ type RuntimeSession struct {
 	// Runtime 会话创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Runtime 会话最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 租户级场景模板注册表，驱动规划分解与交接契约实例化
+type ScenarioTemplate struct {
+	// 场景模板主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 场景模板所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 模板稳定标识（如 software_delivery），租户内未删除时唯一
+	TemplateKey string `json:"template_key"`
+	// 模板显示名
+	Name string `json:"name"`
+	// 模板适用场景说明
+	Description string `json:"description"`
+	// 模板内容：roles/skeleton/default_acceptance_criteria/risk_policy/feasibility_thresholds
+	Spec []byte `json:"spec"`
+	// 模板状态：active/disabled
+	Status string `json:"status"`
+	// 模板软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建模板的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 模板创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 模板更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
