@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TaskLaunchShell } from "./components/task-launch-shell";
-import { TaskLaunchForm } from "./components/task-launch-form";
+import { TaskLaunchForm, type LaunchMode } from "./components/task-launch-form";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -36,6 +36,7 @@ export function TaskLaunchView({
     [apiBaseUrl, fetcher],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [mode, setMode] = useState<LaunchMode>("plan");
   const projectsQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => listProjects(apiOptions, { limit: 50, offset: 0 }),
@@ -80,8 +81,15 @@ export function TaskLaunchView({
     >
       <TaskLaunchForm
         isSubmitting={submitMutation.isPending}
+        mode={mode}
+        onModeChange={setMode}
         onProjectChange={setSelectedProjectId}
-        onSubmit={(projectId, input) => submitMutation.mutate({ input, projectId })}
+        onSubmit={(projectId, input) =>
+          submitMutation.mutate({
+            input: { ...input, coordination_mode: mode === "loop" ? "loop" : "plan" },
+            projectId,
+          })
+        }
         projects={projectsQuery.data ?? []}
         selectedProjectId={selectedProjectId}
       />

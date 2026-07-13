@@ -358,6 +358,7 @@ describe("TaskLaunchView", () => {
         source_type: "manual",
         source_refs: {},
         attachments: [],
+        coordination_mode: "plan",
       });
     });
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
@@ -398,6 +399,26 @@ describe("TaskLaunchView", () => {
     });
   });
 
+  it("switches to loop mode and submits coordination_mode loop", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("Loop 任务");
+    await typeInLabeledField("需求描述", "遇到阻塞时自动补做上游任务");
+
+    await clickButton("提交任务");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
+        coordination_mode: "loop",
+      });
+    });
+  });
+
   it("renders the pre-submit launch composer without orchestration state controls", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
@@ -414,8 +435,10 @@ describe("TaskLaunchView", () => {
     expect(getByLabelText("项目")).toBeTruthy();
     expect(() => getByLabelText("审核人")).toThrow();
     expect(queryByText("审核人")).toBeNull();
-    expect(getByLabelText("优先级")).toBeTruthy();
-    expect(getByLabelText("风险级别")).toBeTruthy();
+    expect(() => getByLabelText("优先级")).toThrow();
+    expect(() => getByLabelText("风险级别")).toThrow();
+    expect(queryByText("优先级")).toBeNull();
+    expect(queryByText("风险级别")).toBeNull();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
     expect(document.querySelector(".v3-glass")).toBeTruthy();
     expect(document.querySelector(".tl-btn-send")).toBeTruthy();
@@ -438,6 +461,22 @@ describe("TaskLaunchView", () => {
     expect(queryByText("待生成")).toBeNull();
     expect(queryByText("已完成")).toBeNull();
     expect(queryByText("运行中")).toBeNull();
+  });
+
+  it("switches to chat mode: hides project chip and shows chat panel slot", async () => {
+    const fetcher = createTaskLaunchFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("对话");
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="chat-panel-slot"]')).toBeTruthy();
+    });
+    expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeNull();
+    expect(() => getByLabelText("项目")).toThrow();
   });
 });
 
