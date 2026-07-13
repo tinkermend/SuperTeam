@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, MessageCircle, SendHorizontal, UserRound } from "lucide-react";
+import {
+  ArrowRightLeft,
+  FolderOpen,
+  MessageCircle,
+  SendHorizontal,
+  UserRound,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -17,6 +23,7 @@ import {
   type DigitalEmployeeRun,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
+import type { Project } from "@/lib/api/projects";
 import { LaunchChip } from "./task-launch-form";
 
 const ACTIVE_RUN_STATUSES = new Set<DigitalEmployeeRunStatus>([
@@ -49,11 +56,18 @@ export type ConvertToTaskPayload = {
   draft: string;
   chatRunId: string;
   digitalEmployeeId: string;
+  /** The project the source chat run was anchored to; pre-selects the task
+   * form's project when converting so the anchor and the eventual demand's
+   * project default to the same place (user can still change it). */
+  anchorProjectId: string;
 };
 
 export type ChatPanelProps = {
   apiOptions: ApiClientOptions;
   onConvertToTask: (payload: ConvertToTaskPayload) => void;
+  onProjectChange: (projectId: string) => void;
+  projectId: string;
+  projects: Project[];
 };
 
 function isActiveEntryStatus(status: DigitalEmployeeRunStatus | "sending"): boolean {
@@ -78,7 +92,13 @@ export function buildTaskDraft(entry: ChatEntry, employeeName: string): string {
   return `【目标】(请改写为你要的结果)\n\n${excerpt}\n\n【背景】源自与 @${employeeName} 的单次对话：${entry.question}`;
 }
 
-export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
+export function ChatPanel({
+  apiOptions,
+  onConvertToTask,
+  onProjectChange,
+  projectId,
+  projects,
+}: ChatPanelProps) {
   const [employeeId, setEmployeeId] = useState("");
   const [question, setQuestion] = useState("");
   const [thread, setThread] = useState<ChatEntry[]>([]);
@@ -149,6 +169,7 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
       createDigitalEmployeeRun(apiOptions, employeeId, {
         objective: input.objective,
         run_kind: "chat",
+        project_id: projectId,
         ...(input.resumeOf ? { resume_of_run_id: input.resumeOf } : {}),
       }),
     onSuccess: (run, variables) => {
@@ -193,9 +214,18 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
     setSendError("");
   }
 
+  // Same rule as changing employee: the project is part of the conversation's
+  // anchor, so switching it starts a new conversation rather than resuming the
+  // old thread against a different anchor.
+  function handleProjectChange(nextProjectId: string) {
+    onProjectChange(nextProjectId);
+    setThread([]);
+    setSendError("");
+  }
+
   function handleSend() {
     const trimmed = question.trim();
-    if (!trimmed || !employeeId || activeEntry || sendInFlightRef.current) {
+    if (!trimmed || !employeeId || !projectId || activeEntry || sendInFlightRef.current) {
       return;
     }
     sendInFlightRef.current = true;
@@ -221,6 +251,7 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
 
   function handleConvert(entry: ChatEntry) {
     onConvertToTask({
+      anchorProjectId: projectId,
       chatRunId: entry.runId,
       digitalEmployeeId: employeeId,
       draft: buildTaskDraft(entry, selectedEmployee?.name ?? ""),
@@ -228,11 +259,29 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
   }
 
   const canSend =
-    Boolean(question.trim()) && Boolean(employeeId) && !activeEntry && !sendMutation.isPending;
+    Boolean(question.trim()) &&
+    Boolean(employeeId) &&
+    Boolean(projectId) &&
+    !activeEntry &&
+    !sendMutation.isPending;
 
   return (
     <div className="tl-chat">
       <div className="tl-chat-header">
+        <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
+          <Select value={projectId} onValueChange={handleProjectChange}>
+            <SelectTrigger aria-label="项目" className="tl-chip-select">
+              <SelectValue placeholder="选择项目" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </LaunchChip>
         <LaunchChip icon={<UserRound aria-hidden />} label="对话员工" required>
           <Select value={employeeId} onValueChange={handleEmployeeChange}>
             <SelectTrigger aria-label="对话员工" className="tl-chip-select">

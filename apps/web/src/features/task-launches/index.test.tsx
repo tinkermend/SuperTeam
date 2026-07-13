@@ -221,8 +221,10 @@ function createTaskLaunchFetcher({
 /** Extends the base task-launch fetcher with chat-mode endpoints (a single digital
  * employee and a run that completes immediately) so tests can drive the
  * chat -> 转为任务 -> submit flow and assert the resulting demand's source_refs. */
-function createTaskLaunchFetcherWithChat() {
-  const base = createTaskLaunchFetcher();
+function createTaskLaunchFetcherWithChat({
+  includeSecondProject = false,
+}: { includeSecondProject?: boolean } = {}) {
+  const base = createTaskLaunchFetcher({ includeSecondProject });
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -540,7 +542,7 @@ describe("TaskLaunchView", () => {
     expect(queryByText("运行中")).toBeNull();
   });
 
-  it("switches to chat mode: hides project chip and shows chat panel slot", async () => {
+  it("switches to chat mode: hides the task-form parameter grid but keeps a required 项目 chip inside the chat panel slot", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
       <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
@@ -553,7 +555,9 @@ describe("TaskLaunchView", () => {
       expect(document.querySelector('[data-testid="chat-panel-slot"]')).toBeTruthy();
     });
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeNull();
-    expect(() => getByLabelText("项目")).toThrow();
+    // the 项目 chip moved into the chat panel (same aria-label/select pattern as
+    // task mode) rather than disappearing: chat runs are anchored to a project.
+    expect(getByLabelText("项目")).toBeTruthy();
   });
 
   it("converts a chat answer to a task and submits it with chat source_refs lineage", async () => {
@@ -569,6 +573,13 @@ describe("TaskLaunchView", () => {
 
     await typeInLabeledField("对话问题", "如何配置这个项目？");
     await clickButton("发送");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/digital-employees/emp-1/runs")).toMatchObject({
+        project_id: "project-1",
+      });
+    });
+
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -589,6 +600,54 @@ describe("TaskLaunchView", () => {
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
+        to: "/workflows/$demandId",
+      });
+    });
+  });
+
+  it("defaults the post-conversion demand to the chat run's anchor project (not the form's original default)", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcherWithChat({ includeSecondProject: true });
+    const { queryClient } = await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("对话");
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    // anchor the chat conversation to the second project before asking anything
+    await clickButton("生产巡检项目");
+
+    await typeInLabeledField("对话问题", "第二个项目怎么配置？");
+    await clickButton("发送");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/digital-employees/emp-1/runs")).toMatchObject({
+        project_id: "project-2",
+      });
+    });
+
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("这是对话回答")).toBeTruthy());
+
+    await clickButton("转为任务");
+    await waitFor(() => expect(getByLabelText("项目")).toBeTruthy());
+
+    // no manual project change here: conversion must have pre-selected project-2
+    // (the chat anchor), overriding the form's original project-1 default
+    await clickButton("提交任务");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
+        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" },
+      });
+    });
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-2" },
         to: "/workflows/$demandId",
       });
     });

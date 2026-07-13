@@ -220,6 +220,9 @@ export type DigitalEmployeeRunInput = {
   metadata?: Record<string, unknown>;
   run_kind?: DigitalEmployeeRunKind;
   resume_of_run_id?: string;
+  /** Required when run_kind is "chat": anchors the chat run to a project for
+   * node resolution, budget and policy boundaries. Ignored for task runs. */
+  project_id?: string;
 };
 
 export type DigitalEmployeeRun = {

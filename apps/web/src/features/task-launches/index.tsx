@@ -82,10 +82,18 @@ export function TaskLaunchView({
     },
   });
 
-  function handleConvertToTask({ draft, chatRunId, digitalEmployeeId }: ConvertToTaskPayload) {
+  function handleConvertToTask({
+    anchorProjectId,
+    draft,
+    chatRunId,
+    digitalEmployeeId,
+  }: ConvertToTaskPayload) {
     setMode("plan");
     setContent(draft);
     setChatSource({ chatRunId, digitalEmployeeId });
+    // Default the task form's project to the chat run's anchor; user can still
+    // change it before submitting.
+    setSelectedProjectId(anchorProjectId);
   }
 
   function handleModeChange(nextMode: LaunchMode) {
@@ -104,7 +112,15 @@ export function TaskLaunchView({
       description="提交需求到项目，由项目协调线程编排后续任务"
     >
       <TaskLaunchForm
-        chatPanel={<ChatPanel apiOptions={apiOptions} onConvertToTask={handleConvertToTask} />}
+        chatPanel={
+          <ChatPanel
+            apiOptions={apiOptions}
+            onConvertToTask={handleConvertToTask}
+            onProjectChange={setSelectedProjectId}
+            projectId={selectedProjectId}
+            projects={activeProjects}
+          />
+        }
         content={content}
         isSubmitting={submitMutation.isPending}
         mode={mode}

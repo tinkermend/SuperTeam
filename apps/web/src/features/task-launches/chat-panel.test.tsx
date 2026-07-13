@@ -1,10 +1,62 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatPanel } from "@/features/task-launches/components/chat-panel";
+import {
+  ChatPanel,
+  type ChatPanelProps,
+  type ConvertToTaskPayload,
+} from "@/features/task-launches/components/chat-panel";
 import type { DigitalEmployee, DigitalEmployeeRun } from "@/lib/api/employees";
+import type { Project } from "@/lib/api/projects";
+
+/** Test harness: ChatPanel's project selection is now controlled by the parent
+ * (mirrors how index.tsx owns `selectedProjectId` and passes it down), so tests
+ * hold that bit of state locally instead of re-fetching a projects list. */
+function ControlledChatPanel({
+  apiOptions,
+  initialProjectId = "project-1",
+  onConvertToTask,
+  onProjectChange,
+  projects,
+}: {
+  apiOptions: ChatPanelProps["apiOptions"];
+  initialProjectId?: string;
+  onConvertToTask: (payload: ConvertToTaskPayload) => void;
+  onProjectChange?: (projectId: string) => void;
+  projects: Project[];
+}) {
+  const [projectId, setProjectId] = useState(initialProjectId);
+  return (
+    <ChatPanel
+      apiOptions={apiOptions}
+      onConvertToTask={onConvertToTask}
+      onProjectChange={(nextProjectId) => {
+        setProjectId(nextProjectId);
+        onProjectChange?.(nextProjectId);
+      }}
+      projectId={projectId}
+      projects={projects}
+    />
+  );
+}
+
+function makeProject(id = "project-1", name = "客户接入项目"): Project {
+  return {
+    approval_policy: {},
+    coordination_policy: {},
+    coordination_status: "registered",
+    coordination_workflow_id: `project-coordinator:${id}`,
+    evidence_policy: {},
+    goal: "完成一次任务发起",
+    human_owner_user_id: "owner-1",
+    id,
+    name,
+    status: "running",
+    tenant_id: "tenant-1",
+  };
+}
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -393,9 +445,10 @@ describe("ChatPanel", () => {
     const { fetcher, setRunScript } = createChatFetcher();
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
-      <ChatPanel
+      <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
       />,
     );
 
@@ -412,7 +465,11 @@ describe("ChatPanel", () => {
 
     await waitFor(() => {
       const body = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")[0];
-      expect(body).toEqual({ objective: "第一个问题", run_kind: "chat" });
+      expect(body).toEqual({
+        objective: "第一个问题",
+        run_kind: "chat",
+        project_id: "project-1",
+      });
     });
 
     // 3. running -> completed; answer renders inside chat-thread
@@ -435,6 +492,7 @@ describe("ChatPanel", () => {
       expect(bodies[1]).toEqual({
         objective: "第二个问题",
         run_kind: "chat",
+        project_id: "project-1",
         resume_of_run_id: "run-1",
       });
     });
@@ -442,15 +500,12 @@ describe("ChatPanel", () => {
     // 5. convert first (completed) answer to a task draft
     await clickButton("转为任务");
     expect(onConvertToTask).toHaveBeenCalledTimes(1);
-    const payload = onConvertToTask.mock.calls[0][0] as {
-      draft: string;
-      chatRunId: string;
-      digitalEmployeeId: string;
-    };
+    const payload = onConvertToTask.mock.calls[0][0] as ConvertToTaskPayload;
     expect(payload.draft).toContain("第一个问题");
     expect(payload.draft).toContain("这是第一轮的回答内容");
     expect(payload.chatRunId).toBe("run-1");
     expect(payload.digitalEmployeeId).toBe("emp-1");
+    expect(payload.anchorProjectId).toBe("project-1");
 
     // 6. second run fails -> error card + retry; retry resends without resume_of_run_id
     await act(async () => {
@@ -463,7 +518,11 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
       expect(bodies).toHaveLength(3);
-      expect(bodies[2]).toEqual({ objective: "第二个问题", run_kind: "chat" });
+      expect(bodies[2]).toEqual({
+        objective: "第二个问题",
+        run_kind: "chat",
+        project_id: "project-1",
+      });
     });
   });
 
@@ -471,9 +530,10 @@ describe("ChatPanel", () => {
     const { fetcher } = createFailingSendFetcher();
     const onConvertToTask = vi.fn();
     await renderWithQueryClient(
-      <ChatPanel
+      <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
       />,
     );
 
@@ -501,9 +561,10 @@ describe("ChatPanel", () => {
     const { fetcher, getCreateCallCount, resolveRetry } = createRetryDeferredFetcher();
     const onConvertToTask = vi.fn();
     await renderWithQueryClient(
-      <ChatPanel
+      <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
       />,
     );
 
@@ -539,9 +600,10 @@ describe("ChatPanel", () => {
     const { fetcher, getCreateCallCount } = createResumeDegradeFetcher();
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
-      <ChatPanel
+      <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
       />,
     );
 
@@ -562,9 +624,14 @@ describe("ChatPanel", () => {
     expect(bodies[1]).toEqual({
       objective: "第二个问题",
       run_kind: "chat",
+      project_id: "project-1",
       resume_of_run_id: "run-1",
     });
-    expect(bodies[2]).toEqual({ objective: "第二个问题", run_kind: "chat" });
+    expect(bodies[2]).toEqual({
+      objective: "第二个问题",
+      run_kind: "chat",
+      project_id: "project-1",
+    });
 
     await waitFor(() => expect(chatThread().textContent).toContain("上下文未延续"));
   });
@@ -573,9 +640,10 @@ describe("ChatPanel", () => {
     const { fetcher, getCreateCallCount } = createNonResumableFailureFetcher();
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
-      <ChatPanel
+      <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
       />,
     );
 
@@ -594,6 +662,69 @@ describe("ChatPanel", () => {
     await waitFor(() => expect(document.body.textContent).toContain("员工繁忙，暂时无法接单"));
     expect(getCreateCallCount()).toBe(2);
     expect(document.body.textContent).not.toContain("上下文未延续");
+  });
+
+  it("renders a required 项目 chip and keeps send disabled until a project is selected", async () => {
+    const { fetcher } = createChatFetcher();
+    const onConvertToTask = vi.fn();
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        initialProjectId=""
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject("project-1", "客户接入项目"), makeProject("project-2", "生产巡检项目")]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    expect(getByLabelText("项目")).toBeTruthy();
+
+    await typeInLabeledField("对话问题", "第一个问题");
+    expect(getButton("发送").disabled).toBe(true);
+
+    await clickButton("生产巡检项目");
+    expect(getButton("发送").disabled).toBe(false);
+  });
+
+  it("clears the thread when the project changes mid-conversation, and the next send has no resume_of_run_id", async () => {
+    const { fetcher, setRunScript } = createChatFetcher();
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject("project-1", "客户接入项目"), makeProject("project-2", "生产巡检项目")]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    setRunScript("run-1", [{ status: "completed", result: { output: "第一轮回答" } }]);
+    await typeInLabeledField("对话问题", "第一个问题");
+    await clickButton("发送");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("第一轮回答"));
+
+    await clickButton("生产巡检项目");
+
+    // switching the project anchor clears the prior Q/A, same as switching employee
+    expect(chatThread().textContent).not.toContain("第一个问题");
+    expect(chatThread().textContent).not.toContain("第一轮回答");
+
+    setRunScript("run-2", [{ status: "completed", result: { output: "第二轮回答" } }]);
+    await typeInLabeledField("对话问题", "第二个问题");
+    await clickButton("发送");
+
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies[1]).toEqual({
+        objective: "第二个问题",
+        run_kind: "chat",
+        project_id: "project-2",
+      });
+    });
   });
 });
 
