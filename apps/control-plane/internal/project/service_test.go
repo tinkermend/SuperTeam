@@ -4493,6 +4493,83 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 }
 
+func TestSubmitDemandCoordinationMode(t *testing.T) {
+	newFixture := func() (*memoryRepository, *fakeCoordinatorSignalClient, *Service, uuid.UUID, uuid.UUID) {
+		repo := newMemoryRepository()
+		coordinator := &fakeCoordinatorSignalClient{}
+		service, err := NewServiceWithCoordinator(repo, coordinator)
+		if err != nil {
+			t.Fatalf("new service: %v", err)
+		}
+		projectID := uuid.New()
+		tenantID := uuid.New()
+		ownerID := uuid.New()
+		repo.projects[projectID] = Project{
+			ID:                     projectID,
+			TenantID:               tenantID,
+			Name:                   "客户侧 Runtime 接入验收",
+			Status:                 ProjectStatusRunning,
+			HumanOwnerUserID:       ownerID,
+			CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+			CoordinationStatus:     "registered",
+		}
+		seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+		return repo, coordinator, service, tenantID, projectID
+	}
+
+	t.Run("absent defaults to plan", func(t *testing.T) {
+		repo, coordinator, service, tenantID, projectID := newFixture()
+		ownerID := repo.projects[projectID].HumanOwnerUserID
+
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			SubmittedByUserID: ownerID,
+			Title:             "验证 Runtime 连接",
+		})
+		require.NoError(t, err)
+		require.Equal(t, CoordinationModePlan, demand.CoordinationMode)
+		require.Len(t, repo.demands, 1)
+		require.Equal(t, CoordinationModePlan, repo.demands[0].CoordinationMode)
+		require.Equal(t, 1, coordinator.demandSignals)
+	})
+
+	t.Run("explicit loop", func(t *testing.T) {
+		repo, coordinator, service, tenantID, projectID := newFixture()
+		ownerID := repo.projects[projectID].HumanOwnerUserID
+
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			SubmittedByUserID: ownerID,
+			Title:             "验证 Runtime 连接",
+			CoordinationMode:  CoordinationModeLoop,
+		})
+		require.NoError(t, err)
+		require.Equal(t, CoordinationModeLoop, demand.CoordinationMode)
+		require.Len(t, repo.demands, 1)
+		require.Equal(t, CoordinationModeLoop, repo.demands[0].CoordinationMode)
+		require.Equal(t, 1, coordinator.demandSignals)
+	})
+
+	t.Run("invalid value rejected before persistence or signal", func(t *testing.T) {
+		repo, coordinator, service, tenantID, projectID := newFixture()
+		ownerID := repo.projects[projectID].HumanOwnerUserID
+
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			SubmittedByUserID: ownerID,
+			Title:             "验证 Runtime 连接",
+			CoordinationMode:  "banana",
+		})
+		require.ErrorIs(t, err, ErrInvalidCoordinationMode)
+		require.Nil(t, demand)
+		require.Len(t, repo.demands, 0)
+		require.Equal(t, 0, coordinator.demandSignals)
+	})
+}
+
 func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -9074,6 +9151,7 @@ func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitPr
 		ReviewerPreference: reviewerPreferenceFromSourceRefs(req.SourceRefs),
 		Status:             status,
 		CreatedEventID:     createdEventID,
+		CoordinationMode:   req.CoordinationMode,
 	}
 	r.demands = append(r.demands, demand)
 	return demand, nil

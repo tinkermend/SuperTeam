@@ -34,9 +34,19 @@ var (
 	// re-selected onto a different one.
 	ErrProjectTaskPinnedNodeOffline = errors.New("project task's pinned runtime node is offline")
 	ErrProjectDeleteBlocked         = errors.New("project delete blocked")
+	// ErrInvalidCoordinationMode means a demand's coordination_mode is neither
+	// empty nor one of the known modes (plan, loop).
+	ErrInvalidCoordinationMode = errors.New("invalid coordination_mode")
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
+
+// Demand coordination modes. "plan" is the default single-pass planning
+// flow; "loop" opts a demand into the tri-mode handoff loop.
+const (
+	CoordinationModePlan = "plan"
+	CoordinationModeLoop = "loop"
+)
 
 type ProjectDeleteBlocker struct {
 	Type   string `json:"type"`
@@ -1205,6 +1215,7 @@ type ProjectDemand struct {
 	CreatedEventID     *uuid.UUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	CoordinationMode   string
 }
 
 type DemandLaunchDetail struct {
@@ -1456,6 +1467,7 @@ type SubmitProjectDemandRequest struct {
 	Attachments             []any
 	ReviewerUserID          *uuid.UUID
 	ReviewerSelectionReason ReviewerSelectionReason
+	CoordinationMode        string
 }
 
 type CreateEvidenceRefServiceRequest struct {

@@ -741,7 +741,7 @@ func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjec
 		Attachments:       attachments,
 		Status:            string(status),
 		CreatedEventID:    nullUUID(createdEventID),
-		CoordinationMode:  "plan",
+		CoordinationMode:  req.CoordinationMode,
 	})
 	if err != nil {
 		return ProjectDemand{}, err
@@ -5968,6 +5968,7 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 		CreatedEventID:     ptrUUID(row.CreatedEventID),
 		CreatedAt:          row.CreatedAt.Time,
 		UpdatedAt:          row.UpdatedAt.Time,
+		CoordinationMode:   row.CoordinationMode,
 	}, nil
 }
 
