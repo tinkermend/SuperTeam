@@ -2,9 +2,28 @@ package employee
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+// RunKindTask and RunKindChat are the two supported values of a run's run_kind:
+// task is the default (a single-shot dispatch), chat is a conversational run that
+// can be followed up via ResumeOfRunID to resume the same provider session.
+const (
+	RunKindTask = "task"
+	RunKindChat = "chat"
+)
+
+var (
+	// ErrInvalidRunKind is returned when CreateDigitalEmployeeRunRequest.RunKind
+	// is set to a value other than RunKindTask/RunKindChat.
+	ErrInvalidRunKind = errors.New("invalid run_kind")
+	// ErrInvalidResumeRun is returned when ResumeOfRunID is set but does not
+	// reference a resumable chat run: wrong run_kind, wrong employee, not yet
+	// terminal, or missing a provider session id.
+	ErrInvalidResumeRun = errors.New("invalid resume_of_run_id")
 )
 
 type DigitalEmployeeRunStatus string
@@ -59,6 +78,8 @@ type DigitalEmployeeRun struct {
 	ProviderType              string
 	ProviderSessionID         *string
 	ProviderSessionExternalID *string
+	RunKind                   string
+	ResumeOfRunID             *uuid.UUID
 	Status                    DigitalEmployeeRunStatus
 	Result                    map[string]any
 	Diagnostic                map[string]any
@@ -151,6 +172,15 @@ type CreateDigitalEmployeeRunRequest struct {
 	TimeoutSec        *int32
 	GraceSec          *int32
 	Metadata          map[string]any
+	// RunKind selects between a single-shot task run (RunKindTask, the default
+	// when empty) and a conversational chat run (RunKindChat). Only chat runs
+	// may set ResumeOfRunID.
+	RunKind string
+	// ResumeOfRunID, when set, must reference a prior terminal chat run for the
+	// same digital employee that carries a provider session id; CreateRun
+	// injects that session id into Metadata so the runtime resumes the same
+	// provider session instead of starting a fresh one.
+	ResumeOfRunID *uuid.UUID
 }
 
 type StartProjectTaskRunPreflight struct {

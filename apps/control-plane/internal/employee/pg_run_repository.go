@@ -252,7 +252,9 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	// GetDigitalEmployeeRunRow adds run_kind/resume_of_run_id (task-level columns) on top
 	// of the task_runs columns; reassemble the task_runs subset into queries.TaskRun so the
 	// existing mapper is reused, mirroring digitalEmployeeRunListItemFromDetailedRow below.
-	return digitalEmployeeRunFromQuery(queries.TaskRun{
+	// run_kind/resume_of_run_id have no equivalent on queries.TaskRun (they live on the
+	// tasks table, not task_runs), so they are set on the mapped domain struct separately.
+	mapped := digitalEmployeeRunFromQuery(queries.TaskRun{
 		ID:                        run.ID,
 		TenantID:                  run.TenantID,
 		TaskID:                    run.TaskID,
@@ -287,7 +289,10 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 		TimedOut:                  run.TimedOut,
 		ProviderType:              run.ProviderType,
 		ProviderSessionExternalID: run.ProviderSessionExternalID,
-	}), nil
+	})
+	mapped.RunKind = run.RunKind
+	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
+	return mapped, nil
 }
 
 func (r *PgRunRepository) GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -439,7 +444,8 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		ExecutionInstanceID:    req.ExecutionInstanceID,
 		TimeoutSec:             int4FromPtr(req.TimeoutSec),
 		GraceSec:               int4FromPtr(req.GraceSec),
-		RunKind:                "task",
+		RunKind:                req.RunKind,
+		ResumeOfRunID:          nullUUIDFromPtr(req.ResumeOfRunID),
 	})
 	if err != nil {
 		return nil, mapCreateRunError(err, req)
@@ -981,6 +987,11 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 		CreatedAt:                 row.CreatedAt,
 		UpdatedAt:                 row.UpdatedAt,
 	})
+	// run_kind/resume_of_run_id live on the joined tasks columns, not on the
+	// task_runs subset reassembled above; carry them through explicitly (see
+	// the equivalent fixup in GetRun).
+	run.RunKind = row.RunKind
+	run.ResumeOfRunID = uuidPtrFromNull(row.ResumeOfRunID)
 
 	item := DigitalEmployeeRunListItem{
 		Run:              run,

@@ -54,6 +54,8 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		TimeoutSec       *int32           `json:"timeout_sec"`
 		GraceSec         *int32           `json:"grace_sec"`
 		Metadata         map[string]any   `json:"metadata"`
+		RunKind          string           `json:"run_kind"`
+		ResumeOfRunID    *uuid.UUID       `json:"resume_of_run_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -75,6 +77,8 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		TimeoutSec:        req.TimeoutSec,
 		GraceSec:          req.GraceSec,
 		Metadata:          req.Metadata,
+		RunKind:           req.RunKind,
+		ResumeOfRunID:     req.ResumeOfRunID,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -330,6 +334,8 @@ type digitalEmployeeRunResponse struct {
 	ProviderType              string                   `json:"provider_type"`
 	ProviderSessionID         *string                  `json:"provider_session_id,omitempty"`
 	ProviderSessionExternalID *string                  `json:"provider_session_external_id,omitempty"`
+	RunKind                   string                   `json:"run_kind"`
+	ResumeOfRunID             *string                  `json:"resume_of_run_id,omitempty"`
 	Status                    DigitalEmployeeRunStatus `json:"status"`
 	Result                    map[string]any           `json:"result"`
 	Diagnostic                map[string]any           `json:"diagnostic"`
@@ -366,6 +372,8 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		ProviderType:              run.ProviderType,
 		ProviderSessionID:         run.ProviderSessionID,
 		ProviderSessionExternalID: run.ProviderSessionExternalID,
+		RunKind:                   run.RunKind,
+		ResumeOfRunID:             uuidStringPtr(run.ResumeOfRunID),
 		Status:                    run.Status,
 		Result:                    cloneMap(run.Result),
 		Diagnostic:                cloneMap(run.Diagnostic),

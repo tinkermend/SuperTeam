@@ -135,6 +135,10 @@ type CreateRunRecordRequest struct {
 	ExecutionInstanceID    uuid.UUID
 	TimeoutSec             *int32
 	GraceSec               *int32
+	// RunKind and ResumeOfRunID mirror CreateDigitalEmployeeRunRequest's fields
+	// of the same name onto the persisted task row.
+	RunKind       string
+	ResumeOfRunID *uuid.UUID
 }
 
 type UpdateRunStatusRequest struct {
