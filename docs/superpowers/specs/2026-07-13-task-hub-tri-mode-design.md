@@ -82,8 +82,10 @@ Runtime Agent → Provider(spawn 参数与今天完全一致)
 
 ### 6.2 数据库(一个迁移,编号以实现时为准)
 
+勘误(2026-07-13 计划期核实):没有 `digital_employee_runs` 表,standalone run 实际存 `tasks` + `task_runs` 两表(sqlc CTE `CreateDigitalEmployeeTaskRun` 一次插入)。归类字段落 `tasks`:
+
 ```sql
-ALTER TABLE digital_employee_runs
+ALTER TABLE tasks
     ADD COLUMN run_kind VARCHAR(20) NOT NULL DEFAULT 'task',
     ADD COLUMN resume_of_run_id UUID;
 -- CHECK (run_kind IN ('task','chat'));追问血缘仅审计用,不做 FK 级联
