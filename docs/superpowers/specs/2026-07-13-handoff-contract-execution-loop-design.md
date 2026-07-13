@@ -148,3 +148,11 @@ A→B→C→D 链上，C 的派工单只注入 B 的 result；D 只注入 C 的�
 - 场景模板 spec：默认 required_outputs 按 task_kind 沉淀，planner 从"现场生成契约"变为"模板实例化"。
 - intent spec：verification 从形态核对升级为语义验真（verdict 绑 criterion + attestation）。
 - 证据地基 spec：upstream_results 中 refs 的解引用读路径。
+
+## 8. P1 落地修订（2026-07-13）
+
+实现前对真实代码的探查发现需求侧声明机制已端到端存在，P1 据此对 §4 做三处修订（决策依据见 `docs/superpowers/plans/2026-07-13-handoff-loop-p1.md`）：
+
+1. **不新增 `handoff_contract.required_outputs` 字段。** 需求侧复用既有 `input_requirements.required_inputs`（planner 已输出、图校验已消费、员工自报 blocked 的 `missing_inputs` 已按它判定 `blocked_resolvable_upstream`）；供给侧复用既有 `produces`（PlannedTask 字段，持久化于 ProjectTask.PlannerMetadata）。§4.1 的 typed schema 落在 **result_contract.deliverables**（`{name, kind, value|ref, summary}`，Go+Rust 双侧），name 是与 produces/required_inputs 的连接键；kind 为自由字符串，注册表待有消费方再立（YAGNI）。
+2. **§4.2 图校验落地为"直接 blocker"收紧**：原实现校验 required_inputs ⊆ 祖先 produces（传递可达），P1 收紧为必须由**直接 blocker** 生产（一条边=一份交接，§3.1），拒绝理由提示补依赖边。
+3. **§4.4 缺项处理的 P1 语义 = 校验失败 → 既有 rejected+waitHuman 路径**（任务不判 completed，人类看到 `handoff_deliverable_missing:<name>` 精确清单），而非原文的"接补做循环"。理由：补做机制的触发语义是"下游被上游产出饿住"（消费侧自报），生产者自身未履约属返工家族；且宪法要求此类业务判断暂停等人。自动返工接线（unfulfilled → revision_attempt 或 supplement）列为 P2。配套可观测性：通过时平台向 contract.Verification 追加 `handoff_fulfillment` 条目并写 `handoff.verified` ledger 事件；拒绝时写 `handoff.unfulfilled`。
