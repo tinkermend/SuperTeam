@@ -23,6 +23,7 @@ const runningRun: DigitalEmployeeRunListItem = {
   work_products: [],
   session_state: {},
   timed_out: false,
+  run_kind: "task",
   task_title: "数据库迁移脚本校验",
   work_product_count: 0,
 };

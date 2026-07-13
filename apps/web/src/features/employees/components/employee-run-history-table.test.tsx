@@ -45,6 +45,7 @@ const result: DigitalEmployeeRunListResult = {
       work_products: [],
       session_state: {},
       timed_out: false,
+      run_kind: "task",
       task_title: "数据库迁移脚本校验",
       project_name: "数据库平台",
       work_product_count: 2,
