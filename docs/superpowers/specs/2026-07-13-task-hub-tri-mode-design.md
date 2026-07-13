@@ -191,7 +191,19 @@ ALTER TABLE tasks
    - loop 模式:同场景自动补链(复用既有 E2E 先例)。
    - 环境不满足任一条件时按仓库规矩标记阻塞,不降级交付。
 
-## 13. 关联
+## 13. 设计修订(2026-07-14,已确认):chat 挂项目锚
+
+真实 E2E 暴露:standalone run 预检依赖 `digital_employee_execution_instances`,该表自运行时亲和重构(`c72d3695`,"digital employees are not runtime-bound")后被设计性禁止供数,§6 所选的 standalone 路径在生产语义下不可用。经人类决策,chat 改为**挂项目锚**:
+
+- **chat run 必须携带 `project_id`**。项目仅充当运行时锚——节点解析、预算与策略边界;**chat 产出仍不进项目流转**,§5 四条不变量全部保留,并新增第 5 条:锚项目不接收任何 chat 事件、signal、ProjectTask 或 RouteDecision。
+- 契约:`CreateDigitalEmployeeRunRequest.project_id`(uuid;`run_kind=chat` 时必填,task 时忽略)。校验失败(缺失/跨租户/项目不存在或 archived)→ 400。
+- RunService:`run_kind=chat` 时预检不再走 `GetRunPreflight`,改为项目锚三件套:`ResolveProjectTaskNode`(ProjectTaskID 以零值或解析器允许的替代传入,以实现为准)→ `GetProjectTaskRunPreflightForNode` → 构造 `RunPreflight` 后复用既有 `createAndDispatchRun`。工作目录用 chat 专属一次性目录(基于 preflight WorkspaceBaseDir 派生,run 终态即弃),不复用项目任务 worktree。
+- 锚记录:`tasks.params["metadata"]["anchor_project_id"]` 落锚项目(审计用,不加列)。
+- 追问校验矩阵新增一条:追问的 `project_id` 必须与上次 chat run 的锚一致,不一致 → 400(session 在原锚节点上,跨锚续会话无意义)。
+- UI:对话态恢复"项目"chip(必选,与任务态同款);转为任务时目标项目默认预选锚项目(可改)。
+- §6.4"Runtime 零改动"保持成立。
+
+## 14. 关联
 
 - `2026-07-10-project-plan-phase-refactor-design.md`:plan/loop 行为定义(§4.7)、chat 隔离原则(§6)、补链机制与上限(§4.8)。
 - `2026-06-30-autonomous-outer-loop-iteration-attestation-budget-design.md`:预算熔断细则(loop 模式延展前核算的调用点归属)。
