@@ -74,6 +74,12 @@ type ResolveProjectTaskNodeRequest struct {
 	// ProjectTaskID selects the task hard-pin layer; Nil skips it (no task
 	// context yet).
 	ProjectTaskID uuid.UUID
+	// DryRun resolves a node without persisting employee node affinity. Chat
+	// runs use a project purely as a dispatch anchor (§13 design revision) and
+	// must never steer future task placement for the employee, so chat
+	// dispatch sets this true; project task dispatch leaves it false so
+	// resolution keeps updating the sticky affinity as before.
+	DryRun bool
 }
 
 // ProjectTaskNodeResolver picks the runtime node a project task dispatch should

@@ -233,6 +233,11 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 		ProjectID:         projectID,
 		DigitalEmployeeID: req.DigitalEmployeeID,
 		ProjectTaskID:     uuid.Nil,
+		// DryRun: a chat run's project anchor is a passive dispatch-scoping
+		// concept (§13 design revision), not a signal of the employee's real
+		// task placement — resolution must never persist/steer node affinity
+		// as a side effect of sending a chat message.
+		DryRun: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat anchor node: %w", err)

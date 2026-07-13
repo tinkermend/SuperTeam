@@ -39,6 +39,7 @@ func (a ProjectTaskNodeResolverAdapter) ResolveProjectTaskNode(ctx context.Conte
 		// provider_healthy check is the downstream safety net for provider
 		// mismatch, so the live dispatch path does not thread provider_type
 		// into node selection (YAGNI; avoids a new dependency chain).
+		DryRun: req.DryRun,
 	})
 	if err != nil {
 		return uuid.Nil, err
