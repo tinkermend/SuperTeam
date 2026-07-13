@@ -2272,13 +2272,17 @@ func routeLogin(t *testing.T, server *Server, username, password string) *http.C
 	if err := json.NewDecoder(captchaResp.Body).Decode(&captchaBody); err != nil {
 		t.Fatalf("decode captcha response: %v", err)
 	}
-	captchaCode := routeDecodeCaptchaAnswer(t, captchaBody.ImageDataURL)
-	body, err := json.Marshal(map[string]string{
-		"username":     username,
-		"password":     password,
-		"captcha_id":   captchaBody.CaptchaID,
-		"captcha_code": captchaCode,
-	})
+	loginPayload := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	// Captcha defaults to disabled (5488e39c); only solve a challenge when the
+	// server actually issued one.
+	if captchaBody.ImageDataURL != "" {
+		loginPayload["captcha_id"] = captchaBody.CaptchaID
+		loginPayload["captcha_code"] = routeDecodeCaptchaAnswer(t, captchaBody.ImageDataURL)
+	}
+	body, err := json.Marshal(loginPayload)
 	if err != nil {
 		t.Fatalf("marshal login body: %v", err)
 	}
