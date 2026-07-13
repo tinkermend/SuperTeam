@@ -60,14 +60,15 @@ type RuntimeMCPLister interface {
 }
 
 type DigitalEmployeeRunService struct {
-	repository       DigitalEmployeeRunRepository
-	dispatcher       RuntimeCommandDispatcher
-	audit            AuditLogger
-	skillLister      RuntimeSkillLister
-	capabilityLister RuntimeCapabilityLister
-	envLister        RuntimeEnvironmentLister
-	mcpLister        RuntimeMCPLister
-	nodeResolver     ProjectTaskNodeResolver
+	repository          DigitalEmployeeRunRepository
+	dispatcher          RuntimeCommandDispatcher
+	audit               AuditLogger
+	skillLister         RuntimeSkillLister
+	capabilityLister    RuntimeCapabilityLister
+	envLister           RuntimeEnvironmentLister
+	mcpLister           RuntimeMCPLister
+	nodeResolver        ProjectTaskNodeResolver
+	chatAnchorValidator ChatAnchorProjectValidator
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -108,6 +109,14 @@ func (s *DigitalEmployeeRunService) SetProjectTaskNodeResolver(r ProjectTaskNode
 	s.nodeResolver = r
 }
 
+// SetChatAnchorProjectValidator injects the project existence/tenant/archived
+// check chat runs must pass before their project-anchor node resolution runs.
+// It is required for chat run dispatch; when unset, CreateRun fails fast for
+// chat requests rather than skipping the check.
+func (s *DigitalEmployeeRunService) SetChatAnchorProjectValidator(v ChatAnchorProjectValidator) {
+	s.chatAnchorValidator = v
+}
+
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
 	objective := strings.TrimSpace(req.Objective)
 	prompt := strings.TrimSpace(req.Prompt)
@@ -129,6 +138,18 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if req.RunKind != RunKindTask && req.RunKind != RunKindChat {
 		return nil, ErrInvalidRunKind
 	}
+
+	if req.RunKind == RunKindChat {
+		if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
+			return nil, fmt.Errorf("%w: project_id is required for chat runs", ErrInvalidInput)
+		}
+	} else {
+		// §13 design revision: task runs ignore any anchor project_id the
+		// caller may have sent — it is a chat-only concept, not validated or
+		// persisted for task-kind runs.
+		req.ProjectID = nil
+	}
+
 	if req.ResumeOfRunID != nil {
 		if req.RunKind != RunKindChat {
 			return nil, ErrInvalidResumeRun
@@ -144,11 +165,26 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 			prior.ProviderSessionID == nil || strings.TrimSpace(*prior.ProviderSessionID) == "" {
 			return nil, ErrInvalidResumeRun
 		}
+		// The resumed session lives on the prior run's anchor node; resuming
+		// under a different anchor project is meaningless, so the request's
+		// project_id must match the prior run's persisted anchor exactly.
+		priorMetadata, err := s.repository.GetRunTaskMetadata(ctx, req.TenantID, prior.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("get prior chat run anchor: %w", err)
+		}
+		priorAnchor, _ := priorMetadata["anchor_project_id"].(string)
+		if priorAnchor == "" || priorAnchor != req.ProjectID.String() {
+			return nil, ErrInvalidResumeRun
+		}
 		if req.Metadata == nil {
 			req.Metadata = map[string]any{}
 		}
 		req.Metadata["provider_session_id"] = *prior.ProviderSessionID
 		req.Metadata["resume_of_run_id"] = prior.ID.String()
+	}
+
+	if req.RunKind == RunKindChat {
+		return s.createChatRun(ctx, req, objective, prompt)
 	}
 
 	preflight, err := s.repository.GetRunPreflight(ctx, req.TenantID, req.DigitalEmployeeID)
@@ -164,6 +200,75 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if !s.dispatcher.IsConnected(preflight.NodeID) {
 		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
+
+	return s.createAndDispatchRun(ctx, req, objective, prompt, preflight)
+}
+
+// createChatRun dispatches a chat run using its project anchor (§13 design
+// revision): standalone preflight (digital_employee_execution_instances) is
+// designed-off since runtime affinity no longer populates it, so chat reuses
+// the project task's node-resolution + preflight-for-node path instead,
+// exactly as project task dispatch does, but with no project task id (chat
+// never has one — ProjectTaskID is passed as uuid.Nil, which
+// ResolveProjectTaskNode documents as "skip the task hard-pin layer").
+func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string) (*DigitalEmployeeRun, error) {
+	preflightRepo, ok := s.repository.(ProjectTaskRunPreflightRepository)
+	if !ok {
+		return nil, fmt.Errorf("%w: project task run preflight repository is required", ErrInvalidInput)
+	}
+	if s.nodeResolver == nil {
+		return nil, fmt.Errorf("%w: project task node resolver is required", ErrInvalidInput)
+	}
+	if s.chatAnchorValidator == nil {
+		return nil, fmt.Errorf("%w: chat anchor project validator is required", ErrInvalidInput)
+	}
+	projectID := *req.ProjectID
+
+	if err := s.chatAnchorValidator.ValidateChatAnchorProject(ctx, req.TenantID, projectID); err != nil {
+		return nil, err
+	}
+
+	resolvedNodeID, err := s.nodeResolver.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		ProjectTaskID:     uuid.Nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve chat anchor node: %w", err)
+	}
+	projectPreflight, err := preflightRepo.GetProjectTaskRunPreflightForNode(ctx, req.TenantID, req.DigitalEmployeeID, resolvedNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("get chat anchor run preflight: %w", err)
+	}
+	if err := validateProjectTaskRunPreflight(projectPreflight); err != nil {
+		return nil, err
+	}
+	if err := validateDailyTokenBudget(RunPreflight{BudgetPolicy: projectPreflight.BudgetPolicy, TodayTokenUsage: projectPreflight.TodayTokenUsage}); err != nil {
+		return nil, err
+	}
+	if !s.dispatcher.IsConnected(projectPreflight.NodeID) {
+		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
+	}
+
+	// The workspace/execution-instance nonce is derived from the caller's
+	// idempotency_key when present so a genuine retry of the same logical
+	// chat dispatch lands on the same one-off directory (preserving
+	// createAndDispatchRun's idempotent re-dispatch path); without an
+	// idempotency key, callers get no such retry-matching guarantee anyway
+	// (sameIdempotentRun always requires an idempotency key), so a fresh
+	// nonce per call is safe.
+	nonce := chatDispatchNonce(req.IdempotencyKey)
+	compatExecutionInstanceID := chatCompatibilityExecutionInstanceID(req.TenantID, projectID, req.DigitalEmployeeID, nonce)
+	agentHomeDir := chatAgentHomeDir(projectPreflight.WorkspaceBaseDir, projectID, req.DigitalEmployeeID, nonce)
+	preflight := projectTaskRunPreflightToRunPreflight(projectPreflight, compatExecutionInstanceID, agentHomeDir)
+
+	if req.Metadata == nil {
+		req.Metadata = map[string]any{}
+	}
+	// Audit-only anchor record (§13): not a new column, lives in
+	// tasks.params["metadata"]["anchor_project_id"] via buildRunParams.
+	req.Metadata["anchor_project_id"] = projectID.String()
 
 	return s.createAndDispatchRun(ctx, req, objective, prompt, preflight)
 }
@@ -992,6 +1097,53 @@ func projectTaskAgentHomeDir(baseDir string, projectID, projectTaskID, attemptID
 		"employees",
 		employeeID.String(),
 	)
+}
+
+// chatDispatchNonce derives the value that scopes a chat run's one-off
+// workspace directory and compatibility execution-instance id (see
+// createChatRun). When the caller supplies an idempotency_key, the nonce is a
+// short hash of it so retries of the same logical dispatch are deterministic;
+// otherwise a fresh value is used.
+func chatDispatchNonce(idempotencyKey *string) string {
+	if idempotencyKey != nil {
+		if trimmed := strings.TrimSpace(*idempotencyKey); trimmed != "" {
+			sum := sha256.Sum256([]byte(trimmed))
+			return hex.EncodeToString(sum[:])[:32]
+		}
+	}
+	return strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+// chatAgentHomeDir derives a chat-specific, one-off working directory rooted
+// under the resolved node's workspace base dir. Unlike project task dispatch,
+// chat never reuses a project task worktree — the directory is scoped to
+// (project anchor, employee, dispatch nonce) and is discarded once the run
+// reaches a terminal state.
+func chatAgentHomeDir(baseDir string, projectID, employeeID uuid.UUID, nonce string) string {
+	return path.Join(
+		strings.TrimSpace(baseDir),
+		"chat",
+		projectID.String(),
+		employeeID.String(),
+		nonce,
+	)
+}
+
+// chatCompatibilityExecutionInstanceID mirrors
+// projectTaskCompatibilityExecutionInstanceID's role for chat dispatch: a
+// deterministic placeholder satisfying the legacy non-null
+// execution_instance_id column without depending on
+// digital_employee_execution_instances (designed-off, see package docs on
+// BindExecutionInstance).
+func chatCompatibilityExecutionInstanceID(tenantID, projectID, employeeID uuid.UUID, nonce string) uuid.UUID {
+	seed := strings.Join([]string{
+		tenantID.String(),
+		projectID.String(),
+		employeeID.String(),
+		"chat",
+		nonce,
+	}, ":")
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(seed))
 }
 
 func projectTaskCompatibilityExecutionInstanceID(req StartProjectTaskRunRequest) uuid.UUID {

@@ -184,22 +184,28 @@ type CreateDigitalEmployeeRunRequest struct {
 	// injects that session id into Metadata so the runtime resumes the same
 	// provider session instead of starting a fresh one.
 	ResumeOfRunID *uuid.UUID
+	// ProjectID is the chat run's runtime anchor (§13 design revision): a chat
+	// run carries no project business effect, but resolving its dispatch node,
+	// budget, and policy boundary requires a project context the way project
+	// task dispatch does. Required when RunKind is RunKindChat; CreateRun
+	// clears it to nil for RunKindTask (ignored, not validated).
+	ProjectID *uuid.UUID
 }
 
 type StartProjectTaskRunPreflight struct {
-	TenantID                   uuid.UUID
-	TeamID                     uuid.UUID
-	DigitalEmployeeID          uuid.UUID
-	DigitalEmployeeStatus      DigitalEmployeeStatus
-	RuntimeNodeID              uuid.UUID
-	NodeID                     string
-	ProviderType               string
-	WorkspaceBaseDir           string
-	BudgetPolicy               map[string]any
-	TodayTokenUsage            int32
-	BusinessTimezone           string
-	RuntimeSessionActive       bool
-	ProviderHealthy            bool
+	TenantID              uuid.UUID
+	TeamID                uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	DigitalEmployeeStatus DigitalEmployeeStatus
+	RuntimeNodeID         uuid.UUID
+	NodeID                string
+	ProviderType          string
+	WorkspaceBaseDir      string
+	BudgetPolicy          map[string]any
+	TodayTokenUsage       int32
+	BusinessTimezone      string
+	RuntimeSessionActive  bool
+	ProviderHealthy       bool
 }
 
 type StartProjectTaskRunRequest struct {

@@ -537,6 +537,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
 	runService.SetProjectTaskNodeResolver(project.NewProjectTaskNodeResolverAdapter(projectService))
+	runService.SetChatAnchorProjectValidator(project.NewChatAnchorProjectValidatorAdapter(projectService))
 	if coordinationStore != nil {
 		coordinationStore.WithProjectTaskNodeResolver(gateProjectTaskNodeResolverAdapter{service: projectService})
 	}

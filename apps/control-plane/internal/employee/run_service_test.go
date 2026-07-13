@@ -959,12 +959,10 @@ func TestCreateRunChatResumeValidation(t *testing.T) {
 			req := validChatResumeRequest(prior.ID)
 			tc.mutate(&req, prior)
 
-			repo := newFakeRunServiceRepository()
-			repo.preflight = validRunServicePreflight()
+			repo := chatAnchorRunServiceRepository(&prior.TaskID)
 			repo.run = prior
 			dispatcher := newFakeRunServiceDispatcher()
-			dispatcher.connected[repo.preflight.NodeID] = true
-			service := mustNewRunService(t, repo, dispatcher)
+			service := chatAnchorRunService(t, repo, dispatcher)
 
 			_, err := service.CreateRun(context.Background(), req)
 
@@ -979,12 +977,10 @@ func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
 	prior := validResumableChatRun()
 	req := validChatResumeRequest(prior.ID)
 
-	repo := newFakeRunServiceRepository()
-	repo.preflight = validRunServicePreflight()
+	repo := chatAnchorRunServiceRepository(&prior.TaskID)
 	repo.run = prior
 	dispatcher := newFakeRunServiceDispatcher()
-	dispatcher.connected[repo.preflight.NodeID] = true
-	service := mustNewRunService(t, repo, dispatcher)
+	service := chatAnchorRunService(t, repo, dispatcher)
 
 	_, err := service.CreateRun(context.Background(), req)
 	if err != nil {
@@ -1009,6 +1005,165 @@ func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
 	}
 	if metadata["resume_of_run_id"] != prior.ID.String() {
 		t.Fatalf("expected injected resume_of_run_id, got %#v", metadata["resume_of_run_id"])
+	}
+}
+
+// TestCreateRunChatRequiresProjectID covers §13's contract rule: chat runs
+// must carry a project_id anchor; a missing/nil one is a 400-mapped
+// ErrInvalidInput, not a runtime/dispatch failure.
+func TestCreateRunChatRequiresProjectID(t *testing.T) {
+	// Wire the full chat-anchor dependency set (node resolver, anchor
+	// validator, project preflight) so the request fails specifically on the
+	// missing project_id — not incidentally on an unrelated missing
+	// dependency this test isn't exercising.
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+	resolver := service.nodeResolver.(*fakeProjectTaskNodeResolver)
+	validator := service.chatAnchorValidator.(*fakeChatAnchorProjectValidator)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for chat run missing project_id, got %v", err)
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created without project_id, got %d", repo.createdRunCount)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected the missing project_id to be rejected before node resolution, got %d resolver calls", resolver.calls)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected the missing project_id to be rejected before anchor validation, got %d validator calls", validator.calls)
+	}
+}
+
+// TestCreateRunChatResolvesProjectAnchorNodeAndDispatches covers §13's core
+// dispatch path: a chat run with a valid project anchor validates the
+// project, resolves a node the way project task dispatch does (with
+// ProjectTaskID left uuid.Nil — chat never has a project task), looks up the
+// dispatch preflight for that resolved node, persists anchor_project_id in
+// the run's metadata for audit, and dispatches to the resolved node.
+func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+	resolver, ok := service.nodeResolver.(*fakeProjectTaskNodeResolver)
+	if !ok {
+		t.Fatalf("expected fake node resolver wired by chatAnchorRunService")
+	}
+	validator, ok := service.chatAnchorValidator.(*fakeChatAnchorProjectValidator)
+	if !ok {
+		t.Fatalf("expected fake chat anchor validator wired by chatAnchorRunService")
+	}
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create chat run: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected dispatching chat run, got %s", run.Status)
+	}
+	if validator.calls != 1 || validator.lastTenantID != runServiceTenantID || validator.lastProjectID != projectID {
+		t.Fatalf("expected chat anchor validator called with tenant+project, got calls=%d tenant=%s project=%s", validator.calls, validator.lastTenantID, validator.lastProjectID)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("expected node resolver called exactly once, got %d", resolver.calls)
+	}
+	if resolver.lastReq.TenantID != runServiceTenantID || resolver.lastReq.ProjectID != projectID ||
+		resolver.lastReq.DigitalEmployeeID != runServiceEmployeeID || resolver.lastReq.ProjectTaskID != uuid.Nil {
+		t.Fatalf("expected resolver called with project anchor and nil project_task_id, got %#v", resolver.lastReq)
+	}
+	if repo.projectTaskPreflightForNodeEmployeeID != runServiceEmployeeID || repo.projectTaskPreflightForNodeNodeID != resolver.nodeID {
+		t.Fatalf("expected dispatch preflight lookup by resolved node, got employee=%s node=%s", repo.projectTaskPreflightForNodeEmployeeID, repo.projectTaskPreflightForNodeNodeID)
+	}
+	if len(repo.createRunRequests) != 1 {
+		t.Fatalf("expected one created run, got %d", len(repo.createRunRequests))
+	}
+	created := repo.createRunRequests[0]
+	if created.ProviderType != "codex" || created.RuntimeNodeID != repo.projectTaskPreflight.RuntimeNodeID || created.NodeID != repo.projectTaskPreflight.NodeID {
+		t.Fatalf("expected create run to use resolved project placement/provider, got %#v", created)
+	}
+	metadata, ok := created.Params["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata map in params, got %#v", created.Params["metadata"])
+	}
+	if metadata["anchor_project_id"] != projectID.String() {
+		t.Fatalf("expected anchor_project_id metadata, got %#v", metadata["anchor_project_id"])
+	}
+	if len(dispatcher.commands) != 1 || dispatcher.commands[0].nodeID != repo.projectTaskPreflight.NodeID {
+		t.Fatalf("expected dispatch to resolved project anchor node, got %#v", dispatcher.commands)
+	}
+}
+
+// TestCreateRunChatResumeRejectsMismatchedAnchorProject covers §13's resume
+// validation-matrix addition: a follow-up chat run's project_id must equal
+// the prior run's persisted anchor_project_id, since the provider session
+// being resumed lives on that anchor's resolved node — resuming under a
+// different anchor is meaningless.
+func TestCreateRunChatResumeRejectsMismatchedAnchorProject(t *testing.T) {
+	prior := validResumableChatRun()
+	repo := chatAnchorRunServiceRepository(nil)
+	repo.run = prior
+	repo.taskMetadata = map[uuid.UUID]map[string]any{
+		prior.TaskID: {"anchor_project_id": uuid.New().String()}, // deliberately different from the request's project_id
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+
+	req := validChatResumeRequest(prior.ID) // req.ProjectID == runServiceProjectID, mismatched above
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidResumeRun) {
+		t.Fatalf("expected ErrInvalidResumeRun for mismatched anchor project, got %v", err)
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created on anchor mismatch, got %d", repo.createdRunCount)
+	}
+}
+
+// TestCreateRunTaskKindIgnoresProjectIDAndUsesLegacyPreflight covers §13's
+// "task 时忽略" rule: a task-kind run with a caller-supplied project_id must
+// not touch project-anchor dispatch at all — no node resolver call, no chat
+// anchor validation, and it still dispatches through the legacy standalone
+// GetRunPreflight path task runs have always used.
+func TestCreateRunTaskKindIgnoresProjectIDAndUsesLegacyPreflight(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	resolver := &fakeProjectTaskNodeResolver{nodeID: uuid.New()}
+	service.SetProjectTaskNodeResolver(resolver)
+	validator := &fakeChatAnchorProjectValidator{}
+	service.SetChatAnchorProjectValidator(validator)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindTask
+	projectID := uuid.New()
+	req.ProjectID = &projectID
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create task run: %v", err)
+	}
+	if run.NodeID != repo.preflight.NodeID || run.ExecutionInstanceID != repo.preflight.ExecutionInstanceID {
+		t.Fatalf("expected legacy standalone preflight used, got %#v", run)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected node resolver not called for task-kind run, got %d calls", resolver.calls)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected chat anchor validator not called for task-kind run, got %d calls", validator.calls)
 	}
 }
 
@@ -1050,12 +1205,40 @@ func validResumableChatRun() *DigitalEmployeeRun {
 }
 
 // validChatResumeRequest builds a valid chat-resume CreateDigitalEmployeeRunRequest
-// targeting resumeOfRunID, layered on top of validCreateRunServiceRequest.
+// targeting resumeOfRunID, layered on top of validCreateRunServiceRequest. The
+// project_id anchor matches runServiceProjectID, the anchor validResumableChatRun's
+// prior run is stubbed to carry via fakeRunServiceRepository.taskMetadata.
 func validChatResumeRequest(resumeOfRunID uuid.UUID) CreateDigitalEmployeeRunRequest {
 	req := validCreateRunServiceRequest()
 	req.RunKind = RunKindChat
 	req.ResumeOfRunID = &resumeOfRunID
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
 	return req
+}
+
+// chatAnchorRunServiceRepository wires the fakes a chat run's project-anchor
+// dispatch path requires on top of a bare fakeRunServiceRepository: a
+// project-task preflight for the resolved node, and — for resume tests — the
+// prior run's persisted anchor_project_id metadata.
+func chatAnchorRunServiceRepository(priorTaskID *uuid.UUID) *fakeRunServiceRepository {
+	repo := newFakeRunServiceRepository()
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	if priorTaskID != nil {
+		repo.taskMetadata = map[uuid.UUID]map[string]any{
+			*priorTaskID: {"anchor_project_id": runServiceProjectID.String()},
+		}
+	}
+	return repo
+}
+
+func chatAnchorRunService(t *testing.T, repo *fakeRunServiceRepository, dispatcher *fakeRunServiceDispatcher) *DigitalEmployeeRunService {
+	t.Helper()
+	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
+	service.SetChatAnchorProjectValidator(&fakeChatAnchorProjectValidator{})
+	return service
 }
 
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
@@ -1770,7 +1953,25 @@ var (
 	runServiceEmployeeID          = uuid.MustParse("00000000-0000-0000-0000-000000000201")
 	runServiceExecutionInstanceID = uuid.MustParse("00000000-0000-0000-0000-000000000301")
 	runServiceRuntimeNodeID       = uuid.MustParse("00000000-0000-0000-0000-000000000401")
+	runServiceProjectID           = uuid.MustParse("00000000-0000-0000-0000-000000000501")
 )
+
+// fakeChatAnchorProjectValidator is the fake ChatAnchorProjectValidator for
+// chat run dispatch tests: it records the (tenant, project) pair it was
+// called with and, by default, approves the anchor (err == nil).
+type fakeChatAnchorProjectValidator struct {
+	err           error
+	calls         int
+	lastTenantID  uuid.UUID
+	lastProjectID uuid.UUID
+}
+
+func (f *fakeChatAnchorProjectValidator) ValidateChatAnchorProject(_ context.Context, tenantID, projectID uuid.UUID) error {
+	f.calls++
+	f.lastTenantID = tenantID
+	f.lastProjectID = projectID
+	return f.err
+}
 
 type fakeProjectTaskNodeResolver struct {
 	nodeID  uuid.UUID
@@ -1829,6 +2030,11 @@ type fakeRunServiceRepository struct {
 	// absent means "no active session for this root").
 	providerSessionForRoot      map[uuid.UUID]string
 	providerSessionForRootCalls []findProviderSessionForRootCall
+
+	// taskMetadata maps a task id to the metadata GetRunTaskMetadata should
+	// return for it (e.g. a prior chat run's persisted anchor_project_id);
+	// absent means "no metadata" (nil map, not an error).
+	taskMetadata map[uuid.UUID]map[string]any
 }
 
 type resolveLineageRootCall struct {
@@ -2025,8 +2231,8 @@ func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(_ context.Cont
 	return f.providerSessionForRoot[taskRootID], nil
 }
 
-func (f *fakeRunServiceRepository) GetRunTaskMetadata(context.Context, uuid.UUID, uuid.UUID) (map[string]any, error) {
-	return nil, nil
+func (f *fakeRunServiceRepository) GetRunTaskMetadata(_ context.Context, _ uuid.UUID, taskID uuid.UUID) (map[string]any, error) {
+	return f.taskMetadata[taskID], nil
 }
 
 func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {

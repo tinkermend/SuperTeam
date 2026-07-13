@@ -92,6 +92,20 @@ type ProjectTaskNodeResolver interface {
 	ResolveProjectTaskNode(ctx context.Context, req ResolveProjectTaskNodeRequest) (uuid.UUID, error)
 }
 
+// ChatAnchorProjectValidator confirms a project can serve as a chat run's
+// runtime anchor (§13 design revision): it must exist, belong to the
+// requesting tenant, and not be archived. Chat runs carry no business effect
+// on the project — this is purely a dispatch-scoping check, mirroring why
+// ProjectTaskNodeResolver is declared here rather than in project: it lets
+// this package depend on project-shaped facts without importing project
+// (which already imports employee). The concrete implementation is a
+// project-package adapter wired in at composition (internal/app). Any
+// not-found/archived/cross-tenant outcome must be returned as an error this
+// package's handler layer maps to 400 (i.e. wrapping ErrInvalidInput).
+type ChatAnchorProjectValidator interface {
+	ValidateChatAnchorProject(ctx context.Context, tenantID, projectID uuid.UUID) error
+}
+
 type RunPreflight struct {
 	TenantID              uuid.UUID
 	TeamID                uuid.UUID

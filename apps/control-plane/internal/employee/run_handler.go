@@ -56,6 +56,7 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		Metadata         map[string]any   `json:"metadata"`
 		RunKind          string           `json:"run_kind"`
 		ResumeOfRunID    *uuid.UUID       `json:"resume_of_run_id"`
+		ProjectID        *uuid.UUID       `json:"project_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -79,6 +80,7 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		Metadata:          req.Metadata,
 		RunKind:           req.RunKind,
 		ResumeOfRunID:     req.ResumeOfRunID,
+		ProjectID:         req.ProjectID,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
