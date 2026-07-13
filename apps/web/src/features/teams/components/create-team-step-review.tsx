@@ -19,32 +19,32 @@ export function CreateTeamStepReview({
   const previewSlug = draft.slug.trim() || "team-slug";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="overflow-hidden rounded-xl bg-gradient-to-br from-primary to-primary/70 p-5 text-primary-foreground shadow-md">
-        <p className="text-xs font-semibold tracking-wide opacity-80">
-          创建确认预览
-        </p>
-        <div className="mt-3 flex items-center gap-3">
-          <TeamIconTile
-            className="size-12 rounded-xl border-white/40 bg-white/80 [&_svg]:size-5"
-            metadata={{ display: draft.display }}
-          />
-          <div className="min-w-0">
-            <div className="truncate text-base font-bold">{previewName}</div>
-            <div className="truncate font-mono text-xs opacity-90">
-              {previewSlug}
+    <div className="flex flex-col gap-5 lg:mx-auto lg:w-full lg:max-w-3xl">
+      <div className="overflow-hidden rounded-[22px] border border-v3-line bg-v3-card shadow-v3">
+        <div className="bg-v3-brand px-5 py-5 text-white sm:px-6">
+          <p className="text-xs font-semibold tracking-wide text-white/80">创建确认预览</p>
+          <div className="mt-3 flex items-center gap-3">
+            <TeamIconTile
+              className="size-12 rounded-[14px] border-white/40 bg-white/90 [&_svg]:size-5"
+              metadata={{ display: draft.display }}
+            />
+            <div className="min-w-0">
+              <div className="truncate text-base font-bold">{previewName}</div>
+              <div className="truncate font-mono text-xs text-white/85">
+                /teams/{previewSlug}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="mt-4 flex gap-6 border-t border-white/20 pt-3">
-          <PreviewStat label="负责人" value={draft.owners.length} />
-          <PreviewStat label="数字员工" value={draft.initial_digital_employees.length} />
+          <div className="mt-4 flex gap-8 border-t border-white/20 pt-3">
+            <PreviewStat label="负责人" value={draft.owners.length} />
+            <PreviewStat label="数字员工" value={draft.initial_digital_employees.length} />
+          </div>
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
-        <h3 className="text-sm font-semibold">创建后解锁</h3>
-        <p className="mb-3 mt-1 text-xs text-muted-foreground">
+      <div className="rounded-[22px] border border-v3-line bg-v3-card p-4 shadow-v3 sm:p-5">
+        <h3 className="text-sm font-semibold text-v3-ink">创建后解锁</h3>
+        <p className="mb-3 mt-1 text-xs text-v3-ink-3">
           下列能力在团队创建后开放，可按需逐步配置：
         </p>
         <ul className="flex flex-col">
@@ -83,16 +83,16 @@ export function CreateTeamStepReview({
         </ul>
       </div>
 
-      <div className="rounded-xl border bg-card p-5 shadow-sm">
+      <div className="rounded-[22px] border border-v3-line bg-v3-card p-5 shadow-v3">
         <Label className="flex cursor-pointer items-start gap-2.5">
           <Checkbox
             checked={goToConstitution}
             className="mt-0.5"
             onCheckedChange={(checked) => setGoToConstitution(checked === true)}
           />
-          <span className="text-sm">
+          <span className="text-sm text-v3-ink">
             <span className="font-medium">创建后前往宪法</span>
-            <span className="mt-0.5 block text-xs text-muted-foreground">
+            <span className="mt-0.5 block text-xs text-v3-ink-3">
               立即进入团队宪法编辑。
             </span>
           </span>

@@ -101,19 +101,18 @@ async function renderView(node: ReactNode) {
 }
 
 describe("CreateTeamView", () => {
-  it("validates name, slug, and owner before moving to next steps", async () => {
+  it("validates name, slug, and owner before moving to review", async () => {
     const fetcher = createFetcher();
     const screen = await renderView(
       <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    // Try next without filling name and slug
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 负责人和数字员工" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
 
     await expect.element(screen.getByText("团队名称不能为空")).toBeVisible();
     await expect.element(screen.getByText("团队标识不能为空")).toBeVisible();
+    await expect.element(screen.getByText("请至少选择一位负责人")).toBeVisible();
 
-    // Fill name and slug
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
       "安全团队",
@@ -122,12 +121,8 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-    
-    // Now next works
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 负责人和数字员工" }));
 
-    // Try next without filling owner
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 权限与设置" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
     await expect.element(screen.getByText("请至少选择一位负责人")).toBeVisible();
 
     expect(
@@ -148,15 +143,17 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
       "2024 团队",
     );
-    // 数字开头的 slug 前端曾放行、后端返回 400 invalid slug format。
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "2024-team",
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "下一步: 负责人和数字员工" }),
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
+      "owner",
     );
+    await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
 
     await expect
       .element(
@@ -190,7 +187,7 @@ describe("CreateTeamView", () => {
       .toHaveValue("myteam");
   });
 
-  it("creates a team through the multi-step wizard", async () => {
+  it("creates a team through the two-step wizard", async () => {
     const fetcher = createFetcher();
     const onCreated = vi.fn();
     const screen = await renderView(
@@ -201,7 +198,6 @@ describe("CreateTeamView", () => {
       />,
     );
 
-    // Step 1
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
       "安全团队",
@@ -210,20 +206,13 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 负责人和数字员工" }));
-
-    // Step 2
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
       "owner",
     );
     await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 权限与设置" }));
-
-    // Step 3
     await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
 
-    // Step 4
     await userEvent.click(screen.getByRole("button", { name: "确认并创建" }));
 
     await expect
@@ -240,7 +229,9 @@ describe("CreateTeamView", () => {
       metadata: {
         display: {
           color_tone: "teal",
-          icon_key: "security", } },
+          icon_key: "security",
+        },
+      },
       name: "安全团队",
       slug: "security",
     });
@@ -254,7 +245,6 @@ describe("CreateTeamView", () => {
       <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    // Step 1
     await userEvent.fill(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
       "安全团队",
@@ -263,20 +253,12 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 负责人和数字员工" }));
-
-    // Step 2
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
       "owner",
     );
     await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
-    await userEvent.click(screen.getByRole("button", { name: "下一步: 权限与设置" }));
-
-    // Step 3
     await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
-
-    // Step 4
     await userEvent.click(screen.getByRole("button", { name: "确认并创建" }));
 
     await expect

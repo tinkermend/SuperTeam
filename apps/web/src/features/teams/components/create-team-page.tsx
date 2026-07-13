@@ -29,10 +29,8 @@ type CreateTeamViewProps = {
 };
 
 const STEPS = [
-  { id: 1, label: "团队信息" },
-  { id: 2, label: "负责人和数字员工" },
-  { id: 3, label: "权限与设置" },
-  { id: 4, label: "确认并创建" },
+  { id: 1, label: "配置团队" },
+  { id: 2, label: "确认并创建" },
 ];
 
 export function CreateTeamView({
@@ -57,23 +55,24 @@ export function CreateTeamView({
     },
   });
 
-  function validateStep(step: number): boolean {
+  function validateBasics(): Record<string, string> {
     const nextErrors: Record<string, string> = {};
-    if (step === 1) {
-      if (!draft.name.trim()) nextErrors.name = "团队名称不能为空";
-      const slug = draft.slug.trim();
-      if (!slug) {
-        nextErrors.slug = "团队标识不能为空";
-      } else if (slug.length < 3 || slug.length > 64) {
-        nextErrors.slug = "团队标识需为 3-64 个字符";
-      } else if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(slug)) {
-        // 与后端 tenant 校验保持一致：小写字母开头，仅含小写字母/数字/中划线，字母或数字结尾。
-        nextErrors.slug =
-          "团队标识需以小写字母开头，仅含小写字母、数字和中划线，且以字母或数字结尾";
-      }
-    } else if (step === 2) {
-      if (draft.owners.length === 0) nextErrors.owner = "请至少选择一位负责人";
+    if (!draft.name.trim()) nextErrors.name = "团队名称不能为空";
+    const slug = draft.slug.trim();
+    if (!slug) {
+      nextErrors.slug = "团队标识不能为空";
+    } else if (slug.length < 3 || slug.length > 64) {
+      nextErrors.slug = "团队标识需为 3-64 个字符";
+    } else if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(slug)) {
+      nextErrors.slug =
+        "团队标识需以小写字母开头，仅含小写字母、数字和中划线，且以字母或数字结尾";
     }
+    if (draft.owners.length === 0) nextErrors.owner = "请至少选择一位负责人";
+    return nextErrors;
+  }
+
+  function validateStep(step: number): boolean {
+    const nextErrors = step === 1 ? validateBasics() : {};
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
@@ -89,7 +88,7 @@ export function CreateTeamView({
   }
 
   function handleSubmit() {
-    if (validateStep(1) && validateStep(2)) {
+    if (validateStep(1)) {
       createMutation.mutate();
     }
   }
@@ -98,19 +97,24 @@ export function CreateTeamView({
     createMutation.error instanceof Error ? createMutation.error.message : undefined;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
-      {/* Header and Stepper */}
-      <div className="flex flex-col items-start gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="flex w-full min-w-0 flex-col gap-5 pb-10">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-3",
+          showHeading ? "justify-between" : "justify-start",
+        )}
+      >
         {showHeading ? (
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground">
               团队管理 › 新建团队
             </p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">新建团队</h1>
           </div>
-        ) : null}
+        ) : (
+          <span className="sr-only">新建团队步骤</span>
+        )}
 
-        {/* Horizontal Stepper */}
         <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-sm lg:gap-4">
           {STEPS.map((step, index) => {
             const isCompleted = currentStep > step.id;
@@ -142,65 +146,58 @@ export function CreateTeamView({
                   </span>
                   <span className="hidden sm:inline">{step.label}</span>
                 </div>
-                {index < STEPS.length - 1 && (
+                {index < STEPS.length - 1 ? (
                   <ChevronRight className="size-4 text-muted-foreground/50" />
-                )}
+                ) : null}
               </div>
             );
           })}
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-6">
-        {submitError && (
+      <div className="flex min-w-0 flex-col gap-5">
+        {submitError ? (
           <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
             {submitError}
           </div>
-        )}
+        ) : null}
 
-        {/* Step Content */}
-        {currentStep === 1 && (
-          <CreateTeamStepIdentity
-            draft={draft}
-            errors={errors}
-            onChange={setDraft}
-          />
-        )}
-        {currentStep === 2 && (
-          <CreateTeamStepMembers
-            apiBaseUrl={apiBaseUrl}
-            draft={draft}
-            errors={errors}
-            fetcher={fetcher}
-            onChange={setDraft}
-          />
-        )}
-        {currentStep === 3 && (
-          <div className="rounded-xl border bg-card p-10 text-center text-muted-foreground shadow-sm">
-            <h3 className="mb-2 text-lg font-semibold text-foreground">权限与设置</h3>
-            <p className="text-sm">本团队暂时没有特殊的初始配置项，可以直接进入下一步进行确认。</p>
-          </div>
-        )}
-        {currentStep === 4 && (
+        {currentStep === 1 ? (
+          <>
+            <CreateTeamStepIdentity
+              draft={draft}
+              errors={errors}
+              onChange={setDraft}
+            />
+            <CreateTeamStepMembers
+              apiBaseUrl={apiBaseUrl}
+              draft={draft}
+              errors={errors}
+              fetcher={fetcher}
+              onChange={setDraft}
+            />
+          </>
+        ) : null}
+
+        {currentStep === 2 ? (
           <CreateTeamStepReview
             draft={draft}
             goToConstitution={goToConstitution}
             setGoToConstitution={setGoToConstitution}
           />
-        )}
+        ) : null}
 
-        {/* Bottom Navigation */}
-        <div className="flex items-center justify-end gap-3 border-t pt-6">
-          {onCancel && currentStep === 1 && (
+        <div className="flex items-center justify-end gap-3 border-t pt-5">
+          {onCancel && currentStep === 1 ? (
             <Button onClick={onCancel} type="button" variant="outline">
               取消
             </Button>
-          )}
-          {currentStep > 1 && (
+          ) : null}
+          {currentStep > 1 ? (
             <Button onClick={handlePrev} type="button" variant="outline">
               上一步
             </Button>
-          )}
+          ) : null}
           {currentStep < STEPS.length ? (
             <Button onClick={handleNext} type="button">
               下一步: {STEPS[currentStep].label}
