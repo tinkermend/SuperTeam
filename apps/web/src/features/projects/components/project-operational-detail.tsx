@@ -447,6 +447,12 @@ export function ProjectOperationalDetail({
                     </div>
                   ) : null}
                 </div>
+                {planRevisionTemplateKey(latestPlanRevision) ? (
+                  <RuntimeMeta
+                    label="场景模板"
+                    value={planRevisionTemplateKey(latestPlanRevision)}
+                  />
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-3">
                   <FactTile
                     icon={<ClipboardList />}
@@ -2101,4 +2107,9 @@ function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function planRevisionTemplateKey(revision: ProjectPlanRevision): string {
+  const value = revision.payload?.["template_key"];
+  return typeof value === "string" ? value : "";
 }

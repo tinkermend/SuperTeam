@@ -13,6 +13,7 @@ var defaultFinalSummaryRequiredSections = []string{"conclusion", "evidence", "ri
 
 type PlanRevisionPayload struct {
 	Summary                string                           `json:"summary"`
+	TemplateKey            string                           `json:"template_key,omitempty"`
 	Assumptions            []string                         `json:"assumptions"`
 	RiskAssessment         PlanRevisionRiskAssessment       `json:"risk_assessment"`
 	HumanReview            PlanRevisionHumanReview          `json:"human_review"`
@@ -133,6 +134,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 	}
 	return PlanRevisionPayload{
 		Summary:                plan.Reason,
+		TemplateKey:            plan.TemplateKey,
 		Assumptions:            []string{},
 		RiskAssessment:         riskAssessment,
 		HumanReview:            humanReview,
@@ -283,6 +285,7 @@ func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTas
 func canonicalPlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPayload {
 	canonical := PlanRevisionPayload{
 		Summary:     payload.Summary,
+		TemplateKey: payload.TemplateKey,
 		Assumptions: sortedPlanRevisionStrings(payload.Assumptions),
 		RiskAssessment: PlanRevisionRiskAssessment{
 			HighestRiskLevel: payload.RiskAssessment.HighestRiskLevel,

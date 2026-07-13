@@ -1,6 +1,7 @@
 package projectcoordination
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -249,4 +250,30 @@ func validPlanRevisionPayload(employeeID uuid.UUID) PlanRevisionPayload {
 			RequiredSections: []string{"conclusion", "evidence", "risks", "next_steps"},
 		},
 	}
+}
+
+func TestBuildPlanRevisionPayloadCarriesTemplateKey(t *testing.T) {
+	plan := RouteDecisionPlan{
+		Reason:      "template driven",
+		TemplateKey: "ops_analysis",
+	}
+	payload := BuildPlanRevisionPayload(plan)
+	require.Equal(t, "ops_analysis", payload.TemplateKey)
+
+	encoded, err := json.Marshal(payload)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"template_key":"ops_analysis"`)
+}
+
+func TestCanonicalPlanFingerprintStableWithoutTemplateKey(t *testing.T) {
+	payload := BuildPlanRevisionPayload(RouteDecisionPlan{Reason: "no template"})
+	fingerprint, err := CanonicalPlanFingerprint(payload)
+	require.NoError(t, err)
+
+	// omitempty: an empty template key must not change historical fingerprints.
+	canonical := canonicalPlanRevisionPayload(payload)
+	encoded, err := json.Marshal(canonical)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "template_key")
+	require.NotEmpty(t, fingerprint)
 }
