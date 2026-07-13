@@ -4455,6 +4455,19 @@ type RuntimeSession struct {
 	UpdatedAt     time.Time           `json:"updated_at"`
 }
 
+// ScenarioTemplate defines model for ScenarioTemplate.
+type ScenarioTemplate struct {
+	CreatedAt   time.Time              `json:"created_at"`
+	Description string                 `json:"description"`
+	Id          openapi_types.UUID     `json:"id"`
+	Name        string                 `json:"name"`
+	Spec        map[string]interface{} `json:"spec"`
+	Status      string                 `json:"status"`
+	TemplateKey string                 `json:"template_key"`
+	TenantId    openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
 // SchedulingReadinessCapabilities defines model for SchedulingReadinessCapabilities.
 type SchedulingReadinessCapabilities struct {
 	EnvironmentVariables SchedulingReadinessEnvironmentSummary `json:"environment_variables"`
@@ -6608,6 +6621,12 @@ type ServerInterface interface {
 	// Update a Runtime Agent task status
 	// (PUT /api/v1/runtime/tasks/{taskId}/status)
 	UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams)
+	// List tenant scenario templates (read-only registry)
+	// (GET /api/v1/scenario-templates)
+	ListScenarioTemplates(w http.ResponseWriter, r *http.Request)
+	// Get one scenario template by key
+	// (GET /api/v1/scenario-templates/{templateKey})
+	GetScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
 	// List skills with files and bindings
 	// (GET /api/v1/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, params ListSkillsParams)
@@ -7568,6 +7587,18 @@ func (_ Unimplemented) RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Requ
 // Update a Runtime Agent task status
 // (PUT /api/v1/runtime/tasks/{taskId}/status)
 func (_ Unimplemented) UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List tenant scenario templates (read-only registry)
+// (GET /api/v1/scenario-templates)
+func (_ Unimplemented) ListScenarioTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get one scenario template by key
+// (GET /api/v1/scenario-templates/{templateKey})
+func (_ Unimplemented) GetScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13049,6 +13080,46 @@ func (siw *ServerInterfaceWrapper) UpdateRuntimeTaskStatus(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// ListScenarioTemplates operation middleware
+func (siw *ServerInterfaceWrapper) ListScenarioTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScenarioTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScenarioTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScenarioTemplate(w, r, templateKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -15180,6 +15251,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/status", wrapper.UpdateRuntimeTaskStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/scenario-templates", wrapper.ListScenarioTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.GetScenarioTemplate)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills", wrapper.ListSkills)

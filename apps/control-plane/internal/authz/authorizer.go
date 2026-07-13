@@ -134,7 +134,9 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		decision, err = a.checkCredentialSelfOrTenantAdmin(ctx, req)
 	case ActionMCPRegistryRead,
-		ActionMCPRegistryManage:
+		ActionMCPRegistryManage,
+		ActionScenarioTemplateRead,
+		ActionScenarioTemplateManage:
 		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision = deny(ReasonInvalidResource)
 			break

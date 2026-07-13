@@ -18,6 +18,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
@@ -40,6 +41,7 @@ type Server struct {
 	inboxHandler                   *inbox.HTTPHandler
 	projectHandler                 *project.HTTPHandler
 	promptTemplateHandler          *prompttemplate.HTTPHandler
+	scenarioTemplateHandler        *scenariotemplate.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 	teamLendingHandler             *teamlending.HTTPHandler
@@ -194,6 +196,14 @@ func (s *Server) SetCapabilityHandler(capabilityHandler *capability.HTTPHandler)
 
 func (s *Server) SetPromptTemplateHandler(promptTemplateHandler *prompttemplate.HTTPHandler) {
 	s.promptTemplateHandler = promptTemplateHandler
+	s.registerRoutes()
+}
+
+func (s *Server) SetScenarioTemplateHandler(scenarioTemplateHandler *scenariotemplate.HTTPHandler) {
+	s.scenarioTemplateHandler = scenarioTemplateHandler
+	if scenarioTemplateHandler != nil {
+		scenarioTemplateHandler.SetAuthorizer(s.authorizer)
+	}
 	s.registerRoutes()
 }
 
@@ -434,6 +444,15 @@ func (s *Server) registerRoutes() {
 				r.Get("/templates", s.promptTemplateHandler.ListPromptTemplates)
 				r.Post("/templates", s.promptTemplateHandler.CreatePromptTemplate)
 				r.Post("/templates/{id}/apply", s.promptTemplateHandler.ApplyPromptTemplate)
+			})
+		}
+
+		if s.scenarioTemplateHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				// Scenario template registry (migration 058), read-only in P1.
+				r.Get("/scenario-templates", s.scenarioTemplateHandler.ListScenarioTemplates)
+				r.Get("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.GetScenarioTemplate)
 			})
 		}
 

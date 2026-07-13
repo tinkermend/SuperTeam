@@ -2185,6 +2185,42 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/scenario-templates:
+    get:
+      operationId: listScenarioTemplates
+      summary: List tenant scenario templates (read-only registry)
+      responses:
+        "200":
+          description: Scenario template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScenarioTemplate"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/scenario-templates/{templateKey}:
+    get:
+      operationId: getScenarioTemplate
+      summary: Get one scenario template by key
+      parameters:
+        - name: templateKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scenario template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioTemplate"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/mcp-servers:
     get:
       operationId: listMCPServerDefinitions
@@ -8931,6 +8967,33 @@ components:
         - none
         - bearer_env
         - headers_env
+    ScenarioTemplate:
+      type: object
+      required: [id, tenant_id, template_key, name, description, spec, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        template_key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     MCPServerDefinition:
       type: object
       required:

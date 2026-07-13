@@ -56,6 +56,9 @@ const (
 	ActionMCPRegistryRead   = "mcp_registry.read"
 	ActionMCPRegistryManage = "mcp_registry.manage"
 
+	ActionScenarioTemplateRead   = "scenario_template.read"
+	ActionScenarioTemplateManage = "scenario_template.manage"
+
 	ActionSkillRead    = "skill.read"
 	ActionSkillUpload  = "skill.upload"
 	ActionSkillDelete  = "skill.delete"

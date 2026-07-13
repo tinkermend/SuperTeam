@@ -24,6 +24,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/skill"
@@ -555,6 +556,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
+	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
@@ -616,6 +618,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
 	capabilityHandler := capability.NewHandler(capabilityService)
+	scenarioTemplateHandler := scenariotemplate.NewHandler(scenarioTemplateService)
 	promptTemplateRepository := prompttemplate.NewPgRepository(q)
 	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
 	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
@@ -634,6 +637,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
 	server.SetCapabilityHandler(capabilityHandler)
+	server.SetScenarioTemplateHandler(scenarioTemplateHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
 
 	return &Container{
