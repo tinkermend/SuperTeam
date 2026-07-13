@@ -206,10 +206,11 @@ type InspectTaskResultDecisionInput struct {
 }
 
 type InspectTaskResultDecisionResult struct {
-	ResultID  uuid.UUID
-	Decision  string
-	Exhausted bool
-	Blocker   *project.TaskResultBlocker
+	ResultID         uuid.UUID
+	Decision         string
+	Exhausted        bool
+	Blocker          *project.TaskResultBlocker
+	CoordinationMode string
 }
 
 type CreateRevisionTaskForResultInput struct {
@@ -258,6 +259,17 @@ type RequestProjectTaskIterationExhaustedReviewInput struct {
 	Reason         string
 	Summary        string
 	CreatedEventID uuid.UUID
+}
+
+// RequestUpstreamSupplementReviewInput requests a human decision gate before the
+// coordinator creates upstream supplement tasks for a blocked task's missing inputs.
+type RequestUpstreamSupplementReviewInput struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	ProjectTaskID    uuid.UUID
+	ResultID         uuid.UUID
+	CompletedEventID uuid.UUID
+	MissingInputs    []string
 }
 
 type ApplyProjectAcceptanceDecisionInput struct {

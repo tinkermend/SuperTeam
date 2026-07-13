@@ -34,9 +34,19 @@ var (
 	// re-selected onto a different one.
 	ErrProjectTaskPinnedNodeOffline = errors.New("project task's pinned runtime node is offline")
 	ErrProjectDeleteBlocked         = errors.New("project delete blocked")
+	// ErrInvalidCoordinationMode means a demand's coordination_mode is neither
+	// empty nor one of the known modes (plan, loop).
+	ErrInvalidCoordinationMode = errors.New("invalid coordination_mode")
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
+
+// Demand coordination modes. "plan" is the default single-pass planning
+// flow; "loop" opts a demand into the tri-mode handoff loop.
+const (
+	CoordinationModePlan = "plan"
+	CoordinationModeLoop = "loop"
+)
 
 type ProjectDeleteBlocker struct {
 	Type   string `json:"type"`
@@ -169,50 +179,52 @@ const (
 	ProjectEventWorkflowCoordinationFailed ProjectEventType = "workflow.coordination_failed"
 	ProjectEventTaskDispatchBlocked        ProjectEventType = "project_task.dispatch_blocked"
 
-	ProjectEventWorkflowSignaled               ProjectEventType = "workflow.signaled"
-	ProjectEventCoordinationJobCreated         ProjectEventType = "coordination_job.created"
-	ProjectEventRouteDecisionCreated           ProjectEventType = "route_decision.created"
-	ProjectEventTaskCreated                    ProjectEventType = "project_task.created"
-	ProjectEventTaskGraphPlanned               ProjectEventType = "project_task_graph.planned"
-	ProjectEventTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
-	ProjectEventTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
-	ProjectEventTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
-	ProjectEventTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
-	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
-	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
-	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
-	ProjectEventTaskRetryScheduled             ProjectEventType = "project_task.retry_scheduled"
-	ProjectEventTaskAttemptLost                ProjectEventType = "project_task.attempt_lost"
-	ProjectEventTaskRecoveryRequested          ProjectEventType = "project_task.recovery_requested"
-	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
-	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
-	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
-	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
-	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
-	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
-	ProjectEventTaskResultRecorded             ProjectEventType = "project_task.result.recorded"
-	ProjectEventTaskResultAccepted             ProjectEventType = "project_task.result.accepted"
-	ProjectEventTaskResultRejected             ProjectEventType = "project_task.result.rejected"
-	ProjectEventTaskResultBlocked              ProjectEventType = "project_task.result.blocked"
-	ProjectEventTaskResultRetryableFailed      ProjectEventType = "project_task.result.retryable_failed"
-	ProjectEventTaskResultFailedRetryable      ProjectEventType = ProjectEventTaskResultRetryableFailed
-	ProjectEventTaskResultValidationFailed     ProjectEventType = "project_task.result.validation_failed"
-	ProjectEventTaskRevisionRequested          ProjectEventType = "project_task.revision.requested"
-	ProjectEventTaskRevisionCreated            ProjectEventType = "project_task.revision.created"
-	ProjectEventTaskReplanRequested            ProjectEventType = "project_task.replan.requested"
-	ProjectEventDemandSummaryCreated           ProjectEventType = "demand.summary.created"
-	ProjectEventTransferRequested              ProjectEventType = "transfer.requested"
-	ProjectEventDecisionRequested              ProjectEventType = "decision.requested"
-	ProjectEventDecisionSubmitted              ProjectEventType = "decision.submitted"
-	ProjectEventEvidenceLinked                 ProjectEventType = "project.evidence.linked"
-	ProjectEventEvidenceVerified               ProjectEventType = "project.evidence.verified"
-	ProjectEventArtifactLinked                 ProjectEventType = "project.artifact.linked"
-	ProjectEventReportLinked                   ProjectEventType = "project.report.linked"
-	ProjectEventBudgetRecorded                 ProjectEventType = "project.budget.recorded"
-	ProjectEventAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
-	ProjectEventArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
-	ProjectEventArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
-	ProjectEventLendingEmployeeSkipped         ProjectEventType = "project.lending.employee_skipped"
+	ProjectEventWorkflowSignaled                ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated          ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated            ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated                     ProjectEventType = "project_task.created"
+	ProjectEventTaskGraphPlanned                ProjectEventType = "project_task_graph.planned"
+	ProjectEventTaskDispatchGateChecked         ProjectEventType = "project_task.dispatch_gate.checked"
+	ProjectEventTaskDispatchGateBlocked         ProjectEventType = "project_task.dispatch_gate.blocked"
+	ProjectEventTaskDispatchGateWaitingHuman    ProjectEventType = "project_task.dispatch_gate.waiting_human"
+	ProjectEventTaskDispatchGateRetryLater      ProjectEventType = "project_task.dispatch_gate.retry_later"
+	ProjectEventTaskDispatchGateReplanRequired  ProjectEventType = "project_task.dispatch_gate.replan_required"
+	ProjectEventTaskDispatched                  ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskDispatchFailed              ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskRetryScheduled              ProjectEventType = "project_task.retry_scheduled"
+	ProjectEventTaskAttemptLost                 ProjectEventType = "project_task.attempt_lost"
+	ProjectEventTaskRecoveryRequested           ProjectEventType = "project_task.recovery_requested"
+	ProjectEventTaskContractMissing             ProjectEventType = "project_task.contract_missing"
+	ProjectEventTaskWaitingHuman                ProjectEventType = "project_task.waiting_human"
+	ProjectEventTaskCancelled                   ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskCompleted                   ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed                      ProjectEventType = "project_task.failed"
+	ProjectEventTaskResultSubmitted             ProjectEventType = "project_task.result.submitted"
+	ProjectEventTaskResultRecorded              ProjectEventType = "project_task.result.recorded"
+	ProjectEventTaskResultAccepted              ProjectEventType = "project_task.result.accepted"
+	ProjectEventTaskResultRejected              ProjectEventType = "project_task.result.rejected"
+	ProjectEventTaskResultBlocked               ProjectEventType = "project_task.result.blocked"
+	ProjectEventTaskResultRetryableFailed       ProjectEventType = "project_task.result.retryable_failed"
+	ProjectEventTaskResultFailedRetryable       ProjectEventType = ProjectEventTaskResultRetryableFailed
+	ProjectEventTaskResultValidationFailed      ProjectEventType = "project_task.result.validation_failed"
+	ProjectEventTaskRevisionRequested           ProjectEventType = "project_task.revision.requested"
+	ProjectEventTaskRevisionCreated             ProjectEventType = "project_task.revision.created"
+	ProjectEventTaskReplanRequested             ProjectEventType = "project_task.replan.requested"
+	ProjectEventDemandSummaryCreated            ProjectEventType = "demand.summary.created"
+	ProjectEventTransferRequested               ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested               ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted               ProjectEventType = "decision.submitted"
+	ProjectEventEvidenceLinked                  ProjectEventType = "project.evidence.linked"
+	ProjectEventEvidenceVerified                ProjectEventType = "project.evidence.verified"
+	ProjectEventArtifactLinked                  ProjectEventType = "project.artifact.linked"
+	ProjectEventReportLinked                    ProjectEventType = "project.report.linked"
+	ProjectEventBudgetRecorded                  ProjectEventType = "project.budget.recorded"
+	ProjectEventAcceptanceSubmitted             ProjectEventType = "project.acceptance.submitted"
+	ProjectEventArchiveSnapshotCreated          ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventArchiveRetentionPending         ProjectEventType = "project.archive.retention_pending"
+	ProjectEventLendingEmployeeSkipped          ProjectEventType = "project.lending.employee_skipped"
+	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
+	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 )
 
 type EvidenceVerificationStatus string
@@ -1205,6 +1217,7 @@ type ProjectDemand struct {
 	CreatedEventID     *uuid.UUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	CoordinationMode   string
 }
 
 type DemandLaunchDetail struct {
@@ -1456,6 +1469,7 @@ type SubmitProjectDemandRequest struct {
 	Attachments             []any
 	ReviewerUserID          *uuid.UUID
 	ReviewerSelectionReason ReviewerSelectionReason
+	CoordinationMode        string
 }
 
 type CreateEvidenceRefServiceRequest struct {

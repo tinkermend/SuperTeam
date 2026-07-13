@@ -1,13 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import {
-  CircleAlert,
-  FolderOpen,
-  GitBranch,
-  PencilLine,
-  SendHorizontal,
-  Sparkles,
-} from "lucide-react";
+import { FolderOpen, PencilLine, SendHorizontal, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GlassCard } from "@/components/superteam";
+import { GlassCard, V3Segmented } from "@/components/superteam";
 import type {
   Project,
   ProjectDemandSourceType,
@@ -25,8 +18,27 @@ import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
+export type LaunchMode = "plan" | "loop" | "chat";
+
+const MODE_OPTIONS: Array<{ label: string; value: LaunchMode }> = [
+  { label: "Plan 任务", value: "plan" },
+  { label: "Loop 任务", value: "loop" },
+  { label: "对话", value: "chat" },
+];
+
+const MODE_EXPLAINER: Record<LaunchMode, string> = {
+  plan: "遇上游阻塞时暂停，提案报你决策后再补做",
+  loop: "遇上游阻塞时自动补做上游任务并重跑下游",
+  chat: "与指定数字员工单次对话，结果不进入项目流转",
+};
+
 type TaskLaunchFormProps = {
+  chatPanel?: ReactNode;
+  content: string;
   isSubmitting?: boolean;
+  mode: LaunchMode;
+  onContentChange: (content: string) => void;
+  onModeChange: (mode: LaunchMode) => void;
   onProjectChange: (projectId: string) => void;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
   projects: Project[];
@@ -38,7 +50,12 @@ function deriveTitle(content: string): string {
 }
 
 export function TaskLaunchForm({
+  chatPanel,
+  content,
   isSubmitting = false,
+  mode,
+  onContentChange,
+  onModeChange,
   onProjectChange,
   onSubmit,
   projects,
@@ -48,9 +65,6 @@ export function TaskLaunchForm({
     () => projects.filter((project) => project.status !== "archived"),
     [projects],
   );
-  const [content, setContent] = useState("");
-  const [priority, setPriority] = useState("high");
-  const [riskLevel, setRiskLevel] = useState("medium");
   const [error, setError] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
@@ -91,14 +105,14 @@ export function TaskLaunchForm({
   function handleInsertTemplate(text: string, templateId: string) {
     if (content.trim()) {
       if (window.confirm("当前内容已存在。\n点击「确定」将覆盖当前内容？\n点击「取消」将继续。")) {
-        setContent(text);
+        onContentChange(text);
         applyTemplate(templateId);
       } else if (window.confirm("是否追加到末尾？\n点击「取消」放弃插入模板。")) {
-        setContent(content + "\n\n" + text);
+        onContentChange(content + "\n\n" + text);
         applyTemplate(templateId);
       }
     } else {
-      setContent(text);
+      onContentChange(text);
       applyTemplate(templateId);
     }
   }
@@ -116,95 +130,78 @@ export function TaskLaunchForm({
         </p>
       </div>
 
+      <V3Segmented<LaunchMode> options={MODE_OPTIONS} value={mode} onChange={onModeChange} />
+      <p className="tl-sub">{MODE_EXPLAINER[mode]}</p>
+
       <GlassCard>
-        <div className="tl-cmd">
-          <div className="tl-cmd-top">
-            <div className="tl-cmd-t">
-              <span>中枢指令区</span>
-              <span className="tl-req">*</span>
+        {mode === "chat" ? (
+          <div data-testid="chat-panel-slot">{chatPanel}</div>
+        ) : (
+          <>
+            <div className="tl-cmd">
+              <div className="tl-cmd-top">
+                <div className="tl-cmd-t">
+                  <span>中枢指令区</span>
+                  <span className="tl-req">*</span>
+                </div>
+                <span className="tl-pill">命令中心</span>
+              </div>
+              <textarea
+                aria-label="需求描述"
+                className="tl-textarea"
+                onChange={(event) => onContentChange(event.target.value)}
+                placeholder="描述你希望项目协调线程处理的目标或问题场景"
+                value={content}
+              />
+              <div className="tl-cmd-foot">
+                <button
+                  className="tl-ghost"
+                  onClick={() => setTemplateDialogOpen(true)}
+                  type="button"
+                >
+                  <Sparkles className="size-3.5" aria-hidden />
+                  浏览模板库
+                </button>
+                <span className="tl-counter">{content.length} / 5000</span>
+              </div>
             </div>
-            <span className="tl-pill">命令中心</span>
-          </div>
-          <textarea
-            aria-label="需求描述"
-            className="tl-textarea"
-            onChange={(event) => setContent(event.target.value)}
-            placeholder="描述你希望项目协调线程处理的目标或问题场景"
-            value={content}
-          />
-          <div className="tl-cmd-foot">
-            <button
-              className="tl-ghost"
-              onClick={() => setTemplateDialogOpen(true)}
-              type="button"
-            >
-              <Sparkles className="size-3.5" aria-hidden />
-              浏览模板库
-            </button>
-            <span className="tl-counter">{content.length} / 5000</span>
-          </div>
-        </div>
 
-        <div className="tl-params" data-testid="task-launch-parameters">
-          <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-            <Select value={projectId} onValueChange={handleProjectChange}>
-              <SelectTrigger aria-label="项目" className="tl-chip-select">
-                <SelectValue placeholder="选择项目" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeProjects.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </LaunchChip>
+            <div className="tl-params" data-testid="task-launch-parameters">
+              <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
+                <Select value={projectId} onValueChange={handleProjectChange}>
+                  <SelectTrigger aria-label="项目" className="tl-chip-select">
+                    <SelectValue placeholder="选择项目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeProjects.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </LaunchChip>
+            </div>
 
-          <LaunchChip icon={<GitBranch aria-hidden />} label="优先级" required>
-            <Select value={priority} onValueChange={setPriority}>
-              <SelectTrigger aria-label="优先级" className="tl-chip-select">
-                <SelectValue placeholder="选择优先级" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="high">高</SelectItem>
-                <SelectItem value="medium">中</SelectItem>
-                <SelectItem value="low">低</SelectItem>
-              </SelectContent>
-            </Select>
-          </LaunchChip>
+            {error ? <div className="tl-err">⚠ {error}</div> : null}
 
-          <LaunchChip icon={<CircleAlert aria-hidden />} label="风险级别" required>
-            <Select value={riskLevel} onValueChange={setRiskLevel}>
-              <SelectTrigger aria-label="风险级别" className="tl-chip-select">
-                <SelectValue placeholder="选择风险级别" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="medium">中风险</SelectItem>
-                <SelectItem value="low">低风险</SelectItem>
-                <SelectItem value="high">高风险</SelectItem>
-              </SelectContent>
-            </Select>
-          </LaunchChip>
-        </div>
-
-        {error ? <div className="tl-err">⚠ {error}</div> : null}
-
-        <div className="tl-actions">
-          <button className="tl-btn-draft" type="button">
-            <PencilLine className="size-[15px]" aria-hidden />
-            保存草稿
-          </button>
-          <button
-            className="tl-btn-send"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
-            type="button"
-          >
-            提交任务
-            <SendHorizontal className="size-4" aria-hidden />
-          </button>
-        </div>
+            <div className="tl-actions">
+              <button className="tl-btn-draft" type="button">
+                <PencilLine className="size-[15px]" aria-hidden />
+                保存草稿
+              </button>
+              <button
+                className="tl-btn-send"
+                disabled={isSubmitting}
+                onClick={handleSubmit}
+                type="button"
+              >
+                提交任务
+                <SendHorizontal className="size-4" aria-hidden />
+              </button>
+            </div>
+          </>
+        )}
       </GlassCard>
 
       <PromptTemplateDialog
@@ -216,7 +213,7 @@ export function TaskLaunchForm({
   );
 }
 
-function LaunchChip({
+export function LaunchChip({
   children,
   icon,
   label,

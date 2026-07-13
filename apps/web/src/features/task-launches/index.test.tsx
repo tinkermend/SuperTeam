@@ -218,6 +218,83 @@ function createTaskLaunchFetcher({
   });
 }
 
+/** Extends the base task-launch fetcher with chat-mode endpoints (a single digital
+ * employee and a run that completes immediately) so tests can drive the
+ * chat -> 转为任务 -> submit flow and assert the resulting demand's source_refs. */
+function createTaskLaunchFetcherWithChat() {
+  const base = createTaskLaunchFetcher();
+
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse([
+        {
+          approval_policy: {},
+          context_policy: {},
+          employee_type: "generalist",
+          id: "emp-1",
+          name: "Ada",
+          owner_user_id: "owner-1",
+          permission_policy: {},
+          provider_type: "claude_code",
+          risk_level: "low",
+          role: "客服助手",
+          status: "active",
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (path === "/api/v1/digital-employees/emp-1/runs" && method === "POST") {
+      return jsonResponse(
+        {
+          command_id: "cmd-run-1",
+          digital_employee_id: "emp-1",
+          execution_instance_id: "instance-1",
+          id: "run-1",
+          node_id: "node-1",
+          provider_type: "claude_code",
+          run_kind: "chat",
+          runtime_node_id: "node-1",
+          session_state: {},
+          status: "queued",
+          task_id: "task-run-1",
+          tenant_id: "tenant-1",
+          timed_out: false,
+          diagnostic: {},
+          result: {},
+          work_products: [],
+        },
+        201,
+      );
+    }
+    if (path === "/api/v1/digital-employees/emp-1/runs/run-1" && method === "GET") {
+      return jsonResponse({
+        command_id: "cmd-run-1",
+        digital_employee_id: "emp-1",
+        execution_instance_id: "instance-1",
+        id: "run-1",
+        node_id: "node-1",
+        provider_type: "claude_code",
+        run_kind: "chat",
+        runtime_node_id: "node-1",
+        session_state: {},
+        status: "completed",
+        task_id: "task-run-1",
+        tenant_id: "tenant-1",
+        timed_out: false,
+        diagnostic: {},
+        result: { output: "这是对话回答" },
+        work_products: [],
+      });
+    }
+
+    return base(input, init);
+  });
+}
+
 function makeLaunchDetail({
   demandId = "demand-1",
   emptyFacts = false,
@@ -358,6 +435,7 @@ describe("TaskLaunchView", () => {
         source_type: "manual",
         source_refs: {},
         attachments: [],
+        coordination_mode: "plan",
       });
     });
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
@@ -398,6 +476,26 @@ describe("TaskLaunchView", () => {
     });
   });
 
+  it("switches to loop mode and submits coordination_mode loop", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("Loop 任务");
+    await typeInLabeledField("需求描述", "遇到阻塞时自动补做上游任务");
+
+    await clickButton("提交任务");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
+        coordination_mode: "loop",
+      });
+    });
+  });
+
   it("renders the pre-submit launch composer without orchestration state controls", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
@@ -414,8 +512,10 @@ describe("TaskLaunchView", () => {
     expect(getByLabelText("项目")).toBeTruthy();
     expect(() => getByLabelText("审核人")).toThrow();
     expect(queryByText("审核人")).toBeNull();
-    expect(getByLabelText("优先级")).toBeTruthy();
-    expect(getByLabelText("风险级别")).toBeTruthy();
+    expect(() => getByLabelText("优先级")).toThrow();
+    expect(() => getByLabelText("风险级别")).toThrow();
+    expect(queryByText("优先级")).toBeNull();
+    expect(queryByText("风险级别")).toBeNull();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
     expect(document.querySelector(".v3-glass")).toBeTruthy();
     expect(document.querySelector(".tl-btn-send")).toBeTruthy();
@@ -438,6 +538,96 @@ describe("TaskLaunchView", () => {
     expect(queryByText("待生成")).toBeNull();
     expect(queryByText("已完成")).toBeNull();
     expect(queryByText("运行中")).toBeNull();
+  });
+
+  it("switches to chat mode: hides project chip and shows chat panel slot", async () => {
+    const fetcher = createTaskLaunchFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("对话");
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="chat-panel-slot"]')).toBeTruthy();
+    });
+    expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeNull();
+    expect(() => getByLabelText("项目")).toThrow();
+  });
+
+  it("converts a chat answer to a task and submits it with chat source_refs lineage", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcherWithChat();
+    const { queryClient } = await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("对话");
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "如何配置这个项目？");
+    await clickButton("发送");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("这是对话回答")).toBeTruthy());
+
+    await clickButton("转为任务");
+
+    // conversion switches the composer back to plan mode with the draft prefilled
+    await waitFor(() => expect(getByLabelText("项目")).toBeTruthy());
+
+    await clickButton("提交任务");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
+        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" },
+      });
+    });
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-1" },
+        to: "/workflows/$demandId",
+      });
+    });
+  });
+
+  it("clears chat source lineage when switching back to chat mode before submitting", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcherWithChat();
+    const { queryClient } = await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await clickButton("对话");
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "如何配置这个项目？");
+    await clickButton("发送");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("这是对话回答")).toBeTruthy());
+
+    await clickButton("转为任务");
+    await waitFor(() => expect(getByLabelText("项目")).toBeTruthy());
+
+    // switch back to chat, then to plan for an unrelated demand: lineage must not
+    // leak onto this later submit
+    await clickButton("对话");
+    await clickButton("Plan 任务");
+    await typeInLabeledField("需求描述", "一个与对话无关的新需求");
+
+    await clickButton("提交任务");
+
+    await waitFor(() => {
+      expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
+        source_refs: {},
+      });
+    });
   });
 });
 

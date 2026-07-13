@@ -102,6 +102,24 @@ func (e CreateDigitalEmployeeConfigRevisionRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreateDigitalEmployeeRunRequestRunKind.
+const (
+	CreateDigitalEmployeeRunRequestRunKindChat CreateDigitalEmployeeRunRequestRunKind = "chat"
+	CreateDigitalEmployeeRunRequestRunKindTask CreateDigitalEmployeeRunRequestRunKind = "task"
+)
+
+// Valid indicates whether the value is a known member of the CreateDigitalEmployeeRunRequestRunKind enum.
+func (e CreateDigitalEmployeeRunRequestRunKind) Valid() bool {
+	switch e {
+	case CreateDigitalEmployeeRunRequestRunKindChat:
+		return true
+	case CreateDigitalEmployeeRunRequestRunKindTask:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateProjectAcceptanceRequestStatus.
 const (
 	CreateProjectAcceptanceRequestStatusAccepted          CreateProjectAcceptanceRequestStatus = "accepted"
@@ -420,6 +438,42 @@ func (e DigitalEmployeeOverviewRunStatus) Valid() bool {
 	case DigitalEmployeeOverviewRunStatusRunning:
 		return true
 	case DigitalEmployeeOverviewRunStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DigitalEmployeeRunRunKind.
+const (
+	DigitalEmployeeRunRunKindChat DigitalEmployeeRunRunKind = "chat"
+	DigitalEmployeeRunRunKindTask DigitalEmployeeRunRunKind = "task"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeRunRunKind enum.
+func (e DigitalEmployeeRunRunKind) Valid() bool {
+	switch e {
+	case DigitalEmployeeRunRunKindChat:
+		return true
+	case DigitalEmployeeRunRunKindTask:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DigitalEmployeeRunListItemRunKind.
+const (
+	DigitalEmployeeRunListItemRunKindChat DigitalEmployeeRunListItemRunKind = "chat"
+	DigitalEmployeeRunListItemRunKindTask DigitalEmployeeRunListItemRunKind = "task"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeRunListItemRunKind enum.
+func (e DigitalEmployeeRunListItemRunKind) Valid() bool {
+	switch e {
+	case DigitalEmployeeRunListItemRunKindChat:
+		return true
+	case DigitalEmployeeRunListItemRunKindTask:
 		return true
 	default:
 		return false
@@ -1560,6 +1614,24 @@ func (e SkillInstallationTargetScope) Valid() bool {
 	}
 }
 
+// Defines values for SubmitProjectDemandRequestCoordinationMode.
+const (
+	Loop SubmitProjectDemandRequestCoordinationMode = "loop"
+	Plan SubmitProjectDemandRequestCoordinationMode = "plan"
+)
+
+// Valid indicates whether the value is a known member of the SubmitProjectDemandRequestCoordinationMode enum.
+func (e SubmitProjectDemandRequestCoordinationMode) Valid() bool {
+	switch e {
+	case Loop:
+		return true
+	case Plan:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubmitProjectDemandRequestReviewerSelectionReason.
 const (
 	SubmitProjectDemandRequestReviewerSelectionReasonProjectHumanOwnerFallback SubmitProjectDemandRequestReviewerSelectionReason = "project_human_owner_fallback"
@@ -1923,6 +1995,24 @@ func (e ListDigitalEmployeesParamsAssignment) Valid() bool {
 	}
 }
 
+// Defines values for ListDigitalEmployeeRunsParamsRunKind.
+const (
+	ListDigitalEmployeeRunsParamsRunKindChat ListDigitalEmployeeRunsParamsRunKind = "chat"
+	ListDigitalEmployeeRunsParamsRunKindTask ListDigitalEmployeeRunsParamsRunKind = "task"
+)
+
+// Valid indicates whether the value is a known member of the ListDigitalEmployeeRunsParamsRunKind enum.
+func (e ListDigitalEmployeeRunsParamsRunKind) Valid() bool {
+	switch e {
+	case ListDigitalEmployeeRunsParamsRunKindChat:
+		return true
+	case ListDigitalEmployeeRunsParamsRunKindTask:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListInboxItemsParamsView.
 const (
 	ListInboxItemsParamsViewMine ListInboxItemsParamsView = "mine"
@@ -2124,19 +2214,24 @@ type CreateDigitalEmployeeRequest struct {
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
 type CreateDigitalEmployeeRunRequest struct {
-	AllowedActions   *[]string                 `json:"allowed_actions,omitempty"`
-	ArtifactRefs     *[]map[string]interface{} `json:"artifact_refs,omitempty"`
-	ContextRefs      *[]map[string]interface{} `json:"context_refs,omitempty"`
-	ForbiddenActions *[]string                 `json:"forbidden_actions,omitempty"`
-	GraceSec         *int32                    `json:"grace_sec,omitempty"`
-	IdempotencyKey   *string                   `json:"idempotency_key,omitempty"`
-	Metadata         *map[string]interface{}   `json:"metadata,omitempty"`
-	Objective        string                    `json:"objective"`
-	OutputSchema     *map[string]interface{}   `json:"output_schema,omitempty"`
-	Prompt           *string                   `json:"prompt,omitempty"`
-	SecretRefs       *[]string                 `json:"secret_refs,omitempty"`
-	TimeoutSec       *int32                    `json:"timeout_sec,omitempty"`
+	AllowedActions   *[]string                               `json:"allowed_actions,omitempty"`
+	ArtifactRefs     *[]map[string]interface{}               `json:"artifact_refs,omitempty"`
+	ContextRefs      *[]map[string]interface{}               `json:"context_refs,omitempty"`
+	ForbiddenActions *[]string                               `json:"forbidden_actions,omitempty"`
+	GraceSec         *int32                                  `json:"grace_sec,omitempty"`
+	IdempotencyKey   *string                                 `json:"idempotency_key,omitempty"`
+	Metadata         *map[string]interface{}                 `json:"metadata,omitempty"`
+	Objective        string                                  `json:"objective"`
+	OutputSchema     *map[string]interface{}                 `json:"output_schema,omitempty"`
+	Prompt           *string                                 `json:"prompt,omitempty"`
+	ResumeOfRunId    *openapi_types.UUID                     `json:"resume_of_run_id,omitempty"`
+	RunKind          *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
+	SecretRefs       *[]string                               `json:"secret_refs,omitempty"`
+	TimeoutSec       *int32                                  `json:"timeout_sec,omitempty"`
 }
+
+// CreateDigitalEmployeeRunRequestRunKind defines model for CreateDigitalEmployeeRunRequest.RunKind.
+type CreateDigitalEmployeeRunRequestRunKind string
 
 // CreateEmployeeTemplateRequest defines model for CreateEmployeeTemplateRequest.
 type CreateEmployeeTemplateRequest struct {
@@ -2696,39 +2791,44 @@ type DigitalEmployeeRecentEventSummary struct {
 
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
 type DigitalEmployeeRun struct {
-	CommandId                 string                   `json:"command_id"`
-	CompletedAt               *time.Time               `json:"completed_at,omitempty"`
-	CreatedAt                 *time.Time               `json:"created_at,omitempty"`
-	Diagnostic                map[string]interface{}   `json:"diagnostic"`
-	DigitalEmployeeId         openapi_types.UUID       `json:"digital_employee_id"`
-	ErrorCode                 *string                  `json:"error_code,omitempty"`
-	ErrorFamily               *string                  `json:"error_family,omitempty"`
-	ErrorMessage              *string                  `json:"error_message,omitempty"`
-	ExecutionInstanceId       openapi_types.UUID       `json:"execution_instance_id"`
-	ExitCode                  *int32                   `json:"exit_code,omitempty"`
-	FinishedAt                *time.Time               `json:"finished_at,omitempty"`
-	GraceSec                  *int32                   `json:"grace_sec,omitempty"`
-	Id                        openapi_types.UUID       `json:"id"`
-	IdempotencyKey            *string                  `json:"idempotency_key,omitempty"`
-	LogRef                    *string                  `json:"log_ref,omitempty"`
-	NodeId                    string                   `json:"node_id"`
-	ProviderSessionExternalId *string                  `json:"provider_session_external_id,omitempty"`
-	ProviderSessionId         *string                  `json:"provider_session_id,omitempty"`
-	ProviderType              string                   `json:"provider_type"`
-	RawResultRef              *string                  `json:"raw_result_ref,omitempty"`
-	Result                    map[string]interface{}   `json:"result"`
-	RuntimeNodeId             openapi_types.UUID       `json:"runtime_node_id"`
-	SessionState              map[string]interface{}   `json:"session_state"`
-	Signal                    *string                  `json:"signal,omitempty"`
-	StartedAt                 *time.Time               `json:"started_at,omitempty"`
-	Status                    DigitalEmployeeRunStatus `json:"status"`
-	TaskId                    openapi_types.UUID       `json:"task_id"`
-	TenantId                  openapi_types.UUID       `json:"tenant_id"`
-	TimedOut                  bool                     `json:"timed_out"`
-	TimeoutSec                *int32                   `json:"timeout_sec,omitempty"`
-	UpdatedAt                 *time.Time               `json:"updated_at,omitempty"`
-	WorkProducts              []map[string]interface{} `json:"work_products"`
+	CommandId                 string                    `json:"command_id"`
+	CompletedAt               *time.Time                `json:"completed_at,omitempty"`
+	CreatedAt                 *time.Time                `json:"created_at,omitempty"`
+	Diagnostic                map[string]interface{}    `json:"diagnostic"`
+	DigitalEmployeeId         openapi_types.UUID        `json:"digital_employee_id"`
+	ErrorCode                 *string                   `json:"error_code,omitempty"`
+	ErrorFamily               *string                   `json:"error_family,omitempty"`
+	ErrorMessage              *string                   `json:"error_message,omitempty"`
+	ExecutionInstanceId       openapi_types.UUID        `json:"execution_instance_id"`
+	ExitCode                  *int32                    `json:"exit_code,omitempty"`
+	FinishedAt                *time.Time                `json:"finished_at,omitempty"`
+	GraceSec                  *int32                    `json:"grace_sec,omitempty"`
+	Id                        openapi_types.UUID        `json:"id"`
+	IdempotencyKey            *string                   `json:"idempotency_key,omitempty"`
+	LogRef                    *string                   `json:"log_ref,omitempty"`
+	NodeId                    string                    `json:"node_id"`
+	ProviderSessionExternalId *string                   `json:"provider_session_external_id,omitempty"`
+	ProviderSessionId         *string                   `json:"provider_session_id,omitempty"`
+	ProviderType              string                    `json:"provider_type"`
+	RawResultRef              *string                   `json:"raw_result_ref,omitempty"`
+	Result                    map[string]interface{}    `json:"result"`
+	ResumeOfRunId             *openapi_types.UUID       `json:"resume_of_run_id,omitempty"`
+	RunKind                   DigitalEmployeeRunRunKind `json:"run_kind"`
+	RuntimeNodeId             openapi_types.UUID        `json:"runtime_node_id"`
+	SessionState              map[string]interface{}    `json:"session_state"`
+	Signal                    *string                   `json:"signal,omitempty"`
+	StartedAt                 *time.Time                `json:"started_at,omitempty"`
+	Status                    DigitalEmployeeRunStatus  `json:"status"`
+	TaskId                    openapi_types.UUID        `json:"task_id"`
+	TenantId                  openapi_types.UUID        `json:"tenant_id"`
+	TimedOut                  bool                      `json:"timed_out"`
+	TimeoutSec                *int32                    `json:"timeout_sec,omitempty"`
+	UpdatedAt                 *time.Time                `json:"updated_at,omitempty"`
+	WorkProducts              []map[string]interface{}  `json:"work_products"`
 }
+
+// DigitalEmployeeRunRunKind defines model for DigitalEmployeeRun.RunKind.
+type DigitalEmployeeRunRunKind string
 
 // DigitalEmployeeRunEvent defines model for DigitalEmployeeRunEvent.
 type DigitalEmployeeRunEvent struct {
@@ -2760,44 +2860,49 @@ type DigitalEmployeeRunList struct {
 
 // DigitalEmployeeRunListItem defines model for DigitalEmployeeRunListItem.
 type DigitalEmployeeRunListItem struct {
-	CommandId                 string                   `json:"command_id"`
-	CompletedAt               *time.Time               `json:"completed_at,omitempty"`
-	CreatedAt                 *time.Time               `json:"created_at,omitempty"`
-	Diagnostic                map[string]interface{}   `json:"diagnostic"`
-	DigitalEmployeeId         openapi_types.UUID       `json:"digital_employee_id"`
-	DurationSec               *float32                 `json:"duration_sec,omitempty"`
-	ErrorCode                 *string                  `json:"error_code,omitempty"`
-	ErrorFamily               *string                  `json:"error_family,omitempty"`
-	ErrorMessage              *string                  `json:"error_message,omitempty"`
-	ExecutionInstanceId       openapi_types.UUID       `json:"execution_instance_id"`
-	ExitCode                  *int32                   `json:"exit_code,omitempty"`
-	FinishedAt                *time.Time               `json:"finished_at,omitempty"`
-	GraceSec                  *int32                   `json:"grace_sec,omitempty"`
-	Id                        openapi_types.UUID       `json:"id"`
-	IdempotencyKey            *string                  `json:"idempotency_key,omitempty"`
-	LogRef                    *string                  `json:"log_ref,omitempty"`
-	NodeId                    string                   `json:"node_id"`
-	ProjectId                 *openapi_types.UUID      `json:"project_id,omitempty"`
-	ProjectName               *string                  `json:"project_name,omitempty"`
-	ProviderSessionExternalId *string                  `json:"provider_session_external_id,omitempty"`
-	ProviderSessionId         *string                  `json:"provider_session_id,omitempty"`
-	ProviderType              string                   `json:"provider_type"`
-	RawResultRef              *string                  `json:"raw_result_ref,omitempty"`
-	Result                    map[string]interface{}   `json:"result"`
-	RuntimeNodeId             openapi_types.UUID       `json:"runtime_node_id"`
-	SessionState              map[string]interface{}   `json:"session_state"`
-	Signal                    *string                  `json:"signal,omitempty"`
-	StartedAt                 *time.Time               `json:"started_at,omitempty"`
-	Status                    DigitalEmployeeRunStatus `json:"status"`
-	TaskId                    openapi_types.UUID       `json:"task_id"`
-	TaskTitle                 string                   `json:"task_title"`
-	TenantId                  openapi_types.UUID       `json:"tenant_id"`
-	TimedOut                  bool                     `json:"timed_out"`
-	TimeoutSec                *int32                   `json:"timeout_sec,omitempty"`
-	UpdatedAt                 *time.Time               `json:"updated_at,omitempty"`
-	WorkProductCount          int                      `json:"work_product_count"`
-	WorkProducts              []map[string]interface{} `json:"work_products"`
+	CommandId                 string                            `json:"command_id"`
+	CompletedAt               *time.Time                        `json:"completed_at,omitempty"`
+	CreatedAt                 *time.Time                        `json:"created_at,omitempty"`
+	Diagnostic                map[string]interface{}            `json:"diagnostic"`
+	DigitalEmployeeId         openapi_types.UUID                `json:"digital_employee_id"`
+	DurationSec               *float32                          `json:"duration_sec,omitempty"`
+	ErrorCode                 *string                           `json:"error_code,omitempty"`
+	ErrorFamily               *string                           `json:"error_family,omitempty"`
+	ErrorMessage              *string                           `json:"error_message,omitempty"`
+	ExecutionInstanceId       openapi_types.UUID                `json:"execution_instance_id"`
+	ExitCode                  *int32                            `json:"exit_code,omitempty"`
+	FinishedAt                *time.Time                        `json:"finished_at,omitempty"`
+	GraceSec                  *int32                            `json:"grace_sec,omitempty"`
+	Id                        openapi_types.UUID                `json:"id"`
+	IdempotencyKey            *string                           `json:"idempotency_key,omitempty"`
+	LogRef                    *string                           `json:"log_ref,omitempty"`
+	NodeId                    string                            `json:"node_id"`
+	ProjectId                 *openapi_types.UUID               `json:"project_id,omitempty"`
+	ProjectName               *string                           `json:"project_name,omitempty"`
+	ProviderSessionExternalId *string                           `json:"provider_session_external_id,omitempty"`
+	ProviderSessionId         *string                           `json:"provider_session_id,omitempty"`
+	ProviderType              string                            `json:"provider_type"`
+	RawResultRef              *string                           `json:"raw_result_ref,omitempty"`
+	Result                    map[string]interface{}            `json:"result"`
+	ResumeOfRunId             *openapi_types.UUID               `json:"resume_of_run_id,omitempty"`
+	RunKind                   DigitalEmployeeRunListItemRunKind `json:"run_kind"`
+	RuntimeNodeId             openapi_types.UUID                `json:"runtime_node_id"`
+	SessionState              map[string]interface{}            `json:"session_state"`
+	Signal                    *string                           `json:"signal,omitempty"`
+	StartedAt                 *time.Time                        `json:"started_at,omitempty"`
+	Status                    DigitalEmployeeRunStatus          `json:"status"`
+	TaskId                    openapi_types.UUID                `json:"task_id"`
+	TaskTitle                 string                            `json:"task_title"`
+	TenantId                  openapi_types.UUID                `json:"tenant_id"`
+	TimedOut                  bool                              `json:"timed_out"`
+	TimeoutSec                *int32                            `json:"timeout_sec,omitempty"`
+	UpdatedAt                 *time.Time                        `json:"updated_at,omitempty"`
+	WorkProductCount          int                               `json:"work_product_count"`
+	WorkProducts              []map[string]interface{}          `json:"work_products"`
 }
+
+// DigitalEmployeeRunListItemRunKind defines model for DigitalEmployeeRunListItem.RunKind.
+type DigitalEmployeeRunListItemRunKind string
 
 // DigitalEmployeeRunStats defines model for DigitalEmployeeRunStats.
 type DigitalEmployeeRunStats struct {
@@ -4619,12 +4724,16 @@ type StopDigitalEmployeeRunRequest struct {
 type SubmitProjectDemandRequest struct {
 	Attachments             *[]interface{}                                     `json:"attachments,omitempty"`
 	Content                 *string                                            `json:"content,omitempty"`
+	CoordinationMode        *SubmitProjectDemandRequestCoordinationMode        `json:"coordination_mode,omitempty"`
 	ReviewerSelectionReason *SubmitProjectDemandRequestReviewerSelectionReason `json:"reviewer_selection_reason,omitempty"`
 	ReviewerUserId          *openapi_types.UUID                                `json:"reviewer_user_id,omitempty"`
 	SourceRefs              *map[string]interface{}                            `json:"source_refs,omitempty"`
 	SourceType              *ProjectDemandSourceType                           `json:"source_type,omitempty"`
 	Title                   string                                             `json:"title"`
 }
+
+// SubmitProjectDemandRequestCoordinationMode defines model for SubmitProjectDemandRequest.CoordinationMode.
+type SubmitProjectDemandRequestCoordinationMode string
 
 // SubmitProjectDemandRequestReviewerSelectionReason defines model for SubmitProjectDemandRequest.ReviewerSelectionReason.
 type SubmitProjectDemandRequestReviewerSelectionReason string
@@ -5223,11 +5332,15 @@ type ListDigitalEmployeeRunsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 
 	// Status Comma-separated run statuses to filter by
-	Status    *string             `form:"status,omitempty" json:"status,omitempty"`
-	ProjectId *openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
-	From      *time.Time          `form:"from,omitempty" json:"from,omitempty"`
-	To        *time.Time          `form:"to,omitempty" json:"to,omitempty"`
+	Status    *string                               `form:"status,omitempty" json:"status,omitempty"`
+	ProjectId *openapi_types.UUID                   `form:"project_id,omitempty" json:"project_id,omitempty"`
+	From      *time.Time                            `form:"from,omitempty" json:"from,omitempty"`
+	To        *time.Time                            `form:"to,omitempty" json:"to,omitempty"`
+	RunKind   *ListDigitalEmployeeRunsParamsRunKind `form:"run_kind,omitempty" json:"run_kind,omitempty"`
 }
+
+// ListDigitalEmployeeRunsParamsRunKind defines parameters for ListDigitalEmployeeRuns.
+type ListDigitalEmployeeRunsParamsRunKind string
 
 // ListDigitalEmployeeRunEventsParams defines parameters for ListDigitalEmployeeRunEvents.
 type ListDigitalEmployeeRunEventsParams struct {
@@ -9072,6 +9185,19 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRuns(w http.ResponseWriter
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "run_kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "run_kind", r.URL.Query(), &params.RunKind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "run_kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "run_kind", Err: err})
 		}
 		return
 	}

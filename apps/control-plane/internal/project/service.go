@@ -1727,6 +1727,12 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.SubmittedByUserID == uuid.Nil || req.Title == "" {
 		return nil, ErrInvalidProject
 	}
+	if req.CoordinationMode == "" {
+		req.CoordinationMode = CoordinationModePlan
+	}
+	if req.CoordinationMode != CoordinationModePlan && req.CoordinationMode != CoordinationModeLoop {
+		return nil, ErrInvalidCoordinationMode
+	}
 	if req.SourceType == "" {
 		req.SourceType = DemandSourceManual
 	}

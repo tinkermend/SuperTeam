@@ -123,6 +123,33 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if objective == "" {
 		return nil, fmt.Errorf("%w: objective is required", ErrInvalidInput)
 	}
+	if req.RunKind == "" {
+		req.RunKind = RunKindTask
+	}
+	if req.RunKind != RunKindTask && req.RunKind != RunKindChat {
+		return nil, ErrInvalidRunKind
+	}
+	if req.ResumeOfRunID != nil {
+		if req.RunKind != RunKindChat {
+			return nil, ErrInvalidResumeRun
+		}
+		prior, err := s.repository.GetRun(ctx, req.TenantID, req.DigitalEmployeeID, *req.ResumeOfRunID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidResumeRun, err)
+		}
+		if prior == nil ||
+			prior.DigitalEmployeeID != req.DigitalEmployeeID ||
+			prior.RunKind != RunKindChat ||
+			!prior.Status.IsTerminal() ||
+			prior.ProviderSessionID == nil || strings.TrimSpace(*prior.ProviderSessionID) == "" {
+			return nil, ErrInvalidResumeRun
+		}
+		if req.Metadata == nil {
+			req.Metadata = map[string]any{}
+		}
+		req.Metadata["provider_session_id"] = *prior.ProviderSessionID
+		req.Metadata["resume_of_run_id"] = prior.ID.String()
+	}
 
 	preflight, err := s.repository.GetRunPreflight(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
@@ -235,6 +262,9 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		TimeoutSec:        req.TimeoutSec,
 		GraceSec:          req.GraceSec,
 		Metadata:          metadata,
+		// Project task dispatch always produces a task run; chat runs are only
+		// created via the workbench CreateRun path.
+		RunKind: RunKindTask,
 	}
 
 	run, err := s.createAndDispatchRun(ctx, createReq, objective, prompt, preflight)
@@ -296,6 +326,13 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		return nil, err
 	}
 
+	runKind := req.RunKind
+	if runKind == "" {
+		// Defensive default: callers that build CreateDigitalEmployeeRunRequest
+		// directly (bypassing CreateRun's own normalization) must still persist a
+		// valid run_kind, since the column is NOT NULL with a CHECK constraint.
+		runKind = RunKindTask
+	}
 	commandID := newRuntimeCommandID()
 	createReq := CreateRunRecordRequest{
 		IdempotencyKey:         idempotencyKey,
@@ -317,6 +354,8 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		ExecutionInstanceID:    preflight.ExecutionInstanceID,
 		TimeoutSec:             req.TimeoutSec,
 		GraceSec:               req.GraceSec,
+		RunKind:                runKind,
+		ResumeOfRunID:          req.ResumeOfRunID,
 	}
 
 	run, err := s.repository.CreateRun(ctx, createReq)

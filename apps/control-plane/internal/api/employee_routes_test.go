@@ -1254,6 +1254,29 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 		}
 	}
 
+	runKindListReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?run_kind=chat", nil)
+	runKindListReq.AddCookie(cookie)
+	runKindListResp := httptest.NewRecorder()
+	server.ServeHTTP(runKindListResp, runKindListReq)
+	if runKindListResp.Code != http.StatusOK {
+		t.Fatalf("expected run_kind=chat list runs to succeed, got %d: %s", runKindListResp.Code, runKindListResp.Body.String())
+	}
+	if runService.listRunKind == nil || *runService.listRunKind != "chat" {
+		t.Fatalf("expected list filter to forward run_kind=chat to the service, got %#v", runService.listRunKind)
+	}
+
+	runService.listCalled = false
+	invalidRunKindReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?run_kind=banana", nil)
+	invalidRunKindReq.AddCookie(cookie)
+	invalidRunKindResp := httptest.NewRecorder()
+	server.ServeHTTP(invalidRunKindResp, invalidRunKindReq)
+	if invalidRunKindResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected run_kind=banana list runs to return 400, got %d: %s", invalidRunKindResp.Code, invalidRunKindResp.Body.String())
+	}
+	if runService.listCalled {
+		t.Fatalf("expected an invalid run_kind to be rejected before reaching the run service")
+	}
+
 	runID := uuid.MustParse(created.ID)
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String(), nil)
 	getReq.AddCookie(cookie)
@@ -1341,7 +1364,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	expectedChecks := []string{
 		authz.ActionEmployeeRunCreate,
 	}
-	for i := 0; i < 19; i++ {
+	for i := 0; i < 21; i++ {
 		expectedChecks = append(expectedChecks, authz.ActionEmployeeRead)
 	}
 	expectedChecks = append(expectedChecks, authz.ActionEmployeeRunStop)
@@ -2055,6 +2078,8 @@ type routeEmployeeRunService struct {
 	listProjectID    *uuid.UUID
 	listFrom         *time.Time
 	listTo           *time.Time
+	listRunKind      *string
+	listCalled       bool
 	getTenantID      uuid.UUID
 	getEmployeeID    uuid.UUID
 	getRunID         uuid.UUID
@@ -2078,6 +2103,7 @@ func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.Cr
 }
 
 func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter employee.DigitalEmployeeRunListFilter) (*employee.DigitalEmployeeRunListResult, error) {
+	s.listCalled = true
 	s.listTenantID = tenantID
 	s.listEmployeeID = employeeID
 	s.listLimit = filter.Limit
@@ -2086,6 +2112,7 @@ func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID
 	s.listProjectID = filter.ProjectID
 	s.listFrom = filter.From
 	s.listTo = filter.To
+	s.listRunKind = filter.RunKind
 	var run *employee.DigitalEmployeeRun
 	if s.createdRun != nil {
 		run = s.createdRun

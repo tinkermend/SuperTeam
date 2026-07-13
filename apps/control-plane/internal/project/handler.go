@@ -673,6 +673,7 @@ func (h *HTTPHandler) SubmitDemand(w http.ResponseWriter, r *http.Request) {
 		Attachments:             req.Attachments,
 		ReviewerUserID:          req.ReviewerUserID,
 		ReviewerSelectionReason: req.ReviewerSelectionReason,
+		CoordinationMode:        req.CoordinationMode,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1687,7 +1688,7 @@ func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, target any) 
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
@@ -1839,6 +1840,7 @@ type submitDemandBody struct {
 	Attachments             []any                   `json:"attachments"`
 	ReviewerUserID          *uuid.UUID              `json:"reviewer_user_id"`
 	ReviewerSelectionReason ReviewerSelectionReason `json:"reviewer_selection_reason"`
+	CoordinationMode        string                  `json:"coordination_mode"`
 }
 
 type resolveDecisionBody struct {
@@ -2521,6 +2523,7 @@ type projectDemandResponse struct {
 	Status            ProjectDemandStatus         `json:"status"`
 	CreatedEventID    *string                     `json:"created_event_id,omitempty"`
 	Reviewer          *reviewerPreferenceResponse `json:"reviewer"`
+	CoordinationMode  string                      `json:"coordination_mode"`
 }
 
 type demandLaunchDetailResponse struct {
@@ -3490,6 +3493,7 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 		Status:            demand.Status,
 		CreatedEventID:    stringPtr(demand.CreatedEventID),
 		Reviewer:          reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
+		CoordinationMode:  demand.CoordinationMode,
 	}
 }
 

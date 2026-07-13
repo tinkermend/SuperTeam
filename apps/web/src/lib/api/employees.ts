@@ -8,6 +8,8 @@ export type DigitalEmployeeStatus =
   | "disabled"
   | "error";
 
+export type DigitalEmployeeRunKind = "task" | "chat";
+
 export type DigitalEmployeeAvatarAsset = {
   id: string;
   label: string;
@@ -216,6 +218,8 @@ export type DigitalEmployeeRunInput = {
   timeout_sec?: number;
   grace_sec?: number;
   metadata?: Record<string, unknown>;
+  run_kind?: DigitalEmployeeRunKind;
+  resume_of_run_id?: string;
 };
 
 export type DigitalEmployeeRun = {
@@ -251,6 +255,8 @@ export type DigitalEmployeeRun = {
   finished_at?: string;
   created_at?: string;
   updated_at?: string;
+  run_kind: DigitalEmployeeRunKind;
+  resume_of_run_id?: string;
 };
 
 export type DigitalEmployeeRunEvent = {
@@ -303,6 +309,7 @@ export type ListDigitalEmployeeRunsFilter = RunPagination & {
   project_id?: string;
   from?: string;
   to?: string;
+  run_kind?: DigitalEmployeeRunKind;
 };
 
 export type DigitalEmployeeOverviewExecutionStatus =
@@ -803,6 +810,7 @@ export function listDigitalEmployeeRuns(
   if (filter.project_id) params.set("project_id", filter.project_id);
   if (filter.from) params.set("from", filter.from);
   if (filter.to) params.set("to", filter.to);
+  if (filter.run_kind) params.set("run_kind", filter.run_kind);
   const query = params.toString();
 
   return getJson<DigitalEmployeeRunListResult>(

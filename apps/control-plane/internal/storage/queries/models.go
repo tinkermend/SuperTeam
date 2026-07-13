@@ -1017,6 +1017,8 @@ type ProjectDemand struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 需求更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 协调模式:plan=上游阻塞时报人类决策;loop=自动补链。随需求提交,冻结进 plan revision。
+	CoordinationMode string `json:"coordination_mode"`
 }
 
 // 项目需求最终总结记录，按 demand 生成 append-only 总结和报告引用。
@@ -1280,6 +1282,8 @@ type ProjectPlanRevision struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 创建该计划版本时产生的项目事件ID，用于 ProjectCoordinator Continue-As-New 后恢复协调作业输出事件链。
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 从 demand 冻结的协调模式;NULL(存量)按 loop 解释。
+	CoordinationMode pgtype.Text `json:"coordination_mode"`
 }
 
 // 项目报告引用表，保存阶段汇报、验收报告和归档报告的对象引用
@@ -2222,6 +2226,10 @@ type Task struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 任务最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// run 归类:task=任务执行,chat=数字员工单次对话。纯分类标签,不改变执行语义。
+	RunKind string `json:"run_kind"`
+	// chat 追问血缘:指向上一个 chat run(task_runs.id),仅审计用,无 FK。
+	ResumeOfRunID uuid.NullUUID `json:"resume_of_run_id"`
 }
 
 // 任务工件表

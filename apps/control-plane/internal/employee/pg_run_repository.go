@@ -249,7 +249,50 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	if err != nil {
 		return nil, mapNoRows(err)
 	}
-	return digitalEmployeeRunFromQuery(run), nil
+	// GetDigitalEmployeeRunRow adds run_kind/resume_of_run_id (task-level columns) on top
+	// of the task_runs columns; reassemble the task_runs subset into queries.TaskRun so the
+	// existing mapper is reused, mirroring digitalEmployeeRunListItemFromDetailedRow below.
+	// run_kind/resume_of_run_id have no equivalent on queries.TaskRun (they live on the
+	// tasks table, not task_runs), so they are set on the mapped domain struct separately.
+	mapped := digitalEmployeeRunFromQuery(queries.TaskRun{
+		ID:                        run.ID,
+		TenantID:                  run.TenantID,
+		TaskID:                    run.TaskID,
+		NodeID:                    run.NodeID,
+		RuntimeNodeID:             run.RuntimeNodeID,
+		ProviderSessionID:         run.ProviderSessionID,
+		Status:                    run.Status,
+		LeaseExpiresAt:            run.LeaseExpiresAt,
+		StartedAt:                 run.StartedAt,
+		CompletedAt:               run.CompletedAt,
+		FinishedAt:                run.FinishedAt,
+		Result:                    run.Result,
+		ErrorMessage:              run.ErrorMessage,
+		CreatedAt:                 run.CreatedAt,
+		UpdatedAt:                 run.UpdatedAt,
+		CommandID:                 run.CommandID,
+		DigitalEmployeeID:         run.DigitalEmployeeID,
+		ExecutionInstanceID:       run.ExecutionInstanceID,
+		IdempotencyKey:            run.IdempotencyKey,
+		IdempotencyFingerprint:    run.IdempotencyFingerprint,
+		TimeoutSec:                run.TimeoutSec,
+		GraceSec:                  run.GraceSec,
+		Diagnostic:                run.Diagnostic,
+		LogRef:                    run.LogRef,
+		RawResultRef:              run.RawResultRef,
+		WorkProducts:              run.WorkProducts,
+		SessionState:              run.SessionState,
+		ErrorCode:                 run.ErrorCode,
+		ErrorFamily:               run.ErrorFamily,
+		ExitCode:                  run.ExitCode,
+		Signal:                    run.Signal,
+		TimedOut:                  run.TimedOut,
+		ProviderType:              run.ProviderType,
+		ProviderSessionExternalID: run.ProviderSessionExternalID,
+	})
+	mapped.RunKind = run.RunKind
+	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
+	return mapped, nil
 }
 
 func (r *PgRunRepository) GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -295,6 +338,8 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		toTime = pgtype.Timestamptz{Time: *filter.To, Valid: true}
 	}
 
+	runKind := textFromPtr(filter.RunKind)
+
 	rows, err := r.q.ListDigitalEmployeeRunsDetailed(ctx, queries.ListDigitalEmployeeRunsDetailedParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
@@ -302,6 +347,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		ProjectID:         projectID,
 		FromTime:          fromTime,
 		ToTime:            toTime,
+		RunKind:           runKind,
 		Limit:             filter.Limit,
 		Offset:            filter.Offset,
 	})
@@ -316,6 +362,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		ProjectID:         projectID,
 		FromTime:          fromTime,
 		ToTime:            toTime,
+		RunKind:           runKind,
 	})
 	if err != nil {
 		return nil, err
@@ -401,6 +448,8 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		ExecutionInstanceID:    req.ExecutionInstanceID,
 		TimeoutSec:             int4FromPtr(req.TimeoutSec),
 		GraceSec:               int4FromPtr(req.GraceSec),
+		RunKind:                req.RunKind,
+		ResumeOfRunID:          nullUUIDFromPtr(req.ResumeOfRunID),
 	})
 	if err != nil {
 		return nil, mapCreateRunError(err, req)
@@ -942,6 +991,11 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 		CreatedAt:                 row.CreatedAt,
 		UpdatedAt:                 row.UpdatedAt,
 	})
+	// run_kind/resume_of_run_id live on the joined tasks columns, not on the
+	// task_runs subset reassembled above; carry them through explicitly (see
+	// the equivalent fixup in GetRun).
+	run.RunKind = row.RunKind
+	run.ResumeOfRunID = uuidPtrFromNull(row.ResumeOfRunID)
 
 	item := DigitalEmployeeRunListItem{
 		Run:              run,

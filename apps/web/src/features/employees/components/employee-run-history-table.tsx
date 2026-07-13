@@ -11,7 +11,12 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
-import type { DigitalEmployeeRunListItem, DigitalEmployeeRunListResult, DigitalEmployeeRunStatus } from "@/lib/api/employees";
+import type {
+  DigitalEmployeeRunKind,
+  DigitalEmployeeRunListItem,
+  DigitalEmployeeRunListResult,
+  DigitalEmployeeRunStatus,
+} from "@/lib/api/employees";
 import { Link } from "@tanstack/react-router";
 
 type EmployeeRunHistoryTableProps = {
@@ -24,6 +29,8 @@ type EmployeeRunHistoryTableProps = {
   pageSize: number;
   statusFilter: DigitalEmployeeRunStatus | undefined;
   onStatusFilterChange: (status: DigitalEmployeeRunStatus | undefined) => void;
+  runKindFilter: DigitalEmployeeRunKind | undefined;
+  onRunKindFilterChange: (runKind: DigitalEmployeeRunKind | undefined) => void;
   onPageChange: (page: number) => void;
   onRowClick: (item: DigitalEmployeeRunListItem) => void;
   onRetry: () => void;
@@ -40,6 +47,11 @@ const runStatusTone: Record<DigitalEmployeeRunStatus, V3Tone> = {
   timed_out: "danger",
 };
 
+const runKindLabel: Record<DigitalEmployeeRunKind, string> = {
+  task: "任务",
+  chat: "对话",
+};
+
 export function EmployeeRunHistoryTable({
   employeeId,
   result,
@@ -50,6 +62,8 @@ export function EmployeeRunHistoryTable({
   pageSize,
   statusFilter,
   onStatusFilterChange,
+  runKindFilter,
+  onRunKindFilterChange,
   onPageChange,
   onRowClick,
   onRetry,
@@ -61,20 +75,33 @@ export function EmployeeRunHistoryTable({
   return (
     <WorkSurface>
       <div className="flex flex-col gap-3 border-b border-v3-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <V3Chip active={statusFilter === undefined} onClick={() => onStatusFilterChange(undefined)} type="button">
-            全部状态
-          </V3Chip>
-          {result?.filters.statuses.map((option) => (
-            <V3Chip
-              active={statusFilter === option.value}
-              key={option.value}
-              onClick={() => onStatusFilterChange(option.value as DigitalEmployeeRunStatus)}
-              type="button"
-            >
-              {option.label}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <V3Chip active={statusFilter === undefined} onClick={() => onStatusFilterChange(undefined)} type="button">
+              全部状态
             </V3Chip>
-          ))}
+            {result?.filters.statuses.map((option) => (
+              <V3Chip
+                active={statusFilter === option.value}
+                key={option.value}
+                onClick={() => onStatusFilterChange(option.value as DigitalEmployeeRunStatus)}
+                type="button"
+              >
+                {option.label}
+              </V3Chip>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <V3Chip active={runKindFilter === undefined} onClick={() => onRunKindFilterChange(undefined)} type="button">
+              全部
+            </V3Chip>
+            <V3Chip active={runKindFilter === "task"} onClick={() => onRunKindFilterChange("task")} type="button">
+              任务
+            </V3Chip>
+            <V3Chip active={runKindFilter === "chat"} onClick={() => onRunKindFilterChange("chat")} type="button">
+              对话
+            </V3Chip>
+          </div>
         </div>
         <V3Button asChild size="sm" variant="outline">
           <Link search={{ employee: employeeId }} to="/run-overview">
@@ -88,6 +115,7 @@ export function EmployeeRunHistoryTable({
             <tr>
               <V3Th>任务 / 项目</V3Th>
               <V3Th>会话 ID</V3Th>
+              <V3Th>类型</V3Th>
               <V3Th>状态</V3Th>
               <V3Th>耗时</V3Th>
               <V3Th>工件</V3Th>
@@ -107,6 +135,11 @@ export function EmployeeRunHistoryTable({
                   <p className="truncate text-xs text-v3-ink-3">{item.project_name ?? "无关联项目"}</p>
                 </V3Td>
                 <V3Td className="font-mono text-xs text-v3-ink-2">{shortId(item.id)}</V3Td>
+                <V3Td>
+                  <StatusPill showDot={false} tone="mute">
+                    {runKindLabel[item.run_kind]}
+                  </StatusPill>
+                </V3Td>
                 <V3Td>
                   <StatusPill tone={runStatusTone[item.status]}>{item.status}</StatusPill>
                 </V3Td>

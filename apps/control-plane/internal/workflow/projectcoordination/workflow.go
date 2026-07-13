@@ -332,7 +332,7 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		_, err := handlePlanReviewDecision(ctx, input, signal, pending)
 		return err
-	case "task_failure_recovery":
+	case "task_failure_recovery", "upstream_supplement_review":
 		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, projectID, signal)
 		if err != nil {
 			return err
@@ -538,6 +538,19 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 		if decision.Blocker == nil {
 			return taskCompletionPending{}, project.ErrInvalidProject
 		}
+		if workflow.GetVersion(ctx, "coordination-mode-branch", workflow.DefaultVersion, 1) != workflow.DefaultVersion &&
+			decision.CoordinationMode == project.CoordinationModePlan {
+			review, err := requestUpstreamSupplementReview(ctx, input.TenantID, input.ProjectID,
+				signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID, decision.Blocker.MissingInputs)
+			if err != nil || review.ID == uuid.Nil {
+				return taskCompletionPending{}, err
+			}
+			return taskCompletionPending{FailureRecovery: &pendingTaskFailureRecovery{
+				DecisionRequestID: review.ID,
+				ProjectID:         input.ProjectID,
+			}}, nil
+		}
+		// loop 模式:以下为既有自动补链路径,原样保留
 		supplement, err := createUpstreamSupplementTasks(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.Blocker.MissingInputs)
 		if err != nil {
 			return taskCompletionPending{}, err
@@ -793,6 +806,21 @@ func requestProjectTaskIterationExhaustedReview(ctx workflow.Context, tenantID, 
 		return DecisionRequestResult{}, err
 	}
 	return decision, nil
+}
+
+func requestUpstreamSupplementReview(ctx workflow.Context, tenantID, projectID, projectTaskID, resultID, completedEventID uuid.UUID, missingInputs []string) (DecisionRequestResult, error) {
+	var result DecisionRequestResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).RequestUpstreamSupplementReview, RequestUpstreamSupplementReviewInput{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    projectTaskID,
+		ResultID:         resultID,
+		CompletedEventID: completedEventID,
+		MissingInputs:    missingInputs,
+	}).Get(ctx, &result); err != nil {
+		return DecisionRequestResult{}, err
+	}
+	return result, nil
 }
 
 func applyProjectAcceptanceDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) error {

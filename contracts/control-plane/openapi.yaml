@@ -3272,6 +3272,14 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: run_kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - task
+              - chat
       responses:
         "200":
           description: Digital employee run list
@@ -7336,6 +7344,12 @@ components:
             - project_reviewer_default
             - project_human_owner_fallback
             - user_selected
+        coordination_mode:
+          type: string
+          enum:
+            - plan
+            - loop
+          default: plan
     CreateProjectEvidenceRequest:
       type: object
       required:
@@ -10631,6 +10645,7 @@ components:
         - work_products
         - session_state
         - timed_out
+        - run_kind
       properties:
         id:
           type: string
@@ -10716,6 +10731,14 @@ components:
         updated_at:
           type: string
           format: date-time
+        run_kind:
+          type: string
+          enum:
+            - task
+            - chat
+        resume_of_run_id:
+          type: string
+          format: uuid
     DigitalEmployeeRunStats:
       type: object
       required:
@@ -10857,6 +10880,15 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        run_kind:
+          type: string
+          enum:
+            - task
+            - chat
+          default: task
+        resume_of_run_id:
+          type: string
+          format: uuid
     DigitalEmployeeRunEvent:
       type: object
       required:

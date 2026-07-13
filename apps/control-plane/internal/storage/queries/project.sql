@@ -690,7 +690,8 @@ INSERT INTO project_demands (
     priority,
     risk_level,
     status,
-    created_event_id
+    created_event_id,
+    coordination_mode
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
@@ -703,7 +704,8 @@ INSERT INTO project_demands (
     sqlc.narg('priority')::varchar,
     sqlc.narg('risk_level')::varchar,
     sqlc.arg('status')::varchar,
-    sqlc.narg('created_event_id')::uuid
+    sqlc.narg('created_event_id')::uuid,
+    sqlc.arg('coordination_mode')::varchar
 ) RETURNING *;
 
 -- name: ListProjectDemands :many
@@ -1039,7 +1041,8 @@ INSERT INTO project_plan_revisions (
     validation_warnings,
     review_required,
     review_reason,
-    created_event_id
+    created_event_id,
+    coordination_mode
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.narg('team_id')::uuid,
@@ -1058,7 +1061,8 @@ INSERT INTO project_plan_revisions (
     COALESCE(sqlc.narg('validation_warnings')::jsonb, '[]'::jsonb),
     sqlc.arg('review_required')::boolean,
     sqlc.narg('review_reason')::text,
-    sqlc.narg('created_event_id')::uuid
+    sqlc.narg('created_event_id')::uuid,
+    sqlc.narg('coordination_mode')::varchar
 ) RETURNING *;
 
 -- name: GetProjectPlanRevision :one

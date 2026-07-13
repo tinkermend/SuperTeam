@@ -17,6 +17,8 @@ export type ProjectStatus =
   | "acceptance"
   | "archived";
 
+export type ProjectCoordinationMode = "plan" | "loop";
+
 export type ProjectPrincipalType = "human_user" | "digital_employee" | "team";
 export type ProjectRole =
   | "owner"
@@ -887,6 +889,7 @@ export type SubmitProjectDemandInput = {
   attachments?: unknown[];
   reviewer_user_id?: string;
   reviewer_selection_reason?: ReviewerSelectionReason;
+  coordination_mode?: ProjectCoordinationMode;
 };
 
 export type CreateProjectEvidenceInput = {

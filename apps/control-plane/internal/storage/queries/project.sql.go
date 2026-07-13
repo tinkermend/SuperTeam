@@ -22,7 +22,7 @@ WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
   AND status IN ('draft', 'pending_review')
-RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode
 `
 
 type AcceptProjectPlanRevisionParams struct {
@@ -70,6 +70,7 @@ func (q *Queries) AcceptProjectPlanRevision(ctx context.Context, arg AcceptProje
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -1042,7 +1043,8 @@ INSERT INTO project_demands (
     priority,
     risk_level,
     status,
-    created_event_id
+    created_event_id,
+    coordination_mode
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1055,8 +1057,9 @@ INSERT INTO project_demands (
     $9::varchar,
     $10::varchar,
     $11::varchar,
-    $12::uuid
-) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at
+    $12::uuid,
+    $13::varchar
+) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode
 `
 
 type CreateProjectDemandParams struct {
@@ -1072,6 +1075,7 @@ type CreateProjectDemandParams struct {
 	RiskLevel         pgtype.Text   `json:"risk_level"`
 	Status            string        `json:"status"`
 	CreatedEventID    uuid.NullUUID `json:"created_event_id"`
+	CoordinationMode  string        `json:"coordination_mode"`
 }
 
 func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDemandParams) (ProjectDemand, error) {
@@ -1088,6 +1092,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		arg.RiskLevel,
 		arg.Status,
 		arg.CreatedEventID,
+		arg.CoordinationMode,
 	)
 	var i ProjectDemand
 	err := row.Scan(
@@ -1106,6 +1111,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -1469,7 +1475,8 @@ INSERT INTO project_plan_revisions (
     validation_warnings,
     review_required,
     review_reason,
-    created_event_id
+    created_event_id,
+    coordination_mode
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1488,8 +1495,9 @@ INSERT INTO project_plan_revisions (
     COALESCE($15::jsonb, '[]'::jsonb),
     $16::boolean,
     $17::text,
-    $18::uuid
-) RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id
+    $18::uuid,
+    $19::varchar
+) RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode
 `
 
 type CreateProjectPlanRevisionParams struct {
@@ -1511,6 +1519,7 @@ type CreateProjectPlanRevisionParams struct {
 	ReviewRequired     bool          `json:"review_required"`
 	ReviewReason       pgtype.Text   `json:"review_reason"`
 	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
+	CoordinationMode   pgtype.Text   `json:"coordination_mode"`
 }
 
 func (q *Queries) CreateProjectPlanRevision(ctx context.Context, arg CreateProjectPlanRevisionParams) (ProjectPlanRevision, error) {
@@ -1533,6 +1542,7 @@ func (q *Queries) CreateProjectPlanRevision(ctx context.Context, arg CreateProje
 		arg.ReviewRequired,
 		arg.ReviewReason,
 		arg.CreatedEventID,
+		arg.CoordinationMode,
 	)
 	var i ProjectPlanRevision
 	err := row.Scan(
@@ -1565,6 +1575,7 @@ func (q *Queries) CreateProjectPlanRevision(ctx context.Context, arg CreateProje
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -2994,7 +3005,7 @@ func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProj
 }
 
 const GetProjectDemand = `-- name: GetProjectDemand :one
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode FROM project_demands
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -3023,6 +3034,7 @@ func (q *Queries) GetProjectDemand(ctx context.Context, arg GetProjectDemandPara
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -3149,7 +3161,7 @@ func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDele
 }
 
 const GetProjectPlanRevision = `-- name: GetProjectPlanRevision :one
-SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id FROM project_plan_revisions
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode FROM project_plan_revisions
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND id = $3::uuid
@@ -3194,12 +3206,13 @@ func (q *Queries) GetProjectPlanRevision(ctx context.Context, arg GetProjectPlan
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
 
 const GetProjectPlanRevisionByFingerprint = `-- name: GetProjectPlanRevisionByFingerprint :one
-SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id FROM project_plan_revisions
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode FROM project_plan_revisions
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND demand_id = $3::uuid
@@ -3251,6 +3264,7 @@ func (q *Queries) GetProjectPlanRevisionByFingerprint(ctx context.Context, arg G
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -4742,7 +4756,7 @@ func (q *Queries) ListProjectDeleteTaskBlockers(ctx context.Context, arg ListPro
 }
 
 const ListProjectDemands = `-- name: ListProjectDemands :many
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode FROM project_demands
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY created_at DESC
@@ -4786,6 +4800,7 @@ func (q *Queries) ListProjectDemands(ctx context.Context, arg ListProjectDemands
 			&i.CreatedEventID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CoordinationMode,
 		); err != nil {
 			return nil, err
 		}
@@ -5003,7 +5018,7 @@ func (q *Queries) ListProjectMembers(ctx context.Context, arg ListProjectMembers
 }
 
 const ListProjectPlanRevisions = `-- name: ListProjectPlanRevisions :many
-SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id FROM project_plan_revisions
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode FROM project_plan_revisions
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND ($3::uuid IS NULL OR demand_id = $3::uuid)
@@ -5064,6 +5079,7 @@ func (q *Queries) ListProjectPlanRevisions(ctx context.Context, arg ListProjectP
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CreatedEventID,
+			&i.CoordinationMode,
 		); err != nil {
 			return nil, err
 		}
@@ -5076,7 +5092,7 @@ func (q *Queries) ListProjectPlanRevisions(ctx context.Context, arg ListProjectP
 }
 
 const ListProjectPlanRevisionsForDemand = `-- name: ListProjectPlanRevisionsForDemand :many
-SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id FROM project_plan_revisions
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode FROM project_plan_revisions
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND demand_id = $3::uuid
@@ -5128,6 +5144,7 @@ func (q *Queries) ListProjectPlanRevisionsForDemand(ctx context.Context, arg Lis
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CreatedEventID,
+			&i.CoordinationMode,
 		); err != nil {
 			return nil, err
 		}
@@ -6747,7 +6764,7 @@ WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
   AND status IN ('decomposing', 'decomposed')
-RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode
 `
 
 type MarkProjectPlanRevisionDecomposedParams struct {
@@ -6795,6 +6812,7 @@ func (q *Queries) MarkProjectPlanRevisionDecomposed(ctx context.Context, arg Mar
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -6808,7 +6826,7 @@ WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND id = $4::uuid
   AND status = 'accepted'
-RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode
 `
 
 type MarkProjectPlanRevisionDecomposingParams struct {
@@ -6856,6 +6874,7 @@ func (q *Queries) MarkProjectPlanRevisionDecomposing(ctx context.Context, arg Ma
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -7407,7 +7426,7 @@ WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
   AND status = 'pending_review'
-RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at, created_event_id, coordination_mode
 `
 
 type RejectProjectPlanRevisionParams struct {
@@ -7457,6 +7476,7 @@ func (q *Queries) RejectProjectPlanRevision(ctx context.Context, arg RejectProje
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CreatedEventID,
+		&i.CoordinationMode,
 	)
 	return i, err
 }
@@ -8416,7 +8436,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at
+RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode
 `
 
 type UpdateProjectDemandStatusParams struct {
@@ -8444,6 +8464,7 @@ func (q *Queries) UpdateProjectDemandStatus(ctx context.Context, arg UpdateProje
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CoordinationMode,
 	)
 	return i, err
 }

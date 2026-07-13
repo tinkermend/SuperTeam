@@ -2,7 +2,8 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TaskLaunchShell } from "./components/task-launch-shell";
-import { TaskLaunchForm } from "./components/task-launch-form";
+import { TaskLaunchForm, type LaunchMode } from "./components/task-launch-form";
+import { ChatPanel, type ConvertToTaskPayload } from "./components/chat-panel";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -36,6 +37,12 @@ export function TaskLaunchView({
     [apiBaseUrl, fetcher],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [mode, setMode] = useState<LaunchMode>("plan");
+  const [content, setContent] = useState("");
+  const [chatSource, setChatSource] = useState<{
+    chatRunId: string;
+    digitalEmployeeId: string;
+  } | null>(null);
   const projectsQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => listProjects(apiOptions, { limit: 50, offset: 0 }),
@@ -66,12 +73,30 @@ export function TaskLaunchView({
       input: SubmitProjectDemandInput;
       projectId: string;
     }) => submitProjectDemand(apiOptions, projectId, input),
-    onSuccess: (demand) =>
+    onSuccess: (demand) => {
+      setChatSource(null);
       navigate({
         params: { demandId: demand.id },
         to: "/workflows/$demandId",
-      }),
+      });
+    },
   });
+
+  function handleConvertToTask({ draft, chatRunId, digitalEmployeeId }: ConvertToTaskPayload) {
+    setMode("plan");
+    setContent(draft);
+    setChatSource({ chatRunId, digitalEmployeeId });
+  }
+
+  function handleModeChange(nextMode: LaunchMode) {
+    if (nextMode === "chat") {
+      // Prevents stale lineage: a chat-sourced demand's source_refs must not
+      // leak onto a later, unrelated demand submitted after switching back to
+      // chat mode and never converting anything from it.
+      setChatSource(null);
+    }
+    setMode(nextMode);
+  }
 
   return (
     <TaskLaunchShell
@@ -79,9 +104,30 @@ export function TaskLaunchView({
       description="提交需求到项目，由项目协调线程编排后续任务"
     >
       <TaskLaunchForm
+        chatPanel={<ChatPanel apiOptions={apiOptions} onConvertToTask={handleConvertToTask} />}
+        content={content}
         isSubmitting={submitMutation.isPending}
+        mode={mode}
+        onContentChange={setContent}
+        onModeChange={handleModeChange}
         onProjectChange={setSelectedProjectId}
-        onSubmit={(projectId, input) => submitMutation.mutate({ input, projectId })}
+        onSubmit={(projectId, input) =>
+          submitMutation.mutate({
+            input: {
+              ...input,
+              coordination_mode: mode === "loop" ? "loop" : "plan",
+              ...(chatSource
+                ? {
+                    source_refs: {
+                      chat_run_id: chatSource.chatRunId,
+                      digital_employee_id: chatSource.digitalEmployeeId,
+                    },
+                  }
+                : {}),
+            },
+            projectId,
+          })
+        }
         projects={projectsQuery.data ?? []}
         selectedProjectId={selectedProjectId}
       />
