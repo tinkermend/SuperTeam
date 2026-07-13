@@ -284,6 +284,8 @@ func buildPlannerSystemPrompt() string {
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
 		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key a task lists in input_requirements.required_inputs must appear in the produces of one of its DIRECT blockers (declare the edge in blocked_by_keys; one edge = one handoff). At execution time the platform injects each task's direct blockers' results as upstream_results into its dispatch request, and a completed task must return result_contract.deliverables covering every name in its produces.",
+		"When the snapshot contains scenario_template, instantiate its spec.skeleton as the task backbone: one task per skeleton step in order, honoring depends_on edges between steps, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold spec.default_acceptance_criteria into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop a skeleton step or rename its produces names.",
+		"Set template_key exactly to scenario_template.key when scenario_template is present; otherwise choose a short descriptive key.",
 		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
 		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
@@ -297,6 +299,7 @@ func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
 		DigitalEmployeePool:  snapshot.DigitalEmployeePool,
 		CoordinationPolicy:   snapshot.CoordinationPolicy,
 		PreviousRouteContext: snapshot.PreviousRouteContext,
+		ScenarioTemplate:     snapshot.ScenarioTemplate,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -306,11 +309,12 @@ func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
 }
 
 type plannerPromptSnapshot struct {
-	ProjectID            string                  `json:"project_id"`
-	Demand               DemandSnapshot          `json:"demand"`
-	DigitalEmployeePool  []ProjectMemberSnapshot `json:"digital_employee_pool"`
-	CoordinationPolicy   map[string]any          `json:"coordination_policy,omitempty"`
-	PreviousRouteContext map[string]any          `json:"previous_route_context,omitempty"`
+	ProjectID            string                    `json:"project_id"`
+	Demand               DemandSnapshot            `json:"demand"`
+	DigitalEmployeePool  []ProjectMemberSnapshot   `json:"digital_employee_pool"`
+	CoordinationPolicy   map[string]any            `json:"coordination_policy,omitempty"`
+	PreviousRouteContext map[string]any            `json:"previous_route_context,omitempty"`
+	ScenarioTemplate     *ScenarioTemplateSnapshot `json:"scenario_template,omitempty"`
 }
 
 func decodePlannerJSON(content string) (RouteDecisionPlan, error) {

@@ -56,6 +56,10 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 	if err := ValidateRouteDecisionGraph(plan, activeExecutorIDs(snapshot.DigitalEmployeePool), policy); err != nil {
 		return err
 	}
+	if snapshot.ScenarioTemplate != nil && strings.TrimSpace(snapshot.ScenarioTemplate.Key) != "" &&
+		plan.TemplateKey != snapshot.ScenarioTemplate.Key {
+		return invalidRouteDecision("plan template_key %q does not match the bound scenario template %q", plan.TemplateKey, snapshot.ScenarioTemplate.Key)
+	}
 	profiles := planningProfilesByEmployeeID(snapshot.DigitalEmployeePool)
 	for _, task := range plan.Tasks {
 		if strings.TrimSpace(task.EmployeeSelectionReason) == "" {
@@ -311,7 +315,6 @@ func hasCycle(tasks []PlannedTask) bool {
 	}
 	return false
 }
-
 
 func uuidSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
 	set := make(map[uuid.UUID]struct{}, len(ids))

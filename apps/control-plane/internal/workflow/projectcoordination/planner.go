@@ -15,6 +15,17 @@ type CoordinationSnapshot struct {
 	DigitalEmployeePool  []ProjectMemberSnapshot
 	CoordinationPolicy   map[string]any
 	PreviousRouteContext map[string]any
+	// ScenarioTemplate is the project's bound scenario template, injected into
+	// the planner prompt. nil means unbound (generic fallback): the planner
+	// behaves exactly as before templates existed.
+	ScenarioTemplate *ScenarioTemplateSnapshot
+}
+
+// ScenarioTemplateSnapshot carries the bound template's content into planning.
+type ScenarioTemplateSnapshot struct {
+	Key  string         `json:"key"`
+	Name string         `json:"name"`
+	Spec map[string]any `json:"spec,omitempty"`
 }
 
 type DemandSnapshot struct {

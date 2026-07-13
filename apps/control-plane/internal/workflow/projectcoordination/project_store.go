@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,17 +17,18 @@ import (
 )
 
 type ProjectStore struct {
-	repository       project.Repository
-	approvals        ApprovalCreator
-	inbox            project.DecisionInboxProjector
-	runStarter       ProjectTaskRunStarter
-	readiness        DigitalEmployeeReadinessChecker
-	lending          LendingGatekeeper
-	profileSource    DigitalEmployeePlanningProfileSource
-	clock            clockFunc
-	employeeReader   GateEmployeeRuntimeReader
-	capabilityReader GateCapabilityReader
-	nodeResolver     GateProjectTaskNodeResolver
+	repository        project.Repository
+	approvals         ApprovalCreator
+	inbox             project.DecisionInboxProjector
+	runStarter        ProjectTaskRunStarter
+	readiness         DigitalEmployeeReadinessChecker
+	lending           LendingGatekeeper
+	scenarioTemplates ScenarioTemplateSource
+	profileSource     DigitalEmployeePlanningProfileSource
+	clock             clockFunc
+	employeeReader    GateEmployeeRuntimeReader
+	capabilityReader  GateCapabilityReader
+	nodeResolver      GateProjectTaskNodeResolver
 }
 
 type clockFunc func() time.Time
@@ -97,6 +99,17 @@ func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadi
 // employees from a foreign team that the project has no effective lending grant for.
 func (s *ProjectStore) WithLendingGatekeeper(gatekeeper LendingGatekeeper) *ProjectStore {
 	s.lending = gatekeeper
+	return s
+}
+
+// ScenarioTemplateSource resolves a project's bound scenario template for
+// injection into the planning snapshot.
+type ScenarioTemplateSource interface {
+	GetScenarioTemplateSnapshot(ctx context.Context, tenantID uuid.UUID, key string) (ScenarioTemplateSnapshot, error)
+}
+
+func (s *ProjectStore) WithScenarioTemplateSource(source ScenarioTemplateSource) *ProjectStore {
+	s.scenarioTemplates = source
 	return s
 }
 
@@ -350,11 +363,25 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	if demand.Content != nil {
 		content = *demand.Content
 	}
+	var scenarioTemplate *ScenarioTemplateSnapshot
+	if s.scenarioTemplates != nil && projectRecord.ScenarioTemplateKey != nil {
+		if key := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); key != "" {
+			template, templateErr := s.scenarioTemplates.GetScenarioTemplateSnapshot(ctx, input.TenantID, key)
+			if templateErr != nil {
+				// A stale binding degrades to the generic fallback (nil) rather
+				// than blocking planning; the defect stays visible in the log.
+				log.Printf("scenario template %q unresolved for project %s: %v", key, input.ProjectID, templateErr)
+			} else {
+				scenarioTemplate = &template
+			}
+		}
+	}
 	return CoordinationSnapshot{
 		ProjectID:           projectRecord.ID,
 		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content},
 		DigitalEmployeePool: pool,
 		CoordinationPolicy:  projectRecord.CoordinationPolicy,
+		ScenarioTemplate:    scenarioTemplate,
 	}, nil
 }
 

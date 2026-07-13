@@ -1415,3 +1415,19 @@ func (p failingRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnap
 	_ = snapshot
 	return RouteDecisionPlan{}, p.err
 }
+
+func TestBuildPlannerUserPromptCarriesScenarioTemplate(t *testing.T) {
+	snapshot := CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析", Content: "分析系统"},
+		ScenarioTemplate: &ScenarioTemplateSnapshot{
+			Key:  "ops_analysis",
+			Name: "运维分析",
+			Spec: map[string]any{"skeleton": []any{map[string]any{"step": "collect"}}},
+		},
+	}
+	prompt := buildPlannerUserPrompt(snapshot)
+	require.Contains(t, prompt, "scenario_template")
+	require.Contains(t, prompt, "ops_analysis")
+	require.Contains(t, prompt, "collect")
+}

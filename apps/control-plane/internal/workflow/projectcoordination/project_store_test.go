@@ -6269,3 +6269,67 @@ func TestCollectUpstreamResultsToleratesBlockerWithoutResult(t *testing.T) {
 	require.Equal(t, blockerTaskID.String(), upstream[0]["task_id"])
 	require.Equal(t, "unavailable", upstream[0]["result"])
 }
+
+type fakeScenarioTemplateSource struct {
+	templates map[string]ScenarioTemplateSnapshot
+}
+
+func (f fakeScenarioTemplateSource) GetScenarioTemplateSnapshot(_ context.Context, _ uuid.UUID, key string) (ScenarioTemplateSnapshot, error) {
+	template, ok := f.templates[key]
+	if !ok {
+		return ScenarioTemplateSnapshot{}, errors.New("template " + key + " not found")
+	}
+	return template, nil
+}
+
+func TestLoadProjectCoordinationSnapshotCarriesScenarioTemplate(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	key := "ops_analysis"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+			ScenarioTemplateKey: &key,
+		},
+		demand: project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析"},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{templates: map[string]ScenarioTemplateSnapshot{
+		"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Spec: map[string]any{"skeleton": []any{}}},
+	}})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot.ScenarioTemplate == nil || snapshot.ScenarioTemplate.Key != "ops_analysis" {
+		t.Fatalf("expected bound template in snapshot, got %#v", snapshot.ScenarioTemplate)
+	}
+}
+
+func TestLoadProjectCoordinationSnapshotDegradesOnUnresolvedTemplate(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	key := "ghost"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+			ScenarioTemplateKey: &key,
+		},
+		demand: project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析"},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot must not fail on stale binding: %v", err)
+	}
+	if snapshot.ScenarioTemplate != nil {
+		t.Fatalf("expected generic fallback (nil), got %#v", snapshot.ScenarioTemplate)
+	}
+}

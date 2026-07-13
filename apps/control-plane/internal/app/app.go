@@ -558,6 +558,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
+	if coordinationStore != nil {
+		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
+	}
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
@@ -756,4 +759,19 @@ func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplate(ctx context.Con
 		return project.ScenarioTemplateBinding{}, err
 	}
 	return project.ScenarioTemplateBinding{Key: template.Key, Name: template.Name, Status: template.Status}, nil
+}
+
+type scenarioTemplateSourceAdapter struct {
+	service *scenariotemplate.Service
+}
+
+func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.Context, tenantID uuid.UUID, key string) (projectcoordination.ScenarioTemplateSnapshot, error) {
+	template, err := a.service.GetByKey(ctx, tenantID, key)
+	if err != nil {
+		return projectcoordination.ScenarioTemplateSnapshot{}, err
+	}
+	if template.Status != "active" {
+		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
+	}
+	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Spec: template.Spec}, nil
 }

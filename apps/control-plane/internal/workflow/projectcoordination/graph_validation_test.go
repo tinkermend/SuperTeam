@@ -662,3 +662,36 @@ func validBlockedGraphPlan(employeeID uuid.UUID) RouteDecisionPlan {
 		},
 	}
 }
+
+func TestValidateRouteDecisionPlanEnforcesBoundScenarioTemplateKey(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	snapshot.ScenarioTemplate = &ScenarioTemplateSnapshot{Key: "ops_analysis", Name: "运维分析"}
+	plan := validGraphPlan(employeeID)
+	plan.Tasks[0].TaskKind = "database_analysis"
+	plan.Tasks[0].RequiredCapabilities = []string{"database.read"}
+	plan.Tasks[0].MatchedCapabilities = []string{"database.read"}
+	plan.Tasks[0].EmployeeSelectionReason = "fits"
+	plan.TemplateKey = "something_else"
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
+
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "template_key")
+
+	plan.TemplateKey = "ops_analysis"
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10}))
+}
+
+func TestValidateRouteDecisionPlanIgnoresTemplateKeyWhenUnbound(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	plan := validGraphPlan(employeeID)
+	plan.Tasks[0].TaskKind = "database_analysis"
+	plan.Tasks[0].RequiredCapabilities = []string{"database.read"}
+	plan.Tasks[0].MatchedCapabilities = []string{"database.read"}
+	plan.Tasks[0].EmployeeSelectionReason = "fits"
+	plan.TemplateKey = "planner_free_choice"
+
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10}))
+}
