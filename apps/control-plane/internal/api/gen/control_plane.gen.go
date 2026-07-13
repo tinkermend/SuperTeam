@@ -2214,20 +2214,23 @@ type CreateDigitalEmployeeRequest struct {
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
 type CreateDigitalEmployeeRunRequest struct {
-	AllowedActions   *[]string                               `json:"allowed_actions,omitempty"`
-	ArtifactRefs     *[]map[string]interface{}               `json:"artifact_refs,omitempty"`
-	ContextRefs      *[]map[string]interface{}               `json:"context_refs,omitempty"`
-	ForbiddenActions *[]string                               `json:"forbidden_actions,omitempty"`
-	GraceSec         *int32                                  `json:"grace_sec,omitempty"`
-	IdempotencyKey   *string                                 `json:"idempotency_key,omitempty"`
-	Metadata         *map[string]interface{}                 `json:"metadata,omitempty"`
-	Objective        string                                  `json:"objective"`
-	OutputSchema     *map[string]interface{}                 `json:"output_schema,omitempty"`
-	Prompt           *string                                 `json:"prompt,omitempty"`
-	ResumeOfRunId    *openapi_types.UUID                     `json:"resume_of_run_id,omitempty"`
-	RunKind          *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
-	SecretRefs       *[]string                               `json:"secret_refs,omitempty"`
-	TimeoutSec       *int32                                  `json:"timeout_sec,omitempty"`
+	AllowedActions   *[]string                 `json:"allowed_actions,omitempty"`
+	ArtifactRefs     *[]map[string]interface{} `json:"artifact_refs,omitempty"`
+	ContextRefs      *[]map[string]interface{} `json:"context_refs,omitempty"`
+	ForbiddenActions *[]string                 `json:"forbidden_actions,omitempty"`
+	GraceSec         *int32                    `json:"grace_sec,omitempty"`
+	IdempotencyKey   *string                   `json:"idempotency_key,omitempty"`
+	Metadata         *map[string]interface{}   `json:"metadata,omitempty"`
+	Objective        string                    `json:"objective"`
+	OutputSchema     *map[string]interface{}   `json:"output_schema,omitempty"`
+
+	// ProjectId Runtime anchor for a chat run (run_kind=chat): resolves the dispatch node, budget, and policy boundary the way project task dispatch does. Required when run_kind is chat; ignored when run_kind is task. The anchor project receives no business effect from the chat run — no signal, ProjectTask, or RouteDecision.
+	ProjectId     *openapi_types.UUID                     `json:"project_id,omitempty"`
+	Prompt        *string                                 `json:"prompt,omitempty"`
+	ResumeOfRunId *openapi_types.UUID                     `json:"resume_of_run_id,omitempty"`
+	RunKind       *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
+	SecretRefs    *[]string                               `json:"secret_refs,omitempty"`
+	TimeoutSec    *int32                                  `json:"timeout_sec,omitempty"`
 }
 
 // CreateDigitalEmployeeRunRequestRunKind defines model for CreateDigitalEmployeeRunRequest.RunKind.

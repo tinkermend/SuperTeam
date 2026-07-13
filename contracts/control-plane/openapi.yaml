@@ -10889,6 +10889,15 @@ components:
         resume_of_run_id:
           type: string
           format: uuid
+        project_id:
+          type: string
+          format: uuid
+          description: >-
+            Runtime anchor for a chat run (run_kind=chat): resolves the
+            dispatch node, budget, and policy boundary the way project task
+            dispatch does. Required when run_kind is chat; ignored when
+            run_kind is task. The anchor project receives no business effect
+            from the chat run — no signal, ProjectTask, or RouteDecision.
     DigitalEmployeeRunEvent:
       type: object
       required:
