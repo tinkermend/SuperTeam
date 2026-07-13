@@ -338,6 +338,8 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		toTime = pgtype.Timestamptz{Time: *filter.To, Valid: true}
 	}
 
+	runKind := textFromPtr(filter.RunKind)
+
 	rows, err := r.q.ListDigitalEmployeeRunsDetailed(ctx, queries.ListDigitalEmployeeRunsDetailedParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
@@ -345,6 +347,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		ProjectID:         projectID,
 		FromTime:          fromTime,
 		ToTime:            toTime,
+		RunKind:           runKind,
 		Limit:             filter.Limit,
 		Offset:            filter.Offset,
 	})
@@ -359,6 +362,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		ProjectID:         projectID,
 		FromTime:          fromTime,
 		ToTime:            toTime,
+		RunKind:           runKind,
 	})
 	if err != nil {
 		return nil, err

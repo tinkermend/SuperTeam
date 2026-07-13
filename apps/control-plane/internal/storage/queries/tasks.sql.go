@@ -69,6 +69,7 @@ WHERE tr.tenant_id = $1::uuid
   AND ($4::uuid IS NULL OR p.id = $4::uuid)
   AND ($5::timestamptz IS NULL OR tr.created_at >= $5::timestamptz)
   AND ($6::timestamptz IS NULL OR tr.created_at < $6::timestamptz)
+  AND ($7::varchar IS NULL OR t.run_kind = $7::varchar)
 `
 
 type CountDigitalEmployeeRunsDetailedParams struct {
@@ -78,6 +79,7 @@ type CountDigitalEmployeeRunsDetailedParams struct {
 	ProjectID         uuid.NullUUID      `json:"project_id"`
 	FromTime          pgtype.Timestamptz `json:"from_time"`
 	ToTime            pgtype.Timestamptz `json:"to_time"`
+	RunKind           pgtype.Text        `json:"run_kind"`
 }
 
 func (q *Queries) CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error) {
@@ -88,6 +90,7 @@ func (q *Queries) CountDigitalEmployeeRunsDetailed(ctx context.Context, arg Coun
 		arg.ProjectID,
 		arg.FromTime,
 		arg.ToTime,
+		arg.RunKind,
 	)
 	var total_count int64
 	err := row.Scan(&total_count)

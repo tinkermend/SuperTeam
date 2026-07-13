@@ -563,7 +563,8 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
   AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
-  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz);
+  AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
+  AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar);
 
 -- name: ListDigitalEmployeeRunProjectOptions :many
 SELECT DISTINCT p.id, p.name

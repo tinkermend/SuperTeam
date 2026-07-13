@@ -147,6 +147,12 @@ func parseRunListFilter(r *http.Request) (DigitalEmployeeRunListFilter, string) 
 		}
 		filter.To = &to
 	}
+	if raw := query.Get("run_kind"); raw != "" {
+		if raw != RunKindTask && raw != RunKindChat {
+			return DigitalEmployeeRunListFilter{}, ErrInvalidRunKind.Error()
+		}
+		filter.RunKind = &raw
+	}
 	return filter, ""
 }
 

@@ -117,12 +117,15 @@ type DigitalEmployeeRunStats struct {
 
 // DigitalEmployeeRunListFilter captures the filterable, pagination, and time-window
 // parameters for the digital employee run history list endpoint. Statuses is a slice
-// of run-status strings; an empty slice (or nil) means "no status filter".
+// of run-status strings; an empty slice (or nil) means "no status filter". RunKind,
+// when non-nil, must be RunKindTask or RunKindChat and scopes the list to that kind
+// only; nil means "no run_kind filter".
 type DigitalEmployeeRunListFilter struct {
 	Statuses  []string
 	ProjectID *uuid.UUID
 	From      *time.Time
 	To        *time.Time
+	RunKind   *string
 	Limit     int32
 	Offset    int32
 }
