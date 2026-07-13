@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TaskLaunchShell } from "./components/task-launch-shell";
 import { TaskLaunchForm, type LaunchMode } from "./components/task-launch-form";
+import { ChatPanel } from "./components/chat-panel";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -37,6 +38,7 @@ export function TaskLaunchView({
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [mode, setMode] = useState<LaunchMode>("plan");
+  const [content, setContent] = useState("");
   const projectsQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => listProjects(apiOptions, { limit: 50, offset: 0 }),
@@ -74,14 +76,22 @@ export function TaskLaunchView({
       }),
   });
 
+  function handleConvertToTask(draft: string) {
+    setMode("plan");
+    setContent(draft);
+  }
+
   return (
     <TaskLaunchShell
       title={title}
       description="提交需求到项目，由项目协调线程编排后续任务"
     >
       <TaskLaunchForm
+        chatPanel={<ChatPanel apiOptions={apiOptions} onConvertToTask={handleConvertToTask} />}
+        content={content}
         isSubmitting={submitMutation.isPending}
         mode={mode}
+        onContentChange={setContent}
         onModeChange={setMode}
         onProjectChange={setSelectedProjectId}
         onSubmit={(projectId, input) =>

@@ -34,8 +34,10 @@ const MODE_EXPLAINER: Record<LaunchMode, string> = {
 
 type TaskLaunchFormProps = {
   chatPanel?: ReactNode;
+  content: string;
   isSubmitting?: boolean;
   mode: LaunchMode;
+  onContentChange: (content: string) => void;
   onModeChange: (mode: LaunchMode) => void;
   onProjectChange: (projectId: string) => void;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
@@ -49,8 +51,10 @@ function deriveTitle(content: string): string {
 
 export function TaskLaunchForm({
   chatPanel,
+  content,
   isSubmitting = false,
   mode,
+  onContentChange,
   onModeChange,
   onProjectChange,
   onSubmit,
@@ -61,7 +65,6 @@ export function TaskLaunchForm({
     () => projects.filter((project) => project.status !== "archived"),
     [projects],
   );
-  const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
@@ -102,14 +105,14 @@ export function TaskLaunchForm({
   function handleInsertTemplate(text: string, templateId: string) {
     if (content.trim()) {
       if (window.confirm("当前内容已存在。\n点击「确定」将覆盖当前内容？\n点击「取消」将继续。")) {
-        setContent(text);
+        onContentChange(text);
         applyTemplate(templateId);
       } else if (window.confirm("是否追加到末尾？\n点击「取消」放弃插入模板。")) {
-        setContent(content + "\n\n" + text);
+        onContentChange(content + "\n\n" + text);
         applyTemplate(templateId);
       }
     } else {
-      setContent(text);
+      onContentChange(text);
       applyTemplate(templateId);
     }
   }
@@ -146,7 +149,7 @@ export function TaskLaunchForm({
               <textarea
                 aria-label="需求描述"
                 className="tl-textarea"
-                onChange={(event) => setContent(event.target.value)}
+                onChange={(event) => onContentChange(event.target.value)}
                 placeholder="描述你希望项目协调线程处理的目标或问题场景"
                 value={content}
               />
@@ -210,7 +213,7 @@ export function TaskLaunchForm({
   );
 }
 
-function LaunchChip({
+export function LaunchChip({
   children,
   icon,
   label,
