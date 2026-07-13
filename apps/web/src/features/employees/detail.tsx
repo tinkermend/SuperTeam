@@ -29,6 +29,7 @@ import {
   type DigitalEmployeeDeleteBlocker,
   type DigitalEmployeeExecutionInstance,
   type DigitalEmployeeRun,
+  type DigitalEmployeeRunKind,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
@@ -70,6 +71,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<DigitalEmployeeRunStatus | undefined>(undefined);
+  const [runKindFilter, setRunKindFilter] = useState<DigitalEmployeeRunKind | undefined>(undefined);
   const [selectedRun, setSelectedRun] = useState<DigitalEmployeeRunListItem | undefined>(undefined);
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
   const [startTaskOpen, setStartTaskOpen] = useState(false);
@@ -98,12 +100,13 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId),
   });
   const runs = useQuery({
-    queryKey: ["digital-employee-runs", employeeId, { page, statusFilter }] as const,
+    queryKey: ["digital-employee-runs", employeeId, { page, statusFilter, runKindFilter }] as const,
     queryFn: () =>
       listDigitalEmployeeRuns(apiOptions, employeeId, {
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
         status: statusFilter ? [statusFilter] : undefined,
+        run_kind: runKindFilter,
       }),
     refetchInterval: (query) =>
       query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false,
@@ -270,6 +273,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                   setSelectedRun(item);
                   setRunDrawerOpen(true);
                 }}
+                onRunKindFilterChange={(runKind) => {
+                  setRunKindFilter(runKind);
+                  setPage(1);
+                }}
                 onStatusFilterChange={(status) => {
                   setStatusFilter(status);
                   setPage(1);
@@ -277,6 +284,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                 page={page}
                 pageSize={PAGE_SIZE}
                 result={runs.data}
+                runKindFilter={runKindFilter}
                 statusFilter={statusFilter}
               />
               <div className="flex flex-col gap-4">

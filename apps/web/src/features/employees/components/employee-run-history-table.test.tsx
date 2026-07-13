@@ -60,6 +60,19 @@ const result: DigitalEmployeeRunListResult = {
   },
 };
 
+const chatResult: DigitalEmployeeRunListResult = {
+  items: [
+    {
+      ...result.items[0],
+      id: "run-2",
+      run_kind: "chat",
+      task_title: "与员工的即时对话",
+    },
+  ],
+  total_count: 1,
+  filters: result.filters,
+};
+
 describe("EmployeeRunHistoryTable", () => {
   it("renders run rows and triggers row click", async () => {
     const onRowClick = vi.fn();
@@ -69,10 +82,12 @@ describe("EmployeeRunHistoryTable", () => {
         onPageChange={vi.fn()}
         onRetry={vi.fn()}
         onRowClick={onRowClick}
+        onRunKindFilterChange={vi.fn()}
         onStatusFilterChange={vi.fn()}
         page={1}
         pageSize={10}
         result={result}
+        runKindFilter={undefined}
         statusFilter={undefined}
       />,
     );
@@ -80,6 +95,9 @@ describe("EmployeeRunHistoryTable", () => {
     await expect.element(screen.getByText("数据库迁移脚本校验")).toBeVisible();
     await expect.element(screen.getByText("数据库平台")).toBeVisible();
     await expect.element(screen.getByText("已完成")).toBeVisible();
+    await expect
+      .element(screen.getByRole("row", { name: /数据库迁移脚本校验/ }).getByText("任务", { exact: true }))
+      .toBeVisible();
     await expect.element(screen.getByRole("link", { name: "在运行总览查看" })).toHaveAttribute(
       "href",
       "/run-overview?employee=employee-1",
@@ -95,14 +113,61 @@ describe("EmployeeRunHistoryTable", () => {
         onPageChange={vi.fn()}
         onRetry={vi.fn()}
         onRowClick={vi.fn()}
+        onRunKindFilterChange={vi.fn()}
         onStatusFilterChange={vi.fn()}
         page={1}
         pageSize={10}
         result={{ items: [], total_count: 0, filters: { statuses: [], projects: [] } }}
+        runKindFilter={undefined}
         statusFilter={undefined}
       />,
     );
 
     await expect.element(screen.getByText("暂无数据")).toBeVisible();
+  });
+
+  it("renders a 对话 badge for chat-kind runs", async () => {
+    const screen = await render(
+      <EmployeeRunHistoryTable
+        employeeId="employee-1"
+        onPageChange={vi.fn()}
+        onRetry={vi.fn()}
+        onRowClick={vi.fn()}
+        onRunKindFilterChange={vi.fn()}
+        onStatusFilterChange={vi.fn()}
+        page={1}
+        pageSize={10}
+        result={chatResult}
+        runKindFilter={undefined}
+        statusFilter={undefined}
+      />,
+    );
+
+    await expect.element(screen.getByText("与员工的即时对话")).toBeVisible();
+    await expect
+      .element(screen.getByRole("row", { name: /与员工的即时对话/ }).getByText("对话", { exact: true }))
+      .toBeVisible();
+  });
+
+  it("re-queries with run_kind=chat when the 对话 chip is clicked", async () => {
+    const onRunKindFilterChange = vi.fn();
+    const screen = await render(
+      <EmployeeRunHistoryTable
+        employeeId="employee-1"
+        onPageChange={vi.fn()}
+        onRetry={vi.fn()}
+        onRowClick={vi.fn()}
+        onRunKindFilterChange={onRunKindFilterChange}
+        onStatusFilterChange={vi.fn()}
+        page={1}
+        pageSize={10}
+        result={result}
+        runKindFilter={undefined}
+        statusFilter={undefined}
+      />,
+    );
+
+    await userEvent.click(screen.getByText("对话"));
+    expect(onRunKindFilterChange).toHaveBeenCalledWith("chat");
   });
 });
