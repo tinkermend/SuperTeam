@@ -279,9 +279,9 @@ describe('authenticated v3 shell background styles', () => {
 
     const buttonStyle = getComputedStyle(menuButton as HTMLElement)
 
-    expect(buttonStyle.backgroundColor).toBe('rgba(225, 234, 255, 0.92)')
+    expect(buttonStyle.backgroundColor).toBe('rgba(47, 95, 255, 0.1)')
     expect(buttonStyle.backgroundImage).toBe('none')
-    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.24)')
+    expect(buttonStyle.borderColor).toBe('rgba(47, 95, 255, 0.16)')
     expect(buttonStyle.boxShadow).toBe('none')
   })
 })

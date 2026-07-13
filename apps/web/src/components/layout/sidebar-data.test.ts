@@ -64,6 +64,7 @@ describe('sidebarData', () => {
       '自动化任务',
       '外部能力',
       'MCP 管理',
+      '场景模板',
       '协作集成',
     ])
     expect(coreItems?.[1]).toMatchObject({
@@ -130,22 +131,13 @@ describe('sidebarData', () => {
     })
   })
 
-  it('nests platform log pages under the 日志管理 collapsible menu', () => {
+  it('keeps 日志管理 as a flat entry pointing at /logs', () => {
     const platformItems = sidebarData.navGroups.find(
       (group) => group.title === '治理平台'
     )?.items
 
     const logMenu = platformItems?.find((item) => item.title === '日志管理')
-    expect(logMenu?.url).toBeUndefined()
-    expect(logMenu?.items?.map((item) => item.title)).toEqual([
-      '登录日志',
-      '操作日志',
-      '平台事件',
-    ])
-    expect(logMenu?.items?.map((item) => item.url)).toEqual([
-      '/logs/login',
-      '/logs/operation',
-      '/logs/runtime',
-    ])
+    expect(logMenu).toMatchObject({ title: '日志管理', url: '/logs' })
+    expect(logMenu && 'items' in logMenu ? logMenu.items : undefined).toBeUndefined()
   })
 })

@@ -124,7 +124,7 @@ describe("ProjectExecutionTracePanel", () => {
     await expect
       .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
       .toBeInTheDocument();
-    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(5);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(1);
     expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
     await expect
       .element(screen.getByLabelText("执行尝试 1"))

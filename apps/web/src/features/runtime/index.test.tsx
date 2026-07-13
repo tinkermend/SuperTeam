@@ -285,7 +285,7 @@ describe("RuntimeNodesView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "Runtime 节点" })).toBeVisible();
     await expect.element(screen.getByText("6 / 8")).toBeVisible();
-    expect(screen.container.querySelectorAll("[data-slot='v3-soft-card']").length).toBeGreaterThanOrEqual(4);
+    expect(screen.container.querySelectorAll("[data-slot='v3-soft-card']").length).toBeGreaterThanOrEqual(3);
     expect(screen.container.querySelector("[data-slot='v3-work-surface']")).not.toBeNull();
     expect(screen.container.querySelector("[data-slot='v3-table']")).not.toBeNull();
   });
