@@ -733,11 +733,19 @@ func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input Insp
 	if err != nil || result == nil {
 		return InspectTaskResultDecisionResult{}, err
 	}
+	mode := project.CoordinationModeLoop
+	if task.AcceptedPlanRevisionID != nil {
+		if rev, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *task.AcceptedPlanRevisionID); err == nil &&
+			rev.CoordinationMode != nil && *rev.CoordinationMode == project.CoordinationModePlan {
+			mode = project.CoordinationModePlan
+		}
+	}
 	return InspectTaskResultDecisionResult{
-		ResultID:  result.ID,
-		Decision:  string(result.Decision),
-		Exhausted: s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, task),
-		Blocker:   result.Contract.Blocker,
+		ResultID:         result.ID,
+		Decision:         string(result.Decision),
+		Exhausted:        s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, task),
+		Blocker:          result.Contract.Blocker,
+		CoordinationMode: mode,
 	}, nil
 }
 

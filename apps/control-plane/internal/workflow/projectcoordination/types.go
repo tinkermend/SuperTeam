@@ -206,10 +206,11 @@ type InspectTaskResultDecisionInput struct {
 }
 
 type InspectTaskResultDecisionResult struct {
-	ResultID  uuid.UUID
-	Decision  string
-	Exhausted bool
-	Blocker   *project.TaskResultBlocker
+	ResultID         uuid.UUID
+	Decision         string
+	Exhausted        bool
+	Blocker          *project.TaskResultBlocker
+	CoordinationMode string
 }
 
 type CreateRevisionTaskForResultInput struct {

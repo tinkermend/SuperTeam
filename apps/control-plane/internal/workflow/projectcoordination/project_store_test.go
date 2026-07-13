@@ -1171,6 +1171,113 @@ func TestProjectStoreResolveReadyDownstreamRequiresAcceptedLatestBlockerResult(t
 	}, repo.statusUpdates)
 }
 
+func TestInspectTaskResultDecisionResolvesCoordinationMode(t *testing.T) {
+	planMode := project.CoordinationModePlan
+	loopMode := project.CoordinationModeLoop
+
+	testCases := []struct {
+		name                   string
+		acceptedPlanRevisionID *uuid.UUID
+		revisionCoordMode      *string
+		wantMode               string
+	}{
+		{
+			name:                   "accepted revision mode plan",
+			acceptedPlanRevisionID: uuidPtr(uuid.New()),
+			revisionCoordMode:      &planMode,
+			wantMode:               project.CoordinationModePlan,
+		},
+		{
+			name:                   "accepted revision mode loop",
+			acceptedPlanRevisionID: uuidPtr(uuid.New()),
+			revisionCoordMode:      &loopMode,
+			wantMode:               project.CoordinationModeLoop,
+		},
+		{
+			name:                   "accepted revision mode nil",
+			acceptedPlanRevisionID: uuidPtr(uuid.New()),
+			revisionCoordMode:      nil,
+			wantMode:               project.CoordinationModeLoop,
+		},
+		{
+			name:                   "no accepted plan revision",
+			acceptedPlanRevisionID: nil,
+			revisionCoordMode:      nil,
+			wantMode:               project.CoordinationModeLoop,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			taskID := uuid.New()
+
+			repo := &projectStoreMemoryRepository{
+				tasks: []project.ProjectTask{{
+					ID:                     taskID,
+					TenantID:               tenantID,
+					ProjectID:              projectID,
+					Title:                  "Implement feature",
+					Status:                 project.ProjectTaskStatusCompleted,
+					AcceptedPlanRevisionID: tc.acceptedPlanRevisionID,
+				}},
+			}
+			if tc.acceptedPlanRevisionID != nil {
+				repo.planRevisions = []project.PlanRevision{{
+					ID:               *tc.acceptedPlanRevisionID,
+					TenantID:         tenantID,
+					ProjectID:        projectID,
+					DemandID:         uuid.New(),
+					CoordinationMode: tc.revisionCoordMode,
+				}}
+			}
+			repo.setTaskLatestResult(taskID, projectStoreTaskResult(tenantID, projectID, taskID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+
+			store := NewProjectStore(repo)
+
+			result, err := store.InspectTaskResultDecision(context.Background(), InspectTaskResultDecisionInput{
+				TenantID:      tenantID,
+				ProjectID:     projectID,
+				ProjectTaskID: taskID,
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.wantMode, result.CoordinationMode)
+		})
+	}
+}
+
+func TestInspectTaskResultDecisionSwallowsPlanRevisionLookupError(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	missingRevisionID := uuid.New()
+
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{{
+			ID:                     taskID,
+			TenantID:               tenantID,
+			ProjectID:              projectID,
+			Title:                  "Implement feature",
+			Status:                 project.ProjectTaskStatusCompleted,
+			AcceptedPlanRevisionID: &missingRevisionID,
+		}},
+	}
+	repo.setTaskLatestResult(taskID, projectStoreTaskResult(tenantID, projectID, taskID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+
+	store := NewProjectStore(repo)
+
+	result, err := store.InspectTaskResultDecision(context.Background(), InspectTaskResultDecisionInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.CoordinationModeLoop, result.CoordinationMode)
+}
+
 func TestApplyTaskResultRevisionCreatesBoundedRevisionTask(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -6211,6 +6318,10 @@ func eventsByType(events []project.ProjectEvent, eventType project.ProjectEventT
 }
 
 func strPtr(value string) *string {
+	return &value
+}
+
+func uuidPtr(value uuid.UUID) *uuid.UUID {
 	return &value
 }
 
