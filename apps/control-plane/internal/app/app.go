@@ -24,9 +24,9 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
-	"github.com/superteam/control-plane/internal/scenariotemplate"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/runtimecommand"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -557,6 +557,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
+	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
@@ -743,4 +744,16 @@ func routePlannerFromConfig(cfg config.PlannerConfig) projectcoordination.RouteP
 		Temperature: cfg.Temperature,
 		MaxAttempts: cfg.MaxAttempts,
 	})
+}
+
+type scenarioTemplateResolverAdapter struct {
+	service *scenariotemplate.Service
+}
+
+func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplate(ctx context.Context, tenantID uuid.UUID, key string) (project.ScenarioTemplateBinding, error) {
+	template, err := a.service.GetByKey(ctx, tenantID, key)
+	if err != nil {
+		return project.ScenarioTemplateBinding{}, err
+	}
+	return project.ScenarioTemplateBinding{Key: template.Key, Name: template.Name, Status: template.Status}, nil
 }

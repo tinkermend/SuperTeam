@@ -255,21 +255,22 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := service.CreateProject(r.Context(), CreateProjectRequest{
-		TenantID:           tenantID,
-		TeamID:             req.TeamID,
-		ActorUserID:        actorID,
-		Name:               req.Name,
-		Description:        req.Description,
-		Goal:               req.Goal,
-		HumanOwnerUserID:   req.HumanOwnerUserID,
-		LeaderUserID:       req.LeaderUserID,
-		AcceptanceUserID:   req.AcceptanceUserID,
-		Members:            req.Members,
-		CoordinationPolicy: req.CoordinationPolicy,
-		ApprovalPolicy:     req.ApprovalPolicy,
-		EvidencePolicy:     req.EvidencePolicy,
-		RepoBinding:        req.RepoBinding,
-		RuntimeNodeIDs:     req.RuntimeNodeIDs,
+		TenantID:            tenantID,
+		TeamID:              req.TeamID,
+		ActorUserID:         actorID,
+		Name:                req.Name,
+		Description:         req.Description,
+		Goal:                req.Goal,
+		HumanOwnerUserID:    req.HumanOwnerUserID,
+		LeaderUserID:        req.LeaderUserID,
+		AcceptanceUserID:    req.AcceptanceUserID,
+		Members:             req.Members,
+		CoordinationPolicy:  req.CoordinationPolicy,
+		ApprovalPolicy:      req.ApprovalPolicy,
+		EvidencePolicy:      req.EvidencePolicy,
+		RepoBinding:         req.RepoBinding,
+		RuntimeNodeIDs:      req.RuntimeNodeIDs,
+		ScenarioTemplateKey: req.ScenarioTemplateKey,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1742,21 +1743,22 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 type createProjectBody struct {
-	TenantID           uuid.UUID                `json:"tenant_id,omitempty"`
-	ActorUserID        uuid.UUID                `json:"actor_user_id,omitempty"`
-	TeamID             *uuid.UUID               `json:"team_id"`
-	Name               string                   `json:"name"`
-	Description        string                   `json:"description"`
-	Goal               string                   `json:"goal"`
-	HumanOwnerUserID   uuid.UUID                `json:"human_owner_user_id"`
-	LeaderUserID       *uuid.UUID               `json:"leader_user_id"`
-	AcceptanceUserID   *uuid.UUID               `json:"acceptance_user_id"`
-	Members            []ProjectMemberInput     `json:"members"`
-	CoordinationPolicy map[string]any           `json:"coordination_policy"`
-	ApprovalPolicy     map[string]any           `json:"approval_policy"`
-	EvidencePolicy     map[string]any           `json:"evidence_policy"`
-	RepoBinding        *ProjectRepoBindingInput `json:"repo_binding"`
-	RuntimeNodeIDs     []uuid.UUID              `json:"runtime_node_ids"`
+	TenantID            uuid.UUID                `json:"tenant_id,omitempty"`
+	ActorUserID         uuid.UUID                `json:"actor_user_id,omitempty"`
+	TeamID              *uuid.UUID               `json:"team_id"`
+	Name                string                   `json:"name"`
+	Description         string                   `json:"description"`
+	Goal                string                   `json:"goal"`
+	HumanOwnerUserID    uuid.UUID                `json:"human_owner_user_id"`
+	LeaderUserID        *uuid.UUID               `json:"leader_user_id"`
+	AcceptanceUserID    *uuid.UUID               `json:"acceptance_user_id"`
+	Members             []ProjectMemberInput     `json:"members"`
+	CoordinationPolicy  map[string]any           `json:"coordination_policy"`
+	ApprovalPolicy      map[string]any           `json:"approval_policy"`
+	EvidencePolicy      map[string]any           `json:"evidence_policy"`
+	RepoBinding         *ProjectRepoBindingInput `json:"repo_binding"`
+	RuntimeNodeIDs      []uuid.UUID              `json:"runtime_node_ids"`
+	ScenarioTemplateKey *string                  `json:"scenario_template_key"`
 }
 
 type projectRuntimeNodeResponse struct {
@@ -2025,6 +2027,7 @@ type projectResponse struct {
 	ApprovalPolicy         map[string]any             `json:"approval_policy"`
 	EvidencePolicy         map[string]any             `json:"evidence_policy"`
 	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
+	ScenarioTemplateKey    *string                    `json:"scenario_template_key,omitempty"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
 	AllowedActions         []string                   `json:"allowed_actions,omitempty"`
 	CreatedAt              string                     `json:"created_at,omitempty"`
@@ -2032,12 +2035,12 @@ type projectResponse struct {
 }
 
 type projectDeletePreviewResponse struct {
-	ProjectID   string                `json:"project_id"`
-	ProjectName string                `json:"project_name"`
-	CanDelete   bool                  `json:"can_delete"`
+	ProjectID   string                 `json:"project_id"`
+	ProjectName string                 `json:"project_name"`
+	CanDelete   bool                   `json:"can_delete"`
 	Blockers    []ProjectDeleteBlocker `json:"blockers"`
-	Warnings    ProjectDeleteWarnings `json:"warnings"`
-	Message     string                `json:"message"`
+	Warnings    ProjectDeleteWarnings  `json:"warnings"`
+	Message     string                 `json:"message"`
 }
 
 type projectDeleteBlockedResponse struct {
@@ -2768,6 +2771,7 @@ func projectResponseFromDomain(project Project) projectResponse {
 		ApprovalPolicy:         mapOrEmpty(project.ApprovalPolicy),
 		EvidencePolicy:         mapOrEmpty(project.EvidencePolicy),
 		RepoBinding:            projectRepoBindingResponseFromDomain(project.RepoBinding),
+		ScenarioTemplateKey:    project.ScenarioTemplateKey,
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),

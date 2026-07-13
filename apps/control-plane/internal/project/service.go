@@ -24,6 +24,24 @@ type Service struct {
 	teamScopeAuthorizer       ProjectTeamScopeAuthorizer
 	runtimeNodes              ProjectRuntimeNodeReader
 	planningProfiles          DigitalEmployeePlanningProfileSource
+	scenarioTemplates         ScenarioTemplateResolver
+}
+
+// ScenarioTemplateResolver is the narrow view of the scenario template
+// registry the project service needs: existence + status at bind time. nil
+// resolver skips validation (tests and callers without the registry wired).
+type ScenarioTemplateResolver interface {
+	ResolveScenarioTemplate(ctx context.Context, tenantID uuid.UUID, key string) (ScenarioTemplateBinding, error)
+}
+
+type ScenarioTemplateBinding struct {
+	Key    string
+	Name   string
+	Status string
+}
+
+func (s *Service) SetScenarioTemplateResolver(resolver ScenarioTemplateResolver) {
+	s.scenarioTemplates = resolver
 }
 
 const (
@@ -153,6 +171,22 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		return nil, err
 	}
 	req.RuntimeNodeIDs = runtimeNodeIDs
+
+	if req.ScenarioTemplateKey != nil {
+		key := strings.TrimSpace(*req.ScenarioTemplateKey)
+		if key == "" {
+			req.ScenarioTemplateKey = nil
+		} else if s.scenarioTemplates != nil {
+			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
+			if err != nil {
+				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
+			}
+			if binding.Status != "active" {
+				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
+			}
+			req.ScenarioTemplateKey = &key
+		}
+	}
 
 	projectID := uuid.New()
 	workflowID := fmt.Sprintf("project-coordinator:%s", projectID)

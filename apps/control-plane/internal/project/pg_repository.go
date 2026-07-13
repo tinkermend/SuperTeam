@@ -101,6 +101,7 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		RepoGitCredentialRef:   repoParams.gitCredentialRef,
 		RepoScope:              repoParams.scope,
 		RepoBindingStatus:      repoParams.status,
+		ScenarioTemplateKey:    textFromStringPtr(req.ScenarioTemplateKey),
 	})
 	if err != nil {
 		return Project{}, err
@@ -5419,6 +5420,7 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		ApprovalPolicy:         approvalPolicy,
 		EvidencePolicy:         evidencePolicy,
 		RepoBinding:            repoBinding,
+		ScenarioTemplateKey:    ptrText(row.ScenarioTemplateKey),
 		ArchivedAt:             ptrTime(row.ArchivedAt),
 		DeletedAt:              ptrTime(row.DeletedAt),
 		CreatedAt:              row.CreatedAt.Time,
@@ -6735,6 +6737,13 @@ func applyRawLog(params *queries.FinishProjectTaskAttemptParams, rawLog *Project
 		params.LogBytes = pgtype.Int8{Int64: rawLog.LogBytes, Valid: true}
 	}
 	params.LogCompressed = pgtype.Bool{Bool: rawLog.LogCompressed, Valid: true}
+}
+
+func textFromStringPtr(value *string) pgtype.Text {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: strings.TrimSpace(*value), Valid: true}
 }
 
 func textOrNull(value string) pgtype.Text {

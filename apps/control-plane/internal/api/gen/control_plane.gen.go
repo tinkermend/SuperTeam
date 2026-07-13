@@ -2237,7 +2237,10 @@ type CreateProjectRequest struct {
 	Name               string                  `json:"name"`
 	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
 	RuntimeNodeIds     []openapi_types.UUID    `json:"runtime_node_ids"`
-	TeamId             *openapi_types.UUID     `json:"team_id,omitempty"`
+
+	// ScenarioTemplateKey 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
+	ScenarioTemplateKey *string             `json:"scenario_template_key,omitempty"`
+	TeamId              *openapi_types.UUID `json:"team_id,omitempty"`
 }
 
 // CreateProjectResponse defines model for CreateProjectResponse.
@@ -3267,6 +3270,7 @@ type Project struct {
 	LeaderUserId           *openapi_types.UUID    `json:"leader_user_id,omitempty"`
 	Name                   string                 `json:"name"`
 	RepoBinding            ProjectRepoBinding     `json:"repo_binding"`
+	ScenarioTemplateKey    *string                `json:"scenario_template_key,omitempty"`
 	Status                 ProjectStatus          `json:"status"`
 	TeamId                 *openapi_types.UUID    `json:"team_id,omitempty"`
 	TenantId               openapi_types.UUID     `json:"tenant_id"`

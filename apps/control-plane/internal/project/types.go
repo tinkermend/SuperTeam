@@ -372,6 +372,7 @@ type Project struct {
 	ApprovalPolicy         map[string]any
 	EvidencePolicy         map[string]any
 	RepoBinding            ProjectRepoBinding
+	ScenarioTemplateKey    *string
 	ArchivedAt             *time.Time
 	DeletedAt              *time.Time
 	CreatedAt              time.Time
@@ -1392,6 +1393,9 @@ type CreateProjectRequest struct {
 	EvidencePolicy     map[string]any
 	RepoBinding        *ProjectRepoBindingInput
 	RuntimeNodeIDs     []uuid.UUID
+	// ScenarioTemplateKey binds the project to a scenario template; nil means
+	// the generic fallback (planning behaves exactly as an unbound project).
+	ScenarioTemplateKey *string
 }
 
 // ProjectRuntimeNode is a runtime node bound to a project's eligibility set —

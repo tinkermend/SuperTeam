@@ -5141,6 +5141,8 @@ components:
           type: string
         coordination_status:
           type: string
+        scenario_template_key:
+          type: string
         coordination_policy:
           type: object
           additionalProperties: true
@@ -7250,6 +7252,9 @@ components:
             format: uuid
         repo_binding:
           $ref: "#/components/schemas/ProjectRepoBinding"
+        scenario_template_key:
+          type: string
+          description: 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
     CreateProjectResponse:
       type: object
       required:
