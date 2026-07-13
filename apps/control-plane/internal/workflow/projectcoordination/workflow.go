@@ -332,7 +332,7 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		_, err := handlePlanReviewDecision(ctx, input, signal, pending)
 		return err
-	case "task_failure_recovery":
+	case "task_failure_recovery", "upstream_supplement_review":
 		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, projectID, signal)
 		if err != nil {
 			return err

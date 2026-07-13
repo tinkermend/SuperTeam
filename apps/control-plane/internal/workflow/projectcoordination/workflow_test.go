@@ -1007,7 +1007,7 @@ func TestProjectCoordinatorDispatchesSupplementAfterApproval(t *testing.T) {
 			Decision: ProjectDecisionSnapshot{
 				ID:             reviewDecisionID,
 				ProjectID:      projectID,
-				DecisionType:   "task_failure_recovery",
+				DecisionType:   "upstream_supplement_review",
 				StatusSnapshot: "resolved",
 				ProjectTaskID:  sourceTaskID,
 			},
