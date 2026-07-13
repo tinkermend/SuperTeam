@@ -614,3 +614,66 @@ func completeTaskResultContract() TaskResultContract {
 		},
 	}
 }
+
+func TestValidateTaskResultContractHandoffDeliverables(t *testing.T) {
+	taskWithProduces := func(names ...string) ProjectTask {
+		items := make([]any, 0, len(names))
+		for _, name := range names {
+			items = append(items, name)
+		}
+		task := taskResultContractTask()
+		task.PlannerMetadata = map[string]any{"produces": items}
+		return task
+	}
+
+	t.Run("missing deliverable fails validation with the missing name", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.Deliverables = []TaskResultDeliverable{{Name: "head_commit", Kind: "git_commit", Value: "abc123"}}
+
+		validation := ValidateTaskResultContract(taskWithProduces("head_commit", "review_notes"), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "handoff_deliverable_missing:review_notes")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
+	t.Run("deliverable without value or ref does not count", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.Deliverables = []TaskResultDeliverable{{Name: "head_commit"}}
+
+		validation := ValidateTaskResultContract(taskWithProduces("head_commit"), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "handoff_deliverable_missing:head_commit")
+	})
+
+	t.Run("fulfilled deliverables pass", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.Deliverables = []TaskResultDeliverable{
+			{Name: "head_commit", Value: "abc123"},
+			{Name: "review_notes", Ref: "artifact://notes-1"},
+		}
+
+		validation := ValidateTaskResultContract(taskWithProduces("head_commit", "review_notes"), result)
+
+		require.True(t, validation.Valid)
+		require.Empty(t, validation.Errors)
+	})
+
+	t.Run("task without produces keeps today's behavior", func(t *testing.T) {
+		validation := ValidateTaskResultContract(taskResultContractTask(), completeTaskResultContract())
+
+		require.True(t, validation.Valid)
+	})
+
+	t.Run("deliverables survive JSON round trip", func(t *testing.T) {
+		var contract TaskResultContract
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"status":"completed","summary":"s","deliverables":[{"name":"x","ref":"artifact://1"}]}`),
+			&contract,
+		))
+		require.Len(t, contract.Deliverables, 1)
+		require.Equal(t, "x", contract.Deliverables[0].Name)
+		require.Equal(t, "artifact://1", contract.Deliverables[0].Ref)
+	})
+}

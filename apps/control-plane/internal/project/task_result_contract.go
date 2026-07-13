@@ -70,6 +70,7 @@ type TaskResultContract struct {
 	EvidenceRefs       []TaskResultRef               `json:"evidence_refs,omitempty"`
 	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
 	ChangesMade        []TaskResultChange            `json:"changes_made,omitempty"`
+	Deliverables       []TaskResultDeliverable       `json:"deliverables,omitempty"`
 	Verification       []TaskResultVerification      `json:"verification,omitempty"`
 	Risks              []TaskResultRisk              `json:"risks,omitempty"`
 	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`
@@ -94,6 +95,17 @@ func (c *TaskResultContract) UnmarshalJSON(data []byte) error {
 		c.EvidenceRefs = []TaskResultRef{*aux.EvidenceRef}
 	}
 	return nil
+}
+
+// TaskResultDeliverable is one named handoff output. A deliverable counts as
+// delivered only when it carries a value or a ref; the platform checks the set
+// against the task's planner-declared produces on completion.
+type TaskResultDeliverable struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Ref     string `json:"ref,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 type TaskResultAcceptanceResult struct {
@@ -409,7 +421,49 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 		}
 		errors = append(errors, validateCompletedAcceptanceResult(criterion, acceptanceResult)...)
 	}
+
+	// A completed result must deliver every output the planner declared in
+	// produces: downstream tasks were validated against these names, so a
+	// missing one starves a consumer. Tasks without produces are unaffected.
+	delivered := map[string]bool{}
+	for _, deliverable := range result.Deliverables {
+		name := strings.TrimSpace(deliverable.Name)
+		if name != "" && (strings.TrimSpace(deliverable.Value) != "" || strings.TrimSpace(deliverable.Ref) != "") {
+			delivered[name] = true
+		}
+	}
+	for _, name := range taskPlannerProduces(task) {
+		if !delivered[name] {
+			errors = append(errors, "handoff_deliverable_missing:"+name)
+		}
+	}
 	return errors
+}
+
+// taskPlannerProduces mirrors projectcoordination.plannerProducesFromMetadata:
+// the planner's produces declarations are persisted under
+// ProjectTask.PlannerMetadata["produces"].
+func taskPlannerProduces(task ProjectTask) []string {
+	switch values := task.PlannerMetadata["produces"].(type) {
+	case []any:
+		produces := make([]string, 0, len(values))
+		for _, value := range values {
+			if produced, ok := value.(string); ok && strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	case []string:
+		produces := make([]string, 0, len(values))
+		for _, produced := range values {
+			if strings.TrimSpace(produced) != "" {
+				produces = append(produces, strings.TrimSpace(produced))
+			}
+		}
+		return produces
+	default:
+		return nil
+	}
 }
 
 func validateTaskResultVerifications(task ProjectTask, status TaskResultStatus, verifications []TaskResultVerification) []string {
