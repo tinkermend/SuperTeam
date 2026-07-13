@@ -7,7 +7,10 @@ import {
   type V3Tone,
 } from "@/components/superteam";
 import type { InboxItem } from "@/lib/api/inbox";
+import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
+
+export { formatDateTime, formatRelativeTime };
 
 type InboxItemListProps = {
   items: InboxItem[];
@@ -279,11 +282,6 @@ export function isSafeAppPath(route: string) {
     return false;
   }
 }
-
-export {
-  formatDateTime,
-  formatRelativeTime,
-} from "@/lib/format-time";
 
 /** 已等待时长（毫秒）→ "X 时 Y 分" 格式，负值钳为 0。 */
 export function formatElapsedDuration(ms: number): string {
