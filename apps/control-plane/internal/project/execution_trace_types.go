@@ -19,6 +19,8 @@ const (
 	ExecutionLedgerEventCapabilityInvocation = "capability.invocation"
 	ExecutionLedgerEventArtifactLinked       = "artifact.linked"
 	ExecutionLedgerEventEvidenceLinked       = "evidence.linked"
+	ExecutionLedgerEventHandoffVerified      = "handoff.verified"
+	ExecutionLedgerEventHandoffUnfulfilled   = "handoff.unfulfilled"
 )
 
 type ExecutionLedgerEvent struct {

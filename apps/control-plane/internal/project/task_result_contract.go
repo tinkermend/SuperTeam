@@ -440,6 +440,25 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 	return errors
 }
 
+// enrichContractWithHandoffVerification appends a platform-authored
+// verification entry per fulfilled produces item. It runs after validation, so
+// every produces item is known to be delivered; these entries record that the
+// check happened, distinct from employee-claimed verifications.
+func enrichContractWithHandoffVerification(task ProjectTask, contract TaskResultContract) TaskResultContract {
+	if contract.Status != TaskResultStatusCompleted {
+		return contract
+	}
+	for _, name := range taskPlannerProduces(task) {
+		contract.Verification = append(contract.Verification, TaskResultVerification{
+			Status:  TaskResultVerificationStatusPassed,
+			Type:    "handoff_fulfillment",
+			Method:  "platform_produces_check",
+			Summary: "deliverable \"" + name + "\" 已交付（平台核对）",
+		})
+	}
+	return contract
+}
+
 // taskPlannerProduces mirrors projectcoordination.plannerProducesFromMetadata:
 // the planner's produces declarations are persisted under
 // ProjectTask.PlannerMetadata["produces"].

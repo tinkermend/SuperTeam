@@ -2755,8 +2755,11 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, err
 	}
 	if !validation.Valid {
+		s.recordHandoffUnfulfilledLedgerEvent(ctx, task, req.ProjectTaskAttemptRuntimeRequest, validation)
 		return s.recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract, validation)
 	}
+	enrichedContract := enrichContractWithHandoffVerification(task, *resultContract)
+	resultContract = &enrichedContract
 	if req.Conclusion == "" {
 		return nil, ErrInvalidProject
 	}
@@ -2833,6 +2836,7 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		if err != nil {
 			return nil, err
 		}
+		s.recordHandoffVerifiedLedgerEvent(ctx, task, req.ProjectTaskAttemptRuntimeRequest)
 		if s.inbox != nil {
 			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
 				return nil, err
@@ -2867,6 +2871,7 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	if err != nil {
 		return nil, err
 	}
+	s.recordHandoffVerifiedLedgerEvent(ctx, task, req.ProjectTaskAttemptRuntimeRequest)
 	if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
 		TenantID:              req.TenantID,
 		RuntimeNodeID:         req.RuntimeNodeID,
@@ -3083,6 +3088,53 @@ func findRuntimeAttestationForRef(attestations []ProjectTaskAttestation, key str
 		}
 	}
 	return ProjectTaskAttestation{}, false
+}
+
+// Best-effort observability: the handoff check outcome must be visible on the
+// execution ledger, but failing to record it must never fail the completion.
+func (s *Service) recordHandoffVerifiedLedgerEvent(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest) {
+	produces := taskPlannerProduces(task)
+	if len(produces) == 0 {
+		return
+	}
+	_, _ = s.repository.CreateExecutionLedgerEvent(ctx, CreateExecutionLedgerEventRequest{
+		TenantID:             runtimeReq.TenantID,
+		ProjectID:            task.ProjectID,
+		ProjectTaskID:        &task.ID,
+		ProjectTaskAttemptID: &runtimeReq.AttemptID,
+		EventType:            ExecutionLedgerEventHandoffVerified,
+		SourceType:           "project_task_attempt",
+		SourceID:             runtimeReq.AttemptID.String(),
+		ActorType:            "control_plane",
+		OutputSummary:        "交接产出逐项核对通过: " + strings.Join(produces, ", "),
+		Metadata:             map[string]any{"produces": produces},
+		IdempotencyKey:       "project_task_attempt:" + runtimeReq.AttemptID.String() + ":handoff.verified",
+	})
+}
+
+func (s *Service) recordHandoffUnfulfilledLedgerEvent(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, validation TaskResultValidation) {
+	var missing []string
+	for _, validationError := range validation.Errors {
+		if name, ok := strings.CutPrefix(validationError, "handoff_deliverable_missing:"); ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	_, _ = s.repository.CreateExecutionLedgerEvent(ctx, CreateExecutionLedgerEventRequest{
+		TenantID:             runtimeReq.TenantID,
+		ProjectID:            task.ProjectID,
+		ProjectTaskID:        &task.ID,
+		ProjectTaskAttemptID: &runtimeReq.AttemptID,
+		EventType:            ExecutionLedgerEventHandoffUnfulfilled,
+		SourceType:           "project_task_attempt",
+		SourceID:             runtimeReq.AttemptID.String(),
+		ActorType:            "control_plane",
+		OutputSummary:        "交接产出缺项: " + strings.Join(missing, ", "),
+		Metadata:             map[string]any{"missing": missing},
+		IdempotencyKey:       "project_task_attempt:" + runtimeReq.AttemptID.String() + ":handoff.unfulfilled",
+	})
 }
 
 func (s *Service) recordRejectedProjectTaskAttemptResultAndWaitHuman(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract, validation TaskResultValidation) (*ExecutionSummary, error) {

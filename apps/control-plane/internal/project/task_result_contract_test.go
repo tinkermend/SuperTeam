@@ -677,3 +677,34 @@ func TestValidateTaskResultContractHandoffDeliverables(t *testing.T) {
 		require.Equal(t, "artifact://1", contract.Deliverables[0].Ref)
 	})
 }
+
+func TestEnrichContractWithHandoffVerification(t *testing.T) {
+	t.Run("appends one platform check entry per produces item", func(t *testing.T) {
+		task := ProjectTask{PlannerMetadata: map[string]any{"produces": []any{"head_commit", "review_notes"}}}
+		contract := TaskResultContract{
+			Status: TaskResultStatusCompleted,
+			Deliverables: []TaskResultDeliverable{
+				{Name: "head_commit", Value: "abc"},
+				{Name: "review_notes", Ref: "artifact://1"},
+			},
+		}
+
+		enriched := enrichContractWithHandoffVerification(task, contract)
+
+		require.Len(t, enriched.Verification, 2)
+		require.Equal(t, "handoff_fulfillment", enriched.Verification[0].Type)
+		require.Equal(t, "platform_produces_check", enriched.Verification[0].Method)
+		require.Equal(t, TaskResultVerificationStatusPassed, enriched.Verification[0].Status)
+	})
+
+	t.Run("no produces means no entries", func(t *testing.T) {
+		contract := TaskResultContract{Status: TaskResultStatusCompleted}
+		require.Empty(t, enrichContractWithHandoffVerification(ProjectTask{}, contract).Verification)
+	})
+
+	t.Run("non-completed contract untouched", func(t *testing.T) {
+		task := ProjectTask{PlannerMetadata: map[string]any{"produces": []any{"x"}}}
+		contract := TaskResultContract{Status: TaskResultStatusBlocked}
+		require.Empty(t, enrichContractWithHandoffVerification(task, contract).Verification)
+	})
+}
