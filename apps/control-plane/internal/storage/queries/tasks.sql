@@ -330,7 +330,9 @@ created_task AS (
         workspace_path,
         params,
         idempotency_key,
-        risk_level
+        risk_level,
+        run_kind,
+        resume_of_run_id
     )
     SELECT
         CASE
@@ -355,7 +357,9 @@ created_task AS (
         sqlc.narg('workspace_path')::text,
         COALESCE(sqlc.arg('params')::jsonb, '{}'::jsonb),
         idempotency_input.idempotency_key,
-        COALESCE(sqlc.narg('risk_level')::varchar, 'normal')
+        COALESCE(sqlc.narg('risk_level')::varchar, 'normal'),
+        sqlc.arg('run_kind')::varchar,
+        sqlc.narg('resume_of_run_id')::uuid
     FROM idempotency_input
     CROSS JOIN lock_barrier
     CROSS JOIN LATERAL (
@@ -456,7 +460,7 @@ ORDER BY tr.created_at DESC
 LIMIT 1;
 
 -- name: GetDigitalEmployeeRun :one
-SELECT tr.*
+SELECT tr.*, t.run_kind, t.resume_of_run_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
@@ -471,12 +475,13 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.command_id = sqlc.arg('command_id')::varchar;
 
 -- name: ListDigitalEmployeeRuns :many
-SELECT tr.*
+SELECT tr.*, t.run_kind, t.resume_of_run_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
+  AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
 ORDER BY tr.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -526,6 +531,8 @@ SELECT
     tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
     tr.created_at, tr.updated_at,
     t.title AS task_title,
+    t.run_kind,
+    t.resume_of_run_id,
     p.id AS project_id,
     p.name AS project_name,
     jsonb_array_length(tr.work_products) AS work_product_count
@@ -540,6 +547,7 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
   AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
+  AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
 ORDER BY tr.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 

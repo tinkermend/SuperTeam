@@ -249,7 +249,45 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	if err != nil {
 		return nil, mapNoRows(err)
 	}
-	return digitalEmployeeRunFromQuery(run), nil
+	// GetDigitalEmployeeRunRow adds run_kind/resume_of_run_id (task-level columns) on top
+	// of the task_runs columns; reassemble the task_runs subset into queries.TaskRun so the
+	// existing mapper is reused, mirroring digitalEmployeeRunListItemFromDetailedRow below.
+	return digitalEmployeeRunFromQuery(queries.TaskRun{
+		ID:                        run.ID,
+		TenantID:                  run.TenantID,
+		TaskID:                    run.TaskID,
+		NodeID:                    run.NodeID,
+		RuntimeNodeID:             run.RuntimeNodeID,
+		ProviderSessionID:         run.ProviderSessionID,
+		Status:                    run.Status,
+		LeaseExpiresAt:            run.LeaseExpiresAt,
+		StartedAt:                 run.StartedAt,
+		CompletedAt:               run.CompletedAt,
+		FinishedAt:                run.FinishedAt,
+		Result:                    run.Result,
+		ErrorMessage:              run.ErrorMessage,
+		CreatedAt:                 run.CreatedAt,
+		UpdatedAt:                 run.UpdatedAt,
+		CommandID:                 run.CommandID,
+		DigitalEmployeeID:         run.DigitalEmployeeID,
+		ExecutionInstanceID:       run.ExecutionInstanceID,
+		IdempotencyKey:            run.IdempotencyKey,
+		IdempotencyFingerprint:    run.IdempotencyFingerprint,
+		TimeoutSec:                run.TimeoutSec,
+		GraceSec:                  run.GraceSec,
+		Diagnostic:                run.Diagnostic,
+		LogRef:                    run.LogRef,
+		RawResultRef:              run.RawResultRef,
+		WorkProducts:              run.WorkProducts,
+		SessionState:              run.SessionState,
+		ErrorCode:                 run.ErrorCode,
+		ErrorFamily:               run.ErrorFamily,
+		ExitCode:                  run.ExitCode,
+		Signal:                    run.Signal,
+		TimedOut:                  run.TimedOut,
+		ProviderType:              run.ProviderType,
+		ProviderSessionExternalID: run.ProviderSessionExternalID,
+	}), nil
 }
 
 func (r *PgRunRepository) GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -401,6 +439,7 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		ExecutionInstanceID:    req.ExecutionInstanceID,
 		TimeoutSec:             int4FromPtr(req.TimeoutSec),
 		GraceSec:               int4FromPtr(req.GraceSec),
+		RunKind:                "task",
 	})
 	if err != nil {
 		return nil, mapCreateRunError(err, req)

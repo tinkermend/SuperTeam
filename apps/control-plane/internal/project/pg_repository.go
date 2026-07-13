@@ -741,6 +741,7 @@ func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjec
 		Attachments:       attachments,
 		Status:            string(status),
 		CreatedEventID:    nullUUID(createdEventID),
+		CoordinationMode:  "plan",
 	})
 	if err != nil {
 		return ProjectDemand{}, err
@@ -1070,6 +1071,7 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 			ReviewRequired:     req.ReviewRequired,
 			ReviewReason:       textPtr(req.ReviewReason),
 			CreatedEventID:     nullUUID(req.CreatedEventID),
+			CoordinationMode:   pgtype.Text{},
 		})
 		if err != nil {
 			if isPGUniqueConstraint(err, "uq_project_plan_revisions_fingerprint") {
