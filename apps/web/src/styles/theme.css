@@ -46,7 +46,8 @@
   --v3-shell-glass-border: rgba(126, 143, 172, 0.20);
   --v3-shell-control: rgba(255, 255, 255, 0.68);
   --v3-shell-control-hover: rgba(248, 250, 252, 0.92);
-  --v3-shell-control-active: rgba(225, 234, 255, 0.92);
+  --v3-shell-control-active: rgba(47, 95, 255, 0.1);
+  --v3-shell-menu-hover: rgba(255, 255, 255, 0.42);
   --v3-shell-control-border: rgba(126, 143, 172, 0.20);
   --v3-shell-search: rgba(255, 255, 255, 0.82);
   --v3-shell-search-border: rgba(47, 95, 255, 0.14);
@@ -171,6 +172,7 @@
   --v3-shell-control: rgba(23, 27, 34, 0.52);
   --v3-shell-control-hover: rgba(32, 38, 48, 0.72);
   --v3-shell-control-active: rgba(91, 139, 255, 0.18);
+  --v3-shell-menu-hover: rgba(255, 255, 255, 0.07);
   --v3-shell-control-border: rgba(255, 255, 255, 0.10);
   --v3-shell-search: rgba(23, 27, 34, 0.86);
   --v3-shell-search-border: rgba(124, 150, 255, 0.18);

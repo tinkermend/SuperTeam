@@ -240,8 +240,8 @@
   }
 
   [data-slot='sidebar-menu-button']:hover {
-    border-color: var(--v3-shell-control-border);
-    background: var(--v3-shell-control-hover);
+    border-color: transparent;
+    background: var(--v3-shell-menu-hover) !important;
     color: var(--v3-ink) !important;
     box-shadow: none;
   }
@@ -251,7 +251,7 @@
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] {
-    border-color: rgba(47, 95, 255, 0.24);
+    border-color: rgba(47, 95, 255, 0.16);
     background-color: var(--v3-shell-control-active) !important;
     background-image: none !important;
     color: var(--v3-brand-deep) !important;
