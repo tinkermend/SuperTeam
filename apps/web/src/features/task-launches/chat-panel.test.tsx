@@ -264,6 +264,107 @@ function createRetryDeferredFetcher() {
   };
 }
 
+/** First message succeeds and completes; the resumed second send is rejected with a
+ * 400 (server treats the resume session as invalid/lost), and the degraded resend
+ * (no resume_of_run_id) succeeds. */
+function createResumeDegradeFetcher() {
+  const employees = [makeEmployee()];
+  let createCallCount = 0;
+
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employees);
+    }
+
+    const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "POST") {
+      createCallCount += 1;
+      const employeeId = createMatch[1];
+      const body = JSON.parse(String(init?.body)) as {
+        objective: string;
+        resume_of_run_id?: string;
+      };
+      if (createCallCount === 1) {
+        return jsonResponse(
+          { ...baseRunFields("run-1", employeeId), status: "queued" },
+          201,
+        );
+      }
+      if (createCallCount === 2 && body.resume_of_run_id) {
+        return jsonResponse({ message: "会话已失效，无法继续上下文" }, 400);
+      }
+      return jsonResponse(
+        { ...baseRunFields("run-2", employeeId), status: "queued" },
+        201,
+      );
+    }
+
+    const getMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs\/([^/]+)$/);
+    if (getMatch && method === "GET") {
+      const employeeId = getMatch[1];
+      const runId = getMatch[2];
+      return jsonResponse({
+        ...baseRunFields(runId, employeeId),
+        status: "completed",
+        result: { output: `回答-${runId}` },
+      });
+    }
+
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  });
+
+  return { fetcher, getCreateCallCount: () => createCallCount };
+}
+
+/** First message succeeds and completes; the resumed second send fails with a
+ * non-400 error, which must NOT trigger an automatic no-resume resend. */
+function createNonResumableFailureFetcher() {
+  const employees = [makeEmployee()];
+  let createCallCount = 0;
+
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employees);
+    }
+
+    const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "POST") {
+      createCallCount += 1;
+      const employeeId = createMatch[1];
+      if (createCallCount === 1) {
+        return jsonResponse(
+          { ...baseRunFields("run-1", employeeId), status: "queued" },
+          201,
+        );
+      }
+      return jsonResponse({ message: "员工繁忙，暂时无法接单" }, 409);
+    }
+
+    const getMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs\/([^/]+)$/);
+    if (getMatch && method === "GET") {
+      const employeeId = getMatch[1];
+      const runId = getMatch[2];
+      return jsonResponse({
+        ...baseRunFields(runId, employeeId),
+        status: "completed",
+        result: { output: "首轮回答" },
+      });
+    }
+
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  });
+
+  return { fetcher, getCreateCallCount: () => createCallCount };
+}
+
 async function renderWithQueryClient(children: ReactNode) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -432,6 +533,67 @@ describe("ChatPanel", () => {
     });
 
     await waitFor(() => expect(getCreateCallCount()).toBe(2));
+  });
+
+  it("auto-resends once without resume_of_run_id when a resumed send is rejected with 400, and surfaces a context-not-continued notice", async () => {
+    const { fetcher, getCreateCallCount } = createResumeDegradeFetcher();
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "第一个问题");
+    await clickButton("发送");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("回答-run-1"));
+
+    await typeInLabeledField("对话问题", "第二个问题");
+    await clickButton("发送");
+
+    await waitFor(() => expect(getCreateCallCount()).toBe(3));
+    const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+    expect(bodies[1]).toEqual({
+      objective: "第二个问题",
+      run_kind: "chat",
+      resume_of_run_id: "run-1",
+    });
+    expect(bodies[2]).toEqual({ objective: "第二个问题", run_kind: "chat" });
+
+    await waitFor(() => expect(chatThread().textContent).toContain("上下文未延续"));
+  });
+
+  it("does not auto-resend when a resumed send fails with a non-400 error", async () => {
+    const { fetcher, getCreateCallCount } = createNonResumableFailureFetcher();
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+
+    await typeInLabeledField("对话问题", "第一个问题");
+    await clickButton("发送");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("首轮回答"));
+
+    await typeInLabeledField("对话问题", "第二个问题");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("员工繁忙，暂时无法接单"));
+    expect(getCreateCallCount()).toBe(2);
+    expect(document.body.textContent).not.toContain("上下文未延续");
   });
 });
 

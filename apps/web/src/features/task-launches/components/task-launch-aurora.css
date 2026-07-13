@@ -289,6 +289,14 @@
   padding: 10px 16px;
   border-radius: 14px 14px 4px 14px;
 }
+.tl-chat-notice {
+  align-self: flex-end;
+  max-width: 80%;
+  color: var(--v3-aurora-ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
 .tl-chat-answer {
   display: flex;
   flex-direction: column;

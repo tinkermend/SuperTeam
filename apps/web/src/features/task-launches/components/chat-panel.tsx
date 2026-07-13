@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { V3EmptyState, V3ErrorState, V3LoadingState } from "@/components/superteam";
-import type { ApiClientOptions } from "@/lib/api/client";
+import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeRun,
   getDigitalEmployeeRun,
@@ -39,6 +39,10 @@ export type ChatEntry = {
   status: DigitalEmployeeRunStatus | "sending";
   answer?: string;
   error?: string;
+  /** Set when this entry was produced by an automatic no-resume retry after the
+   * server rejected `resume_of_run_id` (lost/invalid session) — surfaces a
+   * non-blocking "上下文未延续" hint instead of silently dropping the context. */
+  contextNotContinued?: boolean;
 };
 
 export type ConvertToTaskPayload = {
@@ -141,26 +145,47 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
   }, [runQuery.data]);
 
   const sendMutation = useMutation({
-    mutationFn: (input: { objective: string; resumeOf?: string }) =>
+    mutationFn: (input: { objective: string; resumeOf?: string; degraded?: boolean }) =>
       createDigitalEmployeeRun(apiOptions, employeeId, {
         objective: input.objective,
         run_kind: "chat",
         ...(input.resumeOf ? { resume_of_run_id: input.resumeOf } : {}),
       }),
-    onError: (mutationError: unknown) => {
-      setSendError(mutationError instanceof Error ? mutationError.message : "发送失败，请重试");
-    },
     onSuccess: (run, variables) => {
       setSendError("");
       setThread((prev) => [
         ...prev,
-        { question: variables.objective, runId: run.id, status: run.status },
+        {
+          question: variables.objective,
+          runId: run.id,
+          status: run.status,
+          ...(variables.degraded ? { contextNotContinued: true } : {}),
+        },
       ]);
     },
-    onSettled: () => {
-      sendInFlightRef.current = false;
-    },
   });
+
+  // When a send carrying resume_of_run_id fails with a 400 (server rejected the
+  // resumed session — invalid or lost), automatically resend exactly once without
+  // resume_of_run_id rather than leaving the thread wedged on a repeating 400. The
+  // guard against a resend loop is structural: the retry omits `resumeOf`, so its
+  // own failure path below never re-enters this branch.
+  async function sendWithDegradeFallback(objective: string, resumeOf?: string) {
+    try {
+      return await sendMutation.mutateAsync({ objective, resumeOf });
+    } catch (error) {
+      if (resumeOf && error instanceof ApiRequestError && error.status === 400) {
+        try {
+          return await sendMutation.mutateAsync({ objective, degraded: true });
+        } catch (retryError) {
+          setSendError(retryError instanceof Error ? retryError.message : "发送失败，请重试");
+          throw retryError;
+        }
+      }
+      setSendError(error instanceof Error ? error.message : "发送失败，请重试");
+      throw error;
+    }
+  }
 
   function handleEmployeeChange(nextEmployeeId: string) {
     setEmployeeId(nextEmployeeId);
@@ -174,10 +199,12 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
       return;
     }
     sendInFlightRef.current = true;
-    sendMutation.mutate(
-      { objective: trimmed, resumeOf: lastCompleted?.runId },
-      { onSuccess: () => setQuestion("") },
-    );
+    sendWithDegradeFallback(trimmed, lastCompleted?.runId)
+      .then(() => setQuestion(""))
+      .catch(() => {})
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
   }
 
   function handleRetry(entry: ChatEntry) {
@@ -185,7 +212,11 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
       return;
     }
     sendInFlightRef.current = true;
-    sendMutation.mutate({ objective: entry.question });
+    sendWithDegradeFallback(entry.question)
+      .catch(() => {})
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
   }
 
   function handleConvert(entry: ChatEntry) {
@@ -243,6 +274,9 @@ export function ChatPanel({ apiOptions, onConvertToTask }: ChatPanelProps) {
         {thread.map((entry) => (
           <div className="tl-chat-entry" key={entry.runId}>
             <p className="tl-chat-question">{entry.question}</p>
+            {entry.contextNotContinued ? (
+              <p className="tl-chat-notice">上下文未延续，已作为新对话重新发送</p>
+            ) : null}
             {entry.status === "completed" ? (
               <div className="tl-chat-answer">
                 <p>{entry.answer}</p>
