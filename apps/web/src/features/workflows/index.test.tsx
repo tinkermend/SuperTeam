@@ -239,6 +239,7 @@ function makeLaunchDetail(
       tenant_id: "tenant-1",
       title: "支付成功率下降",
     },
+    execution_summaries: [],
     project: makeProject(),
     project_tasks: [],
     recent_events: [],

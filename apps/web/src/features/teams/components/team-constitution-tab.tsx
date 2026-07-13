@@ -48,7 +48,7 @@ export function TeamConstitutionTab({
     },
   });
 
-  const hardRuleCount = constitutionInput.hard_rules.length;
+  const hardRuleCount = lineList(hardRulesText).length;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
