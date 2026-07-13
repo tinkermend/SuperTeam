@@ -1494,6 +1494,16 @@ func (r *preDispatchGateApprovalRecorder) GetRequestByResource(ctx context.Conte
 	return nil, approval.ErrApprovalNotFound
 }
 
+func (r *preDispatchGateApprovalRecorder) GetRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*approval.ApprovalRequest, error) {
+	for index := len(r.records) - 1; index >= 0; index-- {
+		request := r.records[index]
+		if request.TenantID == tenantID && request.ID == requestID {
+			return &request, nil
+		}
+	}
+	return nil, approval.ErrApprovalNotFound
+}
+
 type preDispatchGateInboxRecorder struct {
 	upserts []project.DecisionRequest
 }

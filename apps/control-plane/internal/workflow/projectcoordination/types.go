@@ -261,6 +261,17 @@ type RequestProjectTaskIterationExhaustedReviewInput struct {
 	CreatedEventID uuid.UUID
 }
 
+// RequestUpstreamSupplementReviewInput requests a human decision gate before the
+// coordinator creates upstream supplement tasks for a blocked task's missing inputs.
+type RequestUpstreamSupplementReviewInput struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	ProjectTaskID    uuid.UUID
+	ResultID         uuid.UUID
+	CompletedEventID uuid.UUID
+	MissingInputs    []string
+}
+
 type ApplyProjectAcceptanceDecisionInput struct {
 	TenantID          uuid.UUID
 	ProjectID         uuid.UUID

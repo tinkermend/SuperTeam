@@ -2626,6 +2626,252 @@ func TestProjectStoreRequestProjectTaskIterationExhaustedReviewCreatesDedicatedD
 	require.Equal(t, decision.ID, inbox.upserts[0].ID)
 }
 
+func TestProjectStoreRequestUpstreamSupplementReviewCreatesDedicatedDecisionAndBlocksDownstream(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	sourceTaskID := uuid.New()
+	downstreamID := uuid.New()
+	resultID := uuid.New()
+	completedEventID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, sourceTaskID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "planned"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, sourceTaskID),
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.RequestUpstreamSupplementReview(context.Background(), RequestUpstreamSupplementReviewInput{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    sourceTaskID,
+		ResultID:         resultID,
+		CompletedEventID: completedEventID,
+		MissingInputs:    []string{"load_test_report"},
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.ID)
+	require.Equal(t, "blocked", repo.taskStatus(downstreamID))
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, sourceTaskID, approvals.last.ResourceID)
+	require.Equal(t, "project_task", approvals.last.ResourceType)
+	require.Equal(t, "upstream_supplement_review", approvals.last.DecisionType)
+	require.Equal(t, []any{"approved", "rejected"}, approvals.last.Options)
+	require.Equal(t, projectID.String(), approvals.last.ContextPayload["project_id"])
+	require.Equal(t, sourceTaskID.String(), approvals.last.ContextPayload["project_task_id"])
+	require.Equal(t, resultID.String(), approvals.last.ContextPayload["result_id"])
+	require.Equal(t, completedEventID.String(), approvals.last.ContextPayload["completed_event_id"])
+	require.Equal(t, []string{"load_test_report"}, approvals.last.ContextPayload["missing_inputs"])
+	require.NotEmpty(t, approvals.last.ContextPayload["summary"])
+	require.Len(t, repo.events, 1)
+	require.Equal(t, project.ProjectEventDecisionRequested, repo.events[0].EventType)
+	require.Len(t, repo.decisionRequests, 1)
+	decision := repo.decisionRequests[0]
+	require.Equal(t, approvalID, decision.ApprovalRequestID)
+	require.Equal(t, "upstream_supplement_review", decision.DecisionType)
+	require.Equal(t, "pending", decision.StatusSnapshot)
+	require.NotNil(t, decision.ProjectTaskID)
+	require.Equal(t, sourceTaskID, *decision.ProjectTaskID)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, decision.ID, inbox.upserts[0].ID)
+}
+
+func upstreamSupplementReviewTestFixture(tenantID, projectID, ownerID, demandID, jobID, routeID, ownerTaskID, sourceTaskID uuid.UUID) *projectStoreMemoryRepository {
+	return &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		tasks: []project.ProjectTask{
+			{
+				ID:                ownerTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &jobID,
+				RouteDecisionID:   &routeID,
+				Title:             "Run load test",
+				Status:            project.ProjectTaskStatusCompleted,
+				PlannerMetadata:   map[string]any{"produces": []any{"load_test_report"}},
+			},
+			{
+				ID:                sourceTaskID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          &demandID,
+				CoordinationJobID: &jobID,
+				RouteDecisionID:   &routeID,
+				Title:             "Publish capacity conclusion",
+				Status:            project.ProjectTaskStatusCompleted,
+				InputRequirements: map[string]any{"required_inputs": []any{"load_test_report"}},
+			},
+		},
+	}
+}
+
+func TestApplyFailureRecoveryDecisionUpstreamSupplementApprovedCreatesSupplementTasks(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	completedEventID := uuid.New()
+	approvalID := uuid.New()
+
+	repo := upstreamSupplementReviewTestFixture(tenantID, projectID, ownerID, demandID, jobID, routeID, ownerTaskID, sourceTaskID)
+	repo.approvalID = approvalID
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	requested, err := store.RequestUpstreamSupplementReview(context.Background(), RequestUpstreamSupplementReviewInput{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    sourceTaskID,
+		ResultID:         resultID,
+		CompletedEventID: completedEventID,
+		MissingInputs:    []string{"load_test_report"},
+	})
+	require.NoError(t, err)
+
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: requested.ID,
+		Decision:          "approved",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.ReadyTaskIDs, 1)
+	supplement := repo.mustTask(result.ReadyTaskIDs[0])
+	require.Equal(t, &ownerTaskID, supplement.RevisionOfTaskID)
+	require.Equal(t, sourceTaskID.String(), supplement.PlannerMetadata["supplement_for"])
+	require.Equal(t, []string{"load_test_report"}, supplement.PlannerMetadata["missing_inputs"])
+}
+
+func TestApplyFailureRecoveryDecisionUpstreamSupplementRejectedCreatesNoTasksAndAppendsAuditEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	completedEventID := uuid.New()
+	approvalID := uuid.New()
+
+	repo := upstreamSupplementReviewTestFixture(tenantID, projectID, ownerID, demandID, jobID, routeID, ownerTaskID, sourceTaskID)
+	repo.approvalID = approvalID
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	requested, err := store.RequestUpstreamSupplementReview(context.Background(), RequestUpstreamSupplementReviewInput{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    sourceTaskID,
+		ResultID:         resultID,
+		CompletedEventID: completedEventID,
+		MissingInputs:    []string{"load_test_report"},
+	})
+	require.NoError(t, err)
+	tasksBefore := len(repo.tasks)
+
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: requested.ID,
+		Decision:          "rejected",
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs)
+	require.Len(t, repo.tasks, tasksBefore)
+	rejectedEvents := projectStoreEventsByType(repo.events, project.ProjectEventTaskUpstreamSupplementRejected)
+	require.Len(t, rejectedEvents, 1)
+	require.Equal(t, sourceTaskID.String(), rejectedEvents[0].ActorID)
+}
+
+func TestApplyFailureRecoveryDecisionUpstreamSupplementApprovedButExhaustedAppendsAuditEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	ownerTaskID := uuid.New()
+	sourceTaskID := uuid.New()
+	resultID := uuid.New()
+	completedEventID := uuid.New()
+	approvalID := uuid.New()
+
+	repo := upstreamSupplementReviewTestFixture(tenantID, projectID, ownerID, demandID, jobID, routeID, ownerTaskID, sourceTaskID)
+	repo.approvalID = approvalID
+	repo.projectRecord.CoordinationPolicy = map[string]any{"max_plan_iterations": float64(1)}
+	repo.tasks = append(repo.tasks, project.ProjectTask{
+		ID:                uuid.New(),
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          &demandID,
+		CoordinationJobID: &jobID,
+		Title:             "Run load test",
+		Status:            project.ProjectTaskStatusCompleted,
+		RevisionOfTaskID:  &ownerTaskID,
+		PlanIteration:     1,
+	})
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	requested, err := store.RequestUpstreamSupplementReview(context.Background(), RequestUpstreamSupplementReviewInput{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ProjectTaskID:    sourceTaskID,
+		ResultID:         resultID,
+		CompletedEventID: completedEventID,
+		MissingInputs:    []string{"load_test_report"},
+	})
+	require.NoError(t, err)
+	tasksBefore := len(repo.tasks)
+
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: requested.ID,
+		Decision:          "approved",
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs)
+	require.Len(t, repo.tasks, tasksBefore)
+	exhaustedEvents := projectStoreEventsByType(repo.events, project.ProjectEventTaskUpstreamSupplementExhausted)
+	require.Len(t, exhaustedEvents, 1)
+}
+
 func TestParseFailureRecoveryAction(t *testing.T) {
 	newEmployeeID := uuid.New()
 	tests := []struct {
@@ -6037,14 +6283,15 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 		id = uuid.New()
 	}
 	request := &approval.ApprovalRequest{
-		ID:           id,
-		TenantID:     input.TenantID,
-		ResourceType: input.ResourceType,
-		ResourceID:   input.ResourceID,
-		TargetUserID: input.TargetUserID,
-		DecisionType: input.DecisionType,
-		Title:        input.Title,
-		Status:       approval.ApprovalStatusPending,
+		ID:             id,
+		TenantID:       input.TenantID,
+		ResourceType:   input.ResourceType,
+		ResourceID:     input.ResourceID,
+		TargetUserID:   input.TargetUserID,
+		DecisionType:   input.DecisionType,
+		Title:          input.Title,
+		ContextPayload: input.ContextPayload,
+		Status:         approval.ApprovalStatusPending,
 	}
 	c.record = request
 	return request, nil
@@ -6056,6 +6303,13 @@ func (c *projectStoreApprovalCreator) GetRequestByResource(ctx context.Context, 
 		c.record.ResourceType == resourceType &&
 		c.record.ResourceID == resourceID &&
 		c.record.Status == approval.ApprovalStatusPending {
+		return c.record, nil
+	}
+	return nil, approval.ErrApprovalNotFound
+}
+
+func (c *projectStoreApprovalCreator) GetRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*approval.ApprovalRequest, error) {
+	if c.record != nil && c.record.TenantID == tenantID && c.record.ID == requestID {
 		return c.record, nil
 	}
 	return nil, approval.ErrApprovalNotFound

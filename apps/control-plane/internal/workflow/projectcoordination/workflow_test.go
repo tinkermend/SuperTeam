@@ -1521,37 +1521,39 @@ type recordingActivityStore struct {
 	recoverResults               []RecoverTaskDispatchFailureResult
 	recoverErr                   error
 
-	dispatchableTaskIDs          []uuid.UUID
-	dispatchableTaskIDBatches    [][]uuid.UUID
-	readyDownstreamIDs           []uuid.UUID
-	resultDecision               InspectTaskResultDecisionResult
-	revisionResult               CreateRevisionTaskForResultResult
-	upstreamSupplementResult     CreateUpstreamSupplementResult
-	failureRecoveryResult        ApplyFailureRecoveryDecisionResult
-	iterationExhaustedDecisionID uuid.UUID
-	listDispatchableInputs       []ListDispatchableTasksInput
-	resolveReadyInputs           []ResolveReadyDownstreamInput
-	inspectResultInputs          []InspectTaskResultDecisionInput
-	createRevisionInputs         []CreateRevisionTaskForResultInput
-	upstreamSupplementInputs     []CreateUpstreamSupplementInput
-	iterationExhaustedInputs     []RequestProjectTaskIterationExhaustedReviewInput
-	acceptanceReady              bool
-	acceptanceDecisionRequestID  uuid.UUID
-	acceptanceReviewInputs       []RequestProjectAcceptanceReviewInput
-	applyAcceptanceInputs        []ApplyProjectAcceptanceDecisionInput
-	applyAcceptanceErr           error
-	holdFailureInputs            []HoldDownstreamForFailureInput
-	applyFailureRecoveryInputs   []ApplyFailureRecoveryDecisionInput
-	applyPreDispatchGateInputs   []ApplyPreDispatchGateDecisionInput
-	dispatchInputs               []DispatchProjectTaskInput
-	gateDecisionTaskID           *uuid.UUID
-	humanDecisionRoutes          map[uuid.UUID]HumanDecisionRouteResult
-	unknownHumanDecisionRouteIDs map[uuid.UUID]bool
-	persistPlanRevisionInputs    []PersistPlanRevisionInput
-	requestPlanReviewInputs      []RequestPlanRevisionReviewInput
-	resolvePlanReviewInputs      []ResolvePlanRevisionReviewInput
-	decomposePlanInputs          []DecomposeAcceptedPlanRevisionInput
-	finishJobInputs              []FinishCoordinationJobInput
+	dispatchableTaskIDs                []uuid.UUID
+	dispatchableTaskIDBatches          [][]uuid.UUID
+	readyDownstreamIDs                 []uuid.UUID
+	resultDecision                     InspectTaskResultDecisionResult
+	revisionResult                     CreateRevisionTaskForResultResult
+	upstreamSupplementResult           CreateUpstreamSupplementResult
+	failureRecoveryResult              ApplyFailureRecoveryDecisionResult
+	iterationExhaustedDecisionID       uuid.UUID
+	listDispatchableInputs             []ListDispatchableTasksInput
+	resolveReadyInputs                 []ResolveReadyDownstreamInput
+	inspectResultInputs                []InspectTaskResultDecisionInput
+	createRevisionInputs               []CreateRevisionTaskForResultInput
+	upstreamSupplementInputs           []CreateUpstreamSupplementInput
+	iterationExhaustedInputs           []RequestProjectTaskIterationExhaustedReviewInput
+	upstreamSupplementReviewInputs     []RequestUpstreamSupplementReviewInput
+	upstreamSupplementReviewDecisionID uuid.UUID
+	acceptanceReady                    bool
+	acceptanceDecisionRequestID        uuid.UUID
+	acceptanceReviewInputs             []RequestProjectAcceptanceReviewInput
+	applyAcceptanceInputs              []ApplyProjectAcceptanceDecisionInput
+	applyAcceptanceErr                 error
+	holdFailureInputs                  []HoldDownstreamForFailureInput
+	applyFailureRecoveryInputs         []ApplyFailureRecoveryDecisionInput
+	applyPreDispatchGateInputs         []ApplyPreDispatchGateDecisionInput
+	dispatchInputs                     []DispatchProjectTaskInput
+	gateDecisionTaskID                 *uuid.UUID
+	humanDecisionRoutes                map[uuid.UUID]HumanDecisionRouteResult
+	unknownHumanDecisionRouteIDs       map[uuid.UUID]bool
+	persistPlanRevisionInputs          []PersistPlanRevisionInput
+	requestPlanReviewInputs            []RequestPlanRevisionReviewInput
+	resolvePlanReviewInputs            []ResolvePlanRevisionReviewInput
+	decomposePlanInputs                []DecomposeAcceptedPlanRevisionInput
+	finishJobInputs                    []FinishCoordinationJobInput
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -1744,6 +1746,12 @@ func (s *recordingActivityStore) RequestProjectTaskIterationExhaustedReview(ctx 
 	s.calls = append(s.calls, "RequestProjectTaskIterationExhaustedReview")
 	s.iterationExhaustedInputs = append(s.iterationExhaustedInputs, input)
 	return DecisionRequestResult{ID: s.iterationExhaustedDecisionID}, nil
+}
+
+func (s *recordingActivityStore) RequestUpstreamSupplementReview(ctx context.Context, input RequestUpstreamSupplementReviewInput) (DecisionRequestResult, error) {
+	s.calls = append(s.calls, "RequestUpstreamSupplementReview")
+	s.upstreamSupplementReviewInputs = append(s.upstreamSupplementReviewInputs, input)
+	return DecisionRequestResult{ID: s.upstreamSupplementReviewDecisionID}, nil
 }
 
 func (s *recordingActivityStore) IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error) {

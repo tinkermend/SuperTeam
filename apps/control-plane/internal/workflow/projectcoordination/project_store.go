@@ -245,6 +245,11 @@ func NewProjectStore(repository project.Repository) *ProjectStore {
 type ApprovalCreator interface {
 	CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error)
 	GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*approval.ApprovalRequest, error)
+	// GetRequest fetches an approval request by ID regardless of resolution status. Apply-side
+	// decision handlers use it to read back the context payload recorded when the request was
+	// created (e.g. missing inputs for an upstream supplement review); by apply time the request
+	// is typically already resolved, so GetRequestByResource (pending-only) cannot be used here.
+	GetRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*approval.ApprovalRequest, error)
 }
 
 type ProjectTaskRunStarter interface {
@@ -1064,6 +1069,191 @@ func (s *ProjectStore) RequestProjectTaskIterationExhaustedReview(ctx context.Co
 	return DecisionRequestResult{ID: decision.ID}, nil
 }
 
+// RequestUpstreamSupplementReview opens a human decision gate before the coordinator
+// creates upstream supplement tasks for a task blocked on missing upstream inputs
+// (plan-mode: propose, don't auto-create). It blocks live downstream tasks first, same
+// as RequestProjectTaskIterationExhaustedReview, so nothing dispatches ahead of the
+// human's call.
+func (s *ProjectStore) RequestUpstreamSupplementReview(ctx context.Context, input RequestUpstreamSupplementReviewInput) (DecisionRequestResult, error) {
+	if s.repository == nil || s.approvals == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if task.ProjectID != input.ProjectID {
+		return DecisionRequestResult{}, project.ErrProjectNotFound
+	}
+	downstreamIDs, err := s.recursiveDownstreamTaskIDs(ctx, input.TenantID, input.ProjectID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	for _, taskID := range downstreamIDs {
+		downstream, err := s.repository.GetProjectTask(ctx, input.TenantID, taskID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		if downstream.ProjectID != input.ProjectID {
+			return DecisionRequestResult{}, project.ErrProjectNotFound
+		}
+		if projectTaskTerminalStatus(downstream.Status) || downstream.Status == "blocked" {
+			continue
+		}
+		if _, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "blocked", nil, failureHoldCurrentStatuses()); err != nil {
+			if errors.Is(err, project.ErrProjectConflict) {
+				continue
+			}
+			return DecisionRequestResult{}, err
+		}
+	}
+	summary := upstreamSupplementReviewSummary(input.MissingInputs)
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   "project_task",
+		ResourceID:     input.ProjectTaskID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   projectRecord.HumanOwnerUserID,
+		DecisionType:   "upstream_supplement_review",
+		Title:          "处理上游输入缺口",
+		Summary:        summary,
+		RiskLevel:      "medium",
+		Options:        []any{"approved", "rejected"},
+		ContextPayload: upstreamSupplementReviewContext(input, summary),
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.ProjectTaskID.String(), summary, map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"project_task_id":     input.ProjectTaskID.String(),
+		"result_id":           input.ResultID.String(),
+		"completed_event_id":  input.CompletedEventID.String(),
+		"missing_inputs":      stringsToAny(input.MissingInputs),
+		"target_user_id":      projectRecord.HumanOwnerUserID.String(),
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	taskID := input.ProjectTaskID
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		ProjectTaskID:     &taskID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      "upstream_supplement_review",
+		TitleSnapshot:     "处理上游输入缺口",
+		SummarySnapshot:   summary,
+		RiskLevelSnapshot: "medium",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func upstreamSupplementReviewSummary(missingInputs []string) string {
+	if len(missingInputs) == 0 {
+		return "任务缺少上游输入，需要人类判断是否补做"
+	}
+	return "任务缺少上游输入（" + strings.Join(missingInputs, "、") + "），需要人类判断是否补做"
+}
+
+func upstreamSupplementReviewContext(input RequestUpstreamSupplementReviewInput, summary string) map[string]any {
+	return map[string]any{
+		"project_id":         input.ProjectID.String(),
+		"project_task_id":    input.ProjectTaskID.String(),
+		"result_id":          input.ResultID.String(),
+		"completed_event_id": input.CompletedEventID.String(),
+		"missing_inputs":     append([]string(nil), input.MissingInputs...),
+		"summary":            summary,
+	}
+}
+
+// applyUpstreamSupplementReviewDecision applies the human's approve/reject call on an
+// upstream_supplement_review decision. Approved re-derives the missing inputs and source
+// task from the decision's approval-request context payload (the human only approves or
+// rejects; they don't resubmit the missing-input list) and runs the same supplement
+// creation used by the auto-supplement path. Rejected leaves the downstream hold in place
+// (already blocked by RequestUpstreamSupplementReview) and just records the outcome.
+func (s *ProjectStore) applyUpstreamSupplementReviewDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput, decision project.DecisionRequest) (ApplyFailureRecoveryDecisionResult, error) {
+	if decision.ProjectTaskID == nil {
+		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
+	}
+	switch strings.TrimSpace(input.Decision) {
+	case "rejected":
+		if err := s.appendUpstreamSupplementAuditEvent(ctx, input.TenantID, input.ProjectID, *decision.ProjectTaskID, decision.ID, project.ProjectEventTaskUpstreamSupplementRejected, "人类驳回上游补做提案"); err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}, nil
+	case "approved":
+		sourceTaskID, missingInputs, err := s.loadUpstreamSupplementReviewContext(ctx, input.TenantID, decision)
+		if err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		result, err := s.CreateUpstreamSupplementTasks(ctx, CreateUpstreamSupplementInput{
+			TenantID:      input.TenantID,
+			ProjectID:     input.ProjectID,
+			SourceTaskID:  sourceTaskID,
+			MissingInputs: missingInputs,
+		})
+		if err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		if result.Exhausted {
+			// Human already approved and is in the loop; don't auto-escalate a fresh
+			// review, just record that the plan-iteration budget ran out.
+			if err := s.appendUpstreamSupplementAuditEvent(ctx, input.TenantID, input.ProjectID, sourceTaskID, decision.ID, project.ProjectEventTaskUpstreamSupplementExhausted, "人类已批准，但补链轮次已耗尽"); err != nil {
+				return ApplyFailureRecoveryDecisionResult{}, err
+			}
+			return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}, nil
+		}
+		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: append([]uuid.UUID{}, result.TaskIDs...)}, nil
+	default:
+		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
+	}
+}
+
+// loadUpstreamSupplementReviewContext re-reads the missing inputs and source task ID
+// recorded on the approval request's context payload when the review was opened. By apply
+// time the approval request is typically already resolved, so this goes through
+// ApprovalCreator.GetRequest (by ID, no pending-status filter) rather than
+// GetRequestByResource.
+func (s *ProjectStore) loadUpstreamSupplementReviewContext(ctx context.Context, tenantID uuid.UUID, decision project.DecisionRequest) (uuid.UUID, []string, error) {
+	if s.approvals == nil {
+		return uuid.Nil, nil, ErrActivityStoreRequired
+	}
+	approvalRequest, err := s.approvals.GetRequest(ctx, tenantID, decision.ApprovalRequestID)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	sourceTaskID, err := uuid.Parse(stringFromAny(approvalRequest.ContextPayload["project_task_id"]))
+	if err != nil {
+		return uuid.Nil, nil, project.ErrInvalidProject
+	}
+	return sourceTaskID, stringsFromAny(approvalRequest.ContextPayload["missing_inputs"]), nil
+}
+
+func (s *ProjectStore) appendUpstreamSupplementAuditEvent(ctx context.Context, tenantID, projectID, taskID, decisionRequestID uuid.UUID, eventType project.ProjectEventType, summary string) error {
+	_, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, eventType, taskID.String(), summary, map[string]any{
+		"project_task_id":     taskID.String(),
+		"decision_request_id": decisionRequestID.String(),
+	}))
+	return err
+}
+
 func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error) {
 	if s.repository == nil {
 		return ApplyFailureRecoveryDecisionResult{}, ErrActivityStoreRequired
@@ -1071,6 +1261,9 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
 	if err != nil {
 		return ApplyFailureRecoveryDecisionResult{}, err
+	}
+	if decision.DecisionType == "upstream_supplement_review" {
+		return s.applyUpstreamSupplementReviewDecision(ctx, input, decision)
 	}
 	if decision.DecisionType != "task_failure_recovery" || decision.ProjectTaskID == nil {
 		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject

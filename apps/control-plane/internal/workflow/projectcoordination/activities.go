@@ -31,6 +31,7 @@ type ActivityStore interface {
 	IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error)
 	RequestProjectAcceptanceReview(ctx context.Context, input RequestProjectAcceptanceReviewInput) (DecisionRequestResult, error)
 	RequestProjectTaskIterationExhaustedReview(ctx context.Context, input RequestProjectTaskIterationExhaustedReviewInput) (DecisionRequestResult, error)
+	RequestUpstreamSupplementReview(ctx context.Context, input RequestUpstreamSupplementReviewInput) (DecisionRequestResult, error)
 	ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error
 	HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error)
 	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error)
@@ -145,6 +146,13 @@ func (a *Activities) RequestProjectTaskIterationExhaustedReview(ctx context.Cont
 		return DecisionRequestResult{}, ErrActivityStoreRequired
 	}
 	return a.store.RequestProjectTaskIterationExhaustedReview(ctx, input)
+}
+
+func (a *Activities) RequestUpstreamSupplementReview(ctx context.Context, input RequestUpstreamSupplementReviewInput) (DecisionRequestResult, error) {
+	if a.store == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	return a.store.RequestUpstreamSupplementReview(ctx, input)
 }
 
 func (a *Activities) ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error {
