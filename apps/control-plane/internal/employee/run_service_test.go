@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -292,6 +293,9 @@ func TestStartProjectTaskRunResolvesNodeThenUsesPreflightForNode(t *testing.T) {
 	if resolver.lastReq.TenantID != runServiceTenantID || resolver.lastReq.ProjectID != projectID ||
 		resolver.lastReq.DigitalEmployeeID != runServiceEmployeeID || resolver.lastReq.ProjectTaskID != projectTaskID {
 		t.Fatalf("expected node resolver called with tenant/project/employee/task ids, got %#v", resolver.lastReq)
+	}
+	if resolver.lastReq.DryRun {
+		t.Fatalf("expected project task dispatch to resolve with DryRun=false so employee node affinity keeps updating, got DryRun=true")
 	}
 	if repo.projectTaskPreflightForNodeEmployeeID != runServiceEmployeeID || repo.projectTaskPreflightForNodeNodeID != resolver.nodeID {
 		t.Fatalf("expected dispatch preflight lookup by resolved node, got employee=%s node=%s", repo.projectTaskPreflightForNodeEmployeeID, repo.projectTaskPreflightForNodeNodeID)
@@ -1082,6 +1086,9 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 		resolver.lastReq.DigitalEmployeeID != runServiceEmployeeID || resolver.lastReq.ProjectTaskID != uuid.Nil {
 		t.Fatalf("expected resolver called with project anchor and nil project_task_id, got %#v", resolver.lastReq)
 	}
+	if !resolver.lastReq.DryRun {
+		t.Fatalf("expected chat dispatch to resolve in DryRun mode so the project anchor never persists/steers employee node affinity, got DryRun=false")
+	}
 	if repo.projectTaskPreflightForNodeEmployeeID != runServiceEmployeeID || repo.projectTaskPreflightForNodeNodeID != resolver.nodeID {
 		t.Fatalf("expected dispatch preflight lookup by resolved node, got employee=%s node=%s", repo.projectTaskPreflightForNodeEmployeeID, repo.projectTaskPreflightForNodeNodeID)
 	}
@@ -1101,6 +1108,41 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 	}
 	if len(dispatcher.commands) != 1 || dispatcher.commands[0].nodeID != repo.projectTaskPreflight.NodeID {
 		t.Fatalf("expected dispatch to resolved project anchor node, got %#v", dispatcher.commands)
+	}
+}
+
+// TestCreateRunChatRejectsInvalidAnchorProject covers §13's 400 rejection
+// matrix (missing/cross-tenant/not-found/archived project_id all reject with
+// a 400-mapped error): whatever ChatAnchorProjectValidator reports as
+// rejected must propagate as-is without creating a run or ever reaching node
+// resolution, since resolution is scoped to a project that turned out not to
+// be a valid anchor.
+func TestCreateRunChatRejectsInvalidAnchorProject(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+	resolver := service.nodeResolver.(*fakeProjectTaskNodeResolver)
+	validator := service.chatAnchorValidator.(*fakeChatAnchorProjectValidator)
+	validator.err = fmt.Errorf("%w: project not found", ErrInvalidInput)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput (400-mapped) when the anchor validator rejects the project, got %v", err)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected anchor validator to be consulted exactly once, got %d", validator.calls)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected node resolution to be skipped once the anchor project is rejected, got %d calls", resolver.calls)
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created when the anchor project is rejected, got %d", repo.createdRunCount)
 	}
 }
 
