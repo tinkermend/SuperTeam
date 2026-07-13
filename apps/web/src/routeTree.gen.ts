@@ -25,6 +25,7 @@ import { Route as AuthenticatedTeamsIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTaskLaunchesIndexRouteImport } from './routes/_authenticated/task-launches/index'
 import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
+import { Route as AuthenticatedScenarioTemplatesIndexRouteImport } from './routes/_authenticated/scenario-templates/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
 import { Route as AuthenticatedRunOverviewIndexRouteImport } from './routes/_authenticated/run-overview/index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
@@ -139,6 +140,12 @@ const AuthenticatedSkillsIndexRoute =
   AuthenticatedSkillsIndexRouteImport.update({
     id: '/skills/',
     path: '/skills/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedScenarioTemplatesIndexRoute =
+  AuthenticatedScenarioTemplatesIndexRouteImport.update({
+    id: '/scenario-templates/',
+    path: '/scenario-templates/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedRuntimeIndexRoute =
@@ -370,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
+  '/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/skills/': typeof AuthenticatedSkillsIndexRoute
   '/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -419,6 +427,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/run-overview': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
+  '/scenario-templates': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/skills': typeof AuthenticatedSkillsIndexRoute
   '/task-launches': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
@@ -471,6 +480,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
+  '/_authenticated/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
   '/_authenticated/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -523,6 +533,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/run-overview/'
     | '/runtime/'
+    | '/scenario-templates/'
     | '/skills/'
     | '/task-launches/'
     | '/tasks/'
@@ -572,6 +583,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/run-overview'
     | '/runtime'
+    | '/scenario-templates'
     | '/skills'
     | '/task-launches'
     | '/tasks'
@@ -623,6 +635,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/'
     | '/_authenticated/run-overview/'
     | '/_authenticated/runtime/'
+    | '/_authenticated/scenario-templates/'
     | '/_authenticated/skills/'
     | '/_authenticated/task-launches/'
     | '/_authenticated/tasks/'
@@ -761,6 +774,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills/'
       preLoaderRoute: typeof AuthenticatedSkillsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/scenario-templates/': {
+      id: '/_authenticated/scenario-templates/'
+      path: '/scenario-templates'
+      fullPath: '/scenario-templates/'
+      preLoaderRoute: typeof AuthenticatedScenarioTemplatesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/runtime/': {
@@ -1075,6 +1095,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedRunOverviewIndexRoute: typeof AuthenticatedRunOverviewIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
+  AuthenticatedScenarioTemplatesIndexRoute: typeof AuthenticatedScenarioTemplatesIndexRoute
   AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
   AuthenticatedTaskLaunchesIndexRoute: typeof AuthenticatedTaskLaunchesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
@@ -1116,6 +1137,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedRunOverviewIndexRoute: AuthenticatedRunOverviewIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,
+  AuthenticatedScenarioTemplatesIndexRoute:
+    AuthenticatedScenarioTemplatesIndexRoute,
   AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
   AuthenticatedTaskLaunchesIndexRoute: AuthenticatedTaskLaunchesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,

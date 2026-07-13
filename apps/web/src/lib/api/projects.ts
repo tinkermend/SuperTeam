@@ -858,6 +858,7 @@ export type CreateProjectInput = {
   approval_policy?: Record<string, unknown>;
   evidence_policy?: Record<string, unknown>;
   runtime_node_ids: string[];
+  scenario_template_key?: string;
 };
 
 export type CreateProjectResponse = {

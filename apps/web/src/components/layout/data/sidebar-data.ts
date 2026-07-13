@@ -9,6 +9,7 @@ import {
   Gauge,
   Inbox,
   KeyRound,
+  LayoutTemplate,
   MessagesSquare,
   Network,
   Puzzle,
@@ -108,6 +109,12 @@ export function buildSidebarData({
             title: "MCP 管理",
             url: "/mcp",
             icon: Network,
+            iconTone: "neutral",
+          },
+          {
+            title: "场景模板",
+            url: "/scenario-templates",
+            icon: LayoutTemplate,
             iconTone: "neutral",
           },
           {
