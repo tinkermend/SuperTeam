@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/approval"
@@ -2365,7 +2366,8 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		runMetadata["project_git"] = projectGit
 	}
 	addDispatchGateMetadata(runMetadata, gate.Gate)
-	executionContextPacket := projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attemptID, leaseToken, handoffContract, gate.Gate)
+	upstreamResults := s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
+	executionContextPacket := projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attemptID, leaseToken, handoffContract, gate.Gate, upstreamResults)
 	queueResult, err := s.repository.QueueProjectTaskWithAttempt(ctx, project.QueueProjectTaskRequest{
 		TenantID:                      input.TenantID,
 		ProjectID:                     input.ProjectID,
@@ -2410,7 +2412,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
 		DispatchUserID:       projectRecord.HumanOwnerUserID,
 		Objective:            task.Title,
-		Prompt:               projectTaskRunPrompt(projectRecord, demand, task),
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults),
 		IdempotencyKey:       attemptIdempotencyKey,
 		Metadata:             runMetadata,
 		WorkspaceMode:        workspaceMode,
@@ -2490,6 +2492,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 	if workspaceMode == WorkspaceModeBranch || workspaceMode == WorkspaceModeDetachedRun {
 		handoffContract["requires_runtime_attestation"] = true
 	}
+	upstreamResults := s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
 	runMetadata := map[string]any{
 		"source":                           "project_task_dispatch",
 		"actor_type":                       "project_coordinator",
@@ -2517,7 +2520,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
 		DispatchUserID:       projectRecord.HumanOwnerUserID,
 		Objective:            task.Title,
-		Prompt:               projectTaskRunPrompt(projectRecord, demand, task),
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults),
 		IdempotencyKey:       attempt.IdempotencyKey,
 		Metadata:             runMetadata,
 		WorkspaceMode:        workspaceMode,
@@ -2529,7 +2532,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 	}
 	boundExecutionContextPacket := cloneAnyMap(attempt.ExecutionContextPacket)
 	if len(boundExecutionContextPacket) == 0 {
-		boundExecutionContextPacket = projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attempt.ID, attempt.LeaseToken, handoffContract, project.PreDispatchGateResult{})
+		boundExecutionContextPacket = projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attempt.ID, attempt.LeaseToken, handoffContract, project.PreDispatchGateResult{}, upstreamResults)
 	}
 	projectTaskDispatchAttachRun(boundExecutionContextPacket, run)
 	_, err = s.repository.BindProjectTaskAttemptRun(ctx, project.BindProjectTaskAttemptRunRequest{
@@ -2679,7 +2682,7 @@ func projectTaskAttemptDispatchIdempotencyKey(taskID uuid.UUID, attemptNo int32)
 	return "project-task:" + taskID.String() + ":attempt:" + strconv.FormatInt(int64(attemptNo), 10) + ":dispatch"
 }
 
-func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask) string {
+func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask, upstreamResults []map[string]any) string {
 	content := ""
 	if demand.Content != nil {
 		content = *demand.Content
@@ -2699,15 +2702,81 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"expected_outputs: " + taskContractJSON(task.ExpectedOutputs) + "\n" +
 		"input_requirements: " + taskContractJSON(task.InputRequirements) + "\n" +
 		"handoff_contract: " + taskContractJSON(task.HandoffContract) + "\n" +
+		"produces: " + taskContractJSON(plannerProducesFromMetadata(task.PlannerMetadata)) + "\n" +
+		"upstream_results: " + taskContractJSON(upstreamResults) + "\n" +
 		"结果契约要求: 最终答案必须包含一个 ```json 代码块，顶层字段为 result_contract。" +
 		"result_contract.status 使用 completed；summary 填写结论；" +
 		"acceptance_results 必须逐条覆盖 handoff_contract.acceptance_criteria，status 使用 passed 并带 evidence_refs；" +
-		"evidence_refs/verification 用于说明已读取或验证的证据。\n" +
+		"evidence_refs/verification 用于说明已读取或验证的证据。" +
+		"result_contract 必须含 deliverables 数组，逐项覆盖 produces 列出的每个产出名（每项含 name 与 value 或 ref）；produces 为空时可省略。\n" +
+		"upstream_results 是你直接上游任务的真实产出，优先复用其中的值与引用，不要重做上游已完成的工作。\n" +
 		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
 }
 
-func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, task project.ProjectTask, attemptID uuid.UUID, leaseToken string, handoffContract map[string]any, gate project.PreDispatchGateResult) map[string]any {
+// Rotate nothing here: the full upstream summary stays available through the
+// blocker's persisted result; the dispatch prompt only carries a bounded slice.
+const upstreamSummaryLimitBytes = 4096
+
+func truncateUpstreamSummary(summary string) (string, bool) {
+	if len(summary) <= upstreamSummaryLimitBytes {
+		return summary, false
+	}
+	end := upstreamSummaryLimitBytes
+	for end > 0 && !utf8.RuneStart(summary[end]) {
+		end--
+	}
+	return summary[:end] + "…[truncated]", true
+}
+
+// collectUpstreamResults loads the direct blockers' latest results for
+// injection into the dispatch request. One dependency edge = one handoff:
+// transitive ancestors are deliberately not walked. Injection is additive
+// context, so every lookup failure degrades to less context, never to a
+// blocked dispatch.
+func (s *ProjectStore) collectUpstreamResults(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask) []map[string]any {
+	deps, err := s.repository.ListProjectTaskDependencies(ctx, tenantID, projectID, []uuid.UUID{task.ID})
+	if err != nil || len(deps) == 0 {
+		return nil
+	}
+	results := make([]map[string]any, 0, len(deps))
+	for _, dep := range deps {
+		blocker, err := s.repository.GetProjectTask(ctx, tenantID, dep.BlockerTaskID)
+		if err != nil {
+			continue
+		}
+		entry := map[string]any{
+			"task_id":    blocker.ID.String(),
+			"task_title": blocker.Title,
+			"status":     blocker.Status,
+		}
+		if blocker.AssignedDigitalEmployeeID != nil {
+			entry["digital_employee_id"] = blocker.AssignedDigitalEmployeeID.String()
+		}
+		if result, err := s.latestTaskResult(ctx, blocker); err == nil && result != nil {
+			summary, truncated := truncateUpstreamSummary(result.Contract.Summary)
+			entry["summary"] = summary
+			if truncated {
+				entry["summary_truncated"] = true
+			}
+			if len(result.Contract.Deliverables) > 0 {
+				entry["deliverables"] = result.Contract.Deliverables
+			}
+			if len(result.Contract.EvidenceRefs) > 0 {
+				entry["evidence_refs"] = result.Contract.EvidenceRefs
+			}
+			if len(result.Contract.ArtifactRefs) > 0 {
+				entry["artifact_refs"] = result.Contract.ArtifactRefs
+			}
+		} else {
+			entry["result"] = "unavailable"
+		}
+		results = append(results, entry)
+	}
+	return results
+}
+
+func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, task project.ProjectTask, attemptID uuid.UUID, leaseToken string, handoffContract map[string]any, gate project.PreDispatchGateResult, upstreamResults []map[string]any) map[string]any {
 	packet := map[string]any{
 		"project_id":               projectID.String(),
 		"demand_id":                demandID.String(),
@@ -2718,6 +2787,9 @@ func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, ta
 		"expected_outputs":         append([]any(nil), task.ExpectedOutputs...),
 		"input_requirements":       cloneAnyMap(task.InputRequirements),
 		"handoff_contract":         handoffContract,
+	}
+	if len(upstreamResults) > 0 {
+		packet["upstream_results"] = upstreamResults
 	}
 	if task.AssignedDigitalEmployeeID != nil {
 		packet["digital_employee_id"] = task.AssignedDigitalEmployeeID.String()

@@ -6152,3 +6152,120 @@ func anyStrings(values []any) []string {
 	}
 	return result
 }
+
+func upstreamDispatchFixture(t *testing.T, blockerSummary string, blockerDeliverables []project.TaskResultDeliverable, withResult bool) (*projectStoreMemoryRepository, *projectTaskRunStarterFake, DispatchProjectTaskInput, uuid.UUID) {
+	t.Helper()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	blockerTaskID := uuid.New()
+	employeeID := uuid.New()
+	resultID := uuid.New()
+
+	blocker := project.ProjectTask{
+		ID:                        blockerTaskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		DemandID:                  &demandID,
+		Title:                     "上游调查",
+		Status:                    "completed",
+		AssignedDigitalEmployeeID: &employeeID,
+	}
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID,
+			Title: "链式交接", Content: strPtr("验证上游注入"),
+		},
+		members: []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		taskDependencies: []project.ProjectTaskDependency{{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			DependentTaskID: taskID, BlockerTaskID: blockerTaskID,
+		}},
+	}
+	if withResult {
+		blocker.LatestTaskResultID = &resultID
+		repo.projectTaskResults = []project.ProjectTaskResult{{
+			ID: resultID, TenantID: tenantID, ProjectID: projectID, ProjectTaskID: blockerTaskID,
+			ResultStatus:     project.TaskResultStatusCompleted,
+			Decision:         project.TaskResultDecisionCompleteAccepted,
+			ValidationStatus: "accepted",
+			Contract: project.TaskResultContract{
+				Status:       project.TaskResultStatusCompleted,
+				Summary:      blockerSummary,
+				Deliverables: blockerDeliverables,
+			},
+		}}
+	}
+	repo.tasks = []project.ProjectTask{
+		blocker,
+		{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+			Title: "下游消费", Summary: strPtr("使用上游产出"), Status: "planned",
+			AssignedDigitalEmployeeID: &employeeID,
+			ExpectedOutputs:           []any{"execution_summary"},
+			InputRequirements:         map[string]any{"required_inputs": []any{"head_commit"}},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{"produces": []any{"final_report"}},
+		},
+	}
+	starter := &projectTaskRunStarterFake{
+		result: StartProjectTaskRunResult{
+			RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(),
+			NodeID: "node-1", ProviderType: "claude-code",
+		},
+	}
+	input := DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID}
+	return repo, starter, input, blockerTaskID
+}
+
+func TestDispatchProjectTaskInjectsDirectBlockerResults(t *testing.T) {
+	repo, starter, input, blockerTaskID := upstreamDispatchFixture(t, "上游结论", []project.TaskResultDeliverable{
+		{Name: "head_commit", Kind: "git_commit", Value: "abc123"},
+	}, true)
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	require.NoError(t, store.DispatchProjectTask(context.Background(), input))
+	require.Len(t, starter.requests, 1)
+
+	prompt := starter.requests[0].Prompt
+	require.Contains(t, prompt, "upstream_results")
+	require.Contains(t, prompt, "head_commit")
+	require.Contains(t, prompt, "abc123")
+	require.Contains(t, prompt, blockerTaskID.String())
+	require.Contains(t, prompt, `produces: ["final_report"]`)
+	require.Contains(t, prompt, "deliverables")
+
+	require.Len(t, repo.queueRequests, 1)
+	packetUpstream, ok := repo.queueRequests[0].ExecutionContextPacket["upstream_results"].([]map[string]any)
+	require.True(t, ok, "packet upstream_results type: %#v", repo.queueRequests[0].ExecutionContextPacket["upstream_results"])
+	require.Len(t, packetUpstream, 1)
+	require.Equal(t, blockerTaskID.String(), packetUpstream[0]["task_id"])
+}
+
+func TestDispatchProjectTaskTruncatesUpstreamSummary(t *testing.T) {
+	longSummary := strings.Repeat("长", 3000) // ~9KB UTF-8
+	repo, starter, input, _ := upstreamDispatchFixture(t, longSummary, nil, true)
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	require.NoError(t, store.DispatchProjectTask(context.Background(), input))
+	require.Len(t, starter.requests, 1)
+	require.Contains(t, starter.requests[0].Prompt, "summary_truncated")
+	require.Less(t, len(starter.requests[0].Prompt), 9000)
+}
+
+func TestCollectUpstreamResultsToleratesBlockerWithoutResult(t *testing.T) {
+	// The pre-dispatch gate normally prevents dispatching over an unaccepted
+	// blocker; this covers the defensive degradation branch (spec §5).
+	repo, _, input, blockerTaskID := upstreamDispatchFixture(t, "", nil, false)
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, nil)
+
+	task, err := repo.GetProjectTask(context.Background(), input.TenantID, input.TaskID)
+	require.NoError(t, err)
+	upstream := store.collectUpstreamResults(context.Background(), input.TenantID, input.ProjectID, task)
+
+	require.Len(t, upstream, 1)
+	require.Equal(t, blockerTaskID.String(), upstream[0]["task_id"])
+	require.Equal(t, "unavailable", upstream[0]["result"])
+}
