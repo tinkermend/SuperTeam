@@ -15,36 +15,23 @@ const stats = {
 };
 
 describe("EmployeeMetricsStrip", () => {
-  it("renders formatted stats", async () => {
-    const screen = await render(
-      <EmployeeMetricsStrip
-        commandChannelConnected
-        currentStatusLabel="active"
-        providerType="claude_code"
-        runtimeNodeLabel="local-dev-node"
-        stats={stats}
-      />,
-    );
+  it("renders formatted stats without runtime/state cards", async () => {
+    const screen = await render(<EmployeeMetricsStrip providerType="Claude Code" stats={stats} />);
 
     await expect.element(screen.getByText("76")).toBeVisible();
     await expect.element(screen.getByText("89.5%")).toBeVisible();
     await expect.element(screen.getByText("68")).toBeVisible();
     await expect.element(screen.getByText("29分0秒")).toBeVisible();
     await expect.element(screen.getByText(/P90 48分0秒/)).toBeVisible();
-    await expect.element(screen.getByText(/近7天.*↑/)).toBeVisible();
+    await expect.element(screen.getByText(/较上周期/)).toBeVisible();
+    expect(screen.getByText("Runtime 执行位置").query()).toBeNull();
+    expect(screen.getByText("当前状态").query()).toBeNull();
   });
 
   it("shows placeholder dashes when stats are unavailable", async () => {
-    const screen = await render(
-      <EmployeeMetricsStrip
-        commandChannelConnected={false}
-        currentStatusLabel="active"
-        providerType="claude_code"
-        runtimeNodeLabel="local-dev-node"
-        stats={undefined}
-      />,
-    );
+    const screen = await render(<EmployeeMetricsStrip providerType="Codex" stats={undefined} />);
 
-    await expect.element(screen.getByText("Runtime 命令通道未连接")).toBeVisible();
+    await expect.element(screen.getByText("成功率")).toBeVisible();
+    expect(screen.getByText("--").elements().length).toBeGreaterThan(0);
   });
 });

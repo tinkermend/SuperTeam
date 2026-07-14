@@ -710,4 +710,45 @@ describe("EmployeeDetailView", () => {
     await expect.element(screen.getByText("project_task · in_progress")).toBeVisible();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
+
+  it("shows a page-level alert when the runtime command channel is disconnected", async () => {
+    const fetcher = createDetailFetcher({
+      run: runFixture({ status: "completed" }),
+      runtimeOverview: {
+        summary: {
+          online_nodes: 1,
+          total_nodes: 1,
+          pending_enrollments: 0,
+          active_provider_sessions: 0,
+          blocked_events: 0,
+        },
+        pending_enrollments: [],
+        nodes: [
+          {
+            runtime_node_id: executionInstance.runtime_node_id,
+            node_id: "node-a",
+            name: "node-a",
+            supported_providers: ["codex"],
+            max_slots: 3,
+            current_load: 0,
+            status: "online",
+            command_channel_connected: false,
+          },
+        ],
+        provider_capabilities: [],
+        recent_events: [],
+      },
+    });
+    const screen = await renderEmployeeDetail(fetcher);
+
+    await expect.element(screen.getByText("Runtime 命令通道未连接")).toBeVisible();
+    await expect.element(screen.getByText(/当前无法开始新任务/)).toBeVisible();
+  });
+
+  it("hides the channel alert when the command channel is connected", async () => {
+    const screen = await renderEmployeeDetail();
+
+    await expect.element(screen.getByRole("heading", { level: 2, name: "需求分析员工" })).toBeVisible();
+    expect(screen.getByText("Runtime 命令通道未连接").query()).toBeNull();
+  });
 });

@@ -247,6 +247,14 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
         {employee.data ? (
           <div className="flex flex-col gap-4">
+            {runtimeCommandChannelDisconnected ? (
+              <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
+                <AlertTriangle className="size-4" />
+                <AlertTitle>Runtime 命令通道未连接</AlertTitle>
+                <AlertDescription>当前无法开始新任务，请检查 Runtime Agent 连接状态后重试。</AlertDescription>
+              </Alert>
+            ) : null}
+
             <EmployeeDetailHeader
               employee={employee.data}
               onDelete={() => setDeleteDialogOpen(true)}
@@ -255,10 +263,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             />
 
             <EmployeeMetricsStrip
-              commandChannelConnected={runtimeNode?.command_channel_connected}
-              currentStatusLabel={employee.data.status}
               providerType={providerDisplayName(employee.data.provider_type)}
-              runtimeNodeLabel={instance.data?.runtime_node_id ?? "由项目运行时决定"}
               stats={runStats.data}
             />
 
