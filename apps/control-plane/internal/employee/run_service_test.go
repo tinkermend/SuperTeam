@@ -954,6 +954,7 @@ func TestCreateRunChatResumeValidation(t *testing.T) {
 		}, ErrInvalidResumeRun},
 		{"上个 run 无 provider session", func(_ *CreateDigitalEmployeeRunRequest, prior *DigitalEmployeeRun) {
 			prior.ProviderSessionID = nil
+			prior.ProviderSessionExternalID = nil
 		}, ErrInvalidResumeRun},
 	}
 
@@ -978,37 +979,100 @@ func TestCreateRunChatResumeValidation(t *testing.T) {
 }
 
 func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
-	prior := validResumableChatRun()
-	req := validChatResumeRequest(prior.ID)
+	testCases := []struct {
+		name                   string
+		setupPrior             func(*DigitalEmployeeRun)
+		expectError            bool
+		expectedSessionID      string
+	}{
+		{
+			name: "prefers ProviderSessionExternalID when set",
+			setupPrior: func(run *DigitalEmployeeRun) {
+				externalID := "sess-abc"
+				run.ProviderSessionExternalID = &externalID
+			},
+			expectError:       false,
+			expectedSessionID: "sess-abc",
+		},
+		{
+			name: "falls back to ProviderSessionID when external ID is blank",
+			setupPrior: func(run *DigitalEmployeeRun) {
+				internalID := "sess-fallback"
+				run.ProviderSessionID = &internalID
+			},
+			expectError:       false,
+			expectedSessionID: "sess-fallback",
+		},
+		{
+			name: "uses ProviderSessionExternalID over ProviderSessionID",
+			setupPrior: func(run *DigitalEmployeeRun) {
+				externalID := "sess-external"
+				internalID := "sess-internal"
+				run.ProviderSessionExternalID = &externalID
+				run.ProviderSessionID = &internalID
+			},
+			expectError:       false,
+			expectedSessionID: "sess-external",
+		},
+		{
+			name: "rejects when both ProviderSessionExternalID and ProviderSessionID are blank",
+			setupPrior: func(run *DigitalEmployeeRun) {
+				// Leave both fields nil/blank
+			},
+			expectError: true,
+		},
+	}
 
-	repo := chatAnchorRunServiceRepository(&prior.TaskID)
-	repo.run = prior
-	dispatcher := newFakeRunServiceDispatcher()
-	service := chatAnchorRunService(t, repo, dispatcher)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			prior := validResumableChatRun()
+			// Reset both fields first
+			prior.ProviderSessionExternalID = nil
+			prior.ProviderSessionID = nil
+			// Apply the test-specific setup
+			tc.setupPrior(prior)
+			req := validChatResumeRequest(prior.ID)
 
-	_, err := service.CreateRun(context.Background(), req)
-	if err != nil {
-		t.Fatalf("expected chat resume to succeed, got %v", err)
-	}
-	if len(repo.createRunRequests) != 1 {
-		t.Fatalf("expected exactly one create run request, got %d", len(repo.createRunRequests))
-	}
-	created := repo.createRunRequests[0]
-	if created.RunKind != RunKindChat {
-		t.Fatalf("expected RunKind chat, got %q", created.RunKind)
-	}
-	if created.ResumeOfRunID == nil || *created.ResumeOfRunID != prior.ID {
-		t.Fatalf("expected ResumeOfRunID %s, got %#v", prior.ID, created.ResumeOfRunID)
-	}
-	metadata, ok := created.Params["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected metadata map in params, got %#v", created.Params["metadata"])
-	}
-	if metadata["provider_session_id"] != "sess-abc" {
-		t.Fatalf("expected injected provider_session_id, got %#v", metadata["provider_session_id"])
-	}
-	if metadata["resume_of_run_id"] != prior.ID.String() {
-		t.Fatalf("expected injected resume_of_run_id, got %#v", metadata["resume_of_run_id"])
+			repo := chatAnchorRunServiceRepository(&prior.TaskID)
+			repo.run = prior
+			dispatcher := newFakeRunServiceDispatcher()
+			service := chatAnchorRunService(t, repo, dispatcher)
+
+			_, err := service.CreateRun(context.Background(), req)
+			if tc.expectError {
+				if !errors.Is(err, ErrInvalidResumeRun) {
+					t.Fatalf("expected ErrInvalidResumeRun, got %v", err)
+				}
+				if len(repo.createRunRequests) != 0 {
+					t.Fatalf("expected no run created when resume is invalid, got %d", len(repo.createRunRequests))
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected chat resume to succeed, got %v", err)
+			}
+			if len(repo.createRunRequests) != 1 {
+				t.Fatalf("expected exactly one create run request, got %d", len(repo.createRunRequests))
+			}
+			created := repo.createRunRequests[0]
+			if created.RunKind != RunKindChat {
+				t.Fatalf("expected RunKind chat, got %q", created.RunKind)
+			}
+			if created.ResumeOfRunID == nil || *created.ResumeOfRunID != prior.ID {
+				t.Fatalf("expected ResumeOfRunID %s, got %#v", prior.ID, created.ResumeOfRunID)
+			}
+			metadata, ok := created.Params["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected metadata map in params, got %#v", created.Params["metadata"])
+			}
+			if metadata["provider_session_id"] != tc.expectedSessionID {
+				t.Fatalf("expected injected provider_session_id=%q, got %#v", tc.expectedSessionID, metadata["provider_session_id"])
+			}
+			if metadata["resume_of_run_id"] != prior.ID.String() {
+				t.Fatalf("expected injected resume_of_run_id, got %#v", metadata["resume_of_run_id"])
+			}
+		})
 	}
 }
 
@@ -1330,13 +1394,13 @@ func TestCreateRunPreservesExplicitPrompt(t *testing.T) {
 }
 
 // validResumableChatRun returns a terminal chat run belonging to the default run-service
-// tenant/employee, with a non-empty provider session id — the minimum legal predecessor
+// tenant/employee, with a non-empty external provider session id — the minimum legal predecessor
 // for a chat resume request.
 func validResumableChatRun() *DigitalEmployeeRun {
 	run := validRunServiceRun(DigitalEmployeeRunStatusCompleted)
 	run.RunKind = RunKindChat
 	sessionID := "sess-abc"
-	run.ProviderSessionID = &sessionID
+	run.ProviderSessionExternalID = &sessionID
 	return run
 }
 

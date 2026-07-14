@@ -164,8 +164,20 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		if prior == nil ||
 			prior.DigitalEmployeeID != req.DigitalEmployeeID ||
 			prior.RunKind != RunKindChat ||
-			!prior.Status.IsTerminal() ||
-			prior.ProviderSessionID == nil || strings.TrimSpace(*prior.ProviderSessionID) == "" {
+			!prior.Status.IsTerminal() {
+			return nil, ErrInvalidResumeRun
+		}
+		// Resolve the provider session id: prefer ProviderSessionExternalID (set by
+		// runtime on chat runs), fall back to ProviderSessionID (legacy path or
+		// project task runs), reject if both are nil/blank.
+		sessionID := ""
+		if prior.ProviderSessionExternalID != nil {
+			sessionID = strings.TrimSpace(*prior.ProviderSessionExternalID)
+		}
+		if sessionID == "" && prior.ProviderSessionID != nil {
+			sessionID = strings.TrimSpace(*prior.ProviderSessionID)
+		}
+		if sessionID == "" {
 			return nil, ErrInvalidResumeRun
 		}
 		// The resumed session lives on the prior run's anchor node; resuming
@@ -182,7 +194,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		if req.Metadata == nil {
 			req.Metadata = map[string]any{}
 		}
-		req.Metadata["provider_session_id"] = *prior.ProviderSessionID
+		req.Metadata["provider_session_id"] = sessionID
 		req.Metadata["resume_of_run_id"] = prior.ID.String()
 	}
 
