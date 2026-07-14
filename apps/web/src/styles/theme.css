@@ -131,6 +131,15 @@
   --v3-aurora-req: #ff4d5e;
   --v3-aurora-r-card: 24px;
   --v3-aurora-r-inner: 16px;
+
+  /* v3 布局宪法 token：页面宽度档位 / 主从右栏档位 / 指标卡宽度界
+     （见 docs/design-system/layout-density.md「宽度档位」；浅/深色不区分） */
+  --v3-layout-contained: 80rem;
+  --v3-layout-wide: 105rem;
+  --v3-layout-rail: 21.25rem;
+  --v3-layout-rail-lg: 26.25rem;
+  --v3-metric-min: 13rem;
+  --v3-metric-max: 21rem;
 }
 
 .dark {

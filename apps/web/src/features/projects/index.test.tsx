@@ -1,6 +1,6 @@
 import { forwardRef, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { userEvent } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { CreateProjectView, ProjectsView } from "@/features/projects";
@@ -425,6 +425,57 @@ function createProjectFetcher(
         project: created,
       });
     }
+    if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
+      return jsonResponse({
+        items: [
+          {
+            actions: [],
+            context: {},
+            created_at: "2026-06-05T01:00:00Z",
+            deep_link: {},
+            id: "inbox-item-1",
+            item_type: "project_decision",
+            last_activity_at: "2026-06-05T01:30:00Z",
+            risk_level: "high",
+            source_id: "decision-1",
+            source_project_id: "project-1",
+            source_type: "project_decision_request",
+            status: "open",
+            target_user_id: CURRENT_USER_ID,
+            tenant_id: "tenant-1",
+            title: "需要负责人确认上线计划",
+            updated_at: "2026-06-05T01:30:00Z",
+          },
+          {
+            actions: [],
+            context: {},
+            created_at: "2026-06-05T02:00:00Z",
+            deep_link: {},
+            id: "inbox-item-2",
+            item_type: "approval",
+            last_activity_at: "2026-06-05T02:15:00Z",
+            source_id: "approval-1",
+            source_type: "approval_request",
+            status: "open",
+            target_user_id: CURRENT_USER_ID,
+            tenant_id: "tenant-1",
+            title: "生产环境发布审批",
+            updated_at: "2026-06-05T02:15:00Z",
+          },
+        ],
+        pagination: { has_more: false, limit: 8, offset: 0 },
+        summary: { blocked_count: 0, high_risk_count: 1, open_count: 2 },
+      });
+    }
+
+    if (url.pathname === "/api/v1/inbox/badge" && method === "GET") {
+      return jsonResponse({
+        high_risk_count: 1,
+        mine_open_count: 2,
+        team_open_count: 3,
+      });
+    }
+
     if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
       return jsonResponse([
         {
@@ -1468,9 +1519,10 @@ describe("ProjectsView", () => {
     );
     // Portfolio truth bar (loaded-list scope), not the old page-scoped risk metric bar.
     await expect.element(screen.getByLabelText("项目组合概览（已加载列表）")).toBeInTheDocument();
-    // Selected-context panel is present but empty until a project is selected.
-    await expect.element(screen.getByLabelText("选中项目上下文")).toBeInTheDocument();
-    await expect.element(screen.getByText("选择项目查看待办")).toBeInTheDocument();
+    // 详情层按需渲染：未选中时不保留空态占位栏，队列独占全宽。
+    expect(
+      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
+    ).toBeNull();
     // Project-first columns surface owner name, risk label and current handler.
     await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
     await expect.element(screen.getByText("等待人工决策").first()).toBeInTheDocument();
@@ -1598,31 +1650,159 @@ describe("ProjectsView", () => {
     expect(handler?.className).toContain("max-h-10");
   });
 
-  it("splits the projects index into a queue and a selected-context triage panel", async () => {
+  it("splits the projects index into a queue and an on-demand triage panel (wide: in-flow rail)", async () => {
+    await page.viewport(1600, 900);
+    try {
+      const fetcher = createProjectFetcher();
+      const screen = await renderProjects(fetcher);
+
+      await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+
+      const layout = screen.getByTestId("projects-risk-home-layout").element();
+      expect(layout.className).toContain("@container/master-detail");
+      // 未选中：右栏为驾驶舱面板（待我决策 + 最近运行动态），无 triage 面板。
+      expect(layout.firstElementChild?.className).toContain(
+        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+      );
+      await vi.waitFor(() => {
+        expect(
+          document.querySelector('[data-testid="projects-dashboard-rail"]'),
+        ).toBeTruthy();
+      });
+      const rail = document.querySelector(
+        '[data-testid="projects-dashboard-rail"]',
+      ) as HTMLElement;
+      await vi.waitFor(() => {
+        expect(rail.textContent).toContain("待我决策");
+        expect(rail.textContent).toContain("需要负责人确认上线计划");
+        expect(rail.textContent).toContain("生产环境发布审批");
+        expect(rail.textContent).toContain("最近运行动态");
+      });
+      // 决策行深链到项目审批 Tab
+      const decisionLink = Array.from(rail.querySelectorAll("a")).find((anchor) =>
+        anchor.textContent?.includes("需要负责人确认上线计划"),
+      );
+      expect(decisionLink?.getAttribute("href")).toContain("/projects/project-1");
+      expect(decisionLink?.getAttribute("href")).toContain("tab=approval");
+      expect(decisionLink?.getAttribute("href")).toContain("focus=decision-1");
+      // KPI 带新增「待我决策」真值卡（inbox badge）
+      const kpiBand = screen.getByLabelText("项目组合概览（已加载列表）").element();
+      expect(kpiBand.textContent).toContain("待我决策");
+      expect(
+        document.querySelector('[data-testid="project-selected-context-panel"]'),
+      ).toBeNull();
+
+      // Selecting the top queue row (project-1) swaps the rail to the in-flow triage panel
+      // with deep-link actions, reusing the already-fetched page risk signals.
+      await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+
+      await vi.waitFor(() => {
+        expect(
+          document.querySelector('[data-testid="project-selected-context-panel"]'),
+        ).toBeTruthy();
+      });
+      expect(layout.firstElementChild?.className).toContain(
+        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+      );
+      // 宽容器下面板在栅格内 in-flow，不走 Sheet 抽屉。
+      expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
+
+      const panel = document.querySelector(
+        '[data-testid="project-selected-context-panel"]',
+      ) as HTMLElement;
+      await vi.waitFor(() => {
+        expect(panel.textContent).toContain("客户接入验收");
+        expect(panel.textContent).toContain("处理决策");
+      });
+      // 右栏受视口高度约束、内部滚动：长待办/证据列表不得把页面撑长。
+      expect(panel.className).toContain("@5xl/master-detail:max-h-[calc(100svh-2rem)]");
+      expect(panel.className).toContain("@5xl/master-detail:overflow-y-auto");
+      const decisionAction = Array.from(panel.querySelectorAll("a")).find((anchor) =>
+        anchor.textContent?.includes("处理决策"),
+      );
+      expect(decisionAction?.getAttribute("href")).toContain("tab=approval");
+
+      // 选中期间驾驶舱面板让位给 triage；点关闭钮返回驾驶舱右栏。
+      expect(
+        document.querySelector('[data-testid="projects-dashboard-rail"]'),
+      ).toBeNull();
+      await userEvent.click(
+        screen.getByRole("button", { name: "关闭项目待办详情" }),
+      );
+      await vi.waitFor(() => {
+        expect(
+          document.querySelector('[data-testid="project-selected-context-panel"]'),
+        ).toBeNull();
+        expect(
+          document.querySelector('[data-testid="projects-dashboard-rail"]'),
+        ).toBeTruthy();
+      });
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
+  it("opens the triage panel as a right sheet on narrow containers and clears selection on dismiss", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
 
-    const layout = screen.getByTestId("projects-risk-home-layout").element();
-    expect(layout.className).toContain("xl:grid-cols-[minmax(0,1fr)_420px]");
-    expect(
-      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
-    ).toBeTruthy();
-
-    // Selecting the top queue row (project-1) populates the panel with deep-link actions,
-    // reusing the already-fetched page risk signals (no extra requests).
     await userEvent.click(screen.getByTestId("project-queue-project-title").first());
 
-    const panel = screen.getByTestId("project-selected-context-panel").element();
     await vi.waitFor(() => {
-      expect(panel.textContent).toContain("客户接入验收");
-      expect(panel.textContent).toContain("处理决策");
+      const sheet = document.querySelector('[data-slot="sheet-content"]');
+      expect(sheet).toBeTruthy();
+      expect(sheet?.textContent).toContain("客户接入验收");
     });
-    const decisionAction = Array.from(panel.querySelectorAll("a")).find((anchor) =>
-      anchor.textContent?.includes("处理决策"),
-    );
-    expect(decisionAction?.getAttribute("href")).toContain("tab=approval");
+
+    const close = document.querySelector(
+      '[data-slot="sheet-content"] button',
+    ) as HTMLElement;
+    close.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
+      expect(
+        document.querySelector('[data-testid="project-selected-context-panel"]'),
+      ).toBeNull();
+    });
+  });
+
+  it("keeps the projects index free of horizontal overflow across viewport tiers", async () => {
+    try {
+      const fetcher = createProjectFetcher();
+      const screen = await renderProjects(fetcher);
+      await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+
+      for (const [width, height] of [
+        [1280, 900],
+        [1536, 960],
+        [1920, 1080],
+      ] as const) {
+        await page.viewport(width, height);
+        await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+        await vi.waitFor(() => {
+          expect(
+            document.querySelector('[data-testid="project-selected-context-panel"]'),
+          ).toBeTruthy();
+        });
+        const doc = document.documentElement;
+        expect(
+          doc.scrollWidth,
+          `viewport ${width} 不应出现横向溢出`,
+        ).toBeLessThanOrEqual(doc.clientWidth);
+        const panel = document.querySelector(
+          '[data-testid="project-selected-context-panel"]',
+        ) as HTMLElement;
+        expect(
+          Math.round(panel.getBoundingClientRect().right),
+          `viewport ${width} 右栏必须完整可见`,
+        ).toBeLessThanOrEqual(width);
+      }
+    } finally {
+      await page.viewport(414, 896);
+    }
   });
 
   it("keeps the project detail route full-width for the plan graph", async () => {
@@ -2404,17 +2584,24 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ project2OverviewGate });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("生产巡检整改")).toBeInTheDocument();
-    // The lightweight triage panel is present, but it must not mount the full
-    // operational detail: no per-project overview fetch, no archive action.
+    await expect
+      .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
+      .toBeInTheDocument();
+    // Selecting a project mounts the lightweight triage panel, but it must not
+    // mount the full operational detail: no per-project overview fetch, no archive action.
+    await userEvent.click(
+      screen.getByTestId("project-risk-queue").getByText("生产巡检整改"),
+    );
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector('[data-testid="project-selected-context-panel"]'),
+      ).toBeTruthy();
+    });
     expect(
       fetchCalls(fetcher).some(([url]) =>
         String(url).includes("/api/v1/projects/project-2/overview"),
       ),
     ).toBe(false);
-    expect(
-      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
-    ).toBeTruthy();
     releaseProject2Overview();
 
     await expect
@@ -2499,9 +2686,10 @@ describe("ProjectsView", () => {
     await expect
       .element(screen.getByRole("link", { name: "进入项目 生产巡检整改" }))
       .toHaveAttribute("href", "/projects/project-2");
+    // 详情层按需渲染：未选中时页面上没有 triage 面板。
     expect(
-      screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
-    ).toBeTruthy();
+      document.querySelector('[data-testid="project-selected-context-panel"]'),
+    ).toBeNull();
   });
 
   it("keeps the full operational detail on project detail routes", async () => {
@@ -2585,7 +2773,9 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await expect.element(screen.getByText("生产巡检整改")).toBeVisible();
+    await expect
+      .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
+      .toBeVisible();
     await expect.element(screen.getByText("风险待确认")).toBeVisible();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
     expect(queueText).toContain("进入项目");

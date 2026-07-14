@@ -7,15 +7,17 @@ import {
   Clock3,
   FileWarning,
   FolderKanban,
-  Inbox,
   PlayCircle,
   ShieldCheck,
   UserCheck,
   UserRound,
+  X,
 } from "lucide-react";
 import {
   IconTile,
+  MetricGrid,
   StatusPill,
+  V3IconButton,
   V3Button,
   V3Chip,
   V3EmptyState,
@@ -114,8 +116,11 @@ const kpiAccentBar: Record<V3Tone, string> = {
  * 保留在下方队列表头与筛选 chip 中，避免把页级计数伪装成全平台真值。
  */
 export function ProjectPortfolioSummaryBar({
+  pendingDecisionCount,
   portfolioCounts,
 }: {
+  /** 跨项目「待我决策」真值（inbox badge mine_open_count）；未传则不渲染该卡。 */
+  pendingDecisionCount?: number;
   portfolioCounts: ProjectPortfolioCounts;
 }) {
   const items = [
@@ -123,13 +128,20 @@ export function ProjectPortfolioSummaryBar({
     { icon: PlayCircle, label: "运行中", tone: "ok" as V3Tone, value: portfolioCounts.running },
     { icon: ShieldCheck, label: "验收中", tone: "info" as V3Tone, value: portfolioCounts.acceptance },
     { icon: AlertTriangle, label: "协调异常", tone: "danger" as V3Tone, value: portfolioCounts.coordinationAnomaly },
+    ...(pendingDecisionCount !== undefined
+      ? [
+          {
+            icon: UserCheck,
+            label: "待我决策",
+            tone: (pendingDecisionCount > 0 ? "warn" : "mute") as V3Tone,
+            value: pendingDecisionCount,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <section
-      aria-label="项目组合概览（已加载列表）"
-      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-    >
+    <MetricGrid aria-label="项目组合概览（已加载列表）">
       {items.map((item) => {
         const Icon = item.icon;
         return (
@@ -173,7 +185,7 @@ export function ProjectPortfolioSummaryBar({
           </div>
         );
       })}
-    </section>
+    </MetricGrid>
   );
 }
 
@@ -459,31 +471,19 @@ const REASON_META: Record<
 
 /**
  * 选中项目上下文（主从详情的从属侧）：复用队列已计算的风险摘要，零额外请求。
- * 未选中时给出安静空态；选中后给出主阻塞、逐条待办与直达动作，动作深链到项目详情对应 Tab。
+ * 按需渲染——仅在选中项目时由 MasterDetailLayout 装载（宽容器 in-flow 右栏 /
+ * 窄容器 Sheet），未选中不保留空态占位栏。
  */
 export function ProjectTriagePanel({
+  onClose,
   project,
   summary,
 }: {
-  project?: Project;
+  /** 关闭选中态（宽容器 in-flow 右栏需要显式返回驾驶舱面板；Sheet 模式有自带关闭钮可不传）。 */
+  onClose?: () => void;
+  project: Project;
   summary?: ProjectRiskSummary;
 }) {
-  if (!project) {
-    return (
-      <aside
-        aria-label="选中项目上下文"
-        className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
-        data-testid="project-selected-context-panel"
-      >
-        <V3EmptyState
-          description="从左侧队列选择一个项目，这里会显示它的待办、当前处理者和直达动作。"
-          icon={<Inbox />}
-          title="选择项目查看待办"
-        />
-      </aside>
-    );
-  }
-
   const resolvedSummary = summary ?? emptyProjectRiskSummary(project);
   const reasons = resolvedSummary.reasons;
   const ownerLabel =
@@ -492,13 +492,24 @@ export function ProjectTriagePanel({
   return (
     <aside
       aria-label="选中项目上下文"
-      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
+      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto"
       data-testid="project-selected-context-panel"
     >
       <div className="flex min-w-0 items-start gap-2.5">
         <IconTile tone={projectStatusTone(project.status)} size="sm">
           <FolderKanban />
         </IconTile>
+        {onClose ? (
+          <V3IconButton
+            aria-label="关闭项目待办详情"
+            // Sheet 模式有自带关闭钮且位置重叠，此钮仅 in-flow（master-detail 容器内）显示
+            className="order-last hidden size-7 shrink-0 @5xl/master-detail:inline-grid"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden className="size-3.5" />
+          </V3IconButton>
+        ) : null}
         <div className="min-w-0 flex-1">
           <h3 className="min-w-0 break-words text-sm font-extrabold leading-5 text-v3-ink">
             {project.name}
@@ -576,7 +587,10 @@ function ProjectTriageReasonRow({
         <Icon />
       </IconTile>
       <div className="min-w-0 flex-1">
-        <p className="min-w-0 break-words text-[12px] font-semibold leading-5 text-v3-ink">
+        <p
+          className="min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
+          title={reason.title}
+        >
           {reason.title}
         </p>
         {reason.detail ? (

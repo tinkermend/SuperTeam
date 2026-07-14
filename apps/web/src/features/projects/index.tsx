@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  MasterDetailLayout,
   StatusPill,
   V3Button,
   V3EmptyState,
@@ -81,6 +82,7 @@ import {
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { Main } from "@/components/layout/main";
@@ -93,6 +95,7 @@ import { ProjectRuntimePlacementPanel } from "./components/project-runtime-place
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
+import { ProjectDashboardRail } from "./components/project-dashboard-rail";
 import {
   ProjectPortfolioSummaryBar,
   ProjectRiskQueue,
@@ -287,6 +290,19 @@ export function ProjectsView({
     enabled: !routeProjectId,
     queryKey: ["workflow-instances", "project-home", { limit: 50, offset: 0 }],
     queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
+    placeholderData: keepPreviousData,
+  });
+  const inboxDecisionsQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["inbox", "project-dashboard", "decisions"],
+    queryFn: () =>
+      listInboxItems(apiOptions, { limit: 8, status: "open", view: "mine" }),
+    placeholderData: keepPreviousData,
+  });
+  const inboxBadgeQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["inbox", "project-dashboard", "badge"],
+    queryFn: () => getInboxBadge(apiOptions),
     placeholderData: keepPreviousData,
   });
   const projects = projectsQuery.data ?? [];
@@ -896,7 +912,10 @@ export function ProjectsView({
             : "围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
         }
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main
+        className="min-w-0 overflow-x-hidden"
+        width={routeProjectId ? "wide" : "canvas"}
+      >
         <div className="flex min-w-0 flex-col gap-5">
           {isInitialLoading ? (
             <WorkSurface>
@@ -936,50 +955,70 @@ export function ProjectsView({
               data-testid={routeProjectId ? undefined : "projects-compact-control-surface"}
             >
               {!routeProjectId ? (
-                <ProjectPortfolioSummaryBar portfolioCounts={portfolioCounts} />
+                <ProjectPortfolioSummaryBar
+                  pendingDecisionCount={inboxBadgeQuery.data?.mine_open_count}
+                  portfolioCounts={portfolioCounts}
+                />
               ) : null}
 
-              <div
-                className={
-                  routeProjectId
-                    ? "grid min-w-0 items-start gap-5"
-                    : "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]"
-                }
-                data-testid="projects-risk-home-layout"
-              >
-                {!routeProjectId ? (
-                  <ProjectRiskQueue
-                    activePage={activeProjectListPage}
-                    createAction={projectCreateAction}
-                    filters={filters}
-                    isFetching={
-                      projectsQuery.isFetching ||
-                      workflowInstancesQuery.isFetching ||
-                      isCurrentPageRiskSettling
-                    }
-                    onFiltersChange={setFilters}
-                    onPageChange={setProjectListPage}
-                    onPageSizeChange={(size) => {
-                      setProjectListPageSize(size);
-                      setProjectListPage(1);
-                    }}
-                    onSelectProject={setSelectedQueueProjectId}
-                    pageCount={projectListPageCount}
-                    pageSize={projectListPageSize}
-                    projects={pagedProjects}
-                    riskSummaries={displayedRiskSummaries}
-                    selectedProjectId={selectedQueueProjectId}
-                    total={projects.length}
-                    workflowInstances={workflowInstancesQuery.data ?? []}
-                  />
-                ) : null}
-                {!routeProjectId ? (
-                  <ProjectTriagePanel
-                    project={selectedQueueProject}
-                    summary={selectedQueueSummary}
-                  />
-                ) : null}
-                {routeProjectId ? (
+              {!routeProjectId ? (
+                <MasterDetailLayout
+                  data-testid="projects-risk-home-layout"
+                  detail={
+                    selectedQueueProject ? (
+                      <ProjectTriagePanel
+                        onClose={() => setSelectedQueueProjectId("")}
+                        project={selectedQueueProject}
+                        summary={selectedQueueSummary}
+                      />
+                    ) : (
+                      <ProjectDashboardRail
+                        decisionItems={inboxDecisionsQuery.data?.items ?? []}
+                        decisionOpenCount={
+                          inboxDecisionsQuery.data?.summary.open_count ?? 0
+                        }
+                        decisionsError={inboxDecisionsQuery.error?.message}
+                        decisionsLoading={inboxDecisionsQuery.isLoading}
+                        workflowInstances={workflowInstancesQuery.data ?? []}
+                      />
+                    )
+                  }
+                  detailLabel="选中项目上下文"
+                  narrowDetail={selectedQueueProject ? "sheet" : "stack"}
+                  onDetailDismiss={() => setSelectedQueueProjectId("")}
+                  master={
+                    <ProjectRiskQueue
+                      activePage={activeProjectListPage}
+                      createAction={projectCreateAction}
+                      filters={filters}
+                      isFetching={
+                        projectsQuery.isFetching ||
+                        workflowInstancesQuery.isFetching ||
+                        isCurrentPageRiskSettling
+                      }
+                      onFiltersChange={setFilters}
+                      onPageChange={setProjectListPage}
+                      onPageSizeChange={(size) => {
+                        setProjectListPageSize(size);
+                        setProjectListPage(1);
+                      }}
+                      onSelectProject={setSelectedQueueProjectId}
+                      pageCount={projectListPageCount}
+                      pageSize={projectListPageSize}
+                      projects={pagedProjects}
+                      riskSummaries={displayedRiskSummaries}
+                      selectedProjectId={selectedQueueProjectId}
+                      total={projects.length}
+                      workflowInstances={workflowInstancesQuery.data ?? []}
+                    />
+                  }
+                  rail="lg"
+                />
+              ) : (
+                <div
+                  className="grid min-w-0 items-start gap-5"
+                  data-testid="projects-risk-home-layout"
+                >
                   <ProjectOperationalDetail
                     acceptance={projectAcceptance}
                     archivePreview={projectArchivePreview}
@@ -1069,8 +1108,8 @@ export function ProjectsView({
                     tasks={projectTasks}
                     transferRequests={projectTransferRequests}
                   />
-                ) : null}
-              </div>
+                </div>
+              )}
             </div>
           )}
       <SubmitDemandDialog

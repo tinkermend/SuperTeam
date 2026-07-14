@@ -8,13 +8,33 @@ describe("Main", () => {
     const main = screen.getByRole("main");
 
     await expect.element(main).toHaveClass("w-full");
-    expect((main.element() as HTMLElement).className).not.toContain("@7xl/content:max-w-7xl");
+    expect((main.element() as HTMLElement).className).not.toContain("max-w-");
   });
 
   it("keeps a contained mode for narrow pages", async () => {
     const screen = await render(<Main contained>窄版页面</Main>);
     const main = screen.getByRole("main");
 
-    await expect.element(main).toHaveClass("@7xl/content:max-w-7xl");
+    await expect
+      .element(main)
+      .toHaveClass("@7xl/content:max-w-(--v3-layout-contained)");
+    expect((main.element() as HTMLElement).dataset.width).toBe("contained");
+  });
+
+  it("caps master-detail workbench pages at the wide tier", async () => {
+    const screen = await render(<Main width="wide">主从工作台</Main>);
+    const main = screen.getByRole("main");
+
+    await expect.element(main).toHaveClass("max-w-(--v3-layout-wide)");
+    await expect.element(main).toHaveClass("mx-auto");
+    expect((main.element() as HTMLElement).dataset.width).toBe("wide");
+  });
+
+  it("keeps canvas pages full-width", async () => {
+    const screen = await render(<Main width="canvas">画布页面</Main>);
+    const main = screen.getByRole("main");
+
+    expect((main.element() as HTMLElement).className).not.toContain("max-w-");
+    expect((main.element() as HTMLElement).dataset.width).toBe("canvas");
   });
 });
