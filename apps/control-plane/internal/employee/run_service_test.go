@@ -1235,6 +1235,100 @@ func TestCreateRunDefaultsRunKindTask(t *testing.T) {
 	}
 }
 
+func TestCreateRunTaskDefaultsPromptToObjective(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.Prompt = "" // empty prompt
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create task run with empty prompt: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected dispatching run, got %s", run.Status)
+	}
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+
+	objective := strings.TrimSpace(req.Objective)
+	if payload["prompt"] != objective {
+		t.Fatalf("expected prompt to default to objective %q, got %q", objective, payload["prompt"])
+	}
+	if payload["input"] != objective {
+		t.Fatalf("expected input to mirror defaulted prompt %q, got %q", objective, payload["input"])
+	}
+}
+
+func TestCreateRunChatDefaultsPromptToObjective(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	req.Prompt = "" // empty prompt
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create chat run with empty prompt: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected dispatching run, got %s", run.Status)
+	}
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+
+	objective := strings.TrimSpace(req.Objective)
+	if payload["prompt"] != objective {
+		t.Fatalf("expected prompt to default to objective %q, got %q", objective, payload["prompt"])
+	}
+	if payload["input"] != objective {
+		t.Fatalf("expected input to mirror defaulted prompt %q, got %q", objective, payload["input"])
+	}
+}
+
+func TestCreateRunPreservesExplicitPrompt(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	explicitPrompt := "explicit prompt"
+	req.Prompt = explicitPrompt
+
+	_, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create run with explicit prompt: %v", err)
+	}
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+
+	if payload["prompt"] != explicitPrompt {
+		t.Fatalf("expected prompt to remain %q, got %q", explicitPrompt, payload["prompt"])
+	}
+	if payload["input"] != explicitPrompt {
+		t.Fatalf("expected input to remain %q, got %q", explicitPrompt, payload["input"])
+	}
+}
+
 // validResumableChatRun returns a terminal chat run belonging to the default run-service
 // tenant/employee, with a non-empty provider session id — the minimum legal predecessor
 // for a chat resume request.

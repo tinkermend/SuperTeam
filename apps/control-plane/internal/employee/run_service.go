@@ -132,6 +132,9 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if objective == "" {
 		return nil, fmt.Errorf("%w: objective is required", ErrInvalidInput)
 	}
+	if prompt == "" {
+		prompt = objective
+	}
 	if req.RunKind == "" {
 		req.RunKind = RunKindTask
 	}
