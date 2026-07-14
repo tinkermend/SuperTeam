@@ -269,7 +269,9 @@ export function ProjectsView({
   const [deleteBlocked, setDeleteBlocked] =
     useState<ProjectDeleteBlockedErrorResponse | undefined>(undefined);
   const [projectListPage, setProjectListPage] = useState(1);
-  const [projectListPageSize, setProjectListPageSize] = useState(5);
+  // 默认每页 10 条：与分页器选项一致（此前默认 5 不在 [10,20] 选项内，
+  // 分页器显示 10 实际渲染 5），也让队列在常规桌面高度下填满首屏。
+  const [projectListPageSize, setProjectListPageSize] = useState(10);
 
   const listFilters = useMemo<ListProjectsFilters>(() => {
     const request: ListProjectsFilters = { limit: 50, offset: 0 };
